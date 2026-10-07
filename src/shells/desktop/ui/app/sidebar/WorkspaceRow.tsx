@@ -13,9 +13,9 @@ import { focusedLeafPanelId, panelRowLabel } from '@client/host'
 import type { WorkspaceEntry } from '@client/workspaces'
 import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
-import { useWorktreeColor } from '../../workspace/repository'
+import { useWorktreeColor, worktreeTitleStyle } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
-import { AgentActivityTitle, AwaitingIndicator, RunningIndicator, agentInfoTitle, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
+import { AwaitingIndicator, RunningIndicator, agentInfoTitle, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
 import { clientApp } from '../app'
 import { closePanels, closeWorkspace, detachPanel, renamePanel, revealPanel, selectWorkspace } from '../navigation'
 import { panelIcon } from '../panels'
@@ -365,13 +365,13 @@ export function WorkspacePanelRow({
           onCancel={rename.onCancel}
         />
       ) : (
-        <AgentActivityTitle
+        <span
           className="min-w-0 flex-1 truncate"
-          worktreeColor={worktreeColor}
+          style={worktreeTitleStyle(worktreeColor)}
           onDoubleClick={(e) => { e.stopPropagation(); onBeginRename?.() }}
         >
           {label}
-        </AgentActivityTitle>
+        </span>
       )}
       {awaiting ? (
         <AwaitingIndicator />

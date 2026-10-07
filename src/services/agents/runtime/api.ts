@@ -1,12 +1,12 @@
-// `cate.agent.*` and `cate.codingAgent.*` service handlers (architecture 14).
-// The router validates arguments; handlers resolve each panel to its runner.
+// `cate.agent.*` service handlers (architecture 14). The router validates
+// arguments; handlers resolve each panel to its runner.
 
 import { RpcError } from '@kernel/rpc/contract'
-import type { ApiHandlerContext, CateServiceHandlers } from '@kernel/api/contract'
-import type { agentApi, codingAgentApi } from '../contract/api'
-import { AGENT_DEFS, PERSON_MISSION_OWNER, type PanelAgentState } from '../contract'
+import type { CateServiceHandlers } from '@kernel/api/contract'
+import type { agentApi } from '../contract/api'
+import type { PanelAgentState } from '../contract'
 import type { AgentsRuntime } from './agentsRuntime'
-import type { Missions } from './missions/missions'
+import type { AgentStarter } from './start'
 
 function summary(agents: AgentsRuntime, state: PanelAgentState) {
   return {
@@ -34,8 +34,15 @@ function live(agents: AgentsRuntime, panelId: string): PanelAgentState {
   return state
 }
 
-export function createAgentApiHandlers(agents: AgentsRuntime): CateServiceHandlers<typeof agentApi> {
+export function createAgentApiHandlers(agents: AgentsRuntime, starter: AgentStarter): CateServiceHandlers<typeof agentApi> {
   return {
+    async start({ canvasPanelId, position, ...args }, ctx) {
+      const placement = canvasPanelId ? { near: canvasPanelId, ...(position ? { position } : {}) } : undefined
+      return starter.start(ctx.caller.panelId, { ...args, ...(placement ? { placement } : {}) })
+    },
+
+    types: () => starter.types(),
+
     list: () => liveAgents(agents).map((state) => summary(agents, state)),
 
     async read({ panelId }) {
@@ -57,6 +64,13 @@ export function createAgentApiHandlers(agents: AgentsRuntime): CateServiceHandle
     async send({ targetPanelId, prompt }) {
       live(agents, targetPanelId)
       const result = await agents.send(targetPanelId, prompt)
+      if (!result.ok) throw new RpcError('rejected', result.error)
+      return { ok: true }
+    },
+
+    async interrupt({ targetPanelId }) {
+      live(agents, targetPanelId)
+      const result = await agents.interrupt(targetPanelId)
       if (!result.ok) throw new RpcError('rejected', result.error)
       return { ok: true }
     },
@@ -99,35 +113,4 @@ function waitForAgents(agents: AgentsRuntime, panelIds: string[], timeoutSeconds
     signal.addEventListener('abort', onAbort)
     check()
   })
-}
-
-/** The mission a call acts for. A panel (an agent's CLI or harness) owns its
- *  own workers. A client is the person: it owns the workers it starts and
- *  decides about any worker with that worker's mission's authority. */
-function owner(ctx: ApiHandlerContext, missions: Missions, runId?: string): string {
-  if (ctx.caller.panelId) return ctx.caller.panelId
-  if (ctx.caller.kind !== 'client') throw new RpcError('rejected', 'mission-owner-required')
-  return (runId ? missions.ownerOf(runId) : null) ?? PERSON_MISSION_OWNER
-}
-
-export function createCodingAgentApiHandlers(missions: Missions): CateServiceHandlers<typeof codingAgentApi> {
-  const run = (ctx: ApiHandlerContext, runId: string) => owner(ctx, missions, runId)
-  return {
-    create: async (args, ctx) => missions.create(owner(ctx, missions), args),
-    send: async ({ runId, prompt }, ctx) => missions.send(run(ctx, runId), runId, prompt),
-    async list(_args, ctx) {
-      if (ctx.caller.panelId) return missions.list(ctx.caller.panelId)
-      owner(ctx, missions) // refuses a caller that is neither a panel nor a client
-      return missions.all()
-    },
-    agents: async () => (await missions.readyAgents()).map((agentId) => ({ agentId, displayName: AGENT_DEFS[agentId].displayName })),
-    wait: async ({ runIds, timeoutSeconds, baselineStatuses }, ctx) =>
-      missions.wait(owner(ctx, missions), { runIds, timeoutSeconds, baselineStatuses, signal: ctx.signal }),
-    inspect: async ({ runId }, ctx) => missions.inspect(run(ctx, runId), runId),
-    review: async ({ runId }, ctx) => missions.review(run(ctx, runId), runId),
-    apply: async ({ runId }, ctx) => missions.apply(run(ctx, runId), runId),
-    keep: async ({ runId }, ctx) => missions.keep(run(ctx, runId), runId),
-    discard: async ({ runId }, ctx) => missions.discard(run(ctx, runId), runId),
-    stop: async ({ runId }, ctx) => missions.stop(run(ctx, runId), runId),
-  }
 }

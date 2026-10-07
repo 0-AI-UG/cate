@@ -57,6 +57,9 @@ export interface AgentPresenceTracker {
    *  A registered pid that vanished — or changed comm (pid reuse) — is
    *  deregistered and reads absent: the falling edge. */
   presenceFor(terminalId: string, tree: ProcTree): AgentPresence
+  /** The agent whose pid a hook post registered for the terminal, until a
+   *  scan sees that pid gone. No liveness check: the post just proved it. */
+  registeredAgent(terminalId: string): AgentId | null
   /** The terminal itself is gone — drop its registration. */
   drop(terminalId: string): void
 }
@@ -178,6 +181,8 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
         ...(reg.sourceStartedAt ? { endedAgentStartedAt: reg.sourceStartedAt } : {}),
       }
     },
+
+    registeredAgent: (terminalId) => registrations.get(terminalId)?.agentId ?? null,
 
     drop(terminalId) {
       registrations.delete(terminalId)

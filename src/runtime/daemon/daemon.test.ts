@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { framePortOver } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
+import { RUNTIME_STOP_DEADLINE_MS } from '@runtime/data/contract'
 import { runtimeIdFor } from '@runtime/data/node'
 import { dialLocal } from '@runtime/transports/node'
 import { runtimeCapability } from './contract'
@@ -162,4 +164,36 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     expect(result.kind).toBe('nested')
     expect((await outer).kind).toBe('serving')
   })
+
+  it('waits for the daemon that last owned the workspace to exit before serving it', async () => {
+    // A stopping daemon closes its socket first and lets go of the
+    // workspace's files last: its successor must not overlap it.
+    const runtimeId = await runtimeIdFor(root)
+    const dir = path.join(home, '.cate', 'workspaces', runtimeId)
+    fs.mkdirSync(dir, { recursive: true })
+    const program = path.join(tmp, 'runtime.cjs')
+    fs.writeFileSync(program, "process.on('SIGTERM', () => {}); console.log('up'); setTimeout(() => {}, 400)")
+    const previous = spawn(process.execPath, [program])
+    await new Promise<void>((resolve) => previous.stdout.once('data', () => resolve()))
+    let exitedAt = 0
+    previous.once('exit', () => { exitedAt = Date.now() })
+    fs.writeFileSync(path.join(dir, 'runtime.json'), JSON.stringify({
+      runtimeId, root: fs.realpathSync(root), pid: previous.pid, version: '0', protocol: [1, 0], endpoints: { local: path.join(dir, 'runtime.sock') },
+    }))
+
+    const result = await start()
+    expect(result.kind).toBe('serving')
+    expect(exitedAt).toBeGreaterThan(0)
+  })
+
+  it('a stuck shutdown still resolves stopped once the stop deadline passes', async () => {
+    const lifecycle = createLifecycleBus()
+    lifecycle.onShutdown(() => new Promise<void>(() => {}))
+    const result = await serveWorkspace({ root, home, lifecycle, log: createLogger('test') })
+    if (result.kind !== 'serving') throw new Error('expected to serve')
+    const started = Date.now()
+    void result.daemon.stop({ kind: 'signal' })
+    await expect(result.daemon.stopped).resolves.toEqual({ kind: 'signal' })
+    expect(Date.now() - started).toBeGreaterThanOrEqual(RUNTIME_STOP_DEADLINE_MS - 50)
+  }, RUNTIME_STOP_DEADLINE_MS + 10_000)
 })

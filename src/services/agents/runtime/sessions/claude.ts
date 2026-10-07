@@ -116,4 +116,9 @@ async function conversation(context: AgentSessionContext): Promise<AgentConversa
   return read ? messages : null
 }
 
-export const claudeSessionStore: AgentSessionStore = { title, conversation }
+const files = async (context: AgentSessionContext): Promise<string[]> => {
+  const file = await locateTranscript(context)
+  return file ? [file] : []
+}
+
+export const claudeSessionStore: AgentSessionStore = { title, conversation, files }

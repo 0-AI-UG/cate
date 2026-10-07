@@ -1,21 +1,24 @@
-// The core API for the agents home, the session view, the composer and
-// shipping: prompts, tasks, a checkout's changes, commit,
-// push and pull request, keep-awake and pushes. Failures come back as words.
+// The core API for agents in a workspace: their conversations (followed live,
+// conversations.ts), prompts and interrupts, starting one in a terminal or in
+// T3 (`cate.agent.start`) and its changes in a review panel; keep-awake and
+// pushes. Failures come back as words.
 
 import { runtimeFor } from '@kernel/rpc/client'
 import { isRpcError } from '@kernel/rpc/contract'
+import { openAgentChanges } from '@panels/review/client'
 import type { MobileActionResult, MobileCoreMethods } from '../contract'
 import type { MobileAgents } from './agents'
-import { agent, codingAgent } from './cateApi'
+import type { MobileConversations } from './conversations'
+import { agent } from './cateApi'
+import { placementOptions } from './placement'
 
 type Handlers<M extends keyof MobileCoreMethods> = {
   [K in M]: (params: MobileCoreMethods[K]['params']) => Promise<MobileCoreMethods[K]['result']>
 }
 
 export type ActionMethod =
-  | 'agents.conversation' | 'agents.send'
-  | 'agents.taskAgents' | 'agents.startTask' | 'agents.taskAction'
-  | 'changes.list' | 'changes.diff' | 'changes.commit' | 'changes.push' | 'changes.pullRequest'
+  | 'agents.watch' | 'agents.unwatch' | 'agents.send' | 'agents.interrupt'
+  | 'agents.choices' | 'agents.t3Models' | 'agents.start' | 'agents.review'
   | 'power.set' | 'push.device' | 'push.useCateConnect'
 
 /** The runtime's error codes in the words the app shows. */
@@ -24,10 +27,9 @@ const WORDS: Record<string, string> = {
   'agent-not-running': 'The agent is not running.',
   'agent-panel-not-found': 'The agent\'s panel was closed.',
   'agent-panel-unavailable': 'The agent\'s panel is not available.',
-  'coding-agent-limit': 'Five tasks are already running. Wait for one to finish.',
-  'coding-agent-not-ready': 'The task is not finished yet.',
-  'worker-does-not-own-worktree': 'This task\'s worktree was not created for it, so it is kept.',
   'prompt-required': 'Describe the task first.',
+  't3-provider-not-ready': 'That T3 Code provider is not ready on your computer.',
+  't3-project-not-found': 'T3 Code is still opening this checkout. Try again in a moment.',
   untrusted: 'Trust this workspace on your computer first.',
 }
 
@@ -49,8 +51,6 @@ async function attempt(work: () => Promise<unknown>): Promise<MobileActionResult
   }
 }
 
-const cwdOf = (checkout: string | null) => (checkout ? { cwd: checkout } : {})
-
 /** A worktree name for a task: its first words, and a suffix so two tasks
  *  with the same start do not collide. */
 export function taskWorktreeName(prompt: string, suffix = Math.random().toString(36).slice(2, 6)): string {
@@ -58,67 +58,51 @@ export function taskWorktreeName(prompt: string, suffix = Math.random().toString
   return `task-${words || 'work'}-${suffix}`
 }
 
-export function createActionHandlers(agents: MobileAgents): Handlers<ActionMethod> {
+export function createActionHandlers(agents: MobileAgents, conversations: MobileConversations): Handlers<ActionMethod> {
   return {
-    async 'agents.conversation'({ workspaceId, panelId }) {
-      // No session yet, or the agent exited: nothing to read.
-      const read = await agent(runtimeFor(workspaceId), 'read', { panelId }).catch(() => null)
-      return read ? read.messages : null
+    async 'agents.watch'(params) {
+      conversations.watch(params)
+      return null
     },
-    'agents.send': ({ workspaceId, panelId, prompt }) =>
-      attempt(() => agent(runtimeFor(workspaceId), 'send', { targetPanelId: panelId, prompt })),
-    async 'agents.taskAgents'({ workspaceId }) {
-      return codingAgent(runtimeFor(workspaceId), 'agents', {}).catch(() => [])
+    async 'agents.unwatch'({ viewId }) {
+      conversations.unwatch(viewId)
+      return null
     },
-    async 'agents.startTask'({ workspaceId, prompt, agentId, worktree }) {
-      try {
-        const run = await codingAgent(runtimeFor(workspaceId), 'create', {
-          prompt,
-          ...(agentId ? { agentId } : {}),
-          ...(worktree ? { newWorktree: taskWorktreeName(prompt) } : {}),
-        })
-        agents.refreshTasks(workspaceId)
-        return { ok: true, panelId: run.panelId }
-      } catch (error) {
-        return { ok: false, message: wordsFor(error) }
-      }
-    },
-    async 'agents.taskAction'({ workspaceId, taskId, action }) {
-      const result = await attempt(() => codingAgent(runtimeFor(workspaceId), action, { runId: taskId }))
-      agents.refreshTasks(workspaceId)
+    async 'agents.send'({ viewId, workspaceId, panelId, prompt }) {
+      conversations.sent(viewId, prompt)
+      const result = await attempt(() => agent(runtimeFor(workspaceId), 'send', { targetPanelId: panelId, prompt }))
+      if (!result.ok) conversations.unsent(viewId)
       return result
     },
-
-    async 'changes.list'({ workspaceId, checkout }) {
-      const result = await runtimeFor(workspaceId).vcs.compare({ ...cwdOf(checkout), spec: { kind: 'uncommitted' } })
-      return {
-        branch: result.currentBranch,
-        files: result.files.map(({ path, status, additions, deletions }) => ({ path, status, additions, deletions })),
-        additions: result.additions,
-        deletions: result.deletions,
-      }
+    'agents.interrupt': ({ workspaceId, panelId }) =>
+      attempt(() => agent(runtimeFor(workspaceId), 'interrupt', { targetPanelId: panelId })),
+    async 'agents.choices'({ workspaceId }) {
+      return agent(runtimeFor(workspaceId), 'types', {}).catch(() => [])
     },
-    'changes.diff': ({ workspaceId, checkout, path }) =>
-      runtimeFor(workspaceId).vcs.fileDiff({ ...cwdOf(checkout), spec: { kind: 'uncommitted' }, path }),
-    async 'changes.commit'({ workspaceId, checkout, message }) {
-      const vcs = runtimeFor(workspaceId).vcs
-      return attempt(async () => {
-        await vcs.stageAll(cwdOf(checkout))
-        await vcs.commit({ ...cwdOf(checkout), message })
-      })
+    async 'agents.t3Models'({ workspaceId }) {
+      return runtimeFor(workspaceId).t3.providerModels().catch(() => [])
     },
-    'changes.push': ({ workspaceId, checkout }) => attempt(() => runtimeFor(workspaceId).vcs.push(cwdOf(checkout))),
-    async 'changes.pullRequest'({ workspaceId, checkout }) {
-      const vcs = runtimeFor(workspaceId).vcs
+    async 'agents.start'({ workspaceId, prompt, launch, worktree, placement }) {
+      const { near, position } = placementOptions(launch.runner === 'terminal' ? 'terminal' : 'chat', placement)
       try {
-        const branch = (await vcs.compare({ ...cwdOf(checkout), spec: { kind: 'uncommitted' } })).currentBranch
-        if (!branch) return { ok: false, message: 'The checkout is not on a branch.' }
-        const path = checkout ?? (await runtimeFor(workspaceId).runtime.info()).root
-        const result = await vcs.createPr({ path, branch })
-        return result.ok ? { ok: true, url: result.url } : { ok: false, message: result.message }
+        const started = await agent(runtimeFor(workspaceId), 'start', {
+          prompt,
+          ...(launch.runner === 'terminal'
+            ? { runner: 'terminal' as const, agentId: launch.agentId }
+            : { runner: 't3' as const, instanceId: launch.instanceId, model: launch.model }),
+          ...(worktree ? { newWorktree: taskWorktreeName(prompt) } : {}),
+          ...(near ? { canvasPanelId: near } : {}),
+          ...(position ? { position } : {}),
+        })
+        return { ok: true, panelId: started.panelId }
       } catch (error) {
         return { ok: false, message: wordsFor(error) }
       }
+    },
+    async 'agents.review'({ workspaceId, panelId }) {
+      const checkout = agents.agents(workspaceId).find((agent) => agent.panelId === panelId)?.checkout
+      const cwd = checkout ?? (await runtimeFor(workspaceId).runtime.info()).root
+      return openAgentChanges({ workspaceId, panelId, cwd })
     },
 
     'power.set': ({ workspaceId, duration }) => attempt(() => runtimeFor(workspaceId).power.set({ duration })),

@@ -1,6 +1,6 @@
 // The agents service core (architecture 10.4): hook ingestion, pid presence,
 // change history, the runner registry, prompt context and notifications.
-// Runners (runners/terminal, runners/t3) and missions plug into it.
+// Runners (runners/terminal, runners/t3) plug into it.
 
 import type { RelationRoleOf } from '@workspace/relations/contract'
 import path from 'node:path'
@@ -10,6 +10,7 @@ import { createAgentHooks, type AgentHooks, type AgentHooksDeps } from './hooks/
 import { createAgentPresenceTracker, type AgentPresenceTracker, type ProcTree } from './presence'
 import { createRunnerRegistry, type RunnerRegistry } from './registry'
 import { createAgentNotifications, type AgentNotifications } from './notifications'
+import { createAgentConversations, type AgentConversations } from './conversations'
 import { createPromptContext, type AgentsDocument, type PromptContext } from './promptContext'
 
 export interface TrustGate {
@@ -57,11 +58,14 @@ export interface AgentsRuntime {
   readonly presence: AgentPresenceTracker
   readonly registry: RunnerRegistry
   readonly notifications: AgentNotifications
+  readonly conversations: AgentConversations
   readonly promptContext: PromptContext
   resolveCheckout(cwd: string | undefined): Promise<string>
   inspectHooks(cwd?: string): Promise<AgentHookAgentState[]>
   panel(panelId: string): PanelAgentState | null
   send(panelId: string, prompt: string): Promise<AgentSendResult>
+  /** Stops the turn of the panel's agent. */
+  interrupt(panelId: string): Promise<AgentSendResult>
   /** Panels whose agent is running a turn. */
   busy(): string[]
   dispose(): void
@@ -87,6 +91,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   })
   const registry = createRunnerRegistry({ contextSentAt: (panelId) => promptContext.sentAt(panelId) })
   promptContext.onSent((panelId) => registry.refresh(panelId))
+  const conversations = createAgentConversations({ registry })
 
   return {
     root: deps.root,
@@ -97,6 +102,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     presence,
     registry,
     notifications,
+    conversations,
     promptContext,
     resolveCheckout: (cwd) => deps.resolveCheckout(cwd),
     async inspectHooks(cwd) {
@@ -111,8 +117,15 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
       if (!runner) return { ok: false, error: 'agent-panel-not-found' }
       return runner.send(panelId, prompt)
     },
+    async interrupt(panelId) {
+      deps.trust.requireTrusted()
+      const runner = registry.runnerFor(panelId)
+      if (!runner) return { ok: false, error: 'agent-panel-not-found' }
+      return runner.interrupt(panelId)
+    },
     busy: () => Object.values(registry.all()).filter((state) => state.status === 'running').map((state) => state.panelId),
     dispose() {
+      conversations.dispose()
       hooks.dispose()
     },
   }

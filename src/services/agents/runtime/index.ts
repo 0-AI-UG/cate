@@ -1,6 +1,6 @@
 export { createAgentsRuntime, type AgentsRuntime, type AgentsRuntimeDeps, type AgentsSettingsReader, type TrustGate } from './agentsRuntime'
 export { agentsCapabilityImpl } from './capability'
-export { createAgentApiHandlers, createCodingAgentApiHandlers } from './api'
+export { createAgentApiHandlers } from './api'
 export { createRunnerRegistry, type AgentRunnerImpl, type RunnerRegistry } from './registry'
 export { createAgentNotifications, type AgentNotifications } from './notifications'
 export { createPromptContext, addAgentPromptGuidance, type AgentsDocument, type PromptContext, type RelationContextMode } from './promptContext'
@@ -22,13 +22,10 @@ export { resolveDriverAgent, evaluateAgentCliHooks, inspectAgentCliHooks, AgentC
 export { createAgentChangesStore, type AgentChangeSource, type AgentChangesStore } from './changes/store'
 export { AGENT_SESSION_STORES } from './sessions'
 export {
-  createMissions,
-  type Missions,
-  type MissionsDeps,
-  type MissionStore,
-  type MissionTerminals,
-  type MissionWorktrees,
-  type WorkerLaunch,
-  type WorktreeReview,
-} from './missions/missions'
-export { openMissionStore } from './missions/store'
+  createAgentStarter,
+  type AgentPlacement,
+  type AgentStartArgs,
+  type AgentStarter,
+  type AgentStartPorts,
+  type AgentTerminalLaunch,
+} from './start'

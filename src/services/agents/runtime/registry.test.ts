@@ -11,6 +11,7 @@ function fakeRunner(kind: AgentRunner) {
     panelIds: () => states.keys(),
     send: vi.fn(async () => ({ ok: true as const })),
     conversation: async () => null,
+    interrupt: vi.fn(async () => ({ ok: true as const })),
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
   const set = (panelId: string, state: Partial<PanelAgentState> | null) => {

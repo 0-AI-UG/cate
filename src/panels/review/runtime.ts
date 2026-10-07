@@ -8,7 +8,6 @@ import { ReviewSession, type ReviewSessionDeps } from './session'
 export { definition as reviewDefinition }
 export {
   ReviewSession,
-  type ReviewAgentRunInfo,
   type ReviewAgents,
   type ReviewFiles,
   type ReviewRepository,

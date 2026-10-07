@@ -395,7 +395,7 @@ private struct MarkdownPreview: View {
                 let fonts: [Font] = [.title, .title2, .title3, .headline, .subheadline, .subheadline]
                 out.append(Text(Self.inline(String(trimmed.dropFirst(level + 1)))).font(fonts[level - 1]).bold())
             } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
-                out.append(Text("• ") + Text(Self.inline(String(trimmed.dropFirst(2)))))
+                out.append(Text("• \(Self.inline(String(trimmed.dropFirst(2))))"))
             } else if trimmed.hasPrefix("> ") {
                 out.append(Text(Self.inline(String(trimmed.dropFirst(2)))).italic().foregroundStyle(.secondary))
             } else {

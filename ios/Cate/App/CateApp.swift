@@ -1,8 +1,8 @@
 // The iOS shell (architecture 15): native SwiftUI over the client core, which
-// runs headless in a hidden web view (CoreHost). Two tabs: the agents of every
-// workspace, and the workspaces with their panels. A `cate://pair` link, from
-// a QR code scanned with the Camera app, opens the join sheet and joins; a
-// notification opens the agent it is about.
+// runs headless in a hidden web view (CoreHost). One stack: the workspaces,
+// then a workspace with its agents and panels. A `cate://pair` link, from a
+// QR code scanned with the Camera app, opens the join sheet and joins; a
+// notification opens its workspace and the agent it is about.
 
 import SwiftUI
 
@@ -21,47 +21,31 @@ struct CateApp: App {
     }
 }
 
-enum RootTab: Hashable {
-    case agents, workspaces
-}
-
 struct RootView: View {
     @Environment(CoreHost.self) private var core
     @Environment(Notifier.self) private var notifier
-    @State private var tab = RootTab.agents
-    @State private var agentsPath = NavigationPath()
     @State private var path = NavigationPath()
     @State private var joining: JoinRequest?
 
     var body: some View {
-        TabView(selection: $tab) {
-            NavigationStack(path: $agentsPath) {
-                AgentsHomeView(join: { joining = JoinRequest(link: nil) })
-                    .agentDestinations()
-            }
-            .tabItem { Label("Agents", systemImage: "sparkles") }
-            .tag(RootTab.agents)
-
-            NavigationStack(path: $path) {
-                WorkspacesView(join: { joining = JoinRequest(link: nil) })
-                    .navigationDestination(for: String.self) { WorkspaceView(workspaceId: $0) }
-                    .agentDestinations()
-            }
-            .tabItem { Label("Workspaces", systemImage: "desktopcomputer") }
-            .tag(RootTab.workspaces)
+        NavigationStack(path: $path) {
+            WorkspacesView(join: { joining = JoinRequest(link: nil) })
+                .navigationDestination(for: String.self) { WorkspaceView(workspaceId: $0) }
+                .agentDestinations()
         }
         .sheet(item: $joining) { request in
             JoinView(link: request.link) { workspaceId in
                 joining = nil
-                tab = .workspaces
                 path = NavigationPath([workspaceId])
             }
         }
         .onChange(of: notifier.route) { _, route in
             guard let route else { return }
             notifier.route = nil
-            tab = .agents
-            agentsPath = NavigationPath([route])
+            var next = NavigationPath()
+            next.append(route.workspaceId)
+            next.append(route)
+            path = next
         }
         .alert("Not sent", isPresented: Binding(get: { notifier.failure != nil }, set: { if !$0 { notifier.failure = nil } })) {
             Button("OK", role: .cancel) {}
@@ -82,11 +66,12 @@ struct RootView: View {
 }
 
 extension View {
-    /// The screens an agent leads to, in either tab.
+    /// The screens a workspace leads to: its panels, its agents' chats and a
+    /// new agent chat.
     func agentDestinations() -> some View {
         navigationDestination(for: PanelRoute.self) { PanelView(route: $0) }
-            .navigationDestination(for: AgentRoute.self) { AgentSessionView(route: $0) }
-            .navigationDestination(for: ShipRoute.self) { ShipView(route: $0) }
+            .navigationDestination(for: AgentRoute.self) { AgentChatView(workspaceId: $0.workspaceId, panelId: $0.panelId) }
+            .navigationDestination(for: NewAgentRoute.self) { AgentChatView(workspaceId: $0.workspaceId, panelId: nil, canvasPanelId: $0.canvasPanelId) }
     }
 }
 

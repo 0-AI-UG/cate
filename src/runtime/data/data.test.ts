@@ -108,6 +108,38 @@ describe.skipIf(process.platform === 'win32')('socket lock', () => {
     await new Promise<void>((resolve, reject) => net.connect(socket).once('connect', function (this: net.Socket) { this.destroy(); resolve() }).once('error', reject))
   })
 
+  const owner = async (program: string, args: string[] = []) => {
+    const child = spawn(program, args)
+    await new Promise<void>((resolve) => child.once('spawn', () => resolve()))
+    await writeRuntimeInfo(tmp, { runtimeId: 'abcdefghijklmnop', root: tmp, pid: child.pid!, version: '0', protocol: [1, 0], endpoints: { local: dataPaths(tmp).socket } })
+    return child
+  }
+
+  it('kills a previous daemon stuck in its shutdown, then takes over', async () => {
+    const program = path.join(tmp, 'runtime.cjs')
+    await fs.writeFile(program, "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)")
+    const stuck = await owner(process.execPath, [program])
+    const exited = new Promise((resolve) => stuck.once('exit', (_code, signal) => resolve(signal)))
+
+    const result = await acquireRuntimeSocket(tmp, 'abcdefghijklmnop', { ownerExitMs: 200 })
+    if (result.kind === 'acquired') servers.push(result.server)
+    expect(result.kind).toBe('acquired')
+    await expect(exited).resolves.toBe('SIGKILL')
+  })
+
+  it('leaves alone a live pid in runtime.json that is not a daemon (reused)', async () => {
+    const other = await owner('sleep', ['30'])
+    try {
+      const result = await acquireRuntimeSocket(tmp, 'abcdefghijklmnop', { ownerExitMs: 200 })
+      if (result.kind === 'acquired') servers.push(result.server)
+      expect(result.kind).toBe('acquired')
+      expect(other.exitCode).toBeNull()
+      expect(other.signalCode).toBeNull()
+    } finally {
+      other.kill('SIGKILL')
+    }
+  })
+
   it('does not delete a non-socket file at the endpoint', async () => {
     await fs.writeFile(dataPaths(tmp).socket, 'keep')
     await expect(acquireRuntimeSocket(tmp, 'abcdefghijklmnop')).rejects.toThrow()

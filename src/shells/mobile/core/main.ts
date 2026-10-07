@@ -15,6 +15,7 @@ import { createMobileChats } from './chat'
 import { createMobileBuffers } from './buffers'
 import { createMobileStreams } from './streams'
 import { createMobileAgents } from './agents'
+import { createMobileConversations } from './conversations'
 
 declare global {
   interface Window {
@@ -35,6 +36,7 @@ async function start(): Promise<void> {
     buffers: createMobileBuffers(bridge),
     streams: createMobileStreams(client, bridge),
     agents,
+    conversations: createMobileConversations(bridge),
   })
   window.cateCore = {
     async call(method, paramsJson) {

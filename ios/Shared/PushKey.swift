@@ -34,10 +34,11 @@ enum PushKey {
     private static let account = "key"
 
     /// The Keychain group the app and the extension share, from Info.plist
-    /// (`$(AppIdentifierPrefix)com.0ai.cate.ios.shared`); nil in an unsigned build.
+    /// (`$(AppIdentifierPrefix)$(CATE_BUNDLE_ID).shared`); nil in an unsigned
+    /// build, which has no team prefix.
     private static var group: String? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "CateSharedKeychainGroup") as? String,
-              !value.isEmpty, !value.hasPrefix("com.") else { return nil }
+              value.range(of: "^[A-Z0-9]{10}\\.", options: .regularExpression) != nil else { return nil }
         return value
     }
 

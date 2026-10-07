@@ -32,7 +32,7 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CateSharedKeychainGroup</key>
-	<string>$(AppIdentifierPrefix)com.0ai.cate.ios.shared</string>
+	<string>$(AppIdentifierPrefix)$(CATE_BUNDLE_ID).shared</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>

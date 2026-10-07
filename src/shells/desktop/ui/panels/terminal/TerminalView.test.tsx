@@ -104,7 +104,7 @@ function fakeProcess() {
 
 const snapshotOf = (patch: Partial<TerminalSnapshot> = {}): TerminalSnapshot => ({
   ptyId: 'pty-1', status: 'running', title: 'zsh', cwd: '/repo', activity: { type: 'idle' },
-  agent: null, exitCode: null, error: null, ...patch,
+  exitCode: null, error: null, ...patch,
 })
 
 function props(snapshot: TerminalSnapshot | null, send = vi.fn(async (_op: TerminalOp) => undefined)): PanelViewProps<TerminalSnapshot, TerminalOp> {

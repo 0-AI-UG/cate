@@ -1,14 +1,15 @@
-// Coding-agent missions end to end: a supervising terminal runs `cate
-// codingAgent ...` (the caller's panel owns the missions), which starts worker
-// terminals running a fake `codex` on the runtime's PATH.
+// Starting agents end to end: a terminal runs `cate agent start ...`, which
+// starts a terminal next to it running a fake `codex` on the runtime's PATH;
+// the started agent is then a panel `cate agent` and the terminal reach.
 
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { closeApp, expectTerminalText, makeHome, makeProject, seedOnCanvas } from './fixtures/electron-app'
+import { layout } from './fixtures/canvas-helpers'
 import { launchWithRuntime, stopRuntimeGracefully } from './fixtures/runtime-install'
-import { cate, runCate, runInTerminal, shellQuote } from './fixtures/cate-terminal'
+import { cate, runInTerminal } from './fixtures/cate-terminal'
 
 let app: ElectronApplication
 let page: Page
@@ -19,7 +20,7 @@ let fakeBin = ''
 let launchLog = ''
 let control = ''
 
-interface Run { id: string; panelId: string; status: string; [key: string]: unknown }
+interface Started { panelId: string; runner: string; agentId: string | null }
 
 function installFakeCodex(): void {
   fakeBin = path.join(home, 'bin')
@@ -66,9 +67,13 @@ async function launch(): Promise<void> {
   }))
 }
 
-async function agent(...args: string[]): Promise<unknown> {
-  const out = await runCate(page, control, 'codingAgent', '--json', ...args)
-  return JSON.parse(out.replace(/\s*\n\s*/g, ''))
+/** `cate agent start`, given the call's own budget: the first hook
+ *  inspection runs each agent CLI's own check (Hermes' plugin list), which
+ *  is slow where that CLI is installed. */
+async function start(prompt: string, ...flags: string[]): Promise<Started> {
+  const { code, output } = await runInTerminal(page, control, cate('agent', '--json', 'start', '--agent', 'codex', ...flags, '--', prompt), 90_000)
+  expect(code, output).toBe(0)
+  return JSON.parse(output.replace(/\s*\n\s*/g, '')) as Started
 }
 
 test.beforeEach(async () => {
@@ -83,70 +88,51 @@ test.beforeEach(async () => {
 })
 test.afterEach(async () => closeApp(app, { home }))
 
-const create = (prompt: string) => agent('create', '--agent', 'codex', '--', prompt) as Promise<Run>
 const launches = () => (existsSync(launchLog) ? readFileSync(launchLog, 'utf8').trim().split('\n').filter(Boolean) : [])
 
-test('creates, inspects, follows up, waits for, and stops real worker PTYs', async () => {
+test('starts a CLI agent with its prompt as argv, next to the calling terminal', async () => {
   test.setTimeout(120_000)
-  const first = await create('--literal mission; no shell')
-  await expectTerminalText(page, first.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
+  const started = await start('--literal task; no shell')
+  expect(started).toMatchObject({ runner: 'terminal', agentId: 'codex' })
+  await expectTerminalText(page, started.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
 
   const launched = JSON.parse(launches()[0]!)
   expect(launched.cwd).toBe(root)
-  expect(launched.argv).toEqual(['Complete this coding task:\n\n--literal mission; no shell'])
+  expect(launched.argv).toEqual(['Complete this coding task:\n\n--literal task; no shell'])
 
-  const inspected = await agent('inspect', first.id) as Run
-  expect(JSON.stringify(inspected)).toContain('FAKE_CODEX_STARTED')
-
-  // `wait` runs in the background of the supervising shell (missions belong
-  // to their caller's panel) while a follow-up finishes the worker.
-  const waitFile = path.join(home, 'wait.json')
-  await runInTerminal(page, control, `${cate('codingAgent', '--json', 'wait', first.id, '--timeout', '20')} > ${shellQuote(waitFile)} 2>&1 &`)
-  await page.waitForTimeout(500)
-  await agent('send', first.id, 'finish-e2e')
-  await expect.poll(() => (existsSync(waitFile) ? readFileSync(waitFile, 'utf8') : ''), { timeout: 30_000 }).toContain('changedRunIds')
-  const waited = JSON.parse(readFileSync(waitFile, 'utf8')) as { changedRunIds: string[]; runs: Run[] }
-  expect(waited.changedRunIds).toEqual([first.id])
-  expect(waited.runs).toEqual([expect.objectContaining({ id: first.id, status: 'ready' })])
-
-  const second = await create('stay alive until stopped')
-  await expectTerminalText(page, second.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
-  const stopped = await agent('stop', second.id) as Run
-  expect(stopped).toEqual(expect.objectContaining({ id: second.id, status: 'stopped' }))
-  expect(await agent('inspect', second.id)).toEqual(expect.objectContaining({ id: second.id }))
+  // Placed on the caller's canvas, and an agent panel like any other.
+  const { places } = await layout(page)
+  expect(places[started.panelId]).toMatchObject({ kind: 'canvas', canvasId: places[control].canvasId })
+  await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, 'finish-e2e\r'), started.panelId)
+  await expectTerminalText(page, started.panelId, 'FAKE_CODEX_FOLLOW_UP finish-e2e')
 })
 
-test('a live worker keeps running when its panel moves to a detached window', async () => {
+test('a started agent keeps running when its panel moves to a detached window', async () => {
   test.setTimeout(120_000)
-  const worker = await create('detach this worker')
-  await expectTerminalText(page, worker.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
+  const started = await start('detach this agent')
+  await expectTerminalText(page, started.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
   const windows = app.windows().length
   // Detaching is a placement op: the panel's session stays in the runtime.
   await page.evaluate((id) => window.__cateE2E!.propose({
     kind: 'placePanel',
     id,
     at: { to: 'window', windowId: crypto.randomUUID(), stackId: crypto.randomUUID() },
-  }), worker.panelId)
+  }), started.panelId)
   await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBeGreaterThan(windows)
-  await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, 'still-here\r'), worker.panelId)
-  await expectTerminalText(page, worker.panelId, 'FAKE_CODEX_FOLLOW_UP still-here')
-  expect(await agent('stop', worker.id)).toEqual(expect.objectContaining({ status: 'stopped' }))
+  await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, 'still-here\r'), started.panelId)
+  await expectTerminalText(page, started.panelId, 'FAKE_CODEX_FOLLOW_UP still-here')
 })
 
-test('restart restores mission history without replaying the worker task', async () => {
+test('restart does not replay a started agent\'s prompt', async () => {
   test.setTimeout(120_000)
-  const worker = await create('finish once, never replay')
-  await expectTerminalText(page, worker.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
-  await agent('send', worker.id, 'finish-e2e')
-  const status = async () => ((await agent('list')) as Run[] | { runs: Run[] })
-  const statusOf = async () => { const l = await status(); return (Array.isArray(l) ? l : l.runs).find((r) => r.id === worker.id)?.status }
-  await expect.poll(statusOf, { timeout: 20_000 }).toBe('ready')
+  const started = await start('finish once, never replay')
+  await expectTerminalText(page, started.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
   expect(launches()).toHaveLength(1)
 
   // A full app and runtime restart.
   await stopRuntimeGracefully(page, home)
   await closeApp(app)
   await launch()
-  await expect.poll(statusOf, { timeout: 30_000 }).toBe('ready')
+  await page.waitForTimeout(3_000)
   expect(launches()).toHaveLength(1)
 })

@@ -11,7 +11,7 @@ import type { RepoStatus } from '@workspace/repository/contract'
 import type { AgentChangeRecord } from '@services/agents/contract'
 import type { SessionKit, SessionStore } from '@panels/framework/runtime'
 import type { ReviewNote, ReviewOp, ReviewSnapshot, ReviewState } from './contract'
-import { ReviewSession, type ReviewAgentRunInfo, type ReviewSessionDeps } from './session'
+import { ReviewSession, type ReviewSessionDeps } from './session'
 
 const file = { path: 'src/a.ts', status: 'modified', additions: 1, deletions: 0, binary: false, staged: false, working: true }
 const diff = {
@@ -27,7 +27,7 @@ let dir: string
 let document: DocumentService
 let stored: Json | undefined
 let statusListeners: Array<(status: RepoStatus) => void>
-let runs: ReviewAgentRunInfo[]
+let exitListeners: Array<(panelId: string) => void>
 let records: AgentChangeRecord[]
 let deps: ReviewSessionDeps
 let repo: Record<string, ReturnType<typeof vi.fn>>
@@ -72,7 +72,7 @@ beforeEach(async () => {
   document = createDocumentService({ file: path.join(dir, 'document.json'), debounceMs: 60_000 })
   stored = undefined
   statusListeners = []
-  runs = [{ id: 'run', panelId: 'reviewer', createdAt: 1 }]
+  exitListeners = []
   records = []
   repo = {
     compare: vi.fn(async () => ({ spec: { kind: 'uncommitted' }, files: [file], additions: 1, deletions: 0, resolvedBase: 'base', resolvedTarget: 'target', currentBranch: 'feature' })),
@@ -101,10 +101,12 @@ beforeEach(async () => {
     agents: {
       readChanges: vi.fn(async () => ({ revision: String(records.length), records })),
       readiness: vi.fn(async () => [{ agentId: 'codex' as const, ready: true }]),
-      startRun: vi.fn(async () => ({ id: 'new-run', panelId: 'worker' })),
-      sendToRun: vi.fn(async () => {}),
-      runs: async () => runs,
-      onRunsChanged: () => () => {},
+      start: vi.fn(async () => ({ panelId: 'worker' })),
+      send: vi.fn(async () => {}),
+      onExit: (listener) => {
+        exitListeners.push(listener)
+        return () => { exitListeners = exitListeners.filter((l) => l !== listener) }
+      },
       threadIdOf: () => undefined,
     },
   }
@@ -153,7 +155,7 @@ it('adds, toggles and resolves notes, persisting them in the session file', asyn
 it('adds agent notes through cate.review.note.add on the live diff', async () => {
   const human = await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'new', line: 4, context: 'return safe()', body: 'Human', severity: 'warning' } }) as ReviewNote
   const note = await session.handleApi!('note.add', { file: 'src/a.ts', side: 'new', line: 4, body: 'Agent', severity: 'warning' }, ctx('reviewer'))
-  expect(note).toMatchObject({ author: 'agent', agentRunId: 'run', context: 'return safe()', contextHash: human.contextHash })
+  expect(note).toMatchObject({ author: 'agent', agentPanelId: 'reviewer', context: 'return safe()', contextHash: human.contextHash })
   expect(saved().notes).toHaveLength(2)
   await expect(session.handleApi!('note.add', { file: 'src/a.ts', side: 'new', line: 9, body: 'x', severity: 'warning' }, ctx('reviewer')))
     .rejects.toThrow('line-not-in-diff')
@@ -257,35 +259,34 @@ it('inspects across a concurrent status refresh but rejects a changed comparison
   await expect(changed).rejects.toThrow('review-changed')
 })
 
-it('launches a reviewer run and lets only that run complete the review', async () => {
+it('launches a reviewer and lets only that reviewer complete the review', async () => {
   expect(await op({ kind: 'reviewWithAgent', agentId: 'codex' })).toBe(true)
-  expect(deps.agents.startRun).toHaveBeenCalledWith('review', expect.objectContaining({ agentId: 'codex', title: 'Review changes', prompt: expect.stringContaining('cate review inspect') }))
-  expect(saved().agentReview).toMatchObject({ runId: 'new-run', terminalPanelId: 'worker', status: 'working' })
+  expect(deps.agents.start).toHaveBeenCalledWith('review', expect.objectContaining({ agentId: 'codex', title: 'Review changes', prompt: expect.stringContaining('cate review inspect') }))
+  expect(saved().agentReview).toMatchObject({ terminalPanelId: 'worker', status: 'working' })
   expect(await op({ kind: 'reviewWithAgent', agentId: 'codex' })).toBe(false)
   await expect(session.handleApi!('complete', {}, ctx('reviewer'))).rejects.toThrow('review-agent-mismatch')
-  runs.push({ id: 'new-run', panelId: 'worker', createdAt: 2 })
   await session.handleApi!('complete', {}, ctx('worker'))
-  expect(saved().agentReview).toMatchObject({ runId: 'new-run', status: 'complete' })
+  expect(saved().agentReview).toMatchObject({ terminalPanelId: 'worker', status: 'complete' })
 })
 
-it('marks a working review failed once its run ended', async () => {
+it('marks a working review failed once its reviewer\'s terminal exited', async () => {
   await op({ kind: 'reviewWithAgent', agentId: 'codex' })
-  runs.push({ id: 'new-run', panelId: 'worker', createdAt: 2, endedAt: 5 })
-  session.dispose('shutdown')
-  await start()
-  await vi.waitFor(() => expect(snap().review.agentReview).toMatchObject({ status: 'failed', completedAt: 5 }))
+  for (const listener of exitListeners) listener('other')
+  expect(snap().review.agentReview).toMatchObject({ status: 'working' })
+  for (const listener of exitListeners) listener('worker')
+  expect(snap().review.agentReview).toMatchObject({ status: 'failed', completedAt: expect.any(Number) })
 })
 
 it('sends open findings to the source agent and asks for another agent when it is gone', async () => {
-  await op({ kind: 'retarget', request: { spec: { kind: 'uncommitted' }, sourceAgent: { runId: 'src', ownerPanelId: 'owner', panelId: 'term' } } })
+  await op({ kind: 'retarget', request: { spec: { kind: 'uncommitted' }, sourceAgent: { panelId: 'term' } } })
   expect(await op({ kind: 'requestChanges' })).toBe('cancelled')
   await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'new', line: 4, context: 'return safe()', body: 'Fix it', severity: 'error' } })
   expect(await op({ kind: 'requestChanges' })).toBe('done')
-  expect(deps.agents.sendToRun).toHaveBeenCalledWith('owner', 'src', expect.stringContaining('Fix it'))
-  vi.mocked(deps.agents.sendToRun).mockRejectedValueOnce(new Error('gone'))
+  expect(deps.agents.send).toHaveBeenCalledWith('term', expect.stringContaining('Fix it'))
+  vi.mocked(deps.agents.send).mockRejectedValueOnce(new Error('gone'))
   expect(await op({ kind: 'requestChanges' })).toBe('pick-agent')
   expect(await op({ kind: 'requestChanges', agentId: 'claude-code' })).toBe('done')
-  expect(deps.agents.startRun).toHaveBeenLastCalledWith('review', expect.objectContaining({ agentId: 'claude-code', title: 'Address review findings' }))
+  expect(deps.agents.start).toHaveBeenLastCalledWith('review', expect.objectContaining({ agentId: 'claude-code', title: 'Address review findings' }))
 })
 
 it('lists recorded agent edits still changed in git, and serves their hunks on demand', async () => {

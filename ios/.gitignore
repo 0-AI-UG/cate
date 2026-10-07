@@ -6,3 +6,5 @@ xcuserdata/
 # Built from src/shells/mobile/core by `npm run build:mobile`
 Cate/Core/Web/core.js
 Cate/Core/Web/core.js.map
+# This Mac's own signing (see Local.xcconfig.example)
+Local.xcconfig

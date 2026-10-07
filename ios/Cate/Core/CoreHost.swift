@@ -201,6 +201,23 @@ extension CoreHost {
         await call("panel.remove", ["workspaceId": workspaceId, "panelId": panelId])
     }
 
+    // MARK: Agent chats
+
+    /// Follows a panel's agent conversation: `events` gets its
+    /// `conversation` events until `unwatchAgent`. `pending` is a first
+    /// prompt on its way.
+    func watchAgent(_ viewId: String, workspaceId: String, panelId: String, pending: String?, events: @escaping (Data) -> Void) {
+        views[viewId] = events
+        var params: [String: Any] = ["viewId": viewId, "workspaceId": workspaceId, "panelId": panelId]
+        if let pending { params["pending"] = pending }
+        Task { await call("agents.watch", params) }
+    }
+
+    func unwatchAgent(_ viewId: String) {
+        views[viewId] = nil
+        Task { await call("agents.unwatch", ["viewId": viewId]) }
+    }
+
     // MARK: Buffers
 
     func openBuffer(_ viewId: String, workspaceId: String, path: String, events: @escaping (Data) -> Void) {

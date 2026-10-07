@@ -14,6 +14,8 @@ import type { MobileAgents } from './agents'
 import type { MobileBrowsers } from './browser'
 import type { MobileBuffers } from './buffers'
 import type { MobileChats } from './chat'
+import type { MobileConversations } from './conversations'
+import { placementOptions } from './placement'
 import { loopbackPort, type MobileStreams } from './streams'
 import type { MobileTerminals } from './terminals'
 import type { MobileViews } from './views'
@@ -28,15 +30,21 @@ export interface CoreParts {
   buffers: MobileBuffers
   streams: MobileStreams
   agents: MobileAgents
+  conversations: MobileConversations
 }
 
-const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({ type: definition.type, label: definition.label, icon: definition.icon })
+const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
+  type: definition.type,
+  label: definition.label,
+  icon: definition.icon,
+  canvas: definition.canLiveOnCanvas,
+})
 
 export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers {
   const { workspaces, connections } = client
-  const { terminals, views, browsers, chats, buffers, streams, agents } = parts
+  const { terminals, views, browsers, chats, buffers, streams, agents, conversations } = parts
   return {
-    ...createActionHandlers(agents),
+    ...createActionHandlers(agents, conversations),
     async 'workspaces.join'({ input }) {
       try {
         const entry = await joinWorkspace(input, { pair: client.pair, workspaces })
@@ -103,8 +111,8 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
     async 'panel.creatable'() {
       return creatableDefinitions().map(choice)
     },
-    async 'panel.create'({ workspaceId, type }) {
-      return isPanelType(type) ? createPanel(workspaceId, type, {}) : null
+    async 'panel.create'({ workspaceId, type, placement }) {
+      return isPanelType(type) ? createPanel(workspaceId, type, { ...placementOptions(type, placement) }) : null
     },
     'panel.remove': ({ workspaceId, panelId }) => closePanel(workspaceId, panelId),
     async 'surface.choices'({ workspaceId, panelId }) {

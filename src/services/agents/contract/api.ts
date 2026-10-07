@@ -1,21 +1,21 @@
-// `cate.agent.*` (live agent panels: terminal runners and chat panels) and
-// `cate.codingAgent.*` (mission workers). Served by services/agents, which
-// resolves each panel to its agent session and runner.
+// `cate.agent.*`: start an agent in a new terminal or chat panel, and
+// observe and prompt the agents running in panels (terminal runners and chat
+// panels). Served by services/agents, which resolves each panel to its agent
+// session and runner.
 
 import {
   ArgError,
   arr,
-  bool,
   defineCateApi,
   num,
+  obj,
+  oneOf,
   opt,
   panel,
-  record,
   str,
 } from '@kernel/api/contract'
 
 export const AGENT_WAIT_DEFAULT_SECONDS = 30
-export const CODING_AGENT_WAIT_DEFAULT_SECONDS = 10
 export const AGENT_WAIT_MIN_SECONDS = 5
 export const AGENT_WAIT_MAX_SECONDS = 60
 /** Slack over the wait itself so the handler answers before the router gives up. */
@@ -40,6 +40,34 @@ function parseWaitTimeoutMs(raw: string): number {
 export const agentApi = defineCateApi(
   'agent',
   {
+    start: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Start an agent on a prompt in a new terminal or T3 Code chat panel',
+      args: {
+        prompt: str.nonEmpty().maxLength(50_000).rest('prompt').help('The first prompt'),
+        agentId: opt(str).flag('agent', 'id')
+          .help('Agent CLI: claude-code, codex, cursor, grok, hermes, kiro or opencode (default: one set up in this workspace; with T3, its provider)'),
+        runner: opt(oneOf('terminal', 't3'), 'terminal').flag('runner', 'terminal|t3')
+          .help('Run the agent CLI in a terminal, or in a T3 Code chat'),
+        instanceId: opt(str).flag('instance', 'id').help('T3: the provider instance (default: a ready one of the agent\'s provider)'),
+        model: opt(str).flag('model', 'slug').help('T3: the model (default: the instance\'s default)'),
+        title: opt(str.maxLength(80)).help('Panel title, at most 80 characters'),
+        worktreeId: opt(str).flag('worktree', 'id').help('Run in this existing worktree (default: the calling panel\'s checkout)'),
+        newWorktree: opt(str).flag('new-worktree', 'name').help('Create a worktree with this name and run in it'),
+        canvasPanelId: opt(panel('canvas')).flag('canvas', 'id')
+          .help('Place the panel on this canvas panel\'s canvas (default: next to the calling panel)'),
+        position: opt(obj({ x: num, y: num })).hidden(),
+      },
+      timeoutMs: 90_000,
+      format: 'createdPanel',
+    },
+    types: {
+      access: 'read',
+      handler: 'service',
+      summary: 'List the agent CLIs: whether each can start in a terminal here (its Cate hooks are on) and its T3 provider',
+      format: 'prettyJson',
+    },
     list: {
       access: 'read',
       handler: 'service',
@@ -77,70 +105,12 @@ export const agentApi = defineCateApi(
         prompt: str.nonEmpty().rest('prompt').help('The prompt'),
       },
     },
-  },
-  { area: 'agent', summary: 'Observe and prompt the agents running in agent panels' },
-)
-
-const runId = { runId: str.nonEmpty().pos('runId').help('Worker id, from cate codingAgent list') }
-
-export const codingAgentApi = defineCateApi(
-  'codingAgent',
-  {
-    create: {
+    interrupt: {
       access: 'control',
       handler: 'service',
-      summary: 'Start a coding agent worker',
-      args: {
-        prompt: str.nonEmpty().maxLength(50_000).rest('prompt').help('The task for the worker'),
-        agentId: opt(str).flag('agent', 'id')
-          .help('Agent CLI to run: claude-code, codex, cursor, grok, hermes, kiro or opencode (default: one set up in this workspace)'),
-        title: opt(str.maxLength(80)).help('Worker title, at most 80 characters (default: the start of the prompt)'),
-        background: opt(bool, true).help('Mark the worker as not running in the background'),
-        terminalPanelId: opt(panel('terminal')).flag('terminal', 'id').help('Run in this existing terminal panel instead of a new one'),
-        worktreeId: opt(str).flag('worktree', 'id').help('Run in this existing worktree'),
-        newWorktree: opt(str).flag('new-worktree', 'name').help('Create a worktree with this name and run in it'),
-        baseRef: opt(str).flag('base-ref', 'ref').help('Branch or commit the new worktree starts from'),
-      },
-      format: 'worker',
+      summary: 'Stop an agent panel\'s turn, as Esc or Ctrl-C would',
+      args: { targetPanelId: panel().pos('panelId').flag('panel').help('Agent panel id or unique prefix, from cate agent list') },
     },
-    send: {
-      access: 'control',
-      handler: 'service',
-      summary: 'Send a follow-up prompt to a worker',
-      args: { ...runId, prompt: str.nonEmpty().rest('prompt').help('The follow-up prompt') },
-      format: 'worker',
-    },
-    list: {
-      access: 'read',
-      handler: 'service',
-      summary: 'List your workers (a client: every worker)',
-      format: 'workers',
-    },
-    agents: {
-      access: 'read',
-      handler: 'service',
-      summary: 'List the agent CLIs a worker can run with here',
-      format: 'prettyJson',
-    },
-    wait: {
-      access: 'read',
-      handler: 'service',
-      summary: 'Wait until a worker changes to an actionable status',
-      args: {
-        runIds: opt(arr(str)).rest('runId').help('Workers to wait for (default: all of yours)'),
-        timeoutSeconds: waitSeconds(CODING_AGENT_WAIT_DEFAULT_SECONDS).flag('timeout', 'seconds')
-          .help('Give up after this many seconds, 5 to 60'),
-        baselineStatuses: opt(record(str)).hidden(),
-      },
-      timeoutMs: waitTimeoutMs,
-      format: 'prettyJson',
-    },
-    inspect: { access: 'read', handler: 'service', summary: 'Print a worker and its recent output', args: runId, format: 'prettyJson' },
-    review: { access: 'read', handler: 'service', summary: 'Review a worker\'s worktree changes', args: runId, format: 'prettyJson' },
-    apply: { access: 'control', handler: 'service', summary: 'Apply a ready worker\'s changes to its base branch', args: runId, format: 'worker' },
-    keep: { access: 'control', handler: 'service', summary: 'Keep a ready worker\'s worktree', args: runId, format: 'worker' },
-    discard: { access: 'control', handler: 'service', summary: 'Discard a ready worker\'s worktree', args: runId, format: 'worker' },
-    stop: { access: 'control', handler: 'service', summary: 'Stop a worker', args: runId, format: 'worker' },
   },
-  { area: 'agent', summary: 'Start and manage background coding-agent workers' },
+  { area: 'agent', summary: 'Start agents, and observe and prompt the agents running in panels' },
 )

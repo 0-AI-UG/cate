@@ -4,7 +4,6 @@
 
 export { CanvasView, type CanvasViewProps } from './CanvasView'
 export { CanvasPanelList } from './CanvasPanelList'
-export { installMinimapBadges } from './Minimap'
 export { CanvasViewProvider, useCanvasView, useCanvasViewStore } from './context'
 export { installCanvasSlots, canvasSlots, type CanvasSlots, type NodeDockProps } from './slots'
 export { registerCanvasToolbarItem, type CanvasToolbarItem, type CanvasToolbarItemProps } from './toolbarItems'

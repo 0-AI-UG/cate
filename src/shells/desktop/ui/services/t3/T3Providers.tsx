@@ -40,20 +40,15 @@ export function T3Providers({ t3, checkout, providerLogo, openInWorkspace }: {
     if (!t3) return
     setProviderStatusesLoading(true)
     try {
-      setProviderStatuses(await t3.providerStatuses({ checkout }))
+      setProviderStatuses(await t3.providerStatuses())
     } catch {
       // Statuses stay unknown; the rows say so.
     } finally {
       setProviderStatusesLoading(false)
     }
-  }, [t3, checkout])
+  }, [t3])
 
-  useEffect(() => {
-    if (!t3) return
-    void refreshProviderStatuses()
-    const retry = window.setTimeout(() => void refreshProviderStatuses(), 1_500)
-    return () => window.clearTimeout(retry)
-  }, [t3, refreshProviderStatuses])
+  useEffect(() => { void refreshProviderStatuses() }, [refreshProviderStatuses])
 
   const startProviderLogin = async (
     provider: T3ProviderLogin,
@@ -146,9 +141,12 @@ export function T3Providers({ t3, checkout, providerLogo, openInWorkspace }: {
       ...current.filter((status) => status.providerId !== authSession.providerId),
       { providerId: authSession.providerId, state: 'authenticated' },
     ])
-    const refresh = window.setTimeout(() => void refreshProviderStatuses(), 1_500)
-    return () => window.clearTimeout(refresh)
-  }, [authSession?.phase, authSession?.providerId, refreshProviderStatuses])
+    // The statuses are T3's last probe: T3 probes again to record the sign-in.
+    let cancelled = false
+    void t3?.providerSettings({ checkout, operation: 'refresh' })
+      .then(() => { if (!cancelled) void refreshProviderStatuses() }, () => undefined)
+    return () => { cancelled = true }
+  }, [t3, checkout, authSession?.phase, authSession?.providerId, refreshProviderStatuses])
 
   return (
     <>

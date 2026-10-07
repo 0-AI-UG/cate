@@ -17,7 +17,6 @@ struct Workspace: Decodable, Equatable, Identifiable, Hashable {
     let panels: [Panel]?
     /// Empty while not connected.
     let agents: [Agent]
-    let tasks: [AgentTask]
     /// Keep-awake on the runtime's machine; nil while not connected.
     let power: PowerState?
     /// This device's pushes from the workspace; nil until registered.
@@ -43,34 +42,12 @@ struct Agent: Decodable, Equatable, Hashable, Identifiable {
     let since: Double
     /// The checkout it works in; nil for the workspace root.
     let checkout: String?
-    let taskId: String?
     var id: String { panelId }
 
     /// Blocked on the person: a permission or a question.
     var needsYou: Bool { status == "waitingForInput" && !canReceivePrompt }
     var working: Bool { status == "running" }
     var name: String { agentName ?? (runner == "t3" ? "T3 Code" : "Agent") }
-    var sinceDate: Date { Date(timeIntervalSince1970: since / 1_000) }
-}
-
-/// A mission worker (`MobileTask`).
-struct AgentTask: Decodable, Equatable, Hashable, Identifiable {
-    let id: String
-    let panelId: String
-    let agentName: String
-    let title: String
-    /// `starting`, `working`, `waiting`, `ready`, `stopped` or `failed`.
-    let status: String
-    let checkout: String
-    let isolated: Bool
-    let ownsWorktree: Bool
-    let appliedToBranch: String?
-    let kept: Bool
-    let statusLine: String?
-    let failureReason: String?
-
-    /// Finished in its own worktree, with nothing decided about it yet.
-    var awaitsDecision: Bool { status == "ready" && isolated && appliedToBranch == nil && !kept }
 }
 
 /// The runtime's `power` state.
@@ -133,7 +110,23 @@ struct PanelChoice: Decodable, Identifiable, Hashable {
     let type: String
     let label: String
     let icon: String
+    /// It can be placed on a canvas.
+    let canvas: Bool
     var id: String { type }
+}
+
+/// Where a new panel goes (`MobilePlacement`): on the canvas a canvas panel
+/// shows, centred on `point` (canvas coordinates) or where there is room.
+/// No placement is the dock.
+struct Placement: Hashable {
+    let canvasPanelId: String
+    var point: CGPoint?
+
+    var params: [String: Any] {
+        var params: [String: Any] = ["canvasPanelId": canvasPanelId]
+        if let point { params["point"] = ["x": point.x, "y": point.y] }
+        return params
+    }
 }
 
 /// A file or folder on the runtime's machine (`MobileFileEntry`).
@@ -160,23 +153,16 @@ struct AnyJSON: Decodable, Sendable {
     init(from decoder: Decoder) throws {}
 }
 
-/// The answer to an agent or git action (`MobileActionResult`).
+/// The answer to an agent action (`MobileActionResult`).
 struct ActionResult: Decodable {
     let ok: Bool
     let message: String?
 }
 
-/// `agents.startTask`'s answer.
-struct StartedTask: Decodable {
+/// `agents.start`'s answer.
+struct StartedAgent: Decodable {
     let ok: Bool
     let panelId: String?
-    let message: String?
-}
-
-/// `changes.pullRequest`'s answer.
-struct PullRequestResult: Decodable {
-    let ok: Bool
-    let url: String?
     let message: String?
 }
 
@@ -185,28 +171,50 @@ struct ConversationMessage: Decodable, Hashable {
     let role: String
     let text: String
     let createdAt: String?
+    /// The text is still coming in.
+    let streaming: Bool?
 }
 
-/// An agent a new task can run with.
-struct TaskAgent: Decodable, Hashable, Identifiable {
+/// What changed in a followed agent chat (`agents.watch`'s `conversation`
+/// event): the agent's state, the prompt sent from it that the conversation
+/// does not show yet, and the messages from index `from` on.
+struct ConversationEvent: Decodable {
+    let kind: String
+    /// Nil while the panel hosts no agent.
+    let status: String?
+    let canReceivePrompt: Bool
+    let pending: String?
+    let from: Int
+    let messages: [ConversationMessage]
+}
+
+/// An agent CLI a new agent can run (`MobileAgentChoice`).
+struct AgentChoice: Decodable, Hashable, Identifiable {
     let agentId: String
     let displayName: String
+    /// Its Cate hooks are on in the workspace.
+    let ready: Bool
+    /// The T3 provider it runs as; nil when T3 cannot run it.
+    let t3Provider: String?
     var id: String { agentId }
 }
 
-/// A checkout's uncommitted changes (`MobileChanges`).
-struct Changes: Decodable, Equatable {
-    struct File: Decodable, Equatable, Identifiable {
-        let path: String
-        let status: String
-        let additions: Int?
-        let deletions: Int?
-        var id: String { path }
+/// A T3 provider instance a new chat can run on (`T3ProviderModels`).
+struct T3Provider: Decodable, Hashable, Identifiable {
+    struct Model: Decodable, Hashable, Identifiable {
+        let slug: String
+        let name: String
+        let isDefault: Bool
+        var id: String { slug }
     }
-    let branch: String?
-    let files: [File]
-    let additions: Int
-    let deletions: Int
+    let providerId: String
+    let instanceId: String
+    let label: String
+    /// Installed, enabled and signed in.
+    let ready: Bool
+    let message: String?
+    let models: [Model]
+    var id: String { instanceId }
 }
 
 /// A notification from a connected workspace (`MobileNotification`).

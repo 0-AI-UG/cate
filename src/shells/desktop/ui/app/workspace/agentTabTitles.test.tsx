@@ -13,9 +13,9 @@ import { AGENTS, type AgentPanelStates, type AgentPanelStatesChange, type PanelA
 import { fakeStream } from '@services/agents/client/testing'
 import { createClientIdentity, installClientIdentity } from '@client/connections'
 import { registerPanelDefinitions } from '@client/host'
-import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../../../../../test/clientWorkspace'
-import { registerTabDecorations, useAgentTabDecorations } from './decorations'
-import { DockView } from './DockView'
+import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../../../../test/clientWorkspace'
+import { DockView, registerTabDecorations } from '../../client/layout/dock'
+import { useAgentTabDecorations } from '../../services/agents'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

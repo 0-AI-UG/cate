@@ -3,11 +3,14 @@ import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent } from '@kernel/rpc/contract'
 import type { PowerState } from '@runtime/power/contract'
 import { fakeStream } from '@services/agents/client/testing'
-import type { AgentNotificationEvent, AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '@services/agents/contract'
-import type { MobileBridge, MobileNotification } from '../contract'
+import type { AgentConversation, AgentConversationChange, AgentNotificationEvent, AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '@services/agents/contract'
+import type { MobileBridge, MobileNotification, MobileViewEvent } from '../contract'
 import type { MobileClient } from './boot'
+import { registerPanelDefinitions } from '@client/host'
+import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { createActionHandlers, taskWorktreeName, wordsFor } from './actions'
 import { createMobileAgents } from './agents'
+import { createMobileConversations } from './conversations'
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -26,13 +29,27 @@ function setup() {
       notifications: () => notifications.sub,
     },
     api: {
-      call: vi.fn(async () => [{ id: 'run-1', agentId: 'claude-code', agentName: 'Claude Code', panelId: 'p1', status: 'working', cwd: '/repo/.cate/worktrees/a', alive: true, followUpSupported: true, worktreeId: 'w', ownsWorktree: true, background: true }]),
+      call: vi.fn(async () => ({ panelId: 'new', runner: 'terminal', agentId: 'codex' })),
     },
-    power: { subscribe: () => power.sub },
+    power: { subscribe: vi.fn(() => power.sub) },
     push: { register: vi.fn(async () => ({ registered: true, blocked: null })) },
   }
   const stopResolver = setRuntimeResolver((id) => (id === 'ws' ? (runtime as never) : null))
-  const connection = { workspaceId: 'ws', runtime, getState: () => ({ kind: 'connected' }), subscribe: () => () => {} }
+  let kind = 'connected'
+  const connectionListeners = new Set<() => void>()
+  const connection = {
+    workspaceId: 'ws',
+    runtime,
+    getState: () => ({ kind }),
+    subscribe: (listener: () => void) => {
+      connectionListeners.add(listener)
+      return () => { connectionListeners.delete(listener) }
+    },
+  }
+  const setConnection = (next: string) => {
+    kind = next
+    for (const listener of [...connectionListeners]) listener()
+  }
   const client = {
     connections: { getSnapshot: () => [connection], subscribe: () => () => {} },
     workspaces: { getSnapshot: () => ({ entries: [{ id: 'ws', kind: 'paired', runtimeId: 'rrrrrrrrrrrrrrrr' }] }) },
@@ -45,7 +62,7 @@ function setup() {
     return null
   }) as MobileBridge
   const agents = createMobileAgents(client, bridge)
-  return { agents, panels, notifications, power, runtime, shown, withdrawn, stopResolver }
+  return { agents, panels, notifications, power, runtime, shown, withdrawn, stopResolver, setConnection }
 }
 
 let cleanup = () => {}
@@ -73,12 +90,10 @@ describe('mobile agents', () => {
     expect(t.withdrawn).toEqual(['rrrrrrrrrrrrrrrr.p1'])
   })
 
-  it('reads the workers, keep-awake and this device\'s push registration', async () => {
+  it('reads keep-awake and this device\'s push registration', async () => {
     const t = setup()
     cleanup = t.stopResolver
     await tick()
-    expect(t.runtime.api.call).toHaveBeenCalledWith({ method: 'cate.codingAgent.list', args: {} })
-    expect(t.agents.tasks('ws')).toMatchObject([{ id: 'run-1', status: 'working', isolated: true, ownsWorktree: true }])
     t.power.emit({ kind: 'snapshot', rev: 0, snapshot: { requested: true, endsAt: null, busy: false, holding: true } })
     expect(t.agents.power('ws')).toMatchObject({ requested: true, holding: true })
 
@@ -88,27 +103,77 @@ describe('mobile agents', () => {
     expect(t.runtime.push.register).toHaveBeenCalledWith({ target: 'apns:sandbox:ab', key: 'k' })
     expect(t.agents.push('ws')).toEqual({ registered: true, blocked: null })
   })
+
+  it('opens keep-awake again on every connect, so a stream that failed before its first event recovers', () => {
+    const t = setup()
+    cleanup = t.stopResolver
+    expect(t.runtime.power.subscribe).toHaveBeenCalledTimes(1)
+    t.setConnection('incompatible')
+    t.setConnection('connected')
+    expect(t.runtime.power.subscribe).toHaveBeenCalledTimes(2)
+    expect(t.power.sub.cancel).toHaveBeenCalled()
+    t.power.emit({ kind: 'snapshot', rev: 0, snapshot: { requested: false, endsAt: null, busy: true, holding: true } })
+    expect(t.agents.power('ws')).toMatchObject({ busy: true })
+  })
 })
 
 describe('mobile actions', () => {
-  it('reads and prompts an agent through cate.agent.*', async () => {
+  it('follows a conversation as deltas, with the prompt sent pending until it shows', async () => {
+    const conversation = fakeStream<ChannelEvent<AgentConversation, AgentConversationChange>>()
     const call = vi.fn(async ({ method }: { method: string }) => {
-      if (method === 'cate.agent.read') return { messages: [{ role: 'assistant', text: 'Done.' }] }
-      throw new Error('agent-busy')
+      if (method === 'cate.agent.send') return { ok: true }
+      throw new Error('agent-not-running')
     })
     // Earlier tests' agent panel mirrors follow the resolver too.
-    const runtime = { api: { call }, agents: { panels: () => fakeStream().sub } }
+    const runtime = { api: { call }, agents: { panels: () => fakeStream().sub, conversation: vi.fn(() => conversation.sub) } }
     const cleanupResolver = setRuntimeResolver((id) => (id === 'ws' ? (runtime as never) : null))
+    const events: MobileViewEvent[] = []
+    const bridge = (async (method: string, params: { json: string }) => {
+      if (method === 'view.event') events.push(JSON.parse(params.json) as MobileViewEvent)
+      return null
+    }) as MobileBridge
     try {
-      const actions = createActionHandlers({} as never)
-      await expect(actions['agents.conversation']({ workspaceId: 'ws', panelId: 'p1' })).resolves.toEqual([{ role: 'assistant', text: 'Done.' }])
-      expect(call).toHaveBeenCalledWith({ method: 'cate.agent.read', args: { panelId: 'p1' } })
-      await expect(actions['agents.send']({ workspaceId: 'ws', panelId: 'p1', prompt: 'go' }))
-        .resolves.toEqual({ ok: false, message: 'The agent is in the middle of a turn.' })
+      const actions = createActionHandlers({} as never, createMobileConversations(bridge))
+      await actions['agents.watch']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
+      expect(runtime.agents.conversation).toHaveBeenCalledWith({ panelId: 'p1' }, { resume: true })
+      conversation.emit({ kind: 'snapshot', rev: 0, snapshot: { status: 'waitingForInput', canReceivePrompt: true, messages: [{ role: 'user', text: 'Complete this coding task:\n\nSay hi' }, { role: 'assistant', text: 'Hi.' }] } })
+      expect(events.at(-1)).toEqual({ kind: 'conversation', status: 'waitingForInput', canReceivePrompt: true, pending: null, from: 0, messages: [{ role: 'user', text: 'Say hi' }, { role: 'assistant', text: 'Hi.' }] })
+
+      await expect(actions['agents.send']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1', prompt: 'go' })).resolves.toEqual({ ok: true })
       expect(call).toHaveBeenCalledWith({ method: 'cate.agent.send', args: { targetPanelId: 'p1', prompt: 'go' } })
+      expect(events.at(-1)).toMatchObject({ pending: 'go', from: 2, messages: [] })
+
+      // The turn shows with the prompt: one event, pending gone.
+      conversation.emit({ kind: 'change', rev: 1, change: { status: 'running', canReceivePrompt: false, from: 2, messages: [{ role: 'user', text: 'go' }] } })
+      expect(events.at(-1)).toEqual({ kind: 'conversation', status: 'running', canReceivePrompt: false, pending: null, from: 2, messages: [{ role: 'user', text: 'go' }] })
+
+      await expect(actions['agents.interrupt']({ workspaceId: 'ws', panelId: 'p1' }))
+        .resolves.toEqual({ ok: false, message: 'The agent is not running.' })
+      expect(call).toHaveBeenCalledWith({ method: 'cate.agent.interrupt', args: { targetPanelId: 'p1' } })
+      await actions['agents.unwatch']({ viewId: 'v' })
+      expect(conversation.sub.cancel).toHaveBeenCalled()
     } finally {
       cleanupResolver()
     }
+  })
+
+  it('starts an agent through cate.agent.start, on the canvas picked', async () => {
+    const t = setup()
+    cleanup = t.stopResolver
+    registerPanelDefinitions(PANEL_DEFINITIONS)
+    const actions = createActionHandlers(t.agents, createMobileConversations((async () => null) as MobileBridge))
+    const { width, height } = PANEL_DEFINITIONS.find((definition) => definition.type === 'terminal')!.defaultSize
+    await expect(actions['agents.start']({
+      workspaceId: 'ws', prompt: 'Fix it', launch: { runner: 'terminal', agentId: 'codex' }, worktree: false,
+      placement: { canvasPanelId: 'canvas', point: { x: 1000, y: 500 } },
+    })).resolves.toEqual({ ok: true, panelId: 'new' })
+    expect(t.runtime.api.call).toHaveBeenLastCalledWith({ method: 'cate.agent.start', args: {
+      prompt: 'Fix it', runner: 'terminal', agentId: 'codex', canvasPanelId: 'canvas', position: { x: 1000 - width / 2, y: 500 - height / 2 },
+    } })
+    await actions['agents.start']({ workspaceId: 'ws', prompt: 'Fix it', launch: { runner: 't3', instanceId: 'codex-1', model: 'gpt' }, worktree: true })
+    expect(t.runtime.api.call).toHaveBeenLastCalledWith({ method: 'cate.agent.start', args: {
+      prompt: 'Fix it', runner: 't3', instanceId: 'codex-1', model: 'gpt', newWorktree: expect.stringMatching(/^task-fix-it-/),
+    } })
   })
 
   it('names a task worktree after the prompt', () => {
@@ -117,7 +182,7 @@ describe('mobile actions', () => {
   })
 
   it('puts runtime error codes in words', () => {
-    expect(wordsFor(new Error('coding-agent-limit'))).toBe('Five tasks are already running. Wait for one to finish.')
+    expect(wordsFor(new Error('t3-provider-not-ready'))).toBe('That T3 Code provider is not ready on your computer.')
     expect(wordsFor('agent-busy')).toBe('The agent is in the middle of a turn.')
     expect(wordsFor(new Error('Something else'))).toBe('Something else')
   })

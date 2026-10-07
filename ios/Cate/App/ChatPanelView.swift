@@ -220,9 +220,7 @@ final class ChatPageController: WebPageController, WKNavigationDelegate, WKScrip
         webView.backgroundColor = .clear
         // Nothing scrolls under the bar (the page pads itself below it), so
         // the bar's edge fade would only darken the top of the page.
-        if #available(iOS 26, *) {
-            webView.scrollView.topEdgeEffect.isHidden = true
-        }
+        webView.scrollView.topEdgeEffect.isHidden = true
         webView.navigationDelegate = self
         // WebKit scrolls the page to reveal a focused field; it already
         // fits the screen, so that would only push it under the bar.

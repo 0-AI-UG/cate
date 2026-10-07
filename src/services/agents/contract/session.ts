@@ -108,8 +108,8 @@ export function openTerminalAgent(
 
 /** Terminal launch intents the agents service resolves. */
 export const AGENT_LAUNCH = {
-  /** A mission worker: `{ agentId, prompt }`, run in place of the shell. */
-  mission: 'agents.mission',
+  /** A started agent: `{ agentId, prompt }`, run in place of the shell. */
+  start: 'agents.start',
   /** A restored session: a resume stamp, typed into the fresh shell. */
   resume: 'agents.resume',
 } as const

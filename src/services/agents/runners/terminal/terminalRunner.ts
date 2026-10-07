@@ -6,10 +6,11 @@
 import type { TerminalService } from '@services/terminal/runtime'
 import {
   AGENT_DEFS,
+  AGENT_INTERRUPT_INPUT,
   AGENT_LAUNCH,
   agentAttentionNotification,
   agentForLaunchCommand,
-  codingAgentCommand,
+  agentLaunchCommand,
   isAgentId,
   openTerminalAgent,
   resumeCommandForAgent,
@@ -51,8 +52,6 @@ export interface TerminalRunner extends AgentRunnerImpl {
   onResumeStamp(listener: (panelId: string, stamp: TerminalResumeStamp | null) => void): () => void
   /** The launch intent a restored terminal passes to `spawn` to resume. */
   resumeLaunch(stamp: TerminalResumeStamp): { kind: string; params: TerminalResumeStamp } | null
-  /** Pastes the prompt and presses Enter, readiness unchecked (missions). */
-  submit(panelId: string, prompt: string): Promise<boolean>
   /** A panel's PTY exited. */
   onExit(listener: (panelId: string, exitCode: number) => void): () => void
   dispose(): void
@@ -64,6 +63,8 @@ interface TerminalInfo {
 }
 
 const ENTER_DELAY_MS = 0
+/** Between two interrupt keys (opencode's second Esc confirms the first). */
+const INTERRUPT_KEY_GAP_MS = 500
 
 export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerminalService): TerminalRunner {
   const { hooks, presence, promptContext, document, notifications } = agents
@@ -145,7 +146,7 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
 
   offs.push(terminal.registerEnvContributor(async (spawn) => {
     const cwd = spawn.cwd
-    const launched = spawn.launch?.kind === AGENT_LAUNCH.mission && isAgentId((spawn.launch.params as { agentId?: unknown })?.agentId)
+    const launched = spawn.launch?.kind === AGENT_LAUNCH.start && isAgentId((spawn.launch.params as { agentId?: unknown })?.agentId)
       ? AGENT_DEFS[(spawn.launch.params as { agentId: AgentId }).agentId]
       : agentForLaunchCommand(spawn.executable)
     terminals.set(spawn.terminalId, { panelId: spawn.panelId, cwd })
@@ -160,10 +161,10 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
     return env
   }))
 
-  offs.push(terminal.registerLaunchIntent(AGENT_LAUNCH.mission, (params) => {
+  offs.push(terminal.registerLaunchIntent(AGENT_LAUNCH.start, (params) => {
     const { agentId, prompt } = (params ?? {}) as { agentId?: unknown; prompt?: unknown }
     if (!isAgentId(agentId) || typeof prompt !== 'string') throw new Error('Invalid agent launch')
-    return { command: codingAgentCommand({ agentId, prompt }) }
+    return { command: agentLaunchCommand({ agentId, prompt }) }
   }))
 
   offs.push(terminal.registerLaunchIntent(AGENT_LAUNCH.resume, (params) => {
@@ -202,6 +203,10 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
   offs.push(hooks.subscribe((event) => {
     const panelId = panelOf(event.terminalId)
     if (!panelId) return
+    // A hook post that registered the agent's pid proves it present now, not
+    // at the next activity scan; the falling edge still comes from scans.
+    const registered = presence.registeredAgent(event.terminalId)
+    if (registered && !status.present(event.terminalId)) status.notePresence(event.terminalId, true, false, registered)
     if (event.kind === 'session-title') {
       if (event.title && event.sessionId) document.setTitleFromAgent(panelId, event.title)
       return
@@ -334,6 +339,30 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
       })
       return messages ? { session, messages } : null
     },
+    async conversationStamp(panelId) {
+      const session = sessionOf(panelId, liveTerminal(panelId))
+      if (!session?.agentId) return null
+      return hooks.conversationStamp({
+        agentId: session.agentId,
+        sessionId: session.sessionId,
+        cwd: session.cwd,
+        ...(session.profile ? { profile: session.profile } : {}),
+      })
+    },
+    async interrupt(panelId): Promise<AgentSendResult> {
+      const terminalId = liveTerminal(panelId)
+      const agentId = terminalId ? status.agentId(terminalId) : null
+      if (!terminalId || !agentId || !status.present(terminalId)) return { ok: false, error: 'agent-not-running' }
+      // Typed as the person would, so an interrupt recovered from input
+      // (Kiro's Ctrl-C) ends the turn the same way.
+      const keys = AGENT_DEFS[agentId].runners.terminal.interruptKeys
+      for (const [index, key] of keys.entries()) {
+        if (index > 0) await new Promise<void>((resolve) => setTimeout(resolve, INTERRUPT_KEY_GAP_MS))
+        if (liveTerminal(panelId) !== terminalId) break
+        terminal.write(terminalId, AGENT_INTERRUPT_INPUT[key])
+      }
+      return { ok: true }
+    },
     onChange(listener) {
       changeListeners.add(listener)
       return () => { changeListeners.delete(listener) }
@@ -349,7 +378,6 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
         ? { kind: AGENT_LAUNCH.resume, params: stamp }
         : null
     },
-    submit,
     onExit(listener) {
       exitListeners.add(listener)
       return () => { exitListeners.delete(listener) }

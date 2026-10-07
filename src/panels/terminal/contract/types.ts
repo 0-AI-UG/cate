@@ -2,16 +2,11 @@
 // Output bytes do not travel on this channel: a view attaches to the terminal
 // service's `process.attach` with the snapshot's `ptyId` (see session.ts).
 
-import type { AgentId, AgentStatus } from '@services/agents/contract'
+import type { AgentId } from '@services/agents/contract'
 import type { LaunchIntent, TerminalActivity } from '@services/terminal/contract'
 import type { PanelCreateOptions } from '@panels/framework/contract'
 
 export type TerminalPtyStatus = 'starting' | 'running' | 'exited' | 'failed'
-
-export type TerminalAgentSummary = {
-  agentId: AgentId | null
-  status: AgentStatus
-}
 
 export type TerminalSnapshot = {
   /** The live PTY a view attaches to; null before the first spawn. */
@@ -21,8 +16,6 @@ export type TerminalSnapshot = {
   title: string
   cwd: string | null
   activity: TerminalActivity
-  /** The terminal-runner agent the panel hosts. */
-  agent: TerminalAgentSummary | null
   exitCode: number | null
   /** Why the last spawn failed. */
   error: string | null

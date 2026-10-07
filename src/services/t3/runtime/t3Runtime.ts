@@ -22,9 +22,11 @@ import {
   providerAuthLaunch,
   providerAuthUrl,
   providerStatusFromSnapshot,
+  t3ProviderModelsFromConfig,
   t3SnapshotBusy,
   t3ThreadActivity,
   T3_PROVIDERS,
+  t3SettingsForClient,
   type T3CheckoutParams,
   type T3Conversation,
   type T3ConversationMessage,
@@ -33,15 +35,17 @@ import {
   type T3PanelTarget,
   type T3ProviderAuthParams,
   type T3ProviderAuthSession,
+  type T3ProviderModels,
   type T3ProviderSettings,
   type T3ProviderSettingsParams,
   type T3ProviderStatus,
   type T3ShellEvent,
   type T3ShellSnapshot,
+  type T3StartThreadParams,
   type T3ThreadActivity,
 } from '../contract'
 import { t3Paths, type T3Paths } from './paths'
-import { prepareInstanceSettings, publishProviderProfile, readJsonObject } from './providerFiles'
+import { instanceSettings, prepareInstanceSettings, publishProviderProfile, readJsonObject, readProviderProbes } from './providerFiles'
 import { settingsRpc } from './settingsRpc'
 import { ThreadShellSubscription } from './threadShells'
 
@@ -52,6 +56,11 @@ const FETCH_TIMEOUT_MS = 10_000
 // reports the running turn only after T3 emits it (plus a 100ms coalesce), and
 // T3 does not reject a second thread.turn.start on a busy thread.
 const TURN_START_HOLD_MS = 3_000
+/** A freshly started harness opens its checkout's project shortly after it
+ *  answers; a thread start polls for it this often. */
+const PROJECT_POLL_MS = 250
+/** A thread started outside T3's composer runs in T3's own default mode. */
+const T3_DEFAULT_RUNTIME_MODE = 'full-access'
 const DEFAULT_HARNESS = {
   node: RUNTIME_NODE_EXECUTABLE,
   entry: `${RUNTIME_INSTALL_ROOT_PLACEHOLDER}/t3/dist/bin.mjs`,
@@ -101,6 +110,9 @@ export interface T3RuntimeDeps {
   harnessStopped?(id: string): void
   homeDir?: string
   fetch?: typeof fetch
+  /** How long a thread start waits for T3 to open the checkout's project.
+   *  Default 15s. */
+  projectWaitMs?: number
   log?: Logger
 }
 
@@ -462,15 +474,17 @@ export class T3Runtime {
     }
   }
 
-  async providerStatuses(params: T3CheckoutParams): Promise<T3ProviderStatus[]> {
-    const instance = await this.trustedInstance(params)
-    return Promise.all(T3_PROVIDERS.map(async ({ providerId, statusCache }) => {
-      const snapshot = await readJsonObject(path.join(instance.paths.caches, statusCache), `${providerId} status`)
-      return providerStatusFromSnapshot(providerId, snapshot)
-    }))
+  async providerStatuses(): Promise<T3ProviderStatus[]> {
+    const probes = await readProviderProbes(this.instancesRoot())
+    return T3_PROVIDERS.map(({ providerId, driverId }) =>
+      providerStatusFromSnapshot(providerId, probes.find((probe) => probe.instanceId === driverId) ?? null))
   }
 
   async providerSettings(params: T3ProviderSettingsParams): Promise<T3ProviderSettings> {
+    if (params.operation === 'read') {
+      const { next } = await instanceSettings(t3Paths(this.deps.t3Root, await this.checkout(params)))
+      return { settings: t3SettingsForClient(next), providers: await readProviderProbes(this.instancesRoot()) }
+    }
     const instance = await this.trustedInstance(params)
     const call = (method: string, payload: unknown = {}) => settingsRpc(instance.url, instance.cookie, method, payload)
     if (params.operation === 'save') {
@@ -484,11 +498,21 @@ export class T3Runtime {
       await call('server.refreshProviders', {})
     } else if (params.operation === 'update') {
       await call('server.updateProvider', { provider: params.provider, instanceId: params.instanceId })
-    } else if (params.operation !== 'read') {
+    } else {
       throw new RpcError('rejected', 'Invalid provider operation')
     }
     const config = await call('server.getConfig')
     return { settings: config.settings, providers: config.providers }
+  }
+
+  /** Read from T3's probe caches, so choosing a provider starts no harness;
+   *  the thread started on it does. */
+  async providerModels(): Promise<T3ProviderModels[]> {
+    return t3ProviderModelsFromConfig(await readProviderProbes(this.instancesRoot()))
+  }
+
+  private instancesRoot(): string {
+    return path.join(this.deps.t3Root, 'instances')
   }
 
   async publishProviderProfile(params: T3CheckoutParams): Promise<void> {
@@ -521,9 +545,9 @@ export class T3Runtime {
     const response = await this.harnessFetch(params, `/api/orchestration/threads/${encodeURIComponent(params.threadId)}`)
     if (response.status === 404) return null
     if (!response.ok) throw new Error(`T3 conversation returned HTTP ${response.status}`)
-    const snapshot = await response.json() as { thread: { messages: Array<{ role: string; text: string; createdAt: string }> } }
-    return snapshot.thread.messages.flatMap(({ role, text, createdAt }) =>
-      (role === 'user' || role === 'assistant') && text ? [{ role, text, createdAt }] : [])
+    const snapshot = await response.json() as { thread: { messages: Array<{ role: string; text: string; createdAt: string; streaming?: boolean }> } }
+    return snapshot.thread.messages.flatMap(({ role, text, createdAt, streaming }) =>
+      (role === 'user' || role === 'assistant') && text ? [{ role, text, createdAt, ...(streaming ? { streaming: true as const } : {}) }] : [])
   }
 
   async renameConversation(params: T3CheckoutParams & { threadId: string; title: string }): Promise<void> {
@@ -550,6 +574,63 @@ export class T3Runtime {
       throw error
     }
     setTimeout(() => this.startingTurns.delete(params.threadId), TURN_START_HOLD_MS).unref?.()
+  }
+
+  /** Stops the thread's running turn, as T3's stop button does. */
+  async interruptTurn(params: T3CheckoutParams & { threadId: string }): Promise<void> {
+    await this.dispatch(params, { type: 'thread.turn.interrupt', threadId: params.threadId, createdAt: new Date().toISOString() })
+  }
+
+  /** A new thread on `instanceId` and `model` in the checkout's project, with
+   *  its first turn, in one command (T3's composer bootstrap). */
+  async startThread(params: T3StartThreadParams): Promise<{ threadId: string }> {
+    const text = params.text.trim()
+    if (!text) throw new RpcError('rejected', 'text is required')
+    const project = await this.project(params)
+    const threadId = randomUUID()
+    const createdAt = new Date().toISOString()
+    const modelSelection = { instanceId: params.instanceId, model: params.model }
+    // A turn's `bootstrap` is run by T3's WebSocket dispatch only; over HTTP
+    // the thread is created first, as that bootstrap does.
+    await this.dispatch(params, {
+      type: 'thread.create',
+      threadId,
+      projectId: project.id,
+      title: text.slice(0, 80),
+      modelSelection,
+      runtimeMode: T3_DEFAULT_RUNTIME_MODE,
+      interactionMode: 'default',
+      branch: null,
+      worktreePath: null,
+      createdAt,
+    })
+    await this.dispatch(params, {
+      type: 'thread.turn.start',
+      threadId,
+      message: { messageId: randomUUID(), role: 'user', text, attachments: [] },
+      modelSelection,
+      titleSeed: text.slice(0, 80),
+      runtimeMode: T3_DEFAULT_RUNTIME_MODE,
+      interactionMode: 'default',
+      createdAt,
+    })
+    return { threadId }
+  }
+
+  /** The checkout's T3 project, once the harness (started here if needed)
+   *  has opened it. */
+  private async project(params: T3CheckoutParams): Promise<{ id: string }> {
+    const checkout = path.resolve(await this.checkout(params))
+    const deadline = Date.now() + (this.deps.projectWaitMs ?? 15_000)
+    for (;;) {
+      const response = await this.harnessFetch(params, '/api/orchestration/shell')
+      if (!response.ok) throw new Error(`T3 projects returned HTTP ${response.status}`)
+      const shell = await response.json() as { projects: Array<{ id: string; workspaceRoot: string }> }
+      const project = shell.projects.find((candidate) => path.resolve(candidate.workspaceRoot) === checkout)
+      if (project) return project
+      if (Date.now() >= deadline) throw new RpcError('rejected', 't3-project-not-found')
+      await new Promise((resolve) => setTimeout(resolve, PROJECT_POLL_MS))
+    }
   }
 
   private async dispatchTurn(params: T3CheckoutParams & { threadId: string; text: string }): Promise<void> {

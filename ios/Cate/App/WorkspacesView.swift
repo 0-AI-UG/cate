@@ -1,9 +1,12 @@
-// The paired workspaces with their connection state.
+// The paired workspaces with their connection state, the app's home. It
+// connects to every workspace, so their agents' notifications arrive while
+// the app runs.
 
 import SwiftUI
 
 struct WorkspacesView: View {
     @Environment(CoreHost.self) private var core
+    @Environment(Notifier.self) private var notifier
     let join: () -> Void
     @State private var disconnecting: String?
 
@@ -15,7 +18,7 @@ struct WorkspacesView: View {
                 ContentUnavailableView {
                     Label("No workspaces", systemImage: "desktopcomputer")
                 } description: {
-                    Text("Pair this phone with a workspace open on your computer.")
+                    Text("Pair this phone with a workspace open on your computer, then follow and steer its agents from here.")
                 } actions: {
                     Button("Join a workspace", action: join).buttonStyle(.borderedProminent)
                 }
@@ -37,6 +40,7 @@ struct WorkspacesView: View {
                         }
                     }
                 }
+                .refreshable { await core.openAll() }
             }
         }
         .navigationTitle("Cate")
@@ -46,6 +50,8 @@ struct WorkspacesView: View {
                 Button("Join a workspace", systemImage: "plus", action: join).disabled(!core.ready)
             }
         }
+        .task(id: core.ready) { if core.ready { await core.openAll() } }
+        .onChange(of: core.state.workspaces.isEmpty, initial: true) { _, empty in if !empty { notifier.askIfNeeded() } }
     }
 }
 

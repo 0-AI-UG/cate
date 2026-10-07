@@ -11,7 +11,7 @@ import { registerActions } from '@client/host'
 import { installFileDropHandler } from '../ui/client/layout/drag'
 import { installReviewOpener, openDroppedFiles, registerSettingsPage, registerWorkspaceViews } from '../ui/app'
 import { setAgentChangesOpener } from '../ui/services/agents'
-import { openAgentChanges, openReviewPanel } from '../ui/panels/review'
+import { openAgentChanges, openReviewPanel } from '@panels/review/client'
 import type { DesktopApi, NativeAction } from '../contract'
 import { quitBlockers } from './quitBlockers'
 import { syncMenuModel } from './menuModel'
@@ -108,7 +108,7 @@ export function registerDesktopRenderer(api: DesktopApi): () => void {
       reportIssue: native('reportIssue'),
     }),
     syncMenuModel(api),
-    setAgentChangesOpener((request) => openAgentChanges(request)),
+    setAgentChangesOpener(async (request) => (await openAgentChanges(request)) !== null),
     registerSettingsPage({ id: 'general', title: 'General', group: 'general', scope: 'client', order: 0, component: GeneralPage }),
     registerSettingsPage({ id: 'updates', title: 'Updates', group: 'general', scope: 'client', order: 90, component: UpdatesPage }),
   ]

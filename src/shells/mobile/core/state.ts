@@ -56,7 +56,6 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents): MobileCo
         connection: connectionOf(connection?.getState() ?? { kind: 'closed' }),
         panels: connection ? panelsOf(entry.id) : null,
         agents: agents.agents(entry.id),
-        tasks: agents.tasks(entry.id),
         power: agents.power(entry.id),
         push: agents.push(entry.id),
       }

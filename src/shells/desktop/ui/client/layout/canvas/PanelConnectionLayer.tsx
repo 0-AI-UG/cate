@@ -21,7 +21,6 @@ interface RenderedConnection {
   key: string
   source: ViewNode
   target: ViewNode
-  persistent: boolean
   flowIndex?: number
   interaction?: PanelInteraction
   relation?: PanelRelation
@@ -41,14 +40,6 @@ function visiblePanelIds(dock: DockNode, activeTabs: Readonly<Record<string, Pan
     const shown = active && stack.panels.includes(active) ? active : stack.panels[0]
     return shown ? [shown] : []
   })
-}
-
-/** A supervising panel recorded on a worker panel's coding-agent run. */
-function ownerPanelId(record: PanelRecord): string | undefined {
-  const run = record.fields.codingAgentRun
-  if (!run || typeof run !== 'object' || Array.isArray(run)) return undefined
-  const owner = (run as Record<string, unknown>).ownerPanelId
-  return typeof owner === 'string' ? owner : undefined
 }
 
 const takesPrompts = (record: PanelRecord) => relationRoleOf(record.type)?.execution === true
@@ -125,7 +116,6 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
     const add = (
       sourcePanelId: string,
       targetPanelId: string,
-      persistent: boolean,
       interaction?: PanelInteraction,
       relation?: PanelRelation,
     ) => {
@@ -138,7 +128,6 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         key,
         source,
         target,
-        persistent: persistent || previous?.persistent === true,
         flowIndex: relation ? flowIndexes.get(relation.id) : previous?.flowIndex,
         interaction: !interaction
           ? previous?.interaction
@@ -149,24 +138,20 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
       })
     }
 
-    for (const panel of Object.values(panels)) {
-      const owner = ownerPanelId(panel)
-      if (owner) add(owner, panel.id, true)
-    }
     for (const interaction of Object.values(interactions)) {
       if (interaction.workspaceId !== workspaceId) continue
-      add(interaction.sourcePanelId, interaction.targetPanelId, false, interaction)
+      add(interaction.sourcePanelId, interaction.targetPanelId, interaction)
     }
     for (const relation of enabledRelations) {
       const preview = waypointPreview[relation.id]
-      add(relation.fromPanelId, relation.toPanelId, false, undefined, preview ? { ...relation, waypoint: preview } : relation)
+      add(relation.fromPanelId, relation.toPanelId, undefined, preview ? { ...relation, waypoint: preview } : relation)
     }
     return [...byNodePair.values()]
   }, [activeTabs, dragGhost, dragSourceNodeId, interactions, nodes, panels, panelRelationsEnabled, relations, waypointPreview, workspaceId])
 
   if (connections.length === 0) return null
 
-  const marker = (phase: 'persistent' | 'active' | 'succeeded' | 'failed') => `${markerPrefix}-${phase}`
+  const marker = (phase: 'active' | 'succeeded' | 'failed') => `${markerPrefix}-${phase}`
   const flowMarker = (flowIndex: number) => `${markerPrefix}-flow-${flowIndex}`
   const flowIndexes = [...new Set(connections
     .map((connection) => connection.flowIndex)
@@ -206,7 +191,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 500 }}
       >
         <defs>
-          {(['persistent', 'active', 'succeeded', 'failed'] as const).map((phase) => (
+          {(['active', 'succeeded', 'failed'] as const).map((phase) => (
             <marker
               key={phase}
               id={marker(phase)}
@@ -220,9 +205,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
             >
               <path
                 d="M 0 0 L 8 4 L 0 8 z"
-                fill={phase === 'persistent'
-                  ? 'var(--text-muted)'
-                  : phase === 'failed' ? 'var(--git-deleted)' : 'var(--focus-blue)'}
+                fill={phase === 'failed' ? 'var(--git-deleted)' : 'var(--focus-blue)'}
               />
             </marker>
           ))}
@@ -252,33 +235,28 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
           )
           if (!path) return null
           const phase = connection.interaction?.phase
-          const hasBaseline = Boolean(connection.relation || connection.persistent)
-          const visualState = phase ?? (connection.relation ? 'relation' : 'persistent')
-          const emphasized = Boolean(phase || connection.relation)
-          const markerState = phase ?? (connection.relation ? 'active' : 'persistent')
+          const visualState = phase ?? 'relation'
+          const markerState = phase ?? 'active'
           const relationColor = connection.flowIndex === undefined ? undefined : flowColor(connection.flowIndex)
           return (
             <path
               key={connection.key}
               data-panel-connection={visualState}
-              data-panel-connection-base={connection.relation ? 'relation' : connection.persistent ? 'persistent' : undefined}
+              data-panel-connection-base={connection.relation ? 'relation' : undefined}
               data-panel-relation-id={connection.relation?.id}
               data-panel-flow={connection.flowIndex}
               d={path}
               fill="none"
-              stroke={phase === 'failed'
-                ? 'var(--git-deleted)'
-                : relationColor ?? (emphasized ? 'var(--focus-blue)' : 'var(--text-muted)')}
-              strokeWidth={emphasized ? 2.25 : 1.5}
+              stroke={phase === 'failed' ? 'var(--git-deleted)' : relationColor ?? 'var(--focus-blue)'}
+              strokeWidth={2.25}
               strokeLinecap="round"
-              opacity={emphasized ? 1 : 0.32}
               markerEnd={`url(#${relationColor && phase !== 'failed'
                 ? flowMarker(connection.flowIndex!)
                 : marker(markerState)})`}
               vectorEffect="non-scaling-stroke"
               className={`cate-panel-connection${phase === 'active'
                 ? ' cate-panel-connection-active'
-                : phase && !hasBaseline ? ' cate-panel-connection-finished' : ''}`}
+                : phase && !connection.relation ? ' cate-panel-connection-finished' : ''}`}
             />
           )
         })}

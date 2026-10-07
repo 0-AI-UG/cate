@@ -160,6 +160,30 @@ describe('terminal runner', () => {
     expect(notifications).toEqual([{ kind: 'agent.needsInput', panelId: 'term', title: 'Claude Code needs input', body: 'Claude Code is waiting for your response.' }])
   })
 
+  it('a hook post that registers the agent pid makes it present before any scan', async () => {
+    // A started agent's fast first turn: every hook lands before the first
+    // activity scan. The bridge (4243) posts; its parent is the agent.
+    procTree.nameByPid.set(4242, 'claude')
+    procTree.nameByPid.set(4243, 'sh')
+    procTree.childrenByPid.set(4242, [4243])
+    const changes: unknown[] = []
+    agents.registry.subscribe((change) => changes.push(change.term?.status ?? null))
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root }, 4243)
+    expect(agents.registry.sessionFor('term')).toMatchObject({ present: true, status: 'waitingForInput' })
+    await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root }, 4243)
+    expect(agents.registry.sessionFor('term')).toMatchObject({ present: true, status: 'running', canReceivePrompt: false })
+    await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root }, 4243)
+    expect(agents.registry.sessionFor('term')).toMatchObject({ present: true, status: 'waitingForInput', canReceivePrompt: true })
+    expect(changes.filter((status, i) => status !== changes[i - 1])).toEqual(['waitingForInput', 'running', 'waitingForInput'])
+
+    // The falling edge still comes from a scan.
+    procTree.nameByPid.set(4242, 'zsh')
+    terminal.scan('pty-1', 'term')
+    expect(agents.registry.sessionFor('term')).toMatchObject({ present: false, status: 'finished' })
+  })
+
   it('publishes resume stamps as panel session state and clears them when the agent exits', async () => {
     const stamps: Array<{ panelId: string; stamp: TerminalResumeStamp | null }> = []
     runner.onResumeStamp((panelId, stamp) => stamps.push({ panelId, stamp }))
@@ -172,10 +196,10 @@ describe('terminal runner', () => {
     expect(stamps).toEqual([{ panelId: 'term', stamp: { agentId: 'codex', sessionId: 'sess-1', cwd: root } }])
   })
 
-  it('resolves a mission launch to the canonical argv', async () => {
-    expect(await terminal.intents.get(AGENT_LAUNCH.mission)!({ agentId: 'opencode', prompt: 'Fix it' }, { cwd: root, panelId: 'w' }))
+  it('resolves a start launch to the canonical argv', async () => {
+    expect(await terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'opencode', prompt: 'Fix it' }, { cwd: root, panelId: 'w' }))
       .toEqual({ command: { executable: 'opencode', args: ['--prompt', 'Complete this coding task:\n\nFix it'] } })
-    expect(() => terminal.intents.get(AGENT_LAUNCH.mission)!({ agentId: '/bin/sh', prompt: 'x' }, { cwd: root, panelId: 'w' })).toThrow()
+    expect(() => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: '/bin/sh', prompt: 'x' }, { cwd: root, panelId: 'w' })).toThrow()
   })
 
   it('sends a prompt only to an agent at its prompt, as a bracketed paste and Enter', async () => {
@@ -333,5 +357,21 @@ describe('terminal runner input and hook ordering', () => {
     terminal.service.write('pty-1', '\x03')
     expect(status()).toBe('waitingForInput')
     expect(notifications).toEqual([]) // a recovered interrupt is silent
+  })
+  it('interrupts with the CLI\'s own keys, which end a Kiro turn the same way', async () => {
+    const send = await setup()
+    await expect(runner.interrupt('term')).resolves.toEqual({ ok: false, error: 'agent-not-running' })
+    await send('kiro', { hook_event_name: 'UserPromptSubmit' })
+    await expect(runner.interrupt('term')).resolves.toEqual({ ok: true })
+    expect(terminal.writes.at(-1)).toEqual({ id: 'pty-1', data: '\x03' })
+    expect(status()).toBe('waitingForInput')
+  })
+
+  it('presses opencode\'s Esc twice, the second confirming the first', async () => {
+    const send = await setup()
+    await send('opencode', { type: 'session.status', status: { type: 'busy' } })
+    const before = terminal.writes.length
+    await expect(runner.interrupt('term')).resolves.toEqual({ ok: true })
+    expect(terminal.writes.slice(before)).toEqual([{ id: 'pty-1', data: '\x1b' }, { id: 'pty-1', data: '\x1b' }])
   })
 })

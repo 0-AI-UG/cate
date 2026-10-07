@@ -22,6 +22,12 @@ export interface AgentRunnerImpl {
   /** Submit a prompt as the user would. */
   send(panelId: string, prompt: string): Promise<AgentSendResult>
   conversation(panelId: string): Promise<{ session: AgentSession; messages: AgentConversationMessage[] } | null>
+  /** Changes whenever the conversation may have: a cheap stamp (the session
+   *  store's file times), or null when the runner cannot tell, so it is read
+   *  again on every look. */
+  conversationStamp?(panelId: string): Promise<string | null>
+  /** Stops the agent's turn as the person would (Esc, Ctrl-C, T3's stop). */
+  interrupt(panelId: string): Promise<AgentSendResult>
   /** A panel's state may have changed. */
   onChange(listener: (panelId: string) => void): () => void
 }

@@ -8,46 +8,11 @@ import { Icon, Tooltip } from '../../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import { useDocument } from '../../document'
 import { panelDefinition } from '@client/host'
-import { AgentActivityTitle, AwaitingIndicator, RunningIndicator } from '../../../services/agents'
-import { usePanelInteractionStore } from '../../../workspace/relations'
-import { useWorktreeColor } from '../../../workspace/repository'
+import { useWorktreeColor, worktreeTitleStyle } from '../../../workspace/repository'
 import { isMiddleClick } from '../drag/dom'
 import { useDragStore } from '../drag/store'
 import { useTabSourceVisibility } from '../drag/selectors'
 import { useTabDecorations } from './decorations'
-
-function PanelInteractionDot({ panelId }: { panelId: string }) {
-  const signal = usePanelInteractionStore((state) => {
-    let newest: (typeof state.interactions)[string] | undefined
-    let role: 'source' | 'target' = 'source'
-    for (const interaction of Object.values(state.interactions)) {
-      const nextRole = interaction.targetPanelId === panelId
-        ? 'target'
-        : interaction.sourcePanelId === panelId ? 'source' : null
-      if (!nextRole || (newest && newest.updatedAt > interaction.updatedAt)) continue
-      newest = interaction
-      role = nextRole
-    }
-    return newest ? `${newest.phase}\0${newest.pulse}\0${role}` : ''
-  })
-  if (!signal) return null
-  const [phase, , role] = signal.split('\0')
-  const color = phase === 'failed' ? 'var(--git-deleted)' : 'var(--focus-blue)'
-  return (
-    <span
-      aria-label={`panel interaction ${role}`}
-      data-panel-interaction={role}
-      className={`shrink-0 rounded-full ${phase === 'active' ? 'cate-panel-interaction-dot-active' : ''}`}
-      style={{
-        width: 6,
-        height: 6,
-        transformOrigin: 'center',
-        backgroundColor: role === 'target' ? color : 'transparent',
-        border: role === 'source' ? `1.5px solid ${color}` : undefined,
-      }}
-    />
-  )
-}
 
 /** The type's icon, or a detected agent's logo. */
 export function TabIcon({ type, size, logo, logoAlt }: { type: string; size: number; logo?: string | null; logoAlt?: string | null }) {
@@ -96,9 +61,9 @@ function TabTitle({ record, worktree, children }: {
 }) {
   const color = useWorktreeColor(worktree?.color)
   return (
-    <AgentActivityTitle className="min-w-0 flex-1 truncate" worktreeColor={record ? color : undefined}>
+    <span className="min-w-0 flex-1 truncate" style={worktreeTitleStyle(record ? color : undefined)}>
       {children}
-    </AgentActivityTitle>
+    </span>
   )
 }
 
@@ -258,9 +223,7 @@ export function DockTabBar(props: DockTabBarProps) {
                 {title}{decoration?.dirty ? ' •' : ''}
               </TabTitle>
             )}
-            <PanelInteractionDot panelId={panelId} />
-            {decoration?.running && <RunningIndicator />}
-            {decoration?.awaiting && <AwaitingIndicator />}
+            {decoration?.status}
             {onClosePanel && (
               <Tooltip label="Close panel" action={isActive ? 'closePanel' : undefined}>
                 <span

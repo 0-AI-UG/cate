@@ -6,11 +6,11 @@ import { isRpcError } from '@kernel/rpc/contract'
 import type { ApiHandlerContext } from '@kernel/api/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { AgentRunner, PanelAgentState } from '../contract'
-import { createAgentApiHandlers, createCodingAgentApiHandlers } from './api'
+import { createAgentApiHandlers } from './api'
 import { agentsCapabilityImpl } from './capability'
 import { createAgentsRuntime, type AgentsRuntime } from './agentsRuntime'
 import type { AgentRunnerImpl } from './registry'
-import type { Missions } from './missions/missions'
+import type { AgentStarter } from './start'
 
 function fakeRunner(kind: AgentRunner) {
   const states = new Map<string, PanelAgentState>()
@@ -20,6 +20,7 @@ function fakeRunner(kind: AgentRunner) {
     state: (panelId) => states.get(panelId) ?? null,
     panelIds: () => states.keys(),
     send: vi.fn(async () => ({ ok: true as const })),
+    interrupt: vi.fn(async () => ({ ok: true as const })),
     conversation: vi.fn(async (panelId: string) => {
       const session = states.get(panelId)?.session
       return session ? { session, messages: [{ role: 'user' as const, text: 'hello' }] } : null
@@ -55,6 +56,7 @@ let agents: AgentsRuntime
 let terminal: ReturnType<typeof fakeRunner>
 let t3: ReturnType<typeof fakeRunner>
 let handlers: ReturnType<typeof createAgentApiHandlers>
+let starter: AgentStarter
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'cate-agents-api-'))
@@ -81,7 +83,11 @@ beforeEach(() => {
   t3 = fakeRunner('t3')
   agents.registry.register(terminal.runner)
   agents.registry.register(t3.runner)
-  handlers = createAgentApiHandlers(agents)
+  starter = {
+    start: vi.fn(async () => ({ panelId: 'new', runner: 'terminal' as const, agentId: 'codex' as const })),
+    types: vi.fn(async () => []),
+  }
+  handlers = createAgentApiHandlers(agents, starter)
 })
 
 afterEach(() => {
@@ -147,32 +153,15 @@ describe('cate.agent.*', () => {
   })
 })
 
-describe('cate.codingAgent.*', () => {
-  it('addresses the calling panel\'s mission and requires one', async () => {
-    const missions = { list: vi.fn(async () => []), stopAll: vi.fn(() => ({ stopped: 2 })) } as unknown as Missions
-    const coding = createCodingAgentApiHandlers(missions)
-    await coding.list({}, ctx({ panelId: 'supervisor' }))
-    expect(missions.list).toHaveBeenCalledWith('supervisor')
-    await expect(rpcError(coding.list({}, ctx({ panelId: undefined })))).resolves.toBe('mission-owner-required')
-    expect(agentsCapabilityImpl(agents, missions).stopMission({ ownerPanelId: 'supervisor' }, {} as never)).toEqual({ stopped: 2 })
+describe('cate.agent.start', () => {
+  it('starts for the calling panel, on the canvas it names', async () => {
+    await handlers.start({ prompt: 'Fix it', runner: 'terminal', canvasPanelId: 'canvas', position: { x: 10, y: 20 } }, ctx())
+    expect(starter.start).toHaveBeenCalledWith('supervisor', { prompt: 'Fix it', runner: 'terminal', placement: { near: 'canvas', position: { x: 10, y: 20 } } })
   })
 
-  it('lets a client act as the person: its own workers, every worker listed, any worker decided', async () => {
-    const missions = {
-      create: vi.fn(async () => ({ id: 'mine' })),
-      all: vi.fn(async () => [{ id: 'mine' }, { id: 'theirs' }]),
-      ownerOf: vi.fn((runId: string) => (runId === 'theirs' ? 'supervisor' : null)),
-      apply: vi.fn(async () => ({ id: 'theirs' })),
-      readyAgents: vi.fn(async () => ['codex']),
-    } as unknown as Missions
-    const coding = createCodingAgentApiHandlers(missions)
-    const phone = ctx({ kind: 'client', panelId: undefined, clientId: 'phone' })
-    await coding.create({ prompt: 'Fix it' } as never, phone)
-    expect(missions.create).toHaveBeenCalledWith('person', { prompt: 'Fix it' })
-    await expect(coding.list({}, phone)).resolves.toEqual([{ id: 'mine' }, { id: 'theirs' }])
-    await coding.apply({ runId: 'theirs' }, phone)
-    expect(missions.apply).toHaveBeenCalledWith('supervisor', 'theirs')
-    await expect(coding.agents({}, phone)).resolves.toEqual([{ agentId: 'codex', displayName: 'Codex' }])
+  it('leaves the place to the starter without a canvas, and starts for a client without a panel', async () => {
+    await handlers.start({ prompt: 'Fix it', runner: 't3', model: 'gpt' }, ctx({ kind: 'client', panelId: undefined }))
+    expect(starter.start).toHaveBeenCalledWith(undefined, { prompt: 'Fix it', runner: 't3', model: 'gpt' })
   })
 })
 

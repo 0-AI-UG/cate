@@ -29,14 +29,15 @@ export interface ReviewNote {
   status?: 'open' | 'resolved'
   severity?: 'info' | 'warning' | 'error'
   author?: 'human' | 'agent'
-  agentRunId?: string
+  /** The panel of the agent that wrote it. */
+  agentPanelId?: string
   createdAt: string
 }
 
 export type ReviewNoteSeverity = NonNullable<ReviewNote['severity']>
 
 export type ReviewNoteInput = Pick<ReviewNote, 'path' | 'side' | 'line' | 'body' | 'context' | 'severity'>
-  & Partial<Pick<ReviewNote, 'agentChangeId' | 'author' | 'agentRunId' | 'resolvedBase' | 'resolvedTarget'>>
+  & Partial<Pick<ReviewNote, 'agentChangeId' | 'author' | 'agentPanelId' | 'resolvedBase' | 'resolvedTarget'>>
 
 /** How a client shows diffs: its `reviewSettings`. */
 export interface ReviewDisplay {
@@ -47,10 +48,10 @@ export interface ReviewDisplay {
   advancedPreview: boolean
 }
 
-export interface ReviewSourceAgent { runId: string; ownerPanelId: string; panelId: string }
+/** The agent whose changes a review shows: request changes sends to it. */
+export interface ReviewSourceAgent { panelId: string }
 
 export interface ReviewAgentRun {
-  runId: string
   terminalPanelId: string
   status: 'working' | 'complete' | 'failed'
   startedAt: number

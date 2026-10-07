@@ -55,6 +55,7 @@ beforeEach(() => {
       ? [{ role: 'user', text: 'hello', createdAt: '2026-01-01T00:00:00.000Z' }]
       : null,
     startTurn,
+    interruptTurn: async () => {},
   }
   const bindings: T3PanelBindings = {
     binding: (panelId) => (panelId === 'chat' ? binding : undefined),

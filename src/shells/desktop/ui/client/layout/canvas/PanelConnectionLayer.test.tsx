@@ -38,7 +38,7 @@ function standardDocument(): WorkspaceDocument {
   return docWith(
     [
       panel('agent', 'chat'),
-      panel('worker', 'terminal', { codingAgentRun: { id: 'run-1', ownerPanelId: 'agent', prompt: 'private prompt' } }),
+      panel('worker', 'terminal'),
       panel('browser', 'browser'),
     ],
     {
@@ -86,18 +86,12 @@ afterEach(() => {
 })
 
 describe('PanelConnectionLayer', () => {
-  it('renders durable supervisor-to-worker ownership as a directed path', () => {
-    render(open(standardDocument(), false))
-    const path = container.querySelector('[data-panel-connection="persistent"]')
-    expect(path).not.toBeNull()
-    expect(path?.getAttribute('marker-end')).toContain('persistent')
-  })
-
-  it('overlays resolved CLI activity and never renders request contents', () => {
+  it('overlays resolved CLI activity as a directed path', () => {
     render(open(standardDocument()))
     act(() => { beginPanelInteraction({ workspaceId: WS, sourcePanelId: 'agent', targetPanelId: 'browser', kind: 'control' }) })
-    expect(container.querySelector('[data-panel-connection="active"]')).not.toBeNull()
-    expect(container.textContent).not.toContain('private prompt')
+    const path = container.querySelector('[data-panel-connection="active"]')
+    expect(path).not.toBeNull()
+    expect(path?.getAttribute('marker-end')).toContain('active')
   })
 
   it('renders a user-declared relation with a horizontal meaning selector', () => {
@@ -156,9 +150,10 @@ describe('PanelConnectionLayer', () => {
     addRelation(WS, 'agent', 'worker', 'trigger')
     settings.setEnabled(false)
     render(view)
+    act(() => { beginPanelInteraction({ workspaceId: WS, sourcePanelId: 'agent', targetPanelId: 'worker', kind: 'agent' }) })
     expect(container.querySelector('[data-panel-connection="relation"]')).toBeNull()
     expect(container.querySelector('[data-panel-relation-selector]')).toBeNull()
-    expect(container.querySelector('[data-panel-connection="persistent"]')).not.toBeNull()
+    expect(container.querySelector('[data-panel-connection="active"]')).not.toBeNull()
   })
 
   it('starts a different-colored flow at every terminal or T3 panel', () => {

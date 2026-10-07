@@ -1,5 +1,5 @@
-import type { T3ProviderId } from './providers'
-import type { T3ProviderStatus } from './types'
+import { T3_PROVIDERS, type T3ProviderId } from './providers'
+import type { T3Model, T3ProviderModels, T3ProviderStatus } from './types'
 
 /** Status from T3's cached provider probe (`<instance>/caches/<file>`). */
 export function providerStatusFromSnapshot(
@@ -42,4 +42,31 @@ export function providerStatusFromSnapshot(
         }
       : {}),
   }
+}
+
+const record = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+
+/** The provider instances in T3's server config (`server.getConfig`) that Cate
+ *  knows, with the models each offers, in registry order. */
+export function t3ProviderModelsFromConfig(providers: unknown): T3ProviderModels[] {
+  const list = Array.isArray(providers) ? providers.map(record).filter((entry) => entry !== null) : []
+  return T3_PROVIDERS.flatMap(({ providerId, driverId }) => list
+    .filter((entry) => entry.driver === driverId && typeof entry.instanceId === 'string')
+    .map((entry): T3ProviderModels => {
+      const status = providerStatusFromSnapshot(providerId, entry)
+      const models = (Array.isArray(entry.models) ? entry.models : []).flatMap((raw): T3Model[] => {
+        const model = record(raw)
+        if (typeof model?.slug !== 'string' || typeof model.name !== 'string' || model.isLegacy === true) return []
+        return [{ slug: model.slug, name: model.name, isDefault: model.isDefault === true }]
+      })
+      return {
+        providerId,
+        instanceId: entry.instanceId as string,
+        label: typeof entry.displayName === 'string' ? entry.displayName : providerId,
+        ready: status.state === 'authenticated' && models.length > 0,
+        ...(status.message ? { message: status.message } : {}),
+        models,
+      }
+    }))
 }

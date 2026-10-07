@@ -420,7 +420,7 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
           data-canvas-id={canvasId}
           data-canvas-panel-id={canvasPanelId}
           data-filedrop="canvas"
-          data-filedrop-id={canvasPanelId}
+          data-filedrop-label="Drop to open on canvas"
           // overflow-clip, not hidden: a hidden box still scrolls
           // programmatically, and a caret at a panel's far edge would scroll
           // the grid and wallpaper sideways. The canvas pans by transform only.

@@ -139,4 +139,10 @@ async function conversation({ session, homeDir }: AgentSessionContext): Promise<
   return messages
 }
 
-export const hermesSessionStore: AgentSessionStore = { title, conversation }
+/** SQLite in WAL mode: a write lands in `-wal` first. */
+const files = async ({ session, homeDir }: AgentSessionContext): Promise<string[]> => {
+  const database = databasePath(homeDir, session.profile)
+  return database ? [database, `${database}-wal`] : []
+}
+
+export const hermesSessionStore: AgentSessionStore = { title, conversation, files }

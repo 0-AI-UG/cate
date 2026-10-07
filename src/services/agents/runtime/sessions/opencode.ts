@@ -113,4 +113,10 @@ async function conversation({ session, homeDir }: AgentSessionContext): Promise<
   })
 }
 
-export const openCodeSessionStore: AgentSessionStore = { title, conversation }
+/** SQLite in WAL mode: a write lands in `-wal` first. */
+const files = async ({ homeDir }: AgentSessionContext): Promise<string[]> => {
+  const database = databasePath(homeDir)
+  return [database, `${database}-wal`]
+}
+
+export const openCodeSessionStore: AgentSessionStore = { title, conversation, files }

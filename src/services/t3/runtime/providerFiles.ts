@@ -63,19 +63,22 @@ async function copyProviderSecrets(sourceDir: string, targetDir: string): Promis
   }
 }
 
+/** An instance's T3 settings file as its harness starts with it: in line
+ *  with the workspace provider profile and Cate's enforced settings. */
+export async function instanceSettings(paths: T3Paths): Promise<{ current: Record<string, unknown>; next: Record<string, unknown>; profiled: boolean }> {
+  const current = await readJsonObject(paths.settings, 'T3 settings') ?? {}
+  const profile = await readJsonObject(paths.providerProfile, 'T3 provider profile')
+  const next = enforceCateSettings(applyCateProviderDefaults(profile ? applyProviderProfile(current, profile) : current))
+  return { current, next, profiled: !!profile }
+}
+
 /** Brings an instance's T3 settings in line with the workspace provider
  *  profile and Cate's enforced settings. Runs before the harness starts. */
 export async function prepareInstanceSettings(paths: T3Paths): Promise<void> {
   await fs.mkdir(paths.userdata, { recursive: true, mode: 0o700 })
-  const settings = await readJsonObject(paths.settings, 'T3 settings') ?? {}
-  let next = settings
-  const profile = await readJsonObject(paths.providerProfile, 'T3 provider profile')
-  if (profile) {
-    await copyProviderSecrets(paths.providerSecrets, paths.secrets)
-    next = applyProviderProfile(settings, profile)
-  }
-  next = enforceCateSettings(applyCateProviderDefaults(next))
-  if (JSON.stringify(next) === JSON.stringify(settings)) return
+  const { current, next, profiled } = await instanceSettings(paths)
+  if (profiled) await copyProviderSecrets(paths.providerSecrets, paths.secrets)
+  if (JSON.stringify(next) === JSON.stringify(current)) return
   await writeJsonAtomic(paths.settings, next, { mode: 0o600 })
 }
 
@@ -87,4 +90,32 @@ export async function publishProviderProfile(paths: T3Paths): Promise<boolean> {
   await copyProviderSecrets(paths.secrets, paths.providerSecrets)
   await writeJsonAtomic(paths.providerProfile, extractProviderProfile(settings), { mode: 0o600 })
   return true
+}
+
+async function listDirs(dir: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true })
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+  } catch (error) {
+    if (isMissing(error)) return []
+    throw error
+  }
+}
+
+/** T3's last probe of each provider instance (`<instance>/caches/*.json`),
+ *  the freshest across the workspace's instances: they share one provider
+ *  profile. A cache T3 is rewriting is skipped. */
+export async function readProviderProbes(instancesRoot: string): Promise<Record<string, unknown>[]> {
+  const probes = new Map<string, Record<string, unknown>>()
+  for (const instance of await listDirs(instancesRoot)) {
+    const caches = path.join(instancesRoot, instance, 'caches')
+    for (const name of await listFiles(caches)) {
+      if (!name.endsWith('.json')) continue
+      const probe = await readJsonObject(path.join(caches, name), 'T3 provider probe').catch(() => null)
+      if (typeof probe?.instanceId !== 'string') continue
+      const seen = probes.get(probe.instanceId)
+      if (!seen || String(probe.checkedAt ?? '') > String(seen.checkedAt ?? '')) probes.set(probe.instanceId, probe)
+    }
+  }
+  return [...probes.values()]
 }

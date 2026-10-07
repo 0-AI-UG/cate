@@ -15,13 +15,14 @@ import { createT3Runtime, t3InstanceId, t3Paths, type T3PtyHost, type T3Runtime,
 interface FakeT3 {
   port: number
   dispatched: Array<Record<string, unknown>>
+  projects: Array<{ id: string; workspaceRoot: string }>
   cookies: string[]
   threads: Array<Record<string, unknown>>
   close(): Promise<void>
 }
 
 async function fakeT3(): Promise<FakeT3> {
-  const state: FakeT3 = { port: 0, dispatched: [], cookies: [], threads: [], close: async () => {} }
+  const state: FakeT3 = { port: 0, dispatched: [], projects: [], cookies: [], threads: [], close: async () => {} }
   const server = http.createServer((req, res) => {
     const json = (status: number, body: unknown, headers: Record<string, string> = {}) => {
       res.writeHead(status, { 'content-type': 'application/json', ...headers })
@@ -30,7 +31,7 @@ async function fakeT3(): Promise<FakeT3> {
     if (req.url === '/.well-known/t3/environment') return json(200, { environmentId: 'env' })
     if (req.url === '/api/auth/browser-session') return json(200, {}, { 'set-cookie': 't3session=abc; Path=/; HttpOnly' })
     state.cookies.push(String(req.headers.cookie))
-    if (req.url === '/api/orchestration/shell') return json(200, { threads: [{ id: 't1', title: 'One', updatedAt: 'now', extra: 1 }] })
+    if (req.url === '/api/orchestration/shell') return json(200, { projects: state.projects, threads: [{ id: 't1', title: 'One', updatedAt: 'now', extra: 1 }] })
     if (req.url?.startsWith('/api/orchestration/threads/missing')) return json(404, {})
     if (req.url?.startsWith('/api/orchestration/threads/')) {
       return json(200, { thread: { runtimeMode: 'full-access', messages: [
@@ -101,6 +102,7 @@ function deps(overrides: Partial<T3RuntimeDeps> = {}): T3RuntimeDeps {
     cateSocket: '/data/runtime.sock',
     mintHarnessToken: (checkout) => `token:${checkout}`,
     homeDir: '/home/me',
+    projectWaitMs: 300,
     ...overrides,
   }
 }
@@ -184,7 +186,7 @@ describe('T3 harness', () => {
       () => runtime.providerAuthStart({ providerId: 'codex' }),
       () => runtime.conversations({}),
       () => runtime.startTurn({ threadId: 't1', text: 'go' }),
-      () => runtime.providerStatuses({}),
+      () => runtime.providerSettings({ operation: 'refresh' }),
     ]) {
       await expect(call()).rejects.toSatisfy((error: unknown) => isRpcError(error, 'untrusted'))
     }
@@ -256,6 +258,27 @@ describe('T3 conversations and thread shells', () => {
     expect(new Set(t3.cookies)).toEqual(new Set(['t3session=abc']))
   })
 
+  it('starts a thread on a provider instance and model in the checkout\'s project', async () => {
+    await expect(runtime.startThread({ instanceId: 'codex', model: 'gpt', text: 'fix it' })).rejects.toThrow('t3-project-not-found')
+    // A harness opens the project shortly after it starts: the start waits.
+    const started = runtime.startThread({ instanceId: 'codex', model: 'gpt', text: ' fix it ' })
+    setTimeout(() => { t3.projects = [{ id: 'p1', workspaceRoot: root }] }, 100)
+    const { threadId } = await started
+    const modelSelection = { instanceId: 'codex', model: 'gpt' }
+    // T3's HTTP dispatch does not run a turn's bootstrap: the thread is
+    // created first.
+    expect(t3.dispatched.slice(-2)).toMatchObject([
+      { type: 'thread.create', threadId, projectId: 'p1', title: 'fix it', modelSelection, branch: null, worktreePath: null },
+      { type: 'thread.turn.start', threadId, message: { role: 'user', text: 'fix it' }, modelSelection },
+    ])
+    expect(t3.dispatched.at(-1)).not.toHaveProperty('bootstrap')
+  })
+
+  it('interrupts a thread\'s turn', async () => {
+    await runtime.interruptTurn({ threadId: 't1' })
+    expect(t3.dispatched.at(-1)).toMatchObject({ type: 'thread.turn.interrupt', threadId: 't1' })
+  })
+
   it('refuses a second turn on a thread until the first has had time to show as running', async () => {
     vi.useFakeTimers()
     try {
@@ -319,14 +342,64 @@ describe('T3 providers', () => {
     expect(() => runtime.providerAuthGet('nope')).toThrow('not found')
   })
 
-  it('reads provider status from the instance caches', async () => {
-    await runtime.panelUrl({})
-    const paths = t3Paths(path.join(dataDir, 't3'), root)
+  it('reads provider status and settings from disk without starting a harness', async () => {
+    const t3Root = path.join(dataDir, 't3')
+    const paths = t3Paths(t3Root, root)
     await fs.mkdir(paths.caches, { recursive: true })
-    await fs.writeFile(path.join(paths.caches, 'codex.json'), JSON.stringify({ enabled: true, installed: true, auth: { status: 'authenticated', label: 'Pro' } }))
-    const statuses = await runtime.providerStatuses({})
+    const codex = { instanceId: 'codex', driver: 'codex', enabled: true, installed: true, auth: { status: 'authenticated', label: 'Pro' } }
+    await fs.writeFile(path.join(paths.caches, 'codex.json'), JSON.stringify(codex))
+    await fs.mkdir(paths.userdata, { recursive: true })
+    await fs.writeFile(paths.settings, JSON.stringify({ sidebarAutoSettleAfterDays: null }))
+    await fs.writeFile(paths.providerProfile, JSON.stringify({
+      providers: { codex: { enabled: true, binaryPath: '/opt/codex' } },
+      providerInstances: { 'codex-work': { driver: 'codex', environment: [
+        { name: 'KEY', value: 'secret', sensitive: true }, { name: 'MODE', value: 'x', sensitive: false },
+      ] } },
+    }))
+    trusted = false
+
+    const statuses = await runtime.providerStatuses()
     expect(statuses.find((status) => status.providerId === 'codex')).toEqual({ providerId: 'codex', state: 'authenticated', label: 'Pro' })
     expect(statuses.find((status) => status.providerId === 'claude')).toEqual({ providerId: 'claude', state: 'unknown' })
+
+    const { settings, providers } = await runtime.providerSettings({ operation: 'read' })
+    expect(providers).toEqual([codex])
+    // As T3 hands them to a client: its defaults, the profile and Cate's
+    // provider defaults applied, secret values blanked.
+    expect(settings).toMatchObject({
+      enableProviderUpdateChecks: true,
+      sidebarAutoSettleOnMerge: true,
+      sidebarAutoSettleAfterDays: null,
+      providers: { codex: { enabled: true, binaryPath: '/opt/codex' }, grok: { enabled: false } },
+      providerInstances: { 'codex-work': { environment: [
+        { name: 'KEY', value: '', sensitive: true, valueRedacted: true }, { name: 'MODE', value: 'x', sensitive: false },
+      ] } },
+    })
+    expect(server.start).not.toHaveBeenCalled()
+    expect(JSON.parse(await fs.readFile(paths.settings, 'utf-8'))).not.toHaveProperty('providers')
+  })
+
+  it('lists provider models from the freshest probe of any checkout without starting a harness', async () => {
+    const t3Root = path.join(dataDir, 't3')
+    const probe = (checkedAt: string, extra: Record<string, unknown> = {}) => ({
+      instanceId: 'codex', driver: 'codex', displayName: 'Codex', enabled: true, installed: true,
+      status: 'ready', auth: { status: 'authenticated' }, checkedAt,
+      models: [{ slug: 'gpt', name: 'GPT', isDefault: true }], ...extra,
+    })
+    for (const [checkout, value] of [[root, probe('2026-01-01')], [worktree, probe('2026-02-01', { auth: { status: 'unauthenticated' } })]] as const) {
+      const { caches } = t3Paths(t3Root, checkout)
+      await fs.mkdir(caches, { recursive: true })
+      await fs.writeFile(path.join(caches, 'codex.json'), JSON.stringify(value))
+    }
+    await fs.writeFile(path.join(t3Paths(t3Root, root).caches, 'claudeAgent.json'), '{"instanceId": "claudeA')
+    trusted = false
+
+    expect(await runtime.providerModels()).toEqual([
+      { providerId: 'codex', instanceId: 'codex', label: 'Codex', ready: false, models: [{ slug: 'gpt', name: 'GPT', isDefault: true }] },
+    ])
+    expect(server.start).not.toHaveBeenCalled()
+    await fs.rm(t3Root, { recursive: true })
+    expect(await runtime.providerModels()).toEqual([])
   })
 
   it('publishes saved provider settings and secrets (0600) to the workspace profile and other checkouts', async () => {

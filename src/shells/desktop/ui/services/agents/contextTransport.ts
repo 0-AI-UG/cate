@@ -21,12 +21,12 @@ export function useAgentContextTransport(workspaceId: string, panel: PanelRecord
   const blocked: RelationContextTransport['blocked'] = !def.promptContextHook
     ? {
         label: 'Not supported',
-        reason: `${def.displayName} cannot take context from Cate, so connected panels are not sent.`,
+        reason: `${def.displayName} can't receive context`,
       }
     : state.hooksMissing
       ? {
           label: 'Hooks off',
-          reason: `${def.displayName} runs without Cate hooks, so connected panels are not sent. Turn its hooks on, then restart it in a new terminal.`,
+          reason: `${def.displayName} hooks are off`,
           fix: { label: 'Agent hooks settings…', run: () => clientUi().openSettings('hooks') },
         }
       : undefined

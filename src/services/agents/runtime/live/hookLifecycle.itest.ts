@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, realpath, rm, readFile, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { AGENT_DEFS, AGENT_HOOK_SPECS, type AgentHookEvent } from '../../contract'
+import { AGENT_DEFS, AGENT_HOOK_SPECS, AGENT_INTERRUPT_INPUT, type AgentHookEvent } from '../../contract'
 import { createAgentHooks } from '../hooks/agentHooks'
 import { createAgentChangesStore } from '../changes/store'
 import { createAgentStatusMachine } from '../status'
@@ -130,7 +130,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           let approvalEntered = false
           let interruptedAt = 0
           let streamingAt = 0
-          let secondEscape = false
+          let interruptKeysSent = 0
           let recoverySubmitted = false
           let recoveryTypedAt = 0
           await runLiveTui(AGENT_DEFS[agentId].runners.terminal.command, launch.args, {
@@ -152,13 +152,14 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
               }
               if (scenario === 'interrupt') {
                 if (!streamingAt && provider.modelInputs.some(({ input, protocol }) => JSON.stringify(input).includes('CATE_LIFECYCLE') || protocol.endsWith('/RunSSE'))) streamingAt = Date.now()
-                if (!interruptedAt && streamingAt && Date.now() - streamingAt > 1500) {
+                // The keys the terminal runner's interrupt types, 500ms apart.
+                const keys = AGENT_DEFS[agentId].runners.terminal.interruptKeys
+                if (streamingAt && interruptKeysSent < keys.length && Date.now() - streamingAt > 1500 && Date.now() - interruptedAt > 500) {
                   interruptedAt = Date.now()
-                  const key = ['cursor', 'claude-code', 'opencode'].includes(agentId) ? '\x1b' : '\x03'
+                  const key = AGENT_INTERRUPT_INPUT[keys[interruptKeysSent++]]
                   hooks.noteInput(terminalId, key)
                   return key
                 }
-                if (agentId === 'opencode' && interruptedAt && !secondEscape && Date.now() - interruptedAt > 500) { secondEscape = true; return '\x1b' }
                 if (interruptedAt && !recoveryTypedAt && canAgentReceivePrompt(terminalId) && Date.now() - interruptedAt > 1500) {
                   recovering = true; followupAnswer = provider.answer + '-recovered'; recoveryTypedAt = Date.now()
                   return 'CATE_RECOVER'

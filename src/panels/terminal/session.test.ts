@@ -54,12 +54,10 @@ function fakeTerminal() {
 
 function fakeAgents() {
   let state: ReturnType<TerminalAgentRunner['state']> = null
-  const changeListeners = new Set<(panelId: string) => void>()
   const stampListeners = new Set<(panelId: string, stamp: TerminalResumeStamp | null) => void>()
   const sent: string[] = []
   const runner: TerminalAgentRunner = {
     state: () => state,
-    onChange: (l) => { changeListeners.add(l); return () => { changeListeners.delete(l) } },
     send: async (_panelId, prompt) => { sent.push(prompt); return { ok: true } },
     onResumeStamp: (l) => { stampListeners.add(l); return () => { stampListeners.delete(l) } },
     resumeLaunch: (stamp) => ({ kind: 'agents.resume', params: stamp }),
@@ -67,9 +65,8 @@ function fakeAgents() {
   return {
     runner,
     sent,
-    setState(panelId: string, next: typeof state) {
+    setState(next: typeof state) {
       state = next
-      for (const l of changeListeners) l(panelId)
     },
     stamp(panelId: string, stamp: TerminalResumeStamp | null) {
       for (const l of stampListeners) l(panelId, stamp)
@@ -219,8 +216,7 @@ describe('TerminalSession', () => {
     await session.start()
     await expect(session.handleOp({ kind: 'submit', text: 'echo a\necho b' }, opCtx)).resolves.toEqual({ ok: true })
     expect(terminal.writes).toEqual([{ id: 'pty-1', data: 'echo a\recho b' }, { id: 'pty-1', data: '\r' }])
-    agents!.setState('p1', { agentId: 'claude-code', status: 'waitingForInput', present: true })
-    expect(snap(session).agent).toEqual({ agentId: 'claude-code', status: 'waitingForInput' })
+    agents!.setState({ present: true })
     await session.handleOp({ kind: 'submit', text: 'fix it' }, opCtx)
     expect(agents!.sent).toEqual(['fix it'])
     expect(terminal.writes).toHaveLength(2)
@@ -293,27 +289,29 @@ describe('createTerminalPanels', () => {
     const panels = createTerminalPanels({ terminal: terminal.service, root: '/repo' })
     const k = fakeKit(record())
     let added: PanelRecord | null = null
+    let placed: unknown
     const kit = {
       newId: () => 'p1',
       record: (_type: string, init: { id: string; title?: string; fields?: Record<string, Json> }) =>
         ({ id: init.id, type: 'terminal', title: init.title ?? 'Terminal', fields: init.fields ?? {} }) as PanelRecord,
-      add: (r: PanelRecord) => { added = r; return r.id },
+      add: (r: PanelRecord, placement: unknown) => { added = r; placed = placement; return r.id },
       uniqueTitle: (title: string) => title,
     }
     const sessions = new Map<string, TerminalSession>()
-    const missions = panels.missionTerminals(kit as never, {
+    const terminals = panels.agentTerminals(kit as never, {
       started: async (panelId) => {
         const session = new panels.session(k.kit, added!) as unknown as TerminalSession
         sessions.set(panelId, session)
         await session.start()
       },
     })
-    const launch = { kind: 'agents.mission', params: { agentId: 'codex', prompt: 'go' } }
-    await expect(missions.create({ cwd: '/repo', title: 'Worker', placementGroupId: 'g', launch })).resolves.toBe('p1')
+    const launch = { kind: 'agents.start', params: { agentId: 'codex', prompt: 'go' } }
+    await expect(terminals.create({ cwd: '/repo', title: 'Agent', launch, placement: { near: 'canvas' } })).resolves.toBe('p1')
+    expect(placed).toEqual({ near: 'canvas' })
     expect(terminal.spawns[0]).toMatchObject({ launch, cwd: '/repo' })
     expect(terminal.spawns[0].restore).toBeUndefined()
-    expect(missions.state('p1')).toEqual({ started: true, alive: true, failure: null, cwd: '/repo', busy: false })
-    await expect(missions.tail('p1')).resolves.toBe('screen of pty-1 (80)')
+    expect(terminals.state('p1')).toEqual({ alive: true, busy: false })
+    expect(terminals.state('nope')).toBeNull()
     await sessions.get('p1')!.handleOp({ kind: 'restart' }, opCtx)
     expect(terminal.spawns[1].launch).toBeUndefined()
   })

@@ -85,7 +85,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
       aria-label={`${compiled.relatedPanelIds.length} connected panels, ${blocked ? `not sent: ${blocked.label}` : mode === 'once' ? 'next message' : mode === 'always' ? 'every message' : 'off'}`}
       title={blocked?.reason ?? 'Choose when connected panels are included'}
       className={`inline-flex h-[20px] min-w-0 items-center rounded-full border transition-[border-color,background-color,color,filter] ${blocked
-        ? 'border-warning bg-warning-tint text-warning hover:brightness-110'
+        ? 'border-transparent bg-warning text-black/85 hover:brightness-110'
         : enabled
           ? 'border-focus-blue bg-focus-blue text-white shadow-sm hover:brightness-110'
           : 'border-subtle bg-surface-3 text-muted hover:border-strong hover:text-primary'}`}

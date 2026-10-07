@@ -1,29 +1,6 @@
-import type { HTMLAttributes, ReactNode } from 'react'
-import { worktreeTitleStyle } from '../../workspace/repository'
+// Agent status marks drawn next to a panel's title (dock tabs, sidebar rows).
 
 const AWAIT_COLOR = 'color-mix(in srgb, var(--activity-orange) 70%, var(--text-primary))'
-
-interface AgentActivityTitleProps extends HTMLAttributes<HTMLSpanElement> {
-  children: ReactNode
-  worktreeColor?: string
-}
-
-// A worktree tints the title, not the icon (the icon may be an agent logo
-// <img>, which ignores `color`). Static on purpose: an infinite title shimmer
-// kept the window repainting at display refresh rate while any agent ran (#746).
-// Running state is shown by RunningIndicator next to the title instead.
-export function AgentActivityTitle({
-  children,
-  worktreeColor,
-  className = '',
-  ...props
-}: AgentActivityTitleProps) {
-  return (
-    <span {...props} className={className} style={worktreeTitleStyle(worktreeColor)}>
-      {children}
-    </span>
-  )
-}
 
 /** Running agent: a static dashed ring. Waiting is the filled dot below; idle
  *  shows neither. No animation, so it costs no frames. */

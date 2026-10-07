@@ -33,7 +33,6 @@ export {
   installFileDropHandler,
   dropFilesInto,
   type FileDropHandler,
-  type FileDropKind,
 } from './fileDrop'
 export { acquireBodyClass, releaseBodyClass, pinDocumentCursor, isMiddleClick } from './dom'
 export { installGestureLockWatchdog, IDLE_GRACE_MS } from './gestureLockWatchdog'

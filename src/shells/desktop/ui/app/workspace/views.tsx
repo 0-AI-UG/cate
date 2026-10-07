@@ -7,22 +7,16 @@ import { createPortal } from 'react-dom'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { clientUi } from '@kernel/interaction'
 import { newPanelActionId, panelTypeOpening } from '@client/host'
-import {
-  AgentChangesOverlay,
-  registerPanelChromeOverlay,
-  registerTabDecorations,
-  useAgentTabDecorations,
-} from '../../client/layout/dock'
+import { registerPanelChromeOverlay, registerTabDecorations } from '../../client/layout/dock'
 import {
   CanvasToolbarButton,
   createPanelOnCanvas,
-  installMinimapBadges,
   registerCanvasToolbarItem,
   useCanvasToolbarAction,
   type CanvasToolbarAction,
   type CanvasToolbarItemProps,
 } from '../../client/layout/canvas'
-import { useAgentContextTransport, useAgentInfoByPanel } from '../../services/agents'
+import { AgentChangesOverlay, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
 import { t3Conversations } from '@services/t3/client'
 import { T3ConversationMenu, UsageOverview } from '../../services/t3'
 import { SkillsDialog } from '../../workspace/skills'
@@ -158,7 +152,6 @@ function ConversationsToolbarItem({ workspaceId, canvasId, canvasPanelId, menuSi
 
 /** Registers the workspace views once per window; returns the undo. */
 export function registerWorkspaceViews(): () => void {
-  installMinimapBadges(useAgentInfoByPanel)
   installRelationUiPort({
     showMenu: async (items) => (await clientUi().showContextMenu?.(items.map((item) => (item.type === 'separator' ? { type: 'separator' } : { id: item.id, label: item.label, enabled: item.enabled })))) ?? null,
     useContextTransport: useAgentContextTransport,
@@ -178,6 +171,5 @@ export function registerWorkspaceViews(): () => void {
   return () => {
     for (const stop of stops.splice(0)) stop()
     installRelationUiPort(null)
-    installMinimapBadges(null)
   }
 }

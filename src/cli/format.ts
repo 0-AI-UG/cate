@@ -58,15 +58,6 @@ function agentRuns(value: unknown): string {
   }))
 }
 
-function workers(value: unknown): string {
-  if (!Array.isArray(value)) return generic(value)
-  if (value.length === 0) return '(no workers)'
-  return table(['ID', 'STATUS', 'AGENT', 'TITLE'], value.map((item) => {
-    const run = asObject(item) ?? {}
-    return [text(run.id) || '?', text(run.status) || '?', text(run.agentName ?? run.agentId), text(run.title)]
-  }))
-}
-
 function conversation(value: unknown): string {
   const object = asObject(value)
   if (!object || !Array.isArray(object.messages)) return generic(value)
@@ -102,8 +93,6 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
     const runs = agentRuns(result?.agents)
     return result?.timedOut === true ? `${runs}\n(timed out before every agent was ready)` : runs
   },
-  workers,
-  worker: (value) => (asObject(value) ? workers([value]) : generic(value)),
   conversation,
   browserContent,
   prettyJson: (value) => JSON.stringify(value, null, 2),

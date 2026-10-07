@@ -33,8 +33,7 @@ import {
   searchCapabilityImpl,
 } from '@workspace/files/runtime'
 import { vcsCapability } from '@workspace/repository/contract'
-import { createRepositoryRuntime, vcsCapabilityImpl, type RepositoryRuntime } from '@workspace/repository/runtime'
-import type { MissionWorktrees } from '@services/agents/runtime'
+import { createRepositoryRuntime, vcsCapabilityImpl } from '@workspace/repository/runtime'
 import { skillsCapability, type SkillTarget } from '@workspace/skills/contract'
 import { createSkillsRuntime, skillsCapabilityImpl } from '@workspace/skills/runtime'
 import { createConnectedEditors, type SharedEditor } from '@workspace/relations/runtime'
@@ -52,20 +51,19 @@ import { browserDataCapabilityImpl, createBrowserDataRuntime } from '@services/b
 import { t3Capability } from '@services/t3/contract'
 import { createT3Runtime, t3CapabilityImpl, type T3PtyHost } from '@services/t3/runtime'
 import { AGENTS, agentsCapability } from '@services/agents/contract'
-import { agentApi, codingAgentApi } from '@services/agents/contract/api'
+import { agentApi } from '@services/agents/contract/api'
 import { CATE_API } from '@panels/api'
 import {
   agentsCapabilityImpl,
   createAgentApiHandlers,
+  createAgentStarter,
   createAgentsRuntime,
-  createCodingAgentApiHandlers,
-  openMissionStore,
   withoutInheritedHookIdentity,
+  type AgentStartPorts,
   type AgentsDocument,
-  type MissionTerminals,
   type RelationContextMode,
 } from '@services/agents/runtime'
-import { createTerminalMissions, createTerminalRunner } from '@services/agents/runners/terminal'
+import { createTerminalRunner } from '@services/agents/runners/terminal'
 import { createT3Runner } from '@services/agents/runners/t3'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract'
 import {
@@ -268,7 +266,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   const chatBindings = createChatBindings()
   // Terminal panels provide these once the session host exists.
   const ports: PanelPorts = {}
-  const missionTerminals = lateMissionTerminals(() => ports.missionTerminals)
+  const agentTerminals = lateAgentTerminals(() => ports.agentTerminals)
 
   let t3Runner: ReturnType<typeof createT3Runner> | undefined
   const harnessTokens = new Map<string, string>()
@@ -303,11 +301,20 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   t3Runner = createT3Runner(agents, t3, chatBindings)
   offs.push(agents.registry.register(t3Runner))
 
-  const missionStore = openMissionStore(paths.agents)
-  const missions = createTerminalMissions(agents, terminalRunner, {
-    terminals: missionTerminals,
-    worktrees: missionWorktrees(repository, root, document),
-    store: missionStore,
+  const agentStarter = createAgentStarter(agents, {
+    terminals: agentTerminals,
+    // The panel factory exists once panel types are attached, before any call.
+    createChat: ({ placement, ...options }) => factory.createPanel('chat', { ...options, ...placement }),
+    worktrees: {
+      async create(name) {
+        const meta = await repository.createWorktree({ branch: name })
+        return { id: meta.id, path: meta.path }
+      },
+      async remove(worktreeId) {
+        await repository.removeWorktree({ worktreeId, force: true, deleteBranch: true })
+      },
+    },
+    t3,
   })
 
   offs.push(deps.busy.contribute(() => terminal.busy()))
@@ -316,8 +323,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
 
   // `cate.ui.notify` reaches clients on the agents notification stream.
   offs.push(registerKernelApi(router, { publishNotification: (event) => agents.notifications.publish(event) }))
-  offs.push(router.registerService(agentApi, createAgentApiHandlers(agents)))
-  offs.push(router.registerService(codingAgentApi, createCodingAgentApiHandlers(missions)))
+  offs.push(router.registerService(agentApi, createAgentApiHandlers(agents, agentStarter)))
 
   // ---- Panels -----------------------------------------------------------------
 
@@ -337,7 +343,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     agents,
     terminalRunner,
     t3Runner,
-    missions,
+    agentStarter,
     chatBindings,
   }
   const modules = (deps.panels ?? PANEL_RUNTIMES).map((panel) => panel(services))
@@ -356,9 +362,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   const factory = createPanelFactory({ document, registry })
   for (const module of modules) {
     const provided = module.attach?.({ services, host, factory, router, surfaces: broker, rpc })
-    if (provided?.missionTerminals) ports.missionTerminals = provided.missionTerminals
+    if (provided?.agentTerminals) ports.agentTerminals = provided.agentTerminals
   }
-  missionTerminals.connect()
 
   offs.push(registerDocumentApi(router, {
     document,
@@ -379,7 +384,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   rpc.register(processCapability, processCapabilityImpl(terminal))
   rpc.register(browserDataCapability, browserDataCapabilityImpl(browserData))
   rpc.register(t3Capability, t3CapabilityImpl(t3))
-  rpc.register(agentsCapability, agentsCapabilityImpl(agents, missions))
+  rpc.register(agentsCapability, agentsCapabilityImpl(agents))
   rpc.register(sessionCapability, sessionCapabilityImpl({ host, presence }))
   rpc.register(surfaceCapability, broker.capability())
   rpc.register(apiCapability, apiCapabilityImpl(router))
@@ -432,8 +437,6 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       sessions.dispose()
       broker.dispose()
       connectedEditors.dispose()
-      missions.dispose()
-      missionStore.dispose()
       t3Runner?.dispose()
       terminalRunner.dispose()
       await t3.dispose()
@@ -495,11 +498,10 @@ function agentsDocument(document: ReturnType<typeof createDocumentService>): Age
   }
 }
 
-/** Mission terminals from the terminal type's port; without one, missions
- *  fail with `unsupported`. */
-function lateMissionTerminals(port: () => MissionTerminals | undefined): MissionTerminals & { connect(): void } {
-  const listeners = new Set<() => void>()
-  const get = (): MissionTerminals => {
+/** Agent terminals from the terminal type's port; without one, starting an
+ *  agent in a terminal fails with `unsupported`. */
+function lateAgentTerminals(port: () => AgentStartPorts['terminals'] | undefined): AgentStartPorts['terminals'] {
+  const get = (): AgentStartPorts['terminals'] => {
     const terminals = port()
     if (!terminals) throw new RpcError('unsupported', 'this runtime has no terminal panels')
     return terminals
@@ -507,52 +509,6 @@ function lateMissionTerminals(port: () => MissionTerminals | undefined): Mission
   return {
     create: (params) => get().create(params),
     relaunch: (panelId, params) => get().relaunch(panelId, params),
-    isTerminal: (panelId) => port()?.isTerminal(panelId) ?? false,
-    state: (panelId) => port()?.state(panelId) ?? { started: false, alive: false, failure: null, cwd: null, busy: false },
-    tail: (panelId) => get().tail(panelId),
-    terminate: (panelId) => port()?.terminate(panelId),
-    onChange(listener) {
-      listeners.add(listener)
-      return () => { listeners.delete(listener) }
-    },
-    connect() {
-      port()?.onChange(() => { for (const listener of [...listeners]) listener() })
-    },
-  }
-}
-
-/** Worktrees as missions use them, over the repository lifecycle. */
-function missionWorktrees(
-  repository: RepositoryRuntime,
-  root: string,
-  document: ReturnType<typeof createDocumentService>,
-): MissionWorktrees {
-  const pathOf = (worktreeId: string): string | undefined => document.get().worktrees[worktreeId]?.path
-  return {
-    async create(name, baseRef) {
-      const meta = await repository.createWorktree({ branch: name, ...(baseRef ? { base: baseRef } : {}) })
-      return { id: meta.id, path: meta.path }
-    },
-    async remove(worktreeId, options) {
-      await repository.removeWorktree({ worktreeId, ...options })
-    },
-    async status(worktreeId) {
-      const dir = pathOf(worktreeId)
-      if (!dir) return null
-      const status = await repository.git.worktreeStatus({ path: dir })
-      return status ? { dirty: status.dirty, branch: status.branch } : null
-    },
-    async primaryBranch() {
-      return (await repository.git.readStatus({ cwd: root })).current
-    },
-    async review(worktreeId, baseBranch) {
-      const dir = pathOf(worktreeId)
-      if (!dir) throw new RpcError('gone', `worktree ${worktreeId} is gone`)
-      return { ...(await repository.git.worktreeReview({ path: dir, baseBranch })) }
-    },
-    async merge(branch, into) {
-      const result = await repository.git.worktreeMergeTo({ cwd: root, from: branch, to: into })
-      return result.ok ? { ok: true } : { ok: false, message: result.message }
-    },
+    state: (panelId) => port()?.state(panelId) ?? null,
   }
 }

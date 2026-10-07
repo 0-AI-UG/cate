@@ -9,8 +9,6 @@ export interface T3ProviderDef {
   providerId: T3ProviderId
   /** Key under T3 settings' `providers`. */
   driverId: string
-  /** File under `<instance>/caches/` holding T3's last probe of the provider. */
-  statusCache: string
   /** Probing it launches a CLI process, so Cate leaves it off until chosen. */
   optIn: boolean
 }
@@ -19,7 +17,7 @@ const OPT_IN: ReadonlySet<T3ProviderId> = new Set(['grok', 'opencode'])
 
 export const T3_PROVIDERS: readonly T3ProviderDef[] = AGENTS.flatMap((agent) => {
   const t3 = agent.runners.t3
-  return t3 ? [{ providerId: t3.providerId, driverId: t3.driverId, statusCache: `${t3.driverId}.json`, optIn: OPT_IN.has(t3.providerId) }] : []
+  return t3 ? [{ providerId: t3.providerId, driverId: t3.driverId, optIn: OPT_IN.has(t3.providerId) }] : []
 })
 
 export function t3Provider(providerId: T3ProviderId): T3ProviderDef {

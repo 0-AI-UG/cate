@@ -1,7 +1,8 @@
 // HTML5 file drags: file refs from the file tree, search and screenshots,
 // and files from the OS (the `fileDrop` feature). One window-level tracker
 // finds the nearest `[data-filedrop]` host under the cursor and one overlay
-// marks it; drop handling stays in the hosts, which all resolve a drop the
+// marks it with the host's `data-filedrop-label` (a host without one, like a
+// file tree marking its own drop folder, shows no overlay); drop handling stays in the hosts, which all resolve a drop the
 // same way (`dropFilesInto`): a workspace's own files as they are, anything
 // else copied into its checkout's `.cate/tmp` through the runtimes.
 
@@ -13,9 +14,6 @@ import type { PanelPlacementOptions } from '@panels/framework/contract'
 import type { RefTarget } from '@workspace/files/client'
 import type { FileLineLocation } from '@workspace/files/contract'
 import { isAnyFileDrag, resolveFileDrop, takeFileDrop } from '../../../workspace/files'
-
-// `files`: a file tree, which marks its own drop folder and shows no overlay.
-export type FileDropKind = 'canvas' | 'dock' | 'terminal' | 'agent' | 'chat' | 'files'
 
 const log = createLogger('file-drop')
 
@@ -72,8 +70,8 @@ export function useDockFileDrop(workspaceId: string, placement: () => PanelPlace
 // --- The indicator ----------------------------------------------------------------
 
 interface FileDropTarget {
-  kind: FileDropKind
-  id: string
+  kind: string
+  label: string | null
   host: HTMLElement
 }
 
@@ -114,7 +112,7 @@ export function useFileDropTracker(): void {
         return
       }
       if (store.target?.host === host) return
-      store.set({ kind: host.getAttribute('data-filedrop') as FileDropKind, id: host.getAttribute('data-filedrop-id') ?? '', host })
+      store.set({ kind: host.getAttribute('data-filedrop') ?? '', label: host.getAttribute('data-filedrop-label'), host })
     }
     const clear = (): void => {
       const store = useFileDropStore.getState()
@@ -137,20 +135,11 @@ export function useFileDropTracker(): void {
   }, [])
 }
 
-const LABEL: Record<FileDropKind, string | null> = {
-  canvas: 'Drop to open on canvas',
-  dock: 'Drop to open here',
-  terminal: 'Drop to paste path',
-  agent: 'Drop to attach',
-  chat: 'Drop to attach',
-  files: null,
-}
-
 /** The one indicator, drawn inside its host so it inherits the host's
  *  clipping, transform and stacking. */
 export const FileDropOverlay: React.FC = () => {
   const target = useFileDropStore((s) => s.target)
-  if (!target || !LABEL[target.kind]) return null
+  if (!target?.label) return null
   return createPortal(
     <div
       data-file-drop-indicator={target.kind}
@@ -179,7 +168,7 @@ export const FileDropOverlay: React.FC = () => {
           boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
         }}
       >
-        {LABEL[target.kind]}
+        {target.label}
       </span>
     </div>,
     target.host,

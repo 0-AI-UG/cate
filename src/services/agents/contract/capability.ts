@@ -1,5 +1,6 @@
 import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
 import type { AgentChangesSnapshot } from './changes'
+import type { AgentConversation, AgentConversationChange } from './conversation'
 import type { AgentHookAgentState } from './hooks'
 import type { AgentNotificationEvent, PanelAgentState } from './session'
 
@@ -31,12 +32,13 @@ export const agentsCapability = defineCapability('agents', {
     panel: method<{ panelId: string }, PanelAgentState | null>(),
     /** Agents running a turn right now (closing their panels interrupts them). */
     busy: method<void, { panelIds: string[] }>(),
-    /** Stop every worker of a mission and refuse new ones (its supervisor closed). */
-    stopMission: method<{ ownerPanelId: string }, { stopped: number }>({ mutates: true }),
   },
   streams: {
     /** Every agent panel's state: a snapshot, then changes. */
     panels: channelStream<void, AgentPanelStates, AgentPanelStatesChange>(),
+    /** A panel's agent conversation with its state, live while the agent
+     *  works: a snapshot, then changes. */
+    conversation: channelStream<{ panelId: string }, AgentConversation, AgentConversationChange>(),
     /** Agent notification events (architecture 10.5). */
     notifications: stream<void, AgentNotificationEvent>(),
   },

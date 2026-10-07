@@ -1,6 +1,6 @@
 ---
 name: cate-cli
-description: Drive Cate browser, terminal, editor, panel, review, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.
+description: Drive Cate browser, terminal, editor, panel, review, and agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.
 user-invocable: true
 ---
 
@@ -36,7 +36,7 @@ command's usage line and exits 2 without contacting Cate.
 
 Output is formatted for reading: lists are aligned tables with a header row,
 other results are `key  value` lines, and structured reports (`review
-inspect`, `codingAgent inspect`) are indented JSON. Add `--json` to any
+inspect`, `agent types`) are indented JSON. Add `--json` to any
 command for the raw result when you need to parse it or need full ids.
 
 Exit codes: 0 ok, 1 the call failed (the error says why), 2 usage error,
@@ -228,9 +228,27 @@ TUIs. Never send keys until the panel id and current screen are verified.
 
 ## Agent orchestration
 
-Use `cate agent` to observe and steer the live agent panels of the current
-workspace: terminal CLI agents and chat (T3 Code) panels.
-Discover their panel ids before sending work or after context compaction:
+Use `cate agent` to start agents and to observe and steer the live agent
+panels of the current workspace: terminal CLI agents and chat (T3 Code)
+panels.
+
+`start` runs an agent on a prompt in a new panel, next to yours, and prints
+its panel id. It runs the agent CLI in a terminal by default (`--agent <id>`
+picks one whose Cate hooks are on; `cate agent types` lists them), or in a T3
+Code chat with `--runner t3` (`--instance <id>` and `--model <slug>`, default:
+a ready instance of the agent's provider and its default model). It works in
+your checkout, an existing worktree (`--worktree <id>`) or a new one
+(`--new-worktree <name>`), not both. `--canvas <id>` places it on that canvas
+panel's canvas instead. From then on it is an agent panel like any other:
+
+```bash
+cate agent start --agent codex --new-worktree fix-login "Fix the flaky login test"
+cate agent start --runner t3 --agent claude-code "Explain the build"
+cate agent types
+```
+
+Discover the panel ids of live agents before sending work or after context
+compaction:
 
 ```bash
 cate agent list
@@ -275,28 +293,6 @@ cate review complete
 Use `complete` only when running as the review agent assigned by that Review
 Panel. Review commands record findings; they do not modify files, stage,
 commit, or push changes.
-
-## Coding-agent workers
-
-`cate codingAgent` starts and manages background workers, each a CLI agent in
-its own terminal, optionally in an existing (`--worktree <id>`) or new
-(`--new-worktree <name>`, `--base-ref <ref>`) worktree. Workers belong to the
-terminal that created them. Pass `--worktree` or `--new-worktree`, not both.
-`create` and `list` print each worker's full run id; the other commands need
-that exact id (no prefixes). When a worker is ready, check its changes with
-`review`, then `apply` them to its base branch, `keep` the worktree, or
-`discard` it:
-
-```bash
-cate codingAgent create "Fix the flaky login test" --agent codex --new-worktree fix-login
-cate codingAgent list
-cate codingAgent wait <run-id> --timeout 60   # seconds, 5 to 60
-cate codingAgent inspect <run-id>
-cate codingAgent review <run-id>
-cate codingAgent apply <run-id>      # or keep / discard
-cate codingAgent send <run-id> "Also cover the logout path"
-cate codingAgent stop <run-id>
-```
 
 ## Serving a workspace
 

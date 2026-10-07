@@ -7,19 +7,7 @@ import type { WorkspaceDocument } from '@workspace/document/contract'
 import { activeNodePanelId } from './store'
 import { shallowArrayEqual, useCanvasView, useCanvasViewStore } from './context'
 import { useWorktreeMembership } from './worktree'
-
-/** A logo per panel (an agent running in a terminal). services/agents
- *  installs the hook; without it no logos show. */
-type MinimapBadges = (workspaceId: string) => Readonly<Record<string, { logo?: string | null } | undefined>>
-
-const NO_BADGES: Readonly<Record<string, never>> = {}
-let useBadges: MinimapBadges = () => NO_BADGES
-
-/** Install before the first canvas renders; the hook's identity must not
- *  change afterwards. */
-export function installMinimapBadges(hook: MinimapBadges | null): void {
-  useBadges = hook ?? (() => NO_BADGES)
-}
+import { useTabDecorations } from '../dock'
 
 const selectPanels = (doc: WorkspaceDocument) => doc.panels
 
@@ -42,7 +30,7 @@ function Minimap({ workspaceId }: { workspaceId: string }) {
   )
   const panels = useDocument(workspaceId, selectPanels)
   const activeTabs = useClientState(workspaceId, (s) => s.activeTabs)
-  const agentInfoByPanel = useBadges(workspaceId)
+  const decorations = useTabDecorations(workspaceId)
   // The same membership the territory draws, so the two never disagree.
   const { groups } = useWorktreeMembership(workspaceId)
   // nodeId → worktree color, so each node rect can carry its branch color.
@@ -177,8 +165,8 @@ function Minimap({ workspaceId }: { workspaceId: string }) {
         const type = panel?.type
         const rectW = Math.max(node.size.width * scale, 2)
         const rectH = Math.max(node.size.height * scale, 2)
-        // Show the agent logo when an agent is open in this panel's terminal.
-        const agentLogo = panelId ? agentInfoByPanel[panelId]?.logo ?? null : null
+        // The logo its tab shows in place of the type icon, if any.
+        const logo = panelId ? decorations[panelId]?.logo ?? null : null
         const iconSize = Math.min(rectW, rectH) - 2
         // Outline the rect in its worktree color (if any) so each panel reads
         // as belonging to a branch.
@@ -211,9 +199,9 @@ function Minimap({ workspaceId }: { workspaceId: string }) {
               overflow: 'hidden',
             }}
           >
-            {agentLogo && iconSize >= 6 && (
+            {logo && iconSize >= 6 && (
               <img
-                src={agentLogo}
+                src={logo}
                 alt=""
                 draggable={false}
                 style={{

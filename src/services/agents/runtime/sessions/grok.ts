@@ -87,4 +87,9 @@ async function conversation(context: AgentSessionContext): Promise<AgentConversa
   })
 }
 
-export const grokSessionStore: AgentSessionStore = { title, conversation }
+const files = async (context: AgentSessionContext): Promise<string[]> => {
+  const file = await locateTranscript(context)
+  return file ? [file] : []
+}
+
+export const grokSessionStore: AgentSessionStore = { title, conversation, files }

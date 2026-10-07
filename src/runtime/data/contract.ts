@@ -40,6 +40,10 @@ export interface RuntimeInfo {
   endpoints: RuntimeEndpoints
 }
 
+/** A stopping daemon gives up on a stuck shutdown and exits after this long,
+ *  so a new daemon can wait that long for the previous one to be gone. */
+export const RUNTIME_STOP_DEADLINE_MS = 5_000
+
 // File and folder names inside ~/.cate/workspaces/<runtimeId>/ (section 7.2).
 export const DATA_FILES = {
   socket: 'runtime.sock',

@@ -15,7 +15,7 @@ import { RpcError } from '@kernel/rpc/contract'
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
 import { settingsCapability } from '@kernel/settings/contract'
 import { createSettingsHandlers, createWorkspaceSettingsStore } from '@kernel/settings/runtime'
-import { runtimeIdFromCanonicalRoot, type RuntimeEndpoints } from '@runtime/data/contract'
+import { RUNTIME_STOP_DEADLINE_MS, runtimeIdFromCanonicalRoot, type RuntimeEndpoints } from '@runtime/data/contract'
 import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '@runtime/data/node'
 import {
   acquireRuntimeSocket,
@@ -94,7 +94,8 @@ export interface Daemon {
   readonly network: NetworkAccess
   readonly workspace: Workspace
   stop(reason: StopReason): Promise<void>
-  /** Resolves once the runtime has stopped and released its socket. */
+  /** Resolves once the runtime has stopped and released its socket, or
+   *  after RUNTIME_STOP_DEADLINE_MS when its shutdown is stuck. */
   readonly stopped: Promise<StopReason>
 }
 
@@ -240,6 +241,14 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   const stop = (reason: StopReason): Promise<void> => {
     stopping ??= (async () => {
       log.info('stopping (%s)', reason.kind)
+      // The socket closes early: a stuck step below would leave a process
+      // that serves nobody but still holds the workspace's files. The
+      // process exits once `stopped` resolves (main.ts).
+      const deadline = setTimeout(() => {
+        log.warn('stop did not finish within %d ms; exiting anyway', RUNTIME_STOP_DEADLINE_MS)
+        resolveStopped(reason)
+      }, RUNTIME_STOP_DEADLINE_MS)
+      deadline.unref()
       // Clients learn why before their connections close.
       for (const listener of [...stoppingListeners]) listener(reason.kind)
       if (stoppingListeners.size > 0) await new Promise((resolve) => setTimeout(resolve, 50))
@@ -260,6 +269,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
       pairingsFile.dispose()
       pushFile.dispose()
       secrets.dispose()
+      clearTimeout(deadline)
       resolveStopped(reason)
     })()
     return stopping

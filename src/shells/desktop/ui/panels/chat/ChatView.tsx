@@ -331,7 +331,7 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
       )}
       <div
         data-filedrop="chat"
-        data-filedrop-id={panelId}
+        data-filedrop-label="Drop to attach"
         onDragOver={(event) => {
           event.preventDefault()
           event.stopPropagation()

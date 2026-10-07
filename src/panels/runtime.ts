@@ -19,9 +19,9 @@ import { activeAgentChanges, summarizeAgentChanges } from '@services/agents/cont
 import {
   evaluateAgentCliHooks,
   inspectAgentCliHooks,
+  type AgentStarter,
+  type AgentStartPorts,
   type AgentsRuntime,
-  type MissionTerminals,
-  type Missions,
 } from '@services/agents/runtime'
 import type { TerminalRunner } from '@services/agents/runners/terminal'
 import type { T3Runner } from '@services/agents/runners/t3'
@@ -54,7 +54,7 @@ export interface PanelServices {
   agents: AgentsRuntime
   terminalRunner: TerminalRunner
   t3Runner: T3Runner
-  missions: Missions
+  agentStarter: AgentStarter
   /** Which thread each chat panel shows: the one instance the t3 runner
    *  also reads (`createT3Runner(agents, t3, chatBindings)`). */
   chatBindings: ChatBindings
@@ -73,8 +73,8 @@ export interface PanelAttachContext {
 
 /** What a panel type provides to services once the session host exists. */
 export interface PanelPorts {
-  /** Terminal panel: mission workers' terminals. */
-  missionTerminals?: MissionTerminals
+  /** Terminal panel: the terminals started agents run in. */
+  agentTerminals?: AgentStartPorts['terminals']
 }
 
 export interface PanelModule {
@@ -95,7 +95,6 @@ const terminal: PanelRuntime = (services) => {
     root: services.root,
     agents: {
       state: (panelId) => services.terminalRunner.state(panelId),
-      onChange: (listener) => services.terminalRunner.onChange(listener),
       send: (panelId, prompt) => services.agents.send(panelId, prompt),
       onResumeStamp: (listener) => services.terminalRunner.onResumeStamp(listener),
       resumeLaunch: (stamp) => services.terminalRunner.resumeLaunch(stamp),
@@ -109,7 +108,7 @@ const terminal: PanelRuntime = (services) => {
     session: panels.session,
     attach: ({ host, factory: panelFactory }) => {
       factory = panelFactory
-      return { missionTerminals: panels.missionTerminals(panelFactory.kit, host) }
+      return { agentTerminals: panels.agentTerminals(panelFactory.kit, host) }
     },
   }
 }
@@ -136,7 +135,7 @@ const editor: PanelRuntime = (services) => ({
 
 const review: PanelRuntime = (services) => {
   const { git, monitors, write } = services.repository
-  const { agents, missions } = services
+  const { agents } = services
   return reviewPanel({
     root: services.root,
     repository: {
@@ -166,20 +165,15 @@ const review: PanelRuntime = (services) => {
         const config = agents.settings.agentHookInjection()
         return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
       },
-      async startRun(ownerPanelId, args) {
-        const run = await missions.create(ownerPanelId, args)
-        return { id: run.id, panelId: run.panelId }
+      async start(ownerPanelId, { at, ...args }) {
+        const { panelId } = await services.agentStarter.start(ownerPanelId, { ...args, ...(at ? { placement: { at } } : {}) })
+        return { panelId }
       },
-      async sendToRun(ownerPanelId, runId, prompt) {
-        await missions.send(ownerPanelId, runId, prompt)
+      async send(panelId, prompt) {
+        const result = await agents.send(panelId, prompt)
+        if (!result.ok) throw new Error(result.error)
       },
-      async runs(ownerPanelId) {
-        const snapshots = await Promise.all((await missions.list(ownerPanelId)).map((run) => missions.snapshot(ownerPanelId, run.id)))
-        return snapshots.flatMap((run) => run
-          ? [{ id: run.id, panelId: run.panelId, createdAt: run.createdAt, ...(run.endedAt ? { endedAt: run.endedAt } : {}) }]
-          : [])
-      },
-      onRunsChanged: (listener) => missions.onChange(listener),
+      onExit: (listener) => services.terminalRunner.onExit((panelId) => listener(panelId)),
       threadIdOf: (panelId) => services.chatBindings.binding(panelId)?.threadId,
     },
   })

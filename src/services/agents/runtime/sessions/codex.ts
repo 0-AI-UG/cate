@@ -130,4 +130,9 @@ async function conversation(context: AgentSessionContext): Promise<AgentConversa
   return read ? messages : null
 }
 
-export const codexSessionStore: AgentSessionStore = { title, conversation }
+const files = async (context: AgentSessionContext): Promise<string[]> => {
+  const file = await locateRollout(context)
+  return file ? [file] : []
+}
+
+export const codexSessionStore: AgentSessionStore = { title, conversation, files }

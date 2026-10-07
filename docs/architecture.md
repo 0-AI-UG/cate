@@ -109,7 +109,6 @@ No UI is shared between shells.
 | **Agent** | A provider identity, static data in one registry (`AGENTS`). | claude-code, codex, cursor, grok, hermes, kiro, opencode |
 | **Runner** | How an agent session executes and how Cate observes it. | `terminal`: the CLI runs in a PTY, observed through injected hooks and pid presence. `t3`: the T3 harness drives the provider, observed through T3 orchestration. |
 | **Agent session** | One conversation: `{agentId, runner, sessionId, cwd, worktreeId}`. It reports status, takes a prompt, reads its conversation, lists its changes and resumes. | "claude-code in a terminal", "codex in a T3 thread" |
-| **Mission** | Orchestration over sessions: a supervisor spawns workers, admission limits them, their changes are applied, kept or discarded. | `cate.codingAgent.*` |
 
 Every agent has the `terminal` runner. The `t3` runner exists for the agents
 T3 has a provider for: claude-code, codex, cursor, grok, opencode (not hermes,
@@ -251,7 +250,7 @@ The split follows the client test (section 3).
 | Terminal logs, shell env |
 | Agents: hook ingestion, pid presence, change history, session stores, conversation reads, Hermes |
 | Agents: status state machine, resume stamps, notifications, driver selection |
-| Missions: supervisor, workers, admission |
+| Starting agents: a new terminal or chat panel on a prompt |
 | T3 harness lifecycle, provider auth, thread shells |
 | T3 state: per-checkout instances, provider profile and secrets |
 | Browser data: history, bookmarks, passwords, downloads |
@@ -494,8 +493,7 @@ persisted session and document file. It is created with mode `0700`.
   browser/              history.json, bookmarks.json, downloads/
   t3/                   the T3 harness root: instances/<checkout hash>/,
                         provider-profile.json, provider-secrets/
-  agents/               hooks/ (hook bridges), changes/ (change history),
-                        missions.json
+  agents/               hooks/ (hook bridges), changes/ (change history)
   servers.json          pids of the runtime's server children, reaped on
                         the next start
   terminal-logs/
@@ -522,6 +520,12 @@ persisted session and document file. It is created with mode `0700`.
   atomic: a second daemon for the same workspace fails to bind and exits. The
   OS releases it when the daemon dies. On Windows the socket is a named pipe
   `\\.\pipe\cate-<runtimeId>`, with the same rule.
+  A stopping daemon closes its socket before it lets go of the workspace's
+  files, so before removing a stale socket a starting daemon waits for the
+  daemon that last owned it (the pid in `runtime.json`) to exit. Every daemon
+  exits within 5 s of starting to stop, even when a shutdown step is stuck;
+  one still alive after that is killed (a reused pid running another program
+  is left alone).
 - **Workspaces never nest.** After binding, a daemon whose root contains, or
   lies inside, the root of a live runtime on the machine (its `runtime.json`
   pid alive and its socket answering; a `runtime.json` left by a killed
@@ -1131,8 +1135,7 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   prompt-context hooks. Every per-agent table is a total
   `Record<AgentId, …>` (an agent without an entry says so with `null`), so a
   new agent is a compile error until every table has it. Also the session,
-  runner and mission types, and the `cate.agent.*` and `cate.codingAgent.*`
-  API specs.
+  runner types, the start launch command, and the `cate.agent.*` API specs.
 - **runtime**: the `agents` capability:
   - hook bridges and repo hook files (per `agentHookInjection`), hook
     ingestion and normalization, pid presence;
@@ -1142,24 +1145,35 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     `agents/changes/`;
   - session store readers per agent, conversation reads, resume stamps,
     Hermes integration;
+  - live conversations (the `conversation` channel): one watch per panel
+    reads the conversation together with the agent's state, so a turn that
+    ended goes out with its reply; it looks again on every state change and
+    while the agent works, reading the store only when its files moved, and
+    sends the messages from the first one that changed;
   - the runner registry: `sessionFor(panel)` answers which agent session a
     panel hosts;
   - prompt context from relations, and agent notification events.
-- **Missions**: supervisor, workers and admission (at most 5 concurrent
-  workers). Workers use the `terminal` runner. Everything goes through
-  `cate.codingAgent.*`. A panel caller (an agent's CLI or harness) owns its
-  own workers; a client caller is the person: it owns the workers it starts
-  (`PERSON_MISSION_OWNER`, never a panel id), `list` shows it every worker,
-  and it decides about any worker with that worker's mission's authority.
-  `agents` lists the agent CLIs a worker can run with.
+- **Starting an agent** (`cate.agent.start`): its CLI in a new terminal
+  panel (a hook-ready agent, launched in place of the shell) or a T3 thread
+  in a new chat panel, in the caller's checkout, an existing worktree or a
+  new one, next to the calling panel or where the call places it. Panels,
+  worktrees and T3 come through ports the composition root fills. Once
+  started it is an agent panel like any other: `cate.agent.*` reads,
+  prompts and interrupts it by its panel. `types` lists the agent CLIs and
+  whether each can start in a terminal here. The review panel starts its
+  reviewers the same way.
 - **runners/terminal**: plugs into the terminal service (hook env on PTY spawn,
-  status, resume, prompt submission into the PTY).
-- **runners/t3**: plugs into the t3 service (thread state, prompt dispatch to
-  T3 orchestration, change capture on harness start).
+  status, resume, prompt submission into the PTY, interrupt with the CLI's
+  own key).
+- **runners/t3**: plugs into the t3 service (thread state, prompt dispatch and
+  turn interrupt to T3 orchestration, change capture on harness start).
+- **client**: the agent panel states mirror and an agent chat
+  (`watchAgentChat`: the conversation channel, and a prompt sent from the
+  client pending until the conversation shows it).
 - **Desktop UI** (`shells/desktop/ui/services/agents`): the changes pill, activity title, logos, hook settings, the
   relation context transport (`useAgentContextTransport`).
 - **Consumers**: terminal and chat panels, review (changes), sidebar and dock
-  tabs (status), `cate.agent.*`, `cate.codingAgent.*`.
+  tabs (status), `cate.agent.*`.
 
 Dependencies point one way: `agents → terminal`, `agents → t3`. Terminal and
 t3 never import agents.
@@ -1602,8 +1616,7 @@ Everything outside the UI that drives Cate goes through one router.
 | `cate.browser.*` | `run` and `reset` (the caller's code session), `listTabs`; page operations for code cells (`getTab`, `createTab`, `getAXState`, `getScreenshot`, `click`, `typeText`, `goto`, `waitFor`, ...) | browser panel | service (`run`, `reset`, `listTabs`) / session |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
 | `cate.review.*` | `inspect`, `complete`, `note.add`, `note.resolve` | review panel | session |
-| `cate.agent.*` | `list`, `read`, `wait`, `send` | services/agents (resolves session to runner) | service |
-| `cate.codingAgent.*` | `create`, `send`, `list`, `wait`, `inspect`, `review`, `apply`, `keep`, `discard`, `stop` | services/agents (missions) | service |
+| `cate.agent.*` | `start`, `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves session to runner) | service |
 
 There is no `cate.panel.focus`: focus is client state. Page operations are
 not CLI commands (`cli: {command: false}`); the CLI reaches them through
@@ -1653,11 +1666,13 @@ not CLI commands (`cli: {command: false}`); the CLI reaches them through
   state snapshot pushed on every change). The core side follows the client
   core's rules: no Node, no Electron, no React. Its state carries each
   connected workspace's agents (panel states with what each asked for),
-  mission workers, keep-awake state and this device's push status; the app
-  shows them as an agents home across workspaces, a session view per agent
-  (conversation and replies; permissions are answered in the agent's own
-  panel), a task composer and a review and ship view (uncommitted changes,
-  commit, push, pull request, and a worker's apply/keep/discard). The core
+  keep-awake state and this device's push status; the app
+  shows each agent of a workspace as a chat (the conversation pushed as it
+  changes through `agents.watch`, replies, what it is doing while it works,
+  stopping its turn; permissions are answered in the
+  agent's own panel, one tap away), and a
+  new agent as an empty chat whose box picks what runs it, started with
+  `cate.agent.start` in the dock or on a canvas the person picks. The core
   consumes notification events like every client and hands each to the
   app (`notification.show`, `notification.withdraw`); the app registers its
   APNs target for pushes, and a notification service extension opens them

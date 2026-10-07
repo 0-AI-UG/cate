@@ -238,8 +238,8 @@ final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
         terminal.nativeBackgroundColor = .black
         terminal.nativeForegroundColor = .white
         terminal.keyboardDismissMode = .interactive
-        // The system keyboard only.
-        terminal.inputAccessoryView = nil
+        // The system keyboard, with the keys it lacks in a bar above it.
+        terminal.inputAccessoryView = TerminalKeyBar(terminal: terminal)
         terminal.inputView = nil
         addSubview(terminal)
     }
@@ -320,7 +320,7 @@ final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
 
     /// Redraws the text at the zoomed resolution instead of scaling pixels.
     private func sharpen() {
-        terminal.contentScaleFactor = zoomScale * (window?.screen.scale ?? UIScreen.main.scale)
+        terminal.contentScaleFactor = zoomScale * traitCollection.displayScale
         terminal.setNeedsDisplay()
     }
 
@@ -383,4 +383,197 @@ final class CateTerminalView: TerminalView {
         if resigned { onFirstResponder?(false) }
         return resigned
     }
+}
+
+/// The keys the system keyboard lacks, in a row of glass buttons over the
+/// terminal, above the keyboard: esc, tab, the arrows (repeating while held),
+/// the page keys and the shell's symbols. A key fires when lifted, so a drag
+/// across the row scrolls it instead. Ctrl and alt are sticky: the next key
+/// typed takes them, then they let go.
+final class TerminalKeyBar: UIView {
+    private weak var terminal: CateTerminalView?
+    private var ctrl: UIButton!
+    private var alt: UIButton!
+    private var repeatTimer: Timer?
+    /// The held key has started repeating: its lift sends nothing more.
+    private var repeated = false
+    private static let height: CGFloat = 52
+
+    private enum Key {
+        case bytes([UInt8])
+        case text(String)
+        case arrow(app: [UInt8], normal: [UInt8])
+    }
+
+    init(terminal: CateTerminalView) {
+        self.terminal = terminal
+        super.init(frame: CGRect(x: 0, y: 0, width: 0, height: Self.height))
+        backgroundColor = .clear
+
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        stack.addArrangedSubview(key(title: "esc", .bytes(EscapeSequences.cmdEsc)))
+        ctrl = modifier(title: "ctrl", #selector(toggleCtrl))
+        stack.addArrangedSubview(ctrl)
+        alt = modifier(title: "alt", #selector(toggleAlt))
+        stack.addArrangedSubview(alt)
+        stack.addArrangedSubview(key(symbol: "arrow.right.to.line", label: "Tab", .bytes(EscapeSequences.cmdTab)))
+        stack.addArrangedSubview(key(symbol: "arrow.left", label: "Left", .arrow(app: EscapeSequences.moveLeftApp, normal: EscapeSequences.moveLeftNormal), repeats: true))
+        stack.addArrangedSubview(key(symbol: "arrow.down", label: "Down", .arrow(app: EscapeSequences.moveDownApp, normal: EscapeSequences.moveDownNormal), repeats: true))
+        stack.addArrangedSubview(key(symbol: "arrow.up", label: "Up", .arrow(app: EscapeSequences.moveUpApp, normal: EscapeSequences.moveUpNormal), repeats: true))
+        stack.addArrangedSubview(key(symbol: "arrow.right", label: "Right", .arrow(app: EscapeSequences.moveRightApp, normal: EscapeSequences.moveRightNormal), repeats: true))
+        for symbol in ["|", "~", "/", "\\", "-", "_", "`", "$", "*", "{", "}", "[", "]", "<", ">"] {
+            stack.addArrangedSubview(key(title: symbol, .text(symbol)))
+        }
+        stack.addArrangedSubview(key(title: "home", .arrow(app: EscapeSequences.moveHomeApp, normal: EscapeSequences.moveHomeNormal)))
+        stack.addArrangedSubview(key(title: "end", .arrow(app: EscapeSequences.moveEndApp, normal: EscapeSequences.moveEndNormal)))
+        stack.addArrangedSubview(key(title: "pgup", .bytes(EscapeSequences.cmdPageUp), repeats: true))
+        stack.addArrangedSubview(key(title: "pgdn", .bytes(EscapeSequences.cmdPageDown), repeats: true))
+
+        let scroll = KeyScrollView()
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.alwaysBounceHorizontal = true
+        scroll.delaysContentTouches = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(stack)
+        addSubview(scroll)
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 10),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -10),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 6),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -6),
+            stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor, constant: -12),
+        ])
+
+        // SwiftTerm lets go of a modifier once a typed key takes it.
+        NotificationCenter.default.addObserver(self, selector: #selector(syncModifiers), name: .terminalViewControlModifierReset, object: terminal)
+        NotificationCenter.default.addObserver(self, selector: #selector(syncModifiers), name: .terminalViewMetaModifierReset, object: terminal)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: Self.height) }
+
+    private func key(title: String? = nil, symbol: String? = nil, label: String? = nil, _ key: Key, repeats: Bool = false) -> UIButton {
+        let button = UIButton(configuration: style(selected: false))
+        if let title { button.configuration?.title = title }
+        if let symbol { button.configuration?.image = UIImage(systemName: symbol) }
+        button.accessibilityLabel = label ?? title
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 40).isActive = true
+        button.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            if !self.repeated { self.tap(key) }
+            self.stopRepeat()
+        }, for: .touchUpInside)
+        if repeats {
+            button.addAction(UIAction { [weak self] _ in self?.startRepeat(key) }, for: .touchDown)
+            // A scroll cancels the touch, and a drag off the key lets go of it.
+            for event: UIControl.Event in [.touchUpOutside, .touchCancel, .touchDragExit] {
+                button.addAction(UIAction { [weak self] _ in self?.stopRepeat() }, for: event)
+            }
+        }
+        return button
+    }
+
+    private func modifier(title: String, _ action: Selector) -> UIButton {
+        let button = UIButton(configuration: style(selected: false))
+        button.configuration?.title = title
+        button.addTarget(self, action: action, for: .touchUpInside)
+        return button
+    }
+
+    private func style(selected: Bool) -> UIButton.Configuration {
+        var config = selected ? UIButton.Configuration.prominentGlass() : UIButton.Configuration.glass()
+        config.cornerStyle = .capsule
+        config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFont.monospacedSystemFont(ofSize: 15, weight: .medium)
+            return attributes
+        }
+        return config
+    }
+
+    private func tap(_ key: Key) {
+        UIDevice.current.playInputClick()
+        press(key)
+    }
+
+    private func press(_ key: Key) {
+        guard let terminal else { return }
+        switch key {
+        case .text(let text):
+            // As typed, so a held ctrl or alt applies.
+            terminal.insertText(text)
+            return
+        case .bytes(let bytes):
+            terminal.send(bytes)
+        case .arrow(let app, let normal):
+            terminal.send(terminal.getTerminal().applicationCursor ? app : normal)
+        }
+        terminal.controlModifier = false
+        terminal.metaModifier = false
+        syncModifiers()
+    }
+
+    /// Held past a beat, the key repeats; lifted before, it is a tap.
+    private func startRepeat(_ key: Key) {
+        stopRepeat()
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.repeated = true
+                self.tap(key)
+                self.repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.press(key) }
+                }
+            }
+        }
+    }
+
+    private func stopRepeat() {
+        repeatTimer?.invalidate()
+        repeatTimer = nil
+        repeated = false
+    }
+
+    @objc private func toggleCtrl() {
+        UIDevice.current.playInputClick()
+        terminal?.controlModifier.toggle()
+        syncModifiers()
+    }
+
+    @objc private func toggleAlt() {
+        UIDevice.current.playInputClick()
+        terminal?.metaModifier.toggle()
+        syncModifiers()
+    }
+
+    @objc private func syncModifiers() {
+        for (button, on) in [(ctrl, terminal?.controlModifier ?? false), (alt, terminal?.metaModifier ?? false)] {
+            guard let button else { continue }
+            let title = button.configuration?.title
+            button.configuration = style(selected: on)
+            button.configuration?.title = title
+        }
+    }
+}
+
+extension TerminalKeyBar: UIInputViewAudioFeedback {
+    var enableInputClicksWhenVisible: Bool { true }
+}
+
+/// Scrolls even when the drag starts on a key: UIScrollView otherwise leaves
+/// a touch that began on a control to the control.
+private final class KeyScrollView: UIScrollView {
+    override func touchesShouldCancel(in view: UIView) -> Bool { true }
 }

@@ -300,15 +300,9 @@ private extension View {
             .contentShape(Circle())
     }
 
-    /// Liquid Glass where the system has it, a material before.
-    @ViewBuilder
+    /// A piece of interactive Liquid Glass.
     func glass<S: Shape>(_ shape: S) -> some View {
-        if #available(iOS 26, *) {
-            glassEffect(.regular.interactive(), in: shape)
-        } else {
-            background(.regularMaterial, in: shape)
-                .overlay(shape.stroke(.separator, lineWidth: 0.5))
-        }
+        glassEffect(.regular.interactive(), in: shape)
     }
 }
 

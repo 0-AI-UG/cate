@@ -75,3 +75,34 @@ export function isProviderSecretFile(name: string): boolean {
   return (name.startsWith('provider-env-') || name.startsWith('usage-limit-source-'))
     && name.endsWith('.bin')
 }
+
+/** T3's decoding defaults (t3@0.0.39 ServerSettings) of the preferences the
+ *  providers page shows, for settings read from disk. */
+const T3_PREFERENCE_DEFAULTS: Record<string, unknown> = {
+  enableProviderUpdateChecks: true,
+  sidebarAutoSettleOnMerge: true,
+  sidebarAutoSettleAfterDays: 3,
+}
+
+/** T3 settings from its settings file as `server.getConfig` gives them to a
+ *  client: the shown preferences' defaults filled in, and secret environment
+ *  values blanked (T3's redactProviderEnvironmentVariable). */
+export function t3SettingsForClient(settings: Record<string, unknown>): Record<string, unknown> {
+  const instances = isRecord(settings.providerInstances) ? settings.providerInstances : null
+  return {
+    ...T3_PREFERENCE_DEFAULTS,
+    ...settings,
+    ...(instances
+      ? {
+          providerInstances: Object.fromEntries(Object.entries(instances).map(([id, instance]) => {
+            if (!isRecord(instance) || !Array.isArray(instance.environment)) return [id, instance]
+            return [id, { ...instance, environment: instance.environment.map((variable: unknown) => {
+              if (!isRecord(variable) || variable.sensitive !== true) return variable
+              const hasValue = typeof variable.value === 'string' && variable.value.length > 0
+              return { ...variable, value: '', ...(hasValue || variable.valueRedacted ? { valueRedacted: true } : {}) }
+            }) }]
+          })),
+        }
+      : {}),
+  }
+}

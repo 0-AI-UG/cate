@@ -2,9 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The push key, shared with the app. -->
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.0ai.cate.ios.shared</string>
+		<string>$(AppIdentifierPrefix)$(CATE_BUNDLE_ID).shared</string>
 	</array>
 </dict>
 </plist>

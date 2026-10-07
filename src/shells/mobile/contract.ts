@@ -11,9 +11,8 @@
 
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
-import type { AgentId, AgentRunner, AgentStatus, CodingAgentAction, CodingAgentRunStatus } from '@services/agents/contract'
-import type { T3Conversation } from '@services/t3/contract'
-import type { GitChangeStatus, GitFileDiff } from '@workspace/repository/contract'
+import type { AgentConversationMessage, AgentId, AgentRunner, AgentStatus, AgentTypeInfo } from '@services/agents/contract'
+import type { T3Conversation, T3ProviderModels } from '@services/t3/contract'
 
 export interface MobileAppInfo {
   /** The device's name, sent in `hello` and shown in pairing lists. */
@@ -84,6 +83,17 @@ export type MobileViewEvent =
   | { kind: 'text'; text: string }
   /** `buffer.open`: the buffer could not be opened or its stream ended. */
   | { kind: 'error'; message: string }
+  /** `agents.watch`: the agent's state (null while the panel hosts none),
+   *  the prompt sent from this chat that the conversation does not show yet,
+   *  and the messages from index `from` on, which replace the app's. */
+  | {
+    kind: 'conversation'
+    status: AgentStatus | null
+    canReceivePrompt: boolean
+    pending: string | null
+    from: number
+    messages: AgentConversationMessage[]
+  }
 
 /** A loopback stream (`stream.open`): bytes from the runtime's machine
  *  (base64), or its end. */
@@ -163,27 +173,6 @@ export interface MobileAgent {
   since: number
   /** The checkout the agent works in; null for the workspace root. */
   checkout: string | null
-  /** The mission worker the panel runs, when it is one. */
-  taskId: string | null
-}
-
-/** A mission worker (`cate.codingAgent.list`): started from a device or by a
- *  supervisor agent, with what can be decided about it. */
-export interface MobileTask {
-  id: string
-  panelId: string
-  agentName: string
-  title: string
-  status: CodingAgentRunStatus
-  checkout: string
-  /** Runs in its own worktree, which apply, keep and discard act on. */
-  isolated: boolean
-  /** The worktree was created for the worker, so discard may remove it. */
-  ownsWorktree: boolean
-  appliedToBranch: string | null
-  kept: boolean
-  statusLine: string | null
-  failureReason: string | null
 }
 
 export interface MobileWorkspace {
@@ -195,7 +184,6 @@ export interface MobileWorkspace {
   panels: MobilePanel[] | null
   /** Empty while not connected. */
   agents: MobileAgent[]
-  tasks: MobileTask[]
   /** Keep-awake on the runtime's machine; null while not connected. */
   power: PowerState | null
   /** This device's pushes from the workspace; null while not connected or
@@ -213,25 +201,22 @@ export interface MobileCoreState {
 /** The answer to an agent or git action: ok, or what went wrong in words. */
 export type MobileActionResult = { ok: true } | { ok: false; message: string }
 
-export interface MobileConversationMessage {
-  role: 'user' | 'assistant'
-  text: string
-  createdAt?: string
-}
+/** An agent CLI a new agent can run, as the composer offers it
+ *  (`cate.agent.types`). */
+export type MobileAgentChoice = AgentTypeInfo
 
-export interface MobileChangedFile {
-  path: string
-  status: GitChangeStatus
-  additions: number | null
-  deletions: number | null
-}
+/** Where a new agent runs: a terminal running its CLI, or a T3 chat on a
+ *  provider instance and model. */
+export type MobileAgentLaunch =
+  | { runner: 'terminal'; agentId: AgentId }
+  | { runner: 't3'; instanceId: string; model: string }
 
-/** A checkout's uncommitted changes, and what shipping them needs. */
-export interface MobileChanges {
-  branch: string | null
-  files: MobileChangedFile[]
-  additions: number
-  deletions: number
+/** Where a new panel goes: on the canvas a canvas panel shows, centred on
+ *  `point` (canvas coordinates) or, without one, where there is room. A
+ *  create without a placement goes to the dock. */
+export interface MobilePlacement {
+  canvasPanelId: string
+  point?: { x: number; y: number }
 }
 
 export type MobileJoinResult = { ok: true; workspaceId: string } | { ok: false; message: string }
@@ -268,8 +253,9 @@ export interface MobileCoreMethods {
   'panel.close': { params: { viewId: string }; result: null }
   /** The panel types people can create, in creation order. */
   'panel.creatable': { params: { workspaceId: string }; result: MobilePanelChoice[] }
-  /** Creates a panel of `type`; answers with its id, or null. */
-  'panel.create': { params: { workspaceId: string; type: string }; result: string | null }
+  /** Creates a panel of `type` at `placement` (the dock without one);
+   *  answers with its id, or null. */
+  'panel.create': { params: { workspaceId: string; type: string; placement?: MobilePlacement }; result: string | null }
   /** Closes a panel (`closePanel`; a canvas takes the panels on it); true
    *  once the op went. */
   'panel.remove': { params: { workspaceId: string; panelId: string }; result: boolean }
@@ -311,29 +297,30 @@ export interface MobileCoreMethods {
    *  is the `selectThread` op, renaming the current one `renameConversation`. */
   'chat.conversations': { params: { viewId: string }; result: T3Conversation[] }
 
-  /** The conversation of a panel's agent session, oldest first; null when
-   *  it cannot be read (no session yet). */
-  'agents.conversation': { params: { workspaceId: string; panelId: string }; result: MobileConversationMessage[] | null }
-  'agents.send': { params: { workspaceId: string; panelId: string; prompt: string }; result: MobileActionResult }
-  /** The agents a new task can run with. */
-  'agents.taskAgents': { params: { workspaceId: string }; result: Array<{ agentId: AgentId; displayName: string }> }
-  /** Starts a task: `agentId` null picks the first ready agent; `worktree`
-   *  runs it in a new worktree named after the prompt. */
-  'agents.startTask': {
-    params: { workspaceId: string; prompt: string; agentId: AgentId | null; worktree: boolean }
+  /** Follows a panel's agent conversation as `conversation` events for
+   *  `viewId` until `agents.unwatch`; `pending` is a first prompt on its way. */
+  'agents.watch': { params: { viewId: string; workspaceId: string; panelId: string; pending?: string }; result: null }
+  'agents.unwatch': { params: { viewId: string }; result: null }
+  /** Sends a prompt from the chat `viewId` follows: pending there until the
+   *  conversation has it. */
+  'agents.send': { params: { viewId: string; workspaceId: string; panelId: string; prompt: string }; result: MobileActionResult }
+  /** Stops the agent's turn (Esc, Ctrl-C, T3's stop); the agent stays. */
+  'agents.interrupt': { params: { workspaceId: string; panelId: string }; result: MobileActionResult }
+  /** Every agent CLI, in registry order. */
+  'agents.choices': { params: { workspaceId: string }; result: MobileAgentChoice[] }
+  /** The T3 provider instances a new chat can run on, with their models,
+   *  from T3's last provider probe. Starts no T3 harness. */
+  'agents.t3Models': { params: { workspaceId: string }; result: T3ProviderModels[] }
+  /** Starts an agent on `prompt`; `worktree` runs it in a new worktree named
+   *  after the prompt, `placement` puts its panel on a canvas. Answers with
+   *  the panel that hosts it. */
+  'agents.start': {
+    params: { workspaceId: string; prompt: string; launch: MobileAgentLaunch; worktree: boolean; placement?: MobilePlacement }
     result: { ok: true; panelId: string } | { ok: false; message: string }
   }
-  'agents.taskAction': { params: { workspaceId: string; taskId: string; action: CodingAgentAction }; result: MobileActionResult }
-
-  /** A checkout's uncommitted changes (`checkout` null: the root). */
-  'changes.list': { params: { workspaceId: string; checkout: string | null }; result: MobileChanges }
-  'changes.diff': { params: { workspaceId: string; checkout: string | null; path: string }; result: GitFileDiff }
-  /** Stages everything and commits it. */
-  'changes.commit': { params: { workspaceId: string; checkout: string | null; message: string }; result: MobileActionResult }
-  /** Pushes the checkout's branch. */
-  'changes.push': { params: { workspaceId: string; checkout: string | null }; result: MobileActionResult }
-  /** Opens (or finds) the pull request of the checkout's branch. */
-  'changes.pullRequest': { params: { workspaceId: string; checkout: string | null }; result: { ok: true; url: string } | { ok: false; message: string } }
+  /** Shows the changes of the agent a panel hosts in a review panel filtered
+   *  to it (reusing a review of its checkout); the review's id, or null. */
+  'agents.review': { params: { workspaceId: string; panelId: string }; result: string | null }
 
   /** Keeps the runtime's machine awake for a while (`power.set`). */
   'power.set': { params: { workspaceId: string; duration: KeepAwakeDuration }; result: MobileActionResult }
@@ -363,6 +350,8 @@ export interface MobilePanelChoice {
   type: string
   label: string
   icon: string
+  /** It can be placed on a canvas. */
+  canvas: boolean
 }
 
 export interface MobileFileEntry {

@@ -169,11 +169,6 @@
     to { opacity: 0; }
   }
 
-  @keyframes catePanelInteractionPulse {
-    0%, 100% { transform: scale(0.8); opacity: 0.55; }
-    50% { transform: scale(1.15); opacity: 1; }
-  }
-
   .cate-panel-connection {
     stroke-dasharray: 10 8;
   }
@@ -186,14 +181,9 @@
     animation: catePanelConnectionFade 10s ease-out 30s forwards;
   }
 
-  .cate-panel-interaction-dot-active {
-    animation: catePanelInteractionPulse 900ms ease-in-out infinite;
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .cate-panel-connection-active,
-    .cate-panel-connection-finished,
-    .cate-panel-interaction-dot-active {
+    .cate-panel-connection-finished {
       animation: none;
     }
   }

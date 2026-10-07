@@ -1,6 +1,8 @@
-// One workspace: its connection, its agents, the computer it runs on (kept
-// awake, alerts while away), and its panels once the document arrives.
-// Panels on a canvas show inside their canvas panel; every panel opens.
+// One workspace: its agents first, each a chat (start one in a terminal or
+// in T3 Code, follow it, answer it, review what it changed), then its
+// panels, and the computer it runs on (kept awake, alerts while away). Panels
+// on a canvas show inside their canvas panel; every panel opens. A new panel
+// made here goes in the dock (one made in a canvas panel goes on it).
 
 import SwiftUI
 
@@ -13,29 +15,31 @@ struct WorkspaceView: View {
 
     var body: some View {
         let workspace = core.workspace(workspaceId)
+        let connected = workspace?.connection.kind == .connected
         List {
-            Section {
-                if let workspace {
+            if let workspace, !connected {
+                Section {
                     ConnectionLabel(connection: workspace.connection)
                     if workspace.connection.kind == .closed {
                         Button("Connect") { Task { await core.open(workspaceId) } }
-                    } else {
-                        if workspace.connection.retryable {
-                            Button("Retry now") { Task { await core.retry(workspaceId) } }
-                        }
-                        Button("Disconnect") { disconnecting = workspaceId }
+                    } else if workspace.connection.retryable {
+                        Button("Retry Now") { Task { await core.retry(workspaceId) } }
                     }
                 }
             }
-            if let workspace, workspace.connection.kind == .connected {
-                if !workspace.agents.isEmpty {
-                    Section("Agents") {
-                        ForEach(workspace.agents) { agent in
-                            AgentRow(workspace: workspace, agent: agent)
+            if let workspace, connected {
+                Section("Agents") {
+                    if workspace.agents.isEmpty {
+                        ContentUnavailableView {
+                            Label("No agents running", systemImage: "sparkles")
+                        } description: {
+                            Text("Start one here, or run an agent in a terminal or T3 Code on your computer.")
                         }
                     }
+                    ForEach(AgentState.sorted(workspace.agents)) { agent in
+                        AgentRow(workspaceId: workspaceId, agent: agent)
+                    }
                 }
-                ComputerSection(workspace: workspace)
             }
             if let panels = workspace?.panels {
                 Section("Panels") {
@@ -48,31 +52,55 @@ struct WorkspaceView: View {
                     }
                 }
             }
+            if let workspace, connected, workspace.power != nil || workspace.push != nil {
+                ComputerSection(workspace: workspace)
+            }
         }
         .navigationTitle(workspace?.name ?? "Workspace")
+        .navigationSubtitle(workspace?.connection.text ?? "")
         .disconnectDialog($disconnecting)
         .toolbar {
-            if workspace?.panels != nil, workspace?.connection.kind == .connected {
-                ToolbarItem(placement: .primaryAction) {
+            if workspace?.panels != nil, connected {
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         ForEach(creatable) { choice in
-                            Button(choice.label, systemImage: PanelIcon.symbol(choice.icon)) {
-                                Task {
-                                    if let panelId = try? await core.call("panel.create", ["workspaceId": workspaceId, "type": choice.type], as: String?.self) {
-                                        created = PanelRoute(workspaceId: workspaceId, panelId: panelId)
-                                    }
-                                }
-                            }
+                            Button(choice.label, systemImage: PanelIcon.symbol(choice.icon)) { add(choice) }
                         }
                     } label: {
-                        Label("New panel", systemImage: "plus")
+                        Label("New Panel", systemImage: "plus.rectangle.on.rectangle")
                     }
+                }
+            }
+            if workspace != nil, workspace?.connection.kind != .closed {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Disconnect", systemImage: "bolt.horizontal") { disconnecting = workspaceId }
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
+                }
+            }
+            if connected {
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    NavigationLink(value: NewAgentRoute(workspaceId: workspaceId)) {
+                        Label("New Agent", systemImage: "square.and.pencil").labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.glassProminent)
                 }
             }
         }
         .navigationDestination(item: $created) { PanelView(route: $0) }
         .task { await core.open(workspaceId) }
         .task { creatable = await core.panelChoices("panel.creatable", ["workspaceId": workspaceId]) }
+    }
+
+    private func add(_ choice: PanelChoice) {
+        Task {
+            if let panelId = await core.createPanel(workspaceId, type: choice.type, at: nil) {
+                created = PanelRoute(workspaceId: workspaceId, panelId: panelId)
+            }
+        }
     }
 }
 

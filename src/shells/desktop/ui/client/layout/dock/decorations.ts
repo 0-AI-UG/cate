@@ -1,26 +1,21 @@
 // What other modules add to dock tabs and panel chrome without the dock
-// knowing them: a tab's agent status and logo, a dirty mark, extra tab menu
-// items, and the overlays over a panel's top-right corner (the worktree chip,
-// relation context toggle, agent changes pill). Register at startup, before
+// knowing them: a tab's logo, status mark and title, a dirty mark, extra tab
+// menu items, and the overlays over a panel's top-right corner. Register at startup, before
 // the first dock renders: decoration hooks run as React hooks.
 
-import type { ComponentType } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
-import { AgentChangesPill, agentInfoTitle, useAgentInfoByPanel } from '../../../services/agents'
 
 export interface TabDecoration {
-  /** Replaces the type icon (a detected agent's logo). */
+  /** Replaces the type icon. */
   logo?: string | null
   logoAlt?: string | null
-  /** An agent is working: the running ring. */
-  running?: boolean
-  /** The awaiting-input dot. */
-  awaiting?: boolean
+  /** A status mark drawn after the title. */
+  status?: ReactNode
   /** The title ends with a dot (unsaved changes). */
   dirty?: boolean
-  /** The title to show for the record's title (an open agent's name in place
-   *  of a fallback title). */
+  /** The title to show for the record's title. */
   retitle?: (title: string) => string
 }
 
@@ -43,22 +38,6 @@ export function useTabDecorations(workspaceId: string): Record<string, TabDecora
   for (const hook of decorationHooks) {
     for (const [panelId, decoration] of Object.entries(hook(workspaceId))) {
       out[panelId] = { ...out[panelId], ...decoration }
-    }
-  }
-  return out
-}
-
-/** Agent status on tabs: logo, running ring, awaiting-input dot. */
-export const useAgentTabDecorations: TabDecorationHook = (workspaceId) => {
-  const info = useAgentInfoByPanel(workspaceId)
-  const out: Record<string, TabDecoration> = {}
-  for (const [panelId, agent] of Object.entries(info)) {
-    out[panelId] = {
-      logo: agent.runner === 'terminal' ? agent.logo : null,
-      logoAlt: agent.name,
-      running: agent.status === 'running',
-      awaiting: agent.status === 'waitingForInput',
-      retitle: (title) => agentInfoTitle(title, agent),
     }
   }
   return out
@@ -111,8 +90,3 @@ export function registerPanelChromeOverlay(overlay: PanelChromeOverlay): () => v
 export function panelChromeOverlays(): readonly PanelChromeOverlay[] {
   return overlays
 }
-
-/** The agent changes pill as a chrome overlay. */
-export const AgentChangesOverlay: PanelChromeOverlay = ({ workspaceId, record }) => (
-  <AgentChangesPill key={`changes:${record.id}`} workspaceId={workspaceId} panelId={record.id} />
-)

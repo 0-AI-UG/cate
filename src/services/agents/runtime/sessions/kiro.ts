@@ -79,4 +79,9 @@ async function conversation(context: AgentSessionContext): Promise<AgentConversa
   return ok ? messages : null
 }
 
-export const kiroSessionStore: AgentSessionStore = { title, conversation }
+const files = async (context: AgentSessionContext): Promise<string[]> => {
+  const file = await messagesFile(context)
+  return file ? [file] : []
+}
+
+export const kiroSessionStore: AgentSessionStore = { title, conversation, files }

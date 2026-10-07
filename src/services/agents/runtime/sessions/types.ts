@@ -17,6 +17,9 @@ export interface AgentSessionStore {
   title(context: AgentSessionContext): Promise<string | null>
   /** The visible user/assistant turns, in conversation order. */
   conversation(context: AgentSessionContext): Promise<AgentConversationMessage[] | null>
+  /** The files the conversation is read from, so a watcher can tell when it
+   *  changed; empty while the session has none yet. */
+  files?(context: AgentSessionContext): Promise<string[]>
 }
 
 /** Exhaustive by design: adding a supported CLI must say where its sessions

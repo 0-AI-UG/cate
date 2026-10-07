@@ -1,9 +1,8 @@
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import { applyAgentPanelStatesChange, type agentsCapability } from '../contract'
 import type { AgentsRuntime } from './agentsRuntime'
-import type { Missions } from './missions/missions'
 
-export function agentsCapabilityImpl(agents: AgentsRuntime, missions?: Missions): CapabilityImpl<typeof agentsCapability> {
+export function agentsCapabilityImpl(agents: AgentsRuntime): CapabilityImpl<typeof agentsCapability> {
   return {
     inspectHooks: ({ cwd }) => agents.inspectHooks(cwd),
     async readChanges({ cwd, knownRevision }) {
@@ -14,7 +13,6 @@ export function agentsCapabilityImpl(agents: AgentsRuntime, missions?: Missions)
     },
     panel: ({ panelId }) => agents.panel(panelId),
     busy: () => ({ panelIds: agents.busy() }),
-    stopMission: ({ ownerPanelId }) => missions?.stopAll(ownerPanelId) ?? { stopped: 0 },
     panels(_params, sink) {
       let rev = 0
       let states = agents.registry.all()
@@ -22,6 +20,13 @@ export function agentsCapabilityImpl(agents: AgentsRuntime, missions?: Missions)
       return agents.registry.subscribe((change) => {
         states = applyAgentPanelStatesChange(states, change)
         sink.emit({ kind: 'change', rev: ++rev, change })
+      })
+    },
+    conversation({ panelId }, sink) {
+      let rev = 0
+      return agents.conversations.watch(panelId, (conversation, change) => {
+        if (change) sink.emit({ kind: 'change', rev: ++rev, change })
+        else sink.emit({ kind: 'snapshot', rev: rev = 0, snapshot: conversation })
       })
     },
     notifications(_params, sink) {

@@ -1,5 +1,5 @@
 // Hook readiness per agent in a checkout, and the one driver-agent pick of a
-// mission. The same policy as injection itself (agentHookInUse/Enabled).
+// started agent. The same policy as injection itself (agentHookInUse/Enabled).
 
 import {
   AGENTS,
@@ -73,7 +73,7 @@ export function evaluateAgentCliHooks(
 }
 
 /**
- * The one CLI a mission worker uses. A configured preference is strict:
+ * The one CLI a started agent uses. A configured preference is strict:
  * silently falling back would violate the user's choice. Without one, the
  * first hook-ready CLI in canonical registry order.
  */

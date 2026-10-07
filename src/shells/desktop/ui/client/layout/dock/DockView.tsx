@@ -125,7 +125,7 @@ export function DockView({
       ref={rootRef}
       data-dock-window={'windowId' in dock ? dock.windowId : undefined}
       data-filedrop="dock"
-      data-filedrop-id={'windowId' in dock ? dock.windowId : ''}
+      data-filedrop-label="Drop to open here"
       className={`flex flex-col overflow-hidden relative bg-canvas-bg ${className ?? ''}`}
       style={{ width: '100%', height: '100%' }}
       onDragOver={fileDrop.onDragOver}

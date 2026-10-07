@@ -23,12 +23,10 @@ export {
 export {
   registerTabDecorations,
   useTabDecorations,
-  useAgentTabDecorations,
   registerTabMenuItems,
   tabMenuContributions,
   registerPanelChromeOverlay,
   panelChromeOverlays,
-  AgentChangesOverlay,
   type TabDecoration,
   type TabDecorationHook,
   type TabMenuContext,

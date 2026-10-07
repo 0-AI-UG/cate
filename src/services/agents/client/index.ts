@@ -12,3 +12,4 @@ export {
   type NotificationConnections,
   type NotificationDisplay,
 } from './notifications'
+export { watchAgentChat, type AgentChat, type AgentChatHandle } from './conversation'

@@ -117,6 +117,9 @@ export interface AgentHooks {
   /** Read one agent CLI session's visible conversation from that CLI's own
    *  session store on this host. Null when the session cannot be found. */
   readConversation(session: AgentSessionLocator): Promise<AgentConversationMessage[] | null>
+  /** Changes whenever the session's conversation may have (its store files'
+   *  times and sizes); null when its store cannot tell. */
+  conversationStamp(session: AgentSessionLocator): Promise<string | null>
   /** Report accepted PTY input on the same ordered stream as lifecycle hooks.
    *  Only terminals identified by a hook emit events; typed text is never sent. */
   noteInput(terminalId: string, data: string): void
@@ -376,6 +379,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     titleTracker?.note(event)
   }
   const sessionStores = deps.sessionStores ?? AGENT_SESSION_STORES
+  const conversationFiles = new Map<string, string[]>()
   titleTracker = createAgentTitleTracker({
     homeDir,
     stores: sessionStores,
@@ -853,6 +857,21 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       } catch {
         return null
       }
+    },
+
+    async conversationStamp(session) {
+      const store = sessionStores[session.agentId]
+      if (!store?.files) return null
+      // Locating can query a CLI's index: once found, a session's files stay.
+      const key = `${session.agentId}\0${session.sessionId}\0${session.cwd ?? ''}\0${session.profile ?? ''}`
+      let files = conversationFiles.get(key)
+      if (!files) {
+        files = await store.files({ session, homeDir }).catch(() => [])
+        if (files.length === 0) return null
+        conversationFiles.set(key, files)
+      }
+      const stamps = await Promise.all(files.map((file) => stat(file).then((info) => `${info.mtimeMs}:${info.size}`, () => '-')))
+      return stamps.join('|')
     },
 
     async inspectWorkspace(cwd, options = {}) {

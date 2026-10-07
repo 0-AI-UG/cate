@@ -29,6 +29,7 @@ export interface RunnerT3Service {
   watchThreadShells(listener: (event: T3ShellEvent) => void): () => void
   readConversation(params: T3CheckoutParams & { threadId: string }): Promise<T3ConversationMessage[] | null>
   startTurn(params: T3CheckoutParams & { threadId: string; text: string }): Promise<void>
+  interruptTurn(params: T3CheckoutParams & { threadId: string }): Promise<void>
 }
 
 /** Which thread each chat panel shows (chat panel session state). */
@@ -170,6 +171,16 @@ export function createT3Runner(agents: AgentsRuntime, t3: RunnerT3Service, bindi
         return { ok: true }
       } catch (err) {
         return { ok: false, error: err instanceof Error && err.message === 'agent-busy' ? 'agent-busy' : 'agent-panel-unavailable' }
+      }
+    },
+    async interrupt(panelId): Promise<AgentSendResult> {
+      const bound = threadOf(panelId)
+      if (!bound?.threadId || !bound.connected) return { ok: false, error: 'agent-not-running' }
+      try {
+        await t3.interruptTurn({ checkout: bound.checkout, threadId: bound.threadId })
+        return { ok: true }
+      } catch {
+        return { ok: false, error: 'agent-panel-unavailable' }
       }
     },
     async conversation(panelId) {

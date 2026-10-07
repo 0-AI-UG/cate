@@ -119,6 +119,32 @@ export interface T3ProviderSettings {
   providers: unknown
 }
 
+/** A model a provider instance offers for a new thread. */
+export interface T3Model {
+  slug: string
+  name: string
+  isDefault: boolean
+}
+
+/** A provider instance a new thread can run on, with its models. */
+export interface T3ProviderModels {
+  providerId: T3ProviderId
+  /** T3's provider instance id, which a model selection names. */
+  instanceId: string
+  label: string
+  /** Installed, enabled and signed in. */
+  ready: boolean
+  message?: string
+  models: T3Model[]
+}
+
+export interface T3StartThreadParams extends T3CheckoutParams {
+  instanceId: string
+  model: string
+  /** The first prompt; it also seeds the thread's title. */
+  text: string
+}
+
 export interface T3Conversation {
   id: string
   title: string
@@ -129,4 +155,6 @@ export interface T3ConversationMessage {
   role: 'user' | 'assistant'
   text: string
   createdAt: string
+  /** T3 is still writing it. */
+  streaming?: true
 }

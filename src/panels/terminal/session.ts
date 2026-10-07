@@ -13,7 +13,7 @@
 import { sessionApi } from '@kernel/api/contract'
 import { RpcError, isRpcError } from '@kernel/rpc/contract'
 import type { Json, PanelRecord } from '@workspace/document/contract'
-import type { AgentSendResult, AgentStatus, AgentId, TerminalResumeStamp } from '@services/agents/contract'
+import type { AgentSendResult, TerminalResumeStamp } from '@services/agents/contract'
 import type { LaunchIntent, TerminalStatus } from '@services/terminal/contract'
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type OpHandlers, type SessionKit, type DisposeReason } from '@panels/framework/runtime'
@@ -35,8 +35,7 @@ export type SessionTerminalService = Pick<
 
 /** The agents terminal runner, as a terminal panel sees it. */
 export interface TerminalAgentRunner {
-  state(panelId: string): { agentId: AgentId | null; status: AgentStatus; present: boolean } | null
-  onChange(listener: (panelId: string) => void): () => void
+  state(panelId: string): { present: boolean } | null
   /** Submits a prompt as the user would; flushes connected editors first. */
   send(panelId: string, prompt: string): Promise<AgentSendResult>
   onResumeStamp(listener: (panelId: string, stamp: TerminalResumeStamp | null) => void): () => void
@@ -51,7 +50,7 @@ export interface TerminalSessionDeps {
   agents?: TerminalAgentRunner
   /** Opens a clicked link inside Cate (a browser or editor panel near this one). */
   open?(target: TerminalOpenTarget, fromPanelId: string): unknown
-  /** A one-shot launch for the panel's first spawn (a mission worker). */
+  /** A one-shot launch for the panel's first spawn (a started agent). */
   takeLaunch?(panelId: string): LaunchIntent | undefined
 }
 
@@ -66,7 +65,6 @@ const initialSnapshot = (): TerminalSnapshot => ({
   title: '',
   cwd: null,
   activity: { type: 'idle' },
-  agent: null,
   exitCode: null,
   error: null,
 })
@@ -107,7 +105,6 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
     }))
     const agents = this.deps.agents
     if (agents) {
-      this.offs.push(agents.onChange((panelId) => { if (panelId === this.panelId) this.followAgent() }))
       this.offs.push(agents.onResumeStamp((panelId, stamp) => {
         if (panelId !== this.panelId) return
         this.stamp = stamp
@@ -121,7 +118,7 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
   }
 
   /** Runs `launch` as the panel's process in a fresh PTY; whatever ran dies.
-   *  For missions, which ask for it explicitly. */
+   *  For an agent started in this panel, which asks for it explicitly. */
   async launch(launch: LaunchIntent, target: { cwd?: string; worktreeId?: string } = {}): Promise<void> {
     if (target.worktreeId !== undefined || target.cwd !== undefined) this.bind(target.worktreeId ?? null, target.cwd)
     await this.respawn({ cwd: target.cwd, launch })
@@ -296,7 +293,6 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
     this.publish({ ptyId: result.id, status: 'running', title: shellName(result.shell), cwd })
     this.rememberCwd(cwd)
     this.followStatus(this.deps.terminal.statuses()[result.id] ?? null)
-    this.followAgent()
   }
 
   private followStatus(status: TerminalStatus | null | undefined): void {
@@ -309,14 +305,6 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       ...(status.alive ? {} : { status: 'exited' as const, exitCode: status.exitCode, activity: { type: 'idle' as const } }),
     })
     if (status.cwd) this.rememberCwd(status.cwd)
-  }
-
-  private followAgent(): void {
-    const state = this.deps.agents?.state(this.panelId) ?? null
-    const next = state ? { agentId: state.agentId, status: state.status } : null
-    const current = this.state.agent
-    if (current?.agentId === next?.agentId && current?.status === next?.status) return
-    this.publish({ agent: next })
   }
 
   private rememberCwd(cwd: string): void {

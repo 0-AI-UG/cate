@@ -353,7 +353,7 @@ export default function TerminalView({
         ref={containerRef}
         className="flex-1 relative min-h-0 overflow-hidden"
         data-filedrop="terminal"
-        data-filedrop-id={panelId}
+        data-filedrop-label="Drop to paste path"
         onDragOver={onDragOver}
         onDrop={onDrop}
       >

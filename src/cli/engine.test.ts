@@ -26,7 +26,7 @@ describe('commands from specs', () => {
     expect(words).toEqual(expect.arrayContaining([
       'version', 'notify', 'panel list', 'panel create', 'panel set', 'panel close', 'editor open',
       'terminal read', 'terminal type', 'terminal press', 'browser run', 'browser reset',
-      'review note add', 'review note resolve', 'agent wait', 'codingAgent create',
+      'review note add', 'review note resolve', 'agent wait', 'agent start',
     ]))
     expect(words).not.toContain('browser click')
     expect(words).not.toContain('panel focus')
@@ -51,7 +51,8 @@ describe('parseCommandLine', () => {
       json: true,
     })
     expect(call(['panel', 'close', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
-    expect(call(['codingAgent', 'create', '--no-background', 'fix', 'it']).args).toMatchObject({ background: false, prompt: 'fix it' })
+    expect(call(['panel', 'close', '--no-discard', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
+    expect(call(['agent', 'start', '--runner=t3', 'fix', 'it']).args).toMatchObject({ runner: 't3', prompt: 'fix it' })
     expect(call(['review', 'note', 'add', '--file=src/a.ts', '--line', '4', '--body', 'x', '--severity', 'error']).args).toEqual({
       file: 'src/a.ts', line: 4, body: 'x', side: 'new', severity: 'error',
     })
@@ -151,7 +152,7 @@ describe('help', () => {
     expect(note).toMatch(/--panel <id> +Target review panel \(id or unique prefix\)/)
     expect(commandHelp(find('agent wait'))).toContain('(default 30000)')
     expect(commandHelp(find('agent send'), { width: 120, color: false })).toContain('from cate agent list (or --panel <panelId>)')
-    expect(commandHelp(find('codingAgent create'))).toMatch(/--no-background +Mark the worker/)
+    expect(commandHelp(find('agent start'), { width: 120, color: false })).toMatch(/--runner terminal\|t3 +Run the agent CLI in a terminal, or in a T3 Code chat \(default terminal\)/)
   })
 
   it('gives every command a summary and every visible argument help', () => {
@@ -176,7 +177,7 @@ describe('help', () => {
   })
 
   it('wraps to the width and bolds headings only with color', () => {
-    const narrow = commandHelp(find('codingAgent create'), { width: 60, color: false })
+    const narrow = commandHelp(find('agent start'), { width: 60, color: false })
     expect(narrow.split('\n').every((line) => line.length <= 60 || line.startsWith('  cate '))).toBe(true)
     expect(commandHelp(find('panel list'), { width: 80, color: true })).toContain('\x1b[1mUsage:\x1b[22m')
     expect(commandHelp(find('panel list'))).not.toContain('\x1b[')
@@ -257,11 +258,14 @@ describe('runCli', () => {
     expect(connect).not.toHaveBeenCalled()
   })
 
-  it('lists coding-agent workers by their full run id', async () => {
-    const run = { id: 'run-0123456789', panelId: 'panel-9', status: 'running', agentName: 'Codex', title: 'Fix login' }
-    const { d, out } = deps({ call: async () => [run] })
-    await runCli(['codingAgent', 'list'], CATE_API, d)
-    expect(out).toEqual(['ID              STATUS   AGENT  TITLE\nrun-0123456789  running  Codex  Fix login'])
+  it('starts an agent and prints its panel', async () => {
+    const call = vi.fn(async () => ({ panelId: 'panel-0123456789', runner: 'terminal', agentId: 'codex' }))
+    const { d, out } = deps({ call })
+    await runCli(['agent', 'start', '--agent', 'codex', '--new-worktree', 'fix-login', 'Fix', 'the', 'login'], CATE_API, d)
+    expect(call).toHaveBeenCalledWith('cate.agent.start', expect.objectContaining({
+      prompt: 'Fix the login', agentId: 'codex', newWorktree: 'fix-login',
+    }), 92_000)
+    expect(out).toEqual(['panel-01'])
   })
 
   it('formats plain results as key and value lines', async () => {

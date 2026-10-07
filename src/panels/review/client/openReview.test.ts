@@ -21,7 +21,11 @@ vi.mock('@client/document', () => ({
 }))
 vi.mock('@kernel/rpc/client', () => ({ runtimeFor: () => ({ session: { op: h.op } }) }))
 
+import { registerPanelDefinitions } from '@client/host'
+import review from '../definition'
 import { openAgentChanges, openReviewPanel } from './openReview'
+
+registerPanelDefinitions([review])
 
 const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW }, stackId: 's1' }
 const add = (id: string, type: 'review' | 'terminal', fields = {}) => {
@@ -46,7 +50,7 @@ it('retargets the focused review of the checkout instead of adding one', async (
 
 it('adds a review next to the source agent when the checkout has none', async () => {
   add('term', 'terminal')
-  const id = await openReviewPanel({ workspaceId: 'ws', repoPath: '/repo', spec: { kind: 'uncommitted' }, sourceAgent: { runId: 'run', ownerPanelId: 'owner', panelId: 'term' } })
+  const id = await openReviewPanel({ workspaceId: 'ws', repoPath: '/repo', spec: { kind: 'uncommitted' }, sourceAgent: { panelId: 'term' } })
   expect(id).toBeTruthy()
   expect(h.doc.panels[id!]).toMatchObject({ type: 'review', fields: { repoPath: '/repo', request: { spec: { kind: 'uncommitted' } } } })
   expect(h.focus).toHaveBeenCalledWith(id)
@@ -55,13 +59,13 @@ it('adds a review next to the source agent when the checkout has none', async ()
 
 it('opens agent changes in a new panel, or moves a chosen review to the agent checkout', async () => {
   add('term', 'terminal')
-  expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'term', cwd: '/wt', turnId: 't' })).toBe(true)
+  expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'term', cwd: '/wt', turnId: 't' })).toBeTruthy()
   const created = Object.values(h.doc.panels).find((panel) => panel.type === 'review')!
   expect(created).toMatchObject({ title: 'Agent changes', fields: { repoPath: '/wt', request: { agentChanges: { panelId: 'term', turnId: 't' } } } })
 
   add('r1', 'review', { repoPath: '/repo' })
-  expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'term', cwd: '/wt', reviewPanelId: 'r1' })).toBe(true)
+  expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'term', cwd: '/wt', reviewPanelId: 'r1' })).toBe('r1')
   expect(h.op).toHaveBeenNthCalledWith(1, { panelId: 'r1', op: { kind: 'switchCheckout', path: '/wt' } })
   expect(h.op).toHaveBeenNthCalledWith(2, { panelId: 'r1', op: { kind: 'retarget', request: expect.objectContaining({ agentChanges: { panelId: 'term' } }) } })
-  expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'gone', cwd: '/wt' })).toBe(false)
+  expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'gone', cwd: '/wt' })).toBeNull()
 })

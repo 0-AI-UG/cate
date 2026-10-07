@@ -64,7 +64,7 @@ function setup() {
     return null
   }) as MobileBridge
   const setSnapshot = (next: Partial<TerminalSnapshot>) => {
-    snapshot = { ptyId: null, status: 'running', title: 'zsh', cwd: null, activity: { type: 'idle' }, agent: null, exitCode: null, error: null, ...next }
+    snapshot = { ptyId: null, status: 'running', title: 'zsh', cwd: null, activity: { type: 'idle' }, exitCode: null, error: null, ...next }
     for (const l of sessionListeners) l()
   }
   return { terminals: createMobileTerminals(client, bridge), attaches, views, events, session, setSnapshot }

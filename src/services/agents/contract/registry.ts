@@ -6,7 +6,7 @@
 //
 // Declared on each AgentDef:
 //   - runners.terminal: the CLI in a PTY. Its command, hook spec (hooks.ts),
-//     resume argv, where its session store lives and how a mission worker is
+//     resume argv, where its session store lives and how a started agent is
 //     launched.
 //   - runners.t3: the T3 provider of the same agent, for the agents T3 has one.
 //   - matchProcess / hookProcess: identity verification of a hook post's pid.
@@ -54,6 +54,11 @@ export interface AgentSkillTarget {
 export type T3ProviderId = 'codex' | 'claude' | 'cursor' | 'grok' | 'opencode'
 export type T3DriverId = 'codex' | 'claudeAgent' | 'cursor' | 'grok' | 'opencode'
 
+export type AgentInterruptKey = 'escape' | 'ctrl-c'
+
+/** What each interrupt key types into the PTY. */
+export const AGENT_INTERRUPT_INPUT: Record<AgentInterruptKey, string> = { escape: '\x1b', 'ctrl-c': '\x03' }
+
 export interface TerminalRunnerDef {
   /** The CLI command that launches this agent, usually its process name. */
   command: string
@@ -71,10 +76,11 @@ export interface TerminalRunnerDef {
   /** Where the CLI persists its sessions, relative to the runtime host's home.
    *  The reader for it is `AGENT_SESSION_STORES` in the runtime. */
   sessionStore: string
-  /** Shell-free argv for a mission worker's first task. */
-  missionArgs: (prompt: string) => string[]
-  /** The launched CLI accepts another prompt on the same PTY. */
-  followUp: boolean
+  /** Shell-free argv that starts the CLI on its first prompt. */
+  promptArgs: (prompt: string) => string[]
+  /** The keys, pressed in order, that stop the CLI's turn and keep it at its
+   *  prompt (verified by the live interrupt scenario). */
+  interruptKeys: readonly AgentInterruptKey[]
 }
 
 export interface T3RunnerDef {
@@ -131,8 +137,8 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         // Claude announces an id before its transcript exists.
         resume: { args: (sid) => ['--resume', sid], fromSessionStart: false },
         sessionStore: '.claude/projects',
-        missionArgs: (prompt) => [prompt],
-        followUp: true,
+        promptArgs: (prompt) => [prompt],
+        interruptKeys: ['escape'],
       },
       t3: { providerId: 'claude', driverId: 'claudeAgent' },
     },
@@ -151,8 +157,8 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         hooks: AGENT_HOOK_SPECS.codex,
         resume: { args: (sid) => ['resume', sid], fromSessionStart: true },
         sessionStore: '.codex/sessions',
-        missionArgs: (prompt) => [prompt],
-        followUp: true,
+        promptArgs: (prompt) => [prompt],
+        interruptKeys: ['ctrl-c'],
       },
       t3: { providerId: 'codex', driverId: 'codex' },
     },
@@ -178,8 +184,8 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         // stamp degrades to a fresh session, never a wrong one.
         resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
         sessionStore: '.cursor/chats',
-        missionArgs: (prompt) => [prompt],
-        followUp: true,
+        promptArgs: (prompt) => [prompt],
+        interruptKeys: ['escape'],
       },
       t3: { providerId: 'cursor', driverId: 'cursor' },
     },
@@ -203,8 +209,8 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         // session is on disk when its id arrives.
         resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
         sessionStore: '.grok/sessions',
-        missionArgs: (prompt) => [prompt],
-        followUp: true,
+        promptArgs: (prompt) => [prompt],
+        interruptKeys: ['ctrl-c'],
       },
       t3: { providerId: 'grok', driverId: 'grok' },
     },
@@ -224,9 +230,9 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         resume: { args: (sid) => ['--session', sid], fromSessionStart: true },
         sessionStore: '.local/share/opencode/opencode.db',
         // Seed the persistent TUI instead of the one-shot `run` command so the
-        // mission supervisor can submit follow-ups on the same PTY.
-        missionArgs: (prompt) => ['--prompt', prompt],
-        followUp: true,
+        // agent can take follow-up prompts on the same PTY.
+        promptArgs: (prompt) => ['--prompt', prompt],
+        interruptKeys: ['escape', 'escape'],
       },
       t3: { providerId: 'opencode', driverId: 'opencode' },
     },
@@ -253,8 +259,8 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         },
         sessionStore: '.hermes/state.db',
         // Hermes >=0.21 keeps `chat -q` interactive when attached to a PTY.
-        missionArgs: (prompt) => ['chat', '-q', prompt],
-        followUp: true,
+        promptArgs: (prompt) => ['chat', '-q', prompt],
+        interruptKeys: ['ctrl-c'],
       },
     },
     matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
@@ -275,8 +281,8 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         // Sessions are saved on each turn; agentSpawn precedes the first one.
         resume: { args: (sid) => ['chat', '--v3', '--resume-id', sid], fromSessionStart: false },
         sessionStore: '.kiro/sessions',
-        missionArgs: (prompt) => ['chat', '--v3', prompt],
-        followUp: true,
+        promptArgs: (prompt) => ['chat', '--v3', prompt],
+        interruptKeys: ['ctrl-c'],
       },
     },
     matchProcess: (n) => n === 'kiro-cli',

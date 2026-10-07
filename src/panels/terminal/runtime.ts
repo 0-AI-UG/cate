@@ -1,8 +1,8 @@
 // What the daemon composition root needs for terminal panels: the definition,
-// the session class bound to its deps, and the terminals port missions drive
-// workers through.
+// the session class bound to its deps, and the terminals port started agents
+// run in.
 
-import type { MissionTerminals } from '@services/agents/runtime'
+import type { AgentStartPorts } from '@services/agents/runtime'
 import type { LaunchIntent } from '@services/terminal/contract'
 import type { PanelKit } from '@panels/framework/contract'
 import type { DisposeReason, PanelSessionClass, SessionKit } from '@panels/framework/runtime'
@@ -23,15 +23,13 @@ export interface TerminalPanels {
   session: PanelSessionClass
   /** The live session of a terminal panel. */
   sessionOf(panelId: string): TerminalSession | undefined
-  /** Missions' view of terminal panels (agents runtime `MissionTerminals`). */
-  missionTerminals(kit: PanelKit, host: { started(panelId: string): Promise<void> }): MissionTerminals
+  /** The terminals started agents run in (agents runtime `AgentStartPorts`). */
+  agentTerminals(kit: PanelKit, host: { started(panelId: string): Promise<void> }): AgentStartPorts['terminals']
 }
 
 export function createTerminalPanels(deps: Omit<TerminalSessionDeps, 'takeLaunch'>): TerminalPanels {
   const launches = new Map<string, LaunchIntent>()
   const live = new Map<string, TerminalSession>()
-  const listeners = new Set<() => void>()
-  const changed = () => { for (const listener of [...listeners]) listener() }
 
   class BoundTerminalSession extends TerminalSession {
     constructor(kit: SessionKit, record: PanelRecord) {
@@ -47,14 +45,12 @@ export function createTerminalPanels(deps: Omit<TerminalSessionDeps, 'takeLaunch
 
     override start(): Promise<void> {
       live.set(this.panelId, this)
-      this.attach({ snapshot() {}, change: changed, bytes() {}, gone() {} })
       return super.start()
     }
 
     protected override release(reason: DisposeReason): void {
       if (live.get(this.panelId) === this) live.delete(this.panelId)
       super.release(reason)
-      changed()
     }
   }
 
@@ -68,12 +64,12 @@ export function createTerminalPanels(deps: Omit<TerminalSessionDeps, 'takeLaunch
     definition: terminalDefinition,
     session: BoundTerminalSession as unknown as PanelSessionClass,
     sessionOf: (panelId) => live.get(panelId),
-    missionTerminals: (kit, host) => ({
-      async create({ cwd, worktreeId, title, launch, at }) {
+    agentTerminals: (kit, host) => ({
+      async create({ cwd, worktreeId, title, launch, placement }) {
         const id = kit.newId()
         launches.set(id, launch)
         const record = kit.record('terminal', { id, title: kit.uniqueTitle(title, id), worktreeId, fields: { cwd } })
-        if (!kit.add(record, at ? { at } : undefined)) {
+        if (!kit.add(record, placement)) {
           launches.delete(id)
           throw new Error('could not place the terminal')
         }
@@ -83,23 +79,10 @@ export function createTerminalPanels(deps: Omit<TerminalSessionDeps, 'takeLaunch
         return id
       },
       relaunch: (panelId, { cwd, worktreeId, launch }) => liveSession(panelId).launch(launch, { cwd, worktreeId }),
-      isTerminal: (panelId) => live.has(panelId),
       state(panelId) {
         const session = live.get(panelId)
-        const snapshot = session?.snapshot()
-        return {
-          started: !!snapshot && snapshot.status !== 'starting',
-          alive: snapshot?.status === 'running',
-          failure: snapshot?.error ?? null,
-          cwd: snapshot?.cwd ?? null,
-          busy: session?.busy() ?? false,
-        }
-      },
-      tail: async (panelId) => (await liveSession(panelId).read(80)).text,
-      terminate: (panelId) => live.get(panelId)?.terminate(),
-      onChange(listener) {
-        listeners.add(listener)
-        return () => { listeners.delete(listener) }
+        if (!session) return null
+        return { alive: session.snapshot().status === 'running', busy: session.busy() }
       },
     }),
   }

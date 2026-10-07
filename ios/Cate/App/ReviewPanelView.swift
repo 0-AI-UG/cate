@@ -17,8 +17,13 @@ struct ReviewSnapshot: Decodable, Equatable {
         let spec: Spec
         let agentChanges: AgentFilter?
     }
-    /// Present for recorded agent edits; its fields do not matter here.
-    struct AgentFilter: Decodable, Equatable {}
+    /// Present for recorded agent edits: whose edits show.
+    struct AgentFilter: Decodable, Equatable {
+        let agentId: String?
+        let panelId: String?
+        let sessionId: String?
+        let turnId: String?
+    }
     struct ChangedFile: Decodable, Equatable, Identifiable {
         let path: String
         let oldPath: String?
@@ -209,6 +214,20 @@ struct ReviewPanelView: View {
 
     private func agentFiles(_ snapshot: ReviewSnapshot) -> some View {
         List {
+            if let filter = snapshot.review.agentChanges, filter.panelId != nil || filter.sessionId != nil || filter.turnId != nil {
+                Section {
+                    LabeledContent {
+                        Button("Show All") {
+                            run(["kind": "updateFilter", "patch": ["panelId": NSNull(), "sessionId": NSNull(), "turnId": NSNull()]])
+                        }
+                        .buttonStyle(.glass)
+                    } label: {
+                        Label(filterTitle(filter), systemImage: "line.3.horizontal.decrease.circle.fill")
+                    }
+                } footer: {
+                    Text("Only the edits this agent made show here.")
+                }
+            }
             if let error = snapshot.recorded.error {
                 Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
             }
@@ -230,6 +249,13 @@ struct ReviewPanelView: View {
             }
         }
         .refreshable { await session.send(["kind": "refresh"]) }
+    }
+
+    /// The agent panel (or turn) the edits are filtered to.
+    private func filterTitle(_ filter: ReviewSnapshot.AgentFilter) -> String {
+        let source = filter.panelId.flatMap { id in core.workspace(workspaceId)?.panels?.first { $0.id == id }?.title }
+        let name = source ?? "One agent"
+        return filter.turnId != nil ? "\(name), one turn" : name
     }
 
     private func title(_ snapshot: ReviewSnapshot) -> String {

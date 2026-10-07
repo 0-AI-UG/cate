@@ -84,27 +84,19 @@ export interface ReviewFiles {
   writeText(absolutePath: string, text: string): Promise<void>
 }
 
-/** A mission run owned by a panel. */
-export interface ReviewAgentRunInfo {
-  id: string
-  /** The terminal the run works in. */
-  panelId: string
-  createdAt: number
-  endedAt?: number
-}
-
 /** What the review needs from the agents service. */
 export interface ReviewAgents {
   /** Recorded edits in a checkout; an unchanged revision omits records. */
   readChanges(cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot>
   /** Which agent CLIs can run a hook-backed review in `cwd`. */
   readiness(cwd: string): Promise<ReviewAgentChoice[]>
-  /** Starts a mission worker owned by `ownerPanelId`. */
-  startRun(ownerPanelId: string, args: { agentId: AgentId; prompt: string; title: string; worktreeId?: string; terminalPanelId?: string; at?: PlaceTarget }): Promise<{ id: string; panelId: string }>
-  /** Sends a follow-up prompt to a run; rejects when its session is gone. */
-  sendToRun(ownerPanelId: string, runId: string, prompt: string): Promise<void>
-  runs(ownerPanelId: string): Promise<ReviewAgentRunInfo[]>
-  onRunsChanged(listener: () => void): () => void
+  /** Starts an agent in a terminal for `ownerPanelId` (placed next to it
+   *  without `at`); answers with its panel. */
+  start(ownerPanelId: string, args: { agentId: AgentId; prompt: string; title: string; worktreeId?: string; terminalPanelId?: string; at?: PlaceTarget }): Promise<{ panelId: string }>
+  /** Sends a prompt to the agent a panel hosts; rejects when it is gone. */
+  send(panelId: string, prompt: string): Promise<void>
+  /** A terminal panel's process exited. */
+  onExit(listener: (panelId: string) => void): () => void
   /** The T3 thread a chat panel shows. */
   threadIdOf(panelId: string): string | undefined
 }
@@ -164,7 +156,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   private status: RepoStatus | null = null
   private stopStatus: (() => void) | undefined
   private statusRoot: string | undefined
-  private stopRuns: (() => void) | undefined
+  private stopExits: (() => void) | undefined
   private records: AgentChangeRecord[] = []
   private recordsRevision: string | undefined
   private recordsFor: string | undefined
@@ -192,8 +184,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       // A restored panel was revealed when it opened.
       this.set({ review: checkoutView(this.review), reveal: null })
     }
-    this.stopRuns = this.deps.agents.onRunsChanged(() => void this.checkAgentReview())
-    void this.checkAgentReview()
+    this.stopExits = this.deps.agents.onExit((panelId) => this.reviewerExited(panelId))
     this.observe()
   }
 
@@ -551,7 +542,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       spec: request.spec,
       sourceAgent: request.sourceAgent,
       agentChanges: request.agentChanges,
-      agentReview: request.sourceAgent?.runId !== current.sourceAgent?.runId ? undefined : current.agentReview,
+      agentReview: request.sourceAgent?.panelId !== current.sourceAgent?.panelId ? undefined : current.agentReview,
     })
   }
 
@@ -659,10 +650,10 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       const prompt = state.agentChanges
         ? recordedReviewPrompt(this.recordedSelection(), this.panelId)
         : reviewAgentPrompt(this.panelId, this.cwd, state.spec)
-      const run = await this.deps.agents.startRun(this.panelId, {
+      const reviewer = await this.deps.agents.start(this.panelId, {
         agentId, prompt, title: 'Review changes', worktreeId: this.worktreeIdOf(this.cwd), terminalPanelId, ...(at ? { at } : {}),
       })
-      this.update({ agentReview: { runId: run.id, terminalPanelId: run.panelId, status: 'working', startedAt: Date.now() } })
+      this.update({ agentReview: { terminalPanelId: reviewer.panelId, status: 'working', startedAt: Date.now() } })
       return true
     }) ?? false
   }
@@ -677,7 +668,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       const prompt = changesAgentPrompt(this.panelId, notes)
       if (!agentId && state.sourceAgent) {
         try {
-          await this.deps.agents.sendToRun(state.sourceAgent.ownerPanelId, state.sourceAgent.runId, prompt)
+          await this.deps.agents.send(state.sourceAgent.panelId, prompt)
           return 'done'
         } catch {
           this.set({ error: 'The original agent session is no longer available. Choose an agent to start a new session.' })
@@ -685,43 +676,25 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
         }
       }
       if (!agentId) return 'cancelled'
-      await this.deps.agents.startRun(this.panelId, {
+      await this.deps.agents.start(this.panelId, {
         agentId, prompt, title: 'Address review findings', worktreeId: this.worktreeIdOf(this.cwd), terminalPanelId, ...(at ? { at } : {}),
       })
       return 'done'
     }) ?? 'cancelled'
   }
 
-  /** A reviewer whose run ended without `cate review complete` failed. */
-  private async checkAgentReview(): Promise<void> {
+  /** A reviewer whose terminal exited without `cate review complete` failed. */
+  private reviewerExited(panelId: string): void {
     const review = this.review.agentReview
-    if (review?.status !== 'working') return
-    const run = (await this.deps.agents.runs(this.panelId)).find((item) => item.id === review.runId)
-    const latest = this.review.agentReview
-    if (this.disposed || latest?.runId !== review.runId || latest.status !== 'working') return
-    if (run?.endedAt) this.update({ agentReview: { ...latest, status: 'failed', completedAt: run.endedAt } })
+    if (review?.status !== 'working' || review.terminalPanelId !== panelId) return
+    this.update({ agentReview: { ...review, status: 'failed', completedAt: Date.now() } })
   }
 
-  private async callerRun(callerPanelId: string | undefined): Promise<ReviewAgentRunInfo | undefined> {
-    if (!callerPanelId) return undefined
-    const runs = (await this.deps.agents.runs(this.panelId)).filter((run) => run.panelId === callerPanelId)
-    return runs.sort((a, b) => b.createdAt - a.createdAt)[0]
-  }
-
-  /** Only the reviewer run assigned to this panel may complete it. */
+  /** Only the reviewer assigned to this panel may complete it. */
   async completeAgentReview(callerPanelId: string | undefined): Promise<void> {
     const assigned = this.review.agentReview
-    const run = await this.callerRun(callerPanelId)
-    if (!run || (assigned && (assigned.terminalPanelId !== callerPanelId || assigned.runId !== run.id))) reject('review-agent-mismatch')
-    this.update({
-      agentReview: {
-        runId: run!.id,
-        terminalPanelId: run!.panelId,
-        startedAt: assigned?.startedAt ?? run!.createdAt,
-        status: 'complete',
-        completedAt: Date.now(),
-      },
-    })
+    if (!assigned || !callerPanelId || assigned.terminalPanelId !== callerPanelId) reject('review-agent-mismatch')
+    this.update({ agentReview: { ...assigned!, status: 'complete', completedAt: Date.now() } })
   }
 
   // ---- Ops and API -----------------------------------------------------------
@@ -774,8 +747,10 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     'note.add': async ({ file, line, side, body, severity }, ctx) => {
       const text = body.trim()
       if (!text) reject('body-required')
-      const run = await this.callerRun(ctx.caller.panelId)
-      return this.addLineNote({ path: file, side, line, body: text, severity, author: 'agent', agentRunId: run?.id })
+      return this.addLineNote({
+        path: file, side, line, body: text, severity, author: 'agent',
+        ...(ctx.caller.panelId ? { agentPanelId: ctx.caller.panelId } : {}),
+      })
     },
     'note.resolve': ({ noteId }) => ({ noteId: this.resolveNote(noteId), status: 'resolved' }),
     complete: async (_args, ctx) => {
@@ -786,7 +761,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
 
   protected override release(): void {
     this.stopStatus?.()
-    this.stopRuns?.()
+    this.stopExits?.()
     for (const task of this.queue.splice(0)) task.reject(new RpcError('gone', 'Review closed'))
   }
 }

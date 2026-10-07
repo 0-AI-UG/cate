@@ -3,6 +3,7 @@
 // op), or add one next to the panel the request came from.
 
 import { clientStateFor, documentStoreFor } from '@client/document'
+import { createPanel } from '@client/host'
 import { runtimeFor } from '@kernel/rpc/client'
 import type { AgentChangesFilter } from '@services/agents/contract'
 import {
@@ -15,8 +16,7 @@ import {
   type WorkspaceDocument,
 } from '@workspace/document/contract'
 import { samePath, type GitComparisonSpec } from '@workspace/repository/contract'
-import { freshRecord } from '@panels/definitions'
-import { reviewRepoPath, type ReviewOp, type ReviewOpenRequest, type ReviewSourceAgent } from '@panels/review/contract'
+import { reviewRepoPath, type ReviewOp, type ReviewOpenRequest, type ReviewSourceAgent } from '../contract'
 
 const newId = () => globalThis.crypto.randomUUID()
 
@@ -49,15 +49,12 @@ function reviewsOf(doc: WorkspaceDocument, repoPath: string): PanelRecord[] {
 }
 
 function addReview(workspaceId: string, options: { repoPath: string; request: ReviewOpenRequest; near?: PanelId | null; title?: string }): PanelId | null {
-  const store = documentStoreFor(workspaceId)
-  if (!store) return null
-  const doc = store.getSnapshot()
-  const record = freshRecord(doc, 'review', { repoPath: options.repoPath, request: options.request, title: options.title })
-  if (!record) return null
-  const result = store.propose({ kind: 'addPanel', record, at: placeNear(doc, options.near) })
-  if (!result.ok) return null
-  revealPanel(workspaceId, record.id)
-  return record.id
+  return createPanel(workspaceId, 'review', {
+    repoPath: options.repoPath,
+    request: options.request,
+    ...(options.near ? { near: options.near } : {}),
+    ...(options.title ? { title: options.title } : {}),
+  })
 }
 
 export interface OpenReviewOptions {
@@ -105,11 +102,12 @@ export interface OpenAgentChangesOptions {
 }
 
 /** Shows an agent's recorded edits: in `reviewPanelId` (moved to the agent's
- *  checkout), else in a new "Agent changes" review next to the agent. */
-export async function openAgentChanges(options: OpenAgentChangesOptions): Promise<boolean> {
+ *  checkout), else in a new "Agent changes" review next to the agent. The
+ *  review's id, or null when it could not be shown. */
+export async function openAgentChanges(options: OpenAgentChangesOptions): Promise<PanelId | null> {
   const { workspaceId, panelId, cwd, focusedFile } = options
   const doc = documentStoreFor(workspaceId)?.getSnapshot()
-  if (!doc?.panels[panelId]) return false
+  if (!doc?.panels[panelId]) return null
   const agentChanges: AgentChangesFilter = {
     panelId,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
@@ -118,11 +116,11 @@ export async function openAgentChanges(options: OpenAgentChangesOptions): Promis
   const request: ReviewOpenRequest = { spec: { kind: 'uncommitted' }, agentChanges, ...(focusedFile ? { focusedFile } : {}) }
   const target = options.reviewPanelId ? doc.panels[options.reviewPanelId] : undefined
   if (options.reviewPanelId) {
-    if (target?.type !== 'review') return false
-    if (!(await sendReviewOp(workspaceId, target.id, { kind: 'switchCheckout', path: cwd }))) return false
+    if (target?.type !== 'review') return null
+    if (!(await sendReviewOp(workspaceId, target.id, { kind: 'switchCheckout', path: cwd }))) return null
     await sendReviewOp(workspaceId, target.id, { kind: 'retarget', request })
     revealPanel(workspaceId, target.id)
-    return true
+    return target.id
   }
-  return addReview(workspaceId, { repoPath: cwd, request, near: panelId, title: 'Agent changes' }) !== null
+  return addReview(workspaceId, { repoPath: cwd, request, near: panelId, title: 'Agent changes' })
 }
