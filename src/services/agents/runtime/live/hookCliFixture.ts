@@ -81,7 +81,7 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       ].join('\n'))
       return { args: ['--no-subagents', '--disable-web-search', '--model', 'cate-mock', initialPrompt] }
     }
-    case 'kiro':
+    case 'kiro': {
       env.HOME = path.join(directory, 'kiro-home')
       await mkdir(path.join(env.HOME, '.local/bin'), { recursive: true })
       const chatBin = await realpath(execFileSync('which', ['kiro-cli-chat'], { encoding: 'utf8' }).trim())
@@ -93,6 +93,7 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       env.KIRO_KAS_CONTROL_PLANE_ENDPOINT = mockUrl
       env.KIRO_NO_AUTO_UPDATE = '1'
       return { args: ['chat', '--v3', initialPrompt] }
+    }
     case 'opencode':
       env.OPENCODE_DISABLE_AUTOUPDATE = '1'
       env.XDG_CONFIG_HOME = path.join(directory, 'config')
