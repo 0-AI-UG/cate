@@ -21,7 +21,7 @@ import {
 import type { DocBatch, DocChange, DockRef, DocOp, OpErrorCode, OpResult, PlaceTarget } from './ops'
 import { opChanges } from './ops'
 import { docIndex, dockOf, isCanvasDock, placementOf, sameDockRef } from './placement'
-import { canvasPanelOf } from './selectors'
+import { canvasPanelOf, windowDockPanels } from './selectors'
 import {
   MAIN_WINDOW,
   type DocWindow,
@@ -71,6 +71,9 @@ function applyOne(doc: Doc, change: DocChange): Doc {
     case 'setSplitRatio': return setSplitRatio(doc, change.splitId, change.ratios)
     case 'setNodeRects': return setNodeRects(doc, change)
     case 'closeWindow': return closeWindow(doc, change.windowId)
+    case 'addLayout': return addLayout(doc, change)
+    case 'removeLayout': return removeLayout(doc, change)
+    case 'renameLayout': return renameLayout(doc, change)
     case 'addRelation': return addRelation(doc, change)
     case 'updateRelation': return updateRelation(doc, change)
     case 'removeRelation': return removeRelation(doc, change.id)
@@ -101,12 +104,22 @@ function setDock(doc: Doc, ref: DockRef, dock: DockNode | null): Doc {
     return { ...doc, canvases: { ...doc.canvases, [canvas.id]: { ...canvas, nodes } } }
   }
   const window = doc.windows[ref.windowId]
-  if (window.dock === dock) return doc
-  if (!dock && window.kind === 'detached') {
-    const { [window.id]: _removed, ...windows } = doc.windows
-    return { ...doc, windows }
+  const layout = window.layouts.find((l) => l.id === ref.layoutId)!
+  if (layout.dock === dock) return doc
+  if (!dock && window.layouts.length > 1) {
+    // An emptied layout goes, unless it is the window's only one. A detached
+    // window left with only empty layouts goes with them.
+    const layouts = window.layouts.filter((l) => l !== layout)
+    if (window.kind === 'detached' && layouts.every((l) => l.dock === null)) return removeWindow(doc, window.id)
+    return setWindow(doc, { ...window, layouts })
   }
-  return setWindow(doc, { ...window, dock })
+  if (!dock && window.kind === 'detached') return removeWindow(doc, window.id)
+  return setWindow(doc, { ...window, layouts: window.layouts.map((l) => (l === layout ? { ...l, dock } : l)) })
+}
+
+function removeWindow(doc: Doc, windowId: WindowId): Doc {
+  const { [windowId]: _removed, ...windows } = doc.windows
+  return { ...doc, windows }
 }
 
 function setWindow(doc: Doc, window: DocWindow): Doc {
@@ -192,7 +205,11 @@ function placeAt(doc: Doc, panelId: PanelId, target: PlaceTarget): Doc {
         ...doc,
         windows: {
           ...doc.windows,
-          [target.windowId]: { id: target.windowId, kind: 'detached', dock: stack(target.stackId) },
+          [target.windowId]: {
+            id: target.windowId,
+            kind: 'detached',
+            layouts: [{ id: target.layoutId, ...(target.layoutName ? { name: target.layoutName } : {}), dock: stack(target.stackId) }],
+          },
         },
       }
   }
@@ -349,7 +366,44 @@ function closeWindow(doc: Doc, windowId: string): Doc {
   const window = doc.windows[windowId]
   if (!window) gone(`window ${windowId}`)
   if (windowId === MAIN_WINDOW) rejected('the main window cannot be closed')
-  return removePanels(doc, dockPanels(window.dock))
+  return removePanels(doc, windowDockPanels(window))
+}
+
+// --- Layouts ---------------------------------------------------------------------
+
+function addLayout(doc: Doc, change: Extract<DocChange, { kind: 'addLayout' }>): Doc {
+  const window = doc.windows[change.windowId]
+  if (!window) gone(`window ${change.windowId}`)
+  if (window.layouts.some((l) => l.id === change.layoutId)) rejected(`layout id ${change.layoutId} is in use`)
+  const layout = { id: change.layoutId, dock: null, ...(change.name ? { name: change.name } : {}) }
+  const at = change.index === undefined ? window.layouts.length : Math.max(0, Math.min(change.index, window.layouts.length))
+  const layouts = [...window.layouts.slice(0, at), layout, ...window.layouts.slice(at)]
+  return setWindow(doc, { ...window, layouts })
+}
+
+function removeLayout(doc: Doc, change: Extract<DocChange, { kind: 'removeLayout' }>): Doc {
+  const window = doc.windows[change.windowId]
+  if (!window) gone(`window ${change.windowId}`)
+  const layout = window.layouts.find((l) => l.id === change.layoutId)
+  if (!layout) gone(`layout ${change.layoutId}`)
+  if (window.layouts.length === 1) rejected('a window keeps at least one layout')
+  // Removing the panels empties the layout, which removes it (see setDock).
+  const next = removePanels(doc, dockPanels(layout.dock))
+  const now = next.windows[window.id]
+  if (!now) return next
+  return setWindow(next, { ...now, layouts: now.layouts.filter((l) => l.id !== layout.id) })
+}
+
+function renameLayout(doc: Doc, change: Extract<DocChange, { kind: 'renameLayout' }>): Doc {
+  const window = doc.windows[change.windowId]
+  if (!window) gone(`window ${change.windowId}`)
+  if (!window.layouts.some((l) => l.id === change.layoutId)) gone(`layout ${change.layoutId}`)
+  const layouts = window.layouts.map((l) => {
+    if (l.id !== change.layoutId) return l
+    const { name: _old, ...rest } = l
+    return change.name ? { ...rest, name: change.name } : rest
+  })
+  return setWindow(doc, { ...window, layouts })
 }
 
 // --- Relations -------------------------------------------------------------------

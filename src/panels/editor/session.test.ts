@@ -42,7 +42,7 @@ afterEach(async () => {
 
 async function addEditor(id: string, filePath?: string): Promise<EditorSession> {
   const record: PanelRecord = { id, type: 'editor', title: id, fields: filePath ? { filePath } : {} }
-  document.apply({ kind: 'addPanel', record, at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } })
+  document.apply({ kind: 'addPanel', record, at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } })
   await host.started(id)
   return host.session(id) as EditorSession
 }

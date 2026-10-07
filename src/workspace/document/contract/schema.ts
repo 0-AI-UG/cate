@@ -8,6 +8,7 @@ import type { DockNode } from './dock'
 
 export type PanelId = string
 export type WindowId = string
+export type LayoutId = string
 export type CanvasId = string
 export type NodeId = string
 export type StackId = string
@@ -18,6 +19,9 @@ export type ClientId = string
 
 /** The id of the one main window every document has. */
 export const MAIN_WINDOW: WindowId = 'main'
+
+/** The id of a new window's first layout. */
+export const DEFAULT_LAYOUT: LayoutId = 'main'
 
 /** Every panel type's name. The panel index holds one definition per name. */
 export const PANEL_TYPES = ['terminal', 'editor', 'browser', 'chat', 'review', 'canvas', 'surface'] as const
@@ -41,12 +45,23 @@ export interface PanelRecord {
   fields: JsonObject
 }
 
+/** One dock tree of a window, like a tmux window: the window shows one layout
+ *  at a time (which one is client state) and every panel is in exactly one
+ *  dock. Layout ids are unique within their window. */
+export interface DockLayout {
+  id: LayoutId
+  name?: string
+  /** Null for an empty layout. A layout that empties is removed unless it is
+   *  the window's only one. */
+  dock: DockNode | null
+}
+
 export interface DocWindow {
   id: WindowId
   kind: 'main' | 'detached'
-  /** Null only for an empty main window; a detached window is removed when
-   *  its last panel leaves. */
-  dock: DockNode | null
+  /** At least one, in switcher order. A detached window is removed when its
+   *  last panel leaves, so it always has a panel in some layout. */
+  layouts: DockLayout[]
 }
 
 export type RelationKind = 'use' | 'context' | 'verify' | 'trigger'
@@ -95,7 +110,7 @@ export interface WorkspaceDocument {
 export function createDocument(): WorkspaceDocument {
   return {
     panels: {},
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock: null } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: DEFAULT_LAYOUT, dock: null }] } },
     canvases: {},
     relations: {},
     worktrees: {},

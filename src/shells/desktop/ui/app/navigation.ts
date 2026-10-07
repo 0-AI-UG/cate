@@ -6,7 +6,7 @@
 import { type WorkspaceConnection } from '@client/connections'
 import { documentStoreFor } from '@client/document'
 import { createPanel, installRevealHooks, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
-import { MAIN_WINDOW, type PanelId } from '@workspace/document/contract'
+import { MAIN_WINDOW, type PanelId, DEFAULT_LAYOUT} from '@workspace/document/contract'
 import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { openWindowAt } from '../client/layout/windows'
@@ -132,7 +132,7 @@ export function detachPanel(workspaceId: string, panelId: PanelId): boolean {
   const id = () => globalThis.crypto.randomUUID()
   const windowId = id()
   openWindowAt(workspaceId, windowId, { origin: { x: 120, y: 120 }, size: { width: 900, height: 640 } })
-  return store.propose({ kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: id() } }).ok
+  return store.propose({ kind: 'placePanel', id: panelId, at: { to: 'window', windowId, layoutId: DEFAULT_LAYOUT, stackId: id() } }).ok
 }
 
 /** Files open where a panel type opens them; without one the palette lists

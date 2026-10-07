@@ -61,7 +61,7 @@ function makeSession(record: PanelRecord): ReviewSession {
 async function start(fields: Record<string, Json> = { repoPath: '/repo' }): Promise<void> {
   const record: PanelRecord = { id: 'review', type: 'review', title: 'Review', fields }
   if (!document.get().panels.review) {
-    document.apply({ kind: 'addPanel', record, at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } })
+    document.apply({ kind: 'addPanel', record, at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } })
   }
   session = makeSession(document.get().panels.review)
   await session.start()

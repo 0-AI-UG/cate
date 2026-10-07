@@ -90,12 +90,12 @@ describe('panelItems', () => {
   }
   const lookup = (type: string) => definitions[type]
   const doc = build([
-    { kind: 'addPanel', record: record('t1', 'terminal', 'Shell'), at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } },
-    { kind: 'addPanel', record: { ...record('c1', 'canvas', 'Canvas'), canvasId: 'cv1' }, at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } },
+    { kind: 'addPanel', record: record('t1', 'terminal', 'Shell'), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } },
+    { kind: 'addPanel', record: { ...record('c1', 'canvas', 'Canvas'), canvasId: 'cv1' }, at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } },
     {
       kind: 'addPanel',
       record: record('b1', 'browser', 'Docs'),
-      at: { to: 'window', windowId: 'w2', stackId: 's2' },
+      at: { to: 'window', windowId: 'w2', layoutId: 'main', stackId: 's2' },
     },
   ])
 

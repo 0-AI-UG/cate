@@ -166,7 +166,7 @@ const sessionFile = (panelId: string) => path.join(dir, 'sessions', `${panelId}.
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 const record = (id: string, type: PanelType, extra: Partial<PanelRecord> = {}): PanelRecord => ({ id, type, title: id, fields: {}, ...extra })
 const addTo = (id: string, type: PanelType = 'terminal', stackId = 's1'): DocChange =>
-  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId } })
+  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId } })
 
 interface World {
   document: DocumentService
@@ -280,9 +280,9 @@ describe('session host lifecycle', () => {
     expect(Object.keys(w.document.get().canvases[canvas].nodes)).toHaveLength(2)
     // A canvas panel near a panel on a canvas goes next to the canvas panel.
     const nested = w.factory.createPanel('canvas', { near: onCanvas })!
-    expect(placementOf(w.document.get(), nested)?.dock).toEqual({ windowId: MAIN_WINDOW })
+    expect(placementOf(w.document.get(), nested)?.dock).toEqual({ windowId: MAIN_WINDOW, layoutId: 'main' })
     const detached = w.factory.createPanel('terminal', {
-      at: { to: 'window', windowId: 'w2', stackId: 'ws1' },
+      at: { to: 'window', windowId: 'w2', layoutId: 'main', stackId: 'ws1' },
     })!
     await w.host.restore()
 
@@ -407,7 +407,7 @@ describe('createPanel', () => {
   it('places next to the calling panel, on its canvas or in its stack, else the main window', () => {
     const w = world()
     const first = w.factory.createPanel('terminal')!
-    expect(placementOf(w.document.get(), first)?.dock).toEqual({ windowId: MAIN_WINDOW })
+    expect(placementOf(w.document.get(), first)?.dock).toEqual({ windowId: MAIN_WINDOW, layoutId: 'main' })
     expect(w.document.get().panels[first].title).toBe('Terminal 1')
     const second = w.factory.createPanel('terminal', { near: first })!
     expect(w.document.get().panels[second].title).toBe('Terminal 2')

@@ -4,7 +4,7 @@ import type { DocChange, DocOp } from './ops'
 import { createDocument } from './schema'
 import { createSequencer } from './sequencer'
 
-const addA: DocChange = { kind: 'addPanel', record: { id: 'a', type: 'terminal', title: 'a', fields: {} }, at: { to: 'stack', dock: { windowId: 'main' }, stackId: 's1' } }
+const addA: DocChange = { kind: 'addPanel', record: { id: 'a', type: 'terminal', title: 'a', fields: {} }, at: { to: 'stack', dock: { windowId: 'main', layoutId: 'main' }, stackId: 's1' } }
 const op = (clientId: string, counter: number, change: DocChange): DocOp => ({ ...change, opId: { clientId, counter } })
 const rename = (title: string): DocChange => ({ kind: 'updatePanel', id: 'a', patch: { title } })
 
@@ -91,7 +91,7 @@ describe('createMirror', () => {
     const runtime = createSequencer({ doc: createDocument() })
     runtime.submit(op('other', 1, addA))
     const mirror = createMirror('me', createDocument(), 0)
-    mirror.propose(op('me', 1, { kind: 'addPanel', record: { id: 'b', type: 'terminal', title: 'b', fields: {} }, at: { to: 'stack', dock: { windowId: 'main' }, stackId: 's2' } }))
+    mirror.propose(op('me', 1, { kind: 'addPanel', record: { id: 'b', type: 'terminal', title: 'b', fields: {} }, at: { to: 'stack', dock: { windowId: 'main', layoutId: 'main' }, stackId: 's2' } }))
     mirror.reset(runtime.doc, runtime.seq)
     expect(mirror.seq).toBe(1)
     expect(mirror.confirmed).toBe(runtime.doc)

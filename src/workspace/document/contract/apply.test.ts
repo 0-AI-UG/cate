@@ -9,7 +9,7 @@ import { validateDocument } from './serialize'
 
 type Doc = WorkspaceDocument
 
-const MAIN: DockRef = { windowId: MAIN_WINDOW }
+const MAIN: DockRef = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const R = rect(0, 0, 400, 300)
 
 function record(id: string, type: PanelType = 'terminal', extra: Partial<PanelRecord> = {}): PanelRecord {
@@ -20,7 +20,7 @@ const tab = (stackId: string, after?: string | null, dock: DockRef = MAIN): Plac
 const split = (beside: string, side: 'left' | 'right' | 'top' | 'bottom', stackId: string, splitId = `split-${stackId}`, dock: DockRef = MAIN): PlaceTarget =>
   ({ to: 'split', dock, beside, side, stackId, splitId })
 const node = (canvasId: string, nodeId: string, stackId = `stack-${nodeId}`, r = R): PlaceTarget => ({ to: 'canvas', canvasId, nodeId, stackId, rect: r })
-const win = (windowId: string, stackId = `stack-${windowId}`): PlaceTarget => ({ to: 'window', windowId, stackId })
+const win = (windowId: string, stackId = `stack-${windowId}`): PlaceTarget => ({ to: 'window', windowId, layoutId: 'main', stackId })
 
 function ok(doc: Doc, ...changes: DocChange[]): Doc {
   for (const change of changes) {
@@ -40,7 +40,7 @@ function fails(doc: Doc, change: DocChange, code: OpErrorCode): void {
 
 const add = (id: string, at: PlaceTarget, type: PanelType = 'terminal'): DocChange => ({ kind: 'addPanel', record: record(id, type), at })
 const place = (id: string, at: PlaceTarget): DocChange => ({ kind: 'placePanel', id, at })
-const mainDock = (doc: Doc) => doc.windows[MAIN_WINDOW].dock
+const mainDock = (doc: Doc) => doc.windows[MAIN_WINDOW].layouts[0].dock
 const stack = (id: string, ...panels: string[]): DockNode => ({ kind: 'stack', id, panels })
 
 /** main: stack s1 [a, b, c] */
@@ -56,7 +56,7 @@ function withCanvas(): Doc {
 describe('createDocument', () => {
   it('has an empty main window and nothing else', () => {
     const doc = createDocument()
-    expect(doc).toEqual({ panels: {}, windows: { main: { id: 'main', kind: 'main', dock: null } }, canvases: {}, relations: {}, worktrees: {} })
+    expect(doc).toEqual({ panels: {}, windows: { main: { id: 'main', kind: 'main', layouts: [{ id: 'main', dock: null }]} }, canvases: {}, relations: {}, worktrees: {} })
     expect(validateDocument(doc)).toBeNull()
   })
 })
@@ -78,7 +78,7 @@ describe('addPanel', () => {
   it('fails with gone for a missing stack, window or canvas', () => {
     const doc = threeTabs()
     fails(doc, add('d', tab('nope')), 'gone')
-    fails(doc, add('d', tab('s1', undefined, { windowId: 'nope' })), 'gone')
+    fails(doc, add('d', tab('s1', undefined, { windowId: 'nope', layoutId: 'main' })), 'gone')
     fails(doc, add('d', node('nope', 'n1')), 'gone')
     fails(doc, add('d', split('nope', 'left', 's2')), 'gone')
   })
@@ -117,7 +117,7 @@ describe('addPanel', () => {
     const doc = ok(withCanvas(), add('w', win('w1', 'ws')))
     expect(doc.canvases['canvas-cv'].nodes.n1).toEqual({ id: 'n1', rect: R, dock: stack('stack-n1', 'x') })
     expect(Object.keys(doc.canvases['canvas-cv'].nodes)).toEqual(['n1', 'n2'])
-    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', dock: stack('ws', 'w') })
+    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', layouts: [{ id: 'main', dock: stack('ws', 'w') }]})
   })
 })
 
@@ -189,7 +189,7 @@ describe('placePanel', () => {
     doc = ok(doc, place('x', win('w1')), place('x', tab('s1')))
     expect(doc.windows.w1).toBeUndefined()
     doc = ok(createDocument(), add('a', tab('s1')), place('a', win('w1')))
-    expect(doc.windows.main).toEqual({ id: 'main', kind: 'main', dock: null })
+    expect(doc.windows.main).toEqual({ id: 'main', kind: 'main', layouts: [{ id: 'main', dock: null }]})
   })
 
   it('moves between nodes and into new nodes', () => {
@@ -314,7 +314,7 @@ describe('containers', () => {
 
 
   it('closeWindow removes the window and its panels, canvases included', () => {
-    let doc = ok(withCanvas(), add('w', win('w1')), place('cv', tab('stack-w1', undefined, { windowId: 'w1' })))
+    let doc = ok(withCanvas(), add('w', win('w1')), place('cv', tab('stack-w1', undefined, { windowId: 'w1', layoutId: 'main' })))
     doc = ok(doc, { kind: 'closeWindow', windowId: 'w1' })
     expect(Object.keys(doc.panels)).toEqual([])
     expect(doc.canvases).toEqual({})
@@ -369,7 +369,7 @@ describe('batch', () => {
     const doc = threeTabs()
     const good = applyOp(doc, { kind: 'batch', changes: [add('d', tab('s1')), place('d', win('w1'))] })
     expect(good.error).toBeUndefined()
-    expect(placementOf(good.doc, 'd')?.dock).toEqual({ windowId: 'w1' })
+    expect(placementOf(good.doc, 'd')?.dock).toEqual({ windowId: 'w1', layoutId: 'main' })
     const bad = applyOp(doc, { kind: 'batch', changes: [add('d', tab('s1')), place('nope', tab('s1'))] })
     expect(bad.error?.code).toBe('gone')
     expect(bad.doc).toBe(doc)

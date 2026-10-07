@@ -16,11 +16,11 @@ const open = (panels: PanelRecord[], dock: DockNode | null) => {
   detach = openTestDocument('ws', {
     ...createDocument(),
     panels: Object.fromEntries(panels.map((p) => [p.id, p])),
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock }] } },
   })
 }
 const doc = () => documentStoreFor('ws')!.getSnapshot()
-const mainDock = () => doc().windows[MAIN_WINDOW].dock
+const mainDock = () => doc().windows[MAIN_WINDOW].layouts[0].dock
 
 beforeEach(() => registerPanelDefinitions(PANEL_DEFINITIONS))
 afterEach(() => detach())
@@ -60,17 +60,17 @@ describe('besideTree', () => {
   const docWith = (dock: DockNode): WorkspaceDocument => ({
     ...createDocument(),
     panels: { tree, a: panel('a') },
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock }] } },
   })
 
   it('uses the stack next to the tree', () => {
     const placement = besideTree(docWith({ kind: 'split', id: 'sp', direction: 'horizontal', children: [stack('s1', 'tree'), stack('s2', 'a')], ratios: [0.2, 0.8] }), 'tree')
-    expect(placement).toEqual({ at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's2' } })
+    expect(placement).toEqual({ at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's2' } })
   })
 
   it('splits off to the right when the tree is alone', () => {
     const placement = besideTree(docWith(stack('s1', 'tree', 'a')), 'tree')
-    expect(placement.at).toMatchObject({ to: 'split', dock: { windowId: MAIN_WINDOW }, beside: 's1', side: 'right' })
+    expect(placement.at).toMatchObject({ to: 'split', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, beside: 's1', side: 'right' })
   })
 
   it('goes near the tree when it is not docked', () => {

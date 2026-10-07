@@ -115,7 +115,7 @@ export function checkDock(v: unknown, depth = 0, parentDirection?: string): Prob
 function checkDockRef(v: unknown): Problem {
   if (!isObject(v)) return 'dock is not an object'
   if ('canvasId' in v) return isId(v.canvasId) && isId(v.nodeId) ? null : 'dock names no node'
-  return isId(v.windowId) ? null : 'dock names no window'
+  return isId(v.windowId) && isId(v.layoutId) ? null : 'dock names no window layout'
 }
 
 const SIDES = ['left', 'right', 'top', 'bottom']
@@ -133,7 +133,8 @@ export function checkTarget(v: unknown): Problem {
     case 'canvas':
       return isId(t.canvasId) && isId(t.nodeId) && isId(t.stackId) && isRect(t.rect) ? null : 'bad canvas target'
     case 'window':
-      return isId(t.windowId) && isId(t.stackId) ? null : 'bad window target'
+      return isId(t.windowId) && isId(t.layoutId) && isId(t.stackId) && (t.layoutName === undefined || typeof t.layoutName === 'string')
+        ? null : 'bad window target'
     default:
       return 'unknown target'
   }
@@ -177,6 +178,12 @@ export function checkChange(v: unknown): Problem {
       return isId(c.canvasId) && Array.isArray(c.rects)
         && c.rects.every((r) => isObject(r) && isId(r.nodeId) && isRect(r.rect)) ? null : 'bad node rects'
     case 'closeWindow': return isId(c.windowId) ? null : 'no window id'
+    case 'addLayout':
+      return isId(c.windowId) && isId(c.layoutId) && (c.name === undefined || typeof c.name === 'string')
+        && (c.index === undefined || Number.isInteger(c.index)) ? null : 'bad layout'
+    case 'removeLayout': return isId(c.windowId) && isId(c.layoutId) ? null : 'bad layout'
+    case 'renameLayout':
+      return isId(c.windowId) && isId(c.layoutId) && (c.name === null || typeof c.name === 'string') ? null : 'bad layout'
     case 'addRelation': return checkRelation(c.relation)
     case 'updateRelation': return isId(c.id) ? checkRelationPatch(c.patch) : 'no relation id'
     case 'removeRelation': return isId(c.id) ? null : 'no relation id'

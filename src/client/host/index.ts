@@ -26,6 +26,16 @@ export {
   type SessionSource,
   type ConnectionLookup,
 } from './sessions'
+export {
+  activeLayoutOf,
+  activeLayoutId,
+  switchLayout,
+  stepLayout,
+  selectLayoutAt,
+  addLayout,
+  removeLayout,
+  renameLayout,
+} from './layouts'
 export { demandSurface, isSurfaceDemanded, demandedSurfaces, subscribeDemandedSurfaces } from './surfaceDemand'
 export { keepMountedPanelIds, setEqual } from './keepMounted'
 export { createPanel, clientPanelKit, newId } from './createPanel'

@@ -36,7 +36,7 @@ function fakeDocument() {
 const addPanel = (record: PanelRecord): DocChange => ({
   kind: 'addPanel',
   record,
-  at: { to: 'stack', dock: { windowId: 'main' }, stackId: 'stack-1' },
+  at: { to: 'stack', dock: { windowId: 'main', layoutId: 'main' }, stackId: 'stack-1' },
 })
 
 const terminal = (id: string, worktreeId?: string): PanelRecord =>

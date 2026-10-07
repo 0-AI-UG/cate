@@ -68,7 +68,7 @@ describe('attachDocuments', () => {
     store.propose({
       kind: 'addPanel',
       record: { id: 'p1', type: 'terminal', title: 't', fields: {} },
-      at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+      at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' },
     })
     await vi.waitFor(() => expect(sequencer.seq).toBe(1))
     state.focus('p1')

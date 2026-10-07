@@ -11,6 +11,7 @@ import {
   type DockStack,
   type PanelId,
   type PlaceTarget,
+  DEFAULT_LAYOUT,
 } from '@workspace/document/contract'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { clientUi } from '@kernel/interaction'
@@ -124,7 +125,7 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
     if (!store || !record) return
     const windowId = newId()
     openWindowAt(workspaceId, windowId, { origin: { x: window.screenX + 60, y: window.screenY + 60 }, size: panelDefaultSize(record.type) })
-    const change: DocChange = { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: newId() } }
+    const change: DocChange = { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, layoutId: DEFAULT_LAYOUT, stackId: newId() } }
     store.propose(change)
   }, [workspaceId])
 

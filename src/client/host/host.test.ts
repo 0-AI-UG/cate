@@ -16,7 +16,7 @@ import { CANVAS_REVEAL_INTENT, revealPanel } from './reveal'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const rect = { origin: { x: 0, y: 0 }, size: { width: 400, height: 300 } }
 
 function fixture() {

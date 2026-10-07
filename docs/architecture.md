@@ -879,13 +879,25 @@ interface WorkspaceDocument {
   worktrees: Record<WorktreeId, WorktreeMeta> // status: creating | ready | removing
 }
 interface DocWindow {
-  id: WindowId; kind: 'main' | 'detached'; dock: DockNode | null
+  id: WindowId; kind: 'main' | 'detached'; layouts: DockLayout[]   // at least one
 }
+interface DockLayout { id: LayoutId; name?: string; dock: DockNode | null }
 ```
 
-- Every panel has exactly one placement: a tab in a dock stack of a window, or
-  a tab in the mini dock of a canvas node. The placement index is derived,
+- Every panel has exactly one placement: a tab in a dock stack of one layout of
+  a window, or a tab in the mini dock of a canvas node. The placement index is derived,
   never stored twice.
+- A window holds one or more **layouts** (`DockLayout`), each its own dock
+  tree, like the windows of tmux: the switcher in the window switches layouts,
+  never panels. A layout that empties is removed unless it is the window's
+  only one; a detached window goes when it has no panel in any layout.
+  `addLayout`, `removeLayout` (with its panels; the view asks first) and
+  `renameLayout` are ops. Layout ids are unique within their window. Which
+  layout a client shows is client state (`activeLayouts`), so two clients can
+  look at different layouts of the same window; a reveal switches to the
+  panel's layout, and a new panel with no better place goes to the layout the
+  creating client shows. `document.json` is version 2 (a window's `dock` became
+  `layouts`); version 1 files are rejected, not migrated.
 - A canvas panel's record names its `canvasId`. A canvas is created with its
   canvas panel (`addPanel`) and removed with it (`removePanels` removes the
   canvas and the panels on it; the view asks first). A canvas panel cannot
@@ -902,7 +914,7 @@ interface DocWindow {
 | Group | Ops |
 |---|---|
 | Records | `addPanel(record, at)`, `replacePanel(record)` (a surface becoming the picked type: same id, the old session is disposed and the new one started), `updatePanel(id, patch)`, `removePanels(ids)` |
-| Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node (`{to: 'canvas', canvasId, nodeId, stackId, rect}`) or a new detached window (`{to: 'window', windowId, stackId}`). `dock` is a window's dock or a canvas node's mini dock. Placing an already placed panel moves it. |
+| Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node (`{to: 'canvas', canvasId, nodeId, stackId, rect}`) or a new detached window (`{to: 'window', windowId, layoutId, stackId}`). `dock` is one layout of a window (`{windowId, layoutId}`) or a canvas node's mini dock. Placing an already placed panel moves it. |
 | Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `closeWindow(windowId)` (removes its panels; the view asks first) |
 | Relations | `addRelation`, `updateRelation`, `removeRelation` |
 | Worktrees | `setWorktree(meta)`, `removeWorktree(id)` (metadata only; the repository service does the resource work and writes these) |

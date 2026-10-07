@@ -10,15 +10,15 @@ import { detachedWindows, panelWindowIndex, panelsByWindow, windowTitle } from '
 import type { WindowRef, WindowsPort } from './ports'
 import { openWindowAt, syncDetachedWindows } from './windowSync'
 
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const bounds = (x: number): Rect => ({ origin: { x, y: 100 }, size: { width: 800, height: 600 } })
 
 function fixture() {
   return buildDocument([
     add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
     add('onCanvas', { to: 'canvas', canvasId: 'C', nodeId: 'N', stackId: 'ns', rect: bounds(0) }),
-    add('d1', { to: 'window', windowId: 'W1', stackId: 'ws1' }),
-    add('d2', { to: 'stack', dock: { windowId: 'W1' }, stackId: 'ws1' }),
+    add('d1', { to: 'window', windowId: 'W1', layoutId: 'main', stackId: 'ws1' }),
+    add('d2', { to: 'stack', dock: { windowId: 'W1', layoutId: 'main' }, stackId: 'ws1' }),
   ])
 }
 
@@ -65,7 +65,7 @@ describe('syncDetachedWindows', () => {
     const stop = syncDetachedWindows('w', fake.port)
     expect(fake.opened).toEqual([{ workspaceId: 'w', windowId: 'W1' }])
 
-    ws.remote(add('d3', { to: 'window', windowId: 'W2', stackId: 'ws2' }))
+    ws.remote(add('d3', { to: 'window', windowId: 'W2', layoutId: 'main', stackId: 'ws2' }))
     expect(fake.opened.map((w) => w.windowId)).toEqual(['W1', 'W2'])
 
     ws.remote({ kind: 'closeWindow', windowId: 'W2' })
@@ -79,7 +79,7 @@ describe('syncDetachedWindows', () => {
     const fake = fakePort()
     const stop = syncDetachedWindows('w', fake.port)
     openWindowAt('w', 'W3', bounds(640))
-    ws.document.propose(add('d4', { to: 'window', windowId: 'W3', stackId: 'ws3' }))
+    ws.document.propose(add('d4', { to: 'window', windowId: 'W3', layoutId: 'main', stackId: 'ws3' }))
     expect(fake.opened.at(-1)).toEqual({ workspaceId: 'w', windowId: 'W3', bounds: bounds(640) })
     expect(ws.confirmed().windows.W3).not.toHaveProperty('bounds')
     stop()

@@ -13,6 +13,7 @@ import {
   type WindowId,
   type WorkspaceDocument,
   type WorktreeMeta,
+  windowDockPanels,
 } from '@workspace/document/contract'
 
 export interface CanvasGroup {
@@ -58,7 +59,7 @@ export function sortByWorktree<P extends Pick<PanelRecord, 'worktreeId'>>(
 function windowTree(doc: WorkspaceDocument, windowId: WindowId, sort: (p: PanelRecord[]) => PanelRecord[]): WindowTree {
   const canvases: CanvasGroup[] = []
   const topLevel: PanelRecord[] = []
-  for (const id of dockPanels(doc.windows[windowId]?.dock)) {
+  for (const id of windowDockPanels(doc.windows[windowId])) {
     const record = doc.panels[id]
     if (!record) continue
     if (record.canvasId) {

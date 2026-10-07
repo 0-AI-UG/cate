@@ -12,7 +12,7 @@ import { DockView } from './DockView'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 let ws: TestWorkspace
 let container: HTMLDivElement
 let root: Root
@@ -88,7 +88,7 @@ describe('DockView', () => {
     await act(async () => { tab('p2').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })) })
     expect(menu.mock.calls[0][0].map((item: { id?: string }) => item.id)).toContain('move-window')
     const detached = Object.values(ws.confirmed().windows).find((w) => w.kind === 'detached')
-    expect(dockPanels(detached?.dock)).toEqual(['p2'])
+    expect(dockPanels(detached?.layouts[0].dock)).toEqual(['p2'])
   })
 
   it('maximize shows the stack alone for this client only; restore brings the split back', () => {

@@ -25,7 +25,7 @@ afterEach(async () => {
 const add = (id: string, type: PanelType, fields: Record<string, string> = {}): DocChange => ({
   kind: 'addPanel',
   record: { id, type, title: id, fields },
-  at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+  at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' },
 })
 const relate = (id: string, from: string, to: string): DocChange =>
   ({ kind: 'addRelation', relation: { id, fromPanelId: from, toPanelId: to, kind: 'use' } })

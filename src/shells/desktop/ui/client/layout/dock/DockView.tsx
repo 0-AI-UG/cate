@@ -55,7 +55,7 @@ export interface DockViewProps {
 }
 
 export function dockKey(dock: DockRef): string {
-  return isCanvasDock(dock) ? `node:${dock.canvasId}:${dock.nodeId}` : `window:${dock.windowId}`
+  return isCanvasDock(dock) ? `node:${dock.canvasId}:${dock.nodeId}` : `window:${dock.windowId}:${dock.layoutId}`
 }
 
 export function DockView({

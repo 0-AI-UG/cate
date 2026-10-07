@@ -3,9 +3,9 @@
 // the chosen side of the main window, a fifth of its width.
 
 import { documentStoreFor, documentWorkspaceIds, subscribeDocumentStores, type DocumentStore } from '@client/document'
-import { createPanel, newId } from '@client/host'
+import { activeLayoutId, createPanel, newId } from '@client/host'
 import { getClientSetting } from '../../kernel/settings'
-import { MAIN_WINDOW, isCanvasDock, parentOf, placementOf, type WorkspaceDocument } from '@workspace/document/contract'
+import { MAIN_WINDOW, dockOf, isCanvasDock, parentOf, placementOf, type WorkspaceDocument } from '@workspace/document/contract'
 
 const TREE_RATIO = 0.2
 
@@ -22,8 +22,8 @@ export function ensureFilesTree(workspaceId: string, side: 'left' | 'right'): st
   if (!store) return null
   const before = store.getSnapshot()
   if (hasDockedTree(before)) return null
-  const dock = { windowId: MAIN_WINDOW }
-  const root = before.windows[MAIN_WINDOW]?.dock ?? null
+  const dock = { windowId: MAIN_WINDOW, layoutId: activeLayoutId(workspaceId, MAIN_WINDOW) }
+  const root = dockOf(before, dock) ?? null
   const stackId = newId()
   const id = createPanel(workspaceId, 'editor', {
     title: 'Files',
@@ -37,7 +37,7 @@ export function ensureFilesTree(workspaceId: string, side: 'left' | 'right'): st
   // keep their proportions.
   const after = store.getSnapshot()
   const placed = placementOf(after, id)
-  const split = placed && parentOf(after.windows[MAIN_WINDOW]?.dock, placed.stackId)?.parent
+  const split = placed && parentOf(dockOf(after, dock), placed.stackId)?.parent
   if (!split) return id
   const previous = new Map<string, number>()
   if (root.kind === 'split') root.children.forEach((child, i) => previous.set(child.id, root.ratios[i]))

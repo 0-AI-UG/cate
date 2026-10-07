@@ -3,9 +3,9 @@
 
 import { findFreePosition, nudgeToFree } from '@workspace/canvas/contract'
 import {
-  MAIN_WINDOW,
   canvasPanelOf,
   isCanvasDock,
+  mainDock,
   placementOf,
   stacksIn,
   type PlaceTarget,
@@ -14,7 +14,7 @@ import {
 import type { AnyPanelDefinition, PanelPlacementOptions } from './definition'
 
 /** Next to `near` (on its canvas, onto the canvas it shows, or after it in
- *  its stack), else the first stack of the main window. */
+ *  its stack), else the first stack of the main window's layout. */
 export function placeTargetFor(
   doc: WorkspaceDocument,
   definition: AnyPanelDefinition,
@@ -49,7 +49,7 @@ export function placeTargetFor(
     after = host?.id
   }
   if (near) return { to: 'stack', dock: near.dock, stackId: near.stackId, after }
-  const main = { windowId: MAIN_WINDOW }
+  const main = mainDock(doc, placement.layoutId)
   const first = stacksIn(doc, main)[0]
   return first ? { to: 'stack', dock: main, stackId: first.id } : { to: 'stack', dock: main, stackId: makeId() }
 }

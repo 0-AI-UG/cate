@@ -8,6 +8,7 @@ import {
   placementOf,
   type DocChange,
   type WorkspaceDocument,
+  DEFAULT_LAYOUT,
 } from '@workspace/document/contract'
 import type { Point, Rect, Size } from '@workspace/canvas/contract'
 import { canLiveOnCanvas } from '@client/host'
@@ -97,7 +98,7 @@ export function dropChanges(
 
 /** The op that detaches a panel into the new window `windowId`. */
 export function detachChange(panel: DragPanel, windowId: string, newId: () => string): DocChange {
-  return { kind: 'placePanel', id: panel.id, at: { to: 'window', windowId, stackId: newId() } }
+  return { kind: 'placePanel', id: panel.id, at: { to: 'window', windowId, layoutId: DEFAULT_LAYOUT, stackId: newId() } }
 }
 
 /** Where the detached window opens on this device: at the drop point. */

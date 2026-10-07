@@ -13,7 +13,7 @@ afterEach(() => {
   ws = null
 })
 
-const fixture = () => buildDocument([add('t1', { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' }, 'terminal')])
+const fixture = () => buildDocument([add('t1', { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' }, 'terminal')])
 const browsers = (w: TestWorkspace) => Object.values(w.confirmed().panels).filter((panel) => panel.type === 'browser')
 
 describe('openUrlFor', () => {

@@ -10,6 +10,7 @@ import { clientUi } from '@kernel/interaction'
 import { documentStoreFor } from '@client/document'
 import { newId } from './createPanel'
 import { panelDefinition, panelLabel } from './definitions'
+import { withActiveLayout } from './layouts'
 import { revealPanel } from './reveal'
 
 export type PanelTarget =
@@ -70,7 +71,7 @@ export async function pickPanelPlace(request: PanelTargetRequest): Promise<Panel
   if (!target || target.kind === 'existing') return target
   const doc = documentStoreFor(request.workspaceId)?.getSnapshot()
   const definition = panelDefinition(request.panelType)
-  return doc && definition ? { kind: 'new', at: placeTargetFor(doc, definition, target.placement, newId) } : null
+  return doc && definition ? { kind: 'new', at: placeTargetFor(doc, definition, withActiveLayout(request.workspaceId, target.placement), newId) } : null
 }
 
 export async function requestPanelTarget(request: PanelTargetRequest): Promise<PanelTarget | null> {

@@ -7,7 +7,7 @@ import { createPanel } from '@client/host'
 import { runtimeFor } from '@kernel/rpc/client'
 import type { AgentChangesFilter } from '@services/agents/contract'
 import {
-  MAIN_WINDOW,
+  mainDock,
   placementOf,
   stacksIn,
   type PanelId,
@@ -22,10 +22,10 @@ const newId = () => globalThis.crypto.randomUUID()
 
 /** A tab next to `near` (in its stack, or its canvas node's stack), else the
  *  main window's first stack. */
-export function placeNear(doc: WorkspaceDocument, near: PanelId | null | undefined): PlaceTarget {
+export function placeNear(doc: WorkspaceDocument, near: PanelId | null | undefined, layoutId?: string): PlaceTarget {
   const placement = near ? placementOf(doc, near) : null
   if (placement) return { to: 'stack', dock: placement.dock, stackId: placement.stackId, after: near }
-  const main = { windowId: MAIN_WINDOW }
+  const main = mainDock(doc, layoutId)
   const first = stacksIn(doc, main)[0]
   return { to: 'stack', dock: main, stackId: first?.id ?? newId() }
 }

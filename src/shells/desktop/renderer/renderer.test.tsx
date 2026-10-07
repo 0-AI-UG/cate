@@ -131,7 +131,7 @@ beforeAll(async () => {
   // One panel of every type, as tabs of the main window.
   for (const type of PANEL_TYPES) {
     const record = freshRecord(runtime.document.get(), type, { title: `A ${type}` }, `p-${type}`)!
-    runtime.document.apply({ kind: 'addPanel', record, at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } })
+    runtime.document.apply({ kind: 'addPanel', record, at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } })
   }
   workspaceId = localWorkspaceId(runtime.root)
   const desktop = createFakeDesktop({ features: [], runtime: runtime.server })

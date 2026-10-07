@@ -1,7 +1,9 @@
 # Dock behavior and test matrix
 
-This document defines the supported dock transitions. Every window has one
-dock tree in the workspace document (architecture 9.1); a canvas node holds a
+This document defines the supported dock transitions. Every layout of a window
+(a window has one or more) is one dock tree in the workspace document
+(architecture 9.1); a window shows one layout at a time and a panel is in
+exactly one dock; a canvas node holds a
 mini dock of the same shape. Placement is shared: a drop is one document op
 (`placePanel`, `setNodeRects`, or a batch), and every client of the workspace
 sees it. Which tab of a stack is active is client state.

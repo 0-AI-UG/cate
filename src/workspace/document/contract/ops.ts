@@ -8,6 +8,7 @@ import type {
   CanvasId,
   ClientId,
   Json,
+  LayoutId,
   NodeId,
   PanelId,
   PanelRecord,
@@ -29,8 +30,8 @@ export interface OpId {
   counter: number
 }
 
-/** A dock: a window's, or a canvas node's mini dock. */
-export type DockRef = { windowId: WindowId } | { canvasId: CanvasId; nodeId: NodeId }
+/** A dock: one layout of a window, or a canvas node's mini dock. */
+export type DockRef = { windowId: WindowId; layoutId: LayoutId } | { canvasId: CanvasId; nodeId: NodeId }
 
 /** Where a panel goes. New ids (`stackId` and `splitId` of a split, the
  *  node of a canvas target, the window of a window target) are the sender's. */
@@ -44,8 +45,8 @@ export type PlaceTarget =
   | { to: 'split'; dock: DockRef; beside: DockNodeId; side: SplitSide; stackId: StackId; splitId: SplitId }
   /** A new canvas node. */
   | { to: 'canvas'; canvasId: CanvasId; nodeId: NodeId; stackId: StackId; rect: Rect }
-  /** A new detached window. */
-  | { to: 'window'; windowId: WindowId; stackId: StackId }
+  /** A new detached window with its first layout. */
+  | { to: 'window'; windowId: WindowId; layoutId: LayoutId; layoutName?: string; stackId: StackId }
 
 export interface PanelPatch {
   title?: string
@@ -75,6 +76,12 @@ export type DocChange =
   | { kind: 'setSplitRatio'; splitId: SplitId; ratios: number[] }
   | { kind: 'setNodeRects'; canvasId: CanvasId; rects: { nodeId: NodeId; rect: Rect }[] }
   | { kind: 'closeWindow'; windowId: WindowId }
+  /** A new empty layout at `index` in the switcher (last by default). */
+  | { kind: 'addLayout'; windowId: WindowId; layoutId: LayoutId; name?: string; index?: number }
+  /** Removes a layout with its panels. A window keeps at least one layout. */
+  | { kind: 'removeLayout'; windowId: WindowId; layoutId: LayoutId }
+  /** null clears the name. */
+  | { kind: 'renameLayout'; windowId: WindowId; layoutId: LayoutId; name: string | null }
   | { kind: 'addRelation'; relation: PanelRelation }
   | { kind: 'updateRelation'; id: RelationId; patch: RelationPatch }
   | { kind: 'removeRelation'; id: RelationId }

@@ -36,7 +36,7 @@ const ready = (patch: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   connected: true, activity: null, agentName: 'T3 Code', canReceivePrompt: true, changes: null, ...patch,
 })
 const record: PanelRecord = { id: 'chat', type: 'chat', title: 'T3 Code', fields: {} }
-const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW }, stackId: 's2' }
+const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's2' }
 
 const session: SessionHandle<ChatSnapshot> = {
   panelId: 'chat',

@@ -3,10 +3,12 @@
 // close, rename and claimed keys, and creating panels of every type (from the
 // definitions, through client/host's panel actions).
 
+import { MAIN_WINDOW } from '@workspace/document/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { defineActions, storedShortcut, type ActionId } from '@kernel/interaction/contract'
 import { documentStoreFor } from '@client/document'
 import {
+  addLayout,
   closePanel,
   createPanel,
   focusedLeafPanelId,
@@ -16,6 +18,7 @@ import {
   registerPanelActions,
   requestPanelRename,
   requestPanelShortcut,
+  stepLayout,
   type ActionBinding,
 } from '@client/host'
 import { clientApp, tryClientApp } from '../app'
@@ -41,6 +44,9 @@ export const BUILTIN_ACTIONS = defineActions({
   toggleSidebar: { title: 'Toggle Sidebar', key: key('b', { command: true }), welcome: true, menu: { bar: 'view', group: 'panes' } },
   nextWorkspace: { title: 'Next Workspace', key: key('→', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 1 } },
   previousWorkspace: { title: 'Previous Workspace', key: key('←', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 0 } },
+  newLayout: { title: 'New Layout', key: key('t', { command: true, option: true }), menu: { bar: 'go', group: 'layouts', order: 0 } },
+  nextLayout: { title: 'Next Layout', key: key(']', { command: true, shift: true }), menu: { bar: 'go', group: 'layouts', order: 1 } },
+  previousLayout: { title: 'Previous Layout', key: key('[', { command: true, shift: true }), menu: { bar: 'go', group: 'layouts', order: 2 } },
   undo: { title: 'Undo', key: key('z', { command: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   redo: { title: 'Redo', key: key('z', { command: true, shift: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   openFolder: { title: 'Open Folder…', key: key('o', { command: true }), menu: { bar: 'file', group: 'open' } },
@@ -118,6 +124,10 @@ export function registerBuiltinActions(): () => void {
       toggleSidebar: { run: () => useUIStore.getState().toggleSidebar() },
       nextWorkspace: { run: () => cycleWorkspace(1) },
       previousWorkspace: { run: () => cycleWorkspace(-1) },
+      // The main window's layouts (a detached window has its own switcher).
+      newLayout: { run: ({ workspaceId }) => { if (workspaceId) addLayout(workspaceId, MAIN_WINDOW) }, enabled: ({ workspaceId }) => !!workspaceId },
+      nextLayout: { run: ({ workspaceId }) => { if (workspaceId) stepLayout(workspaceId, MAIN_WINDOW, 1) }, enabled: ({ workspaceId }) => !!workspaceId },
+      previousLayout: { run: ({ workspaceId }) => { if (workspaceId) stepLayout(workspaceId, MAIN_WINDOW, -1) }, enabled: ({ workspaceId }) => !!workspaceId },
       undo: {
         run: () => { selectedDocument()?.undo() },
         enabled: () => selectedDocument()?.getUndoState().canUndo ?? false,

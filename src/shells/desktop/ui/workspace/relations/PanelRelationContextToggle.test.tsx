@@ -43,7 +43,7 @@ describe('PanelRelationContextToggle', () => {
     detach = openTestDocument('ws', {
       ...createDocument(),
       panels: { source, docs },
-      windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock: { kind: 'stack', id: 'main', panels: ['source', 'docs'] } } },
+      windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock: { kind: 'stack', id: 'main', panels: ['source', 'docs'] } }]} },
       relations: { relation: { id: 'relation', fromPanelId: 'source', toPanelId: 'docs', kind: 'use' } },
     })
     host = document.createElement('div')
