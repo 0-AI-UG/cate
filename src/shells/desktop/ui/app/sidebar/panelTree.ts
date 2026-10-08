@@ -9,11 +9,11 @@ import {
   MAIN_WINDOW,
   dockPanels,
   panelsOnCanvas,
+  type LayoutId,
   type PanelRecord,
   type WindowId,
   type WorkspaceDocument,
   type WorktreeMeta,
-  windowDockPanels,
 } from '@workspace/document/contract'
 
 export interface CanvasGroup {
@@ -21,10 +21,21 @@ export interface CanvasGroup {
   children: PanelRecord[]
 }
 
-export interface WindowTree {
-  windowId: WindowId
+/** One layout of a window: its canvases and top-level panels. */
+export interface LayoutTree {
+  layoutId: LayoutId
+  name?: string
   canvases: CanvasGroup[]
   topLevel: PanelRecord[]
+}
+
+export interface WindowTree {
+  windowId: WindowId
+  /** Every layout's canvases and top-level panels, layout by layout. */
+  canvases: CanvasGroup[]
+  topLevel: PanelRecord[]
+  /** The same panels grouped by layout, in switcher order. */
+  layouts: LayoutTree[]
 }
 
 export interface WorkspacePanelTree {
@@ -57,19 +68,27 @@ export function sortByWorktree<P extends Pick<PanelRecord, 'worktreeId'>>(
 }
 
 function windowTree(doc: WorkspaceDocument, windowId: WindowId, sort: (p: PanelRecord[]) => PanelRecord[]): WindowTree {
-  const canvases: CanvasGroup[] = []
-  const topLevel: PanelRecord[] = []
-  for (const id of windowDockPanels(doc.windows[windowId])) {
-    const record = doc.panels[id]
-    if (!record) continue
-    if (record.canvasId) {
-      const children = panelsOnCanvas(doc, record.canvasId).map((c) => doc.panels[c]).filter((c): c is PanelRecord => !!c)
-      canvases.push({ record, children: sort(children) })
-    } else {
-      topLevel.push(record)
+  const layouts: LayoutTree[] = (doc.windows[windowId]?.layouts ?? []).map((layout) => {
+    const canvases: CanvasGroup[] = []
+    const topLevel: PanelRecord[] = []
+    for (const id of dockPanels(layout.dock)) {
+      const record = doc.panels[id]
+      if (!record) continue
+      if (record.canvasId) {
+        const children = panelsOnCanvas(doc, record.canvasId).map((c) => doc.panels[c]).filter((c): c is PanelRecord => !!c)
+        canvases.push({ record, children: sort(children) })
+      } else {
+        topLevel.push(record)
+      }
     }
+    return { layoutId: layout.id, ...(layout.name ? { name: layout.name } : {}), canvases, topLevel: sort(topLevel) }
+  })
+  return {
+    windowId,
+    canvases: layouts.flatMap((l) => l.canvases),
+    topLevel: layouts.flatMap((l) => l.topLevel),
+    layouts,
   }
-  return { windowId, canvases, topLevel: sort(topLevel) }
 }
 
 const rows = (tree: WindowTree): number =>

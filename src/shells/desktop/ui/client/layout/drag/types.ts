@@ -4,7 +4,7 @@
 // document is the only placement state, so a drop is one document op.
 
 import type { Point, Size } from '@workspace/canvas/contract'
-import type { DockRef, PanelId, SplitSide, StackId } from '@workspace/document/contract'
+import type { DockRef, PanelId, SplitSide, StackId, WindowId } from '@workspace/document/contract'
 import type { CrossWindowDrag } from './ports'
 
 export interface DragPanel {
@@ -73,6 +73,8 @@ export type DropTarget =
   /** A whole dock: its root split on `edge` (a window's edge strip), or its
    *  first stack (a new stack in an empty window). */
   | { kind: 'dock-zone'; workspaceId: string; dock: DockRef; edge?: SplitSide }
+  /** A window's header: a new layout holding the dropped panel. */
+  | { kind: 'layout-new'; workspaceId: string; windowId: WindowId }
   | { kind: 'detach'; screen: Point }
 
 export interface DragState {

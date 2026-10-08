@@ -33,6 +33,24 @@ describe('workspacePanelTree', () => {
     expect(tree.primary.topLevel.map((p) => p.id)).toEqual(['b1'])
   })
 
+  it('groups a window\'s panels by layout, in switcher order, and still counts every row', () => {
+    const layered = build([
+      { kind: 'addPanel', record: rec('a', 'terminal'), at: { to: 'stack', dock: main, stackId: 's1' } },
+      { kind: 'addLayout', windowId: MAIN_WINDOW, layoutId: 'two', name: 'Build' },
+      { kind: 'addPanel', record: rec('c', 'canvas', { canvasId: 'cv' }), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'two' }, stackId: 's2' } },
+      { kind: 'addPanel', record: rec('t', 'terminal'), at: { to: 'canvas', canvasId: 'cv', nodeId: 'n', stackId: 'ns', rect } },
+      { kind: 'addPanel', record: rec('b', 'browser'), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'two' }, stackId: 's2' } },
+    ])
+    const tree = workspacePanelTree(layered)
+    expect(tree.primary.layouts.map((l) => [l.layoutId, l.name, l.topLevel.map((p) => p.id), l.canvases.map((c) => c.record.id)])).toEqual([
+      ['main', undefined, ['a'], []],
+      ['two', 'Build', ['b'], ['c']],
+    ])
+    // The flat lists keep every layout's panels.
+    expect(tree.primary.topLevel.map((p) => p.id)).toEqual(['a', 'b'])
+    expect(tree.count).toBe(4)
+  })
+
   it('lists other windows after this one and counts every row', () => {
     const tree = workspacePanelTree(doc)
     expect(tree.others.map((w) => [w.windowId, w.canvases[0].record.id, w.canvases[0].children.map((p) => p.id)])).toEqual([['w2', 'c2', ['t2']]])

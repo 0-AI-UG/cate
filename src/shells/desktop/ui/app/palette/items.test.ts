@@ -115,3 +115,25 @@ describe('panelItems', () => {
     expect(panelItems(doc, 'w2', lookup, '').map((i) => [i.panelId, i.otherWindow])).toEqual([['b1', false], ['t1', true]])
   })
 })
+
+describe('panelItems across layouts', () => {
+  it('lists the shown layout first, then the window\'s other layouts, then other windows', () => {
+    let doc = createDocument()
+    const apply = (change: DocChange) => { const r = applyOp(doc, change); if (r.error) throw new Error(r.error.message); doc = r.doc }
+    const term = (id: string, title: string) => ({ id, type: 'terminal', title, fields: {} }) as PanelRecord
+    apply({ kind: 'addPanel', record: term('a', 'A'), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } })
+    apply({ kind: 'addLayout', windowId: MAIN_WINDOW, layoutId: 'two', name: 'Build' })
+    apply({ kind: 'addPanel', record: term('b', 'B'), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'two' }, stackId: 's2' } })
+    apply({ kind: 'addPanel', record: term('c', 'C'), at: { to: 'window', windowId: 'w2', layoutId: 'main', stackId: 's3' } })
+    const lookup = () => ({ label: 'Terminal', icon: 'terminal', navigable: true }) as never
+    const shown = panelItems(doc, MAIN_WINDOW, lookup, '', 'two')
+    expect(shown.map((i) => [i.panelId, i.secondary, i.otherLayout, i.otherWindow])).toEqual([
+      ['b', 'Terminal', false, false],
+      ['a', 'Other layout', true, false],
+      ['c', 'Other window', false, true],
+    ])
+    expect(panelItems(doc, MAIN_WINDOW, lookup, '', 'main').find((i) => i.panelId === 'b')?.secondary).toBe('Layout: Build')
+    // Without an active layout every layout of the window counts as shown.
+    expect(panelItems(doc, MAIN_WINDOW, lookup, '').map((i) => i.otherLayout)).toEqual([false, false, false])
+  })
+})

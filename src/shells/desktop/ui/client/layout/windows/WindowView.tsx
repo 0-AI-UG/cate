@@ -22,7 +22,7 @@ const EDGES: SplitSide[] = ['left', 'bottom']
 export interface WindowViewProps {
   workspaceId: string
   windowId: WindowId
-  /** Shown while the window's dock is empty. */
+  /** Shown while the shown layout is empty; the creation menu by default. */
   emptyContent?: React.ReactNode
   /** Draw the drag ghost and indicators here (once per client window). */
   overlay?: boolean
@@ -68,7 +68,7 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
         <WindowHeader workspaceId={workspaceId} window={window} activeLayoutId={layoutId} leadingInset={leadingInset} />
       )}
       <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
-        <DockView workspaceId={workspaceId} dock={{ windowId, layoutId }} emptyContent={emptyContent} compact />
+        <DockView workspaceId={workspaceId} dock={{ windowId, layoutId }} emptyContent={emptyContent ?? <EmptyDockChooser workspaceId={workspaceId} dock={{ windowId, layoutId }} />} compact />
       </div>
       {activeEdge && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 9998, pointerEvents: 'none' }}>
@@ -101,7 +101,7 @@ export function MainWindowView({ workspaceId, emptyContent, leadingInset }: {
     <WindowView
       workspaceId={workspaceId}
       windowId={MAIN_WINDOW}
-      emptyContent={emptyContent ?? <EmptyDockChooser workspaceId={workspaceId} />}
+      emptyContent={emptyContent}
       leadingInset={leadingInset}
     />
   )

@@ -32,6 +32,8 @@ is `src/client/layout/drag/commit.ts`.
 | Canvas node/pane | Another canvas-node tab bar | Merge into the target as tabs; the emptied source node is removed | `drag/commit.test.ts` |
 | Canvas node/pane | Another canvas | Move there; the emptied source node is removed | `drag/__tests__/scenarios.test.tsx` |
 | Canvas node/pane | Main-dock tab bar or edge | Move into the dock as a tab or split | `drag/commit.test.ts` |
+| Any panel | Header chip of another layout | Move into that layout's first stack and show that layout (the layout it left stays, empty); hovering the chip mid-drag shows that layout after a short delay, like a tab; the chip of the layout the panel is already in does nothing (and keeps the header's new-layout drop away) | `windows/WindowView.layouts.test.tsx` |
+| Any panel | Empty part of a window header | A new layout holding the panel (a dashed ghost chip previews it); the shown layout switches to it, and the one the panel left stays, empty, with its creation menu | `windows/WindowView.layouts.test.tsx` |
 | Any panel | Outside the application window | A new detached window at the drop point (only on clients with the `windows` feature; a selected group never leaves the window) | `drag/commit.test.ts`, `drag/__tests__/scenarios.test.tsx` |
 | Any panel | Another window of the same workspace | That window claims the drop; the placement op is sent once, from the source window | `drag/__tests__/crossWindow.test.tsx`, `drag/__tests__/scenarios.test.tsx` |
 | Canvas panel | A canvas or a canvas-node mini dock | Refused: canvases never nest | `drag/commit.test.ts`, `drag/resolve.test.ts`, `drag/__tests__/scenarios.test.tsx` |

@@ -51,8 +51,8 @@ export interface PanelRecord {
 export interface DockLayout {
   id: LayoutId
   name?: string
-  /** Null for an empty layout. A layout that empties is removed unless it is
-   *  the window's only one. */
+  /** Null for an empty layout. A layout that empties stays, empty: its window
+   *  shows the creation menu there. */
   dock: DockNode | null
 }
 

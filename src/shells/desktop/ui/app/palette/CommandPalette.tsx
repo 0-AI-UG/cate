@@ -7,9 +7,9 @@ import { flushSync } from 'react-dom'
 import { FileText, Search as MagnifyingGlass } from 'lucide-react'
 import { Icon, LoadingState, PaletteDialogShell, PaletteTextInput, useResolvedShortcuts } from '../../kernel/interaction'
 import { tryRuntimeFor } from '@kernel/rpc/client'
-import { useDocument } from '../../client/document'
+import { useClientState, useDocument } from '../../client/document'
 import { useWorkspaceList } from '../../client/workspaces'
-import { availableActions, createPanel, creatableDefinitions, focusedPanelId, panelDefinition, worktreeChoices } from '@client/host'
+import { activeLayoutOf, availableActions, createPanel, creatableDefinitions, focusedPanelId, panelDefinition, worktreeChoices } from '@client/host'
 import { useActionsVersion } from '../../client/host/hooks'
 import { getRecentFiles } from '@workspace/files/client'
 import { pathDisplayName } from '@workspace/files/contract'
@@ -57,7 +57,9 @@ function OpenPalette(): JSX.Element {
     },
   }, query)
   const workspaces = workspaceItems(list.entries, workspaceId, query)
-  const panels = useMemo(() => panelItems(doc, windowId, panelDefinition, query), [doc, windowId, query])
+  const activeLayouts = useClientState(workspaceId, (s) => s.activeLayouts)
+  const activeLayoutId = useMemo(() => activeLayoutOf(doc, activeLayouts, windowId), [doc, activeLayouts, windowId])
+  const panels = useMemo(() => panelItems(doc, windowId, panelDefinition, query, activeLayoutId), [doc, windowId, query, activeLayoutId])
 
   // File names: searched with a query (debounced), recent files without one.
   const filesAvailable = !!workspaceId && canOpenFiles()

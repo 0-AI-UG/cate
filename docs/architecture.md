@@ -889,8 +889,9 @@ interface DockLayout { id: LayoutId; name?: string; dock: DockNode | null }
   never stored twice.
 - A window holds one or more **layouts** (`DockLayout`), each its own dock
   tree, like the windows of tmux: the switcher in the window switches layouts,
-  never panels. A layout that empties is removed unless it is the window's
-  only one; a detached window goes when it has no panel in any layout.
+  never panels. A layout that empties stays, empty (the window shows its
+  creation menu there); a detached window goes when it has no panel in any
+  layout.
   `addLayout`, `removeLayout` (with its panels; the view asks first) and
   `renameLayout` are ops. Layout ids are unique within their window. Which
   layout a client shows is client state (`activeLayouts`), so two clients can

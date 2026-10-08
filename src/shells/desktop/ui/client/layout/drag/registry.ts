@@ -3,6 +3,7 @@
 
 import type { Point } from '@workspace/canvas/contract'
 import type { DockRef, SplitSide, StackId } from '@workspace/document/contract'
+import type { DragSource } from './types'
 
 export interface DropZoneEntry {
   id: string
@@ -20,6 +21,16 @@ export interface DropZoneEntry {
   tabCount?(): number
   /** False rejects the dragged panel. */
   acceptsPanel?(panelType: string): boolean
+  /** True for a drag whose drop here does nothing (a layout chip of the layout
+   *  the panel is already in): the zone still claims the cursor, so the zones
+   *  behind it (the header's new-layout drop) do not. */
+  noopFor?(source: DragSource): boolean
+  /** A window header: dropping makes a new layout of `dock.windowId` with the
+   *  panel (`dock.layoutId` is unused). */
+  newLayout?: boolean
+  /** A layout's chip in a window header. It draws its own highlight, so the
+   *  overlay's dashed zone outline skips it. */
+  layoutChip?: boolean
 }
 
 /** A canvas the canvas view draws, as the drag system sees it. */

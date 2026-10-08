@@ -91,6 +91,15 @@ export function dropChanges(
       return [change]
     }
 
+    case 'layout-new': {
+      if (!doc.windows[target.windowId]) return null
+      const layoutId = ctx.newId()
+      return [
+        { kind: 'addLayout', windowId: target.windowId, layoutId },
+        { kind: 'placePanel', id: panel.id, at: { to: 'stack', dock: { windowId: target.windowId, layoutId }, stackId: ctx.newId() } },
+      ]
+    }
+
     case 'detach':
       return null
   }

@@ -106,15 +106,11 @@ function setDock(doc: Doc, ref: DockRef, dock: DockNode | null): Doc {
   const window = doc.windows[ref.windowId]
   const layout = window.layouts.find((l) => l.id === ref.layoutId)!
   if (layout.dock === dock) return doc
-  if (!dock && window.layouts.length > 1) {
-    // An emptied layout goes, unless it is the window's only one. A detached
-    // window left with only empty layouts goes with them.
-    const layouts = window.layouts.filter((l) => l !== layout)
-    if (window.kind === 'detached' && layouts.every((l) => l.dock === null)) return removeWindow(doc, window.id)
-    return setWindow(doc, { ...window, layouts })
-  }
-  if (!dock && window.kind === 'detached') return removeWindow(doc, window.id)
-  return setWindow(doc, { ...window, layouts: window.layouts.map((l) => (l === layout ? { ...l, dock } : l)) })
+  // An emptied layout stays, empty (its window offers the creation menu); a
+  // detached window left with only empty layouts goes.
+  const layouts = window.layouts.map((l) => (l === layout ? { ...l, dock } : l))
+  if (window.kind === 'detached' && layouts.every((l) => l.dock === null)) return removeWindow(doc, window.id)
+  return setWindow(doc, { ...window, layouts })
 }
 
 function removeWindow(doc: Doc, windowId: WindowId): Doc {
@@ -387,7 +383,7 @@ function removeLayout(doc: Doc, change: Extract<DocChange, { kind: 'removeLayout
   const layout = window.layouts.find((l) => l.id === change.layoutId)
   if (!layout) gone(`layout ${change.layoutId}`)
   if (window.layouts.length === 1) rejected('a window keeps at least one layout')
-  // Removing the panels empties the layout, which removes it (see setDock).
+  // Removing the panels leaves the layout empty; it is dropped below.
   const next = removePanels(doc, dockPanels(layout.dock))
   const now = next.windows[window.id]
   if (!now) return next

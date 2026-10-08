@@ -5,7 +5,7 @@
 import type React from 'react'
 import { useCallback } from 'react'
 import { viewToCanvas, type Point, type Size } from '@workspace/canvas/contract'
-import { isCanvasDock, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
+import { isCanvasDock, layoutOf, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { newId, panelDefaultSize, panelDropSize } from '@client/host'
 import { windowsPort } from '../windows/ports'
@@ -164,6 +164,10 @@ export function proposeDrop(workspaceId: string, changes: DocChange[], panelId: 
   const placement = placementOf(store.getSnapshot(), panelId)
   const state = clientStateFor(workspaceId)
   if (placement && state) {
+    // The layout it landed in shows, so a drop onto another layout (or a new
+    // one) ends with the panel on screen.
+    const layout = layoutOf(store.getSnapshot(), panelId)
+    if (layout) state.setActiveLayout(layout.windowId, layout.layoutId)
     state.setActiveTab(placement.stackId, panelId)
     state.focus(panelId)
   }

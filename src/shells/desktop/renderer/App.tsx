@@ -7,7 +7,7 @@ import { MAIN_WINDOW } from '@workspace/document/contract'
 import { PersistentPanelHost } from '../ui/client/host/PersistentPanelHost'
 import { FileDropOverlay, useFileDropTracker } from '../ui/client/layout/drag'
 import { MainWindowView, WindowView } from '../ui/client/layout/windows'
-import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '../ui/app'
+import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, setShownWindowId, useShortcuts, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '../ui/app'
 import { useWorkspaceList } from '../ui/client/workspaces'
 import type { DesktopClient } from './boot'
 import { PerfHud } from './perf/PerfHud'
@@ -92,6 +92,7 @@ function MainApp({ client }: { client: DesktopClient }) {
 }
 
 function DetachedApp({ client, workspaceId, windowId }: { client: DesktopClient; workspaceId: string; windowId: string }) {
+  useEffect(() => { setShownWindowId(windowId) }, [windowId])
   // The macOS traffic lights sit over the top-left tab bar.
   const controlsInset = useWindowControlsInset()
   const { blocked } = useWorkspaceBlock(workspaceId)

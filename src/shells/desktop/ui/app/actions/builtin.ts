@@ -124,10 +124,10 @@ export function registerBuiltinActions(): () => void {
       toggleSidebar: { run: () => useUIStore.getState().toggleSidebar() },
       nextWorkspace: { run: () => cycleWorkspace(1) },
       previousWorkspace: { run: () => cycleWorkspace(-1) },
-      // The main window's layouts (a detached window has its own switcher).
-      newLayout: { run: ({ workspaceId }) => { if (workspaceId) addLayout(workspaceId, MAIN_WINDOW) }, enabled: ({ workspaceId }) => !!workspaceId },
-      nextLayout: { run: ({ workspaceId }) => { if (workspaceId) stepLayout(workspaceId, MAIN_WINDOW, 1) }, enabled: ({ workspaceId }) => !!workspaceId },
-      previousLayout: { run: ({ workspaceId }) => { if (workspaceId) stepLayout(workspaceId, MAIN_WINDOW, -1) }, enabled: ({ workspaceId }) => !!workspaceId },
+      // The layouts of the window the shortcut came from.
+      newLayout: { run: ({ workspaceId, windowId }) => { if (workspaceId) addLayout(workspaceId, windowId ?? MAIN_WINDOW) }, enabled: ({ workspaceId }) => !!workspaceId },
+      nextLayout: { run: ({ workspaceId, windowId }) => { if (workspaceId) stepLayout(workspaceId, windowId ?? MAIN_WINDOW, 1) }, enabled: ({ workspaceId }) => !!workspaceId },
+      previousLayout: { run: ({ workspaceId, windowId }) => { if (workspaceId) stepLayout(workspaceId, windowId ?? MAIN_WINDOW, -1) }, enabled: ({ workspaceId }) => !!workspaceId },
       undo: {
         run: () => { selectedDocument()?.undo() },
         enabled: () => selectedDocument()?.getUndoState().canUndo ?? false,

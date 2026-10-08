@@ -3,7 +3,7 @@
 // handed, so the listing rules are testable.
 
 import { displayString, isIconName, type ActionId, type ActionSpec, type IconName, type StoredShortcut } from '@kernel/interaction/contract'
-import { documentOrder, windowOf, type WindowId, type WorkspaceDocument } from '@workspace/document/contract'
+import { documentOrder, layoutOf, windowOf, type LayoutId, type WindowId, type WorkspaceDocument } from '@workspace/document/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import type { WorkspaceEntry } from '@client/workspaces'
 
@@ -32,6 +32,8 @@ interface PanelItem {
   secondary: string
   /** Lives in another window of the workspace. */
   otherWindow: boolean
+  /** Lives in another layout of this window (picking it shows that layout). */
+  otherLayout: boolean
 }
 
 export interface FileItem {
@@ -101,14 +103,18 @@ export function workspaceItems(entries: readonly WorkspaceEntry[], currentId: st
     .filter((item) => matches(query, item.name, item.detail))
 }
 
-/** Navigable panels of the workspace in document order, this window's first. */
+/** Navigable panels of the workspace in document order: the layout this
+ *  window shows first, then its other layouts, then other windows. Without
+ *  `activeLayoutId` every layout of the window counts as shown. */
 export function panelItems(
   doc: WorkspaceDocument,
   windowId: WindowId,
   definition: (type: string) => AnyPanelDefinition | undefined,
   query: string,
+  activeLayoutId?: LayoutId,
 ): PanelItem[] {
   const here: PanelItem[] = []
+  const otherLayouts: PanelItem[] = []
   const elsewhere: PanelItem[] = []
   for (const panelId of documentOrder(doc)) {
     const record = doc.panels[panelId]
@@ -117,15 +123,19 @@ export function panelItems(
     const title = record.title || def.label
     if (!matches(query, title)) continue
     const otherWindow = windowOf(doc, panelId) !== windowId
+    const layout = layoutOf(doc, panelId)
+    const otherLayout = !otherWindow && !!activeLayoutId && layout?.layoutId !== activeLayoutId
+    const layoutName = otherLayout && layout ? doc.windows[windowId]?.layouts.find((l) => l.id === layout.layoutId)?.name : undefined
     const item: PanelItem = {
       kind: 'panel',
       panelId,
       title,
       icon: isIconName(def.icon) ? def.icon : 'grid',
-      secondary: otherWindow ? 'Other window' : def.describe?.(record) ?? def.label,
+      secondary: otherWindow ? 'Other window' : otherLayout ? (layoutName ? `Layout: ${layoutName}` : 'Other layout') : def.describe?.(record) ?? def.label,
       otherWindow,
+      otherLayout,
     }
-    ;(otherWindow ? elsewhere : here).push(item)
+    ;(otherWindow ? elsewhere : otherLayout ? otherLayouts : here).push(item)
   }
-  return [...here, ...elsewhere]
+  return [...here, ...otherLayouts, ...elsewhere]
 }

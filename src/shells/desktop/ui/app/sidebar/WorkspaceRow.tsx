@@ -3,13 +3,13 @@
 // panels, top-level panels, the panels of its other windows, and its skills.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2 } from 'lucide-react'
+import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, PanelsTopLeft } from 'lucide-react'
 import { Icon, Tooltip } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
-import { useDocument } from '../../client/document'
-import { focusedLeafPanelId, panelRowLabel } from '@client/host'
+import { useClientState, useDocument } from '../../client/document'
+import { activeLayoutOf, focusedLeafPanelId, panelRowLabel, switchLayout } from '@client/host'
 import type { WorkspaceEntry } from '@client/workspaces'
 import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
@@ -24,7 +24,7 @@ import { useUIStore } from '../state/uiStore'
 import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
 import { showMenu, type MenuItem } from './menu'
-import { workspacePanelTree, type WindowTree } from './panelTree'
+import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
 
 const isMiddleClick = (e: React.MouseEvent): boolean => e.button === 1
 
@@ -177,8 +177,36 @@ export function WorkspaceRow({
     />
   )
 
-  const renderWindow = (w: WindowTree) => (
-    <React.Fragment key={w.windowId}>
+  const activeLayouts = useClientState(isOpen ? workspaceId : null, (s) => s.activeLayouts)
+
+  /** A window with several layouts lists them one by one, each under a heading
+   *  that shows it; a window with one lists its panels as before. */
+  const renderWindow = (w: WindowTree) => {
+    if (w.layouts.length < 2) return renderLayout(w.windowId, w)
+    const active = activeLayoutOf(doc, activeLayouts, w.windowId)
+    return (
+      <React.Fragment key={w.windowId}>
+        {w.layouts.map((layout, index) => (
+          <React.Fragment key={layout.layoutId}>
+            <button
+              type="button"
+              data-layout-heading={layout.layoutId}
+              className={`mx-1.5 my-0.5 flex h-6 items-center gap-1.5 rounded-lg pl-7 pr-2 text-left text-[11px] hover:bg-hover focus:outline-none ${
+                layout.layoutId === active ? 'text-secondary' : 'text-muted'}`}
+              onClick={(e) => { e.stopPropagation(); switchLayout(workspaceId, w.windowId, layout.layoutId) }}
+            >
+              <PanelsTopLeft size={11} className="shrink-0 opacity-70" />
+              <span className="truncate">{layout.name || `Layout ${index + 1}`}</span>
+            </button>
+            {renderLayout(layout.layoutId, layout)}
+          </React.Fragment>
+        ))}
+      </React.Fragment>
+    )
+  }
+
+  const renderLayout = (key: string, w: Pick<LayoutTree, 'canvases' | 'topLevel'>) => (
+    <React.Fragment key={key}>
       {w.canvases.map(({ record, children }) => {
         const isCollapsed = collapsed.has(canvasKey(workspaceId, record.id))
         return (

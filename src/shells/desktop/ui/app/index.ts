@@ -42,7 +42,7 @@ export {
   type ScreenCorner,
 } from './state/uiState'
 export { useTerminalStatuses, terminalStatuses, panelsWithPorts, terminalCwd } from './state/statusStore'
-export { WindowIdContext, useWindowId } from './state/windowContext'
+export { WindowIdContext, setShownWindowId, shownWindow, useWindowId } from './state/windowContext'
 
 // Navigation and actions.
 export {

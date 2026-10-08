@@ -56,12 +56,15 @@ describe('layouts', () => {
     expect(panelsInLayout(doc, MAIN_WINDOW, 'main')).toEqual(['b'])
   })
 
-  it('a layout that empties is removed, unless it is the window\'s only one', () => {
+  it('a layout that empties stays, empty: the window offers its creation menu there', () => {
     const doc = ok(twoLayouts(), { kind: 'removePanels', ids: ['c'] })
-    expect(layoutsOf(doc)).toEqual(['main'])
-    const only = ok(doc, { kind: 'removePanels', ids: ['a', 'b'] })
-    expect(layoutsOf(only)).toEqual(['main'])
-    expect(only.windows[MAIN_WINDOW].layouts[0].dock).toBeNull()
+    expect(layoutsOf(doc)).toEqual(['main', 'two'])
+    expect(doc.windows[MAIN_WINDOW].layouts[1].dock).toBeNull()
+    // Pulling the last panel out of a layout does the same.
+    const moved = ok(twoLayouts(), { kind: 'placePanel', id: 'c', at: tab(L1, 's1') })
+    expect(layoutsOf(moved)).toEqual(['main', 'two'])
+    expect(moved.windows[MAIN_WINDOW].layouts[1].dock).toBeNull()
+    expect(placementOf(moved, 'c')?.dock).toEqual(L1)
   })
 
   it('removeLayout takes its panels with it and keeps at least one layout', () => {
@@ -90,7 +93,7 @@ describe('layouts', () => {
     doc = ok(doc, { kind: 'addLayout', windowId: 'W', layoutId: 'wb' }, add('v', tab({ windowId: 'W', layoutId: 'wb' }, 'sv')))
     expect(doc.windows.W.layouts.map((l) => l.id)).toEqual(['main', 'wb'])
     doc = ok(doc, { kind: 'removePanels', ids: ['w'] })
-    expect(doc.windows.W.layouts.map((l) => l.id)).toEqual(['wb'])
+    expect(doc.windows.W.layouts.map((l) => [l.id, l.dock === null])).toEqual([['main', true], ['wb', false]])
     doc = ok(doc, { kind: 'removePanels', ids: ['v'] })
     expect(doc.windows.W).toBeUndefined()
   })
