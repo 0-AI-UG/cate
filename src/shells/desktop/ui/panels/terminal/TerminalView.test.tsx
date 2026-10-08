@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Subscription } from '@kernel/rpc/contract'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import { installMockClientUi } from '@kernel/interaction/testing'
+import { getActiveTheme } from '../../kernel/interaction'
 import type { PanelViewProps } from '../../client/host/views'
 import type { SessionHandle } from '@client/connections'
 import { FILE_REFS_MIME } from '@workspace/files/contract'
@@ -155,6 +156,16 @@ describe('TerminalView', () => {
     // Keystrokes go straight to the attach stream.
     act(() => { for (const l of xterms[0].data) l('ls\r') })
     expect(new TextDecoder().decode(process_.attaches[0].written[0])).toBe('ls\r')
+  })
+
+  it('fills the box around the whole-row grid with the terminal background, so the leftover strip is not a bar', () => {
+    render(<TerminalView {...props(snapshotOf())} />)
+    const box = q('[data-terminal-render-box]')!.parentElement as HTMLElement
+    // jsdom normalises colors, so compare through an element.
+    const expected = document.createElement('div')
+    expected.style.backgroundColor = getActiveTheme().terminal.background ?? ''
+    expect(expected.style.backgroundColor).not.toBe('')
+    expect(box.style.backgroundColor).toBe(expected.style.backgroundColor)
   })
 
   it('re-attaches when the session spawns a new PTY and stays detached without one', () => {
