@@ -29,6 +29,8 @@ export interface WatchPoolDeps {
     fn: (err: Error | null, events: Array<{ path: string; type: FsChangeType }>) => void,
     opts?: ParcelOptions,
   ) => Promise<AsyncSubscription>
+  /** First wait before rewatching a failed tree; doubles up to 30 s. */
+  retryMs?: number
 }
 
 export interface WatchPool {
@@ -56,6 +58,8 @@ export interface WatchPool {
  *                  like .DS_Store, or a directory like node_modules and all its
  *                  contents) at any depth.
  */
+const MAX_RETRY_MS = 30_000
+
 export function buildIgnorePatterns(exclusions: Iterable<string>): string[] {
   const patterns = ['**/.*/**']
   for (const name of exclusions) patterns.push(`**/${name}`, `**/${name}/**`)
@@ -79,19 +83,27 @@ interface SharedTree {
   /** Bumped on refresh so a slow in-flight subscribe can't overwrite a newer
    *  one (or revive a torn-down tree). */
   generation: number
+  /** The wait before the next rewatch after a failure; reset once one works. */
+  retryMs: number
+  retryTimer: ReturnType<typeof setTimeout> | null
+  /** The watcher failed: tell every subscriber to rescan once it is back. */
+  broken: boolean
 }
 
 export function createWatchPool(
   /** Read the CURRENT exclusion set; called fresh on every (re)subscribe so
    *  refresh() picks up live edits. */
   getExclusions: () => Iterable<string>,
-  /** Surface watcher errors (logging/metrics). The pool already contains them
-   * : a broken tree is dropped so a later subscribe recreates it. */
+  /** Surface watcher errors (logging/metrics). The pool already contains them:
+   *  a failed tree keeps its subscribers and is rewatched with backoff, and
+   *  each subscriber then gets an `update` of its own prefix (rescan it, as
+   *  changes in between were missed). */
   onError?: (root: string, err: unknown) => void,
   deps: WatchPoolDeps = {},
 ): WatchPool {
   const subscribe = deps.subscribe ?? (nativeWatcher.subscribe as WatchPoolDeps['subscribe'])!
   const pool = new Map<string, SharedTree>()
+  const firstRetryMs = deps.retryMs ?? 1_000
 
   // True iff a tree rooted at `root` can never deliver events under `prefix`:
   // its native ignore globs (buildIgnorePatterns) prune any path that crosses a
@@ -127,7 +139,28 @@ export function createWatchPool(
     if (pool.get(tree.root) === tree) pool.delete(tree.root)
     tree.closed = true
     tree.subscribers.clear()
+    if (tree.retryTimer) clearTimeout(tree.retryTimer)
+    tree.retryTimer = null
     void tree.subscription?.unsubscribe()
+  }
+
+  // The watcher of `tree` failed: drop it and watch again later, keeping the
+  // subscribers.
+  const fail = (tree: SharedTree, err: unknown): void => {
+    onError?.(tree.root, err)
+    const old = tree.subscription
+    tree.subscription = null
+    tree.generation++
+    tree.broken = true
+    void old?.unsubscribe()
+    if (tree.closed || tree.retryTimer) return
+    const wait = tree.retryMs
+    tree.retryMs = Math.min(wait * 2, MAX_RETRY_MS)
+    tree.retryTimer = setTimeout(() => {
+      tree.retryTimer = null
+      if (!tree.closed && pool.get(tree.root) === tree) start(tree)
+    }, wait)
+    tree.retryTimer.unref?.()
   }
 
   const fanOut = (tree: SharedTree, events: Array<{ path: string; type: FsChangeType }>): void => {
@@ -151,8 +184,7 @@ export function createWatchPool(
     subscribe(tree.root, (err, events) => {
       if (tree.closed || tree.generation !== generation) return
       if (err) {
-        onError?.(tree.root, err)
-        drop(tree)
+        fail(tree, err)
         return
       }
       fanOut(tree, events)
@@ -164,11 +196,15 @@ export function createWatchPool(
           return
         }
         tree.subscription = subscription
+        tree.retryMs = firstRetryMs
+        if (tree.broken) {
+          tree.broken = false
+          for (const sub of [...tree.subscribers]) sub.onChange(sub.prefix, 'update')
+        }
       })
       .catch((err) => {
-        if (tree.generation !== generation) return
-        onError?.(tree.root, err)
-        drop(tree)
+        if (tree.closed || tree.generation !== generation) return
+        fail(tree, err)
       })
   }
 
@@ -176,7 +212,7 @@ export function createWatchPool(
     subscribe(prefix, onChange) {
       let tree = findCovering(prefix)
       if (!tree) {
-        tree = { root: prefix, subscribers: new Set(), subscription: null, closed: false, generation: 0 }
+        tree = { root: prefix, subscribers: new Set(), subscription: null, closed: false, generation: 0, retryMs: firstRetryMs, retryTimer: null, broken: false }
         pool.set(prefix, tree)
         start(tree)
       }
@@ -216,6 +252,7 @@ export function createWatchPool(
           tree.closed = true
           tree.generation++
           tree.subscribers.clear()
+          if (tree.retryTimer) clearTimeout(tree.retryTimer)
           if (tree.subscription) await tree.subscription.unsubscribe()
         }),
       )

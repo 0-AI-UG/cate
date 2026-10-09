@@ -174,10 +174,10 @@ describe('createWatchPool, refcounted teardown', () => {
 })
 
 describe('createWatchPool, error containment', () => {
-  it('reports a callback error, drops the tree, and lets the next subscribe recreate it', async () => {
+  it('reports a callback error and closes the broken watcher', async () => {
     const fake = fakeParcel()
     const onError = vi.fn()
-    const pool = createWatchPool(() => [], onError, { subscribe: fake.subscribe })
+    const pool = createWatchPool(() => [], onError, { subscribe: fake.subscribe, retryMs: 60_000 })
     pool.subscribe(ROOT, () => {})
     await flush()
 
@@ -185,10 +185,28 @@ describe('createWatchPool, error containment', () => {
     expect(() => fake.fireError(0, boom)).not.toThrow()
     expect(onError).toHaveBeenCalledWith(ROOT, boom)
     expect(fake.subs[0].unsubscribe).toHaveBeenCalledTimes(1)
+    await pool.closeAll()
+  })
 
-    // A fresh subscribe opens a brand-new watcher (the broken one was dropped).
-    pool.subscribe(ROOT, () => {})
-    expect(fake.subscribe).toHaveBeenCalledTimes(2)
+  it('keeps its subscribers through a watcher error: rewatches and tells them to rescan', async () => {
+    const fake = fakeParcel()
+    const pool = createWatchPool(() => [], vi.fn(), { subscribe: fake.subscribe, retryMs: 5 })
+    const a: Array<[string, string]> = []
+    const b: Array<[string, string]> = []
+    pool.subscribe(ROOT, (p, t) => a.push([t, p]))
+    pool.subscribe(path.join(ROOT, 'src'), (p, t) => b.push([t, p]))
+    await flush()
+    fake.fireError(0, new Error('watch overflow'))
+    await vi.waitFor(() => expect(fake.subs).toHaveLength(2))
+    await flush()
+    // Whatever changed while unwatched: each subscriber rescans its prefix.
+    expect(a).toEqual([['update', ROOT]])
+    expect(b).toEqual([['update', path.join(ROOT, 'src')]])
+    const file = path.join(ROOT, 'src', 'x.ts')
+    fake.fire(1, [{ path: file, type: 'update' }])
+    expect(a.at(-1)).toEqual(['update', file])
+    expect(b.at(-1)).toEqual(['update', file])
+    await pool.closeAll()
   })
 
   it('contains a rejected subscribe (e.g. EMFILE at creation) as an onError, not a throw', async () => {
