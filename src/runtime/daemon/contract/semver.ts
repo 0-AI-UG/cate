@@ -1,13 +1,4 @@
-// Minimal semver comparison for the app updater and the runtime update
-// dialog: x.y.z cores plus an optional pre-release suffix used for the beta
-// channel (e.g. 1.2.0-beta.1).
 
-
-/** A semver string with a pre-release suffix (e.g. 1.2.0-beta.1) identifies a
- *  beta / staged build. The presence of a `-` is the reliable signal. */
-export function isPrereleaseVersion(version: string): boolean {
-  return version.includes('-')
-}
 
 /** Compare two semver strings. Returns 1 if a > b, -1 if a < b, 0 if equal.
  *  Handles pre-release suffixes per semver: a pre-release ranks BELOW its

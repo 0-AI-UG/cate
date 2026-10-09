@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getDocumentType, pathDisplayName, pathHasPrefix, pathKey, relativeDisplayPath, toAbsolutePath, toRelativePath } from './paths'
-import { classifyExternalEvent, textDelta } from './buffer'
+import { textDelta } from './buffer'
 import { base64ToBytes, bytesToBase64, contentHash } from './hash'
 
 describe('path helpers', () => {
@@ -34,11 +34,6 @@ describe('path helpers', () => {
 })
 
 describe('buffer helpers', () => {
-  it('routes external events', () => {
-    expect(classifyExternalEvent('delete', false)).toBe('conflict-deleted')
-    expect(classifyExternalEvent('update', false)).toBe('reload')
-    expect(classifyExternalEvent('create', true)).toBe('conflict-changed')
-  })
 
   it('finds the smallest replacement', () => {
     expect(textDelta('abc', 'abc')).toBeNull()

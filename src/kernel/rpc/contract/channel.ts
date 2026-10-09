@@ -20,10 +20,6 @@ export function channel<S, C = Partial<S>, Op = never>(opts: { bytes?: ChannelBy
   return { kind: 'channel', bytes: opts.bytes ?? 'none' }
 }
 
-export type SnapshotOf<Ch> = Ch extends { __types?: { snapshot: infer S } } ? S : never
-export type ChangeOf<Ch> = Ch extends { __types?: { change: infer C } } ? C : never
-export type OpOf<Ch> = Ch extends { __types?: { op: infer O } } ? O : never
-
 /** Events on a channel's stream. `rev` increases by one per change; a
  *  snapshot restarts the count. */
 export type ChannelEvent<S, C> =
@@ -33,12 +29,6 @@ export type ChannelEvent<S, C> =
 /** A stream declaration for a channel subscription taking params `P`. */
 export function channelStream<P, S, C = Partial<S>>(opts: { bytes?: boolean } = {}): StreamSpec<P, ChannelEvent<S, C>, void> {
   return stream<P, ChannelEvent<S, C>, void>({ bytes: opts.bytes })
-}
-
-/** An op sent back to a channel's owner. `opId` is filled by the rpc client
- *  when the carrying method is declared `mutates`. */
-export interface ChannelOp<Op> {
-  op: Op
 }
 
 export interface ChannelState<S> {

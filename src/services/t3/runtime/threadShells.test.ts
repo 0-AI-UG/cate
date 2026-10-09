@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket, { WebSocketServer } from 'ws'
 import type { AddressInfo } from 'net'
-import type { T3ShellSnapshot } from '../contract'
-import { ThreadShellSubscription } from './threadShells'
+import { t3SnapshotBusy, type T3ShellSnapshot } from '../contract'
+import { applyT3ShellEvent, ThreadShellSubscription } from './threadShells'
 
 let server: WebSocketServer | undefined
 let subscription: ThreadShellSubscription | undefined
@@ -83,4 +83,18 @@ describe('ThreadShellSubscription', () => {
     await new Promise((resolve) => setTimeout(resolve, 2_500))
     expect(connections).toBe(1)
   }, 10_000)
+})
+
+const empty: T3ShellSnapshot = { instanceId: 'i', checkout: '/repo', connected: false, sequence: 0, threads: {} }
+
+describe('T3 thread shells', () => {
+  it('folds shell events into a snapshot', () => {
+    let state = applyT3ShellEvent(empty, { kind: 'snapshot', snapshot: { snapshotSequence: 4, threads: [{ id: 'a', title: 'A', extra: 1 }, { id: 'b', title: 'B' }] } })
+    state = applyT3ShellEvent(state, { kind: 'thread-upserted', sequence: 5, thread: { id: 'b', title: 'Renamed', latestTurn: { state: 'running' } } })
+    state = applyT3ShellEvent(state, { kind: 'thread-removed', sequence: 6, threadId: 'a' })
+    expect(state).toMatchObject({ connected: true, sequence: 6, threads: { b: { title: 'Renamed' } } })
+    expect(Object.keys(state.threads)).toEqual(['b'])
+    expect(t3SnapshotBusy(state)).toBe(true)
+    expect(t3SnapshotBusy({ ...state, connected: false })).toBe(false)
+  })
 })

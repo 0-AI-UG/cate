@@ -8,7 +8,7 @@ import path from 'node:path'
 import { framePortOver } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
-import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
+import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { settingsCapability } from '@kernel/settings/contract'
 import { fingerprint, generateKeyPair } from '@runtime/security/contract'
@@ -27,7 +27,7 @@ const daemons: Daemon[] = []
 const clients: RpcClient[] = []
 
 beforeEach(() => {
-  installLogSink(nullSink)
+  installLogSink(() => {})
   tmp = fs.mkdtempSync('/tmp/cate-n-')
   home = path.join(tmp, 'h')
   root = path.join(tmp, 'w')

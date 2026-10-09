@@ -97,8 +97,6 @@ export function installLayout(installDir: string, platform: string) {
   }
 }
 
-export type InstallLayout = ReturnType<typeof installLayout>
-
 /** The install dir a daemon runs from: its Node is `<dir>/runtime/bin/node`. */
 export function installDirFromExecPath(execPath: string, platform: string): string {
   const parts = execPath.split(/[\\/]+/)

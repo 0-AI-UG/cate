@@ -27,8 +27,6 @@ export interface SkillsRegistryDeps {
   now?: () => number
 }
 
-export type SkillsRegistry = ReturnType<typeof createSkillsRegistry>
-
 export function createSkillsRegistry(deps: SkillsRegistryDeps) {
   const now = deps.now ?? Date.now
   const indexUrl = deps.indexUrl ?? CURATED_INDEX_URL

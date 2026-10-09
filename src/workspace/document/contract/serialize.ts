@@ -12,11 +12,6 @@ export interface DocumentFile {
   document: WorkspaceDocument
 }
 
-export function serializeDocument(doc: WorkspaceDocument): string {
-  const file: DocumentFile = { version: DOCUMENT_FILE_VERSION, document: doc }
-  return `${JSON.stringify(file, null, 2)}\n`
-}
-
 export type ParseResult = { ok: true; doc: WorkspaceDocument } | { ok: false; error: string }
 
 /** Parse and validate document.json text. */

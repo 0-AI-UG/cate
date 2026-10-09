@@ -1,4 +1,4 @@
-import { channelStream, defineCapability, method, stream, type ChannelEvent } from '@kernel/rpc/contract'
+import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
 
 export type TerminalActivity =
   | { type: 'idle' }
@@ -125,8 +125,6 @@ export const processCapability = defineCapability('process', {
     statuses: channelStream<void, TerminalStatuses, TerminalStatusChange>(),
   },
 })
-
-export type StatusEvent = ChannelEvent<TerminalStatuses, TerminalStatusChange>
 
 declare module '@kernel/rpc/contract' {
   interface CapabilityRegistry {

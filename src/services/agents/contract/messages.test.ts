@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentMessageText, lastAssistantMessage, lastAssistantText } from './messages'
+import { agentMessageText, lastAssistantMessage } from './messages'
 
 describe('agent message helpers', () => {
   it('joins only text content blocks and trims the result', () => {
@@ -19,7 +19,6 @@ describe('agent message helpers', () => {
     const messages = [olderWithText, { role: 'user', content: [] }, newestEmpty]
 
     expect(lastAssistantMessage(messages)).toBe(olderWithText)
-    expect(lastAssistantText(messages)).toBe('answer')
     expect(lastAssistantMessage([newestEmpty])).toBe(newestEmpty)
     expect(lastAssistantMessage('invalid')).toBeNull()
   })

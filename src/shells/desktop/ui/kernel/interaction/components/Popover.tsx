@@ -168,11 +168,3 @@ export function useNodePopover(
   })
   return { open, setOpen, popoverRef, pos, portalTarget }
 }
-
-/** Compatibility name for the composer-facing popover surface. */
-export function NodePopover({
-  bodyClassName,
-  ...props
-}: Omit<Parameters<typeof PopoverSurface>[0], 'className'> & { bodyClassName?: string }) {
-  return <PopoverSurface {...props} className={bodyClassName} />
-}

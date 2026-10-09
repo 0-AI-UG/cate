@@ -110,7 +110,3 @@ export function stepBrowserZoom(current: number, direction: 1 | -1): number {
 }
 
 export const COMPACT_VIEWPORT: BrowserViewport = { preset: 'compact' }
-
-/** The record fields of a browser panel: the URL it opened on, then its
- *  active URL, kept by the session for `describe` and the palette. */
-export type BrowserRecordFields = { url?: string }

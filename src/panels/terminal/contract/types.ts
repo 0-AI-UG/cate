@@ -34,13 +34,6 @@ export type TerminalOp =
   | { kind: 'openUrl'; url: string }
   | { kind: 'openFile'; path: string; line?: number; column?: number }
 
-
-/** The terminal's own record fields. */
-export type TerminalFields = {
-  /** The directory the terminal was opened in. */
-  cwd?: string
-}
-
 export interface TerminalCreateOptions extends PanelCreateOptions {
   cwd?: string
 }

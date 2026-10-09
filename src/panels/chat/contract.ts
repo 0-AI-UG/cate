@@ -4,14 +4,6 @@
 import type { PanelCreateOptions } from '@panels/framework/contract'
 import type { PanelRecord, PlaceTarget } from '@workspace/document/contract'
 
-/** The record fields of a chat panel. `cwd` is an explicit checkout (else the
- *  panel's worktree, else the root); `threadId` the conversation shown (none:
- *  a fresh chat whose first prompt creates it). */
-export interface ChatFields {
-  threadId?: string
-  cwd?: string
-}
-
 export function chatThreadId(record: PanelRecord): string | undefined {
   const threadId = record.fields.threadId
   return typeof threadId === 'string' && threadId ? threadId : undefined

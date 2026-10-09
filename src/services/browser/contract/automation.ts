@@ -1,7 +1,6 @@
 // Cate's browser page protocol: what the page driver observes and returns.
 // The runtime session, the client view and the desktop driver share it.
 export type BrowserPoint = [number, number]
-export type BrowserElementTarget = number | BrowserPoint
 
 export interface BrowserBinding {
   panelId: string

@@ -10,7 +10,7 @@ import {
   enforceCateSettings,
   extractProviderProfile,
   isProviderSecretFile,
-} from '../contract'
+} from './providerProfile'
 import type { T3Paths } from './paths'
 
 function errorMessage(error: unknown): string {

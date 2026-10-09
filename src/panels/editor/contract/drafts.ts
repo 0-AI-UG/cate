@@ -21,7 +21,3 @@ export function isEditorDraft(path: string | undefined): boolean {
 export function editorDraftPath(root: string, id: string): string {
   return `${cateTempDir(root)}/${id}.md`
 }
-
-export function editorDraftDirectory(path: string): string {
-  return path.replace(/[/\\][^/\\]+$/, '')
-}

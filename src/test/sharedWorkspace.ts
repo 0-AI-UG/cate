@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
-import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
+import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import type { ByteDuplex, ChannelState, ClientFeature } from '@kernel/rpc/contract'
 import { createClientIdentity, WorkspaceConnection, type ClientIdentity, type ConnectionState, type SessionHandle, type ShellTransports } from '@client/connections'
@@ -115,7 +115,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     registerPanelDefinitions(PANEL_DEFINITIONS)
     registered = true
   }
-  installLogSink(nullSink)
+  installLogSink(() => {})
   // Short paths: a Unix socket path must fit in ~104 bytes.
   const tmp = fs.realpathSync(fs.mkdtempSync('/tmp/cate-s-'))
   const home = path.join(tmp, 'h')

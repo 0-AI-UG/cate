@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { installLogSink, nullSink } from '../../log/contract'
+import { installLogSink } from '../../log/contract'
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-jsonstate-test-'))
 
@@ -20,7 +20,7 @@ const normalize = (parsed: unknown, d: Shape): Shape => {
 const at = (name: string): string => path.join(dir, name)
 
 beforeEach(() => {
-  installLogSink(nullSink)
+  installLogSink(() => {})
   for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { recursive: true, force: true })
 })
 afterAll(() => {

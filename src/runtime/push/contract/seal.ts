@@ -4,7 +4,7 @@
 
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'
 import { randomBytes } from '@noble/hashes/utils.js'
-import { utf8Decode, utf8Encode } from '@runtime/security/contract'
+import { utf8Encode } from '@runtime/security/contract'
 
 export const PUSH_KEY_BYTES = 32
 const NONCE_BYTES = 12
@@ -34,17 +34,6 @@ export function sealPushMessage(key: Uint8Array, message: PushMessage, nonce: Ui
   combined.set(nonce)
   combined.set(sealed, NONCE_BYTES)
   return encodeBase64(combined)
-}
-
-/** The message, or null when `sealed` is not one sealed under `key`. */
-export function openPushMessage(key: Uint8Array, sealed: string): PushMessage | null {
-  try {
-    const combined = decodeBase64(sealed)
-    const plain = chacha20poly1305(key, combined.subarray(0, NONCE_BYTES)).decrypt(combined.subarray(NONCE_BYTES))
-    return JSON.parse(utf8Decode(plain)) as PushMessage
-  } catch {
-    return null
-  }
 }
 
 export function encodeBase64(bytes: Uint8Array): string {

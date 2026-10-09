@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ConnectPush, ConnectPushResult } from '@runtime/connect/contract'
-import { encodeBase64, openPushMessage, sealPushMessage, type PushMessage } from './contract'
+import { encodeBase64, sealPushMessage, type PushMessage } from './contract'
+import { openPushMessage } from '../../test/push'
 import { createPushService, type PushFile, type PushSender } from './runtime'
 
 const key = new Uint8Array(32).fill(7)

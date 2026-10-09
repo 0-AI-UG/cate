@@ -173,9 +173,6 @@ export type AnyPanelDefinition = PanelDefinition<PanelType, any, any, any>
 /** Declares a panel type. `const` keeps literal flags visible to derived types. */
 export const definePanel = <const Definition extends AnyPanelDefinition>(definition: Definition): Definition => definition
 
-export type SnapshotOfPanel<D> = D extends PanelDefinition<PanelType, infer S, unknown> ? S : never
-export type OpOfPanel<D> = D extends PanelDefinition<PanelType, unknown, infer Op> ? Op : never
-
 /** What is wrong with a definition; empty when nothing. The contract test
  *  runs it over every definition. */
 export function definitionProblems(definition: AnyPanelDefinition): string[] {

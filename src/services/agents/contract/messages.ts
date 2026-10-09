@@ -26,7 +26,3 @@ export function lastAssistantMessage(messages: unknown): Record<string, unknown>
   }
   return lastAssistant
 }
-
-export function lastAssistantText(messages: unknown): string {
-  return agentMessageText(lastAssistantMessage(messages))
-}

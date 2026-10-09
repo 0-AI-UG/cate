@@ -43,13 +43,6 @@ export type BufferStreamEvent =
 export type ExternalEventType = 'create' | 'update' | 'delete'
 export type ExternalAction = 'reload' | 'conflict-changed' | 'conflict-deleted'
 
-/** How a buffer reacts to an external change of its file: a clean buffer
- *  reloads, a dirty one conflicts, a deletion always conflicts. */
-export function classifyExternalEvent(eventType: ExternalEventType, isDirty: boolean): ExternalAction {
-  if (eventType === 'delete') return 'conflict-deleted'
-  return isDirty ? 'conflict-changed' : 'reload'
-}
-
 /** The smallest single replacement turning `from` into `to`: keep the common
  *  prefix and suffix. Applying a reload this way keeps remote cursors stable. */
 export function textDelta(from: string, to: string): { index: number; remove: number; insert: string } | null {

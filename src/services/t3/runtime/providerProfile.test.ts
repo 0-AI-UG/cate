@@ -4,7 +4,7 @@ import {
   applyProviderProfile,
   extractProviderProfile,
   isProviderSecretFile,
-} from '../contract'
+} from './providerProfile'
 
 describe('T3 provider profile', () => {
   it('copies only provider-owned settings and always enforces local threads', () => {

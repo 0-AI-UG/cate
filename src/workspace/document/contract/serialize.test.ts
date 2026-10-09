@@ -4,7 +4,7 @@ import { applyOp } from './apply'
 import type { DocChange } from './ops'
 import { allStacks, canvasOf, canvasPanelOf, documentOrder, panelsInWindow, panelsOnCanvas, stacksIn, windowOf } from './selectors'
 import { createDocument, type WorkspaceDocument } from './schema'
-import { DOCUMENT_FILE_VERSION, parseDocument, serializeDocument, validateDocument } from './serialize'
+import { DOCUMENT_FILE_VERSION, parseDocument, validateDocument } from './serialize'
 
 const R = rect(0, 0, 400, 300)
 
@@ -27,11 +27,6 @@ function sample(): WorkspaceDocument {
 const file = (document: unknown) => JSON.stringify({ version: DOCUMENT_FILE_VERSION, document })
 
 describe('document.json', () => {
-  it('round trips', () => {
-    const doc = sample()
-    const parsed = parseDocument(serializeDocument(doc))
-    expect(parsed).toEqual({ ok: true, doc })
-  })
 
   it('rejects anything that is not a version 1 document file', () => {
     expect(parseDocument('{').ok).toBe(false)

@@ -164,29 +164,6 @@ export function wouldCreatePanelRelationCycle(
   return false
 }
 
-/** A relation only affects prompts when its source is an execution surface or
- * already belongs to a flow rooted at one. */
-export function isPanelRelationSourceAnchored(
-  panelId: string,
-  panels: Record<string, RelationPanel>,
-  relations: readonly PanelRelation[],
-): boolean {
-  const reachable = new Set(Object.values(panels)
-    .filter((panel) => isExecutionSurface(panel))
-    .map((panel) => panel.id))
-  const queue = [...reachable]
-  while (queue.length > 0) {
-    const sourceId = queue.shift()!
-    for (const relation of relations) {
-      if (relation.fromPanelId !== sourceId || reachable.has(relation.toPanelId)) continue
-      reachable.add(relation.toPanelId)
-      queue.push(relation.toPanelId)
-    }
-  }
-  return reachable.has(panelId)
-}
-
-
 function panelRef(panel: RelationPanel): string {
   const id = shortPanelId(panel.id)
   return panel.title === panel.id ? `${panel.type} ${id}` : `${panel.title} ${id}`

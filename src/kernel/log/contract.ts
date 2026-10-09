@@ -84,9 +84,6 @@ export function createConsoleSink(threshold: LogLevel = 'info'): LogSink {
   }
 }
 
-/** Drops everything. Tests install it to keep output quiet. */
-export const nullSink: LogSink = () => {}
-
 const defaultSink = createConsoleSink()
 let activeSink: LogSink = defaultSink
 

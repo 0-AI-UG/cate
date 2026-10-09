@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { compareSemver, isPrereleaseVersion } from './semver'
+import { compareSemver } from './semver'
 
 describe('compareSemver', () => {
   it('orders release versions by core', () => {
@@ -34,13 +34,5 @@ describe('compareSemver', () => {
     const versions = ['1.2.0', '1.2.0-beta.1', '1.2.1', '1.2.0-beta.10', '1.2.0-beta.2']
     const sorted = [...versions].sort(compareSemver)
     expect(sorted).toEqual(['1.2.0-beta.1', '1.2.0-beta.2', '1.2.0-beta.10', '1.2.0', '1.2.1'])
-  })
-})
-
-describe('isPrereleaseVersion', () => {
-  it('detects a pre-release suffix', () => {
-    expect(isPrereleaseVersion('1.2.0-beta.1')).toBe(true)
-    expect(isPrereleaseVersion('1.2.0-rc.1')).toBe(true)
-    expect(isPrereleaseVersion('1.2.0')).toBe(false)
   })
 })

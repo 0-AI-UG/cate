@@ -902,6 +902,13 @@ unused exports (`ACCENT_PALETTE`, `NodePopover`, `SkillsRegistry`,
 `isPanelRelationSourceAnchored`, `serializeDocument`, `isPrereleaseVersion`,
 `openPushMessage`, `nullSink`), after confirming each with a grep.
 
+Note (as built): `normalizeAgentHookPayload` stays in the agents contract:
+it is the harness every hook spec's contract test runs through, so moving
+it would make the contract's tests import the runtime. `panelConnectionAnchor`
+stays: tests use it as the oracle for where production geometry puts a
+connection. `openPushMessage` moved to `src/test/push.ts` and `nullSink`
+became an inline `() => {}`: tests use them, nothing else.
+
 Other cleanup in the same pass:
 - Delete `shells/desktop/ui/client/layout/drag/shellLogic.ts` (dead copy of
   main's logic) and its test.

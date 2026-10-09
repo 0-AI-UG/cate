@@ -52,7 +52,6 @@ export interface AgentSkillTarget {
   beta?: boolean
 }
 
-
 export type AgentInterruptKey = 'escape' | 'ctrl-c'
 
 /** What each interrupt key types into the PTY. */
@@ -306,11 +305,6 @@ export function agentDef(id: string | null | undefined): AgentDef | null {
 
 export function agentDisplayName(id: AgentId): string {
   return AGENT_DEFS[id].displayName
-}
-
-/** The agent whose skills target this is, or null for a non-agent target. */
-export function agentForSkillTarget(targetId: SkillTargetId): AgentDef | null {
-  return AGENTS.find((a) => a.skills?.targetId === targetId) ?? null
 }
 
 /** The repo-local config folder whose presence gates 'auto' injection for one

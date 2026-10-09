@@ -10,12 +10,13 @@ import path from 'node:path'
 import { framePortOver } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
-import { createLogger, installLogSink, nullSink, type LogRecord } from '@kernel/log/contract'
+import { createLogger, installLogSink, type LogRecord } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { fingerprint, generateKeyPair, networkIdOf, type KeyPair, type MessagePortLike } from '../security/contract'
 import { PinMismatchError } from '../security/client'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '../pairing/contract'
-import { encodeBase64, openPushMessage, pushCapability } from '../push/contract'
+import { encodeBase64, pushCapability } from '../push/contract'
+import { openPushMessage } from '../../test/push'
 import { KnownRuntimes, PairingError } from '../pairing/client'
 import type { IceServer, PeerConnectionFactory } from '../transports/contract'
 import { openSecureConnection } from '../transports/client'
@@ -39,7 +40,7 @@ beforeAll(async () => {
 })
 
 beforeEach(() => {
-  installLogSink(nullSink)
+  installLogSink(() => {})
   tmp = fs.mkdtempSync('/tmp/cate-c-')
 })
 

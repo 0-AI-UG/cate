@@ -5,7 +5,7 @@
 // any T3 page being open.
 
 import WebSocket from 'ws'
-import { applyT3ShellEvent, type T3ShellSnapshot } from '../contract'
+import type { T3ShellSnapshot, T3Thread } from '../contract'
 
 const REQUEST_ID = 'cate-shell'
 const RECONNECT_MS = 2_000
@@ -103,4 +103,38 @@ export class ThreadShellSubscription {
     this.state = { ...this.state, connected: false }
     this.publish(this.state)
   }
+}
+
+/** The fields Cate keeps from one of T3's thread shells. */
+export function pickT3Thread(thread: Record<string, unknown>): T3Thread {
+  return {
+    id: String(thread.id),
+    title: String(thread.title ?? ''),
+    latestTurn: thread.latestTurn as T3Thread['latestTurn'],
+    session: thread.session as T3Thread['session'],
+    hasPendingApprovals: thread.hasPendingApprovals as boolean | undefined,
+    hasPendingUserInput: thread.hasPendingUserInput as boolean | undefined,
+    hasActionableProposedPlan: thread.hasActionableProposedPlan as boolean | undefined,
+    backgroundLiveness: thread.backgroundLiveness as T3Thread['backgroundLiveness'],
+  }
+}
+
+/** Folds one `orchestration.subscribeShell` event into a snapshot. */
+export function applyT3ShellEvent(state: T3ShellSnapshot, event: Record<string, any>): T3ShellSnapshot {
+  let next = state
+  if (event.kind === 'snapshot') {
+    const threads: Array<Record<string, unknown>> = event.snapshot?.threads ?? []
+    next = {
+      ...state,
+      threads: Object.fromEntries(threads.map((thread) => [String(thread.id), pickT3Thread(thread)])),
+      sequence: event.snapshot?.snapshotSequence ?? state.sequence,
+      connected: true,
+    }
+  } else if (event.kind === 'thread-upserted' && event.thread) {
+    next = { ...state, threads: { ...state.threads, [String(event.thread.id)]: pickT3Thread(event.thread) } }
+  } else if (event.kind === 'thread-removed') {
+    const { [String(event.threadId)]: _removed, ...rest } = state.threads
+    next = { ...state, threads: rest }
+  }
+  return typeof event.sequence === 'number' ? { ...next, sequence: event.sequence } : next
 }

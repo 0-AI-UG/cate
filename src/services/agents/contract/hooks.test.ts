@@ -7,7 +7,6 @@ import { describe, expect, test } from 'vitest'
 import {
   AGENT_HOOK_SPECS,
   CATE_HOOK_MARKER,
-  codexTrustedHash,
   normalizeAgentHookPayload,
   type HookInjectionContext,
 } from './hooks'
@@ -18,16 +17,6 @@ const ctx: HookInjectionContext = {
 
 const norm = (agentId: string, payload: Record<string, unknown>) =>
   normalizeAgentHookPayload(agentId, 'term-1', payload)
-
-describe('codex trusted hash', () => {
-  test('pinned vector — the exact builder verified live against codex', () => {
-    // If this drifts, the live contract suite is the authority; both must move
-    // together with a codex release that changes the trust scheme.
-    expect(codexTrustedHash('session_start', '/cate/hooks/bridge-codex', 60)).toBe(
-      'sha256:45b23f6911ff81a78ed16f786e7ff25cad505d52d656cab9b3236565677d2c37',
-    )
-  })
-})
 
 describe('claude spec', () => {
   const spec = AGENT_HOOK_SPECS['claude-code']

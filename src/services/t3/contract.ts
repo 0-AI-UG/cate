@@ -3,7 +3,6 @@
 export * from './contract/types'
 export * from './contract/providers'
 export * from './contract/providerAuth'
-export * from './contract/providerProfile'
 export * from './contract/providerStatus'
 export * from './contract/threads'
 export * from './contract/capability'

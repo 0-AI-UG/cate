@@ -8,7 +8,6 @@ import {
   AGENTS,
   T3_AGENTS,
   agentForLaunchCommand,
-  agentForSkillTarget,
   agentIdForT3Provider,
   matchAgentDef,
   resumeCommandForAgent,
@@ -20,7 +19,6 @@ import type { SkillTargetId } from '@workspace/skills/contract'
 /** Agents deliberately without a skills integration. Add an id here ONLY with a
  *  reason — the point of the failure is to force the decision, not to be muted. */
 const NO_SKILLS: ReadonlySet<AgentId> = new Set([])
-
 
 describe('agent registry coverage', () => {
   test('native prompt context is gated to CLIs with a supported submit hook', () => {
@@ -48,13 +46,6 @@ describe('agent registry coverage', () => {
         expect(seg, `${a.id} skills segment`).not.toContain('/')
         expect(seg).not.toBe('..')
       }
-    }
-  })
-
-  test('every skills target resolves back to its agent', () => {
-    for (const a of AGENTS) {
-      if (!a.skills) continue
-      expect(agentForSkillTarget(a.skills.targetId)?.id, `${a.skills.targetId} resolves to its agent`).toBe(a.id)
     }
   })
 

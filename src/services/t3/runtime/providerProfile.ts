@@ -2,7 +2,7 @@
 // from the instance where the user edited it to `<t3>/provider-profile.json`
 // and applied to every other checkout's instance of the workspace.
 
-import { T3_PROVIDERS } from './providers'
+import { T3_PROVIDERS } from '../contract'
 
 const PROVIDER_SETTING_KEYS = [
   'providers',

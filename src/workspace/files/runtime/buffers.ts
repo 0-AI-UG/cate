@@ -16,13 +16,13 @@ import {
   contentHash,
   pathKey,
   textDelta,
-  threeWayMerge,
   type BufferConflict,
   type BufferResolution,
   type BufferState,
   type FsChangeType,
 } from '../contract'
 import type { PathScope } from './pathScope'
+import { threeWayMerge } from './threeWayMerge'
 import { readBytesOrNull, writeAtomic } from './fileOps'
 
 export interface BufferHandle {

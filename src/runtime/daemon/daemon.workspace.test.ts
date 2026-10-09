@@ -8,7 +8,7 @@ import { apiCapability } from '@kernel/api/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { framePortOver, type ChannelEvent } from '@kernel/rpc/contract'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
-import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
+import { createLogger, installLogSink } from '@kernel/log/contract'
 import { dialLocal } from '@runtime/transports/node'
 import { workspaceCapability } from '@workspace/lifecycle/contract'
 import { MAIN_WINDOW, documentCapability, type DocOp } from '@workspace/document/contract'
@@ -25,7 +25,7 @@ const clients: RpcClient[] = []
 const saved = { HOME: process.env.HOME, SHELL: process.env.SHELL }
 
 beforeEach(() => {
-  installLogSink(nullSink)
+  installLogSink(() => {})
   // Short paths: a Unix socket path must fit in ~104 bytes.
   tmp = fs.realpathSync(fs.mkdtempSync('/tmp/cate-w-'))
   home = path.join(tmp, 'h')

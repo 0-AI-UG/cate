@@ -6,11 +6,7 @@
 
 import type { AgentChangedFile, AgentChangesFilter, AgentId } from '@services/agents/contract'
 import type { PlaceTarget } from '@workspace/document/contract'
-import type {
-  GitComparisonResult,
-  GitComparisonSpec,
-  GitFileDiff,
-} from '@workspace/repository/contract'
+import type { GitComparisonResult, GitComparisonSpec } from '@workspace/repository/contract'
 
 export interface ReviewNote {
   id: string
@@ -199,8 +195,6 @@ export type ReviewOp =
   | { kind: 'reviewWithAgent'; agentId: AgentId; terminalPanelId?: string; at?: PlaceTarget }
   /** Returns a `RequestChangesOutcome`. */
   | { kind: 'requestChanges'; agentId?: AgentId; terminalPanelId?: string; at?: PlaceTarget }
-
-export type ReviewDiffResult = GitFileDiff
 
 export function defaultReviewState(repoPath: string, request?: Partial<ReviewOpenRequest>): ReviewState {
   return {

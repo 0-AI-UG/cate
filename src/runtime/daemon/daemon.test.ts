@@ -5,7 +5,7 @@ import path from 'node:path'
 import { framePortOver } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
-import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
+import { createLogger, installLogSink } from '@kernel/log/contract'
 import { RUNTIME_STOP_DEADLINE_MS } from '@runtime/data/contract'
 import { runtimeIdFor } from '@runtime/data/node'
 import { socketAnswers } from '@runtime/data/runtime'
@@ -21,7 +21,7 @@ let root: string
 const daemons: Daemon[] = []
 
 beforeEach(() => {
-  installLogSink(nullSink)
+  installLogSink(() => {})
   tmp = fs.mkdtempSync('/tmp/cate-d-')
   home = path.join(tmp, 'h')
   root = path.join(tmp, 'w')

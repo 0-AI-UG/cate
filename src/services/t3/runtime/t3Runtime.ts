@@ -17,7 +17,6 @@ import type { ServerHost } from '@runtime/server/runtime'
 import {
   canT3ThreadReceivePrompt,
   cleanProviderAuthOutput,
-  PROVIDER_SETTINGS_PATCH_KEYS,
   providerAuthCode,
   providerAuthLaunch,
   providerAuthUrl,
@@ -26,7 +25,6 @@ import {
   t3SnapshotBusy,
   t3ThreadActivity,
   T3_PROVIDERS,
-  t3SettingsForClient,
   type T3CheckoutParams,
   type T3Conversation,
   type T3ConversationMessage,
@@ -48,6 +46,7 @@ import { t3Paths, type T3Paths } from './paths'
 import { instanceSettings, prepareInstanceSettings, publishProviderProfile, readJsonObject, readProviderProbes } from './providerFiles'
 import { settingsRpc } from './settingsRpc'
 import { ThreadShellSubscription } from './threadShells'
+import { PROVIDER_SETTINGS_PATCH_KEYS, t3SettingsForClient } from './providerProfile'
 
 const READY_PATH = '/.well-known/t3/environment'
 const START_TIMEOUT_MS = 30_000

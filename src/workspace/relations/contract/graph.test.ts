@@ -4,7 +4,6 @@ import { panelDefinition } from '@panels/definitions'
 import {
   compileRelationContext,
   defaultPanelRelationKind,
-  isPanelRelationSourceAnchored,
   panelRelationOptions,
   relationPanelOf,
   wouldCreatePanelRelationCycle,
@@ -115,20 +114,6 @@ describe('panel relation prompt context', () => {
     ]
     expect(wouldCreatePanelRelationCycle(relations, 'c', 'a')).toBe(true)
     expect(wouldCreatePanelRelationCycle(relations, 'c', 'd')).toBe(false)
-  })
-
-  it('only enables downstream sources after an execution surface anchors the flow', () => {
-    const panels = {
-      chat: panel('chat', 'chat'),
-      browser: panel('browser', 'browser'),
-      editor: panel('editor', 'editor'),
-    }
-    expect(isPanelRelationSourceAnchored('chat', panels, [])).toBe(true)
-    expect(isPanelRelationSourceAnchored('browser', panels, [])).toBe(false)
-    expect(isPanelRelationSourceAnchored('browser', panels, [
-      { id: 'link', fromPanelId: 'chat', toPanelId: 'browser', kind: 'use' },
-    ])).toBe(true)
-    expect(isPanelRelationSourceAnchored('editor', panels, [])).toBe(false)
   })
 
   it('offers exactly three pair-aware intents with one recommendation', () => {

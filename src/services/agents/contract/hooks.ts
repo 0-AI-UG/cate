@@ -8,8 +8,6 @@
 // The injection and payload contracts are pinned live against the installed
 // CLIs by the agent hook contract suite; the shapes here follow it. Pure.
 
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import type { AgentId } from './registry'
 import type { AgentApprovalDetection, AgentApprovalMode } from './approvalModes'
 
@@ -465,17 +463,6 @@ const claudeSpec: AgentHookSpec = {
 // "modified since last trusted" on every boot. Schema and trust behavior were
 // verified live against codex.
 // ---------------------------------------------------------------------------
-
-/** sha256 of codex's canonical handler identity — the recipe codex checks a
- *  hooks.state trusted_hash against, verified live. Product code does not plant
- *  trust (the user grants it once in codex's own review prompt); the builder
- *  stays exported for the pinned-vector test. */
-export function codexTrustedHash(label: string, command: string, timeout: number): string {
-  const identity =
-    `{"event_name":${JSON.stringify(label)},"hooks":[{"async":false,` +
-    `"command":${JSON.stringify(command)},"timeout":${timeout},"type":"command"}]}`
-  return 'sha256:' + bytesToHex(sha256(utf8ToBytes(identity)))
-}
 
 /** hooks.json event keys (CamelCase). Codex's own trust-state keys use
  *  snake_case labels of these same events — a codex quirk the live suite's

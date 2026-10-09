@@ -84,8 +84,6 @@ export type DocChange =
   | { kind: 'setWorktree'; worktree: WorktreeMeta }
   | { kind: 'removeWorktree'; id: WorktreeId }
 
-export type DocChangeKind = DocChange['kind']
-
 export interface DocBatch {
   kind: 'batch'
   changes: DocChange[]
