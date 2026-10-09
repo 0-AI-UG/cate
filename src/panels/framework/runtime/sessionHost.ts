@@ -1,8 +1,13 @@
 // The session host (architecture 11.1, 11.2 rule 7): one session per
 // document panel. It follows the document: a panel added gets a session that
-// starts, a removed one is disposed (with its state file), a replaced one is
-// swapped under the same id, and a changed record is passed on. Ops for a
-// panel run one after another and fail with `gone` once it is removed.
+// starts, a removed one is disposed (its state file set aside under
+// `sessions/removed/` for a day, so undoing the removal brings the state
+// back), a replaced one is swapped under the same id, and a changed record is
+// passed on. Ops for a panel run one after another and fail with `gone` once
+// it is removed.
+
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 
 import type { ApiSessionContext } from '@kernel/api/contract'
 import { createLogger, type Logger } from '@kernel/log/contract'
@@ -51,11 +56,41 @@ interface Entry {
 
 const gone = (panelId: PanelId) => new RpcError('gone', `panel ${panelId} is gone`)
 
+/** How long the state of a removed panel is kept for an undo. */
+const REMOVED_KEEP_MS = 24 * 60 * 60_000
+
 export function createSessionHost(deps: SessionHostDeps): SessionHost {
   const log = deps.log ?? createLogger('sessions')
   const entries = new Map<PanelId, Entry>()
   const lock = new KeyedLock()
+  // A dropped panel's state file until it is set aside; a session created
+  // under the same id starts after it.
+  const retiring = new Map<PanelId, Promise<void>>()
   let disposed = false
+
+  const removedFile = (panelId: PanelId) => {
+    const file = deps.sessionFile(panelId)
+    return path.join(path.dirname(file), 'removed', path.basename(file))
+  }
+
+  /** Brings back the state a removed panel of this id left. */
+  const bringBack = async (panelId: PanelId): Promise<void> => {
+    await retiring.get(panelId)
+    await fs.rename(removedFile(panelId), deps.sessionFile(panelId)).catch((err: NodeJS.ErrnoException) => {
+      if (err.code !== 'ENOENT') log.warn('restoring the state of panel %s failed: %s', panelId, err.message)
+    })
+  }
+
+  const pruneRemoved = async (): Promise<void> => {
+    const dir = path.dirname(removedFile('x'))
+    const names = await fs.readdir(dir).catch(() => [] as string[])
+    const cutoff = Date.now() - REMOVED_KEEP_MS
+    for (const name of names) {
+      const file = path.join(dir, name)
+      const stat = await fs.stat(file).catch(() => null)
+      if (stat && stat.mtimeMs < cutoff) await fs.rm(file, { force: true })
+    }
+  }
 
   const create = (record: PanelRecord): void => {
     const registered = deps.registry.get(record.type)
@@ -73,7 +108,7 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
       session: (panelId) => entries.get(panelId)?.session,
     }
     const session = new registered.session(kit, record)
-    const started = Promise.resolve()
+    const started = bringBack(record.id)
       .then(() => (session.isDisposed ? undefined : session.start()))
       .catch((err) => log.error('panel %s (%s) failed to start: %O', record.id, record.type, err))
     entries.set(record.id, { session, store, started })
@@ -83,7 +118,9 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
     const entry = entries.get(panelId)
     if (!entry) return
     entries.delete(panelId)
-    entry.store.remove()
+    const retired = entry.store.retire(reason === 'removed' ? removedFile(panelId) : null)
+    retiring.set(panelId, retired)
+    void retired.finally(() => { if (retiring.get(panelId) === retired) retiring.delete(panelId) })
     try { entry.session.dispose(reason) } catch (err) { log.error('disposing panel %s failed: %O', panelId, err) }
   }
 
@@ -113,6 +150,7 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
 
   return {
     async restore() {
+      await pruneRemoved()
       for (const record of Object.values(deps.document.get().panels)) if (!entries.has(record.id)) create(record)
       await Promise.all([...entries.values()].map((entry) => entry.started))
     },

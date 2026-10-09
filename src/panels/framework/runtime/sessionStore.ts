@@ -1,16 +1,21 @@
 // A session's own state file, `<data>/sessions/<panelId>.json`: read once,
-// written debounced and atomic, removed with the panel.
+// written debounced and atomic, set aside when the panel is removed (so undo
+// brings it back) and deleted when the panel is replaced.
 
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import type { Logger } from '@kernel/log/contract'
-import { readJsonFile, removeFile, writeJsonAtomic, writeJsonAtomicSync } from '@kernel/state/node'
+import { readJsonFile, writeJsonAtomic, writeJsonAtomicSync } from '@kernel/state/node'
 import type { Json } from '@workspace/document/contract'
 import type { SessionStore } from './PanelSession'
 
 export interface SessionFileStore extends SessionStore {
   /** Writes a pending value synchronously (shutdown). */
   flushSync(): void
-  /** Drops pending writes and deletes the file (panel removed). */
-  remove(): void
+  /** Stops writing, waits for a write in flight, writes what is pending and
+   *  moves the file to `to` (panel removed), or deletes it when `to` is null
+   *  (panel replaced by another type). */
+  retire(to: string | null): Promise<void>
 }
 
 const MISSING = Symbol('missing')
@@ -35,8 +40,6 @@ export function createSessionFileStore(file: string, log: Logger, debounceMs = 2
       dirty = false
       await writeJsonAtomic(file, value ?? null)
     }
-    // A removal while the write ran: the file must not survive it.
-    if (removed) removeFile(file)
   }
 
   const flush = (): Promise<void> => {
@@ -66,11 +69,25 @@ export function createSessionFileStore(file: string, log: Logger, debounceMs = 2
       dirty = false
       try { writeJsonAtomicSync(file, value ?? null) } catch (err) { log.warn('writing %s failed: %s', file, (err as Error).message) }
     },
-    remove() {
+    async retire(to) {
+      if (removed) return
       removed = true
-      dirty = false
       if (timer) { clearTimeout(timer); timer = null }
-      removeFile(file)
+      await writing
+      try {
+        if (to === null) {
+          await fs.rm(file, { force: true })
+          return
+        }
+        await fs.mkdir(path.dirname(to), { recursive: true })
+        if (dirty) await writeJsonAtomic(to, value ?? null)
+        else await fs.rename(file, to)
+        await fs.rm(file, { force: true })
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('retiring %s failed: %s', file, (err as Error).message)
+      } finally {
+        dirty = false
+      }
     },
   }
 }

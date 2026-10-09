@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineCateApi, sessionApi, str } from '@kernel/api/contract'
 import { ApiRouter, ApiTokenRegistry } from '@kernel/api/runtime'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
@@ -160,7 +160,7 @@ beforeEach(async () => {
   log.length = 0
   ids = 0
 })
-afterEach(async () => { await fs.rm(dir, { recursive: true, force: true }) })
+afterEach(async () => { await fs.rm(dir, { recursive: true, force: true, maxRetries: 10 }) })
 
 const sessionFile = (panelId: string) => path.join(dir, 'sessions', `${panelId}.json`)
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
@@ -295,7 +295,7 @@ describe('session host lifecycle', () => {
     w.dispose()
   })
 
-  it('persists session state, removes it with the panel and restores sessions at start', async () => {
+  it('persists session state, sets it aside with the panel and restores sessions at start', async () => {
     const docFile = path.join(dir, 'document.json')
     const first = world({ document: createDocumentService({ file: docFile, debounceMs: 60_000 }) })
     first.document.apply(addTo('t1'))
@@ -305,6 +305,8 @@ describe('session host lifecycle', () => {
     await new Promise((r) => setTimeout(r, 30))
     expect(JSON.parse(await fs.readFile(sessionFile('t1'), 'utf8'))).toEqual({ count: 5 })
     first.document.apply({ kind: 'removePanels', ids: ['t2'] })
+    const removed = path.join(path.dirname(sessionFile('t2')), 'removed', path.basename(sessionFile('t2')))
+    await vi.waitFor(() => fs.access(removed))
     await expect(fs.access(sessionFile('t2'))).rejects.toThrow()
     first.dispose()
     expect(log).toContain('dispose t1 shutdown')
@@ -315,6 +317,21 @@ describe('session host lifecycle', () => {
     expect(log).toEqual(['construct t1', 'start t1'])
     expect(second.host.session('t1')?.snapshot()).toEqual({ count: 5, dirty: false })
     second.dispose()
+  })
+
+  it('brings back a removed panel\'s state when the panel comes back (undo)', async () => {
+    const w = world()
+    w.document.apply(addTo('t1'))
+    await w.host.op('t1', { kind: 'bump', by: 3 }, { clientId: null, connectionId: null })
+    // Removed while its write is still pending, and added back at once.
+    w.document.apply({ kind: 'removePanels', ids: ['t1'] })
+    w.document.apply(addTo('t1'))
+    await w.host.started('t1')
+    expect(w.host.session('t1')?.snapshot()).toEqual({ count: 3, dirty: false })
+    await w.host.op('t1', { kind: 'bump', by: 1 }, { clientId: null, connectionId: null })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(JSON.parse(await fs.readFile(sessionFile('t1'), 'utf8'))).toEqual({ count: 4 })
+    w.dispose()
   })
 })
 

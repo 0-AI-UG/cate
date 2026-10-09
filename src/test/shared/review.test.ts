@@ -6,7 +6,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ReviewSnapshot } from '@panels/review/contract'
-import { startSharedWorkspace, type SharedWorkspace } from '../sharedWorkspace'
+import { invertOp, type DocChange } from '@workspace/document/contract'
+import { startSharedWorkspace, until, type SharedWorkspace } from '../sharedWorkspace'
 
 let ws: SharedWorkspace | undefined
 afterEach(async () => { await ws?.stop(); ws = undefined })
@@ -47,5 +48,22 @@ describe.skipIf(process.platform === 'win32')('shared workspace: review', () => 
     const s = await ws.a.session<ReviewSnapshot>(id).until((s) => !s.loading && s.comparison !== null)
     expect(s.error).toBeNull()
     expect(s.comparison!.files.map((f) => f.path)).toContain('w/new.txt')
+  })
+
+  it('undoing a closed review brings back its notes', async () => {
+    ws = await startSharedWorkspace({ files: { 'a.txt': 'one\n' } })
+    const id = ws.a.createPanel('review')
+    const a = ws.a.session<ReviewSnapshot>(id)
+    await a.until(settled)
+    await a.send({ kind: 'addNote', note: { path: 'a.txt', side: 'new', line: 1, body: 'keep me', context: 'one' } })
+    await a.until((s) => (s.review.notes ?? []).length === 1)
+
+    const before = ws.a.document.getSnapshot()
+    const remove: DocChange = { kind: 'removePanels', ids: [id] }
+    ws.a.document.propose(remove)
+    await until(() => (!ws!.a.document.getSnapshot().panels[id] && ws!.a.document.pending.length === 0 ? true : undefined), 5_000, 'removed')
+    ws.a.document.propose({ kind: 'batch', changes: invertOp(before, { ...remove, opId: { clientId: 'x', counter: 1 } }, () => crypto.randomUUID()) })
+    const restored = await ws.b.session<ReviewSnapshot>(id).until(settled)
+    expect((restored.review.notes ?? []).map((n) => n.body)).toEqual(['keep me'])
   })
 })

@@ -482,6 +482,7 @@ persisted session and document file. It is created with mode `0700`.
   runtime.json          { runtimeId, root, pid, version, build, protocol, endpoints }
   document.json         the document (9.1)
   sessions/<panelId>.json   persisted session state
+  sessions/removed/     state of removed panels, kept a day for undo
   buffers/<hash>.bin    unsaved editor buffers (Yjs updates)
   settings.json         workspace settings (hand-editable)
   secrets.json          0600: browser passwords, runtime key pair
@@ -1295,7 +1296,9 @@ Every panel type meets the same contract.
    owns all live execution and state and keeps working with no client
    connected. Constructors have no side effects; work starts in `start()`.
    Sessions persist their own state to `sessions/<panelId>.json` through the
-   kit.
+   kit. Removing a panel sets its file aside in `sessions/removed/` (pruned
+   after a day at start); a panel added again under that id (undo) starts
+   from it.
 2. **Views render snapshots and send ops.** A snapshot is plain JSON (no
    class instances, no `Map`). A view talks to its session channel through
    the session handles of `client/host` (`acquireSession`); in the desktop UI
