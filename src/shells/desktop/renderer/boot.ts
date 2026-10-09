@@ -171,12 +171,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   stops.push(startClientUi())
 
   // Notifications: OS notifications with `osNotifications`, else toasts.
-  const display = createNotificationDisplay({
-    settings: () => ({
-      notificationsEnabled: settings.get('notificationsEnabled'),
-      notifyOnlyWhenUnfocused: settings.get('notifyOnlyWhenUnfocused'),
-    }),
-  })
+  const display = createNotificationDisplay({ settings })
   stops.push(
     attachNotifications(connections, display.show),
     onAgentsWorking(connections, display.cancel),

@@ -4,6 +4,8 @@ import type { NotificationEvent } from '../contract'
 import { attachNotifications, type NotificationConnection } from './attach'
 import { createNotificationGate } from './gate'
 
+const reader = (read: () => { notificationsEnabled: boolean; notifyOnlyWhenUnfocused: boolean }) => ({ get: <K extends 'notificationsEnabled' | 'notifyOnlyWhenUnfocused'>(key: K) => read()[key] })
+
 function fakeEvents() {
   const listeners = new Set<(event: NotificationEvent) => void>()
   const sub = {
@@ -40,7 +42,7 @@ it('shows only what the client\'s settings and focus allow, after a moment, unle
   const settings = { notificationsEnabled: true, notifyOnlyWhenUnfocused: true }
   let focused = true
   const show = vi.fn()
-  const gate = createNotificationGate({ settings: () => settings, isFocused: () => focused, show })
+  const gate = createNotificationGate({ settings: reader(() => settings), isFocused: () => focused, show })
 
   // In front with notifyOnlyWhenUnfocused: nothing.
   gate.show('ws', event)

@@ -22,6 +22,7 @@ import { useCanvasUi } from './uiState'
 import Minimap from './Minimap'
 import { KeepAwakeButton } from './KeepAwakeButton'
 import { RecentScreenshotButton } from './RecentScreenshotButton'
+import { originCentredOn } from '@workspace/canvas/contract'
 
 interface CanvasToolbarProps {
   workspaceId: string
@@ -76,7 +77,7 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
       if (!target) return
       const center = target.getState().viewToCanvas({ x: ev.clientX - hit.rect.left, y: ev.clientY - hit.rect.top })
       createPanelOnCanvas(workspaceId, hit.canvasId, definition.type, {
-        position: { x: center.x - size.width / 2, y: center.y - size.height / 2 },
+        position: originCentredOn(center, size),
       })
     }
     window.addEventListener('mousemove', onMove, true)

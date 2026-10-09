@@ -4,6 +4,7 @@
 
 import { panelDefinition } from '@client/host'
 import type { PanelPlacementOptions } from '@panels/framework/contract'
+import { originCentredOn } from '@workspace/canvas/contract'
 import type { MobilePlacement } from '../contract'
 
 /** The create options of a new panel of `type` placed at `placement`. */
@@ -11,6 +12,6 @@ export function placementOptions(type: string, placement: MobilePlacement | null
   if (!placement) return {}
   const size = panelDefinition(type)?.defaultSize
   const at = placement.point
-  const position = at && size ? { x: at.x - size.width / 2, y: at.y - size.height / 2 } : undefined
+  const position = at && size ? originCentredOn(at, size) : undefined
   return { near: placement.canvasPanelId, ...(position ? { position } : {}) }
 }

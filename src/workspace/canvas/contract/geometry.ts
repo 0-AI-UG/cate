@@ -243,3 +243,8 @@ export function findNodeInDirection<T extends Box>(
   }
   return best
 }
+
+/** The origin of a `size` box centred on `center`. */
+export function originCentredOn(center: Point, size: Size): Point {
+  return { x: center.x - size.width / 2, y: center.y - size.height / 2 }
+}

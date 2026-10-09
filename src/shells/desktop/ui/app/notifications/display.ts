@@ -8,8 +8,8 @@ import { clientStateFor, documentStoreFor } from '@client/document'
 import { clientUi } from '@kernel/interaction'
 import type { NotificationAction } from '@kernel/interaction/contract'
 import { placementOf } from '@workspace/document/contract'
-import { createNotificationGate, type NotificationGate } from '@workspace/notifications/client'
-import type { NotificationEvent, NotificationSettings } from '@workspace/notifications/contract'
+import { createNotificationGate, type NotificationGate, type NotificationSettingsReader } from '@workspace/notifications/client'
+import type { NotificationEvent } from '@workspace/notifications/contract'
 import { toasts as defaultToasts, type ToastStore } from './toasts'
 
 const focusListeners = new Set<(workspaceId: string, panelId: string) => void>()
@@ -38,8 +38,8 @@ export function runNotificationAction(action: NotificationAction): void {
 }
 
 export interface NotificationDisplayDeps {
-  /** The client's notification settings (client settings slice). */
-  settings(): NotificationSettings
+  /** The client's settings store. */
+  settings: NotificationSettingsReader
   /** Whether this client has the person's attention. */
   isFocused?(): boolean
   /** Whether to use OS notifications; defaults to the client feature plus an

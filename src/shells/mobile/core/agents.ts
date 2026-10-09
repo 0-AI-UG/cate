@@ -141,10 +141,7 @@ export function createMobileAgents(client: MobileClient, bridge: MobileBridge): 
   // (this device's settings and whether the app is in front) decides which
   // become banners.
   const gate = createNotificationGate({
-    settings: () => ({
-      notificationsEnabled: client.settings.get('notificationsEnabled'),
-      notifyOnlyWhenUnfocused: client.settings.get('notifyOnlyWhenUnfocused'),
-    }),
+    settings: client.settings,
     isFocused: () => client.isActive(),
     show(workspaceId, event) {
       void bridge('notification.show', {

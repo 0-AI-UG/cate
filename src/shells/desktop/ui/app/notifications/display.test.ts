@@ -6,6 +6,8 @@ import { createNotificationDisplay, onNotificationFocus, runNotificationAction }
 import { createToastStore } from './toasts'
 import type { NotificationEvent } from '@workspace/notifications/contract'
 
+const reader = (read: () => { notificationsEnabled: boolean; notifyOnlyWhenUnfocused: boolean }) => ({ get: <K extends 'notificationsEnabled' | 'notifyOnlyWhenUnfocused'>(key: K) => read()[key] })
+
 const h = vi.hoisted(() => ({
   doc: null as WorkspaceDocument | null,
   state: null as ClientStateStore | null,
@@ -42,7 +44,7 @@ describe('notification display', () => {
   it('shows an OS notification with a focus action', () => {
     const ui = installMockClientUi()
     const toasts = createToastStore()
-    const display = createNotificationDisplay({ settings: () => on, isFocused: () => false, toasts })
+    const display = createNotificationDisplay({ settings: reader(() => on), isFocused: () => false, toasts })
     display.show('ws', event)
     vi.advanceTimersByTime(1_000)
     expect(ui.notify).toHaveBeenCalledWith({
@@ -56,7 +58,7 @@ describe('notification display', () => {
   it('falls back to a toast when the shell installed no notify', () => {
     installMockClientUi({ notify: undefined })
     const toasts = createToastStore()
-    createNotificationDisplay({ settings: () => on, isFocused: () => false, toasts }).show('ws', event)
+    createNotificationDisplay({ settings: reader(() => on), isFocused: () => false, toasts }).show('ws', event)
     vi.advanceTimersByTime(1_000)
     expect(toasts.getSnapshot()).toHaveLength(1)
   })
@@ -65,7 +67,7 @@ describe('notification display', () => {
     const ui = installMockClientUi()
     let settings = on
     let focused = true
-    const display = createNotificationDisplay({ settings: () => settings, isFocused: () => focused })
+    const display = createNotificationDisplay({ settings: reader(() => settings), isFocused: () => focused })
 
     display.show('ws', event)
     vi.advanceTimersByTime(1_000)
@@ -86,7 +88,7 @@ describe('notification display', () => {
 
   it('debounces per panel: a burst shows once with the latest event, a cancel drops it', () => {
     const ui = installMockClientUi()
-    const display = createNotificationDisplay({ settings: () => on, isFocused: () => false, debounceMs: 300 })
+    const display = createNotificationDisplay({ settings: reader(() => on), isFocused: () => false, debounceMs: 300 })
 
     display.show('ws', event)
     vi.advanceTimersByTime(200)
@@ -109,7 +111,7 @@ describe('notification display', () => {
     const toasts = createToastStore()
     const focused = vi.fn()
     const off = onNotificationFocus(focused)
-    createNotificationDisplay({ settings: () => on, isFocused: () => false, toasts }).show('ws', event)
+    createNotificationDisplay({ settings: reader(() => on), isFocused: () => false, toasts }).show('ws', event)
     vi.advanceTimersByTime(1_000)
     toasts.getSnapshot()[0].onClick!()
     expect(h.state!.getSnapshot().focusedPanelId).toBe('p1')

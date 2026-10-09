@@ -8,14 +8,19 @@ import { createNotificationDebouncer } from './debouncer'
 export const NOTIFICATION_DEBOUNCE_MS = 300
 
 export interface NotificationGateDeps {
-  /** The client's notification settings (the shared client slice). */
-  settings(): NotificationSettings
+  /** The client's settings store; the gate reads the notification slice. */
+  settings: NotificationSettingsReader
   /** Whether this client has the person's attention. */
   isFocused(): boolean
   /** Shows one event, the shell's way. */
   show(workspaceId: string, event: NotificationEvent): void
   /** How long an event waits for a newer one or a cancel. */
   debounceMs?: number
+}
+
+/** What the gate reads of a client settings store. */
+export interface NotificationSettingsReader {
+  get<K extends keyof NotificationSettings>(key: K): NotificationSettings[K]
 }
 
 export interface NotificationGate {
@@ -30,7 +35,11 @@ const keyOf = (workspaceId: string, event: { panelId?: string; kind: string }) =
 
 export function createNotificationGate(deps: NotificationGateDeps): NotificationGate {
   const debouncer = createNotificationDebouncer(deps.debounceMs ?? NOTIFICATION_DEBOUNCE_MS, ({ workspaceId, event }: { workspaceId: string; event: NotificationEvent }) => {
-    if (shouldShowNotification(deps.settings(), deps.isFocused())) deps.show(workspaceId, event)
+    const settings = {
+      notificationsEnabled: deps.settings.get('notificationsEnabled'),
+      notifyOnlyWhenUnfocused: deps.settings.get('notifyOnlyWhenUnfocused'),
+    }
+    if (shouldShowNotification(settings, deps.isFocused())) deps.show(workspaceId, event)
   })
   return {
     show: (workspaceId, event) => debouncer.request(keyOf(workspaceId, event), { workspaceId, event }),
