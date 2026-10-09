@@ -10,10 +10,3 @@ export interface Trust {
   requireTrusted(): void
 }
 
-/** `.cate/.gitignore`: only skills.json is meant to be committed. */
-export const CATE_GITIGNORE = `# Cate project-local state. Only skills.json is shared; everything else
-# (drafts, worktrees and scratch files) stays local.
-*
-!.gitignore
-!skills.json
-`

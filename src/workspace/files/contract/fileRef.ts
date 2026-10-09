@@ -7,6 +7,14 @@
  *  files copied in from another workspace or the OS. */
 export const CATE_TEMP_DIR = '.cate/tmp'
 
+/** `.cate/.gitignore`: only skills.json is meant to be committed. */
+export const CATE_GITIGNORE = `# Cate project-local state. Only skills.json is shared; everything else
+# (drafts, worktrees and scratch files) stays local.
+*
+!.gitignore
+!skills.json
+`
+
 export function cateTempDir(checkout: string): string {
   return `${checkout.replace(/[/\\]+$/, '')}/${CATE_TEMP_DIR}`
 }

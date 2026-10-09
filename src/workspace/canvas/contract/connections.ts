@@ -1,5 +1,12 @@
-import { PLACEMENT_GAP, type Point, type Rect } from '@workspace/canvas/contract'
-import type { RelationSide as PanelConnectionSide } from '@workspace/document/contract'
+// Curves between two rects on a canvas (a relation between two panels):
+// anchors on their sides, the path and its midpoint, and where a panel
+// dropped at a connection's end goes.
+
+import type { Point, Rect } from './geometry'
+import { PLACEMENT_GAP } from './placement'
+
+/** A side of a rect a connection leaves or enters by. */
+export type PanelConnectionSide = 'top' | 'right' | 'bottom' | 'left'
 
 const ENDPOINT_GAP = 7
 const PORT_ENDPOINT_GAP = 12

@@ -4,3 +4,4 @@
 export * from './contract/snapshot'
 export * from './contract/api'
 export * from './contract/settings'
+export * from './contract/drafts'

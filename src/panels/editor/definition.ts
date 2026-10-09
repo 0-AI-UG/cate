@@ -6,7 +6,7 @@ import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { pathDisplayName } from '@workspace/files/contract'
-import { isPreviewPath } from '@workspace/relations/contract'
+import { isPreviewPath } from './contract/drafts'
 import { editorApi, type EditorOp, type EditorSnapshot } from './contract'
 
 interface EditorCreateOptions extends PanelCreateOptions {

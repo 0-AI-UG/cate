@@ -1,7 +1,7 @@
 import { useId, useMemo } from 'react'
 import type { Point } from '@workspace/canvas/contract'
 import { dockStacks, type DockNode, type PanelId, type PanelRecord, type PanelRelation } from '@workspace/document/contract'
-import { panelConnectionMidpoint, panelConnectionPath } from '@workspace/relations/contract'
+import { panelConnectionMidpoint, panelConnectionPath } from '@workspace/canvas/contract'
 import {
   PanelRelationSelector,
   RelationCanvasProvider,

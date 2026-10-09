@@ -4,15 +4,10 @@
 // sessions, and flushes them before a prompt is submitted. Editor sessions
 // live in a higher layer; the composition root passes the lookup.
 
-import { promises as fs } from 'node:fs'
-import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { RpcError } from '@kernel/rpc/contract'
 import type { PanelId, PanelRecord, WorkspaceDocument } from '@workspace/document/contract'
-import { ensureCateGitignore } from '@workspace/lifecycle/runtime'
 import {
   compileRelationContext,
-  editorDraftPath,
   isExecutionSurface,
   relationPanels,
   type RelationRoleOf,
@@ -50,9 +45,6 @@ export interface ConnectedEditors {
    *  Throws `RpcError('conflict')` naming the first editor that could not
    *  sync. */
   flush(sourceId: PanelId): Promise<void>
-  /** A fresh draft path in `checkout`, with its directory and the
-   *  `.cate/.gitignore` in place. */
-  prepareDraft(checkout: string): Promise<string>
   dispose(): void
 }
 
@@ -105,12 +97,6 @@ export function createConnectedEditors(deps: ConnectedEditorsDeps): ConnectedEdi
           throw new RpcError('conflict', `Could not sync "${record.title}". Resolve its editor conflict or save error, then send again.`, { panelId: record.id })
         }
       }
-    },
-    async prepareDraft(checkout) {
-      const file = editorDraftPath(checkout, randomUUID())
-      await ensureCateGitignore(checkout)
-      await fs.mkdir(path.dirname(file), { recursive: true })
-      return file
     },
     dispose() {
       disposed = true

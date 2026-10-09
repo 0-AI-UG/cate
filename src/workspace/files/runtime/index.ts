@@ -10,3 +10,4 @@ export { createPathScope, worktreesDir, pathCompareKey, realpathAllowingMissing,
 export { createBufferService, type BufferService, type BufferHandle, type BufferDeps } from './buffers'
 export { createWatchPool, buildIgnorePatterns, type WatchPool, type WatchPoolDeps, type FsWatchListener } from './watchPool'
 export { runRipgrepSearch, type SearchCallbacks, type SearchHandle } from './search/engine'
+export { ensureCateGitignore } from './gitignore'

@@ -16,7 +16,7 @@ import type { WorkspaceSettings } from '@panels/settings'
 import type { DataPaths, openSecretsFile } from '@runtime/data/runtime'
 import type { ServerHost } from '@runtime/server/runtime'
 import { workspaceCapability } from '@workspace/lifecycle/contract'
-import { createTrustGate, ensureCateGitignore, workspaceCapabilityImpl, workspaceInfo } from '@workspace/lifecycle/runtime'
+import { createTrustGate, workspaceCapabilityImpl, workspaceInfo } from '@workspace/lifecycle/runtime'
 import { documentCapability, presenceCapability, type PanelRecord } from '@workspace/document/contract'
 import {
   createDocumentService,
@@ -28,6 +28,7 @@ import {
 import { fileCapability, searchCapability } from '@workspace/files/contract'
 import {
   createFilesRuntime,
+  ensureCateGitignore,
   fileCapabilityImpl,
   pathCompareKey,
   realpathAllowingMissing,

@@ -5,7 +5,7 @@ import {
   panelConnectionMidpoint,
   panelConnectionPath,
   panelPlacementAtConnectionEnd,
-} from './geometry'
+} from './connections'
 
 const rect = (x: number, y: number, width = 100, height = 80): Rect => ({
   origin: { x, y },

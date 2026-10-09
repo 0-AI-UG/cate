@@ -4,7 +4,6 @@ import type { WorkspaceInfo, workspaceCapability } from '../contract'
 import type { TrustGate } from './trust'
 
 export { createTrustGate, type TrustGate, type TrustGateOptions } from './trust'
-export { ensureCateGitignore } from './gitignore'
 
 export function workspaceInfo(runtimeId: string, root: string): WorkspaceInfo {
   return { runtimeId, root, name: path.basename(root) || root }

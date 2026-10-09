@@ -7,3 +7,4 @@
 export * from './contract/geometry'
 export * from './contract/placement'
 export * from './contract/arrange'
+export * from './contract/connections'

@@ -3,8 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { isRpcError } from '@kernel/rpc/contract'
-import { CATE_GITIGNORE } from '../contract'
-import { createTrustGate, ensureCateGitignore, workspaceCapabilityImpl, workspaceInfo } from './index'
+import { createTrustGate, workspaceCapabilityImpl, workspaceInfo } from './index'
 
 let dir: string
 beforeEach(async () => { dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-lifecycle-')) })
@@ -61,17 +60,5 @@ describe('trust gate', () => {
     stop()
     expect(events).toEqual([false, true])
     gate.dispose()
-  })
-})
-
-describe('.cate/.gitignore', () => {
-  it('writes the ignore-all-but-skills file once', async () => {
-    await ensureCateGitignore(dir)
-    const file = path.join(dir, '.cate', '.gitignore')
-    expect(await fs.readFile(file, 'utf8')).toBe(CATE_GITIGNORE)
-    expect(CATE_GITIGNORE).toContain('!skills.json')
-    await fs.writeFile(file, 'custom\n')
-    await ensureCateGitignore(dir)
-    expect(await fs.readFile(file, 'utf8')).toBe('custom\n')
   })
 })

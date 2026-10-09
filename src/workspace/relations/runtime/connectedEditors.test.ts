@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { isRpcError } from '@kernel/rpc/contract'
 import { MAIN_WINDOW, type DocChange, type PanelType } from '@workspace/document/contract'
 import { createDocumentService, type DocumentService } from '@workspace/document/runtime'
-import { editorDraftDirectory, editorDraftPath, isEditorDraft } from '../contract'
 import { panelDefinition } from '@panels/definitions'
 import { createConnectedEditors, type SharedEditor } from './index'
 
@@ -89,17 +88,6 @@ describe('connected editors', () => {
     document.apply(relate('r2', 'chat', 'b'))
     const err = await service.flush('chat').catch((e) => e)
     expect(isRpcError(err, 'conflict')).toBe(true)
-    service.dispose()
-  })
-
-  it('prepares drafts under .cate/tmp with the gitignore', async () => {
-    const service = createConnectedEditors({ document, enabled: () => true, editor: () => undefined, relationRole })
-    const draft = await service.prepareDraft(dir)
-    expect(isEditorDraft(draft)).toBe(true)
-    expect(editorDraftDirectory(draft)).toBe(`${dir}/.cate/tmp`)
-    expect((await fs.stat(editorDraftDirectory(draft))).isDirectory()).toBe(true)
-    expect(await fs.readFile(path.join(dir, '.cate', '.gitignore'), 'utf8')).toContain('!skills.json')
-    expect(editorDraftPath('/repo/', 'x')).toBe('/repo/.cate/tmp/x.md')
     service.dispose()
   })
 })

@@ -20,8 +20,8 @@ import {
   type BufferState,
 } from '@workspace/files/contract'
 import type { BufferHandle, BufferService } from '@workspace/files/runtime'
-import { ensureCateGitignore } from '@workspace/lifecycle/runtime'
-import { DRAFTS_DIR, editorDraftPath, isEditorDraft } from '@workspace/relations/contract'
+import { ensureCateGitignore } from '@workspace/files/runtime'
+import { DRAFTS_DIR, editorDraftPath, isEditorDraft } from './contract'
 import type { SharedEditor } from '@workspace/relations/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
 import { editorApi, type EditorOp, type EditorSnapshot } from './contract'

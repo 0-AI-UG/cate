@@ -4,10 +4,9 @@ import { viewToCanvas, type Point } from '@workspace/canvas/contract'
 import type { RelationSide as PanelConnectionSide } from '@workspace/document/contract'
 import { Icon, POPOVER_SURFACE } from '../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
+import { panelConnectionPathFromPoints, panelPlacementAtConnectionEnd } from '@workspace/canvas/contract'
 import {
   defaultPanelRelationKind,
-  panelConnectionPathFromPoints,
-  panelPlacementAtConnectionEnd,
   relationPanelOf,
   wouldCreatePanelRelationCycle,
 } from '@workspace/relations/contract'

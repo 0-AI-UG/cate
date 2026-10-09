@@ -10,7 +10,7 @@ import type { CapabilityImpl, StreamSink } from '@kernel/rpc/runtime'
 import { KeyedLock } from '@kernel/state/contract'
 import type { Logger } from '@kernel/log/contract'
 import type { DataPaths } from '@runtime/data/runtime'
-import { ensureCateGitignore } from '@workspace/lifecycle/runtime'
+import { ensureCateGitignore } from './gitignore'
 import {
   FILE_EXCLUSIONS,
   base64ToBytes,
