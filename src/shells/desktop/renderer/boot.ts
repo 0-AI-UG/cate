@@ -8,15 +8,15 @@ import * as Sentry from '@sentry/electron/renderer'
 import { createLogger, installLogSink, type LogSink } from '@kernel/log/contract'
 import { createElectronRendererSink } from '@kernel/log/desktop/renderer'
 import { createClientSettingsStore, type ClientSettingsStore } from '@kernel/settings/client'
-import { clientSettingsTable, type ClientSettings } from '../settings'
+import { clientSettingsTable } from '../settings'
 import { installClientSettings, workspaceSettingsFor } from '../ui/kernel/settings'
 import { applyTheme, applyUiScale, installAppearanceHost, installErrorReporter } from '../ui/kernel/interaction'
 import { createShortcutRegistry, installClientUi, installShortcutRegistry } from '@kernel/interaction'
 import type { NotificationAction } from '@kernel/interaction/contract'
-import { createClientIdentity, eachConnection, installClientIdentity, WorkspaceConnections } from '@client/connections'
-import { attachDocuments, documentStoreFor, setClientAttentive } from '@client/document'
+import { eachConnection, type WorkspaceConnections } from '@client/connections'
+import { startClientCore } from '@client/core'
+import { documentStoreFor, setClientAttentive } from '@client/document'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
-import { installSessionSource, registerPanelDefinitions, sessionSourceFrom } from '@client/host'
 import {
   BUILTIN_WALLPAPERS,
   createCanvasE2E,
@@ -45,7 +45,7 @@ import {
   TELEMETRY_NOTICE_VERSION,
   useUIStore,
 } from '../ui/app'
-import { WorkspaceList, nameJoinedWorkspaces } from '@client/workspaces'
+import type { WorkspaceList } from '@client/workspaces'
 import { trustStore } from '../ui/workspace/lifecycle'
 import { installEditorSettings, startFilesTreeOnOpen } from '../ui/panels/editor'
 import { installTerminalViewSettings } from '../ui/panels/terminal'
@@ -59,7 +59,7 @@ import { quitBlockers } from './quitBlockers'
 import { registerDesktopRenderer } from './registrations'
 import { createScreenshotPort } from './screenshots'
 import { createDesktopShellTransports, serveLoopbackRequests } from './transports'
-import { installWebviewHosts, prepareWebviewPartitions, serveSurfacesOf, type WebviewPartitions } from './webviews'
+import { installWebviewHosts, prepareWebviewPartitions, serveBrowserCodeCells, type WebviewPartitions } from './webviews'
 import { attachDetachedWindow, createWindowsPort } from './windows'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
@@ -131,12 +131,20 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     installErrorReporter((error, context) => report(error, context))
   }
 
-  // The client: identity, connections, documents, the workspace list.
-  const identity = createClientIdentity({ device: info.device, features: info.features })
-  installClientIdentity(identity)
+  // The client core: identity, connections, documents, sessions, page
+  // operations, the workspace list.
   const transports = createDesktopShellTransports(api)
-  const connections = new WorkspaceConnections({ identity, transports, capabilities: RUNTIME_CAPABILITIES, version: info.version, build: RUNTIME_BUILD })
-  stops.push(attachDocuments(connections))
+  const core = await startClientCore({
+    device: info.device,
+    features: info.features,
+    deviceStore: device,
+    transports,
+    version: info.version,
+    build: RUNTIME_BUILD,
+    panels: PANEL_DEFINITIONS,
+    capabilities: RUNTIME_CAPABILITIES,
+  })
+  const { identity, connections, workspaces } = core
   stops.push(api.app.onAttention(setClientAttentive))
   const partitions = prepareWebviewPartitions(api, connections)
   stops.push(() => partitions.dispose())
@@ -145,9 +153,6 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     return workspaceId ? connections.get(workspaceId) : undefined
   }, api))
 
-  const workspaces = new WorkspaceList({ store: device, connections })
-  await workspaces.load()
-  stops.push(nameJoinedWorkspaces(workspaces, connections))
   installClientApp({ workspaces, connections, version: info.version, pair: transports.pair, ssh: api.ssh })
   installDesktopPort(createDesktopPort(api, info))
   const uiState = createUiStateStore(device)
@@ -163,8 +168,6 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   installUiState(uiState)
   installTrustCheck((workspaceId, label) => trustStore.ensureTrusted(workspaceId, label))
   installClientUi(createDesktopClientUi(api, info.features))
-  // Before the client's actions: each panel type brings its own.
-  registerPanelDefinitions(PANEL_DEFINITIONS)
   stops.push(startClientUi())
 
   // Notifications: OS notifications with `osNotifications`, else toasts.
@@ -181,7 +184,6 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
 
   // Panels, their views and settings, and everything registered into slots.
   stops.push(registerDesktopRenderer(api))
-  installSessionSource(sessionSourceFrom(connections))
   installTerminalViewSettings(settings)
   installEditorSettings(settings)
   stops.push(startFilesTreeOnOpen())
@@ -216,7 +218,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   // Webviews: partitions before any guest mounts, then page operations.
   const bridge = options.pageBridge
   stops.push(installWebviewHosts(api, partitions, bridge))
-  stops.push(serveSurfacesOf(connections, bridge && identity.features.has('pageDriver') ? bridge : null))
+  if (bridge && identity.features.has('pageDriver')) stops.push(serveBrowserCodeCells(connections, bridge))
 
   quitBlockers.install((labels) => api.app.setQuitBlockers(labels))
   if (info.e2e) stops.push(installE2eHarness({ canvas: createCanvasE2E() }))
@@ -246,8 +248,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
       for (const stop of stops.splice(0).reverse()) {
         try { stop() } catch { /* keep disposing */ }
       }
-      connections.dispose()
-      workspaces.dispose()
+      core.dispose()
       uiState.dispose()
       settings.dispose()
     },

@@ -6,7 +6,6 @@
 
 import { useSyncExternalStore } from 'react'
 import { eachConnection, type WorkspaceConnection, type WorkspaceConnections } from '@client/connections'
-import { serveSurfaces } from '@client/host'
 import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/client'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import { installT3WebviewHost } from '@services/t3/client'
@@ -112,17 +111,9 @@ export function installWebviewHosts(api: DesktopApi, partitions: WebviewPartitio
   }
 }
 
-/** Answers the runtime's page operations on this client's surfaces: the
- *  views register their panels' (client host), and each workspace's browser
- *  code cells run on the page bridge. */
-export function serveSurfacesOf(connections: WorkspaceConnections, bridge: BrowserPageBridge | null): () => void {
-  const stopServing = serveSurfaces(connections)
-  const stopCode = bridge
-    ? eachConnection(connections, (connection: WorkspaceConnection) =>
-      serveBrowserCode(connection.workspaceId, { browserCode: connection.runtime.browserCode, bridge }))
-    : () => {}
-  return () => {
-    stopCode()
-    stopServing()
-  }
+/** Runs each workspace's browser code cells on the page bridge (the views
+ *  register their own panels' page operations with the client host). */
+export function serveBrowserCodeCells(connections: WorkspaceConnections, bridge: BrowserPageBridge): () => void {
+  return eachConnection(connections, (connection: WorkspaceConnection) =>
+    serveBrowserCode(connection.workspaceId, { browserCode: connection.runtime.browserCode, bridge }))
 }

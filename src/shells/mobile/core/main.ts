@@ -4,7 +4,6 @@
 
 import type { MobileCoreMethod } from '../contract'
 import { createCoreApi } from './api'
-import { nameJoinedWorkspaces } from '@client/workspaces'
 import { bootMobileClient } from './boot'
 import { nativeBridge } from './bridge'
 import { snapshotOf, watchState } from './state'
@@ -47,7 +46,6 @@ async function start(): Promise<void> {
   }
   const push = () => { void bridge('core.state', { json: JSON.stringify(snapshotOf(client, agents)) }) }
   watchState(client, agents, push)
-  nameJoinedWorkspaces(client.workspaces, client.connections)
   push()
   await bridge('core.ready', {})
 }
