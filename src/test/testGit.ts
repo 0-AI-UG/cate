@@ -1,5 +1,5 @@
 // Test helper: a git host whose path scope accepts any directory.
-import { createGitHost, type GitHost } from './git'
+import { createGitHost, type GitHost } from '@workspace/repository/runtime'
 
 export function testGitHost(env: () => NodeJS.ProcessEnv = () => process.env): GitHost {
   return createGitHost({

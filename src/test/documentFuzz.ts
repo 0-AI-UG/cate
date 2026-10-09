@@ -5,11 +5,18 @@
 // entry; tests import it directly.
 
 import { rect, type Rect } from '@workspace/canvas/contract'
-import { dockStacks, visitDock, type SplitSide } from './dock'
-import { placementOf } from './placement'
-import type { DocChange, PlaceTarget } from './ops'
-import { MAIN_WINDOW, PANEL_TYPES, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
-import { allStacks } from './selectors'
+import {
+  allStacks,
+  MAIN_WINDOW,
+  PANEL_TYPES,
+  visitDock,
+  type DocChange,
+  type PanelRecord,
+  type PanelType,
+  type PlaceTarget,
+  type SplitSide,
+  type WorkspaceDocument,
+} from '@workspace/document/contract'
 
 export interface Rng {
   next(): number

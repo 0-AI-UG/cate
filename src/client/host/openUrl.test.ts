@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { MAIN_WINDOW, placementOf } from '@workspace/document/contract'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../test/clientUi'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../test/clientWorkspace'
 import { registerPanelDefinitions } from './definitions'
 import { openUrlFor, openUrlInPanel } from './openUrl'

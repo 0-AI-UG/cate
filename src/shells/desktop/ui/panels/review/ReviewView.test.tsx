@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createDocument, type WorkspaceDocument } from '@workspace/document/contract'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import { createFileRefs, createWatchManager, type FsClient } from '@workspace/files/client'
 import type { FileEntry, FileRef } from '@workspace/files/contract'
 import { FileTreeModel } from '@workspace/files/client'

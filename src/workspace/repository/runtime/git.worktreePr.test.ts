@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { simpleGit } from 'simple-git'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { testGitHost } from './testGit'
+import { testGitHost } from '../../../test/testGit'
 
 const posixTest = process.platform === 'win32' ? test.skip : test
 

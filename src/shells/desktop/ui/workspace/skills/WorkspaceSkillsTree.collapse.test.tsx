@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useTreeCollapseStore } from '../files'
 import type { InstalledSkill } from '@workspace/skills/contract'
 import { WorkspaceSkillsTree } from './WorkspaceSkillsTree'
-import { installFakeSkills } from './testRuntime'
+import { installFakeSkills } from '../../../../../test/skillsRuntime'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

@@ -1,9 +1,9 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import { SkillsSettings } from './SkillsSettings'
-import { installFakeSkills } from './testRuntime'
+import { installFakeSkills } from '../../../../../test/skillsRuntime'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

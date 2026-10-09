@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RecentScreenshot as ShellScreenshot } from '../contract'
 import { createScreenshotPort } from './screenshots'
-import { createFakeDesktop } from './testing'
+import { createFakeDesktop } from '../../../test/fakeDesktop'
 
 const readBytes = vi.hoisted(() => vi.fn(async () => new Uint8Array([1, 2])))
 vi.mock('@workspace/files/client', () => ({ fileRefs: { readBytes } }))

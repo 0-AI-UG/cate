@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyOp } from './apply'
 import { applicable, invertOp } from './invert'
-import { createRng, randomChange } from './fuzz'
+import { createRng, randomChange } from '../../../test/documentFuzz'
 import { createDocument, type WorkspaceDocument } from './schema'
 import { validateDocument } from './serialize'
 import { placementOf } from './placement'

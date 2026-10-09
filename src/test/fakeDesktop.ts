@@ -5,7 +5,7 @@
 import { vi } from 'vitest'
 import { framePortOver, type ByteDuplex, type ClientFeature, type FramePort } from '@kernel/rpc/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import type { DesktopApi, DesktopAppInfo, PipeMessage } from '../contract'
+import type { DesktopApi, DesktopAppInfo, PipeMessage } from '@shells/desktop/contract'
 
 /** Two ends of an in-memory byte pipe; delivery is asynchronous. */
 export function bytePipe(): [ByteDuplex, ByteDuplex] {

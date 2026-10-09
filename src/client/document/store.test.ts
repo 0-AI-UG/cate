@@ -13,7 +13,7 @@ import {
   type DocOp,
   type PanelRecord,
 } from '@workspace/document/contract'
-import { createRng, randomChange } from '@workspace/document/contract/fuzz'
+import { createRng, randomChange } from '../../test/documentFuzz'
 import { createDocumentStore, type DocumentLink, type DocumentStore, type RefusedOp } from './store'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 

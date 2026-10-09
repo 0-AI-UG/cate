@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import ReactMarkdown from 'react-markdown'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import MarkdownCodeBlock from './MarkdownCodeBlock'
 
 const mocks = vi.hoisted(() => ({

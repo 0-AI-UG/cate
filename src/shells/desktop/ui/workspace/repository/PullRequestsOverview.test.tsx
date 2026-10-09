@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import { PullRequestsOverview } from './PullRequestsOverview'
 import { installFakeRuntime, mount, type Mounted } from './testing'
 

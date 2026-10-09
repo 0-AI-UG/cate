@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClientStateStore, type ClientStateStore } from '@client/document'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import { applyOp, createDocument, MAIN_WINDOW, type WorkspaceDocument } from '@workspace/document/contract'
 import { createNotificationDisplay, onNotificationFocus, runNotificationAction } from './display'
 import { createToastStore } from './toasts'

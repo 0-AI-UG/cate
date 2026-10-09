@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
-import type { ClientUi } from './contract'
-import { installClientUi } from './clientUi'
+import type { ClientUi } from '@kernel/interaction/contract'
+import { installClientUi } from '@kernel/interaction'
 
 /** Installs an inert ClientUi of vi.fn()s (dialogs cancel, pickers pick
  * nothing), including every feature-gated method. Pass overrides to script

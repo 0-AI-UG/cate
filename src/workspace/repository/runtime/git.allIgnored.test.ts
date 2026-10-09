@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import simpleGit from 'simple-git'
-import { testGitHost } from './testGit'
+import { testGitHost } from '../../../test/testGit'
 
 it('reports whether git ignores every changed path', async () => {
   const repo = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'cate-ignored-')))

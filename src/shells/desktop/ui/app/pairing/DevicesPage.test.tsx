@@ -4,7 +4,7 @@ import { act } from 'react'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent, RuntimeProxy } from '@kernel/rpc/contract'
 import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import type { PairedDevice } from '@runtime/pairing/contract'
 import { DevicesPage, formatCountdown } from './DevicesPage'
 

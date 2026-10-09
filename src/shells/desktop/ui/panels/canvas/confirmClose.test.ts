@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { MAIN_WINDOW, canvasOf } from '@workspace/document/contract'
 import { closePanel, registerPanelDefinitions } from '@client/host'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../../../../test/clientWorkspace'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import './index'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))

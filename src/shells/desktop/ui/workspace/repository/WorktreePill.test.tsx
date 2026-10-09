@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import type { PanelRecord } from '@workspace/document/contract'
 import { WorktreePill } from './WorktreePill'
 import { fakeHost, fakeVcs, installFakeRuntime, mount, type Mounted } from './testing'

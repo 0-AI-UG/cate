@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
-import { testGitHost } from './testGit'
+import { testGitHost } from '../../../test/testGit'
 
 // findRepos scans a directory a bounded depth down and returns the paths that
 // are git repos, without descending into the repos it finds (or into

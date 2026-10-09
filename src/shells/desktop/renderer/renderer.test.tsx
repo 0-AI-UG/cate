@@ -24,7 +24,7 @@ import { RpcServer } from '@kernel/rpc/runtime'
 import { workspaceCapability } from '@workspace/lifecycle/contract/capability'
 import { documentCapability, presenceCapability } from '@workspace/document/contract/capability'
 import { createDocumentService, createPresence, documentCapabilityImpl, presenceCapabilityImpl, type DocumentService } from '@workspace/document/runtime'
-import { createFakeDesktop } from './testing'
+import { createFakeDesktop } from '../../../test/fakeDesktop'
 import { buildMenuModel } from './menuModel'
 
 // Native editors and terminals do not run in jsdom.

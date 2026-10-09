@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../test/clientUi'
 import { createFileRefs, type RefFs } from '@workspace/files/client'
 import { FileTreeModel, type FileTreeFs } from './fileTreeModel'
 import type { DroppedImport } from './fileTreeModel'

@@ -6,7 +6,7 @@
 // connection drops.
 
 import { describe, expect, it } from 'vitest'
-import { createRng, randomChange, type Rng } from './fuzz'
+import { createRng, randomChange, type Rng } from '../../../test/documentFuzz'
 import { createMirror, type Mirror } from './mirror'
 import type { DocOp, OpId } from './ops'
 import { createDocument } from './schema'

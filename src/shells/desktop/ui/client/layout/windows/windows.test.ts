@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAIN_WINDOW } from '@workspace/document/contract'
 import type { Rect } from '@workspace/canvas/contract'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../../test/clientUi'
 import { registerPanelCloseGuard } from '@client/host'
 import { add, attachTestWorkspace, buildDocument, type TestWorkspace } from '../../../../../../test/clientWorkspace'
 import { clampToScreens } from './bounds'

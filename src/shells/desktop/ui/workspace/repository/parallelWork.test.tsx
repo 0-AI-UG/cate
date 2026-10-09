@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RpcError } from '@kernel/rpc/contract'
-import { installMockClientUi } from '@kernel/interaction/testing'
+import { installMockClientUi } from '../../../../../test/clientUi'
 import type { JoinedWorktree } from '@workspace/repository/contract'
 import type { RepositoryHost } from '@workspace/repository/client'
 import type { ContextMenuItem } from '@kernel/interaction/contract'

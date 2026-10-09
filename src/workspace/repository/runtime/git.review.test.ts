@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { simpleGit } from 'simple-git'
 import { parseReviewPatch } from '../contract'
-import { testGitHost } from './testGit'
+import { testGitHost } from '../../../test/testGit'
 
 const vcs = testGitHost()
 
