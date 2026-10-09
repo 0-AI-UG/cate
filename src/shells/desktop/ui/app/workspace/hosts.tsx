@@ -3,17 +3,16 @@
 // views host. Opening a review is the review panel's: the shell installs it.
 
 import { useMemo, type ReactNode } from 'react'
-import { isRpcError } from '@kernel/rpc/contract'
 import { tryRuntimeFor } from '@kernel/rpc/client'
-import { clientUi } from '@kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import { documentStoreFor } from '@client/document'
 import { useDocument } from '../../client/document'
 import { confirmClose, createPanel, creatableDefinitions, focusedPanelId, panelDefinition } from '@client/host'
 import { activeCanvasId, createPanelOnCanvas, useCanvasUi } from '../../client/layout/canvas'
 import { useWorkspaceRoot } from '../../client/connections'
-import { boundWorktreeId, panelsBoundTo } from '@workspace/repository/contract'
-import { RepositoryUiProvider, type RepositoryUiHost, type ReviewRequest, type WorktreeLaunchType } from '../../workspace/repository'
+import { panelsBoundTo } from '@workspace/repository/contract'
+import { switchPanelWorktree, type RepositoryHost, type ReviewRequest, type WorktreeLaunchType } from '@workspace/repository/client'
+import { RepositoryUiProvider } from '../../workspace/repository'
 import { FileViewsContext } from '../../workspace/files'
 import type { PanelRecord, WorktreeMeta } from '@workspace/document/contract'
 import { fileViewsHost } from './fileActions'
@@ -37,33 +36,13 @@ function worktreeLaunchTypes(): WorktreeLaunchType[] {
     .map((d) => ({ type: d.type, label: d.label, icon: isIconName(d.icon) ? d.icon : 'grid', switches: !!d.switchesWorktree }))
 }
 
-/** A type that `switchesWorktree` switches through its session (which may
- *  refuse with `dirty` while something runs); others just rebind the record. */
-async function switchPanelWorktree(workspaceId: string, panelId: string, picked: string, root: string): Promise<void> {
-  const worktreeId = boundWorktreeId(picked, root)
-  const record = documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]
-  const runtime = tryRuntimeFor(workspaceId)
-  if (!record || !runtime) return
-  if (!panelDefinition(record.type)?.switchesWorktree) {
-    documentStoreFor(workspaceId)?.propose({ kind: 'updatePanel', id: panelId, patch: { worktreeId } })
-    return
-  }
-  const send = (discard: boolean) => runtime.session.op({ panelId, op: { kind: 'switchWorktree', worktreeId, ...(discard ? { discard } : {}) } })
-  try {
-    await send(false)
-  } catch (err) {
-    if (!isRpcError(err, 'dirty')) throw err
-    if (await clientUi().confirm(`${err.message}. Stop it and switch the worktree?`)) await send(true)
-  }
-}
-
 export function RepositoryHost({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
   const root = useWorkspaceRoot(workspaceId)
   const worktrees = useDocument(workspaceId, selectWorktrees, sameList)
   const panels = useDocument(workspaceId, selectPanels, sameList)
   const focusedWorktreeId = useCanvasUi((s) => s.focusedWorktreeId)
 
-  const host = useMemo<RepositoryUiHost>(() => ({
+  const host = useMemo<RepositoryHost>(() => ({
     workspaceId,
     root,
     worktrees,
@@ -90,7 +69,16 @@ export function RepositoryHost({ workspaceId, children }: { workspaceId: string;
       return (await confirmClose(workspaceId, panelsBoundTo(doc, worktreeId).map((p) => p.id))) !== null
     },
     switchesWorktree: (panel) => panelDefinition(panel.type)?.switchesWorktree === true,
-    switchPanelWorktree: (panelId, worktreeId) => switchPanelWorktree(workspaceId, panelId, worktreeId, root),
+    async switchPanelWorktree(panelId, picked) {
+      const record = documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]
+      const runtime = tryRuntimeFor(workspaceId)
+      if (!record || !runtime) return
+      await switchPanelWorktree({
+        panelId, picked, root, runtime,
+        switches: panelDefinition(record.type)?.switchesWorktree === true,
+        propose: (op) => documentStoreFor(workspaceId)?.propose(op),
+      })
+    },
     async openReview(request) {
       await reviewOpener?.({ workspaceId, ...request })
     },

@@ -4,7 +4,7 @@
 // Every call fails with `untrusted` until the workspace is trusted: git runs
 // hooks and config the repository controls.
 
-import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
+import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
 import type { WorktreeId, WorktreeMeta } from '@workspace/document/contract'
 import type {
   CreatePrResult,

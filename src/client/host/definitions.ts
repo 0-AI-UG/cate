@@ -4,6 +4,7 @@
 
 import type { Size } from '@workspace/canvas/contract'
 import type { AnyPanelDefinition, PanelOpenKind } from '@panels/framework/contract'
+import type { PanelCheckoutHooks } from '@workspace/repository/contract'
 
 /** Floor for a dock pane, whatever its panels ask for. */
 export const MIN_PANE_SIZE: Size = { width: 320, height: 220 }
@@ -63,3 +64,10 @@ export function panelTypeOpening(kind: PanelOpenKind): string | undefined {
   return panelDefinitions().find((definition) => definition.opens?.includes(kind))?.type
 }
 
+
+/** Checkout hooks from the panel definitions, so no code branches on type. */
+export const panelCheckoutHooks: PanelCheckoutHooks = {
+  checkoutPath: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
+  bound: (type) => !!panelDefinition(type)?.switchesWorktree,
+  workingDir: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
+}

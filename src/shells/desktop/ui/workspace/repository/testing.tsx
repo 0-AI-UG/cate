@@ -7,7 +7,8 @@ import { vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { EMPTY_REPO_STATUS, type RepoStatus } from '@workspace/repository/contract'
-import { RepositoryUiProvider, type RepositoryUiHost } from './context'
+import type { RepositoryHost } from '@workspace/repository/client'
+import { RepositoryUiProvider } from './context'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -75,7 +76,7 @@ export function installFakeRuntime(vcs: FakeVcs = fakeVcs(), file: Record<string
   return { runtime, vcs, file, uninstall }
 }
 
-export function fakeHost(patch: Partial<RepositoryUiHost> = {}): RepositoryUiHost {
+export function fakeHost(patch: Partial<RepositoryHost> = {}): RepositoryHost {
   return {
     workspaceId: 'ws',
     root: '/repo',
@@ -98,7 +99,7 @@ export function fakeHost(patch: Partial<RepositoryUiHost> = {}): RepositoryUiHos
 
 export interface Mounted {
   host: HTMLDivElement
-  render(node: ReactNode, repoHost?: RepositoryUiHost): Promise<void>
+  render(node: ReactNode, repoHost?: RepositoryHost): Promise<void>
   unmount(): void
   button(text: string): HTMLButtonElement
 }
@@ -107,7 +108,7 @@ export function mount(): Mounted {
   const host = document.createElement('div')
   document.body.append(host)
   const root: Root = createRoot(host)
-  let lastHost: RepositoryUiHost | undefined
+  let lastHost: RepositoryHost | undefined
   return {
     host,
     async render(node, repoHost) {

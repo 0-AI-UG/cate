@@ -1,8 +1,18 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
 import type { PullRequestItem } from '@workspace/repository/contract'
-import { openPullRequest } from './openPullRequest'
-import { fakeHost, fakeVcs } from './testing'
+import { openPullRequest } from './flows'
+import type { RepositoryHost } from './host'
+
+const fakeVcs = () => ({ prContext: vi.fn(), worktreeCreate: vi.fn() })
+const fakeHost = (patch: Partial<RepositoryHost> = {}) => ({
+  worktrees: [],
+  panels: [],
+  launchTypes: [{ type: 'terminal', label: 'Terminal', icon: 'terminal', switches: true }, { type: 'chat', label: 'T3 Code', icon: 't3', switches: true }],
+  launchInWorktree: vi.fn().mockResolvedValue(true),
+  openReview: vi.fn().mockResolvedValue(undefined),
+  ...patch,
+}) as Pick<RepositoryHost, 'worktrees' | 'panels' | 'launchTypes' | 'launchInWorktree' | 'openReview'>
 
 const pr = { number: 42, title: 'Fix startup', repository: 'org/repo', author: 'alice' } as PullRequestItem
 let vcs: ReturnType<typeof fakeVcs>

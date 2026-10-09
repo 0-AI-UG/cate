@@ -58,7 +58,7 @@ export {
   activeCanvasId,
   placePanelOnCanvas,
 } from './access'
-export { createPanelOnCanvas, inheritedCheckout, checkoutHooks, type CanvasCreateOptions } from './actions'
+export { createPanelOnCanvas, inheritedCheckout, type CanvasCreateOptions } from './actions'
 export { canvasAtPoint, canvasContainerFor, type CanvasAtPoint } from './parts/dom'
 export { isMouseWheel, type WheelLike } from './parts/wheelIntent'
 export { createCanvasE2E, type CanvasE2E } from './e2e'

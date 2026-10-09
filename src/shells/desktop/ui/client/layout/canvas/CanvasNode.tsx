@@ -16,7 +16,7 @@ import { canvasDrag, canvasHost, panelMinimumSize } from './ports'
 import { useWorkspaceSetting } from './settingsHooks'
 import { activeNodePanelId, type ViewNode } from './store'
 import { isGroupDragMember, isSelected as isNodeSelected } from './selection'
-import { checkoutHooks } from './actions'
+import { panelCheckoutHooks } from '@client/host'
 import { useCanvasTopOverlayTarget, useCanvasView, useCanvasViewStore } from './context'
 import { useIsDragging, useIsDragSource } from './dragState'
 import { isFileDrag } from '../drag'
@@ -152,11 +152,11 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   useEffect(() => subscribeTheme(setTheme), [])
   const activeWorktree = useMemo(() => {
     if (readyWorktrees.length < 2 || !activePanel) return undefined
-    const own = worktreeForPanel(activePanel, readyWorktrees, checkoutHooks)
+    const own = worktreeForPanel(activePanel, readyWorktrees, panelCheckoutHooks)
     if (own) return own
     // An untagged checkout-bound panel runs in the main checkout, which
     // every other checkout lives under: the shortest path.
-    if (!checkoutHooks.bound?.(activePanel.type)) return undefined
+    if (!panelCheckoutHooks.bound?.(activePanel.type)) return undefined
     return [...readyWorktrees].sort((a, b) => a.path.length - b.path.length)[0]
   }, [readyWorktrees, activePanel])
   const activeWorktreeId = activeWorktree?.id ?? null

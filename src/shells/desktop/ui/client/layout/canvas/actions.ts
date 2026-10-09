@@ -5,7 +5,8 @@
 
 import { documentStoreFor } from '@client/document'
 import type { Point, Size } from '@workspace/canvas/contract'
-import { inheritWorktree, type PanelCheckoutHooks } from '@workspace/repository/contract'
+import { panelCheckoutHooks } from '@client/host'
+import { inheritWorktree } from '@workspace/repository/contract'
 import type { CanvasId, NodeId, PanelId, PanelRecord } from '@workspace/document/contract'
 import { canvasPanelOf } from '@workspace/document/contract'
 import { canvasHost, panelDefinition } from './ports'
@@ -14,13 +15,6 @@ import { canvasSetting } from './settings'
 import { activeNodePanelId, type CanvasViewStore } from './store'
 import { focusedNodeId } from './selection'
 import { clientStateFor } from '@client/document'
-
-/** Checkout hooks from the panel definitions, so no code branches on type. */
-export const checkoutHooks: PanelCheckoutHooks = {
-  checkoutPath: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
-  bound: (type) => !!panelDefinition(type)?.switchesWorktree,
-  workingDir: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
-}
 
 /** The checkout of the canvas's focused node's visible panel, for a new panel
  *  to inherit. */
@@ -31,7 +25,7 @@ export function inheritedCheckout(workspaceId: string, store: CanvasViewStore): 
   if (!doc || !nodeId) return {}
   const panelId = activeNodePanelId(state.nodes[nodeId]?.dock, clientStateFor(workspaceId)?.getSnapshot().activeTabs)
   const record: PanelRecord | undefined = panelId ? doc.panels[panelId] : undefined
-  return inheritWorktree(record, Object.values(doc.worktrees), checkoutHooks)
+  return inheritWorktree(record, Object.values(doc.worktrees), panelCheckoutHooks)
 }
 
 export interface CanvasCreateOptions {

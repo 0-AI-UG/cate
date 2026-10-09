@@ -6,6 +6,7 @@
 export {
   registerPanelDefinitions,
   panelDefinition,
+  panelCheckoutHooks,
   panelDefinitions,
   panelLabel,
   panelMinimumSize,

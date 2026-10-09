@@ -2,13 +2,12 @@
 // worktree menus, pills and forms, GitHub and worktree settings, and the React
 // hooks over the git status store.
 
-export { RepositoryUiProvider, useRepositoryUi, type RepositoryUiHost, type ReviewRequest, type WorktreeLaunchType } from './context'
+export { RepositoryUiProvider, useRepositoryUi } from './context'
 export { gitStatusStoreFor, useGitStatus } from './gitStatus'
 export { useJoinedWorktrees, useWorktrees, worktreeLabel } from './worktrees'
 export { worktreeColor, worktreePalette, useTheme, useWorktreeColor, worktreeTitleStyle } from './colors'
 export { humanStatus, useWorktreeStatuses, type WorktreeStatuses } from './worktreeStatuses'
 export { useParallelWork, runWorktreeContextMenu, type CardCallbacks, type ParallelWork } from './parallelWork'
-export { openPullRequest, pullRequestNotOpenMessage } from './openPullRequest'
 export { CreateWorktreeForm, type PrListItem } from './CreateWorktreeForm'
 export { WorktreeSelector } from './WorktreeSelector'
 export { WorktreePill } from './WorktreePill'

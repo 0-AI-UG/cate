@@ -24,11 +24,10 @@ import {
   RepositoryOverview,
   WorktreePill,
   WorktreeToolbarMenu,
-  openPullRequest,
-  pullRequestNotOpenMessage,
   useRepositoryUi,
   type RepositoryTab,
 } from '../../workspace/repository'
+import { openPullRequest, pullRequestNotOpenMessage } from '@workspace/repository/client'
 import { PanelRelationContextToggle, installRelationUiPort } from '../../workspace/relations'
 import type { PanelRecord } from '@workspace/document/contract'
 import { OverlayHeader } from '../chrome/chrome'

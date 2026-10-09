@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RpcError } from '@kernel/rpc/contract'
 import { installMockClientUi } from '@kernel/interaction/testing'
 import type { JoinedWorktree } from '@workspace/repository/contract'
-import type { RepositoryUiHost } from './context'
+import type { RepositoryHost } from '@workspace/repository/client'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { runWorktreeContextMenu, useParallelWork, type ParallelWork } from './parallelWork'
 import { fakeHost, installFakeRuntime, mount, type Mounted } from './testing'
@@ -22,7 +22,7 @@ function Probe() {
   api = useParallelWork('main', { setError, setBusy })
   return null
 }
-async function render(host: RepositoryUiHost = fakeHost()) {
+async function render(host: RepositoryHost = fakeHost()) {
   await m.render(<Probe />, host)
   return host
 }
