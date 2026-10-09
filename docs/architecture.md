@@ -1409,6 +1409,12 @@ headless.
 
 ### 12.1 Modules
 
+- **`client/core`**: the one entry every shell calls, `startClientCore`, with
+  its transports, device, declared features, device store and the panel and
+  capability lists. It registers the panel definitions and the client
+  identity, opens the connections, and attaches documents, sessions
+  (`attachSessions`) and page operations (`serveSurfaces`) itself, so a shell
+  fills none of the client layer's slots.
 - **`client/connections`**: one connection per open workspace runtime: finding
   it (the local socket, mDNS, Cate Connect), starting a local one, pairing,
   the security layer, the typed capability proxies (filling the
@@ -1418,15 +1424,27 @@ headless.
   `eachConnection` runs something per open connection.
   Each connection implements `dialLoopback(port)` (section 12.3).
 - **`client/workspaces`**: the device's workspace list: local recents, paired
-  workspaces and their pinned keys (`known-runtimes.json`), sidebar order.
+  workspaces and their pinned keys (`known-runtimes.json`), sidebar order;
+  and the trust question (`trustStore`, `ensureOpenedTrusted`): opening an
+  untrusted workspace queues one question, every shell shows its head, and
+  the answer is `workspace.setTrust` for everyone.
 - **`client/document`**: the client's mirror of each open workspace's
   document, with optimistic ops (section 13.5) and subscriptions. The stores
   that show records, docks and canvases are selectors over it.
 - **`client/host`**: the panel side of the core: `createPanel`, panel
   targeting (`pickPanelPlace`), session handles (`acquireSession`), closing
   (`registerPanelCloseGuard` and `closePanels`, which asks every guard before
-  one `removePanels` op), focus and reveal, the action registry with each
+  one `removePanels` op), focus and reveal, the checkout hooks derived from
+  the definitions (`panelCheckoutHooks`), the action registry with each
   panel type's actions, and the creation menus (12.4).
+
+Logic a view needs that every shell's view would need too sits in the
+`client/` side of its module, never in a view: the chat page controller
+(`panels/chat/client`: thread binding, navigation guard, the T3 host bridge
+over a small page port), the browser tab follower (`panels/browser/client`),
+the file tree and search models (`workspace/files/client`), and the
+repository flows (`workspace/repository/client`: opening a pull request,
+discarding a worktree, switching a panel's checkout).
 
 How a shell lays the document out (docks, the canvas view, dragging, windows)
 is its UI: the desktop's is `shells/desktop/ui/client/layout` (section 15).
@@ -1759,7 +1777,10 @@ not CLI commands (`cli: {command: false}`); the CLI reaches them through
   primitives only: device storage, the Keychain, mDNS, the declared
   features) and the core API (what the app asks the core to do, plus one
   state snapshot pushed on every change). The core side follows the client
-  core's rules: no Node, no Electron, no React. Its state carries each
+  core's rules: no Node, no Electron, no React. It starts the client core
+  with `startClientCore` like the desktop renderer, and drives the same
+  core pieces the desktop views do (the chat page controller, the browser
+  tab follower, `acquireSession`, the trust question, shown as an alert). Its state carries each
   connected workspace's agents (panel states with what each asked for),
   keep-awake state and this device's push status; the app
   shows each agent of a workspace as a chat (the conversation pushed as it
