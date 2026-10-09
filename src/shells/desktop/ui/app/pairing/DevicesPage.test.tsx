@@ -35,6 +35,7 @@ function fakeRuntime() {
           return () => { listener = null }
         },
         cancel: () => {},
+        done: new Promise(() => {}),
       }),
     },
     pairing: {

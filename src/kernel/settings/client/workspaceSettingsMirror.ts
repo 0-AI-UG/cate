@@ -12,12 +12,18 @@ import {
   type WorkspaceSettings,
 } from '../contract'
 
+const RESTART_MS = 1_000
+
 type SettingsEvent = ChannelEvent<WorkspaceSettings, Partial<WorkspaceSettings>>
 
 /** The part of the `settings` proxy the mirror uses. */
 export interface WorkspaceSettingsRemote {
   set(params: SetSettingParams): Promise<void>
-  subscribe(): { onEvent(listener: (event: SettingsEvent) => void): () => void; cancel(): void }
+  subscribe(params: undefined, options: { resume: true }): {
+    onEvent(listener: (event: SettingsEvent) => void): () => void
+    cancel(): void
+    readonly done: Promise<unknown>
+  }
 }
 
 export interface WorkspaceSettingsMirror {
@@ -65,8 +71,14 @@ export function createWorkspaceSettingsMirror(
   let offEvent: () => void = () => {}
 
   const open = (): void => {
-    subscription = remote.subscribe()
-    offEvent = subscription.onEvent((event) => {
+    // Resumed across reconnects. One the runtime ends starts over a moment
+    // later; one that fails (a closed client, no such capability) stays ended.
+    const current = remote.subscribe(undefined, { resume: true })
+    subscription = current
+    current.done.then(() => {
+      setTimeout(() => { if (!disposed && subscription === current) open() }, RESTART_MS)
+    }, () => {})
+    offEvent = current.onEvent((event) => {
       const next = reduceChannel(confirmed, event, applyShallowPatch)
       if (!next) {
         // Missed a change: start over from a fresh snapshot.

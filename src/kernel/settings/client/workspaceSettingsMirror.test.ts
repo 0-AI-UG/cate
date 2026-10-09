@@ -22,6 +22,7 @@ function fakeRemote() {
           return () => { listener = null }
         },
         cancel: () => {},
+        done: new Promise(() => {}),
       }
     },
   }

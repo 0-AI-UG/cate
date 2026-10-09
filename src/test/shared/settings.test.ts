@@ -7,9 +7,10 @@ import { apiCapability } from '@kernel/api/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { framePortOver, type ChannelEvent } from '@kernel/rpc/contract'
 import type { WorkspaceSettings } from '@kernel/settings/contract'
+import { createWorkspaceSettingsMirror } from '@kernel/settings/client'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
 import { dialLocal } from '@runtime/transports/node'
-import { startSharedWorkspace, until, type SharedWorkspace, type TestClient } from '../sharedWorkspace'
+import { startSharedWorkspace, until, untilState, type SharedWorkspace, type TestClient } from '../sharedWorkspace'
 
 let ws: SharedWorkspace
 const callers: RpcClient[] = []
@@ -41,6 +42,19 @@ async function cliIn(c: TestClient) {
 }
 
 describe.skipIf(process.platform === 'win32')('shared workspace: settings', () => {
+  it('a client\'s settings mirror keeps following after its connection drops', async () => {
+    const mirror = createWorkspaceSettingsMirror(settings(ws.a))
+    await mirror.ready
+    ws.a.offline()
+    await untilState(ws.a, 'offline')
+    ws.a.online()
+    await untilState(ws.a, 'connected')
+    const expected = !mirror.get('cliNotifyEnabled')
+    await settings(ws.b).set({ key: 'cliNotifyEnabled', value: expected })
+    await until(() => (mirror.get('cliNotifyEnabled') === expected ? true : undefined), 5_000, 'A sees the change')
+    mirror.dispose()
+  })
+
   it('a setting B changes is A\'s, pushed to A\'s subscription; invalid values are refused', async () => {
     const changes: Partial<WorkspaceSettings>[] = []
     const sub = settings(ws.a).subscribe()
