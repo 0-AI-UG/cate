@@ -34,6 +34,7 @@ export {
   selectLayoutAt,
   addLayout,
   removeLayout,
+  moveLayout,
   renameLayout,
 } from './layouts'
 export { demandSurface, isSurfaceDemanded, demandedSurfaces, subscribeDemandedSurfaces } from './surfaceDemand'

@@ -182,8 +182,10 @@ export function checkChange(v: unknown): Problem {
       return isId(c.windowId) && isId(c.layoutId) && (c.name === undefined || typeof c.name === 'string')
         && (c.index === undefined || Number.isInteger(c.index)) ? null : 'bad layout'
     case 'removeLayout': return isId(c.windowId) && isId(c.layoutId) ? null : 'bad layout'
+    case 'moveLayout':
+      return isId(c.windowId) && isId(c.layoutId) && Number.isInteger(c.index) ? null : 'bad layout'
     case 'renameLayout':
-      return isId(c.windowId) && isId(c.layoutId) && (c.name === null || typeof c.name === 'string') ? null : 'bad layout'
+      return isId(c.windowId) && isId(c.layoutId) && typeof c.name === 'string' ? null : 'bad layout'
     case 'addRelation': return checkRelation(c.relation)
     case 'updateRelation': return isId(c.id) ? checkRelationPatch(c.patch) : 'no relation id'
     case 'removeRelation': return isId(c.id) ? null : 'no relation id'

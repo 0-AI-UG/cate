@@ -1,18 +1,21 @@
 // The header of a window: one chip per layout, drawn like the panel chips of a
 // tab bar (icon, title or rename input, close button). Clicking a chip shows
-// that layout; right-click renames or closes it (the + adds one). A panel
+// that layout; dragging a chip along the header reorders it; right-click
+// renames or closes it (the + adds one). A panel
 // dragged onto the header makes a new layout; a chip of another layout takes it
 // into that layout. It switches what this client
 // shows of the window, never a panel.
 
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { PanelsTopLeft, Plus, X } from 'lucide-react'
 import { layoutOf, type DocWindow, type LayoutId } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
 import { clientUi } from '@kernel/interaction'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
-import { addLayout, renameLayout, switchLayout } from '@client/host'
+import { addLayout, moveLayout, renameLayout, switchLayout } from '@client/host'
 import { Tooltip } from '../../../kernel/interaction'
+import { DropGhostChip } from '../dock'
 import { isMiddleClick } from '../drag/dom'
 import { registerDropZone } from '../drag/registry'
 import { useDragStore } from '../drag/store'
@@ -22,6 +25,9 @@ import { closeLayout } from './closeLayout'
 export function layoutLabel(window: DocWindow, index: number): string {
   return window.layouts[index].name || `Layout ${index + 1}`
 }
+
+/** Pointer travel before a press on a chip becomes a reorder. */
+const REORDER_THRESHOLD_PX = 4
 
 /** How long a dragged panel hovers a layout chip before the layout shows (a tab's is 600). */
 const SPRING_LOAD_MS = 600
@@ -84,6 +90,49 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
     getRect: () => headerRef.current?.getBoundingClientRect() ?? null,
     getElement: () => headerRef.current,
   }), [workspaceId, windowId])
+  // Reordering: pressing a chip and moving along the header lifts it. Like a
+  // dragged tab, its chip leaves the row for a dashed ghost at the slot it
+  // would take, and a copy follows the cursor. Only this header listens: panel
+  // drags and layout drags never meet. `slot` is the index among the others;
+  // it is measured against the chips as they stood at the press, so the ghost
+  // opening a gap cannot move the targets.
+  const [reorder, setReorder] = useState<{ layoutId: LayoutId; slot: number; left: number; top: number; width: number } | null>(null)
+  const justReordered = useRef(false)
+  const startReorder = (e: React.PointerEvent, layoutId: LayoutId) => {
+    if (e.button !== 0 || renameId || window.layouts.length < 2) return
+    const startX = e.clientX
+    const own = chipRefs.current.get(layoutId)?.getBoundingClientRect()
+    if (!own) return
+    const mids = window.layouts
+      .filter((l) => l.id !== layoutId)
+      .map((l) => { const r = chipRefs.current.get(l.id)?.getBoundingClientRect(); return r ? r.left + r.width / 2 : Infinity })
+    let slot = -1
+    const move = (ev: PointerEvent) => {
+      if (slot < 0 && Math.abs(ev.clientX - startX) < REORDER_THRESHOLD_PX) return
+      slot = mids.filter((mid) => ev.clientX > mid).length
+      setReorder({ layoutId, slot, left: own.left + ev.clientX - startX, top: own.top, width: own.width })
+    }
+    const end = () => {
+      globalThis.removeEventListener('pointermove', move)
+      globalThis.removeEventListener('pointerup', end)
+      globalThis.removeEventListener('pointercancel', end)
+      setReorder(null)
+      if (slot < 0) return
+      justReordered.current = true // swallows the click that follows the release
+      globalThis.setTimeout(() => { justReordered.current = false }, 0)
+      if (window.layouts[slot]?.id !== layoutId) moveLayout(workspaceId, windowId, layoutId, slot)
+    }
+    globalThis.addEventListener('pointermove', move)
+    globalThis.addEventListener('pointerup', end)
+    globalThis.addEventListener('pointercancel', end)
+  }
+  const lifted = reorder ? window.layouts.findIndex((l) => l.id === reorder.layoutId) : -1
+  const ghostBefore = reorder ? window.layouts.filter((l) => l.id !== reorder.layoutId)[reorder.slot]?.id : undefined
+  const reorderGhost = lifted >= 0 ? (
+    <DropGhostChip key="__layout-ghost__" data-reorder-ghost icon={<PanelsTopLeft size={13} />}>
+      {layoutLabel(window, lifted)}
+    </DropGhostChip>
+  ) : null
   useEffect(() => () => { if (springTimer.current) globalThis.clearTimeout(springTimer.current) }, [])
 
   useEffect(() => {
@@ -132,11 +181,13 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
       } as React.CSSProperties}
     >
       {window.layouts.map((layout, index) => {
+        if (reorder?.layoutId === layout.id) return null
         const active = layout.id === activeLayoutId
         const label = layoutLabel(window, index)
         return (
+          <React.Fragment key={layout.id}>
+          {ghostBefore === layout.id && reorderGhost}
           <div
-            key={layout.id}
             ref={(el) => { if (el) chipRefs.current.set(layout.id, el); else chipRefs.current.delete(layout.id) }}
             data-layout-id={layout.id}
             data-active={active || undefined}
@@ -152,7 +203,8 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
               } : null),
             } as React.CSSProperties}
             data-join-target={joinLayoutId === layout.id || undefined}
-            onClick={() => switchLayout(workspaceId, windowId, layout.id)}
+            onPointerDown={(e) => startReorder(e, layout.id)}
+            onClick={() => { if (!justReordered.current) switchLayout(workspaceId, windowId, layout.id) }}
             onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
             onAuxClick={(e) => {
               if (isMiddleClick(e) && closable) {
@@ -208,25 +260,25 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
               </Tooltip>
             )}
           </div>
+          </React.Fragment>
         )
       })}
-      {newLayoutHover && (
-        // The ghost of the layout the drop creates, like a tab bar's "+ new tab".
+      {reorderGhost && ghostBefore === undefined && reorderGhost}
+      {reorder && lifted >= 0 && createPortal(
+        // The chip under the cursor, drawn like the one lifted from the row.
         <div
           aria-hidden
-          data-new-layout-ghost
-          className="flex flex-shrink-0 items-center justify-center gap-1.5 whitespace-nowrap select-none h-6 px-3 text-[12px]"
-          style={{
-            minWidth: 100,
-            color: 'var(--focus-blue, #3b82f6)',
-            backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
-            border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
-            borderRadius: 10,
-          }}
+          data-reorder-floating
+          className="fixed z-[10000] pointer-events-none flex items-center gap-1.5 whitespace-nowrap h-6 pl-2.5 pr-2.5 text-[12px] rounded-[var(--node-tab-radius,10px)] bg-surface-2 text-primary shadow-lg"
+          style={{ left: reorder.left, top: reorder.top, width: reorder.width }}
         >
-          <PanelsTopLeft size={13} />
-          new layout
-        </div>
+          <span className="shrink-0 text-secondary"><PanelsTopLeft size={13} /></span>
+          <span className="min-w-0 flex-1 truncate">{layoutLabel(window, lifted)}</span>
+        </div>,
+        document.body,
+      )}
+      {newLayoutHover && (
+        <DropGhostChip data-new-layout-ghost icon={<PanelsTopLeft size={13} />}>new layout</DropGhostChip>
       )}
       <Tooltip label="New layout" action="newLayout">
         <button

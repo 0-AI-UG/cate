@@ -43,7 +43,7 @@ describe('workspacePanelTree', () => {
     ])
     const tree = workspacePanelTree(layered)
     expect(tree.primary.layouts.map((l) => [l.layoutId, l.name, l.topLevel.map((p) => p.id), l.canvases.map((c) => c.record.id)])).toEqual([
-      ['main', undefined, ['a'], []],
+      ['main', 'Layout 1', ['a'], []],
       ['two', 'Build', ['b'], ['c']],
     ])
     // The flat lists keep every layout's panels.

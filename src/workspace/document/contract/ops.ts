@@ -80,8 +80,10 @@ export type DocChange =
   | { kind: 'addLayout'; windowId: WindowId; layoutId: LayoutId; name?: string; index?: number }
   /** Removes a layout with its panels. A window keeps at least one layout. */
   | { kind: 'removeLayout'; windowId: WindowId; layoutId: LayoutId }
-  /** null clears the name. */
-  | { kind: 'renameLayout'; windowId: WindowId; layoutId: LayoutId; name: string | null }
+  /** Moves a layout to `index` in the switcher (clamped). */
+  | { kind: 'moveLayout'; windowId: WindowId; layoutId: LayoutId; index: number }
+  /** A layout always has a name; a blank one is rejected. */
+  | { kind: 'renameLayout'; windowId: WindowId; layoutId: LayoutId; name: string }
   | { kind: 'addRelation'; relation: PanelRelation }
   | { kind: 'updateRelation'; id: RelationId; patch: RelationPatch }
   | { kind: 'removeRelation'; id: RelationId }

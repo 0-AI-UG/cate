@@ -892,8 +892,10 @@ interface DockLayout { id: LayoutId; name?: string; dock: DockNode | null }
   never panels. A layout that empties stays, empty (the window shows its
   creation menu there); a detached window goes when it has no panel in any
   layout.
-  `addLayout`, `removeLayout` (with its panels; the view asks first) and
-  `renameLayout` are ops. Layout ids are unique within their window. Which
+  `addLayout`, `removeLayout` (with its panels; the view asks first),
+  `moveLayout` (reorders the switcher) and `renameLayout` are ops. A layout
+  is named when created ("Layout N"), never by its position, so moving one
+  keeps its name; a blank rename is refused. Layout ids are unique within their window. Which
   layout a client shows is client state (`activeLayouts`), so two clients can
   look at different layouts of the same window; a reveal switches to the
   panel's layout, and a new panel with no better place goes to the layout the

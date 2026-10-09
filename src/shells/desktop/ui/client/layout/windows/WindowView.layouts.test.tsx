@@ -90,7 +90,7 @@ describe('WindowView layouts', () => {
     expect(container.querySelector('[data-tab-panel-id="p1"]')).not.toBeNull()
   })
 
-  it('right-click offers rename and close; rename is inline and a blank result keeps it unnamed', async () => {
+  it('right-click offers rename and close; rename is inline', async () => {
     const menu = vi.fn(async (_items: unknown[]) => 'rename' as string | null)
     installMockClientUi({ showContextMenu: menu })
     render()
@@ -195,6 +195,34 @@ describe('WindowView layouts', () => {
     // The drop shows the new layout.
     expect(activeLayoutId('w', MAIN_WINDOW)).toBe(layouts[1].id)
     expect(container.querySelector('[data-tab-panel-id="p1"]')).not.toBeNull()
+  })
+
+  it('dragging a chip along the header reorders the layouts; a plain click still switches', () => {
+    render()
+    act(() => { addLayout('w', MAIN_WINDOW, 'B'); addLayout('w', MAIN_WINDOW, 'C') })
+    // jsdom has no layout: give the chips 100px slots in order.
+    entries().forEach((el, i) => {
+      el.getBoundingClientRect = () => ({ left: i * 100, width: 100, right: i * 100 + 100, top: 0, bottom: 24, height: 24, x: i * 100, y: 0, toJSON: () => ({}) })
+    })
+    const pointer = (target: EventTarget, type: string, x: number) => act(() => {
+      const e = new MouseEvent(type, { bubbles: true, clientX: x, button: 0 })
+      target.dispatchEvent(e)
+    })
+    const names = () => ws.document.getSnapshot().windows[MAIN_WINDOW].layouts.map((l) => l.name ?? 'Layout 1')
+
+    // Press the first chip, move past the third's midpoint, release.
+    pointer(entries()[0], 'pointerdown', 50)
+    pointer(globalThis, 'pointermove', 260)
+    expect(container.querySelector('[data-reorder-ghost]')).not.toBeNull()
+    pointer(globalThis, 'pointerup', 260)
+    expect(names()).toEqual(['B', 'C', 'Layout 1'])
+    expect(container.querySelector('[data-reorder-ghost]')).toBeNull()
+
+    // A press without travel is a click: it switches, never reorders.
+    const seq = ws.document.getSnapshot()
+    pointer(entries()[0], 'pointerdown', 50)
+    pointer(globalThis, 'pointerup', 51)
+    expect(ws.document.getSnapshot()).toBe(seq)
   })
 
   it('closing a layout from its chip removes it (empty layouts need no confirm)', async () => {

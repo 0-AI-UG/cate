@@ -24,6 +24,7 @@ import { docIndex, dockOf, isCanvasDock, placementOf, sameDockRef } from './plac
 import { canvasPanelOf, windowDockPanels } from './selectors'
 import {
   MAIN_WINDOW,
+  defaultLayoutName,
   type DocWindow,
   type PanelId,
   type PanelRecord,
@@ -73,6 +74,7 @@ function applyOne(doc: Doc, change: DocChange): Doc {
     case 'closeWindow': return closeWindow(doc, change.windowId)
     case 'addLayout': return addLayout(doc, change)
     case 'removeLayout': return removeLayout(doc, change)
+    case 'moveLayout': return moveLayout(doc, change)
     case 'renameLayout': return renameLayout(doc, change)
     case 'addRelation': return addRelation(doc, change)
     case 'updateRelation': return updateRelation(doc, change)
@@ -204,7 +206,7 @@ function placeAt(doc: Doc, panelId: PanelId, target: PlaceTarget): Doc {
           [target.windowId]: {
             id: target.windowId,
             kind: 'detached',
-            layouts: [{ id: target.layoutId, ...(target.layoutName ? { name: target.layoutName } : {}), dock: stack(target.stackId) }],
+            layouts: [{ id: target.layoutId, name: target.layoutName || defaultLayoutName([]), dock: stack(target.stackId) }],
           },
         },
       }
@@ -371,7 +373,7 @@ function addLayout(doc: Doc, change: Extract<DocChange, { kind: 'addLayout' }>):
   const window = doc.windows[change.windowId]
   if (!window) gone(`window ${change.windowId}`)
   if (window.layouts.some((l) => l.id === change.layoutId)) rejected(`layout id ${change.layoutId} is in use`)
-  const layout = { id: change.layoutId, dock: null, ...(change.name ? { name: change.name } : {}) }
+  const layout = { id: change.layoutId, name: change.name || defaultLayoutName(window.layouts), dock: null }
   const at = change.index === undefined ? window.layouts.length : Math.max(0, Math.min(change.index, window.layouts.length))
   const layouts = [...window.layouts.slice(0, at), layout, ...window.layouts.slice(at)]
   return setWindow(doc, { ...window, layouts })
@@ -390,15 +392,22 @@ function removeLayout(doc: Doc, change: Extract<DocChange, { kind: 'removeLayout
   return setWindow(next, { ...now, layouts: now.layouts.filter((l) => l.id !== layout.id) })
 }
 
+function moveLayout(doc: Doc, change: Extract<DocChange, { kind: 'moveLayout' }>): Doc {
+  const window = doc.windows[change.windowId]
+  if (!window) gone(`window ${change.windowId}`)
+  const layout = window.layouts.find((l) => l.id === change.layoutId)
+  if (!layout) gone(`layout ${change.layoutId}`)
+  const layouts = window.layouts.filter((l) => l !== layout)
+  layouts.splice(Math.max(0, Math.min(change.index, layouts.length)), 0, layout)
+  return setWindow(doc, { ...window, layouts })
+}
+
 function renameLayout(doc: Doc, change: Extract<DocChange, { kind: 'renameLayout' }>): Doc {
   const window = doc.windows[change.windowId]
   if (!window) gone(`window ${change.windowId}`)
   if (!window.layouts.some((l) => l.id === change.layoutId)) gone(`layout ${change.layoutId}`)
-  const layouts = window.layouts.map((l) => {
-    if (l.id !== change.layoutId) return l
-    const { name: _old, ...rest } = l
-    return change.name ? { ...rest, name: change.name } : rest
-  })
+  if (!change.name.trim()) rejected('a layout needs a name')
+  const layouts = window.layouts.map((l) => (l.id === change.layoutId ? { ...l, name: change.name } : l))
   return setWindow(doc, { ...window, layouts })
 }
 

@@ -88,9 +88,13 @@ function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => s
       const sim = applyOp(after, add).doc
       return [add, ...restore(before, sim, removalSet(before, dockPanels(layout.dock)), 'add', newId)]
     }
+    case 'moveLayout': {
+      const index = before.windows[change.windowId].layouts.findIndex((l) => l.id === change.layoutId)
+      return [{ kind: 'moveLayout', windowId: change.windowId, layoutId: change.layoutId, index }]
+    }
     case 'renameLayout': {
       const old = before.windows[change.windowId].layouts.find((l) => l.id === change.layoutId)!
-      return [{ kind: 'renameLayout', windowId: change.windowId, layoutId: change.layoutId, name: old.name ?? null }]
+      return [{ kind: 'renameLayout', windowId: change.windowId, layoutId: change.layoutId, name: old.name ?? old.id }]
     }
     case 'placePanel':
       return restore(before, after, new Set([change.id]), 'move', newId)

@@ -138,10 +138,11 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   if (roll < 86) {
     const window = rng.pick(Object.values(doc.windows))
     const layout = rng.pick(window.layouts)
-    const pick = rng.int(3)
+    const pick = rng.int(4)
+    if (pick === 3) return { kind: 'moveLayout', windowId: window.id, layoutId: layout.id, index: rng.int(window.layouts.length + 1) }
     if (pick === 0) return { kind: 'addLayout', windowId: window.id, layoutId: rng.chance(0.1) ? layout.id : newId(), name: rng.chance(0.5) ? `L${rng.int(9)}` : undefined }
     if (pick === 1) return { kind: 'removeLayout', windowId: window.id, layoutId: layout.id }
-    return { kind: 'renameLayout', windowId: window.id, layoutId: layout.id, name: rng.chance(0.3) ? null : `n${rng.int(9)}` }
+    return { kind: 'renameLayout', windowId: window.id, layoutId: layout.id, name: `n${rng.int(9)}` }
   }
   if (roll < 88) {
     return {

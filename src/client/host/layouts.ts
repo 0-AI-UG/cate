@@ -75,8 +75,13 @@ export function removeLayout(workspaceId: string, windowId: WindowId, layoutId: 
   return documentStoreFor(workspaceId)?.propose({ kind: 'removeLayout', windowId, layoutId }).ok ?? false
 }
 
-/** A blank name clears it. */
+/** Moves a layout to `index` in the window's switcher. */
+export function moveLayout(workspaceId: string, windowId: WindowId, layoutId: LayoutId, index: number): boolean {
+  return documentStoreFor(workspaceId)?.propose({ kind: 'moveLayout', windowId, layoutId, index }).ok ?? false
+}
+
+/** A blank name is refused: a layout keeps the one it has. */
 export function renameLayout(workspaceId: string, windowId: WindowId, layoutId: LayoutId, name: string): boolean {
   const trimmed = name.trim()
-  return documentStoreFor(workspaceId)?.propose({ kind: 'renameLayout', windowId, layoutId, name: trimmed || null }).ok ?? false
+  return !!trimmed && (documentStoreFor(workspaceId)?.propose({ kind: 'renameLayout', windowId, layoutId, name: trimmed }).ok ?? false)
 }

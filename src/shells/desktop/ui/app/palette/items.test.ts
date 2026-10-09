@@ -129,7 +129,7 @@ describe('panelItems across layouts', () => {
     const shown = panelItems(doc, MAIN_WINDOW, lookup, '', 'two')
     expect(shown.map((i) => [i.panelId, i.secondary, i.otherLayout, i.otherWindow])).toEqual([
       ['b', 'Terminal', false, false],
-      ['a', 'Other layout', true, false],
+      ['a', 'Layout: Layout 1', true, false],
       ['c', 'Other window', false, true],
     ])
     expect(panelItems(doc, MAIN_WINDOW, lookup, '', 'main').find((i) => i.panelId === 'b')?.secondary).toBe('Layout: Build')

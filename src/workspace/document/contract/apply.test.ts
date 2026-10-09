@@ -56,7 +56,7 @@ function withCanvas(): Doc {
 describe('createDocument', () => {
   it('has an empty main window and nothing else', () => {
     const doc = createDocument()
-    expect(doc).toEqual({ panels: {}, windows: { main: { id: 'main', kind: 'main', layouts: [{ id: 'main', dock: null }]} }, canvases: {}, relations: {}, worktrees: {} })
+    expect(doc).toEqual({ panels: {}, windows: { main: { id: 'main', kind: 'main', layouts: [{ id: 'main', name: 'Layout 1', dock: null }]} }, canvases: {}, relations: {}, worktrees: {} })
     expect(validateDocument(doc)).toBeNull()
   })
 })
@@ -117,7 +117,7 @@ describe('addPanel', () => {
     const doc = ok(withCanvas(), add('w', win('w1', 'ws')))
     expect(doc.canvases['canvas-cv'].nodes.n1).toEqual({ id: 'n1', rect: R, dock: stack('stack-n1', 'x') })
     expect(Object.keys(doc.canvases['canvas-cv'].nodes)).toEqual(['n1', 'n2'])
-    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', layouts: [{ id: 'main', dock: stack('ws', 'w') }]})
+    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', layouts: [{ id: 'main', name: 'Layout 1', dock: stack('ws', 'w') }]})
   })
 })
 
@@ -189,7 +189,7 @@ describe('placePanel', () => {
     doc = ok(doc, place('x', win('w1')), place('x', tab('s1')))
     expect(doc.windows.w1).toBeUndefined()
     doc = ok(createDocument(), add('a', tab('s1')), place('a', win('w1')))
-    expect(doc.windows.main).toEqual({ id: 'main', kind: 'main', layouts: [{ id: 'main', dock: null }]})
+    expect(doc.windows.main).toEqual({ id: 'main', kind: 'main', layouts: [{ id: 'main', name: 'Layout 1', dock: null }]})
   })
 
   it('moves between nodes and into new nodes', () => {

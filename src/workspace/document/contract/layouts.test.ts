@@ -38,7 +38,7 @@ function twoLayouts(): Doc {
 describe('layouts', () => {
   it('a new window has one empty layout; addLayout appends an empty one', () => {
     const doc = ok(createDocument(), addLayout('two', 'Build'))
-    expect(doc.windows[MAIN_WINDOW].layouts).toEqual([{ id: 'main', dock: null }, { id: 'two', name: 'Build', dock: null }])
+    expect(doc.windows[MAIN_WINDOW].layouts).toEqual([{ id: 'main', name: 'Layout 1', dock: null }, { id: 'two', name: 'Build', dock: null }])
   })
 
   it('a panel placed in a layout is in exactly that dock', () => {
@@ -81,11 +81,28 @@ describe('layouts', () => {
     expect(applyOp(doc, add('z', tab({ windowId: MAIN_WINDOW, layoutId: 'nope' }, 's9'))).error?.code).toBe('gone')
   })
 
+  it('layouts are named at creation and keep the name when moved or when others go', () => {
+    const doc = ok(createDocument(), addLayout('b'), addLayout('c'))
+    const names = (d: Doc) => d.windows[MAIN_WINDOW].layouts.map((l) => `${l.id}:${l.name}`)
+    expect(names(doc)).toEqual(['main:Layout 1', 'b:Layout 2', 'c:Layout 3'])
+    expect(names(ok(doc, { kind: 'moveLayout', windowId: MAIN_WINDOW, layoutId: 'c', index: 0 }))).toEqual(['c:Layout 3', 'main:Layout 1', 'b:Layout 2'])
+    // A later layout never takes a name that is still in use.
+    expect(names(ok(doc, { kind: 'removeLayout', windowId: MAIN_WINDOW, layoutId: 'b' }, addLayout('d')))).toEqual(['main:Layout 1', 'c:Layout 3', 'd:Layout 4'])
+  })
+
+  it('moveLayout reorders, clamps, and undoes', () => {
+    const before = ok(twoLayouts(), addLayout('three'))
+    const change: DocChange = { kind: 'moveLayout', windowId: MAIN_WINDOW, layoutId: 'three', index: 0 }
+    const after = ok(before, change)
+    expect(layoutsOf(after)).toEqual(['three', 'main', 'two'])
+    expect(layoutsOf(ok(before, { ...change, layoutId: 'main', index: 99 }))).toEqual(['two', 'three', 'main'])
+    expect(layoutsOf(ok(after, ...invertOp(before, change, () => 'fresh')))).toEqual(['main', 'two', 'three'])
+  })
+
   it('renameLayout sets and clears the name', () => {
     const named = ok(twoLayouts(), { kind: 'renameLayout', windowId: MAIN_WINDOW, layoutId: 'two', name: 'Logs' })
     expect(named.windows[MAIN_WINDOW].layouts[1].name).toBe('Logs')
-    const cleared = ok(named, { kind: 'renameLayout', windowId: MAIN_WINDOW, layoutId: 'two', name: null })
-    expect(cleared.windows[MAIN_WINDOW].layouts[1]).toEqual({ id: 'two', dock: expect.anything() })
+    expect(applyOp(named, { kind: 'renameLayout', windowId: MAIN_WINDOW, layoutId: 'two', name: '  ' }).error?.code).toBe('rejected')
   })
 
   it('a detached window is removed with its last panel across all layouts', () => {

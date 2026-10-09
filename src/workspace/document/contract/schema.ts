@@ -23,6 +23,15 @@ export const MAIN_WINDOW: WindowId = 'main'
 /** The id of a new window's first layout. */
 export const DEFAULT_LAYOUT: LayoutId = 'main'
 
+/** The name a layout gets when none is given: fixed at creation, so moving a
+ *  layout never renames it. The first free "Layout N" from the layout count up. */
+export function defaultLayoutName(existing: readonly DockLayout[]): string {
+  const taken = new Set(existing.map((l) => l.name))
+  let n = existing.length + 1
+  while (taken.has(`Layout ${n}`)) n++
+  return `Layout ${n}`
+}
+
 /** Every panel type's name. The panel index holds one definition per name. */
 export const PANEL_TYPES = ['terminal', 'editor', 'browser', 'chat', 'review', 'canvas', 'surface'] as const
 export type PanelType = (typeof PANEL_TYPES)[number]
@@ -110,7 +119,7 @@ export interface WorkspaceDocument {
 export function createDocument(): WorkspaceDocument {
   return {
     panels: {},
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: DEFAULT_LAYOUT, dock: null }] } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: DEFAULT_LAYOUT, name: defaultLayoutName([]), dock: null }] } },
     canvases: {},
     relations: {},
     worktrees: {},

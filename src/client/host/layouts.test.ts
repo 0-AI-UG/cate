@@ -24,7 +24,7 @@ describe('layouts on the client', () => {
     expect(activeLayoutId('w', MAIN_WINDOW)).toBe('main')
     const id = addLayout('w', MAIN_WINDOW, 'Logs')!
     expect(activeLayoutId('w', MAIN_WINDOW)).toBe(id)
-    expect(ws.confirmed().windows[MAIN_WINDOW].layouts.map((l) => l.name)).toEqual([undefined, 'Logs'])
+    expect(ws.confirmed().windows[MAIN_WINDOW].layouts.map((l) => l.name)).toEqual(['Layout 1', 'Logs'])
     const before = ws.confirmed()
     expect(switchLayout('w', MAIN_WINDOW, 'main')).toBe(true)
     expect(ws.confirmed()).toBe(before)
