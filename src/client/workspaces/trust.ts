@@ -116,9 +116,8 @@ function whenConnected(connection: WorkspaceConnection | undefined): Promise<boo
 
 /** After a workspace was opened: waits for its runtime and makes sure the
  *  workspace is trusted, asking through `store` when it is not. `declined`:
- *  the person said no, and the caller closes the workspace; `closed`: the
- *  connection closed first. */
-export async function ensureOpenedTrusted(
+ *  the person said no; `closed`: the connection closed first. */
+async function ensureOpenedTrusted(
   deps: { workspaces: Pick<WorkspaceList, 'get'>; connections: Pick<WorkspaceConnections, 'get'>; store?: TrustStore },
   workspaceId: string,
 ): Promise<'trusted' | 'declined' | 'closed'> {
@@ -126,4 +125,26 @@ export async function ensureOpenedTrusted(
   if (!entry || !(await whenConnected(deps.connections.get(workspaceId)))) return 'closed'
   const label = entry.kind === 'local' ? entry.root : entry.name
   return (await (deps.store ?? trustStore).ensureTrusted(workspaceId, label)) ? 'trusted' : 'declined'
+}
+
+/** Opens a workspace (when it is not open) the way every client does: the
+ *  connection first, then the trust question once its runtime answers; a
+ *  declined workspace is closed again with `close`. Rejects when opening
+ *  fails; `trusted` settles once the question is answered. */
+export async function openTrusted(
+  deps: {
+    workspaces: Pick<WorkspaceList, 'get' | 'getSnapshot' | 'open'>
+    connections: Pick<WorkspaceConnections, 'get'>
+    close(workspaceId: string): void
+    store?: TrustStore
+  },
+  workspaceId: string,
+): Promise<{ trusted: Promise<boolean> }> {
+  if (deps.workspaces.getSnapshot().open.includes(workspaceId)) return { trusted: Promise.resolve(true) }
+  await deps.workspaces.open(workspaceId)
+  const trusted = ensureOpenedTrusted(deps, workspaceId).then((answer) => {
+    if (answer === 'declined') deps.close(workspaceId)
+    return answer === 'trusted'
+  })
+  return { trusted }
 }

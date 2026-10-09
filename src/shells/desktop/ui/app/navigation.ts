@@ -3,7 +3,7 @@
 // panels are client/host's; this module plugs workspace selection and window
 // raising into its reveal hooks.
 
-import { ensureOpenedTrusted } from '@client/workspaces'
+import { openTrusted } from '@client/workspaces'
 import { documentStoreFor } from '@client/document'
 import { createPanel, installRevealHooks, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
 import { MAIN_WINDOW, type PanelId } from '@workspace/document/contract'
@@ -20,18 +20,15 @@ export async function selectWorkspace(workspaceId: string): Promise<boolean> {
   const { workspaces } = clientApp()
   const entry = workspaces.get(workspaceId)
   if (!entry) return false
-  const wasOpen = workspaces.getSnapshot().open.includes(workspaceId)
+  let opened: { trusted: Promise<boolean> }
   try {
-    if (!wasOpen) await workspaces.open(workspaceId)
+    opened = await openTrusted({ workspaces, connections: clientApp().connections, close: closeWorkspace }, workspaceId)
   } catch (err) {
     clientUi().showError(errorMessage(err, `Could not open ${entry.name}`))
     return false
   }
   useUIStore.getState().setSelectedWorkspace(workspaceId)
-  if (wasOpen) return true
-  const trust = await ensureOpenedTrusted({ workspaces, connections: clientApp().connections }, workspaceId)
-  if (trust === 'declined') closeWorkspace(workspaceId)
-  return trust === 'trusted'
+  return opened.trusted
 }
 
 /** Adds a folder on this device to the list and opens it. */

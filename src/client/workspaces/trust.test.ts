@@ -2,7 +2,7 @@
 // untrusted one always asks, and the answer is what the caller gets back.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createTrustStore, type TrustApi, type TrustStore } from './trust'
+import { createTrustStore, openTrusted, type TrustApi, type TrustStore } from './trust'
 
 let trusted: Set<string>
 let getTrust: ReturnType<typeof vi.fn<(id: string) => Promise<{ trusted: boolean; decidedAt: string | null }>>>
@@ -108,5 +108,35 @@ describe('ensureTrusted', () => {
     expect(listener).toHaveBeenCalledTimes(1)
     await store.answer(false)
     expect(listener).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('openTrusted', () => {
+  const opens = vi.fn()
+  const deps = (open: string[], close: (id: string) => void) => ({
+    workspaces: {
+      get: (id: string) => ({ id, kind: 'local' as const, root: `/${id}`, name: id }),
+      getSnapshot: () => ({ open }),
+      open: async (id: string) => { opens(id); open.push(id) },
+    },
+    connections: { get: () => ({ state: { kind: 'connected' }, subscribe: () => () => {} }) },
+    close,
+    store,
+  }) as unknown as Parameters<typeof openTrusted>[0]
+
+  it('opens, asks once its runtime answers, and closes a declined workspace again', async () => {
+    const close = vi.fn()
+    const opened = await openTrusted(deps([], close), 'ws')
+    await tick()
+    expect(store.current()).toMatchObject({ workspaceId: 'ws', label: '/ws' })
+    await store.answer(false)
+    await expect(opened.trusted).resolves.toBe(false)
+    expect(close).toHaveBeenCalledWith('ws')
+  })
+
+  it('asks nothing for a workspace already open', async () => {
+    opens.mockClear()
+    await expect((await openTrusted(deps(['ws'], vi.fn()), 'ws')).trusted).resolves.toBe(true)
+    expect(opens).not.toHaveBeenCalled()
   })
 })
