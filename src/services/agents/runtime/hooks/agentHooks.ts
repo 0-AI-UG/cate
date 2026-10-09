@@ -819,6 +819,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
             try {
               const res = pf.strip?.(existing)
               if (res && 'delete' in res) await unlink(filePath)
+              // An agent's own config file in the repo, in its format: not Cate state.
               else if (res && 'content' in res && res.content !== existing) await writeFile(filePath, res.content)
             } catch { /* best-effort — never block the terminal spawn */ }
           }
@@ -837,6 +838,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
             const next = pf.build(existing, ctx)
             if (next !== null) {
               await mkdir(path.dirname(filePath), { recursive: true })
+              // An agent's own config file in the repo, in its format: not Cate state.
               await writeFile(filePath, next)
               wrote = true
             }

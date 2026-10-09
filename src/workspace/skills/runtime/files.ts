@@ -44,7 +44,9 @@ export function isMissingError(error: unknown): boolean {
   )
 }
 
-/** Atomic JSON publication, so readers never see a half-written manifest. */
+/** Atomic JSON publication, so readers never see a half-written manifest.
+ *  Not through kernel/state: a manifest is published once through
+ *  `SkillFiles`, which may be a checkout's files, never held as live state. */
 export async function writeSkillJson(files: SkillFiles, destination: string, value: unknown): Promise<void> {
   const temporary = `${destination}.tmp-${randomUUID()}`
   try {

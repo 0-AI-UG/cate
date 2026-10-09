@@ -185,7 +185,8 @@ const ensureRuntime = (): Promise<string> => {
 void ensureRuntime().catch(() => {})
 
 // "Open settings file" opens the device settings.json in the OS; it exists
-// only once something was set, so give it one to open.
+// only once something was set, so give it one to open. Created only when
+// absent (`wx`); the device store writes it from then on.
 const settingsFile = path.join(userData, 'settings.json')
 try { fs.writeFileSync(settingsFile, '{}\n', { flag: 'wx' }) } catch { /* exists */ }
 const backgrounds = createCanvasBackgrounds(path.join(userData, CANVAS_BACKGROUNDS_DIR))

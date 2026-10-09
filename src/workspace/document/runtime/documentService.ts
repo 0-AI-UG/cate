@@ -1,12 +1,12 @@
 // The runtime side of the document (9.1): holds it in memory, applies ops one
-// at a time in arrival order, persists document.json with the seq and the
-// per-client op counters (so a resend after a restart is not applied twice),
+// at a time in arrival order, persists document.json through kernel/state
+// with the seq and the per-client op counters (so a resend after a restart is not applied twice),
 // and tells every listener about every applied op.
 
 import fs from 'node:fs'
 import { createLogger, type Logger } from '@kernel/log/contract'
 import { isRpcError, RpcError } from '@kernel/rpc/contract'
-import { quarantineCorruptFile, writeJsonAtomic, writeJsonAtomicSync } from '@kernel/state/node'
+import { createJsonStateFile, quarantineCorruptFile } from '@kernel/state/node'
 import {
   DOCUMENT_FILE_VERSION,
   RUNTIME_CLIENT_ID,
@@ -129,12 +129,6 @@ export function createDocumentService(options: DocumentServiceOptions): Document
   let removalGuard: RemovalGuard | null = null
   let runtimeCounter = sequencer.counters.get(RUNTIME_CLIENT_ID) ?? 0
 
-  // Every submit may change the document or a counter: bump `version`, and
-  // write until the file holds the latest one.
-  let version = 0
-  let written = 0
-  let timer: ReturnType<typeof setTimeout> | null = null
-  let writing: Promise<void> | null = null
   let disposed = false
 
   const snapshot = (): DocumentFileData => ({
@@ -145,27 +139,17 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     document: sequencer.doc,
   })
 
-  const writeLoop = async (): Promise<void> => {
-    while (written < version) {
-      const target = version
-      await writeJsonAtomic(options.file, snapshot())
-      written = target
-    }
-  }
-
-  const flush = (): Promise<void> => {
-    if (timer) { clearTimeout(timer); timer = null }
-    writing ??= writeLoop().finally(() => { writing = null })
-    return writing
-  }
+  // Written through kernel/state (debounced, atomic, one write in flight).
+  // The service validated the file above and is its only writer.
+  const file = createJsonStateFile<DocumentFileData>({
+    file: options.file,
+    defaults: snapshot(),
+    normalize: (parsed, defaults) => (parsed && typeof parsed === 'object' ? parsed as DocumentFileData : defaults),
+    debounceMs,
+  })
 
   const schedule = () => {
-    version++
-    if (disposed || timer) return
-    timer = setTimeout(() => {
-      timer = null
-      flush().catch((err) => log.warn('writing document.json failed: %s', (err as Error).message))
-    }, debounceMs)
+    if (!disposed) file.set(snapshot())
   }
 
   const submit = (op: DocOp): SubmitResult => {
@@ -217,20 +201,12 @@ export function createDocumentService(options: DocumentServiceOptions): Document
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
-    flush,
+    flush: () => file.flushDurable(),
     dispose() {
       if (disposed) return
       disposed = true
-      if (timer) { clearTimeout(timer); timer = null }
       listeners.clear()
-      if (written < version) {
-        try {
-          writeJsonAtomicSync(options.file, snapshot())
-          written = version
-        } catch (err) {
-          log.error('writing document.json on stop failed: %s', (err as Error).message)
-        }
-      }
+      file.dispose()
     },
   }
 }
