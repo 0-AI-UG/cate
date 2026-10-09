@@ -14,6 +14,7 @@ import {
   createSurfaceBroker,
   type OpContext,
   type SessionHost,
+  type SurfaceCallOptions,
 } from '@panels/framework/runtime'
 import { createDocumentService, createPresence, type DocumentService } from '@workspace/document/runtime'
 import type { BrowserDownloadEntry } from '@services/browser/contract'
@@ -43,7 +44,7 @@ beforeEach(async () => {
 })
 afterEach(async () => { await fs.rm(dir, { recursive: true, force: true }) })
 
-type Surface = (panelId: string, op: string, args: any) => Promise<unknown>
+type Surface = (panelId: string, op: string, args: any, options?: SurfaceCallOptions) => Promise<unknown>
 
 interface World {
   document: DocumentService
@@ -79,7 +80,7 @@ function world(surface?: Surface): World {
   const registry = createPanelRegistry([entry, { definition: canvasDef }])
   const presence = createPresence({ lifecycle: createLifecycleBus() })
   const broker = createSurfaceBroker({ presence, timeoutMs: 1000 })
-  const surfaces = surface ? { request: (panelId: string, op: string, args: unknown) => surface(panelId, op, args) } : broker
+  const surfaces = surface ? { request: (panelId: string, op: string, args: unknown, options?: SurfaceCallOptions) => surface(panelId, op, args, options) } : broker
   const host = createSessionHost({
     document,
     registry,
@@ -229,6 +230,21 @@ describe('browser session', () => {
     await expect(w.api(id, 'getAXState', { tabId })).rejects.toMatchObject({ code: 'no-renderer' })
     await expect(w.op(id, { kind: 'history', action: 'back' })).rejects.toMatchObject({ code: 'no-renderer' })
     w.dispose()
+  })
+
+  it('runs a cate API page operation under the call\'s own deadline and cancellation', async () => {
+    const seen: Array<SurfaceCallOptions | undefined> = []
+    const w = world(async (_panelId, op, _args, options) => {
+      seen.push(options)
+      return op === 'page.execute' ? { result: { ok: true } } : undefined
+    })
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    const tabId = w.snapshot(id).activeTabId
+    const abort = new AbortController()
+    await w.host.handleApi(id, 'click', { tabId, target: 3 }, { panelId: id, signal: abort.signal } as ApiSessionContext)
+    // The broker's own 30 s timer is off; the API's signal ends the request.
+    expect(seen).toEqual([{ timeoutMs: 0, signal: abort.signal }])
   })
 
   it('runs page methods on the driving client and shows the agent cursor', async () => {
