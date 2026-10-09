@@ -9,7 +9,6 @@ import { openAgentChanges } from '@panels/review/client'
 import type { MobileActionResult, MobileCoreMethods } from '../contract'
 import type { MobileAgents } from './agents'
 import type { MobileConversations } from './conversations'
-import { agent } from './cateApi'
 import { placementOptions } from './placement'
 
 type Handlers<M extends keyof MobileCoreMethods> = {
@@ -70,14 +69,14 @@ export function createActionHandlers(agents: MobileAgents, conversations: Mobile
     },
     async 'agents.send'({ viewId, workspaceId, panelId, prompt }) {
       conversations.sent(viewId, prompt)
-      const result = await attempt(() => agent(runtimeFor(workspaceId), 'send', { targetPanelId: panelId, prompt }))
+      const result = await attempt(() => runtimeFor(workspaceId).agents.send({ panelId, prompt }))
       if (!result.ok) conversations.unsent(viewId)
       return result
     },
     'agents.interrupt': ({ workspaceId, panelId }) =>
-      attempt(() => agent(runtimeFor(workspaceId), 'interrupt', { targetPanelId: panelId })),
+      attempt(() => runtimeFor(workspaceId).agents.interrupt({ panelId })),
     async 'agents.choices'({ workspaceId }) {
-      return agent(runtimeFor(workspaceId), 'types', {}).catch(() => [])
+      return runtimeFor(workspaceId).agents.types().catch(() => [])
     },
     async 'agents.t3Models'({ workspaceId }) {
       return runtimeFor(workspaceId).t3.providerModels().catch(() => [])
@@ -85,7 +84,7 @@ export function createActionHandlers(agents: MobileAgents, conversations: Mobile
     async 'agents.start'({ workspaceId, prompt, launch, worktree, placement }) {
       const { near, position } = placementOptions(launch.runner === 'terminal' ? 'terminal' : 'chat', placement)
       try {
-        const started = await agent(runtimeFor(workspaceId), 'start', {
+        const started = await runtimeFor(workspaceId).agents.start({
           prompt,
           ...(launch.runner === 'terminal'
             ? { runner: 'terminal' as const, agentId: launch.agentId }

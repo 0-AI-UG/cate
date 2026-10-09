@@ -169,7 +169,7 @@ describe('agents capability', () => {
   it('streams every agent panel\'s state as a snapshot, then changes', () => {
     terminal.set('term', {})
     const events: unknown[] = []
-    const impl = agentsCapabilityImpl(agents)
+    const impl = agentsCapabilityImpl(agents, {} as never)
     const stop = impl.panels(undefined as never, { emit: (event: unknown) => events.push(event) } as never, {} as never)
     t3.set('chat', { status: 'running' })
     expect(events).toEqual([
@@ -182,9 +182,9 @@ describe('agents capability', () => {
   it('reports running agents as busy and forwards notifications', () => {
     terminal.set('term', { status: 'running' })
     t3.set('chat', {})
-    expect(agentsCapabilityImpl(agents).busy(undefined as never, {} as never)).toEqual({ panelIds: ['term'] })
+    expect(agentsCapabilityImpl(agents, {} as never).busy(undefined as never, {} as never)).toEqual({ panelIds: ['term'] })
     const seen: unknown[] = []
-    const impl = agentsCapabilityImpl(agents)
+    const impl = agentsCapabilityImpl(agents, {} as never)
     impl.notifications(undefined as never, { emit: (event: unknown) => seen.push(event) } as never, {} as never)
     agents.notifications.publish({ kind: 'agent.needsInput', panelId: 'term', title: 't', body: 'b' })
     expect(seen).toEqual([{ kind: 'agent.needsInput', panelId: 'term', title: 't', body: 'b' }])

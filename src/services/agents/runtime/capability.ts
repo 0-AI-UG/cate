@@ -1,9 +1,15 @@
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import { applyAgentPanelStatesChange, type agentsCapability } from '../contract'
 import type { AgentsRuntime } from './agentsRuntime'
+import { interruptAgent, sendToAgent, startAgent } from './api'
+import type { AgentStarter } from './start'
 
-export function agentsCapabilityImpl(agents: AgentsRuntime): CapabilityImpl<typeof agentsCapability> {
+export function agentsCapabilityImpl(agents: AgentsRuntime, starter: AgentStarter): CapabilityImpl<typeof agentsCapability> {
   return {
+    start: (request) => startAgent(starter, undefined, request),
+    types: () => starter.types(),
+    send: ({ panelId, prompt }) => sendToAgent(agents, panelId, prompt),
+    interrupt: ({ panelId }) => interruptAgent(agents, panelId),
     inspectHooks: ({ cwd }) => agents.inspectHooks(cwd),
     async readChanges({ cwd, knownRevision }) {
       return agents.hooks.readChanges(await agents.resolveCheckout(cwd), knownRevision)

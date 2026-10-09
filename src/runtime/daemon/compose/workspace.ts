@@ -393,7 +393,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   rpc.register(processCapability, processCapabilityImpl(terminal))
   rpc.register(browserDataCapability, browserDataCapabilityImpl(browserData))
   rpc.register(t3Capability, t3CapabilityImpl(t3))
-  rpc.register(agentsCapability, agentsCapabilityImpl(agents))
+  rpc.register(agentsCapability, agentsCapabilityImpl(agents, agentStarter))
   rpc.register(sessionCapability, sessionCapabilityImpl({ host, presence }))
   rpc.register(surfaceCapability, broker.capability())
   rpc.register(apiCapability, apiCapabilityImpl(router))

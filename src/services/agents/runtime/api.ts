@@ -4,7 +4,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { agentApi } from '../contract/api'
-import type { PanelAgentState } from '../contract'
+import type { AgentStartRequest, PanelAgentState } from '../contract'
 import type { AgentsRuntime } from './agentsRuntime'
 import type { AgentStarter } from './start'
 
@@ -34,12 +34,33 @@ function live(agents: AgentsRuntime, panelId: string): PanelAgentState {
   return state
 }
 
+/** Starts an agent for a caller panel (a client: none), placing it on a
+ *  canvas when asked: `cate agent start` and the agents capability. */
+export function startAgent(starter: AgentStarter, callerPanelId: string | undefined, request: AgentStartRequest) {
+  const { canvasPanelId, position, ...args } = request
+  const placement = canvasPanelId ? { near: canvasPanelId, ...(position ? { position } : {}) } : undefined
+  return starter.start(callerPanelId, { ...args, ...(placement ? { placement } : {}) })
+}
+
+/** A prompt to a live agent panel: `cate agent send` and the capability. */
+export async function sendToAgent(agents: AgentsRuntime, panelId: string, prompt: string): Promise<{ ok: true }> {
+  live(agents, panelId)
+  const result = await agents.send(panelId, prompt)
+  if (!result.ok) throw new RpcError('rejected', result.error)
+  return { ok: true }
+}
+
+/** Stops a live agent panel's turn: `cate agent interrupt` and the capability. */
+export async function interruptAgent(agents: AgentsRuntime, panelId: string): Promise<{ ok: true }> {
+  live(agents, panelId)
+  const result = await agents.interrupt(panelId)
+  if (!result.ok) throw new RpcError('rejected', result.error)
+  return { ok: true }
+}
+
 export function createAgentApiHandlers(agents: AgentsRuntime, starter: AgentStarter): CateServiceHandlers<typeof agentApi> {
   return {
-    async start({ canvasPanelId, position, ...args }, ctx) {
-      const placement = canvasPanelId ? { near: canvasPanelId, ...(position ? { position } : {}) } : undefined
-      return starter.start(ctx.caller.panelId, { ...args, ...(placement ? { placement } : {}) })
-    },
+    start: (args, ctx) => startAgent(starter, ctx.caller.panelId, args as AgentStartRequest),
 
     types: () => starter.types(),
 
@@ -61,19 +82,9 @@ export function createAgentApiHandlers(agents: AgentsRuntime, starter: AgentStar
 
     wait: ({ panelIds, timeoutSeconds }, ctx) => waitForAgents(agents, panelIds ?? [], timeoutSeconds, ctx.signal),
 
-    async send({ targetPanelId, prompt }) {
-      live(agents, targetPanelId)
-      const result = await agents.send(targetPanelId, prompt)
-      if (!result.ok) throw new RpcError('rejected', result.error)
-      return { ok: true }
-    },
+    send: ({ targetPanelId, prompt }) => sendToAgent(agents, targetPanelId, prompt),
 
-    async interrupt({ targetPanelId }) {
-      live(agents, targetPanelId)
-      const result = await agents.interrupt(targetPanelId)
-      if (!result.ok) throw new RpcError('rejected', result.error)
-      return { ok: true }
-    },
+    interrupt: ({ targetPanelId }) => interruptAgent(agents, targetPanelId),
   }
 }
 

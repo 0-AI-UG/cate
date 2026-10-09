@@ -2,7 +2,24 @@ import { channelStream, defineCapability, method, stream } from '@kernel/rpc/con
 import type { AgentChangesSnapshot } from './changes'
 import type { AgentConversation, AgentConversationChange } from './conversation'
 import type { AgentHookAgentState } from './hooks'
-import type { AgentNotificationEvent, PanelAgentState } from './session'
+import type { AgentNotificationEvent, AgentRunner, PanelAgentState } from './session'
+import type { AgentId } from './registry'
+import type { AgentTypeInfo } from './launch'
+
+/** Starting an agent from a client, as `cate agent start` does from a
+ *  terminal: a new terminal or T3 chat panel, placed on a canvas when asked. */
+export interface AgentStartRequest {
+  prompt: string
+  runner?: AgentRunner
+  agentId?: AgentId
+  instanceId?: string
+  model?: string
+  title?: string
+  worktreeId?: string
+  newWorktree?: string
+  canvasPanelId?: string
+  position?: { x: number; y: number }
+}
 
 /** Every panel hosting an agent, keyed by panel id. */
 export type AgentPanelStates = Record<string, PanelAgentState>
@@ -32,6 +49,11 @@ export const agentsCapability = defineCapability('agents', {
     panel: method<{ panelId: string }, PanelAgentState | null>(),
     /** Agents running a turn right now (closing their panels interrupts them). */
     busy: method<void, { panelIds: string[] }>(),
+    /** The same functions as `cate agent start / types / send / interrupt`. */
+    start: method<AgentStartRequest, { panelId: string; runner: AgentRunner; agentId: AgentId | null }>({ mutates: true, timeoutMs: 90_000 }),
+    types: method<void, AgentTypeInfo[]>(),
+    send: method<{ panelId: string; prompt: string }, { ok: true }>({ mutates: true }),
+    interrupt: method<{ panelId: string }, { ok: true }>({ mutates: true }),
   },
   streams: {
     /** Every agent panel's state: a snapshot, then changes. */
