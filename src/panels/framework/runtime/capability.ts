@@ -25,11 +25,9 @@ export function sessionCapabilityImpl(deps: {
       const detach = host.subscribe(panelId, {
         snapshot: (rev, snapshot) => sink.emit({ kind: 'snapshot', rev, snapshot }),
         change: (rev, change) => sink.emit({ kind: 'change', rev, change }),
-        bytes: (chunk) => { sink.bytes(chunk) },
         gone: () => sink.fail(new RpcError('gone', `panel ${panelId} is gone`)),
       })
       presence?.usedPanel(ctx.connection.id, panelId)
-      sink.onInput((bytes) => host.input(panelId, bytes, opContext(ctx)))
       return detach
     },
   }

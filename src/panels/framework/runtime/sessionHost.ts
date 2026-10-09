@@ -38,7 +38,6 @@ export interface SessionHost {
   /** Resolves once the panel's session finished `start()`. */
   started(panelId: PanelId): Promise<void>
   op(panelId: PanelId, op: unknown, ctx: OpContext): Promise<unknown>
-  input(panelId: PanelId, bytes: Uint8Array, ctx: OpContext): void
   subscribe(panelId: PanelId, subscriber: SessionSubscriber): () => void
   /** The `ApiSessionHost` of the kernel/api router. */
   handleApi(panelId: PanelId, method: string, args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown>
@@ -169,9 +168,6 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
         await entry.started
         return entry.session.handleOp(op, ctx)
       })
-    },
-    input(panelId, bytes, ctx) {
-      entries.get(panelId)?.session.input(bytes, ctx)
     },
     subscribe(panelId, subscriber) {
       return entryOf(panelId).session.attach(subscriber)

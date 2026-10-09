@@ -58,7 +58,6 @@ beforeEach(async () => {
     root: ROOT,
     t3,
     bindings,
-    send: vi.fn(async () => ({ ok: true as const })),
     relationContext: vi.fn(async () => 'context'),
     createPanel: vi.fn(() => 'created'),
   }
@@ -235,10 +234,8 @@ describe('ChatSession ops', () => {
     expect(deps.createPanel).toHaveBeenLastCalledWith('chat', { near: 'chat', at, threadId: 'two', title: 'Two' })
   })
 
-  it('starts turns through the agents service and a fresh chat through the page', async () => {
+  it('starts a fresh chat through the page', async () => {
     await addChat()
-    expect(await op({ kind: 'startTurn', text: 'hi' })).toEqual({ ok: true })
-    expect(deps.send).toHaveBeenCalledWith('chat', 'hi')
     expect(await bindings.sendFresh('chat', 'first prompt')).toBe(true)
     expect(surfaces.request).toHaveBeenCalledWith('chat', 'chat.sendText', { text: 'first prompt' }, undefined)
     expect(await op({ kind: 'relationContext', provider: 'claudeAgent' })).toBe('context')

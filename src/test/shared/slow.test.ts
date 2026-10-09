@@ -69,7 +69,7 @@ describe.skipIf(process.platform === 'win32')('shared workspace: slow links', ()
   it('a terminal round trip from the slow client shows on the screen the fast one reads', async () => {
     const id = ws.a.createPanel('terminal')
     await ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'running', 15_000)
-    await ws.b.session(id).send({ kind: 'submit', text: 'echo slow-$((20+22))' })
+    await ws.b.connection.runtime.api.call({ method: 'cate.terminal.type', args: { panelId: id, text: 'echo slow-$((20+22))\r' } })
     await until(async () => {
       const read = await ws.a.connection.runtime.api.call({ method: 'cate.terminal.read', args: { panelId: id } }) as { text: string }
       return read.text.includes('slow-42') ? true : undefined

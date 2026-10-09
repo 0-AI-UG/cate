@@ -130,7 +130,7 @@ const snapshotOf = (patch: Partial<EditorSnapshot> = {}): EditorSnapshot => ({
 })
 
 function fakeSession(): SessionHandle<EditorSnapshot> {
-  return { panelId: 'p1', getSnapshot: () => null, subscribe: () => () => {}, send: vi.fn(), write: vi.fn(), onBytes: () => () => {}, release: vi.fn() }
+  return { panelId: 'p1', getSnapshot: () => null, subscribe: () => () => {}, send: vi.fn(), release: vi.fn() }
 }
 
 async function show(snapshot: EditorSnapshot | null, record: Partial<PanelRecord> = {}) {

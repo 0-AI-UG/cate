@@ -93,8 +93,6 @@ const terminal: PanelRuntime = (services) => {
     terminal: services.terminal,
     root: services.root,
     agents: {
-      state: (panelId) => services.terminalRunner.state(panelId),
-      send: (panelId, prompt) => services.agents.send(panelId, prompt),
       onResumeStamp: (listener) => services.terminalRunner.onResumeStamp(listener),
       resumeLaunch: (stamp) => services.terminalRunner.resumeLaunch(stamp),
     },
@@ -189,7 +187,6 @@ const chat: PanelRuntime = (services) => {
       root: services.root,
       t3: services.t3,
       bindings: services.chatBindings,
-      send: (panelId, prompt) => agents.send(panelId, prompt),
       relationContext: (panelId, agentId) => agents.promptContext.prepareForSend(panelId, agentId),
       changes: chatChanges(services),
       createPanel: (type, options) => factory?.createPanel(type, options) ?? null,

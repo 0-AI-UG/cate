@@ -182,7 +182,17 @@ export function createClientE2E(options: { canvas?: CanvasE2EHooks; extensions?:
     },
     async writeTerminal(panelId, data, workspaceId) {
       const id = await ptyOf(panelId, workspaceId)
-      await connectionOf(workspaceId).runtime.process.write({ id, data })
+      // As a view types: through an attach of its own, as a hidden viewer.
+      const attach = connectionOf(workspaceId).runtime.process.attach({ id, visible: false })
+      await new Promise<void>((resolve) => {
+        const off = attach.onEvent((event) => {
+          if (event.kind !== 'screen') return
+          off()
+          attach.write(new TextEncoder().encode(data))
+          resolve()
+        })
+      })
+      setTimeout(() => attach.cancel(), 100)
     },
     async joinWorkspace(input) {
       const app = clientApp()

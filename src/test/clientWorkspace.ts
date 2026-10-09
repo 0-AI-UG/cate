@@ -178,8 +178,6 @@ export function fakeSessions(): FakeSessions {
           return () => { e.listeners.delete(listener) }
         },
         send: async (op) => { sent.push({ panelId, op }) },
-        write: () => {},
-        onBytes: () => () => {},
         release: () => {
           if (released) return
           released = true

@@ -12,17 +12,12 @@ export interface SessionHandle<S = unknown> {
   subscribe(listener: () => void): () => void
   /** Runs one typed op on the session. */
   send(op: unknown): Promise<unknown>
-  /** Bytes to the session (keystrokes, Yjs updates). */
-  write(bytes: Uint8Array): void
-  /** The panel's byte stream; survives resubscribes. */
-  onBytes(listener: (bytes: Uint8Array) => void): () => void
   /** Drops this reference. Releasing twice is harmless. */
   release(): void
 }
 
 interface Entry {
   mirror: ChannelMirror<unknown>
-  bytes: Set<(bytes: Uint8Array) => void>
   refs: number
 }
 
@@ -35,26 +30,15 @@ export class SessionSubscriptions {
     const entry = this.entries.get(panelId) ?? this.openEntry(panelId)
     entry.refs++
     const mirror = entry.mirror as ChannelMirror<S>
-    const own: Set<(bytes: Uint8Array) => void> = new Set()
     let released = false
     return {
       panelId,
       getSnapshot: () => mirror.get(),
       subscribe: (listener) => mirror.subscribe(() => listener()),
       send: (op) => this.session.op({ panelId, op }),
-      write: (bytes) => mirror.subscription.write(bytes),
-      onBytes: (listener) => {
-        own.add(listener)
-        entry.bytes.add(listener)
-        return () => {
-          own.delete(listener)
-          entry.bytes.delete(listener)
-        }
-      },
       release: () => {
         if (released) return
         released = true
-        for (const listener of own) entry.bytes.delete(listener)
         if (--entry.refs > 0 || this.entries.get(panelId) !== entry) return
         this.entries.delete(panelId)
         entry.mirror.dispose()
@@ -73,14 +57,9 @@ export class SessionSubscriptions {
   }
 
   private openEntry(panelId: string): Entry {
-    const bytes = new Set<(bytes: Uint8Array) => void>()
-    const open = () => {
-      // Resumed on reconnect: the channel restarts with a snapshot.
-      const sub = this.session.subscribe({ panelId }, { resume: true }) as Subscription<ChannelEvent<unknown, unknown>, void>
-      sub.onBytes((chunk) => { for (const listener of [...bytes]) listener(chunk) })
-      return sub
-    }
-    const entry: Entry = { mirror: mirrorChannel<unknown, unknown>(open), bytes, refs: 0 }
+    // Resumed on reconnect: the channel restarts with a snapshot.
+    const open = () => this.session.subscribe({ panelId }, { resume: true }) as Subscription<ChannelEvent<unknown, unknown>, void>
+    const entry: Entry = { mirror: mirrorChannel<unknown, unknown>(open), refs: 0 }
     this.entries.set(panelId, entry)
     return entry
   }

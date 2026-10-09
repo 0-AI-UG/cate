@@ -76,7 +76,7 @@ const fakeTerminalApi = defineCateApi(
 )
 
 type CounterSnapshot = { count: number; dirty: boolean }
-type CounterOp = { kind: 'bump'; by: number } | { kind: 'setDirty'; dirty: boolean } | { kind: 'echo'; text: string }
+type CounterOp = { kind: 'bump'; by: number } | { kind: 'setDirty'; dirty: boolean }
 
 const log: string[] = []
 
@@ -97,14 +97,10 @@ class CounterSession extends PanelSession<CounterSnapshot, CounterOp> {
       return this.state.count
     },
     setDirty: ({ dirty }) => { this.publish({ dirty }) },
-    echo: ({ text }) => { this.emitBytes(new TextEncoder().encode(text)) },
   }
   override handleApi = sessionApi(fakeTerminalApi, {
     read: ({ prefix }) => `${prefix}${this.state.count}`,
   })
-  override input(bytes: Uint8Array, ctx: OpContext): void {
-    this.emitBytes(new TextEncoder().encode(`${ctx.clientId}:${new TextDecoder().decode(bytes)}`))
-  }
   override closeBlocker(): RpcError | null {
     return this.state.dirty ? new RpcError('dirty', 'unsaved') : null
   }
@@ -129,7 +125,7 @@ const terminalDef = definePanel({
   minimumSize: size,
   canLiveOnCanvas: true,
   defaultTitle: 'Terminal',
-  channel: channel<CounterSnapshot, Partial<CounterSnapshot>, CounterOp>({ bytes: 'raw' }),
+  channel: channel<CounterSnapshot, Partial<CounterSnapshot>, CounterOp>(),
   api: fakeTerminalApi,
   commands: [{ id: 'bump', title: 'Bump', op: { kind: 'bump', by: 1 } }],
   create: (options: { near?: string; position?: { x: number; y: number } }, kit) =>
@@ -355,28 +351,23 @@ describe('session host lifecycle', () => {
 })
 
 describe('session channel over rpc', () => {
-  it('sends the snapshot, then changes, bytes, and takes ops and input', async () => {
+  it('sends the snapshot, then changes, and takes ops', async () => {
     const w = world()
     w.document.apply(addTo('t1'))
     await w.host.started('t1')
     const a = connect(w.server, 'ca')
     await a.ready
     const channelA = new SessionSubscriptions(a.session).acquire<CounterSnapshot>('t1')
-    const bytes: string[] = []
-    channelA.onBytes((chunk) => bytes.push(new TextDecoder().decode(chunk)))
     const revs: number[] = []
     channelA.subscribe(() => revs.push(channelA.getSnapshot()!.rev))
     await tick()
     expect(channelA.getSnapshot()).toEqual({ rev: 0, snapshot: { count: 0, dirty: false } })
 
     await expect(channelA.send({ kind: 'bump', by: 3 } satisfies CounterOp)).resolves.toBe(3)
-    await channelA.send({ kind: 'echo', text: 'hi' } satisfies CounterOp)
-    channelA.write(new TextEncoder().encode('ls'))
     await tick()
     await tick()
     expect(channelA.getSnapshot()).toEqual({ rev: 1, snapshot: { count: 3, dirty: false } })
     expect(revs).toEqual([0, 1])
-    expect(bytes).toEqual(['hi', 'ca:ls'])
 
     // Removing the panel fails later ops with gone.
     w.document.apply({ kind: 'removePanels', ids: ['t1'] })

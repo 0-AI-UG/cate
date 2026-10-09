@@ -13,7 +13,7 @@ export const sessionCapability = defineCapability('session', {
     /** The session's snapshot, then its changes (shallow patches), plus the
      *  panel's byte or Yjs stream as binary chunks. Bytes written by the
      *  client go to the session. */
-    subscribe: channelStream<{ panelId: PanelId }, JsonObject, JsonObject>({ bytes: true }),
+    subscribe: channelStream<{ panelId: PanelId }, JsonObject, JsonObject>(),
   },
 })
 

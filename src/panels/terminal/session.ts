@@ -13,14 +13,13 @@
 import { sessionApi } from '@kernel/api/contract'
 import { RpcError, isRpcError } from '@kernel/rpc/contract'
 import type { Json, PanelRecord } from '@workspace/document/contract'
-import type { AgentSendResult, TerminalResumeStamp } from '@services/agents/contract'
+import type { TerminalResumeStamp } from '@services/agents/contract'
 import type { LaunchIntent, TerminalStatus } from '@services/terminal/contract'
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type OpHandlers, type SessionKit, type DisposeReason } from '@panels/framework/runtime'
 import { terminalApi } from './contract/api'
 import { sequenceForKeys } from './contract/keys'
 import type {
-  SubmitResult,
   TerminalOp,
   TerminalOpenTarget,
   TerminalPersisted,
@@ -35,9 +34,6 @@ export type SessionTerminalService = Pick<
 
 /** The agents terminal runner, as a terminal panel sees it. */
 export interface TerminalAgentRunner {
-  state(panelId: string): { present: boolean } | null
-  /** Submits a prompt as the user would; flushes connected editors first. */
-  send(panelId: string, prompt: string): Promise<AgentSendResult>
   onResumeStamp(listener: (panelId: string, stamp: TerminalResumeStamp | null) => void): () => void
   /** The launch intent that resumes a stamp in a fresh shell. */
   resumeLaunch(stamp: TerminalResumeStamp): LaunchIntent | null
@@ -137,8 +133,6 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
   }
 
   protected override readonly ops: OpHandlers<TerminalOp> = {
-    input: ({ data }) => { this.write(data) },
-    submit: ({ text }) => this.submit(text),
     terminate: () => { this.terminate() },
     restart: async ({ discard }) => {
       this.requireIdle(discard)
@@ -205,16 +199,6 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
     const id = this.state.ptyId
     if (!id || this.state.status !== 'running') throw new RpcError('rejected', 'terminal-not-ready')
     this.deps.terminal.write(id, data)
-  }
-
-  private async submit(text: string): Promise<SubmitResult> {
-    const agents = this.deps.agents
-    if (agents?.state(this.panelId)?.present) return agents.send(this.panelId, text)
-    const id = this.state.ptyId
-    if (!id || this.state.status !== 'running') return { ok: false, error: 'terminal-not-ready' }
-    this.deps.terminal.write(id, text.replace(/\r?\n/g, '\r'))
-    this.deps.terminal.write(id, '\r')
-    return { ok: true }
   }
 
   private open(target: TerminalOpenTarget): unknown {

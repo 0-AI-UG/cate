@@ -43,8 +43,6 @@ const session: SessionHandle<ChatSnapshot> = {
   getSnapshot: () => null,
   subscribe: () => () => {},
   send: async () => undefined,
-  write: () => {},
-  onBytes: () => () => {},
   release: () => {},
 }
 const runtime = { t3: { conversations: vi.fn(async () => []), renameConversation: vi.fn(), deleteConversation: vi.fn() } } as unknown as RuntimeProxy

@@ -6,7 +6,6 @@ import type { TerminalService } from './terminalService'
 export function processCapabilityImpl(service: TerminalService): CapabilityImpl<typeof processCapability> {
   return {
     spawn: (params) => service.spawn(params),
-    write: ({ id, data }) => service.write(id, data),
     view: (params) => service.view(params),
     kill: ({ id }) => service.kill(id),
     close: ({ id }) => service.close(id),

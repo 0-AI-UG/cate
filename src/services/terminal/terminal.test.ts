@@ -157,8 +157,8 @@ describe('terminal service', () => {
     v.binding.dispose()
   })
 
-  it('sends input from every viewer and the write method to the same PTY', async () => {
-    const { ptys, connect } = setup()
+  it('sends input from every viewer and the write function to the same PTY', async () => {
+    const { ptys, connect, service } = setup()
     const a = await connect()
     const b = await connect()
     const { id } = await a.spawn({ cols: 80, rows: 24 })
@@ -168,7 +168,7 @@ describe('terminal service', () => {
     await until(() => ptys[0].written.join('') === 'ls\r')
     vb.term.input('pwd ü\r')
     await until(() => ptys[0].written.join('') === 'ls\rpwd ü\r')
-    await b.write({ id, data: 'exit\r' })
+    service.write(id, 'exit\r')
     expect(ptys[0].written.join('')).toBe('ls\rpwd ü\rexit\r')
     va.binding.dispose()
     vb.binding.dispose()
@@ -284,12 +284,12 @@ describe('terminal service', () => {
   })
 
   it('refuses to run anything in an untrusted workspace', async () => {
-    const { ptys, trust, connect } = setup()
+    const { ptys, trust, connect, service } = setup()
     const proc = await connect()
     const { id } = await proc.spawn({ cols: 80, rows: 24 })
     trust.trusted = false
     await expect(proc.spawn({ cols: 80, rows: 24 })).rejects.toSatisfy((e: unknown) => isRpcError(e, 'untrusted'))
-    await expect(proc.write({ id, data: 'rm -rf ~\r' })).rejects.toSatisfy((e: unknown) => isRpcError(e, 'untrusted'))
+    expect(() => service.write(id, 'rm -rf ~\r')).toThrow(expect.objectContaining({ code: 'untrusted' }))
     expect(ptys).toHaveLength(1)
     expect(ptys[0].written).toEqual([])
   })
@@ -503,7 +503,7 @@ describe('terminal service with node-pty', () => {
     const { service, connect } = setup({ spawnPty: undefined })
     const proc = await connect()
     const { id } = await proc.spawn({ cols: 80, rows: 24 })
-    await proc.write({ id, data: 'sleep 600 & p=$! ; echo PID=$p\r' })
+    service.write(id, 'sleep 600 & p=$! ; echo PID=$p\r')
     let pid = 0
     await until(() => { void proc.read({ id }).then((r) => { pid = Number(/PID=(\d+)/.exec(r.text)?.[1] ?? 0) }); return pid > 0 }, 10_000)
     const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }

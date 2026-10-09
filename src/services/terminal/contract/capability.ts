@@ -103,7 +103,6 @@ export interface ScreenSnapshot {
 export const processCapability = defineCapability('process', {
   methods: {
     spawn: method<SpawnParams, SpawnResult>({ mutates: true }),
-    write: method<{ id: string; data: string }, void>({ mutates: true }),
     /** Reports a viewer's size, visibility and activity. */
     view: method<ViewParams, void>(),
     /** Kills the PTY; the screen stays readable until `close`. */

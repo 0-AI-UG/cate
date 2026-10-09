@@ -78,7 +78,6 @@ export type ChatOp =
   /** The view failed to load the page of `loadId`. */
   | { kind: 'loadFailed'; loadId: number; message: string }
   /** Submits a prompt as the user would. */
-  | { kind: 'startTurn'; text: string }
   /** Relation context for a turn the page composer sends. */
   | { kind: 'relationContext'; provider: string | null }
   /** Guest bridge actions after the user picked a place. `threadId` is the

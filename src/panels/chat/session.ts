@@ -8,7 +8,7 @@
 import path from 'node:path'
 import { RpcError } from '@kernel/rpc/contract'
 import { PanelSession, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
-import { AGENT_DEFS, agentIdForT3Provider, type AgentId, type AgentSendResult } from '@services/agents/contract'
+import { AGENT_DEFS, agentIdForT3Provider, type AgentId } from '@services/agents/contract'
 import {
   canT3ThreadReceivePrompt,
   t3ThreadActivity,
@@ -53,8 +53,6 @@ export interface ChatSessionDeps {
   root: string
   t3: ChatT3Service
   bindings?: ChatBindings
-  /** The agents service's `send` (relation context, busy checks, the runner). */
-  send?(panelId: PanelId, prompt: string): Promise<AgentSendResult>
   relationContext?(panelId: PanelId, agentId: AgentId | null): Promise<string | null>
   changes?: ChatChangesFeed
   /** The runtime panel factory: builds records through each type's definition. */
@@ -152,10 +150,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     },
     loadFailed: ({ loadId, message: text }) => {
       if (loadId === this.state.loadId && this.state.phase === 'ready') this.publish({ phase: 'error', error: text || 'The agent page failed to load.' })
-    },
-    startTurn: ({ text }) => {
-      if (!this.deps.send) throw new RpcError('unsupported', 'Prompts are not available')
-      return this.deps.send(this.panelId, text)
     },
     relationContext: async ({ provider }) =>
       (await this.deps.relationContext?.(this.panelId, provider ? agentIdForT3Provider(provider) : null)) ?? null,

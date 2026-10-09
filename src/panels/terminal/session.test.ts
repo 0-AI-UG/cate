@@ -53,21 +53,13 @@ function fakeTerminal() {
 }
 
 function fakeAgents() {
-  let state: ReturnType<TerminalAgentRunner['state']> = null
   const stampListeners = new Set<(panelId: string, stamp: TerminalResumeStamp | null) => void>()
-  const sent: string[] = []
   const runner: TerminalAgentRunner = {
-    state: () => state,
-    send: async (_panelId, prompt) => { sent.push(prompt); return { ok: true } },
     onResumeStamp: (l) => { stampListeners.add(l); return () => { stampListeners.delete(l) } },
     resumeLaunch: (stamp) => ({ kind: 'agents.resume', params: stamp }),
   }
   return {
     runner,
-    sent,
-    setState(next: typeof state) {
-      state = next
-    },
     stamp(panelId: string, stamp: TerminalResumeStamp | null) {
       for (const l of stampListeners) l(panelId, stamp)
     },
@@ -207,17 +199,6 @@ describe('TerminalSession', () => {
     terminal.update('pty-1', { alive: false, exitCode: 0 })
     await expect(session.handleApi!('read', {}, ctx)).resolves.toMatchObject({ text: 'screen of pty-1' })
     await expect(session.handleApi!('type', { text: 'x' }, ctx)).rejects.toMatchObject({ code: 'rejected' })
-  })
-
-  it('submits to the shell, or through the agent runner when an agent runs', async () => {
-    const { session, terminal, agents } = setup({ agents: true })
-    await session.start()
-    await expect(session.handleOp({ kind: 'submit', text: 'echo a\necho b' }, opCtx)).resolves.toEqual({ ok: true })
-    expect(terminal.writes).toEqual([{ id: 'pty-1', data: 'echo a\recho b' }, { id: 'pty-1', data: '\r' }])
-    agents!.setState({ present: true })
-    await session.handleOp({ kind: 'submit', text: 'fix it' }, opCtx)
-    expect(agents!.sent).toEqual(['fix it'])
-    expect(terminal.writes).toHaveLength(2)
   })
 
   it('persists resume stamps and resumes them on restore', async () => {

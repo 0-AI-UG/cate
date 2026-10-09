@@ -20,7 +20,7 @@ describe.skipIf(process.platform === 'win32')('shared workspace: sessions', () =
     const b = await ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'running')
     expect(b.ptyId).toBe(a.ptyId)
 
-    await ws.b.session(id).send({ kind: 'submit', text: 'echo from-$((40+2))' })
+    await ws.b.connection.runtime.api.call({ method: 'cate.terminal.type', args: { panelId: id, text: 'echo from-$((40+2))\r' } })
     await until(async () => ((await screen(ws, 'a', id)).includes('from-42') ? true : undefined), 10_000, 'output in A')
   }, 30_000)
 

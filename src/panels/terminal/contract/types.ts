@@ -21,11 +21,9 @@ export type TerminalSnapshot = {
   error: string | null
 }
 
+/** Input goes through the `process.attach` stream (views) or
+ *  `cate terminal type / press` (callers), never a session op. */
 export type TerminalOp =
-  /** Raw PTY input, exactly like keystrokes. */
-  | { kind: 'input'; data: string }
-  /** A complete prompt plus Enter; through the agent when one runs. */
-  | { kind: 'submit'; text: string }
   /** Kills the PTY; the screen stays readable. */
   | { kind: 'terminate' }
   /** A fresh shell in the panel's checkout. `dirty` while a program runs
@@ -37,7 +35,6 @@ export type TerminalOp =
   | { kind: 'openUrl'; url: string }
   | { kind: 'openFile'; path: string; line?: number; column?: number }
 
-export type SubmitResult = { ok: true } | { ok: false; error: string }
 
 /** The terminal's own record fields. */
 export type TerminalFields = {

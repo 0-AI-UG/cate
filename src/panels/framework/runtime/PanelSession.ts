@@ -44,7 +44,6 @@ export interface SessionKit {
 export interface SessionSubscriber {
   snapshot(rev: number, snapshot: JsonObject): void
   change(rev: number, change: JsonObject): void
-  bytes(chunk: Uint8Array): void
   /** The session was disposed. */
   gone(): void
 }
@@ -116,19 +115,6 @@ export abstract class PanelSession<S extends JsonObject = JsonObject, Op = never
     for (const subscriber of [...this.subscribers]) subscriber.change(this.rev, change)
   }
 
-  /** Sends a chunk of the panel's byte stream to every subscriber. */
-  protected emitBytes(chunk: Uint8Array): void {
-    if (this.disposed) return
-    for (const subscriber of [...this.subscribers]) subscriber.bytes(chunk)
-  }
-
-  /** Chunks a new subscriber gets right after the snapshot (a serialized
-   *  screen, a Yjs state update). */
-  protected initialBytes(): Uint8Array[] { return [] }
-
-  /** Bytes a client wrote to the channel (keystrokes, Yjs updates). */
-  input(_bytes: Uint8Array, _ctx: OpContext): void {}
-
   /** @internal The host attaches a channel subscriber. */
   attach(subscriber: SessionSubscriber): () => void {
     if (this.disposed) {
@@ -136,7 +122,6 @@ export abstract class PanelSession<S extends JsonObject = JsonObject, Op = never
       return () => {}
     }
     subscriber.snapshot(this.rev, this.state)
-    for (const chunk of this.initialBytes()) subscriber.bytes(chunk)
     this.subscribers.add(subscriber)
     return () => { this.subscribers.delete(subscriber) }
   }
