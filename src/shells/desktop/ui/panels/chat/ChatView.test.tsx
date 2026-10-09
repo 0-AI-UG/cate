@@ -34,7 +34,7 @@ vi.mock('../../workspace/repository', () => ({ WorktreePill: () => null }))
 const harness = { origin: 'http://127.0.0.1:49152', port: 49152, instanceId: 'inst', environmentId: 'env', session: { name: 't3_session', value: 'secret' } }
 const ready = (patch: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   checkout: '/repo', threadId: null, phase: 'ready', error: null, harness, loadId: 1,
-  connected: true, activity: null, agentName: 'T3 Code', canReceivePrompt: true, changes: null, ...patch,
+  connected: true, changes: null, ...patch,
 })
 const record: PanelRecord = { id: 'chat', type: 'chat', title: 'T3 Code', fields: {} }
 const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW }, stackId: 's2' }

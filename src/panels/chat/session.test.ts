@@ -8,7 +8,7 @@ import type { T3PanelParams, T3ShellEvent, T3ShellSnapshot, T3Thread } from '@se
 import { MAIN_WINDOW, type PanelRecord } from '@workspace/document/contract'
 import { createDocumentService, type DocumentService } from '@workspace/document/runtime'
 import type { ChatSnapshot } from './contract'
-import { chatPanel, createChatBindings, type ChatBindings, type ChatSessionDeps } from './runtime'
+import { chatPanel, createChatThreads, type ChatThreads, type ChatSessionDeps } from './runtime'
 
 const ROOT = '/repo'
 
@@ -44,7 +44,7 @@ let dir: string
 let document: DocumentService
 let host: SessionHost
 let t3: ReturnType<typeof fakeT3>
-let bindings: ChatBindings
+let bindings: ChatThreads
 let deps: ChatSessionDeps
 let surfaces: { request: ReturnType<typeof vi.fn<(panelId: string, op: string, args: unknown) => Promise<unknown>>> }
 
@@ -52,12 +52,11 @@ beforeEach(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-chat-'))
   document = createDocumentService({ file: path.join(dir, 'document.json'), debounceMs: 60_000 })
   t3 = fakeT3()
-  bindings = createChatBindings()
   surfaces = { request: vi.fn(async (_panelId: string, _op: string, _args: unknown) => true as unknown) }
+  bindings = createChatThreads({ root: ROOT, document, surfaces: () => surfaces })
   deps = {
     root: ROOT,
     t3,
-    bindings,
     relationContext: vi.fn(async () => 'context'),
     createPanel: vi.fn(() => 'created'),
   }
@@ -70,6 +69,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  bindings.dispose()
   host.dispose()
   document.dispose()
   await fs.rm(dir, { recursive: true, force: true })
@@ -91,7 +91,7 @@ const snapshot = () => host.session('chat')!.snapshot() as ChatSnapshot
 const op = (value: unknown) => host.op('chat', value, { clientId: 'c', connectionId: 1 })
 
 describe('ChatSession binding', () => {
-  it('loads the checkout harness on start and registers its binding', async () => {
+  it('loads the checkout harness on start, and the runner reads its binding', async () => {
     await addChat()
     expect(t3.watchThreadShells).toHaveBeenCalledOnce()
     expect(t3.panelUrl).toHaveBeenCalledWith({ checkout: ROOT, route: 'thread' })
@@ -181,13 +181,14 @@ describe('ChatSession and the harness', () => {
     expect(snapshot().loadId).toBe(1)
   })
 
-  it('publishes the bound thread activity and agent', async () => {
+  it('publishes whether the harness is connected, and no agent state', async () => {
     await addChat({ threadId: 'one' })
     const running: T3Thread = { id: 'one', title: 'One', latestTurn: { state: 'running' }, session: { status: 'running', activeTurnId: 't', providerName: 'codex' } }
     t3.emit({ kind: 'snapshot', snapshot: shell({ one: running }) })
-    expect(snapshot()).toMatchObject({ connected: true, activity: 'running', agentName: 'Codex', canReceivePrompt: false })
-    t3.emit({ kind: 'snapshot', snapshot: shell({ one: { ...running, latestTurn: { state: 'completed' }, session: { status: 'ready', activeTurnId: null, providerName: 'codex' } } }, true, 2) })
-    expect(snapshot()).toMatchObject({ activity: 'waitingForInput', canReceivePrompt: true })
+    expect(snapshot()).toMatchObject({ connected: true })
+    expect(snapshot()).not.toHaveProperty('activity')
+    t3.emit({ kind: 'snapshot', snapshot: shell({ one: running }, false, 2) })
+    expect(snapshot()).toMatchObject({ connected: false })
   })
 
   it('restarts the harness on retry and reports failures', async () => {

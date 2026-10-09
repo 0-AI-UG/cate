@@ -75,7 +75,7 @@ import {
   type SurfaceBroker,
 } from '@panels/framework/runtime'
 import { PANEL_RUNTIMES, type PanelPorts, type PanelRuntime, type PanelServices } from '@panels/runtime'
-import { createChatBindings } from '@panels/chat/runtime'
+import { createChatThreads } from '@panels/chat/runtime'
 import { installLayout } from '../contract'
 import type { BusyRegistry } from '../runtime'
 
@@ -263,8 +263,10 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   const terminalRunner = createTerminalRunner(agents, terminal)
   offs.push(agents.registry.register(terminalRunner))
 
-  // Which thread each chat panel shows: chat sessions write it, the t3 runner reads it.
-  const chatBindings = createChatBindings()
+  // Which thread each chat panel shows, from the document, for the t3 runner.
+  let broker: ReturnType<typeof createSurfaceBroker> | undefined
+  const chatThreads = createChatThreads({ root, document, surfaces: () => broker })
+  offs.push(chatThreads.dispose)
   // Terminal panels provide these once the session host exists.
   const ports: PanelPorts = {}
   const agentTerminals = lateAgentTerminals(() => ports.agentTerminals)
@@ -299,7 +301,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     harnessStopped: (id) => t3Runner?.releaseChangeCapture(id),
     log: log.child('t3'),
   })
-  t3Runner = createT3Runner(agents, t3, chatBindings)
+  t3Runner = createT3Runner(agents, t3, chatThreads)
   offs.push(agents.registry.register(t3Runner))
 
   const agentStarter = createAgentStarter(agents, {
@@ -352,12 +354,12 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     terminalRunner,
     t3Runner,
     agentStarter,
-    chatBindings,
+    chatThreads,
   }
   const modules = (deps.panels ?? PANEL_RUNTIMES).map((panel) => panel(services))
   const registry = createPanelRegistry(modules.map(({ definition, session }) => ({ definition, session })))
   relationRole = (type) => registry.get(type)?.definition.relation
-  const broker = createSurfaceBroker({ presence })
+  broker = createSurfaceBroker({ presence })
   host = createSessionHost({
     document,
     registry,

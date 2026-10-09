@@ -1,17 +1,15 @@
 // The chat panel session (architecture 11.2, 11.3). Owns the panel's thread
-// binding and selection, asks the t3 service for its checkout's harness,
-// follows the harness's thread shells for activity, restarts and deleted
-// conversations, and keeps the agents service's t3 runner informed of its
-// binding (the runner owns agent status, titles and attention notifications).
-// The page itself lives in the view.
+// selection, asks the t3 service for its checkout's harness and follows the
+// harness's thread shells for restarts and deleted conversations. Harness and
+// page state only: the agents service's t3 runner reads the record and owns
+// agent status, titles, attention notifications and prompts. The page itself
+// lives in the view.
 
 import path from 'node:path'
 import { RpcError } from '@kernel/rpc/contract'
 import { PanelSession, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
-import { AGENT_DEFS, agentIdForT3Provider, type AgentId } from '@services/agents/contract'
+import { agentIdForT3Provider, type AgentId } from '@services/agents/contract'
 import {
-  canT3ThreadReceivePrompt,
-  t3ThreadActivity,
   type T3CheckoutParams,
   type T3PanelParams,
   type T3PanelTarget,
@@ -22,14 +20,13 @@ import type { PanelCreateOptions } from '@panels/framework/contract'
 import type { PanelId, PanelRecord, PanelType } from '@workspace/document/contract'
 import {
   CHAT_DEFAULT_TITLE,
-  CHAT_SURFACE_SEND_TEXT,
   chatThreadId,
   type ChatHarness,
   type ChatOp,
   type ChatSnapshot,
   type ChatTurnChange,
 } from './contract'
-import type { ChatBindings } from './parts/runtime/bindings'
+import { chatCheckout } from './parts/runtime/threads'
 
 /** The part of the t3 service a chat session uses. */
 export interface ChatT3Service {
@@ -52,7 +49,6 @@ export interface ChatSessionDeps {
   /** Canonical workspace root: the checkout of a panel without worktree or cwd. */
   root: string
   t3: ChatT3Service
-  bindings?: ChatBindings
   relationContext?(panelId: PanelId, agentId: AgentId | null): Promise<string | null>
   changes?: ChatChangesFeed
   /** The runtime panel factory: builds records through each type's definition. */
@@ -67,9 +63,6 @@ const initial = (checkout: string, threadId: string | null): ChatSnapshot => ({
   harness: null,
   loadId: 0,
   connected: null,
-  activity: null,
-  agentName: null,
-  canReceivePrompt: false,
   changes: null,
 })
 
@@ -107,9 +100,7 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
 
   /** The checkout this panel's conversation belongs to. */
   checkout(record: PanelRecord = this.record): string {
-    if (typeof record.fields.cwd === 'string' && record.fields.cwd) return record.fields.cwd
-    const worktree = record.worktreeId ? this.kit.document.get().worktrees[record.worktreeId] : undefined
-    return worktree?.path ?? this.deps.root
+    return chatCheckout(record, this.kit.document.get(), this.deps.root)
   }
 
   protected override recordChanged(previous: PanelRecord): void {
@@ -205,8 +196,7 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
 
   private ready(target: T3PanelTarget): void {
     if (this.shell && this.shell.instanceId !== target.instanceId) this.shell = undefined
-    this.publish({ phase: 'ready', error: null, harness: harnessOf(target), loadId: this.state.loadId + 1 })
-    this.observe()
+    this.publish({ phase: 'ready', error: null, harness: harnessOf(target), loadId: this.state.loadId + 1, connected: this.shell ? this.shell.connected : null })
   }
 
   private async retry(): Promise<void> {
@@ -249,7 +239,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     this.applyDoc({ kind: 'updatePanel', id: this.panelId, patch: { fields: { threadId: threadId ?? null } } })
     this.publish({ threadId: threadId ?? null })
     this.bound()
-    this.observe()
   }
 
   private onShells(event: T3ShellEvent): void {
@@ -266,31 +255,14 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     if (!instanceId || snapshot.instanceId !== instanceId) return
     const wasConnected = this.shell?.connected
     this.shell = snapshot
-    this.observe()
+    this.publish({ connected: snapshot.connected })
     if (snapshot.connected && (wasConnected === false || this.state.phase === 'error')) void this.reconnect()
   }
 
-  /** Activity of the bound thread from the harness's thread shells. */
-  private observe(): void {
-    const shell = this.shell
-    const threadId = chatThreadId(this.record)
-    const thread = threadId && shell?.connected ? shell.threads[threadId] : undefined
-    const provider = thread?.session?.providerName
-    const agentId = provider ? agentIdForT3Provider(provider) : null
-    this.publish({
-      connected: shell ? shell.connected : null,
-      activity: thread ? t3ThreadActivity(thread) : null,
-      agentName: agentId ? AGENT_DEFS[agentId].displayName : CHAT_DEFAULT_TITLE,
-      // A fresh chat's first prompt creates its thread; a bound thread must be known.
-      canReceivePrompt: shell?.connected === true && (threadId ? !!thread && canT3ThreadReceivePrompt(thread) : true),
-    })
-  }
-
-  /** Tells the runner and the change feed about the current binding. */
+  /** Follows the current binding's change summaries. */
   private bound(): void {
     const checkout = this.checkout()
     const threadId = chatThreadId(this.record)
-    this.deps.bindings?.set(this.panelId, { checkout, ...(threadId ? { threadId } : {}) }, (prompt) => this.sendFresh(prompt))
     const key = identityOf(checkout, threadId)
     if (key === this.changesKey) return
     this.changesKey = key
@@ -302,16 +274,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     this.stopChanges = this.deps.changes.watch(checkout, threadId, (turns) => {
       if (chatThreadId(this.record) === threadId) this.publish({ changes: { threadId, turns } })
     })
-  }
-
-  /** A fresh chat's first prompt, through the page composer on the driving
-   *  client (it holds the provider and model choice). */
-  private async sendFresh(prompt: string): Promise<boolean> {
-    try {
-      return (await this.withSurface<boolean>(CHAT_SURFACE_SEND_TEXT, { text: prompt })) === true
-    } catch {
-      return false
-    }
   }
 
   private requireBinding(threadId: string | undefined): void {
@@ -338,6 +300,5 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     this.generation++
     this.stopShells?.()
     this.stopChanges?.()
-    this.deps.bindings?.delete(this.panelId)
   }
 }

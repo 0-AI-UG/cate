@@ -107,8 +107,8 @@ describe('mobile browser views', () => {
 
 const harness = { origin: 'http://127.0.0.1:4000', port: 4000, instanceId: 'i', environmentId: 'env', session: { name: 's', value: 'v' } }
 const chatSnapshot = (patch: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
-  checkout: '/repo', threadId: 'th1', phase: 'ready', error: null, harness, loadId: 1, connected: true, activity: null,
-  agentName: null, canReceivePrompt: true, changes: null, ...patch,
+  checkout: '/repo', threadId: 'th1', phase: 'ready', error: null, harness, loadId: 1, connected: true,
+  changes: null, ...patch,
 })
 
 describe('mobile chat views', () => {

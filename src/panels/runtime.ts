@@ -32,7 +32,7 @@ import { reviewPanel } from './review/runtime'
 import { BrowserCodeCells, browserCodeCapabilityImpl, browserPanel, browserServiceHandlers } from './browser/runtime'
 import { browserApi, browserCodeCapability } from './browser/contract'
 import { surfacePanel } from './surface/runtime'
-import { chatPanel, type ChatBindings, type ChatChangesFeed } from './chat/runtime'
+import { chatPanel, type ChatChangesFeed, type ChatThreads } from './chat/runtime'
 import { canvasPanel } from './canvas/runtime'
 
 /** The runtime services the daemon hands panel types. */
@@ -54,9 +54,8 @@ export interface PanelServices {
   terminalRunner: TerminalRunner
   t3Runner: T3Runner
   agentStarter: AgentStarter
-  /** Which thread each chat panel shows: the one instance the t3 runner
-   *  also reads (`createT3Runner(agents, t3, chatBindings)`). */
-  chatBindings: ChatBindings
+  /** Which thread each chat panel shows (what the t3 runner reads). */
+  chatThreads: ChatThreads
 }
 
 export interface PanelAttachContext {
@@ -161,7 +160,7 @@ const review: PanelRuntime = (services) => {
         if (!result.ok) throw new Error(result.error)
       },
       onExit: (listener) => services.terminalRunner.onExit((panelId) => listener(panelId)),
-      threadIdOf: (panelId) => services.chatBindings.binding(panelId)?.threadId,
+      threadIdOf: (panelId) => services.chatThreads.binding(panelId)?.threadId,
     },
   })
 }
@@ -186,7 +185,6 @@ const chat: PanelRuntime = (services) => {
     ...chatPanel({
       root: services.root,
       t3: services.t3,
-      bindings: services.chatBindings,
       relationContext: (panelId, agentId) => agents.promptContext.prepareForSend(panelId, agentId),
       changes: chatChanges(services),
       createPanel: (type, options) => factory?.createPanel(type, options) ?? null,

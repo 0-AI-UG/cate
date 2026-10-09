@@ -40,7 +40,7 @@ export interface T3PanelBindings {
   onChange(listener: (panelId: string) => void): () => void
   /** A fresh chat's first prompt goes through its page composer, which holds
    *  the provider and model choice. */
-  sendFresh?(panelId: string, prompt: string): Promise<boolean>
+  sendFresh(panelId: string, prompt: string): Promise<boolean>
 }
 
 export interface T3Runner extends AgentRunnerImpl {
@@ -161,7 +161,7 @@ export function createT3Runner(agents: AgentsRuntime, t3: RunnerT3Service, bindi
       if (!bound || !bound.connected || (bound.threadId && !bound.thread)) return { ok: false, error: 'agent-not-running' }
       if (bound.thread && !canT3ThreadReceivePrompt(bound.thread)) return { ok: false, error: 'agent-busy' }
       if (!bound.threadId) {
-        const sent = await bindings.sendFresh?.(panelId, prompt).catch(() => false)
+        const sent = await bindings.sendFresh(panelId, prompt).catch(() => false)
         return sent ? { ok: true } : { ok: false, error: 'agent-panel-unavailable' }
       }
       let context: string | null

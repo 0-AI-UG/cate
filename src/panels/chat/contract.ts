@@ -1,7 +1,6 @@
 // The chat panel (architecture 11.3): a T3 conversation in its checkout's
 // harness, shown by the T3 client in a webview. Snapshot and op types. Pure.
 
-import type { T3ThreadActivity } from '@services/t3/contract'
 import type { PanelCreateOptions } from '@panels/framework/contract'
 import type { PanelRecord, PlaceTarget } from '@workspace/document/contract'
 
@@ -55,10 +54,6 @@ export type ChatSnapshot = {
   loadId: number
   /** The harness's thread-shell stream; null until reported. */
   connected: boolean | null
-  activity: T3ThreadActivity | null
-  /** The agent running the thread ("T3 Code" until its provider is known). */
-  agentName: string | null
-  canReceivePrompt: boolean
   changes: ChatChanges | null
 }
 
