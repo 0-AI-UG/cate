@@ -693,6 +693,13 @@ Done when: both boots call `startClientCore` once; `ChatView.tsx` and
 `mobile/core/chat.ts` use the same controller; a shared-workspace test
 grants trust through the core API that iOS uses.
 
+Note (as built): `ShellTransports` still offers `dialNetwork` and `pair`:
+the desktop keeps its device key in main, so the network dialer runs
+there, and iOS runs the same `createNetworkDialer` in its core. What each
+shell repeated is gone: the dialer dials Cate Connect itself from the raw
+peer connection factory, and pairing results become endpoints once
+(`pairingEndpoints`).
+
 ### R6. Surfaces chosen by feature, not by browser
 
 Problem: the surface broker accepts only `pageDriver` clients for every op
