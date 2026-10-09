@@ -27,9 +27,7 @@ function setup() {
     agents: {
       panels: () => panels.sub,
       notifications: () => notifications.sub,
-    },
-    api: {
-      call: vi.fn(async () => ({ panelId: 'new', runner: 'terminal', agentId: 'codex' })),
+      start: vi.fn(async () => ({ panelId: 'new', runner: 'terminal', agentId: 'codex' })),
     },
     power: { subscribe: vi.fn(() => power.sub) },
     push: { register: vi.fn(async () => ({ registered: true, blocked: null })) },
@@ -120,12 +118,10 @@ describe('mobile agents', () => {
 describe('mobile actions', () => {
   it('follows a conversation as deltas, with the prompt sent pending until it shows', async () => {
     const conversation = fakeStream<ChannelEvent<AgentConversation, AgentConversationChange>>()
-    const call = vi.fn(async ({ method }: { method: string }) => {
-      if (method === 'cate.agent.send') return { ok: true }
-      throw new Error('agent-not-running')
-    })
+    const send = vi.fn(async () => ({ ok: true }))
+    const interrupt = vi.fn(async () => { throw new Error('agent-not-running') })
     // Earlier tests' agent panel mirrors follow the resolver too.
-    const runtime = { api: { call }, agents: { panels: () => fakeStream().sub, conversation: vi.fn(() => conversation.sub) } }
+    const runtime = { agents: { panels: () => fakeStream().sub, conversation: vi.fn(() => conversation.sub), send, interrupt } }
     const cleanupResolver = setRuntimeResolver((id) => (id === 'ws' ? (runtime as never) : null))
     const events: MobileViewEvent[] = []
     const bridge = (async (method: string, params: { json: string }) => {
@@ -140,7 +136,7 @@ describe('mobile actions', () => {
       expect(events.at(-1)).toEqual({ kind: 'conversation', status: 'waitingForInput', canReceivePrompt: true, pending: null, from: 0, messages: [{ role: 'user', text: 'Say hi' }, { role: 'assistant', text: 'Hi.' }] })
 
       await expect(actions['agents.send']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1', prompt: 'go' })).resolves.toEqual({ ok: true })
-      expect(call).toHaveBeenCalledWith({ method: 'cate.agent.send', args: { targetPanelId: 'p1', prompt: 'go' } })
+      expect(send).toHaveBeenCalledWith({ panelId: 'p1', prompt: 'go' })
       expect(events.at(-1)).toMatchObject({ pending: 'go', from: 2, messages: [] })
 
       // The turn shows with the prompt: one event, pending gone.
@@ -149,7 +145,7 @@ describe('mobile actions', () => {
 
       await expect(actions['agents.interrupt']({ workspaceId: 'ws', panelId: 'p1' }))
         .resolves.toEqual({ ok: false, message: 'The agent is not running.' })
-      expect(call).toHaveBeenCalledWith({ method: 'cate.agent.interrupt', args: { targetPanelId: 'p1' } })
+      expect(interrupt).toHaveBeenCalledWith({ panelId: 'p1' })
       await actions['agents.unwatch']({ viewId: 'v' })
       expect(conversation.sub.cancel).toHaveBeenCalled()
     } finally {
@@ -157,7 +153,7 @@ describe('mobile actions', () => {
     }
   })
 
-  it('starts an agent through cate.agent.start, on the canvas picked', async () => {
+  it('starts an agent through the agents capability, on the canvas picked', async () => {
     const t = setup()
     cleanup = t.stopResolver
     registerPanelDefinitions(PANEL_DEFINITIONS)
@@ -167,13 +163,13 @@ describe('mobile actions', () => {
       workspaceId: 'ws', prompt: 'Fix it', launch: { runner: 'terminal', agentId: 'codex' }, worktree: false,
       placement: { canvasPanelId: 'canvas', point: { x: 1000, y: 500 } },
     })).resolves.toEqual({ ok: true, panelId: 'new' })
-    expect(t.runtime.api.call).toHaveBeenLastCalledWith({ method: 'cate.agent.start', args: {
+    expect(t.runtime.agents.start).toHaveBeenLastCalledWith({
       prompt: 'Fix it', runner: 'terminal', agentId: 'codex', canvasPanelId: 'canvas', position: { x: 1000 - width / 2, y: 500 - height / 2 },
-    } })
+    })
     await actions['agents.start']({ workspaceId: 'ws', prompt: 'Fix it', launch: { runner: 't3', instanceId: 'codex-1', model: 'gpt' }, worktree: true })
-    expect(t.runtime.api.call).toHaveBeenLastCalledWith({ method: 'cate.agent.start', args: {
+    expect(t.runtime.agents.start).toHaveBeenLastCalledWith({
       prompt: 'Fix it', runner: 't3', instanceId: 'codex-1', model: 'gpt', newWorktree: expect.stringMatching(/^task-fix-it-/),
-    } })
+    })
   })
 
   it('names a task worktree after the prompt', () => {
