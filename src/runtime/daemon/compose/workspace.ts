@@ -12,6 +12,7 @@ import type { LifecycleBus } from '@kernel/lifecycle/contract'
 import { apiCapability } from '@kernel/api/contract'
 import { ApiRouter, ApiTokenRegistry, acceptCallerHello, apiCapabilityImpl, registerKernelApi } from '@kernel/api/runtime'
 import type { WorkspaceSettingsStore } from '@kernel/settings/runtime'
+import type { WorkspaceSettings } from '@panels/settings'
 import type { DataPaths, openSecretsFile } from '@runtime/data/runtime'
 import type { ServerHost } from '@runtime/server/runtime'
 import { workspaceCapability } from '@workspace/lifecycle/contract'
@@ -86,7 +87,7 @@ export interface WorkspaceDeps {
   installDir: string
   rpc: RpcServer
   lifecycle: LifecycleBus
-  settings: WorkspaceSettingsStore
+  settings: WorkspaceSettingsStore<WorkspaceSettings>
   secrets: ReturnType<typeof openSecretsFile>
   servers: ServerHost
   busy: BusyRegistry

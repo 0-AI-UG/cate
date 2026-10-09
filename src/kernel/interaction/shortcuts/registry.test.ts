@@ -4,6 +4,7 @@ import { createClientSettingsStore } from '@kernel/settings/client'
 import { normaliseShortcutKey, storedShortcut } from '../contract'
 import { declareActions } from '../actions/catalog'
 import { createMemoryShortcutRegistry, createShortcutRegistry } from './registry'
+import { clientSettingsTable } from '../../../shells/desktop/settings'
 
 function keyEvent(key: string, mods: Partial<{ meta: boolean; shift: boolean; alt: boolean; ctrl: boolean }> = {}) {
   return {
@@ -28,7 +29,7 @@ const undeclare = declareActions({
 afterAll(undeclare)
 
 function settingsRegistry() {
-  const settings = createClientSettingsStore(createMemoryDeviceStore())
+  const settings = createClientSettingsStore(createMemoryDeviceStore(), clientSettingsTable)
   return { settings, registry: createShortcutRegistry(settings) }
 }
 

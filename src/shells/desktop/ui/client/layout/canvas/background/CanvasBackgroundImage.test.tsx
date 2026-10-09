@@ -1,7 +1,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { clientSettingsTable, type ClientSettings } from '@kernel/settings/contract'
+import { clientSettingsTable, type ClientSettings } from '../../../../../settings'
 import { installCanvasSettings } from '../settings'
 import CanvasBackgroundImage from './CanvasBackgroundImage'
 

@@ -4,7 +4,7 @@
 
 import { SettingRow, Select, Slider, Toggle } from '../../../kernel/interaction'
 import { setClientSetting, setWorkspaceSetting, useClientSetting, useWorkspaceSetting } from '../../../kernel/settings'
-import type { ClientSettings } from '@kernel/settings/contract'
+import type { ClientSettings } from '../../../../settings'
 import { useDesktopPort } from '../../desktop'
 import type { SettingsPageProps } from '../registry'
 

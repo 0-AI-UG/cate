@@ -1,6 +1,7 @@
-// Every capability declaration a client builds its typed runtime proxy from.
-// The one list: a module that registers a capability adds it here, and the
-// check below fails to compile until it does.
+// Every capability declaration a client builds its typed runtime proxy from,
+// handed to each connection by the shell's boot. The one list: a module that
+// registers a capability adds it here, and the check below fails to compile
+// until it does.
 
 import type { CapabilityRegistry } from '@kernel/rpc/contract'
 import { apiCapability } from '@kernel/api/contract/capability'

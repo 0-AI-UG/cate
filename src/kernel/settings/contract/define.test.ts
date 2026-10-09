@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { composeSettings, defineSettings, numberIn, oneOf, setting } from './define'
-import { clientSettingsTable, workspaceSettingsTable, type ClientSettings, type WorkspaceSettings } from './composed'
+import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
+import { clientSettingsTable, type ClientSettings } from '../../../shells/desktop/settings'
 
 describe('defineSettings composition', () => {
   const a = defineSettings({ scope: 'client', keys: { size: setting(12, numberIn(8, 32, { integer: true })), name: setting('') } })

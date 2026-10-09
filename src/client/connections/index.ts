@@ -1,4 +1,3 @@
-export { RUNTIME_CAPABILITIES } from './capabilities'
 export {
   WorkspaceConnection,
   DEFAULT_BACKOFF,

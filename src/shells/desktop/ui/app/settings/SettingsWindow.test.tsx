@@ -8,6 +8,7 @@ import { installClientSettings, useClientSetting, setClientSetting } from '../..
 import { SettingsWindow } from './SettingsWindow'
 import { registerSettingsPage, resolveSectionId, visiblePages, type SettingsPage } from './registry'
 import { SidebarPage } from './pages/clientPages'
+import { clientSettingsTable } from '../../../settings'
 
 let host: HTMLDivElement
 let root: Root
@@ -108,7 +109,7 @@ describe('SettingsWindow', () => {
 describe('client settings hooks and pages', () => {
   it('edits a client setting through the installed store', async () => {
     const device = createMemoryDeviceStore()
-    const store = createClientSettingsStore(device)
+    const store = createClientSettingsStore(device, clientSettingsTable)
     await store.load()
     installClientSettings(store)
     act(() => root.render(<SidebarPage />))
@@ -121,7 +122,7 @@ describe('client settings hooks and pages', () => {
 
   it('re-renders on outside edits', async () => {
     const device = createMemoryDeviceStore()
-    const store = createClientSettingsStore(device)
+    const store = createClientSettingsStore(device, clientSettingsTable)
     await store.load()
     installClientSettings(store)
     function Probe() {

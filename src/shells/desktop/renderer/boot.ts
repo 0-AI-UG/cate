@@ -8,6 +8,7 @@ import * as Sentry from '@sentry/electron/renderer'
 import { createLogger, installLogSink, type LogSink } from '@kernel/log/contract'
 import { createElectronRendererSink } from '@kernel/log/desktop/renderer'
 import { createClientSettingsStore, type ClientSettingsStore } from '@kernel/settings/client'
+import { clientSettingsTable, type ClientSettings } from '../settings'
 import { installClientSettings, workspaceSettingsFor } from '../ui/kernel/settings'
 import { applyTheme, applyUiScale, installAppearanceHost, installErrorReporter } from '../ui/kernel/interaction'
 import { createShortcutRegistry, installClientUi, installShortcutRegistry } from '@kernel/interaction'
@@ -60,6 +61,7 @@ import { createScreenshotPort } from './screenshots'
 import { createDesktopShellTransports, serveLoopbackRequests } from './transports'
 import { installWebviewHosts, prepareWebviewPartitions, serveSurfaces, type WebviewPartitions } from './webviews'
 import { attachDetachedWindow, createWindowsPort } from './windows'
+import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
 const log = createLogger('renderer')
 
@@ -102,7 +104,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   log.info('Renderer starting (window %s)', window.kind)
   const device = api.device
 
-  const settings = createClientSettingsStore(device)
+  const settings = createClientSettingsStore(device, clientSettingsTable)
   await settings.load()
   installClientSettings(settings)
 
@@ -133,7 +135,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   const identity = createClientIdentity({ device: info.device, features: info.features })
   installClientIdentity(identity)
   const transports = createDesktopShellTransports(api)
-  const connections = new WorkspaceConnections({ identity, transports, version: info.version, build: RUNTIME_BUILD })
+  const connections = new WorkspaceConnections({ identity, transports, capabilities: RUNTIME_CAPABILITIES, version: info.version, build: RUNTIME_BUILD })
   stops.push(attachDocuments(connections))
   stops.push(api.app.onAttention(setClientAttentive))
   const partitions = prepareWebviewPartitions(api, connections)

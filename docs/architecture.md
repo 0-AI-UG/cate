@@ -385,10 +385,10 @@ Generic machinery. The kernel knows no feature.
   - Framing, version negotiation and error codes (section 7.8).
 - **`kernel/api`**: `defineCateApi`, the router and targeting (section 14).
 - **`kernel/settings`**: `defineSettings` for a module's settings slice (keys,
-  defaults, validation, scope `client` or `workspace`). The `ClientSettings`
-  and `WorkspaceSettings` types, the validation tables and the settings window
-  are composed from the slices (section 8). Serves the `settings` capability
-  for workspace scope.
+  defaults, validation, scope `client` or `workspace`), `composeSettings`,
+  and the stores and mirror over a composed table, which they are given: the
+  kernel composes no slice (section 8). Serves the `settings` capability for
+  workspace scope.
 - **`kernel/lifecycle`**: a bus for `onShutdown`, `onClientConnected` and
   `onClientGone`, so generic lifecycle code never names a feature.
 - **`kernel/state`**: hand-editable JSON state files: in-memory authority,
@@ -794,8 +794,9 @@ implemented in its `runtime/` folder and registered by the composition root:
 operations sent to the driving client, section 10.2) and `browserCode`
 (panels/browser: a client running a browser code cell passes the cell's
 `cua.*` calls back through it). A client lists every capability it proxies
-in `RUNTIME_CAPABILITIES` (`client/connections`), which fails to compile
-when a registered capability is missing.
+in `RUNTIME_CAPABILITIES` (`src/panels/capabilities.ts`, an index file next
+to the panel ones, handed to every connection by the shell's boot), which
+fails to compile when a registered capability is missing.
 
 ### 7.10 Versions
 
@@ -851,6 +852,11 @@ or that changes shared state, is a **workspace** setting.
   edits them one key at a time (last write wins), so a change by one person
   applies for everyone. A new workspace starts from defaults.
 - Secrets never live in a settings file.
+- **Composition.** `src/panels/settings.ts` composes the slices every client
+  and the runtime share into `WorkspaceSettings` and the shared client
+  settings; each shell adds its own client slices (the desktop's in
+  `shells/desktop/settings.ts`), so a client never carries another shell's
+  settings and the kernel names no feature.
 - The settings window shows the client settings and the settings of the
   active workspace. With no workspace open (the welcome screen), only client
   settings exist.
@@ -1640,7 +1646,8 @@ Everything outside the UI that drives Cate goes through one router.
     original caller, through the same gates.
   - a client: the `api` capability.
 - **Access classes**: each method declares `read` or `control`. The workspace
-  settings enable each class per area (the `cli*Enabled` keys), behind the
+  settings enable each class per area (the `cli*Enabled` keys; each module
+  declares its area with its methods, `defineCliArea`), behind the
   `cliEnabled` master switch; they apply to CLI and harness callers. Client
   callers are not gated (D3). These settings keep agents to what the user
   allows through the CLI; they are not a security boundary against programs

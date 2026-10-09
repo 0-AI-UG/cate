@@ -11,6 +11,7 @@ import {
 } from '@workspace/document/contract'
 import { WorkspaceConnections, createClientIdentity } from '@client/connections'
 import { attachDocuments, clientStateFor, documentStoreFor } from './registry'
+import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
 function pipe(): [ByteDuplex, ByteDuplex] {
   const data: ((b: Uint8Array) => void)[] = [() => {}, () => {}]
@@ -47,6 +48,7 @@ describe('attachDocuments', () => {
       subscribe: () => {},
     })
     const connections = new WorkspaceConnections({
+      capabilities: RUNTIME_CAPABILITIES,
       identity: createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] }),
       version: 'test',
       transports: {

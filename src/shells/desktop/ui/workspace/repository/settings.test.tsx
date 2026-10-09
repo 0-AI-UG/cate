@@ -39,7 +39,7 @@ it('toggles closeWorktreePanelsOnDelete through the workspace settings', async (
     get: () => value,
     set: vi.fn(async (_key: string, next: boolean) => { value = next; listeners.forEach((l) => l()) }),
     subscribe: (cb: () => void) => { listeners.add(cb); return () => listeners.delete(cb) },
-  } as unknown as WorkspaceSettingsMirror
+  } as unknown as WorkspaceSettingsMirror<never>
   await m.render(<WorktreeSettings settings={settings} />)
   const toggle = m.host.querySelector<HTMLButtonElement>('[role="switch"]')!
   expect(toggle.getAttribute('aria-checked')).toBe('true')

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { apiCapability } from '@kernel/api/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { framePortOver, type ChannelEvent } from '@kernel/rpc/contract'
-import type { WorkspaceSettings } from '@kernel/settings/contract'
+import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 import { createWorkspaceSettingsMirror } from '@kernel/settings/client'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
 import { dialLocal } from '@runtime/transports/node'
@@ -43,7 +43,7 @@ async function cliIn(c: TestClient) {
 
 describe.skipIf(process.platform === 'win32')('shared workspace: settings', () => {
   it('a client\'s settings mirror keeps following after its connection drops', async () => {
-    const mirror = createWorkspaceSettingsMirror(settings(ws.a))
+    const mirror = createWorkspaceSettingsMirror(settings(ws.a), workspaceSettingsTable)
     await mirror.ready
     ws.a.offline()
     await untilState(ws.a, 'offline')

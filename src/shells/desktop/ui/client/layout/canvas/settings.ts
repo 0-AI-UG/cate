@@ -2,21 +2,15 @@
 // wallpaper, ...) and, per workspace, the shared workspace settings. The
 // client shell installs its stores; until then defaults apply.
 
-import {
-  clientSettingsTable,
-  workspaceSettingsTable,
-  type ClientSettingKey,
-  type ClientSettings,
-  type WorkspaceSettingKey,
-  type WorkspaceSettings,
-} from '@kernel/settings/contract'
+import { workspaceSettingsTable, type WorkspaceSettingKey, type WorkspaceSettings } from '@panels/settings'
+import { clientSettingsTable, type ClientSettingKey, type ClientSettings } from '../../../../settings'
 import type { ClientSettingsStore, WorkspaceSettingsMirror } from '@kernel/settings/client'
 
-type WorkspaceSource = Pick<WorkspaceSettingsMirror, 'get' | 'subscribe'>
+type WorkspaceSource = Pick<WorkspaceSettingsMirror<WorkspaceSettings>, 'get' | 'subscribe'>
 
 /** The kernel settings stores, as the shell holds them. */
 export interface CanvasSettingsSources {
-  client: Pick<ClientSettingsStore, 'get' | 'subscribe'> & Partial<Pick<ClientSettingsStore, 'set'>>
+  client: Pick<ClientSettingsStore<ClientSettings>, 'get' | 'subscribe'> & Partial<Pick<ClientSettingsStore<ClientSettings>, 'set'>>
   workspace?(workspaceId: string): WorkspaceSource | null
 }
 

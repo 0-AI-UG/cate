@@ -10,6 +10,7 @@ import type { SshSetup } from '@runtime/daemon/contract'
 import type { WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../app'
 import { RemoteMachinesPage } from './RemoteMachinesPage'
+import { clientSettingsTable, type ClientSettings } from '../../../settings'
 
 vi.mock('../navigation', () => ({ selectWorkspace: vi.fn(async () => true) }))
 
@@ -24,7 +25,7 @@ const uri = encodePairingUri({
 
 let host: HTMLDivElement
 let root: Root
-let store: ClientSettingsStore
+let store: ClientSettingsStore<ClientSettings>
 
 function fakeSsh(): SshSetup & { [K in keyof SshSetup]: ReturnType<typeof vi.fn> } {
   return {
@@ -39,7 +40,7 @@ beforeEach(async () => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
-  store = createClientSettingsStore(createMemoryDeviceStore())
+  store = createClientSettingsStore(createMemoryDeviceStore(), clientSettingsTable)
   await store.load()
   installClientSettings(store)
 })

@@ -15,6 +15,7 @@ import { RpcError } from '@kernel/rpc/contract'
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
 import { settingsCapability } from '@kernel/settings/contract'
 import { createSettingsHandlers, createWorkspaceSettingsStore } from '@kernel/settings/runtime'
+import { workspaceSettingsTable } from '@panels/settings'
 import { RUNTIME_STOP_DEADLINE_MS, runtimeIdFromCanonicalRoot, type RuntimeEndpoints } from '@runtime/data/contract'
 import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '@runtime/data/node'
 import {
@@ -183,7 +184,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   // Paired devices, Cate Connect and mDNS know the runtime by the id its key
   // derives; the path's runtimeId names only its data dir and socket.
   const networkId = networkIdOf(keys.publicKey)
-  const settings = createWorkspaceSettingsStore({ dataDir: paths.dir })
+  const settings = createWorkspaceSettingsStore({ dataDir: paths.dir, table: workspaceSettingsTable })
   if (options.network) settings.set('runtimeNetwork', options.network)
 
   const busy = createBusyRegistry()

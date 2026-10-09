@@ -20,7 +20,6 @@ const NEW = `${ROOT}/`
 // runtime.ts are its runtime side.
 const PANEL_DEFINITION = '^src/panels/[^/]+/definition\\.ts$'
 const CONTRACT = `(?:${ROOT}.*/contract(?:\\.ts$|/)|${PANEL_DEFINITION})`
-const SLICE = `${ROOT}.*/contract/settings\\.ts$`
 // Sides are folders of the shared modules; a shell is one zone of its own.
 const SHARED = `^src/${any(LAYERS.filter((layer) => layer !== 'shells'))}`
 const side = (names) => `${SHARED}.*/${any(names)}/`
@@ -44,7 +43,7 @@ const PUBLIC_ENTRY = [
   `${NEW}[^/]+/index\\.tsx?$`,
   `${NEW}[^/]+/[^/]+/index\\.tsx?$`,
   // The panel index: every panel's definition, and the daemon's panel runtimes.
-  '^src/panels/(definitions|runtime|api)\\.ts$',
+  '^src/panels/(definitions|runtime|api|settings|capabilities)\\.ts$',
 ]
 
 const IMPURE = `^(?:node_modules/)?(?:@types/)?${any([
@@ -142,9 +141,9 @@ const layerRules = LAYERS.slice(0, -1).flatMap((layer, index) => [
   forbid(`layer-${layerName(layer)}`, `${layerName(layer)} imports only its own layer or layers below`,
     { path: `^src/${layer}/`, pathNot: [CONTRACT, COMPOSITION_ROOT] },
     { path: higher(index), pathNot: CONTRACT }),
-  forbid(`contract-layer-${layerName(layer)}`, `${layerName(layer)} contracts import contracts of their own layer or below; kernel/settings composes the settings slices`,
+  forbid(`contract-layer-${layerName(layer)}`, `${layerName(layer)} contracts import contracts of their own layer or below`,
     { path: `^src/${layer}/.*/contract(?:\\.ts$|/)` },
-    { path: higher(index), pathNot: SLICE }),
+    { path: higher(index) }),
 ])
 
 const publicEntries = forbid('public-entries', "across modules, import a module's contract or a side's index.ts",

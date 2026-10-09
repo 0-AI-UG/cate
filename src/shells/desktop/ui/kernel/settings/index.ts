@@ -6,26 +6,20 @@
 import { useSyncExternalStore } from 'react'
 import { subscribeRuntimes, tryRuntimeFor } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
-import {
-  clientSettingsTable,
-  workspaceSettingsTable,
-  type ClientSettingKey,
-  type ClientSettings,
-  type WorkspaceSettingKey,
-  type WorkspaceSettings,
-} from '@kernel/settings/contract'
+import { workspaceSettingsTable, type WorkspaceSettingKey, type WorkspaceSettings } from '@panels/settings'
+import { clientSettingsTable, type ClientSettingKey, type ClientSettings } from '../../../settings'
 import { createWorkspaceSettingsMirror, type ClientSettingsStore, type WorkspaceSettingsMirror } from '@kernel/settings/client'
 
 // --- Client settings -------------------------------------------------------
 
-let clientStore: ClientSettingsStore | null = null
+let clientStore: ClientSettingsStore<ClientSettings> | null = null
 const clientListeners = new Set<() => void>()
 let unsubscribeClient: () => void = () => {}
 
 const notifyClient = (): void => { for (const l of [...clientListeners]) l() }
 
 /** The shell installs the device's client settings store once at start. */
-export function installClientSettings(store: ClientSettingsStore | null): void {
+export function installClientSettings(store: ClientSettingsStore<ClientSettings> | null): void {
   unsubscribeClient()
   clientStore = store
   unsubscribeClient = store ? store.subscribe(notifyClient) : () => {}
@@ -58,7 +52,7 @@ export function useClientSetting<K extends ClientSettingKey>(key: K): ClientSett
 
 interface MirrorEntry {
   runtime: RuntimeProxy
-  mirror: WorkspaceSettingsMirror
+  mirror: WorkspaceSettingsMirror<WorkspaceSettings>
   values: WorkspaceSettings
 }
 
@@ -88,13 +82,13 @@ subscribeRuntimes(() => {
 })
 
 /** The settings mirror of an open workspace, or null when it is not open. */
-export function workspaceSettingsFor(workspaceId: string): WorkspaceSettingsMirror | null {
+export function workspaceSettingsFor(workspaceId: string): WorkspaceSettingsMirror<WorkspaceSettings> | null {
   const runtime = tryRuntimeFor(workspaceId)
   if (!runtime) return null
   const existing = mirrors.get(workspaceId)
   if (existing?.runtime === runtime) return existing.mirror
   if (existing) drop(workspaceId)
-  const mirror = createWorkspaceSettingsMirror(runtime.settings)
+  const mirror = createWorkspaceSettingsMirror(runtime.settings, workspaceSettingsTable)
   const entry: MirrorEntry = { runtime, mirror, values: mirror.getAll() }
   mirror.subscribe((values) => {
     entry.values = values

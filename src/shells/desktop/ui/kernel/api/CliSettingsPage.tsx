@@ -10,7 +10,7 @@ import { SearchableBlock, SecondaryButton, SettingRow, Toggle } from '../interac
 import { errorMessage } from '@kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSettings } from '../settings'
 import { cliAreasOf, type CliPermissionArea, type CliPermissionCell } from '@kernel/api/contract'
-import type { WorkspaceSettingKey } from '@kernel/settings/contract'
+import type { WorkspaceSettingKey } from '@panels/settings'
 import { CATE_API } from '@panels/api'
 
 function PermissionCheckbox({ checked, onChange, title, disabled }: {

@@ -13,6 +13,7 @@ import { WorkspaceConnections } from './registry'
 import { createClientIdentity, type ClientIdentity } from './identity'
 import { sessionCapability } from '@panels/framework/contract/capability'
 import type { ShellTransports } from './transports'
+import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
 /** Two ends of an in-memory byte pipe; delivery is asynchronous. */
 function bytePipe(): [ByteDuplex, ByteDuplex] {
@@ -106,7 +107,8 @@ afterEach(() => {
 })
 
 function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }, build?: string) {
-  registry = new WorkspaceConnections({ identity, transports: transportsFor(rt, extra), version: '9.0.0', build, backoff })
+  registry = new WorkspaceConnections({
+      capabilities: RUNTIME_CAPABILITIES, identity, transports: transportsFor(rt, extra), version: '9.0.0', build, backoff })
   return registry.open('ws1', { kind: 'local', root: '/w' })
 }
 
@@ -243,6 +245,7 @@ describe('dialLoopback', () => {
     rt.server.register(tunnelCapability, tunnelImpl)
     const dialLoopbackTcp = vi.fn(async (): Promise<ByteDuplex> => { throw new Error('must not dial TCP') })
     registry = new WorkspaceConnections({
+      capabilities: RUNTIME_CAPABILITIES,
       identity,
       version: '9.0.0',
       transports: {

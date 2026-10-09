@@ -20,6 +20,7 @@ import { createClientIdentity, WorkspaceConnection, type ClientIdentity, type Co
 import { attachDocument, documentStoreFor, type DocumentStore } from '@client/document'
 import { createPanel, registerPanelDefinitions } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
+import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { fingerprint, generateKeyPair } from '@runtime/security/contract'
 import { dialSameNetwork } from '@runtime/transports/client'
@@ -212,6 +213,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     const workspaceId = `local-${name}-${counter++}`
     return makeClient(name, workspaceId, new WorkspaceConnection({
       workspaceId,
+      capabilities: RUNTIME_CAPABILITIES,
       target: { kind: 'local', root },
       transports,
       identity: identity ?? createClientIdentity({ device: { name, keyFingerprint: '' }, features: ['canvas', 'windows'] }),
@@ -238,6 +240,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     const link = createLink()
     return makeClient(name, workspaceId, new WorkspaceConnection({
       workspaceId,
+      capabilities: RUNTIME_CAPABILITIES,
       target: { kind: 'network', runtimeId: paired.runtimeId, endpoints: [{ kind: 'lan', address: address!, port: Number(port) }] },
       transports: {
         dialLocal: () => Promise.reject(new Error('no local runtime')),

@@ -4,6 +4,7 @@ import { tryRuntimeFor } from '@kernel/rpc/client'
 import { KNOWN_RUNTIMES_DOCUMENT } from '@runtime/pairing/client'
 import { WorkspaceConnections, createClientIdentity, type ShellTransports } from '@client/connections'
 import { WORKSPACES_DOCUMENT, WorkspaceList } from './workspaceList'
+import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
 const never = () => new Promise<never>(() => {})
 const transports: ShellTransports = { dialLocal: never, dialNetwork: never, dialLoopbackTcp: never }
@@ -17,7 +18,8 @@ afterEach(() => {
 
 async function setup(store = createMemoryDeviceStore()) {
   let t = 1000
-  const connections = new WorkspaceConnections({ identity, transports, version: '1.0.0' })
+  const connections = new WorkspaceConnections({
+      capabilities: RUNTIME_CAPABILITIES, identity, transports, version: '1.0.0' })
   const list = new WorkspaceList({ store, connections, now: () => ++t })
   cleanup.push(() => list.dispose(), () => connections.dispose())
   await list.load()

@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRuntime } from '../../kernel/rpc'
 import { createWorkspaceSettingsMirror, type WorkspaceSettingsMirror } from '@kernel/settings/client'
+import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 import { LoadingState, SearchableBlock } from '../../kernel/interaction'
 import {
   AGENTS,
@@ -74,7 +75,7 @@ export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null
   const [error, setError] = useState(false)
   const [config, setConfig] = useState<AgentHookConfig>({})
   const [refresh, setRefresh] = useState(0)
-  const mirror = useRef<WorkspaceSettingsMirror | null>(null)
+  const mirror = useRef<WorkspaceSettingsMirror<WorkspaceSettings> | null>(null)
 
   useEffect(() => {
     setRows(null)
@@ -90,7 +91,7 @@ export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null
 
   useEffect(() => {
     if (!runtime) return
-    const settings = createWorkspaceSettingsMirror(runtime.settings)
+    const settings = createWorkspaceSettingsMirror(runtime.settings, workspaceSettingsTable)
     mirror.current = settings
     setConfig(settings.get('agentHookInjection'))
     const off = settings.subscribe((values) => setConfig(values.agentHookInjection))

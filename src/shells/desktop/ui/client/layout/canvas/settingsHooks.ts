@@ -1,7 +1,8 @@
 // React bindings of the canvas settings, for the desktop UI.
 
 import { useCallback, useSyncExternalStore } from 'react'
-import type { ClientSettingKey, ClientSettings, WorkspaceSettingKey, WorkspaceSettings } from '@kernel/settings/contract'
+import type { WorkspaceSettingKey, WorkspaceSettings } from '@panels/settings'
+import type { ClientSettingKey, ClientSettings } from '../../../../settings'
 import { canvasSetting, subscribeCanvasSettings, workspaceSetting, workspaceSettingsSource } from './settings'
 
 export function useCanvasSetting<K extends ClientSettingKey>(key: K): ClientSettings[K] {

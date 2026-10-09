@@ -14,6 +14,7 @@ import { fingerprint } from '@runtime/security/contract'
 import type { MobileBridge } from '../contract'
 import { createDeviceStore, loadDeviceKeys } from './device'
 import { createMobileShellTransports } from './transports'
+import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
 export interface MobileClient {
   connections: WorkspaceConnections
@@ -40,7 +41,7 @@ export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClie
   })
   // The core is built from this checkout's sources, like the runtime it
   // talks to, so it carries the same version and build.
-  const connections = new WorkspaceConnections({ identity, transports, version: RUNTIME_VERSION, build: RUNTIME_BUILD })
+  const connections = new WorkspaceConnections({ identity, transports, capabilities: RUNTIME_CAPABILITIES, version: RUNTIME_VERSION, build: RUNTIME_BUILD })
   attachDocuments(connections)
   const workspaces = new WorkspaceList({ store: device, connections })
   await workspaces.load()

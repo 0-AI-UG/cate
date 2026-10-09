@@ -2,6 +2,7 @@
 // runtime slot, so `runtimeFor(workspaceId)` works for everything above.
 
 import { notifyRuntimesChanged, setRuntimeResolver } from '@kernel/rpc/client'
+import type { AnyCapability } from '@kernel/rpc/contract'
 import { WorkspaceConnection, type Backoff } from './connection'
 import type { ClientIdentity } from './identity'
 import type { ConnectionTarget, ShellTransports } from './transports'
@@ -9,6 +10,8 @@ import type { ConnectionTarget, ShellTransports } from './transports'
 export interface WorkspaceConnectionsOptions {
   identity: ClientIdentity
   transports: ShellTransports
+  /** The capabilities of each runtime proxy (`RUNTIME_CAPABILITIES`). */
+  capabilities: readonly AnyCapability[]
   version: string
   /** App build: a runtime of another build is incompatible. */
   build?: string

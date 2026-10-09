@@ -1,9 +1,11 @@
 import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
-import type { WorkspaceSettingKey, WorkspaceSettings } from './composed'
 
-export interface SetSettingParams<K extends WorkspaceSettingKey = WorkspaceSettingKey> {
-  key: K
-  value: WorkspaceSettings[K]
+/** A composed table's values on the wire: the kernel knows no keys. */
+export type SettingsValues = Record<string, unknown>
+
+export interface SetSettingParams {
+  key: string
+  value: unknown
 }
 
 /** Workspace settings: read all, edit one key at a time (last write wins),
@@ -11,11 +13,11 @@ export interface SetSettingParams<K extends WorkspaceSettingKey = WorkspaceSetti
  *  key or value is refused with `rejected`. */
 export const settingsCapability = defineCapability('settings', {
   methods: {
-    getAll: method<void, WorkspaceSettings>(),
+    getAll: method<void, SettingsValues>(),
     set: method<SetSettingParams, void>({ mutates: true }),
   },
   streams: {
-    subscribe: channelStream<void, WorkspaceSettings>(),
+    subscribe: channelStream<void, SettingsValues>(),
   },
 })
 

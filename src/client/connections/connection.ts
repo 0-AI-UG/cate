@@ -14,7 +14,6 @@ import { RpcClient, createCapabilityProxy, createRuntimeProxy, type RpcClientSta
 import { framePortOver } from '@kernel/rpc/contract'
 import { nestedRefusalRoot } from '@runtime/daemon/contract'
 import { FRAME_MODE } from '@runtime/transports/contract'
-import { RUNTIME_CAPABILITIES } from './capabilities'
 import type { ClientIdentity } from './identity'
 import { SessionSubscriptions, type SessionHandle } from './session'
 import type { ConnectionKind, ConnectionTarget, ShellTransports } from './transports'
@@ -56,7 +55,8 @@ export interface WorkspaceConnectionOptions {
   backoff?: Partial<Backoff>
   now?: () => number
   /** Defaults to every declared capability. */
-  capabilities?: readonly AnyCapability[]
+  /** The capabilities of the runtime proxy (`RUNTIME_CAPABILITIES`). */
+  capabilities: readonly AnyCapability[]
 }
 
 export class WorkspaceConnection {
@@ -107,7 +107,7 @@ export class WorkspaceConnection {
       },
       nextOpCounter: opts.identity.nextCounter,
     })
-    this.runtime = createRuntimeProxy(this.rpc, opts.capabilities ?? RUNTIME_CAPABILITIES)
+    this.runtime = createRuntimeProxy(this.rpc, opts.capabilities)
     this.rpc.onStateChange((state) => this.onRpcState(state))
     this.rpc.onReady(() => this.watchLifecycle())
     this.sessions = new SessionSubscriptions(this.runtime.session)

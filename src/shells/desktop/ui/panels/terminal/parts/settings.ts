@@ -3,7 +3,7 @@
 // the defaults.
 
 import { useSyncExternalStore } from 'react'
-import { clientSettingsTable, type ClientSettings } from '@kernel/settings/contract'
+import { clientSettingsTable, type ClientSettings } from '../../../../settings'
 
 export interface TerminalSettingsSource {
   getAll(): ClientSettings

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent } from '@kernel/rpc/contract'
 import { SettingsSearchContext } from '../../kernel/interaction'
-import { workspaceSettingsTable, type WorkspaceSettings } from '@kernel/settings/contract'
+import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 import { fakeStream } from '@services/agents/client/testing'
 import { AgentHooksSettings } from './AgentHooksSettings'
 

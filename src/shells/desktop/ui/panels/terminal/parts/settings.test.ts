@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { clientSettingsTable } from '@kernel/settings/contract'
+import { clientSettingsTable } from '../../../../settings'
 import { resolveTerminalFontFamily, resolveTerminalFontSize, terminalOptions } from './settings'
 
 it('falls back to the default font family', () => {

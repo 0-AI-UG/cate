@@ -2,9 +2,10 @@
 
 import { useSyncExternalStore } from 'react'
 import type { WorkspaceSettingsMirror } from '@kernel/settings/client'
+import type { WorkspaceSettings } from '@panels/settings'
 import { SettingRow, Toggle } from '../../kernel/interaction'
 
-export function WorktreeSettings({ settings }: { settings: WorkspaceSettingsMirror }) {
+export function WorktreeSettings({ settings }: { settings: WorkspaceSettingsMirror<WorkspaceSettings> }) {
   const closePanels = useSyncExternalStore(
     (cb) => settings.subscribe(() => cb()),
     () => settings.get('closeWorktreePanelsOnDelete'),

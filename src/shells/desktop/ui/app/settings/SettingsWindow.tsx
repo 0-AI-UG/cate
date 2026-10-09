@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { SettingsSearchContext } from '../../kernel/interaction'
-import { clientSettingsTable } from '@kernel/settings/contract'
+import { clientSettingsTable } from '../../../settings'
 import { clientSettings } from '../../kernel/settings'
 import { createLogger } from '@kernel/log/contract'
 import { LeftSidebarReopen, OverlayHeader } from '../chrome/chrome'

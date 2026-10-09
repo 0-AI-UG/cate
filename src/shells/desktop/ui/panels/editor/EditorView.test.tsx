@@ -316,7 +316,7 @@ describe('EditorView', () => {
   })
 
   it('opens a file from a tree-only panel beside it when set to', async () => {
-    installClientSettings({ get: (key: string) => (key === 'filesTreeOpenFileIn' ? 'beside' : undefined), subscribe: () => () => {} } as unknown as ClientSettingsStore)
+    installClientSettings({ get: (key: string) => (key === 'filesTreeOpenFileIn' ? 'beside' : undefined), subscribe: () => () => {} } as unknown as ClientSettingsStore<never>)
     await show(snapshotOf(), { fields: { treeOnly: true } })
     await act(async () => h.explorerOpen!([`${ROOT}/b.ts`], 'dock', { line: 3 }))
     expect(h.openDropped).toHaveBeenCalledWith('ws', [`${ROOT}/b.ts`], { near: 'p1' }, { path: `${ROOT}/b.ts`, line: 3, column: 1 })

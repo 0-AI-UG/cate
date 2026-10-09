@@ -6,37 +6,31 @@ import path from 'node:path'
 import { RpcError, type ChannelEvent } from '@kernel/rpc/contract'
 import { jsonEqual } from '@kernel/state/contract'
 import { createJsonStateFile } from '@kernel/state/node'
-import {
-  workspaceSettingsTable,
-  type SetSettingParams,
-  type SettingsTable,
-  type WorkspaceSettingKey,
-  type WorkspaceSettings,
-} from '../contract'
+import { type SetSettingParams, type SettingsTable, type SettingsValues } from '../contract'
 
 export const WORKSPACE_SETTINGS_FILE = 'settings.json'
 
-export type SettingsPatch = Partial<WorkspaceSettings>
-
-export interface WorkspaceSettingsStore {
+/** The workspace settings store of a composed table (the composition is the
+ *  caller's: the kernel knows no slice). */
+export interface WorkspaceSettingsStore<S extends object = SettingsValues> {
   readonly path: string
-  getAll(): WorkspaceSettings
-  get<K extends WorkspaceSettingKey>(key: K): WorkspaceSettings[K]
+  getAll(): S
+  get<K extends keyof S & string>(key: K): S[K]
   /** Throws `rejected` for an unknown key or an invalid value. */
-  set<K extends WorkspaceSettingKey>(key: K, value: WorkspaceSettings[K]): void
+  set<K extends keyof S & string>(key: K, value: S[K]): void
   /** Every change, local or a hand edit of the file, as the keys that moved. */
-  subscribe(cb: (values: WorkspaceSettings, patch: SettingsPatch) => void): () => void
+  subscribe(cb: (values: S, patch: Partial<S>) => void): () => void
   flushDurable(): Promise<void>
   flushSync(): void
   dispose(): void
 }
 
-export function createWorkspaceSettingsStore(options: {
+export function createWorkspaceSettingsStore<S extends object>(options: {
   dataDir: string
-  table?: SettingsTable<WorkspaceSettings>
-}): WorkspaceSettingsStore {
-  const table = options.table ?? workspaceSettingsTable
-  const file = createJsonStateFile<WorkspaceSettings>({
+  table: SettingsTable<S>
+}): WorkspaceSettingsStore<S> {
+  const table = options.table
+  const file = createJsonStateFile<S>({
     file: path.join(options.dataDir, WORKSPACE_SETTINGS_FILE),
     defaults: { ...table.defaults },
     normalize: (parsed) => table.normalize(parsed),
@@ -49,11 +43,11 @@ export function createWorkspaceSettingsStore(options: {
     file.flushSync()
   }
 
-  const listeners = new Set<(values: WorkspaceSettings, patch: SettingsPatch) => void>()
+  const listeners = new Set<(values: S, patch: Partial<S>) => void>()
   let last = file.get()
   let unsubscribeFile: (() => void) | null = null
 
-  const onFileChange = (next: WorkspaceSettings): void => {
+  const onFileChange = (next: S): void => {
     const patch: Record<string, unknown> = {}
     for (const key of table.keys) {
       if (!jsonEqual(next[key], last[key])) patch[key] = next[key]
@@ -61,7 +55,7 @@ export function createWorkspaceSettingsStore(options: {
     last = next
     if (Object.keys(patch).length === 0) return
     for (const cb of listeners) {
-      try { cb(next, patch as SettingsPatch) } catch { /* isolate listeners */ }
+      try { cb(next, patch as Partial<S>) } catch { /* isolate listeners */ }
     }
   }
 
@@ -101,19 +95,19 @@ export function createWorkspaceSettingsStore(options: {
 /** The `settings` capability's handlers over a store. `subscribe` emits the
  *  snapshot, then one change per edit. */
 export interface SettingsHandlers {
-  getAll(): WorkspaceSettings
+  getAll(): SettingsValues
   set(params: SetSettingParams): void
-  subscribe(emit: (event: ChannelEvent<WorkspaceSettings, SettingsPatch>) => void): () => void
+  subscribe(emit: (event: ChannelEvent<SettingsValues, Partial<SettingsValues>>) => void): () => void
 }
 
-export function createSettingsHandlers(store: WorkspaceSettingsStore): SettingsHandlers {
+export function createSettingsHandlers<S extends object>(store: WorkspaceSettingsStore<S>): SettingsHandlers {
   return {
-    getAll: () => store.getAll(),
-    set: ({ key, value }) => store.set(key, value),
+    getAll: () => store.getAll() as SettingsValues,
+    set: ({ key, value }) => store.set(key as keyof S & string, value as S[keyof S & string]),
     subscribe(emit) {
       let rev = 0
-      emit({ kind: 'snapshot', rev, snapshot: store.getAll() })
-      return store.subscribe((_values, patch) => emit({ kind: 'change', rev: ++rev, change: patch }))
+      emit({ kind: 'snapshot', rev, snapshot: store.getAll() as SettingsValues })
+      return store.subscribe((_values, patch) => emit({ kind: 'change', rev: ++rev, change: patch as Partial<SettingsValues> }))
     },
   }
 }

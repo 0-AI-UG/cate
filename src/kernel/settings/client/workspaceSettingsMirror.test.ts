@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RpcError, type ChannelEvent } from '@kernel/rpc/contract'
-import { workspaceSettingsTable, type SetSettingParams, type WorkspaceSettings } from '../contract'
+import { type SetSettingParams } from '../contract'
 import { createWorkspaceSettingsMirror, type WorkspaceSettingsRemote } from './workspaceSettingsMirror'
+import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 
 type Event = ChannelEvent<WorkspaceSettings, Partial<WorkspaceSettings>>
 
@@ -37,7 +38,7 @@ function fakeRemote() {
 describe('workspace settings mirror', () => {
   it('shows an edit at once and keeps it when the runtime confirms', async () => {
     const { remote, calls, change } = fakeRemote()
-    const mirror = createWorkspaceSettingsMirror(remote)
+    const mirror = createWorkspaceSettingsMirror(remote, workspaceSettingsTable)
     await mirror.ready
     const seen = vi.fn()
     mirror.subscribe((v) => seen(v.runtimeLifetime))
@@ -56,7 +57,7 @@ describe('workspace settings mirror', () => {
 
   it('reverts a refused edit', async () => {
     const { remote, calls } = fakeRemote()
-    const mirror = createWorkspaceSettingsMirror(remote)
+    const mirror = createWorkspaceSettingsMirror(remote, workspaceSettingsTable)
     await mirror.ready
     const done = mirror.set('cliEnabled', false)
     expect(mirror.get('cliEnabled')).toBe(false)
@@ -67,7 +68,7 @@ describe('workspace settings mirror', () => {
 
   it('rejects invalid values locally without calling the runtime', async () => {
     const { remote, calls } = fakeRemote()
-    const mirror = createWorkspaceSettingsMirror(remote)
+    const mirror = createWorkspaceSettingsMirror(remote, workspaceSettingsTable)
     // @ts-expect-error invalid value
     await expect(mirror.set('runtimeNetwork', 'lan')).rejects.toThrow(/Invalid/)
     expect(calls).toHaveLength(0)
@@ -75,7 +76,7 @@ describe('workspace settings mirror', () => {
 
   it('applies remote changes and resubscribes after a gap', async () => {
     const { remote, change, subscribes } = fakeRemote()
-    const mirror = createWorkspaceSettingsMirror(remote)
+    const mirror = createWorkspaceSettingsMirror(remote, workspaceSettingsTable)
     await mirror.ready
     change({ browserHomepage: 'https://a.dev' })
     expect(mirror.get('browserHomepage')).toBe('https://a.dev')

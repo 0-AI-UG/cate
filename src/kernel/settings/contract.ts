@@ -14,13 +14,4 @@ export {
   type ComposedSettings,
   type SettingsTable,
 } from './contract/define'
-export {
-  SETTINGS_SLICES,
-  clientSettingsTable,
-  workspaceSettingsTable,
-  type ClientSettings,
-  type WorkspaceSettings,
-  type ClientSettingKey,
-  type WorkspaceSettingKey,
-} from './contract/composed'
-export { settingsCapability, type SetSettingParams } from './contract/capability'
+export { settingsCapability, type SetSettingParams, type SettingsValues } from './contract/capability'

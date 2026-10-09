@@ -1,7 +1,9 @@
-// Every slice, composed into the two settings types and their validation
-// tables. A new slice is one line here.
+// The settings slices every client and the runtime share, composed into the
+// workspace settings and the shared client settings (section 8). A new slice
+// is one line here. Each shell adds its own client slices (the desktop's in
+// `shells/desktop/settings.ts`); the kernel composes nothing.
 
-import { composeSettings, type ComposedSettings, type SettingsTable } from './define'
+import { composeSettings, type ComposedSettings, type SettingsTable } from '@kernel/settings/contract'
 import { appearanceSettings, shortcutSettings } from '@kernel/interaction/contract/settings'
 import { cateApiSettings } from '@kernel/api/contract/settings'
 import { runtimeSettings } from '@runtime/daemon/contract/settings'
@@ -12,15 +14,8 @@ import { browserClientSettings, browserSettings } from '@services/browser/contra
 import { agentSettings } from '@services/agents/contract/settings'
 import { editorSettings } from '@panels/editor/contract/settings'
 import { reviewSettings } from '@panels/review/contract/settings'
-import {
-  canvasSettings,
-  desktopSettings,
-  notificationSettings,
-  remoteMachineSettings,
-  sidebarSettings,
-} from '@shells/desktop/contract/settings'
 
-export const SETTINGS_SLICES = [
+export const SHARED_SETTINGS_SLICES = [
   appearanceSettings,
   shortcutSettings,
   cateApiSettings,
@@ -33,24 +28,17 @@ export const SETTINGS_SLICES = [
   browserClientSettings,
   browserSettings,
   agentSettings,
-  canvasSettings,
-  sidebarSettings,
-  notificationSettings,
-  remoteMachineSettings,
   editorSettings,
   reviewSettings,
-  desktopSettings,
 ] as const
 
-type Slice = (typeof SETTINGS_SLICES)[number]
+type Slice = (typeof SHARED_SETTINGS_SLICES)[number]
 
-/** Settings of one client device, in every workspace. */
-export type ClientSettings = ComposedSettings<Slice, 'client'>
 /** Settings of one workspace, shared by every client of it. */
 export type WorkspaceSettings = ComposedSettings<Slice, 'workspace'>
-
-export type ClientSettingKey = keyof ClientSettings & string
 export type WorkspaceSettingKey = keyof WorkspaceSettings & string
+/** The client settings every shell has (a shell adds its own slices). */
+export type SharedClientSettings = ComposedSettings<Slice, 'client'>
 
-export const clientSettingsTable: SettingsTable<ClientSettings> = composeSettings<ClientSettings>('client', SETTINGS_SLICES)
-export const workspaceSettingsTable: SettingsTable<WorkspaceSettings> = composeSettings<WorkspaceSettings>('workspace', SETTINGS_SLICES)
+export const workspaceSettingsTable: SettingsTable<WorkspaceSettings> = composeSettings<WorkspaceSettings>('workspace', SHARED_SETTINGS_SLICES)
+export const sharedClientSettingsTable: SettingsTable<SharedClientSettings> = composeSettings<SharedClientSettings>('client', SHARED_SETTINGS_SLICES)

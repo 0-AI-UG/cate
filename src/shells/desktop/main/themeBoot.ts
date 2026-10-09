@@ -3,7 +3,7 @@
 // has the right color. Rebuilt in main from the client settings whenever they
 // or the OS appearance change, including hand edits of settings.json.
 
-import { clientSettingsTable } from '@kernel/settings/contract'
+import { clientSettingsTable } from '../settings'
 import { resolveTheme, themeBootSnapshot, type ThemeBootSnapshot } from '@kernel/interaction/contract'
 import type { DeviceFiles } from './deviceFiles'
 

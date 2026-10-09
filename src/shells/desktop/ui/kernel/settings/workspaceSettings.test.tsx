@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { act } from 'react'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent, RuntimeProxy } from '@kernel/rpc/contract'
-import { workspaceSettingsTable, type WorkspaceSettings } from '@kernel/settings/contract'
+import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 import { setWorkspaceSetting, useWorkspaceSetting, workspaceSettingsFor } from './index'
 
 type Event = ChannelEvent<WorkspaceSettings, Partial<WorkspaceSettings>>

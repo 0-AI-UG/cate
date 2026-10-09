@@ -4,17 +4,11 @@
 // the time an edit resolves the mirrored value already holds it.
 
 import { RpcError, applyShallowPatch, reduceChannel, type ChannelEvent, type ChannelState } from '@kernel/rpc/contract'
-import {
-  workspaceSettingsTable,
-  type SetSettingParams,
-  type SettingsTable,
-  type WorkspaceSettingKey,
-  type WorkspaceSettings,
-} from '../contract'
+import { type SetSettingParams, type SettingsTable, type SettingsValues } from '../contract'
 
 const RESTART_MS = 1_000
 
-type SettingsEvent = ChannelEvent<WorkspaceSettings, Partial<WorkspaceSettings>>
+type SettingsEvent = ChannelEvent<SettingsValues, Partial<SettingsValues>>
 
 /** The part of the `settings` proxy the mirror uses. */
 export interface WorkspaceSettingsRemote {
@@ -26,38 +20,39 @@ export interface WorkspaceSettingsRemote {
   }
 }
 
-export interface WorkspaceSettingsMirror {
+export interface WorkspaceSettingsMirror<S extends object = SettingsValues> {
   /** Resolves with the first snapshot. */
   readonly ready: Promise<void>
   /** Runtime values with pending local edits on top; defaults before the
    *  first snapshot. */
-  getAll(): WorkspaceSettings
-  get<K extends WorkspaceSettingKey>(key: K): WorkspaceSettings[K]
+  getAll(): S
+  get<K extends keyof S & string>(key: K): S[K]
   /** Applies at once; rejects (and reverts) when the value is invalid or the
    *  runtime refuses it. */
-  set<K extends WorkspaceSettingKey>(key: K, value: WorkspaceSettings[K]): Promise<void>
-  subscribe(cb: (values: WorkspaceSettings) => void): () => void
+  set<K extends keyof S & string>(key: K, value: S[K]): Promise<void>
+  subscribe(cb: (values: S) => void): () => void
   dispose(): void
 }
 
-export function createWorkspaceSettingsMirror(
+/** The mirror of a composed table (the composition is the caller's). */
+export function createWorkspaceSettingsMirror<S extends object>(
   remote: WorkspaceSettingsRemote,
-  table: SettingsTable<WorkspaceSettings> = workspaceSettingsTable,
-): WorkspaceSettingsMirror {
-  let confirmed: ChannelState<WorkspaceSettings> | null = null
+  table: SettingsTable<S>,
+): WorkspaceSettingsMirror<S> {
+  let confirmed: ChannelState<SettingsValues> | null = null
   const pending = new Map<string, { seq: number; value: unknown }>()
-  const listeners = new Set<(values: WorkspaceSettings) => void>()
+  const listeners = new Set<(values: S) => void>()
   let seq = 0
   let disposed = false
   let markReady!: () => void
   const ready = new Promise<void>((resolve) => { markReady = resolve })
 
-  const values = (): WorkspaceSettings => {
-    const base = confirmed?.snapshot ?? table.defaults
+  const values = (): S => {
+    const base = (confirmed?.snapshot ?? table.defaults) as S
     if (pending.size === 0) return { ...base }
-    const next: Record<string, unknown> = { ...base }
+    const next: Record<string, unknown> = { ...(base as Record<string, unknown>) }
     for (const [key, edit] of pending) next[key] = edit.value
-    return next as WorkspaceSettings
+    return next as S
   }
 
   const notify = (): void => {

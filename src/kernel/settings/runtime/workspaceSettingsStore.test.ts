@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { isRpcError } from '@kernel/rpc/contract'
-import { workspaceSettingsTable } from '../contract'
 import { createSettingsHandlers, createWorkspaceSettingsStore } from './workspaceSettingsStore'
+import { workspaceSettingsTable } from '@panels/settings'
 
 vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
 
@@ -15,18 +15,18 @@ afterEach(() => fs.rmSync(dataDir, { recursive: true, force: true }))
 const readFile = () => JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.json'), 'utf-8'))
 
 it('seeds defaults, sets one key and persists it', async () => {
-  const store = createWorkspaceSettingsStore({ dataDir })
+  const store = createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable })
   expect(readFile()).toEqual(workspaceSettingsTable.defaults)
   store.set('runtimeLifetime', 'keepRunning')
   expect(store.get('runtimeLifetime')).toBe('keepRunning')
   await store.flushDurable()
   expect(readFile().runtimeLifetime).toBe('keepRunning')
   store.dispose()
-  expect(createWorkspaceSettingsStore({ dataDir }).getAll().runtimeLifetime).toBe('keepRunning')
+  expect(createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable }).getAll().runtimeLifetime).toBe('keepRunning')
 })
 
 it('refuses unknown keys and invalid values with rejected', () => {
-  const store = createWorkspaceSettingsStore({ dataDir })
+  const store = createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable })
   const attempt = (fn: () => void) => { try { fn(); return null } catch (e) { return e } }
   // @ts-expect-error unknown key
   expect(isRpcError(attempt(() => store.set('nope', 1)), 'rejected')).toBe(true)
@@ -38,14 +38,14 @@ it('refuses unknown keys and invalid values with rejected', () => {
 
 it('drops invalid keys from a hand-edited file', () => {
   fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ terminalScrollback: 5, browserHomepage: 'https://x.dev', junk: 1 }))
-  const store = createWorkspaceSettingsStore({ dataDir })
+  const store = createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable })
   expect(store.get('terminalScrollback')).toBe(2000)
   expect(store.get('browserHomepage')).toBe('https://x.dev')
   store.dispose()
 })
 
 it('handlers emit a snapshot, then each edit as a patch', () => {
-  const store = createWorkspaceSettingsStore({ dataDir })
+  const store = createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable })
   const handlers = createSettingsHandlers(store)
   const events: unknown[] = []
   const stop = handlers.subscribe((e) => events.push(e))

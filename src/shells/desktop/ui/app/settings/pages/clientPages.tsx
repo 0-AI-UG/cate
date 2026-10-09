@@ -7,7 +7,8 @@
 import { useEffect, useState } from 'react'
 import { NumberInput, SecondaryButton, Select, SettingRow, Slider, TextInput, Toggle } from '../../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
-import type { WorkspaceSettingKey, WorkspaceSettings, ClientSettings } from '@kernel/settings/contract'
+import type { WorkspaceSettingKey, WorkspaceSettings } from '@panels/settings'
+import type { ClientSettings } from '../../../../settings'
 import {
   setClientSetting,
   setWorkspaceSetting,
