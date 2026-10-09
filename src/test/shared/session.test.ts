@@ -42,6 +42,18 @@ describe.skipIf(process.platform === 'win32')('shared workspace: sessions', () =
     expect(resumed.exitCode).toBeNull()
   }, 30_000)
 
+  it('a paired client reconnecting while the runtime restores finds the panels it had', async () => {
+    const id = ws.a.createPanel('terminal')
+    await ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'running')
+    // B keeps asking for the panel's session while the new daemon listens
+    // but has not restored the workspace yet.
+    const restarting = ws.restartRuntime({ beforeStart: () => new Promise((resolve) => setTimeout(resolve, 2_000)) })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const resumed = ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'running', 20_000)
+    await restarting
+    await resumed
+  }, 40_000)
+
   it('a session survives a runtime restart for both clients', async () => {
     const id = ws.b.createPanel('terminal')
     await ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'running')

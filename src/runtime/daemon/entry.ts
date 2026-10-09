@@ -80,6 +80,8 @@ export interface ServeOptions {
   connect?: { url?: string; webSocket?: WebSocketFactory; peerConnection?: () => Promise<PeerConnectionFactory> }
   /** Panel types; default every panel in `@panels/runtime`. */
   panels?: readonly PanelRuntime[]
+  /** Test seam: runs before the workspace restores. */
+  beforeStart?: () => Promise<void>
 }
 
 export interface Daemon {
@@ -340,6 +342,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     },
     log: log.child('network'),
   })
+  await options.beforeStart?.()
   await ws.start()
   await network.settled()
   await writeInfo(network.endpoints())

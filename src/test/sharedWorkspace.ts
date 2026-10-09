@@ -78,8 +78,9 @@ export interface SharedWorkspace {
   /** Closes a local client and opens a new connection with the same
    *  identity, as reopening a workspace in the same app launch does. */
   reopen(client: TestClient): Promise<TestClient>
-  /** Stops the daemon and serves the workspace again from its saved state. */
-  restartRuntime(): Promise<void>
+  /** Stops the daemon and serves the workspace again from its saved state.
+   *  `beforeStart` runs while the new daemon listens but has not restored. */
+  restartRuntime(options?: { beforeStart?: () => Promise<void> }): Promise<void>
   /** Stops every client and the daemon, and removes the temp dirs. */
   stop(): Promise<void>
 }
@@ -136,8 +137,9 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
 
   // The LAN port is the runtimeId's preferred one, as in the app, so it
   // survives a restart.
-  const serve = async (): Promise<Daemon> => {
+  const serve = async (beforeStart?: () => Promise<void>): Promise<Daemon> => {
     const served = await serveWorkspace({
+      beforeStart,
       root,
       home,
       network: 'sameNetwork',
@@ -271,9 +273,9 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
       await c.document.ready
       return c
     },
-    async restartRuntime() {
+    async restartRuntime(options) {
       await daemon.stop({ kind: 'signal' })
-      daemon = await serve()
+      daemon = await serve(options?.beforeStart)
     },
     async stop() {
       for (const b of buffers) { b.attached.close(); b.doc.destroy() }

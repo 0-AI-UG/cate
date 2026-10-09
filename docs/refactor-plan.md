@@ -274,6 +274,9 @@ while a debounced async write may be in flight.
   connect client B; subscribe to a panel that exists in `document.json`;
   assert the subscribe succeeds after start (today: `gone`).
 - Fix: network connections wait for `open()` exactly like local ones.
+- Not reproduced: client B was connected over the network before the
+  workspace restored and asked for the panel's session the whole time; it
+  got the session once the restore finished. The test stays as a guard.
 
 **B13. Workspace settings stop updating after a reconnect.**
 `kernel/settings/client/workspaceSettingsMirror.ts:68` subscribes without
