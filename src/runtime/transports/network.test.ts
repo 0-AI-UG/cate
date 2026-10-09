@@ -8,7 +8,7 @@ import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { createMemoryPortPair, fingerprint, generateKeyPair, type KeyPair, type MemoryPort } from '../security/contract'
+import { createMemoryPortPair, fingerprint, generateKeyPair, networkIdOf, type KeyPair, type MemoryPort } from '../security/contract'
 import { connectToRuntime } from '../security/client'
 import { decodePairingUri, parsePairingCode } from '../pairing/contract'
 import { KnownRuntimes, pairWithRuntime, PairingError } from '../pairing/client'
@@ -18,7 +18,8 @@ import { dialSameNetwork, openSecureConnection, SameNetworkUnreachableError } fr
 import { nodeWebSocketFactory } from './node'
 import { createNetworkPeers, serveSameNetwork, type NetworkPeers, type SameNetworkListener } from './runtime'
 
-const RUNTIME_ID = 'abcdefghijklmnop'
+const RUNTIME_KEYS = generateKeyPair()
+const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 const pingCap = defineCapability('ping', { methods: { ping: method<void, string>() } })
 
 let runtimeKeys: KeyPair
@@ -29,10 +30,9 @@ let rpc: RpcServer
 const clients: RpcClient[] = []
 
 beforeEach(async () => {
-  runtimeKeys = generateKeyPair()
+  runtimeKeys = RUNTIME_KEYS
   let file: PairingsFile = { devices: [] }
   pairing = new PairingService({
-    runtimeId: RUNTIME_ID,
     runtimePublicKey: runtimeKeys.publicKey,
     store: { get: () => file, update: (fn) => { file = fn(file) } },
     addresses: () => lan.addresses(),

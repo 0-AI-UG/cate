@@ -10,12 +10,13 @@ import { RpcServer } from '@kernel/rpc/runtime'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { PairingService, type PairingsFile } from '@runtime/pairing/runtime'
-import { fingerprint, generateKeyPair, type KeyPair } from '@runtime/security/contract'
+import { fingerprint, generateKeyPair, networkIdOf, type KeyPair } from '@runtime/security/contract'
 import { createNetworkDialer, dialSameNetwork, type NetworkDialer } from './client'
 import { nodeWebSocketFactory } from './node'
 import { createNetworkPeers, serveSameNetwork, type NetworkPeers, type SameNetworkListener } from './runtime'
 
-const RUNTIME_ID = 'abcdefghijklmnop'
+const RUNTIME_KEYS = generateKeyPair()
+const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 const pingCap = defineCapability('ping', { methods: { ping: method<void, string>() } })
 
 let runtimeKeys: KeyPair
@@ -25,10 +26,9 @@ let lan: SameNetworkListener
 const clients: RpcClient[] = []
 
 beforeEach(async () => {
-  runtimeKeys = generateKeyPair()
+  runtimeKeys = RUNTIME_KEYS
   let file: PairingsFile = { devices: [] }
   pairing = new PairingService({
-    runtimeId: RUNTIME_ID,
     runtimePublicKey: runtimeKeys.publicKey,
     store: { get: () => file, update: (fn) => { file = fn(file) } },
     addresses: () => lan.addresses(),

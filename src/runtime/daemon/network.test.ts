@@ -87,7 +87,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     const desk = await local(daemon)
     const created = await createCapabilityProxy(desk, pairingCapability).createSecret({ mode: 'sameNetwork' })
     const payload = decodePairingUri(created.uri)
-    expect(payload).toMatchObject({ runtimeId: daemon.runtimeId, mode: 'sameNetwork', addresses: info!.endpoints.sameNetwork!.addresses })
+    expect(payload).toMatchObject({ runtimeId: daemon.networkId, mode: 'sameNetwork', addresses: info!.endpoints.sameNetwork!.addresses })
 
     const phone = device('phone')
     const port = await dialSameNetwork({ runtimeId: payload.runtimeId, addresses: payload.addresses, webSocket: nodeWebSocketFactory })
@@ -108,10 +108,9 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     const desk = await local(daemon)
     const pairingApi = createCapabilityProxy(desk, pairingCapability)
     const typed = parsePairingCode((await pairingApi.createSecret({ mode: 'sameNetwork' })).code)
+    // mDNS: the runtime answers under its network id.
     const discover = async (runtimeId: string) =>
-      (await readRuntimeInfo(daemon.paths.dir))?.runtimeId === runtimeId
-        ? (await readRuntimeInfo(daemon.paths.dir))!.endpoints.sameNetwork!.addresses
-        : []
+      daemon.networkId === runtimeId ? (await readRuntimeInfo(daemon.paths.dir))!.endpoints.sameNetwork!.addresses : []
 
     const laptop = device('laptop')
     const first = await openSecureConnection(
@@ -159,7 +158,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     const phone = device('phone')
     const payload = decodePairingUri((await createCapabilityProxy(desk, pairingCapability).createSecret({ mode: 'sameNetwork' })).uri)
     const { frames } = await openSecureConnection(
-      await dialSameNetwork({ runtimeId: daemon.runtimeId, addresses: payload.addresses, webSocket: nodeWebSocketFactory }),
+      await dialSameNetwork({ runtimeId: daemon.networkId, addresses: payload.addresses, webSocket: nodeWebSocketFactory }),
       { kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name, target: payload, pins: phone.pins },
     )
     const rpc = phone.rpc()
@@ -170,7 +169,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     await dropped
     await daemon.network.settled()
     expect(daemon.network.addresses()).toEqual([])
-    await expect(dialSameNetwork({ runtimeId: daemon.runtimeId, addresses, webSocket: nodeWebSocketFactory, timeoutMs: 1_000 }))
+    await expect(dialSameNetwork({ runtimeId: daemon.networkId, addresses, webSocket: nodeWebSocketFactory, timeoutMs: 1_000 }))
       .rejects.toThrow()
     await expect.poll(async () => (await readRuntimeInfo(daemon.paths.dir))?.endpoints.sameNetwork).toBeUndefined()
   })

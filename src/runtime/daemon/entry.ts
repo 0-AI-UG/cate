@@ -33,7 +33,7 @@ import { powerCapability } from '@runtime/power/contract'
 import { createPowerService, powerCapabilityImpl } from '@runtime/power/runtime'
 import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
-import { fingerprint, hexToBytes } from '@runtime/security/contract'
+import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
 import { createServerHost, reapOrphanServers, serverCapabilityImpl, type ServerHost } from '@runtime/server/runtime'
 import type { PeerConnectionFactory, WebSocketFactory } from '@runtime/transports/contract'
 import { loadNodePeerConnection, nodeWebSocketFactory } from '@runtime/transports/node'
@@ -84,6 +84,8 @@ export interface ServeOptions {
 
 export interface Daemon {
   readonly runtimeId: string
+  /** The id on the network, from the runtime key (`networkIdOf`). */
+  readonly networkId: string
   readonly root: string
   readonly paths: DataPaths
   readonly endpoint: string
@@ -171,6 +173,9 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
 
   const secrets = openSecretsFile(paths.dir)
   const keys = await ensureRuntimeKeyPair(secrets)
+  // Paired devices, Cate Connect and mDNS know the runtime by the id its key
+  // derives; the path's runtimeId names only its data dir and socket.
+  const networkId = networkIdOf(keys.publicKey)
   const settings = createWorkspaceSettingsStore({ dataDir: paths.dir })
   if (options.network) settings.set('runtimeNetwork', options.network)
 
@@ -189,7 +194,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
 
   const pairingsFile = openPairingsFile(paths.dir)
   const pairing = new PairingService({
-    runtimeId,
     runtimePublicKey: keys.publicKey,
     store: pairingsFile,
     addresses: () => network.addresses(),
@@ -221,7 +225,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   // they are away; an unpaired device stops getting them.
   const pushFile = openPushFile(paths.dir)
   const push = createPushService({
-    runtimeId,
+    runtimeId: networkId,
     workspace: path.basename(root),
     store: pushFile,
     sender: () => network.registration(),
@@ -321,7 +325,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   })
 
   const network = createNetworkAccess({
-    runtimeId,
     runtimeKeys: keys,
     peers: createNetworkPeers({ rpc, runtimeKeys: keys, pairing, log: log.child('network') }),
     mode: () => settings.get('runtimeNetwork'),
@@ -345,7 +348,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
 
   return {
     kind: 'serving',
-    daemon: { runtimeId, root, paths, endpoint, rpc, busy, servers, pairing, network, workspace: ws, stop, stopped },
+    daemon: { runtimeId, networkId, root, paths, endpoint, rpc, busy, servers, pairing, network, workspace: ws, stop, stopped },
   }
 }
 

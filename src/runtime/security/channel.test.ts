@@ -4,6 +4,7 @@ import {
   createMemoryPortPair,
   fingerprint,
   generateKeyPair,
+  networkIdOf,
   MAX_CHUNK,
   openSecureChannel,
   type SecureChannel,
@@ -119,9 +120,10 @@ describe('peer checks', () => {
     const [a, b] = createMemoryPortPair()
     const runtimeKeys = generateKeyPair()
     const deviceKeys = generateKeyPair()
-    const pins = { get: async (id: string) => (id === 'r1' ? runtimeKeys.publicKey : undefined) }
+    const runtimeId = networkIdOf(runtimeKeys.publicKey)
+    const pins = { get: async (id: string) => (id === runtimeId ? runtimeKeys.publicKey : undefined) }
     const [client, runtime] = await Promise.all([
-      connectToRuntime(a, { deviceKeys, runtimeId: 'r1', pins }),
+      connectToRuntime(a, { deviceKeys, runtimeId, pins }),
       acceptPeer(b, {
         runtimeKeys,
         policy: { isPaired: (key) => bytesEqual(key, deviceKeys.publicKey), pairUnknown: async () => false },

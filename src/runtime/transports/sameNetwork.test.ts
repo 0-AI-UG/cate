@@ -7,13 +7,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
-import { generateKeyPair } from '../security/contract'
+import { generateKeyPair, networkIdOf } from '../security/contract'
 import { PairingService, type PairingsFile } from '../pairing/runtime'
 import { isPrivateAddress, sameNetworkUrl } from './contract'
 import { lanAddresses } from './node'
 import { createNetworkPeers, serveSameNetwork, type SameNetworkListener } from './runtime'
 
-const RUNTIME_ID = 'abcdefghijklmnop'
+const RUNTIME_KEYS = generateKeyPair()
+const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 
 describe('isPrivateAddress', () => {
   it.each([
@@ -86,10 +87,9 @@ describe('same-network listener', () => {
   })
 
   async function serve(isAllowed?: (remoteAddress: string) => boolean) {
-    const runtimeKeys = generateKeyPair()
+    const runtimeKeys = RUNTIME_KEYS
     let file: PairingsFile = { devices: [] }
     const pairing = new PairingService({
-      runtimeId: RUNTIME_ID,
       runtimePublicKey: runtimeKeys.publicKey,
       store: { get: () => file, update: (fn) => { file = fn(file) } },
     })

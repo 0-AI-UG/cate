@@ -1,4 +1,5 @@
-// The `known-runtimes` device document: the runtime key pinned per runtimeId.
+// The `known-runtimes` device document: the runtime key pinned per runtimeId
+// (the runtime's network id, derived from that key).
 
 import type { DeviceStore } from '@kernel/state/contract'
 import { decodePublicKey, encodePublicKey } from '../../security/contract'
@@ -36,8 +37,13 @@ export class KnownRuntimes implements RuntimePins {
     return (await this.read()).runtimes
   }
 
+  /** Pins a runtime's key; refuses another key for an id already pinned. */
   async pin(runtimeId: string, publicKey: Uint8Array): Promise<void> {
     const file = await this.read()
+    const pinned = file.runtimes[runtimeId]
+    if (pinned && pinned.publicKey !== encodePublicKey(publicKey)) {
+      throw new Error(`runtime ${runtimeId} is pinned to another key`)
+    }
     file.runtimes[runtimeId] = { publicKey: encodePublicKey(publicKey), pinnedAt: this.now() }
     await this.store.set(KNOWN_RUNTIMES_DOCUMENT, file)
   }

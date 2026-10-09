@@ -6,7 +6,7 @@
 
 import type { Logger } from '@kernel/log/contract'
 import type { RuntimeEndpoints } from '@runtime/data/contract'
-import type { KeyPair } from '@runtime/security/contract'
+import { networkIdOf, type KeyPair } from '@runtime/security/contract'
 import type { PeerConnectionFactory, WebSocketFactory } from '@runtime/transports/contract'
 import {
   serveSameNetwork,
@@ -20,7 +20,7 @@ import type { RuntimeNetwork } from '../contract'
 export type NetworkEndpoints = Omit<RuntimeEndpoints, 'local'>
 
 export interface NetworkAccessDeps {
-  runtimeId: string
+  /** The runtime is on the network under the key's network id. */
   runtimeKeys: KeyPair
   peers: NetworkPeers
   mode(): RuntimeNetwork
@@ -67,7 +67,7 @@ export function createNetworkAccess(deps: NetworkAccessDeps): NetworkAccess {
     if (mode !== 'off' && !lan) {
       try {
         lan = await serveSameNetwork({
-          runtimeId: deps.runtimeId,
+          runtimeId: networkIdOf(deps.runtimeKeys.publicKey),
           peers: deps.peers,
           ...deps.sameNetwork,
           onError: (error) => deps.log?.warn('same network: %s', error.message),
@@ -84,7 +84,6 @@ export function createNetworkAccess(deps: NetworkAccessDeps): NetworkAccess {
     if (mode === 'cateConnect' && !registration) {
       registration = startConnectRegistration({
         url: deps.connect.url,
-        runtimeId: deps.runtimeId,
         runtimeKeys: deps.runtimeKeys,
         webSocket: deps.connect.webSocket,
         peerConnection: deps.connect.peerConnection,

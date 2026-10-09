@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { WebSocketServer, type WebSocket } from 'ws'
 import {
-  bytesToHex,
+  networkIdOf,
   generateKeyPair,
   openSecureChannel,
   type KeyPair,
@@ -55,8 +55,6 @@ export interface MitmEvent {
 export interface ConnectStandIn {
   /** `ws://127.0.0.1:<port>`, the base URL the runtime and clients take. */
   readonly url: string
-  /** runtimeId to hex static key, as bound on first registration. */
-  bindings(): Map<string, string>
   online(runtimeId: string): boolean
   /** What the man in the middle managed, per session side. */
   readonly mitmEvents: MitmEvent[]
@@ -80,7 +78,6 @@ interface Session {
 export async function startConnectStandIn(options: StandInOptions = {}): Promise<ConnectStandIn> {
   const iceServers = options.iceServers ?? []
   const serviceKeys = options.serviceKeys ?? generateKeyPair()
-  const bindings = new Map<string, string>()
   const registrations = new Map<string, Registration>()
   const sessions = new Map<string, Session>()
   const mitmEvents: MitmEvent[] = []
@@ -117,10 +114,7 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
       if (!message) return
       if (message.t === 'register') {
         if (message.protocol !== CONNECT_PROTOCOL) return refuse('protocol')
-        const key = bytesToHex(channel.remoteStatic)
-        const bound = bindings.get(message.runtimeId)
-        if (bound && bound !== key) return refuse('key-mismatch')
-        bindings.set(message.runtimeId, key)
+        if (networkIdOf(channel.remoteStatic) !== message.runtimeId) return refuse('key-mismatch')
         runtimeId = message.runtimeId
         registrations.get(runtimeId)?.channel.close()
         registrations.set(runtimeId, registration)
@@ -241,7 +235,6 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
   const address = server.address() as AddressInfo
   return {
     url: `ws://127.0.0.1:${address.port}`,
-    bindings: () => new Map(bindings),
     online: (runtimeId) => registrations.has(runtimeId),
     mitmEvents,
     pushes,

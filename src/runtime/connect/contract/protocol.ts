@@ -2,9 +2,9 @@
 //
 // `<url>/runtime`: a runtime keeps one connection here. It runs Noise as the
 //   initiator with its static key (prologue `cate-connect/1`), then sends
-//   `register`. The service binds the runtimeId to that key the first time
-//   and refuses any other key for it afterwards. Signaling for incoming
-//   sessions arrives on the same connection.
+//   `register` with its network id, which the key derives (`networkIdOf`).
+//   The service refuses an id that is not its key's and keeps no bindings.
+//   Signaling for incoming sessions arrives on the same connection.
 // `<url>/client`: a client looks a runtime up and opens a session, then
 //   relays the WebRTC offer, answer and ICE candidates through it. Once the
 //   data channel is open the client hangs up; the service never carries
@@ -26,7 +26,7 @@
 import { utf8Decode, utf8Encode } from '../../security/contract'
 import type { IceServer, SignalMessage } from '../../transports/contract'
 
-export const CONNECT_PROTOCOL = 1
+export const CONNECT_PROTOCOL = 2
 export const CONNECT_PROLOGUE = utf8Encode('cate-connect/1')
 /** Override with `CATE_CONNECT_URL`. */
 export const DEFAULT_CATE_CONNECT_URL = 'wss://connect.cate.cero-ai.com'

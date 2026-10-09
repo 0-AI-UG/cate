@@ -9,6 +9,7 @@ import {
   createMemoryPortPair,
   fingerprint,
   generateKeyPair,
+  networkIdOf,
   openSecureChannel,
   type KeyPair,
 } from '../security/contract'
@@ -30,7 +31,8 @@ import {
 import { KnownRuntimes, pairWithRuntime, PairingError } from './client'
 import { openPairingsFile, PairingService, type PairingsFile, type PairingsStore } from './runtime'
 
-const RUNTIME_ID = 'abcdefghijklmnop'
+const RUNTIME_KEYS = generateKeyPair()
+const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 
 function memoryStore(): PairingsStore {
   let value: PairingsFile = { devices: [] }
@@ -38,9 +40,8 @@ function memoryStore(): PairingsStore {
 }
 
 function setup(options: { now?: () => number } = {}) {
-  const runtimeKeys = generateKeyPair()
+  const runtimeKeys = RUNTIME_KEYS
   const service = new PairingService({
-    runtimeId: RUNTIME_ID,
     runtimePublicKey: runtimeKeys.publicKey,
     store: memoryStore(),
     addresses: () => ['192.168.1.4:4100'],
@@ -56,13 +57,14 @@ async function attempt(
   secret: Uint8Array,
   deviceKeys: KeyPair = generateKeyPair(),
   fp?: string,
+  runtimeId = RUNTIME_ID,
 ) {
   const [a, b] = createMemoryPortPair()
   const accepted = acceptPeer(b, { runtimeKeys: ctx.runtimeKeys, policy: ctx.service })
   const paired = pairWithRuntime(a, {
     deviceKeys,
     deviceName: 'Anton’s phone',
-    target: { runtimeId: RUNTIME_ID, secret, fingerprint: fp },
+    target: { runtimeId, secret, fingerprint: fp },
     pins: ctx.pins,
   })
   const [client, runtime] = await Promise.allSettled([paired, accepted])
@@ -85,7 +87,7 @@ describe('pairing payload and code', () => {
       addresses: ['192.168.1.4:4100', '[fe80::1]:4100'],
     }
     const uri = encodePairingUri(payload)
-    expect(uri.startsWith('cate://pair?r=abcdefghijklmnop&k=')).toBe(true)
+    expect(uri.startsWith(`cate://pair?r=${RUNTIME_ID}&k=`)).toBe(true)
     expect(decodePairingUri(uri)).toEqual(payload)
     expect(decodePairingUri(encodePairingUri({ ...payload, addresses: [] })).addresses).toEqual([])
   })
@@ -194,6 +196,15 @@ describe('pairing flow', () => {
     const result = await attempt(ctx, secretOf(created.uri), undefined, fingerprint(generateKeyPair().publicKey))
     expect((result.client as PromiseRejectedResult).reason.reason).toBe('fingerprint-mismatch')
     expect(await ctx.pins.get(RUNTIME_ID)).toBeUndefined()
+  })
+
+  it('client rejects a runtime whose key does not derive the code\'s id, and pins nothing', async () => {
+    const ctx = setup()
+    const created = ctx.service.createSecret('sameNetwork')
+    const result = await attempt(ctx, secretOf(created.uri), undefined, undefined, 'abcdefghijklmnop')
+    expect(result.client.status).toBe('rejected')
+    expect((result.client as PromiseRejectedResult).reason.reason).toBe('id-mismatch')
+    expect(await ctx.pins.list()).toEqual({})
   })
 
   it('client rejects a runtime that cannot prove the secret', async () => {

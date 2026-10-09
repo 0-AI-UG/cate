@@ -30,6 +30,16 @@ export function fingerprint(publicKey: Uint8Array): string {
   return base32Encode(sha256(publicKey)).slice(0, FINGERPRINT_LENGTH)
 }
 
+export const NETWORK_ID_LENGTH = 16
+
+/** The id a runtime has on the network (Cate Connect, mDNS, pairing codes,
+ *  paired clients): the first 16 characters of the key's base32 SHA-256, the
+ *  format of a runtime id. Derived from the key, so only its holder can claim
+ *  it and two keys never share one. */
+export function networkIdOf(publicKey: Uint8Array): string {
+  return base32Encode(sha256(publicKey)).slice(0, NETWORK_ID_LENGTH)
+}
+
 export function encodeKeyPair(pair: KeyPair): StoredKeyPair {
   return { publicKey: bytesToHex(pair.publicKey), secretKey: bytesToHex(pair.secretKey) }
 }

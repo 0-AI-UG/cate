@@ -3,6 +3,7 @@
 
 import {
   fingerprint,
+  networkIdOf,
   openSecureChannel,
   SecureChannelError,
   type KeyPair,
@@ -38,7 +39,7 @@ export interface PairOptions {
 export class PairingError extends SecureChannelError {
   constructor(
     message: string,
-    readonly reason: PairRejectReason | 'fingerprint-mismatch' | 'bad-runtime-proof' | 'timeout' | 'closed',
+    readonly reason: PairRejectReason | 'id-mismatch' | 'fingerprint-mismatch' | 'bad-runtime-proof' | 'timeout' | 'closed',
   ) {
     super(message)
   }
@@ -55,6 +56,9 @@ export async function pairWithRuntime(port: MessagePortLike, options: PairOption
   const abort = (error: PairingError): never => {
     channel.close(error)
     throw error
+  }
+  if (networkIdOf(channel.remoteStatic) !== target.runtimeId) {
+    abort(new PairingError('runtime key does not match the runtime id', 'id-mismatch'))
   }
   if (target.fingerprint && fingerprint(channel.remoteStatic) !== target.fingerprint) {
     abort(new PairingError('runtime key does not match the pairing code', 'fingerprint-mismatch'))

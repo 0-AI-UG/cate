@@ -3,7 +3,7 @@
 
 import { randomBytes as nobleRandomBytes } from '@noble/hashes/utils.js'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
-import { bytesToHex, fingerprint, hexToBytes, type SecureChannel } from '../../security/contract'
+import { bytesToHex, fingerprint, hexToBytes, networkIdOf, type SecureChannel } from '../../security/contract'
 import type { PeerPolicy } from '../../security/runtime'
 import {
   cleanDeviceName,
@@ -26,7 +26,7 @@ import {
 import type { PairingsFile, PairingsStore } from './pairingsFile'
 
 export interface PairingServiceOptions {
-  runtimeId: string
+  /** The runtime's static key; codes carry its network id. */
   runtimePublicKey: Uint8Array
   store: PairingsStore
   /** LAN addresses (`host:port`) to put in the QR payload. */
@@ -58,7 +58,8 @@ export class PairingService implements PeerPolicy {
     const secret = this.random(PAIRING_SECRET_BYTES)
     const expiresAt = this.now() + PAIRING_SECRET_TTL_MS
     this.secrets = [...this.liveSecrets(), { secret, expiresAt }]
-    const { runtimeId, runtimePublicKey } = this.options
+    const { runtimePublicKey } = this.options
+    const runtimeId = networkIdOf(runtimePublicKey)
     return {
       uri: encodePairingUri({
         runtimeId,

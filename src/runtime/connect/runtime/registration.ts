@@ -6,7 +6,7 @@
 // carried when it ends.
 
 import type { Logger } from '@kernel/log/contract'
-import { openSecureChannel, type KeyPair, type MessagePortLike, type SecureChannel } from '../../security/contract'
+import { networkIdOf, openSecureChannel, type KeyPair, type MessagePortLike, type SecureChannel } from '../../security/contract'
 import {
   answerDataChannel,
   connectionPath,
@@ -37,7 +37,7 @@ export type RegistrationState =
 
 export interface ConnectRegistrationOptions {
   url: string
-  runtimeId: string
+  /** Registers under the key's network id. */
   runtimeKeys: KeyPair
   webSocket: WebSocketFactory
   /** Loaded lazily: the WebRTC stack is only needed once someone connects. */
@@ -182,7 +182,7 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
           return
       }
     })
-    send({ t: 'register', runtimeId: options.runtimeId, protocol: CONNECT_PROTOCOL })
+    send({ t: 'register', runtimeId: networkIdOf(options.runtimeKeys.publicKey), protocol: CONNECT_PROTOCOL })
   }
 
   void connect()

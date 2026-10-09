@@ -4,6 +4,7 @@
 import {
   bytesEqual,
   fingerprint,
+  networkIdOf,
   openSecureChannel,
   SecureChannelError,
   type KeyPair,
@@ -38,7 +39,7 @@ export async function connectToRuntime(port: MessagePortLike, options: ConnectOp
     staticKeys: options.deviceKeys,
     handshakeTimeoutMs: options.handshakeTimeoutMs,
   })
-  if (!bytesEqual(channel.remoteStatic, pinned)) {
+  if (!bytesEqual(channel.remoteStatic, pinned) || networkIdOf(channel.remoteStatic) !== options.runtimeId) {
     const error = new PinMismatchError(
       `runtime ${options.runtimeId} presented key ${fingerprint(channel.remoteStatic)}, pinned ${fingerprint(pinned)}`,
     )

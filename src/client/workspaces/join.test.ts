@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { bytesEqual, createMemoryPortPair, fingerprint, generateKeyPair } from '@runtime/security/contract'
+import { bytesEqual, createMemoryPortPair, fingerprint, generateKeyPair, networkIdOf } from '@runtime/security/contract'
 import { acceptPeer } from '@runtime/security/runtime'
 import { PairingService, type PairingsFile, type PairingsStore } from '@runtime/pairing/runtime'
 import { pairWithRuntime } from '@runtime/pairing/client'
@@ -8,7 +8,8 @@ import type { PairedRuntime, WorkspaceConnections } from '@client/connections'
 import { joinErrorMessage, joinWorkspace, parsePairingInput } from './join'
 import { WorkspaceList } from './workspaceList'
 
-const RUNTIME_ID = 'abcdefghijklmnop'
+const RUNTIME_KEYS = generateKeyPair()
+const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 
 function memoryStore(): PairingsStore {
   let value: PairingsFile = { devices: [] }
@@ -16,9 +17,8 @@ function memoryStore(): PairingsStore {
 }
 
 function setup() {
-  const runtimeKeys = generateKeyPair()
+  const runtimeKeys = RUNTIME_KEYS
   const service = new PairingService({
-    runtimeId: RUNTIME_ID,
     runtimePublicKey: runtimeKeys.publicKey,
     store: memoryStore(),
     addresses: () => ['192.168.1.4:4100'],

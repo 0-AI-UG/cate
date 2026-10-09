@@ -422,9 +422,15 @@ the pieces that make it reachable and secure.
   is the scope.
 - **Identity.** `runtimeId` is the first 16 characters of the lowercase base32
   SHA-256 of the canonical root (`realpath`), so socket paths stay short. It is
-  stable across restarts, names the workspace data directory, and is what
-  pairings refer to. Moving the project folder gives a new `runtimeId` and a
-  fresh workspace.
+  stable across restarts and names the workspace data directory and the local
+  socket only; it never leaves the machine. Moving the project folder gives a
+  new `runtimeId` and a fresh workspace. On the network (mDNS, Cate Connect,
+  pairing codes, `known-runtimes.json`, pushes) a runtime is known by its
+  **network id**, the first 16 base32 characters of the SHA-256 of its static
+  key (`networkIdOf`, same format): only the key's holder can claim it, the
+  same path on two machines never collides, and the path does not leak. A
+  runtime whose key is lost (`secrets.json` deleted) gets a new network id,
+  and devices pair again.
 - **Install.** One layout everywhere: `~/.cate/runtime/<build>/` holds the
   daemon, its Node, the `cate` CLI, the patched T3 harness, bundled skills and
   native addons; `<build>` is the build id (section 7.10), which the tarball
@@ -544,7 +550,7 @@ persisted session and document file. It is created with mode `0700`.
   until connected (10 s budget). It also starts the runtime of the last
   selected workspace when the app launches, before the window asks for it.
 - **A client on another machine** finds the runtime through the network
-  transport (7.5) using the `runtimeId` it paired with.
+  transport (7.5) using the network id it paired with (7.2).
 
 ### 7.4 Lifetime
 
@@ -583,13 +589,13 @@ and T3 servers.
 - **`network`**, established one of two ways, always wrapped by the security
   layer (7.6):
   - **Same network**: the runtime listens for WebSocket connections on a
-    port on every interface (path `/cate/<runtimeId>`), but serves only
+    port on every interface (path `/cate/<network id>`), but serves only
     private addresses: `10/8`, `172.16/12`, `192.168/16`, `100.64/10`
     (carrier NAT, which Tailscale uses), `169.254/16`, `127/8`, `::1`,
     `fe80::/10` and `fc00::/7` (`isPrivateAddress` in
     `runtime/transports/contract`). A connection from any other address is
     closed before anything is read. It advertises `_cate._tcp` over mDNS
-    with `runtimeId` in the TXT record. The pairing payload also carries its
+    with its network id in the TXT record. The pairing payload also carries its
     addresses, so a client that cannot use mDNS still connects. Both carry
     only private addresses, so a machine with none (a cloud VM) advertises
     nothing and is reached through Cate Connect. One rule holds on every
@@ -634,7 +640,7 @@ pure-JS Noise implementation), so the iOS app uses the same code.
   larger than a Noise message are split.
 - **Known peers only.** After the handshake:
   - the client checks that the runtime's key is the one it pinned for that
-    `runtimeId`, and aborts otherwise;
+    network id and that the key derives the id, and aborts otherwise;
   - the runtime checks that the client's key is in `pairings.json`; if not, the
     only message it accepts is `pair` (below), and it closes the connection
     after one failed attempt.
@@ -672,12 +678,13 @@ connected client or by `cate serve`.
   pairing secret (10 random bytes, 80 bits, valid for 10 minutes, single use) and shows
   it as:
   - a QR code encoding
-    `cate://pair?r=<runtimeId>&k=<runtime key fingerprint>&s=<secret>&m=<mode>&a=<lan addresses>`;
-  - a pairing code of 32 base32 characters in groups of four (the
-    `runtimeId` and the secret), for typing on a desktop. A typed code has
-    no key fingerprint and no addresses: the client finds the runtime by
-    `runtimeId` over mDNS or Cate Connect, the proofs below bind the
-    handshake, and 80 bits keep a captured proof safe from offline guessing.
+    `cate://pair?r=<network id>&k=<runtime key fingerprint>&s=<secret>&m=<mode>&a=<lan addresses>`;
+  - a pairing code of 32 base32 characters in groups of four (the network
+    id and the secret), for typing on a desktop. A typed code has no key
+    fingerprint and no addresses: the client finds the runtime by network id
+    over mDNS or Cate Connect and refuses a key that does not derive that
+    id; the proofs below bind the handshake, and 80 bits keep a captured
+    proof safe from offline guessing.
 - **The `pairing` capability**: `createSecret {mode}` (for "Add device"),
   `list`, `revoke {deviceKey}`. `pair` itself is the one message a runtime
   accepts from an unknown key.
@@ -688,17 +695,18 @@ connected client or by `cate serve`.
   handshakeHash)`. Each side verifies the other's proof, which binds the
   secret to this exact encrypted session, so a party in the middle learns
   nothing usable. The runtime then stores the device key in `pairings.json`
-  and burns the secret; the client pins the runtime key under its
-  `runtimeId` in `known-runtimes.json`. A wrong proof burns the secret too.
+  and burns the secret; the client checks that the runtime key derives the
+  network id it paired with and pins the key under it in
+  `known-runtimes.json`, refusing another key for an id already pinned. A
+  wrong proof burns the secret too.
 - **Afterwards** both sides reconnect by key; no code is needed again.
 - **Cate Connect** (registry, signaling, STUN, TURN relay) lives in its own repository and
   is deployed separately. This repository holds only its client,
   **`runtime/connect`**: the runtime's registration and connection setup on
   both sides, written against the service's protocol. The runtime registers
-  over a Noise connection to the service, which binds the `runtimeId` to the
-  runtime's static key on first registration and refuses another key for it
-  afterwards. Even if that failed, clients would refuse any key but the one
-  they pinned. Tests run against a
+  over a Noise connection to the service under its network id; the service
+  refuses an id its static key does not derive and keeps no bindings. Even
+  if that failed, clients would refuse any key but the one they pinned. Tests run against a
   local stand-in for the service.
 - **Pushes.** A service with an APNs key says so in `registered`
   (`push: true`). A registered runtime then sends `push {target, sealed,

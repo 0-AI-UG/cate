@@ -1,8 +1,8 @@
 // Cate Connect against the local stand-in: a real daemon registers, a client
 // looks it up, trades signaling through the service, opens a WebRTC data
 // channel (node-datachannel, host candidates only) and runs Noise inside it.
-// The man-in-the-middle stand-in cannot complete a connection, and the
-// service refuses a second key for a registered runtimeId.
+// The man-in-the-middle stand-in cannot complete a connection, and a runtime
+// registers under the network id its key derives.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'node:fs'
@@ -12,7 +12,7 @@ import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink, nullSink, type LogRecord } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { fingerprint, generateKeyPair, type KeyPair, type MessagePortLike } from '../security/contract'
+import { fingerprint, generateKeyPair, networkIdOf, type KeyPair, type MessagePortLike } from '../security/contract'
 import { PinMismatchError } from '../security/client'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '../pairing/contract'
 import { encodeBase64, openPushMessage, pushCapability } from '../push/contract'
@@ -111,7 +111,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
   it('pairs and calls runtime.info over a WebRTC data channel, then reconnects by key', async () => {
     const service = await standIn()
     const daemon = await daemonOn(service)
-    expect(await lookupRuntime({ url: service.url, runtimeId: daemon.runtimeId, webSocket: nodeWebSocketFactory }))
+    expect(await lookupRuntime({ url: service.url, runtimeId: daemon.networkId, webSocket: nodeWebSocketFactory }))
       .toEqual({ online: true, iceServers: [] })
 
     const { created } = await addDevice(daemon)
@@ -128,8 +128,8 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     first.detach()
     paired.channel.close()
 
-    const again = await openSecureConnection(await dial(service, daemon.runtimeId), {
-      kind: 'connect', deviceKeys: phone.keys, runtimeId: daemon.runtimeId, pins: phone.pins,
+    const again = await openSecureConnection(await dial(service, daemon.networkId), {
+      kind: 'connect', deviceKeys: phone.keys, runtimeId: daemon.networkId, pins: phone.pins,
     })
     const second = rpcClient('phone', phone.keys)
     await second.attach(again.frames)
@@ -154,26 +154,23 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
 
     daemon.workspace.agents.notifications.publish({ kind: 'cate.ui.notify', title: 'Build done', body: 'All green' })
     await expect.poll(() => service.pushes.length).toBe(1)
-    expect(service.pushes[0]).toMatchObject({ runtimeId: daemon.runtimeId, push: { target: `apns:sandbox:${'ab'.repeat(32)}` } })
-    expect(openPushMessage(key, service.pushes[0].push.sealed)).toMatchObject({ runtimeId: daemon.runtimeId, title: 'Build done', body: 'All green' })
+    expect(service.pushes[0]).toMatchObject({ runtimeId: daemon.networkId, push: { target: `apns:sandbox:${'ab'.repeat(32)}` } })
+    expect(openPushMessage(key, service.pushes[0].push.sealed)).toMatchObject({ runtimeId: daemon.networkId, title: 'Build done', body: 'All green' })
   }, 30_000)
 
-  it('refuses a second registration of the runtimeId with another key', async () => {
+  it('a runtime whose key changed registers again and is reachable', async () => {
     const service = await standIn()
-    const daemon = await daemonOn(service)
-    const impostor = startConnectRegistration({
-      url: service.url,
-      runtimeId: daemon.runtimeId,
-      runtimeKeys: generateKeyPair(),
-      webSocket: nodeWebSocketFactory,
-      peerConnection: async () => createPeer,
-      onConnection: () => { throw new Error('the impostor must never get a session') },
-    })
-    registrations.push(impostor)
-    expect(await registered(impostor)).toEqual({ kind: 'refused', reason: 'key-mismatch' })
-    expect(service.online(daemon.runtimeId)).toBe(true)
-    expect(service.bindings().size).toBe(1)
-  }, 20_000)
+    const first = await daemonOn(service)
+    await first.stop({ kind: 'signal' })
+    daemons.splice(daemons.indexOf(first), 1)
+    // secrets.json lost: the runtime makes a new key.
+    fs.rmSync(path.join(first.paths.dir, 'secrets.json'))
+    const again = await daemonOn(service)
+    expect(again.network.registration()!.state()).toEqual({ kind: 'registered' })
+    expect(again.networkId).not.toBe(first.networkId)
+    expect(await lookupRuntime({ url: service.url, runtimeId: again.networkId, webSocket: nodeWebSocketFactory }))
+      .toEqual({ online: true, iceServers: [] })
+  }, 30_000)
 
   it('hands both sides the ICE servers of the session, and logs its path and bytes', async () => {
     const iceServers: IceServer[] = [{ urls: 'turn:relay.test:3478', username: '1700000000', credential: 'c2VjcmV0' }]
@@ -186,10 +183,10 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
       given.push({ side, iceServers: config.iceServers })
       return createPeer({ iceServers: [] })
     }
+    const echoKeys = generateKeyPair()
     const echo = startConnectRegistration({
       url: service.url,
-      runtimeId: 'relayrelayrelayr',
-      runtimeKeys: generateKeyPair(),
+      runtimeKeys: echoKeys,
       webSocket: nodeWebSocketFactory,
       peerConnection: async () => recording('runtime'),
       onConnection: (port) => { port.onMessage((message) => port.send(message)) },
@@ -198,7 +195,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     registrations.push(echo)
     await registered(echo)
     const port: MessagePortLike = await dialCateConnect({
-      url: service.url, runtimeId: 'relayrelayrelayr', webSocket: nodeWebSocketFactory, createPeer: recording('client'),
+      url: service.url, runtimeId: networkIdOf(echoKeys.publicKey), webSocket: nodeWebSocketFactory, createPeer: recording('client'),
     })
     const back = new Promise<Uint8Array>((resolve) => port.onMessage(resolve))
     port.send(new Uint8Array(5))
@@ -216,7 +213,6 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     // Registered, but never answers an offer.
     const silent = startConnectRegistration({
       url: service.url,
-      runtimeId: 'silentsilentsile',
       runtimeKeys,
       webSocket: nodeWebSocketFactory,
       peerConnection: () => new Promise(() => {}),
@@ -224,7 +220,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     })
     registrations.push(silent)
     await registered(silent)
-    const error = await dial(service, 'silentsilentsile', 1_500).catch((e: unknown) => e)
+    const error = await dial(service, networkIdOf(runtimeKeys.publicKey), 1_500).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(CateConnectError)
     expect(error).toMatchObject({ code: 'no-path', message: CONNECTION_FAILED })
     await expect(dial(service, 'offlineofflineof')).rejects.toMatchObject({ code: 'offline' })
@@ -252,9 +248,9 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
 
       const mitm = await standIn({ mitm: { keys: generateKeyPair(), createPeer } })
       const again = await daemonOn(mitm)
-      expect(again.runtimeId).toBe(daemon.runtimeId)
-      await expect(openSecureConnection(await dial(mitm, daemon.runtimeId), {
-        kind: 'connect', deviceKeys: phone.keys, runtimeId: daemon.runtimeId, pins: phone.pins,
+      expect(again.networkId).toBe(daemon.networkId)
+      await expect(openSecureConnection(await dial(mitm, daemon.networkId), {
+        kind: 'connect', deviceKeys: phone.keys, runtimeId: daemon.networkId, pins: phone.pins,
       })).rejects.toBeInstanceOf(PinMismatchError)
       expect(again.rpc.connections().filter((c) => c.client?.device.name === 'phone')).toEqual([])
     }, 40_000)
@@ -265,11 +261,11 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
       const phone = { keys: generateKeyPair(), pins: new KnownRuntimes(createMemoryDeviceStore()) }
       await expect(openSecureConnection(await dial(service, payload.runtimeId), {
         kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
-      })).rejects.toMatchObject({ reason: 'fingerprint-mismatch' })
-      expect(await phone.pins.get(daemon.runtimeId)).toBeUndefined()
+      })).rejects.toMatchObject({ reason: 'id-mismatch' })
+      expect(await phone.pins.get(daemon.networkId)).toBeUndefined()
     }, 30_000)
 
-    it('a typed code cannot be relayed: the proofs bind each handshake', async () => {
+    it('a typed code exposes the substituted key: the id it carries is the key\'s', async () => {
       const { service, daemon } = await mitmSetup()
       const { pairing, created } = await addDevice(daemon)
       const typed = parsePairingCode(created.code)
@@ -278,12 +274,8 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
         kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: typed, pins: phone.pins,
       }).catch((e: unknown) => e)
       expect(error).toBeInstanceOf(PairingError)
-      expect(error).toMatchObject({ reason: 'invalid-proof' })
-      expect(service.mitmEvents).toEqual(expect.arrayContaining([
-        { side: 'client', outcome: 'secured' },
-        { side: 'runtime', outcome: 'secured' },
-      ]))
-      expect(await phone.pins.get(daemon.runtimeId)).toBeUndefined()
+      expect(error).toMatchObject({ reason: 'id-mismatch' })
+      expect(await phone.pins.get(daemon.networkId)).toBeUndefined()
       expect(await pairing.list()).toEqual([])
     }, 30_000)
   })

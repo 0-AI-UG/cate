@@ -33,6 +33,7 @@ export interface PushEvent {
 }
 
 export interface PushDeps {
+  /** The runtime's network id, which paired devices know it by. */
   runtimeId: string
   /** The workspace folder's name, shown with each notification. */
   workspace: string
