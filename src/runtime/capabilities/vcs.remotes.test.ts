@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import simpleGit from 'simple-git'
+import { simpleGit } from 'simple-git'
 import { createVcsCapability } from './vcs'
 it('reads named fetch/push remotes through the scoped VCS capability', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-remotes-'))
