@@ -57,6 +57,7 @@ function shell() {
     webSocket: nodeWebSocketFactory,
     // Discovery stands in for mDNS, which the transports' own test covers.
     sameNetwork: (options) => dialSameNetwork({ ...options, discover: async (id) => (id === RUNTIME_ID ? lan.addresses() : []) }),
+    createPeer: () => { throw new Error('Cate Connect is not part of this test') },
     cateConnect: () => Promise.reject(new Error('Cate Connect is not part of this test')),
   })
   return { host, pins, deviceKeys }

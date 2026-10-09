@@ -3,8 +3,6 @@
 // bridge. A phone runs no runtimes, so there is no local dial.
 
 import type { ShellTransports } from '@client/connections'
-import { dialCateConnect } from '@runtime/connect/client'
-import { DEFAULT_CATE_CONNECT_URL } from '@runtime/connect/contract'
 import type { KnownRuntimes } from '@runtime/pairing/client'
 import type { KeyPair } from '@runtime/security/contract'
 import { createNetworkDialer } from '@runtime/transports/client'
@@ -30,7 +28,7 @@ export function createMobileShellTransports(deps: MobileTransportDeps): ShellTra
     discover: (runtimeId, signal) => signal.aborted
       ? Promise.resolve([])
       : deps.bridge('mdns.discover', { runtimeId, timeoutMs: 3_000 }),
-    cateConnect: (runtimeId) => dialCateConnect({ url: DEFAULT_CATE_CONNECT_URL, runtimeId, webSocket, createPeer }),
+    createPeer: () => createPeer,
   })
   return {
     dialLocal: () => Promise.reject(new Error('A phone has no local runtimes')),

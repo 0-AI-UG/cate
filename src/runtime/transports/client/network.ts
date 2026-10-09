@@ -1,14 +1,17 @@
 // Reaching a paired runtime over the network, and pairing with a new one
 // (architecture 7.5 to 7.7): same network first (known addresses and mDNS),
 // then Cate Connect, then the security layer with this device's key and the
-// pinned runtime key. Portable: each shell passes its WebSocket, its mDNS
-// lookup and its Cate Connect dial, and runs this where its device key lives.
+// pinned runtime key. Portable: each shell passes its raw factories
+// (WebSocket, peer connection, mDNS lookup) and runs this where its device
+// key lives.
 
 import type { ByteDuplex } from '@kernel/rpc/contract'
+import { dialCateConnect } from '../../connect/client'
+import { DEFAULT_CATE_CONNECT_URL } from '../../connect/contract'
 import { decodePairingUri, parsePairingCode, type PairingMode } from '../../pairing/contract'
 import type { KnownRuntimes } from '../../pairing/client'
 import { secureChannelDuplex, type KeyPair, type MessagePortLike } from '../../security/contract'
-import { formatAddress, pairingEndpoints, type NetworkEndpoint, type NetworkTarget, type WebSocketFactory } from '../contract'
+import { formatAddress, pairingEndpoints, type NetworkEndpoint, type NetworkTarget, type PeerConnectionFactory, type WebSocketFactory } from '../contract'
 import { dialSameNetwork } from './sameNetwork'
 import { openSecureConnection } from './secure'
 
@@ -27,10 +30,13 @@ export interface NetworkDialerDeps {
   webSocket: WebSocketFactory
   /** mDNS lookup by runtimeId, when the platform has it. */
   discover?: (runtimeId: string, signal: AbortSignal) => Promise<string[]>
-  /** A raw data channel to the runtime through Cate Connect. */
-  cateConnect(runtimeId: string): Promise<MessagePortLike>
-  /** Seam for tests. */
+  /** WebRTC for Cate Connect (loaded on first use where it is heavy). */
+  createPeer(): PeerConnectionFactory | Promise<PeerConnectionFactory>
+  /** Defaults to the public Cate Connect service. */
+  connectUrl?: string
+  /** Seams for tests. */
   sameNetwork?: typeof dialSameNetwork
+  cateConnect?(runtimeId: string): Promise<MessagePortLike>
 }
 
 export interface NetworkDialer {
@@ -42,6 +48,12 @@ export interface NetworkDialer {
 
 export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
   const sameNetwork = deps.sameNetwork ?? dialSameNetwork
+  const cateConnect = deps.cateConnect ?? (async (runtimeId: string) => dialCateConnect({
+    url: deps.connectUrl ?? DEFAULT_CATE_CONNECT_URL,
+    runtimeId,
+    webSocket: deps.webSocket,
+    createPeer: await deps.createPeer(),
+  }))
 
   /** The first raw message port that reaches the runtime. */
   const reach = async (runtimeId: string, addresses: string[], viaConnect: boolean): Promise<{ port: MessagePortLike; via: PairingMode }> => {
@@ -54,7 +66,7 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
     }
     if (viaConnect) {
       try {
-        return { port: await deps.cateConnect(runtimeId), via: 'cateConnect' }
+        return { port: await cateConnect(runtimeId), via: 'cateConnect' }
       } catch (error) {
         errors.push((error as Error).message)
       }

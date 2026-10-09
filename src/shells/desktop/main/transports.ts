@@ -7,8 +7,6 @@
 import net from 'node:net'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
-import { dialCateConnect } from '@runtime/connect/client'
-import { DEFAULT_CATE_CONNECT_URL } from '@runtime/connect/contract'
 import type { LocalRuntime } from '@runtime/daemon/desktop'
 import type { KnownRuntimes } from '@runtime/pairing/client'
 import type { KeyPair, MessagePortLike } from '@runtime/security/contract'
@@ -53,19 +51,16 @@ export function dialLoopbackTcp(port: number, host = '127.0.0.1'): Promise<ByteD
 }
 
 export function createShellTransportHost(deps: ShellTransportDeps): ShellTransportHost {
-  const connectUrl = deps.connectUrl ?? process.env.CATE_CONNECT_URL ?? DEFAULT_CATE_CONNECT_URL
+  const connectUrl = deps.connectUrl ?? process.env.CATE_CONNECT_URL
   const network = createNetworkDialer({
     deviceKeys: deps.deviceKeys,
     deviceName: deps.deviceName,
     pins: deps.pins,
     webSocket: nodeWebSocketFactory,
     discover: (id, signal) => discoverRuntime(id, { signal }),
-    cateConnect: deps.cateConnect ?? (async (runtimeId) => dialCateConnect({
-      url: connectUrl,
-      runtimeId,
-      webSocket: nodeWebSocketFactory,
-      createPeer: await loadNodePeerConnection(),
-    })),
+    createPeer: loadNodePeerConnection,
+    ...(connectUrl ? { connectUrl } : {}),
+    ...(deps.cateConnect ? { cateConnect: deps.cateConnect } : {}),
     ...(deps.sameNetwork ? { sameNetwork: deps.sameNetwork } : {}),
   })
 
