@@ -24,7 +24,10 @@ import { useUIStore } from '../state/uiStore'
 import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
 import { showMenu, type MenuItem } from './menu'
-import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
+import { DropGhostChip } from '../../client/layout/dock'
+import { workspacePanelTree, type LayoutTree, type StackGroup, type WindowTree } from './panelTree'
+import { headingKey, layoutKey, itemKey } from './sidebarDrag'
+import { DragFloat, useSidebarDrag } from './useSidebarDrag'
 
 const isMiddleClick = (e: React.MouseEvent): boolean => e.button === 1
 
@@ -63,6 +66,7 @@ export function WorkspaceRow({
   const doc = useDocument(isOpen ? workspaceId : null, (d) => d)
   const rootPath = useWorkspaceRoot(isOpen ? workspaceId : null) || undefined
   const tree = useMemo(() => workspacePanelTree(doc, { windowId, rootPath }), [doc, windowId, rootPath])
+  const sidebarDrag = useSidebarDrag(workspaceId, [tree.primary, ...tree.others])
   const statuses = useTerminalStatuses(isOpen ? workspaceId : null)
   const ports = panelsWithPorts(statuses)
   const agents = useAgentInfoByPanel(isOpen ? workspaceId : null)
@@ -156,15 +160,17 @@ export function WorkspaceRow({
     setRename(null)
   }
 
-  const renderPanel = (record: PanelRecord, indent: boolean) => (
+  const renderPanel = (record: PanelRecord, depth: number, inset: number) => (
     <WorkspacePanelRow
       key={record.id}
       record={record}
-      indent={indent}
+      depth={depth}
+      inset={inset}
       agent={agents[record.id]}
       hasPorts={ports.has(record.id)}
       worktreeKey={Object.keys(doc.worktrees).length >= 2 && record.worktreeId ? doc.worktrees[record.worktreeId]?.color : undefined}
-      onClick={(e) => { e.stopPropagation(); void revealPanel(workspaceId, record.id) }}
+      onClick={(e) => { e.stopPropagation(); if (!sidebarDrag.consumeClick()) void revealPanel(workspaceId, record.id) }}
+      onPointerDown={depth === 0 && rename?.panelId !== record.id ? (e) => sidebarDrag.begin(e, { kind: 'panel', panelId: record.id }, rowLook(record)) : undefined}
       onClose={() => void closePanels(workspaceId, [record.id])}
       onContextMenu={(e) => void handlePanelMenu(e, record)}
       rename={rename?.panelId === record.id ? {
@@ -179,53 +185,114 @@ export function WorkspaceRow({
 
   const activeLayouts = useClientState(isOpen ? workspaceId : null, (s) => s.activeLayouts)
 
-  /** A window with several layouts lists them one by one, each under a heading
-   *  that shows it; a window with one lists its panels as before. */
+  const rowLook = (record: PanelRecord) => ({
+    label: panelRowLabel(record),
+    icon: <Icon name={panelIcon(record.type)} size={11} style={{ opacity: 0.6 }} />,
+  })
+  const layoutLook = (label: string) => ({ label, icon: <PanelsTopLeft size={11} className="opacity-70" /> })
+
+  /** The dashed row a drag leaves where its drop would land. */
+  const ghostRow = (look: { label: string; icon: React.ReactNode }, inset: number) => (
+    // Spans the row like a row does; only its content is indented.
+    <div key="__ghost__" className="mx-1.5 my-0.5 flex h-7 items-center [&>*]:w-full" data-sidebar-drag-ghost>
+      <DropGhostChip compact start icon={look.icon} style={{ paddingLeft: inset - 1, minWidth: 0 }}>{look.label}</DropGhostChip>
+    </div>
+  )
+
+  /** Every window lists its layouts in switcher order; with several, each sits
+   *  under a heading that shows it and its rows are indented one icon in. A
+   *  layout's stacks (split sections) are spaced apart. */
   const renderWindow = (w: WindowTree) => {
-    if (w.layouts.length < 2) return renderLayout(w.windowId, w)
+    const multi = w.layouts.length > 1
+    const lifted = sidebarDrag.drag?.kind === 'layout' && sidebarDrag.drag.windowId === w.windowId ? sidebarDrag.drag : null
+    const shown = w.layouts.filter((l) => l.layoutId !== lifted?.layoutId)
     const active = activeLayoutOf(doc, activeLayouts, w.windowId)
+    const layoutGhost = lifted?.slot ? ghostRow(lifted.look, 12) : null
     return (
       <React.Fragment key={w.windowId}>
-        {w.layouts.map((layout, index) => (
+        {shown.map((layout, shownIndex) => (
           <React.Fragment key={layout.layoutId}>
-            <button
-              type="button"
-              data-layout-heading={layout.layoutId}
-              className={`mx-1.5 my-0.5 flex h-6 items-center gap-1.5 rounded-lg pl-7 pr-2 text-left text-[11px] hover:bg-hover focus:outline-none ${
-                layout.layoutId === active ? 'text-secondary' : 'text-muted'}`}
-              onClick={(e) => { e.stopPropagation(); switchLayout(workspaceId, w.windowId, layout.layoutId) }}
-            >
-              <PanelsTopLeft size={11} className="shrink-0 opacity-70" />
-              <span className="truncate">{layout.name || `Layout ${index + 1}`}</span>
-            </button>
-            {renderLayout(layout.layoutId, layout)}
+            {lifted?.slot?.index === shownIndex && layoutGhost}
+            <div data-sb-key={layoutKey(w.windowId, layout.layoutId)}>
+              {multi && renderHeading(w, layout, w.layouts.indexOf(layout), layout.layoutId === active)}
+              {renderLayout(w, layout, multi ? 16 : 0)}
+            </div>
           </React.Fragment>
         ))}
+        {lifted?.slot && lifted.slot.index >= shown.length && layoutGhost}
       </React.Fragment>
     )
   }
 
-  const renderLayout = (key: string, w: Pick<LayoutTree, 'canvases' | 'topLevel'>) => (
-    <React.Fragment key={key}>
-      {w.canvases.map(({ record, children }) => {
-        const isCollapsed = collapsed.has(canvasKey(workspaceId, record.id))
-        return (
-          <React.Fragment key={record.id}>
-            <CanvasRow
-              record={record}
-              hasChildren={children.length > 0}
-              collapsed={isCollapsed}
-              onToggle={() => toggleCollapsed(canvasKey(workspaceId, record.id))}
-              onClick={(e) => { e.stopPropagation(); void revealPanel(workspaceId, record.id) }}
-              onContextMenu={(e) => void handlePanelMenu(e, record)}
-            />
-            {!isCollapsed && children.map((child) => renderPanel(child, true))}
-          </React.Fragment>
-        )
-      })}
-      {w.topLevel.map((record) => renderPanel(record, false))}
-    </React.Fragment>
-  )
+  const renderHeading = (w: WindowTree, layout: LayoutTree, index: number, isActive: boolean) => {
+    const label = layout.name || `Layout ${index + 1}`
+    return (
+      <button
+        type="button"
+        data-layout-heading={layout.layoutId}
+        data-sb-key={headingKey(w.windowId, layout.layoutId)}
+        className={`mx-1.5 my-0.5 flex h-6 w-[calc(100%-12px)] items-center gap-1.5 rounded-lg pl-3 pr-2 text-left text-[11px] hover:bg-hover focus:outline-none ${
+          isActive ? 'text-secondary' : 'text-muted'}`}
+        onPointerDown={(e) => sidebarDrag.begin(e, { kind: 'layout', windowId: w.windowId, layoutId: layout.layoutId }, layoutLook(label))}
+        onClick={(e) => { e.stopPropagation(); if (!sidebarDrag.consumeClick()) switchLayout(workspaceId, w.windowId, layout.layoutId) }}
+      >
+        <PanelsTopLeft size={11} className="shrink-0 opacity-70" />
+        <span className="truncate">{label}</span>
+      </button>
+    )
+  }
+
+  const renderLayout = (w: WindowTree, layout: LayoutTree, inset: number) => {
+    const dragged = sidebarDrag.drag?.kind === 'panel' ? sidebarDrag.drag : null
+    const slot = dragged?.slot?.windowId === w.windowId && dragged.slot.layoutId === layout.layoutId ? dragged.slot : null
+    const ghost = dragged && slot ? ghostRow(dragged.look, inset + 28) : null
+    return (
+      <>
+        {layout.stacks.map((stack, stackIndex) => renderStack(stack, stackIndex, inset, dragged?.panelId, slot?.stackId === stack.stackId ? slot.after : undefined, ghost))}
+        {layout.stacks.length === 0 && slot && ghost}
+      </>
+    )
+  }
+
+  /** `ghostAfter`: the panel the ghost follows (null: first), undefined: no ghost here. */
+  const renderStack = (stack: StackGroup, stackIndex: number, inset: number, liftedId: string | undefined, ghostAfter: string | null | undefined, ghost: React.ReactNode) => {
+    const items = stack.items.filter((item) => item.record.id !== liftedId)
+    if (items.length === 0 && ghostAfter === undefined) return null
+    return (
+      <div key={stack.stackId} data-sb-stack={stack.stackId} className={stackIndex > 0 ? 'relative mt-2' : undefined}>
+        {stackIndex > 0 && sidebarDrag.drag?.kind === 'panel' && (
+          // Splits are told apart by a hairline in the middle of their gap, only while a row is dragged.
+          <div aria-hidden data-split-divider className="pointer-events-none absolute -top-[5px] right-3 h-[2px] rounded-full bg-[var(--border-strong)]" style={{ left: inset + 18 }} />
+        )}
+        {ghostAfter === null && ghost}
+        {items.map(({ record, children }) => {
+          const isCollapsed = collapsed.has(canvasKey(workspaceId, record.id))
+          return (
+            <React.Fragment key={record.id}>
+              <div data-sb-key={itemKey(record.id)}>
+                {record.canvasId ? (
+                  <>
+                    <CanvasRow
+                      record={record}
+                      inset={inset}
+                      hasChildren={children.length > 0}
+                      collapsed={isCollapsed}
+                      onToggle={() => toggleCollapsed(canvasKey(workspaceId, record.id))}
+                      onClick={(e) => { e.stopPropagation(); if (!sidebarDrag.consumeClick()) void revealPanel(workspaceId, record.id) }}
+                      onPointerDown={(e) => sidebarDrag.begin(e, { kind: 'panel', panelId: record.id }, rowLook(record))}
+                      onContextMenu={(e) => void handlePanelMenu(e, record)}
+                    />
+                    {!isCollapsed && children.map((child) => renderPanel(child, 1, inset))}
+                  </>
+                ) : renderPanel(record, 0, inset)}
+              </div>
+              {ghostAfter === record.id && ghost}
+            </React.Fragment>
+          )
+        })}
+      </div>
+    )
+  }
 
   const displayTitle = entry.name
   const FolderIcon = isExpanded ? FolderOpen : Folder
@@ -292,7 +359,7 @@ export function WorkspaceRow({
         </Tooltip>
       </div>
       {isExpanded && canExpand && (
-        <div className="flex flex-col" role="group">
+        <div ref={sidebarDrag.containerRef} className={`flex flex-col ${sidebarDrag.drag ? 'select-none' : ''}`} role="group">
           {renderWindow(tree.primary)}
           {tree.others.length > 0 && (
             <>
@@ -302,6 +369,7 @@ export function WorkspaceRow({
               {tree.others.map(renderWindow)}
             </>
           )}
+          {sidebarDrag.drag && <DragFloat look={sidebarDrag.drag.look} float={sidebarDrag.drag.float} />}
           <WorkspaceSkillsTree
             workspaceId={workspaceId}
             enabled={showSkills}
@@ -325,12 +393,17 @@ interface PanelRowRename {
 
 interface WorkspacePanelRowProps {
   record: PanelRecord
-  indent: boolean
+  /** 0 for a tab of a stack, 1 for a panel on a canvas. */
+  depth: number
+  /** Extra left padding in px (the rows of a layout under its heading). */
+  inset?: number
   agent?: AgentPanelInfo
   hasPorts?: boolean
   /** The panel's worktree palette key, when worktrees are told apart. */
   worktreeKey?: string
   onClick: (e: React.MouseEvent) => void
+  /** Starts a drag of the row. */
+  onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void
   /** Middle-click closes. */
   onClose?: () => void
   onContextMenu?: (e: React.MouseEvent) => void
@@ -340,11 +413,13 @@ interface WorkspacePanelRowProps {
 
 export function WorkspacePanelRow({
   record,
-  indent,
+  depth,
+  inset = 0,
   agent,
   hasPorts = false,
   worktreeKey,
   onClick,
+  onPointerDown,
   onClose,
   onContextMenu,
   rename,
@@ -362,10 +437,11 @@ export function WorkspacePanelRow({
 
   return (
     <button
-      className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
-        indent ? 'pl-10' : 'pl-7'
-      } ${awaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
+      className={`group/panel mx-1.5 my-0.5 w-[calc(100%-12px)] rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
+        awaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
+      style={{ paddingLeft: (depth > 0 ? 40 : 28) + inset }}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
       onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
       onAuxClick={(e) => {
@@ -412,12 +488,14 @@ export function WorkspacePanelRow({
   )
 }
 
-function CanvasRow({ record, hasChildren, collapsed, onToggle, onClick, onContextMenu }: {
+function CanvasRow({ record, inset = 0, hasChildren, collapsed, onToggle, onClick, onPointerDown, onContextMenu }: {
   record: PanelRecord
+  inset?: number
   hasChildren: boolean
   collapsed: boolean
   onToggle: () => void
   onClick: (e: React.MouseEvent) => void
+  onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void
   onContextMenu: (e: React.MouseEvent) => void
 }): JSX.Element {
   const label = panelRowLabel(record)
@@ -425,8 +503,10 @@ function CanvasRow({ record, hasChildren, collapsed, onToggle, onClick, onContex
     <div
       role="button"
       tabIndex={0}
-      className="group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+      className="group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+      style={{ paddingLeft: 12 + inset }}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {

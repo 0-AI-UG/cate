@@ -8,9 +8,11 @@
 import {
   MAIN_WINDOW,
   dockPanels,
+  dockStacks,
   panelsOnCanvas,
   type LayoutId,
   type PanelRecord,
+  type StackId,
   type WindowId,
   type WorkspaceDocument,
   type WorktreeMeta,
@@ -21,12 +23,27 @@ export interface CanvasGroup {
   children: PanelRecord[]
 }
 
+/** A tab of a stack, with the panels on its canvas when it is a canvas. */
+export interface StackItem {
+  record: PanelRecord
+  children: PanelRecord[]
+}
+
+/** One stack (split section) of a layout: its tabs in dock order. */
+export interface StackGroup {
+  stackId: StackId
+  items: StackItem[]
+}
+
 /** One layout of a window: its canvases and top-level panels. */
 export interface LayoutTree {
   layoutId: LayoutId
   name?: string
   canvases: CanvasGroup[]
   topLevel: PanelRecord[]
+  /** The same panels in dock order, a group per stack: what the sidebar draws
+   *  and drags (the worktree ordering above is not applied). */
+  stacks: StackGroup[]
 }
 
 export interface WindowTree {
@@ -81,7 +98,18 @@ function windowTree(doc: WorkspaceDocument, windowId: WindowId, sort: (p: PanelR
         topLevel.push(record)
       }
     }
-    return { layoutId: layout.id, ...(layout.name ? { name: layout.name } : {}), canvases, topLevel: sort(topLevel) }
+    const stacks: StackGroup[] = dockStacks(layout.dock).map((stack) => ({
+      stackId: stack.id,
+      items: stack.panels.flatMap((id) => {
+        const record = doc.panels[id]
+        if (!record) return []
+        const children = record.canvasId
+          ? sort(panelsOnCanvas(doc, record.canvasId).map((c) => doc.panels[c]).filter((c): c is PanelRecord => !!c))
+          : []
+        return [{ record, children }]
+      }),
+    }))
+    return { layoutId: layout.id, ...(layout.name ? { name: layout.name } : {}), canvases, topLevel: sort(topLevel), stacks }
   })
   return {
     windowId,

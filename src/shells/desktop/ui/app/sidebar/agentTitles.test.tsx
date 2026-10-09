@@ -28,7 +28,7 @@ afterEach(() => {
 
 const record = (title: string): PanelRecord => ({ id: 't1', type: 'terminal', title, fields: {} })
 const rowText = (title: string, agent?: AgentPanelInfo) => {
-  act(() => root.render(<WorkspacePanelRow record={record(title)} indent={false} agent={agent} onClick={() => {}} />))
+  act(() => root.render(<WorkspacePanelRow record={record(title)} depth={0} agent={agent} onClick={() => {}} />))
   return container.textContent ?? ''
 }
 

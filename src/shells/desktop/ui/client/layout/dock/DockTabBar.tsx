@@ -104,22 +104,25 @@ const sameTabRecords = (a: ReturnType<ReturnType<typeof selectTabRecords>>, b: R
   a.worktrees === b.worktrees && a.records.length === b.records.length && a.records.every((r, i) => r === b.records[i])
 
 /** The dashed chip a drag leaves where its drop would land (a tab bar's "+ new tab"). */
-export function DropGhostChip({ compact, icon, children, ...rest }: {
+export function DropGhostChip({ compact, icon, start, style, children, ...rest }: {
   compact?: boolean
   icon?: React.ReactNode
+  /** Content from the left edge (a full-width row) instead of centred. */
+  start?: boolean
   children: React.ReactNode
 } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       aria-hidden
       {...rest}
-      className={`flex flex-shrink-0 items-center justify-center gap-1.5 whitespace-nowrap select-none rounded-[10px] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
+      className={`flex flex-shrink-0 items-center ${start ? 'justify-start' : 'justify-center'} gap-1.5 whitespace-nowrap select-none rounded-[10px] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
       style={{
         minWidth: 100,
         color: 'var(--focus-blue, #3b82f6)',
         backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
         border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
         borderRadius: 10,
+        ...style,
       }}
     >
       {icon}
