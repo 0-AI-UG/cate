@@ -15,7 +15,7 @@ let ports: {
   terminals: { create: ReturnType<typeof vi.fn>; relaunch: ReturnType<typeof vi.fn>; state: ReturnType<typeof vi.fn> }
   createChat: ReturnType<typeof vi.fn>
   worktrees: { create: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> }
-  t3: { providerModels: ReturnType<typeof vi.fn>; startThread: ReturnType<typeof vi.fn> }
+  t3: { providerModels: ReturnType<typeof vi.fn>; startThread: ReturnType<typeof vi.fn>; stopThread: ReturnType<typeof vi.fn> }
 }
 
 const panels: PanelRecord[] = [
@@ -61,6 +61,7 @@ beforeEach(() => {
         { providerId: 'codex', instanceId: 'codex-1', label: 'Codex', ready: true, models: [{ slug: 'mini', name: 'Mini', isDefault: false }, { slug: 'gpt', name: 'GPT', isDefault: true }] },
       ]),
       startThread: vi.fn(async () => ({ threadId: 'thread-1' })),
+      stopThread: vi.fn(async () => {}),
     },
   }
 })
@@ -103,6 +104,21 @@ describe('agent start', () => {
     ports.terminals.create.mockRejectedValueOnce(new Error('could not place the terminal'))
     await expect(starter().start(undefined, { prompt: 'Fix it', newWorktree: 'fix' })).rejects.toThrow('could not place the terminal')
     expect(ports.worktrees.remove).toHaveBeenCalledWith('wt-fix')
+  })
+
+  it('fails when relaunching the reused terminal fails', async () => {
+    ports.terminals.relaunch.mockRejectedValueOnce(new Error('spawn failed'))
+    await expect(starter().start(undefined, { prompt: 'Fix it', terminalPanelId: 'idle' })).rejects.toThrow('spawn failed')
+  })
+
+  it('stops the thread it started when its chat cannot be made, before removing the worktree', async () => {
+    const order: string[] = []
+    ports.createChat.mockImplementationOnce(() => { throw new Error('no place for the chat') })
+    ports.t3.stopThread.mockImplementation(async () => { order.push('stop thread') })
+    ports.worktrees.remove.mockImplementation(async () => { order.push('remove worktree') })
+    await expect(starter().start(undefined, { prompt: 'Fix it', runner: 't3', newWorktree: 'fix' })).rejects.toThrow('no place for the chat')
+    expect(ports.t3.stopThread).toHaveBeenCalledWith({ checkout: '/repo/.cate/worktrees/fix', threadId: 'thread-1' })
+    expect(order).toEqual(['stop thread', 'remove worktree'])
   })
 
   it('refuses before creating anything when the CLI cannot start', async () => {

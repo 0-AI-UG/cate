@@ -314,7 +314,14 @@ export function composeWorkspace(deps: WorkspaceDeps) {
         await repository.removeWorktree({ worktreeId, force: true, deleteBranch: true })
       },
     },
-    t3,
+    t3: {
+      providerModels: () => t3.providerModels(),
+      startThread: (params) => t3.startThread(params),
+      async stopThread(params) {
+        await t3.interruptTurn(params).catch(() => {})
+        await t3.deleteConversation(params)
+      },
+    },
   })
 
   offs.push(deps.busy.contribute(() => terminal.busy()))

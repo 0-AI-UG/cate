@@ -46,6 +46,8 @@ export interface AgentStartPorts {
   t3: {
     providerModels(): Promise<T3ProviderModels[]>
     startThread(params: T3StartThreadParams): Promise<{ threadId: string }>
+    /** Ends a thread a failed start left without a chat. */
+    stopThread(params: { checkout?: string; threadId: string }): Promise<void>
   }
 }
 
@@ -157,7 +159,7 @@ export function createAgentStarter(agents: AgentsRuntime, ports: AgentStartPorts
           if (args.terminalPanelId) {
             // Reuse the panel, not its shell process: restarting the PTY
             // launches the canonical executable and argv directly.
-            void ports.terminals.relaunch(args.terminalPanelId, { ...checkout, launch }).catch(() => {})
+            await ports.terminals.relaunch(args.terminalPanelId, { ...checkout, launch })
             return { panelId: args.terminalPanelId, runner, agentId: terminalId }
           }
           const title = args.title?.trim() || prompt.replace(/\s+/g, ' ').slice(0, 54)
@@ -171,14 +173,20 @@ export function createAgentStarter(agents: AgentsRuntime, ports: AgentStartPorts
           model: t3!.model,
           text: prompt,
         })
-        const panelId = ports.createChat({
-          threadId,
-          ...(inWorktree ? checkout : {}),
-          ...(args.title?.trim() ? { title: args.title.trim() } : {}),
-          placement,
-        })
-        if (!panelId) fail('panel-creation-failed')
-        return { panelId, runner, agentId: t3!.agentId }
+        try {
+          const panelId = ports.createChat({
+            threadId,
+            ...(inWorktree ? checkout : {}),
+            ...(args.title?.trim() ? { title: args.title.trim() } : {}),
+            placement,
+          })
+          if (!panelId) fail('panel-creation-failed')
+          return { panelId, runner, agentId: t3!.agentId }
+        } catch (error) {
+          // No chat shows the thread: end it before its worktree goes.
+          await ports.t3.stopThread({ ...(inWorktree ? { checkout: checkout.cwd } : {}), threadId }).catch(() => {})
+          throw error
+        }
       } catch (error) {
         if (created) await ports.worktrees.remove(created.id).catch(() => {})
         throw error
