@@ -1,12 +1,15 @@
-import { act, inspectFixture } from './fixtures/browser-control'
+import { act, createBrowser, inspectFixture } from './fixtures/browser-control'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import {
   closeApp,
   dragMouse,
   getNodeOrigin,
+  getNodeRect,
   launchApp,
+  seedOnCanvas,
   titleBarCentre,
+  waitForGhost,
 } from './fixtures/electron-app'
 
 let app: ElectronApplication
@@ -20,16 +23,34 @@ test.afterEach(async () => {
   await closeApp(app)
 })
 
+test('a scroll over an unfocused browser pans the canvas like any panel', async () => {
+  const browser = await createBrowser(page, 'data:text/html,<h1>Page</h1>', { x: 100, y: 100 })
+  const editor = await seedOnCanvas(page, 'editor', { x: 1000, y: 100 })
+  const e = (await getNodeRect(page, editor.nodeId))!
+  await page.mouse.click(e.x + e.width / 2, e.y + e.height / 2)
+  const r = (await getNodeRect(page, browser.nodeId))!
+  const centre = { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+  const world = () => page.evaluate(() => document.querySelector<HTMLElement>('[data-canvas-world]')!.style.transform)
+  const topTag = () => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, centre)
+
+  // Unfocused: the canvas, not the guest, takes the scroll.
+  await expect.poll(topTag).toBe('DIV')
+  const before = await world()
+  await page.mouse.move(centre.x, centre.y)
+  await page.mouse.wheel(40, 40)
+  await expect.poll(world).not.toBe(before)
+
+  // Focused: the page is live again.
+  await page.mouse.click(centre.x, centre.y)
+  await expect.poll(topTag).toBe('WEBVIEW')
+})
+
 test('moves a browser panel by its canvas title bar', async () => {
-  const browser = await page.evaluate(() => window.__cateE2E!.createBrowser(
+  const browser = await createBrowser(page,
     `data:text/html,${encodeURIComponent('<title>Draggable browser</title><h1>Browser page</h1><input id="name" aria-label="Name"><button id="save" onclick="document.body.dataset.saved=document.querySelector(\'#name\').value">Save</button>')}`,
     { x: 120, y: 120 },
-  ))
-  const nodeId = await expect.poll(() => page.evaluate(
-    (panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId,
-  )).not.toBeNull().then(() => page.evaluate(
-    (panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId,
-  ))
+  )
+  const nodeId = browser.nodeId
 
   const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
   await expect(surface).toHaveAttribute('data-browser-surface-visible', 'true')
@@ -52,23 +73,19 @@ test('moves a browser panel by its canvas title bar', async () => {
 })
 
 test('does not focus the address bar while dragging a browser panel', async () => {
-  const browser = await page.evaluate(() => window.__cateE2E!.createBrowser(
-    'cate://newtab',
-    { x: 120, y: 120 },
-  ))
-  const nodeId = await expect.poll(() => page.evaluate(
-    (panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId,
-  )).not.toBeNull().then(() => page.evaluate(
-    (panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId,
-  ))
+  // The start page (no url).
+  const { panelId, nodeId } = await seedOnCanvas(page, 'browser', { x: 120, y: 120 })
+  const browser = { panelId }
+  // Measure the grab point once the node's tab is laid out.
+  await expect(page.locator(`[data-node-id="${nodeId}"] [data-tab-panel-id]`).first()).toBeVisible()
   const grab = await titleBarCentre(page, nodeId!)
   expect(grab).not.toBeNull()
 
   await page.mouse.move(grab!.x, grab!.y)
   await page.mouse.down()
-  await page.mouse.move(grab!.x + 20, grab!.y + 10)
+  await page.mouse.move(grab!.x + 20, grab!.y + 10, { steps: 4 })
 
-  await expect.poll(() => page.evaluate(() => window.__cateE2E!.dragSnapshot().isDragging)).toBe(true)
+  expect(await waitForGhost(page)).not.toBeNull()
   expect(await page.evaluate((panelId) => {
     const input = document.querySelector(`[data-browser-surface="${panelId}"] input`)
     return document.activeElement === input
@@ -79,12 +96,12 @@ test('does not focus the address bar while dragging a browser panel', async () =
 })
 
 test('closes active and inactive new tabs with a single click on their close buttons', async () => {
-  const browser = await page.evaluate(() => window.__cateE2E!.createBrowser(
-    'cate://newtab',
-    { x: 120, y: 120 },
-  ))
+  const { panelId, nodeId } = await seedOnCanvas(page, 'browser', { x: 120, y: 120 })
+  const browser = { panelId }
   const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
   await expect(surface).toHaveAttribute('data-browser-surface-visible', 'true')
+  // The first click focuses the node (its unfocused overlay takes it).
+  await page.locator(`[data-node-id="${nodeId}"] [data-unfocused-overlay]`).click()
   const newTab = surface.getByRole('button', { name: 'New tab', exact: true })
   const closeTabs = surface.getByRole('button', { name: 'Close tab', exact: true })
   await newTab.click()

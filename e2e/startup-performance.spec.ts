@@ -7,7 +7,7 @@ test('isolated-user-data startup reaches an interactive shell', async () => {
   let app: ElectronApplication | undefined
   const started = performance.now()
   try {
-    const launched = await launchApp({ empty: true, perf: true })
+    const launched = await launchApp({ workspace: false, perf: true })
     app = launched.electronApp
     const readyMs = performance.now() - started
     const processes = await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics().map((process) => ({

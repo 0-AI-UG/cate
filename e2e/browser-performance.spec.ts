@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { expect, test } from '@playwright/test'
 import { closeApp, launchApp } from './fixtures/electron-app'
-import { browserInvoke } from './fixtures/browser-control'
+import { browserInvoke, browserWebContentsId, createBrowser } from './fixtures/browser-control'
 
 test('large-form observations report latency and keep screenshots independent of AX size', async () => {
   const { electronApp: app, mainWindow: page } = await launchApp()
@@ -20,9 +20,9 @@ test('large-form observations report latency and keep screenshots independent of
     server.listen(0, '127.0.0.1')
     await once(server, 'listening')
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
-    const browser = await page.evaluate(url => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), url)
+    const browser = await createBrowser(page, url, { x: 100, y: 100 })
     await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 }).toMatchObject({ ok: true })
-    const guestId = await page.evaluate(id => window.__cateE2E!.browserWebContentsId(id), browser.panelId)
+    const guestId = await browserWebContentsId(page, browser.panelId)
     await app.evaluate(({ webContents }, id) => {
       const guest = webContents.fromId(id!)! as any
       const send = guest.debugger.sendCommand.bind(guest.debugger)

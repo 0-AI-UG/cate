@@ -1,0 +1,8 @@
+// Copy to Local.xcconfig to build Cate for your own phone with your own team,
+// for example a free personal team. Such a team cannot sign push
+// notifications or another team's App IDs, so the build gets its own bundle
+// id and leaves push out; everything else, banners included, works.
+
+DEVELOPMENT_TEAM = YOURTEAMID
+CATE_BUNDLE_ID = dev.YOURTEAMID.cate
+CATE_APP_ENTITLEMENTS = Cate/CateLocal.entitlements

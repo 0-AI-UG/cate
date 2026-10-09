@@ -12,12 +12,12 @@ let directory: string
 test.beforeEach(async () => {
   directory = await mkdtemp(path.join(tmpdir(), 'cate-code-e2e-'))
   const output = path.join(directory, 'runner.cjs')
-  await build({ entryPoints: ['src/main/browser/browserCodeSession.ts'], outfile: output, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], define: { __dirname: JSON.stringify(path.resolve('dist/main')) } })
-  ;({ electronApp: app } = await launchApp())
-  await app.evaluate(async (_electron, output) => {
+  await build({ entryPoints: ['src/services/browser/desktop/codeSessions.ts'], outfile: output, bundle: true, platform: 'node', format: 'cjs', external: ['electron'] })
+  ;({ electronApp: app } = await launchApp({ workspace: false }))
+  await app.evaluate(async (_electron, { output, preloadPath }) => {
     const { BrowserCodeSessions } = (process as any).mainModule.require(output)
-    ;(globalThis as any).__codeSessions = new BrowserCodeSessions(1500)
-  }, output)
+    ;(globalThis as any).__codeSessions = new BrowserCodeSessions({ deadlineMs: 1500, preloadPath })
+  }, { output, preloadPath: path.resolve('dist/preload/shellCodeCell.js') })
 })
 
 test.afterEach(async () => {

@@ -1,0 +1,79 @@
+// Every panel type's definition, as data. Pure: clients read it to list types
+// (the surface picker, menus) and build fresh records; the contract test runs
+// `definitionProblems` over it. Adding a type is one import and one entry.
+
+import { isCanvasDock, placementOf, type PanelId, type PanelRecord, type PanelType, type WorkspaceDocument } from '@workspace/document/contract'
+import { createPanelKit, type AnyPanelDefinition, type PanelKit } from './framework/contract'
+import terminal from './terminal/definition'
+import editor from './editor/definition'
+import review from './review/definition'
+import browser from './browser/definition'
+import chat from './chat/definition'
+import canvas from './canvas/definition'
+import surface from './surface/definition'
+
+export const PANEL_DEFINITIONS: readonly AnyPanelDefinition[] = [terminal, editor, review, browser, chat, canvas, surface]
+
+const byType = new Map<string, AnyPanelDefinition>(PANEL_DEFINITIONS.map((definition) => [definition.type, definition]))
+
+export function panelDefinition(type: PanelType | string): AnyPanelDefinition | undefined {
+  return byType.get(type)
+}
+
+/** Types people create from menus, in creation order. */
+export function creatableDefinitions(): AnyPanelDefinition[] {
+  return PANEL_DEFINITIONS
+    .filter((definition) => definition.creation)
+    .sort((a, b) => a.creation!.order - b.creation!.order)
+}
+
+export interface FreshRecordOptions {
+  title?: string
+  worktreeId?: string
+  /** The type's own create options (a url, a file path). */
+  [option: string]: unknown
+}
+
+const newId = () => globalThis.crypto.randomUUID()
+
+/**
+ * A fresh record of `type`, built the way the runtime's `createPanel` builds
+ * one: through the definition's `create` when it has one (with a kit that
+ * captures the record instead of placing it), else from its `fields`. With
+ * `id`, the record keeps that id (a surface becoming the picked type).
+ */
+export function freshRecord(doc: WorkspaceDocument, type: PanelType, options: FreshRecordOptions = {}, id?: PanelId): PanelRecord | null {
+  const definition = panelDefinition(type)
+  if (!definition) return null
+  let captured: PanelRecord | null = null
+  const kit: PanelKit = createPanelKit({
+    document: () => doc,
+    newId,
+    definitionOf: () => definition,
+    add: (record) => { captured = record; return record.id },
+  })
+  if (definition.create) definition.create(options, kit)
+  else captured = kit.record(type, { id: newId(), title: options.title, worktreeId: options.worktreeId, fields: definition.fields?.(options) ?? {} })
+  const record = captured as PanelRecord | null
+  return record && id ? { ...record, id } : record
+}
+
+/** The types a surface can become where it sits. */
+export function surfaceChoices(doc: WorkspaceDocument, surfaceId: PanelId): AnyPanelDefinition[] {
+  const placement = placementOf(doc, surfaceId)
+  const onCanvas = !!placement && isCanvasDock(placement.dock)
+  return creatableDefinitions().filter((definition) => !onCanvas || definition.canLiveOnCanvas)
+}
+
+/** A surface becomes the picked type in place: the record of `type` that
+ *  replaces it (one `replacePanel` op, under the surface's id), or null when
+ *  the type cannot go where the surface sits. The runtime disposes the
+ *  surface session and starts the new one. */
+export function surfaceReplacement(doc: WorkspaceDocument, surfaceId: PanelId, type: PanelType): PanelRecord | null {
+  const definition = panelDefinition(type)
+  const surface = doc.panels[surfaceId]
+  if (!definition?.creation || !surface) return null
+  const placement = placementOf(doc, surfaceId)
+  if (!definition.canLiveOnCanvas && placement && isCanvasDock(placement.dock)) return null
+  return freshRecord(doc, type, surface.worktreeId ? { worktreeId: surface.worktreeId } : {}, surfaceId)
+}

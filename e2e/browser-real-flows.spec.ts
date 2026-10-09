@@ -1,16 +1,16 @@
-import { browserInvoke, popupBinding, target, act, activeAction, waitForText, inspectFixture } from './fixtures/browser-control'
+import { browserInvoke, createBrowser, popupBinding, target, act, activeAction, waitForText, inspectFixture } from './fixtures/browser-control'
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { once } from 'node:events'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
-import { closeApp, launchApp } from './fixtures/electron-app'
+import { closeApp, launchApp, seedOnCanvas } from './fixtures/electron-app'
 
 let app: ElectronApplication
 let page: Page
+let project: string
 let shopServer: Server
 let docsServer: Server
 let shopOrigin: string
@@ -169,7 +169,7 @@ test.afterAll(async () => {
 })
 
 test.beforeEach(async () => {
-  ;({ electronApp: app, mainWindow: page } = await launchApp())
+  ;({ electronApp: app, mainWindow: page, project } = await launchApp() as { electronApp: ElectronApplication; mainWindow: Page; project: string })
 })
 
 test.afterEach(async () => {
@@ -179,7 +179,7 @@ test.afterEach(async () => {
 
 test('completes authenticated shopping and cross-origin documentation flows', async () => {
   test.setTimeout(90_000)
-  const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/login`)
+  const browser = await createBrowser(page, `${shopOrigin}/login`, { x: 100, y: 100 })
 
   await expect.poll(() => browserInvoke(page, browser, 'getAXState', { disableDiffing: true }), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { state: expect.stringContaining('Sign in') } })
@@ -199,7 +199,7 @@ test('completes authenticated shopping and cross-origin documentation flows', as
   const initialTabs = await browserInvoke(page, browser, 'listTabs') as { ok: boolean; result: { tabs: Array<{ id: string }> } }
   const shopTabId = initialTabs.result.tabs[0].id
   const docsTab = await browserInvoke(page, browser, 'createTab', { url: docsOrigin }) as { ok: boolean; result: { tabId: string } }
-  expect(docsTab.ok).toBe(true)
+  expect(docsTab.ok, JSON.stringify(docsTab)).toBe(true)
   const docs = { ...browser, tabId: docsTab.result.tabId }
   await expect.poll(() => browserInvoke(page, docs, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${docsOrigin}/` } })
@@ -300,7 +300,7 @@ test('completes authenticated shopping and cross-origin documentation flows', as
 })
 
 test('recovers from SPA rerenders and serializes concurrent actions', async () => {
-  const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/spa`)
+  const browser = await createBrowser(page, `${shopOrigin}/spa`, { x: 100, y: 100 })
 
   await expect.poll(() => waitForText(page, browser, 'Issue title'), { timeout: 20_000 }).toMatchObject({ ok: true })
   await expect(act(page, browser, 'setValue', 'Issue title', { value: 'Browser regression' })).resolves.toMatchObject({ ok: true })
@@ -347,7 +347,7 @@ test('recovers from SPA rerenders and serializes concurrent actions', async () =
 })
 
 test('acts through accessibility refs inside open and closed shadow roots', async () => {
-  const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/components`)
+  const browser = await createBrowser(page, `${shopOrigin}/components`, { x: 100, y: 100 })
   const observation = await expect.poll(async () => {
     const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
       ok: boolean
@@ -373,10 +373,8 @@ test('acts through accessibility refs inside open and closed shadow roots', asyn
 })
 
 test('keeps concurrent workflows isolated across multiple live browser panels', async () => {
-  const [first, second] = await page.evaluate((origin) => [
-    window.__cateE2E!.createBrowser(`${origin}/spa`, { x: 80, y: 80 }),
-    window.__cateE2E!.createBrowser(`${origin}/spa`, { x: 760, y: 80 }),
-  ], shopOrigin)
+  const first = await createBrowser(page, `${shopOrigin}/spa`, { x: 80, y: 80 })
+  const second = await createBrowser(page, `${shopOrigin}/spa`, { x: 760, y: 80 })
   for (const browser of [first, second]) {
     await expect.poll(() => target(page, browser, "Issue title").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
   }
@@ -402,7 +400,7 @@ test('keeps concurrent workflows isolated across multiple live browser panels', 
 })
 
 test('observes 10,000 interactive controls within the workflow latency budget', async ({ browserName: _browserName }, testInfo) => {
-  const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/large-dom`)
+  const browser = await createBrowser(page, `${shopOrigin}/large-dom`, { x: 100, y: 100 })
   await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/large-dom` } })
 
@@ -423,12 +421,12 @@ test('observes 10,000 interactive controls within the workflow latency budget', 
 })
 
 test('renders the password manager across the complete browser content area', async () => {
-  const browser = await page.evaluate(() => window.__cateE2E!.createBrowser(
-    'chrome://password-manager/passwords', { x: 100, y: 100 },
-  ))
+  const browser = await seedOnCanvas(page, 'browser', { x: 100, y: 100 }, { url: 'chrome://password-manager/passwords' })
   const manager = page.locator(`[data-browser-surface="${browser.panelId}"] [data-browser-password-manager]`)
   await expect(manager).toBeVisible()
   await expect(manager.getByRole('heading', { name: 'Password manager' })).toBeVisible()
+  // The first click focuses the node (its unfocused overlay takes it).
+  await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
   await manager.getByRole('button', { name: 'Advanced' }).click()
   await expect(manager.getByRole('heading', { name: 'Import passwords' })).toBeVisible()
 
@@ -442,7 +440,7 @@ test('renders the password manager across the complete browser content area', as
 })
 
 test('acts through accessibility refs inside same-origin and cross-origin frames', async () => {
-  const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/components`)
+  const browser = await createBrowser(page, `${shopOrigin}/components`, { x: 100, y: 100 })
   const observation = await expect.poll(async () => {
     const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true }) as {
       ok: boolean
@@ -465,7 +463,7 @@ test('acts through accessibility refs inside same-origin and cross-origin frames
 })
 
 test('does not silently lose a click after a responsive viewport round trip', async () => {
-  const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/login`)
+  const browser = await createBrowser(page, `${shopOrigin}/login`, { x: 100, y: 100 })
   await expect.poll(() => target(page, browser, "Sign in").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
   await act(page, browser, 'setValue', "Email", { value: 'viewport@example.test' })
   await act(page, browser, 'setValue', "Password", { value: 'viewport test' })
@@ -482,15 +480,18 @@ test('does not silently lose a click after a responsive viewport round trip', as
 })
 
 test('uploads an authorized local file and verifies the server receives its exact bytes', async () => {
-  const uploadDir = mkdtempSync(path.join(tmpdir(), 'cate-browser-upload-'))
+  // Uploads may read only paths the runtime's path scope allows (the
+  // workspace, by its canonical path).
+  const uploadDir = mkdtempSync(path.join(realpathSync(project), 'upload-'))
   const uploadPath = path.join(uploadDir, 'browser-upload-fixture.txt')
   const expectedBytes = Buffer.concat([Buffer.from('Uploaded through Cate: Grüße 日本語\r\n'), Buffer.from(Array.from({ length: 256 }, (_, i) => i))])
   writeFileSync(uploadPath, expectedBytes)
   receivedUploads = []
   try {
-    const browser = await page.evaluate((url) => window.__cateE2E!.createBrowser(url, { x: 100, y: 100 }), `${shopOrigin}/upload`)
+    const browser = await createBrowser(page, `${shopOrigin}/upload`, { x: 100, y: 100 })
     await expect.poll(() => target(page, browser, "Attachment").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
-    await expect(act(page, browser, 'upload', "Attachment", { filePath: uploadPath })).resolves.toMatchObject({ ok: true })
+    const uploaded = await act(page, browser, 'upload', "Attachment", { filePath: uploadPath })
+    expect(uploaded, JSON.stringify(uploaded)).toMatchObject({ ok: true })
     await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#selected\")?.textContent ?? ''", 'text')).resolves.toMatchObject({ ok: true, result: { text: 'browser-upload-fixture.txt' } })
     await expect(act(page, browser, 'click', 'Submit attachment')).resolves.toMatchObject({ ok: true })
     // Independent server-side oracle: selecting a filename alone cannot pass.

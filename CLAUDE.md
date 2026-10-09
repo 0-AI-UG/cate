@@ -8,97 +8,281 @@ Read and follow the **karpathy-guidelines** skill (`.claude/skills/karpathy-guid
 
 ## Project Overview
 
-Cate is a desktop application that provides an infinite zoomable canvas where editor panels, terminal panels, and browser panels float spatially (similar to Figma/Miro, but for coding). Built with Electron + React + TypeScript, styled with Tailwind CSS.
+Cate is a desktop application that provides an infinite zoomable canvas where
+terminal, editor, browser, chat and review panels float spatially (similar to
+Figma/Miro, but for coding), next to classic docked layouts. Built with
+Electron + React + TypeScript, styled with Tailwind CSS.
+
+Each open workspace is served by its own **runtime daemon**, which holds the
+workspace's state and does all its work (files, git, terminals, agents, T3,
+the `cate` API). The desktop app and the iOS app are clients of those
+runtimes; other devices connect to the same runtime after pairing, and every
+client sees one live workspace.
+
+`docs/architecture.md` is the model: what every module is, where it lives,
+what it owns and how the pieces talk. Read the sections for the area you touch
+before changing it. Where the code disagrees with the document, the document
+wins.
 
 ## Build System
 
-The Electron app lives at the project root. Uses **electron-vite** for bundling.
+The Electron app lives at the project root. It uses **electron-vite** for the
+desktop shell and **esbuild** for the daemon and the CLI.
 
 ```bash
-npm install        # install dependencies
-npm run dev        # start dev server with hot reload
-npm run build      # production build
-npm test           # run vitest suite
+npm install              # install dependencies (patches T3)
+npm run dev              # bundle the daemon, then start the app with hot reload
+npm run build            # production build of the desktop shell
+npm run build:runtime    # bundle the daemon to dist-runtime/runtime.cjs
+npm run build:mobile     # bundle the iOS app's client core to ios/Cate/Core/Web/core.js
+npm run runtime:tarball  # build the runtime tarball (daemon, Node, cate CLI, T3, skills)
+npm run runtime:dev      # install this checkout's runtime into ~/.cate/runtime/<build>/ (no tarball; run by predev)
+npm run typecheck        # tsc --noEmit
+npm run lint             # eslint
+npm run lint:deps        # dependency-cruiser: layer, side and entry rules
+npm test                 # vitest suite
+npm run test:e2e         # playwright e2e suite (e2e/)
 ```
 
-Tests use **Vitest** and live alongside the code they cover (`*.test.ts` / `*.test.tsx`). A few git-touching tests assume a clean working repo and may fail when the dev tree has a branch named `main` or local modifications — those failures are environmental, not regressions.
+Tests use **Vitest** and live alongside the code they cover (`*.test.ts` runs
+in node, `*.test.tsx` in jsdom). A few git-touching tests assume a clean
+working repo and may fail when the dev tree has a branch named `main` or local
+modifications: those failures are environmental, not regressions.
+
+The daemon is a detached process that outlives the app. The app installs the
+runtime tarball of its build into `~/.cate/runtime/<build>/` once (in a
+checkout, the one `npm run runtime:tarball` left in `dist-runtime/`) and
+starts workspaces from there. To iterate on runtime-side code, run the app
+with `CATE_RUNTIME_BUNDLE=dist-runtime/runtime.cjs` (it then starts the daemon
+from that bundle with your `node`), rebuild with `npm run build:runtime`, and
+stop the running workspace runtime so the next open starts the new build.
+Without `CATE_RUNTIME_BUNDLE`, the app needs a runtime of its build (a hash of
+`src/`, `skills/`, the T3 patches and the lockfile): `npm run dev` installs one with `runtime:dev` (instant when the build
+is already installed, a few seconds otherwise), so no tarball is needed.
 
 ## Dependencies
 
 Managed via npm (`package.json`):
-- **Electron** — desktop shell (Chromium + Node.js)
-- **React 18** + **react-dom** — UI framework
-- **xterm.js** (`@xterm/xterm`) — terminal emulator with WebGL addon
-- **node-pty** — native PTY for terminal backend
-- **Monaco Editor** — code editor (VS Code's editor component)
-- **zustand** — lightweight state management
-- **chokidar** — filesystem watching
-- **simple-git** — git operations
-- **@phosphor-icons/react** — icons
-- **electron-updater** — auto-update (GitHub Releases)
+- **Electron**: desktop shell (Chromium + Node.js)
+- **React 18** + **react-dom**: UI
+- **xterm.js** (`@xterm/xterm`): terminal view; `@xterm/headless` + serialize addon keep each PTY's screen in the runtime
+- **node-pty**: PTYs (runtime)
+- **Monaco Editor** + **yjs** / **y-monaco**: editor, one shared Yjs buffer per open file
+- **zustand**: client-side stores
+- **@parcel/watcher**: workspace file watching; **chokidar**: state-file external-edit watching
+- **simple-git**: git operations
+- **@noble/curves**, **@noble/ciphers**, **@noble/hashes**: the Noise handshake for network connections
+- **ws**, **bonjour-service**, **node-datachannel**: same-network WebSocket, mDNS, WebRTC (Cate Connect)
+- **lucide-react** / **@phosphor-icons/react**: icons
+- **electron-updater**: auto-update (GitHub Releases)
 
 ## Architecture
 
-### Process Model (Electron)
+### Processes
 
-- **Main process** (`src/main/`) — window management, IPC handlers, native APIs
-- **Preload** (`src/preload/`) — secure bridge exposing IPC to renderer
-- **Renderer** (`src/renderer/`) — React app with canvas UI
+- **Runtime daemon** (`src/runtime/daemon/`), one per workspace, on the
+  machine that holds the workspace. The same program (`runtime.cjs`, installed
+  under `~/.cate/runtime/<build>/`) runs on every machine. It serves the
+  workspace over a local socket (`~/.cate/workspaces/<runtimeId>/runtime.sock`,
+  which is also the one-daemon-per-workspace lock) and, with network access
+  on, over the same network or Cate Connect, always inside a Noise handshake
+  with pinned keys; only paired devices connect.
+- **Desktop shell** (`src/shells/desktop/`):
+  - `main/`: Electron main: windows, menus, native dialogs, updater (and
+    installing the bundled runtime tarball), device files, the raw sockets
+    for the client's transports (finding and starting local runtimes),
+    webview partitions and the loopback web proxy, passkeys, capture, drag
+    ghost.
+  - `preload/`: `window.cateDesktop` (typed by `DesktopApi` in
+    `shells/desktop/contract`). Desktop IPC only; no workspace work crosses
+    it. Each preload entry must bundle self-contained (a test enforces it).
+  - `renderer/`: boots the client core, installs the desktop `ClientUi` and
+    ports, maps each panel type to its view, mounts the desktop UI.
+  - `ui/`: the whole desktop UI in React (see "Shared core, one UI per
+    shell" below).
+- **iOS app** (`ios/`, SwiftUI) with its TypeScript side in
+  `src/shells/mobile/`: the client core runs headless in a hidden web view
+  (`core/`, bundled by `npm run build:mobile`); `contract.ts` is the bridge
+  and the core API between them.
+- **CLI** (`src/cli/`): the `cate` command in terminals the runtime spawns.
 
-IPC channels are defined in `src/shared/ipc-channels.ts`. Type definitions in `src/shared/types.ts`.
+The client talks to a runtime only through the runtime protocol
+(`kernel/rpc`): typed capabilities declared once with `defineCapability`, and
+session channels for panels. There is no per-feature IPC.
 
-### Coordinate System & Canvas
+### Layers and sides
 
-The canvas (`Canvas.tsx`) positions nodes using CSS transforms. Panel positions are stored in **canvas-space** and converted to **view-space** via zoom level and viewport offset. Key conversions in `src/renderer/lib/canvas/coordinates.ts`: `canvasToView()` / `viewToCanvas()`. Zoom range defined by `ZOOM_MIN`/`ZOOM_MAX` in shared types.
+`src/` is organised by **layer**, lowest first:
 
-### Canvas Interaction
+- `kernel/`: rpc, api, settings, lifecycle, state, log, interaction (generic machinery)
+- `runtime/`: daemon, data, transports, security, pairing, connect, server, tunnel, power
+- `workspace/`: document, lifecycle (trust), canvas, files, repository, skills, relations
+- `services/`: terminal, browser, t3, agents
+- `client/`: connections, workspaces, document mirror, host
+- `panels/`: framework + terminal, editor, browser, chat, review, canvas, surface
+- `shells/`: desktop (including all desktop UI), mobile (the iOS app's core)
+- plus `cli/`, `shared/` (generic pure utilities) and `test/` (test support)
 
-`useCanvasInteraction` hook handles wheel events (Cmd+scroll = zoom, two-finger = pan) and right-click drag panning. Node drag/resize handled by `useCanvasNodeDrag` and `useNodeResize` hooks.
+and by **side** inside each module:
 
-### Panel System
+```
+<module>/
+  contract.ts   pure: types, pure logic; re-exports contract/
+  contract/     capability.ts (defineCapability), api.ts (cate API specs),
+                settings.ts (settings slice), other pure files
+  runtime/      daemon side
+  node/         Node code shared by the daemon and the desktop shell
+  client/       client core: logic, no React, no DOM, no Node, no Electron
+  desktop/      desktop-only code that is not UI (webview host, preloads)
+```
 
-Panel definitions are centralised in `src/shared/panels.ts`. The detachable panel
-types (`PanelType` in `src/shared/types.ts`) are: terminal, browser, editor,
-canvas, agent, document, review. Renderer components live in `src/renderer/panels/`:
-- **EditorPanel** — Monaco Editor with syntax highlighting
-- **TerminalPanel** — xterm.js terminal with WebGL renderer, backed by node-pty
-- **BrowserPanel** — embedded webview (file:// allowed for local HTML)
-- **CanvasPanel** — nested canvas
-- **DocumentPanel** — PDF / docx preview
-- **AgentPanel** — Claude-Code agent thread (sidebar + dock)
+Rules (enforced by `npm run lint:deps`, `.dependency-cruiser.cjs`):
+- Contracts are pure (no Electron, Node built-ins, React, DOM or I/O) and
+  import only contracts.
+- `runtime/` imports contracts, `runtime/` and `node/`; `client/` imports
+  contracts and `client/`; `desktop/` and the desktop shell never import a
+  `runtime/` side.
+- React, the DOM, xterm, Monaco and the icon sets are imported only in
+  `src/shells/desktop/`.
+- A module imports only its own layer or lower. A lower layer that needs a
+  higher one owns a slot the higher one fills (`runtimeFor` in `kernel/rpc`
+  filled by `client/connections`; `registerPanelCloseGuard` in `client/host`
+  filled by a shell's panel views).
+- Across modules, import a contract or a side's `index.ts`, never internals.
+  `src/panels/{definitions,runtime,api}.ts` are public entries too.
+- The daemon's composition root (`src/runtime/daemon/entry.ts`, `main.ts`,
+  `compose/`) builds and wires every module's runtime side and is the only
+  code exempt from these rules. Runtime sides export factories taking an
+  explicit deps object (`createFilesRuntime(deps)`) and a
+  `<name>CapabilityImpl`; no globals or singletons.
 
-The file tree (`src/renderer/sidebar/FileExplorer.tsx`) and recent-projects
-switcher (`src/renderer/sidebar/ProjectList.tsx`) are **sidebar** components, not
-detachable panels.
+Path aliases: `@kernel/*`, `@runtime/*`, `@workspace/*`, `@services/*`,
+`@client/*`, `@panels/*`, `@shells/*`.
 
-Each panel can be wrapped in a `CanvasNode` (`src/renderer/canvas/CanvasNode.tsx`) — title bar, drag, resize, close — or live inside a dock zone via `DockTabStack` (`src/renderer/docking/`). All panel records render through the shared `PanelHost` (`src/renderer/panels/PanelHost.tsx`); detached windows are dock windows (`src/renderer/shells/DockWindowShell.tsx`) with local panels state synced back to main for session persistence.
+### Shared core, one UI per shell
 
-### State Management
+Every client runs the same **client core**: everything outside
+`src/shells/` (contracts, `client/` sides, the `client/` layer). It holds no
+UI. Each shell draws it with its own UI: the desktop shell in React
+(`src/shells/desktop/ui/`, mirroring where things belong: `ui/app/` (sidebar,
+palette, settings, dialogs), `ui/kernel/interaction/`, `ui/client/{host,layout}/`
+(panel hosting, dock, canvas, drag, windows), `ui/<layer>/<module>/`,
+`ui/panels/<type>/`), the
+iOS app in SwiftUI (`ios/`). UI is never shared and never adapts itself to
+another platform. Logic a second shell would need goes into the core, not
+into a view.
 
-Zustand stores in `src/renderer/stores/`:
-- **canvasStore** — nodes, regions, zoom, viewport offset, focus state, history; per-canvas instances created via `CanvasStoreContext`. A `focusEpoch` counter lets panels re-run focus side effects when the same node is re-focused.
-- **appStore** — workspaces, panels, selected workspace, sidebar
-- **dockStore** — dock-zone layout (per window)
-- **settingsStore** — user preferences
-- **shortcutStore** — keyboard shortcut bindings
-- **statusStore** — status bar state
-- **uiStore** — transient UI state (command palette, etc.)
+Never branch on local versus remote, on desktop versus another client, or on
+a panel type in shared code. Where the runtime or the core must know what a
+client can do, it asks for a declared **client feature** (`webview`,
+`pageDriver`, `passkeys`, `windows`, `canvas`, `fileDrop`, `osNotifications`,
+`screenCapture`, `clipboard`, `camera`) with `clientHas(feature)`.
 
-Persisted state is stored as hand-editable JSON files under `userData` (no
-electron-store). `settingsFile.ts` owns `settings.json`; `jsonStateFile.ts` is a
-reusable factory for that same pattern — it delegates the in-memory-authority
-engine to `jsonStateStore.ts` and keeps the filesystem backend (sync load,
-debounced atomic write, chokidar external-edit watcher, corrupt-file quarantine).
-`workspaceStateStore.ts` uses it for `recent-projects.json`, `sidebar.json`,
-`remote-workspaces.json`, and `trusted-projects.json`. Per-project canvas/session state
-lives in `<project>/.cate/workspace.json` + `session.json`. Agent provider
-credentials and conversation state are owned by the bundled T3 harness.
+### Panels
+
+Each panel type is one folder, `src/panels/<type>/`:
+- `definition.ts`: pure `definePanel({...})`: label, icon name, sizes,
+  flags, record fields, the session
+  channel schema, its API spec, `create(options, kit)`, `creation` (its
+  place in every creation menu, the default key of `panel.new.<type>`, a
+  toolbar button, whether it is created in a worktree), and the hooks
+  generic code asks instead of branching on the type (`checkoutPath`,
+  `ownsKeyboard`, `claimsShortcuts`, `commands`, `describe`, `chrome`,
+  `relation`).
+- `contract.ts` / `contract/`: snapshot and op types, `contract/api.ts`.
+- `session.ts`: the runtime session (`PanelSession` subclass): all
+  behaviour, snapshot, typed op handlers, its `cate` API handlers; persists
+  to `sessions/<panelId>.json`. Never asks the user: an op that would lose
+  work without an explicit choice fails with `dirty`.
+- `runtime.ts`: what the daemon needs to register the type.
+- `parts/`: supporting modules, split by side. No UI.
+
+Its desktop view is `src/shells/desktop/ui/panels/<type>/` (React; registers
+`registerPanelCloseGuard` where closing can lose work). Views render the
+snapshot, send ops, and ask the user through `ClientUi` before destructive
+ops. The terminal view reads bytes from `process.attach` and the editor view
+its Yjs buffer from `file.buffer`; session channels carry JSON only.
+
+The panel index files: `src/panels/definitions.ts` (`PANEL_DEFINITIONS`),
+`src/panels/runtime.ts` (`PANEL_RUNTIMES`, read by the composition root) and
+`src/panels/api.ts` (`CATE_API`). Adding a type = its folder, its name in
+`PANEL_TYPES` (`workspace/document/contract`), an entry in each index file
+that applies, and its view in each shell (desktop: the view folder plus its
+entry in `shells/desktop/renderer/registrations.tsx`). Create panels with
+`createPanel(workspaceId, type, options)` from `@client/host`; close them with
+`closePanels`, which runs the close guards and sends one `removePanels` op.
+
+### State
+
+Every piece of state is in exactly one class (`docs/architecture.md` section 5):
+- **Document** (runtime, shared): panel records, windows and dock trees,
+  canvases and nodes, relations, worktree metadata. Changed only by document
+  ops (`workspace/document/contract`); clients hold an optimistic mirror
+  (`client/document`: `documentStoreFor(workspaceId)`; the desktop UI's
+  `useDocument`).
+- **Session** (runtime, per panel): terminal screen, editor buffer, browser
+  tabs, chat binding, review state.
+- **Workspace data** (runtime): workspace settings, secrets, trust, grants,
+  pairings, T3 state, browser data, skill sources.
+- **Device** (one client device): client settings, workspace list, known
+  runtimes, device key, main window bounds, through the `DeviceStore` port.
+- **Client** (in memory): viewport, zoom, active tab, focus, selection, undo
+  (`createClientStateStore`; the desktop UI's `useClientState`).
+
+Settings: each module declares a slice with `defineSettings` in
+`contract/settings.ts`, scope `client` (device `settings.json`) or `workspace`
+(the workspace's `settings.json`, served by the `settings` capability).
+
+Persisted state is hand-editable JSON written through `kernel/state`
+(in-memory authority, debounced atomic write, external-edit watcher,
+corrupt-file quarantine); every file has one writer process.
+- Workspace data: `~/.cate/workspaces/<runtimeId>/` on the runtime's machine
+  (`document.json`, `sessions/`, `buffers/`, `settings.json`, `secrets.json`,
+  `pairings.json`, `push.json`, `trust.json`, `grants.json`, `skills/`, `browser/`, `t3/`,
+  `agents/`, `terminal-logs/`, `screenshots/`, `logs/`).
+- Project `<root>/.cate/`: only `skills.json`, `drafts/`, `worktrees/` and its
+  `.gitignore`.
+- Device (Electron `userData`): `settings.json`, `ui-state.json`, `boot.json`,
+  `workspaces.json`, `known-runtimes.json`, `device-key.json`, ...
+
+Agent CLIs keep their own logins in their own files; Cate writes only
+repo-local agent files, never user-global ones.
+
+### The `cate` API and CLI
+
+Everything outside the UI that drives Cate goes through one router
+(`kernel/api`) in the runtime. Each module declares its methods once with
+`defineCateApi` in `contract/api.ts` (access `read` or `control`, handler
+`service` or `session`, args, timeout, output format, CLI words);
+`src/panels/api.ts` lists them. The CLI (`src/cli/engine.ts`) generates its
+commands, help and argument parsing from those specs.
+
+Terminals get `CATE_SOCKET` (the workspace's local socket) and a per-PTY
+`CATE_TOKEN` that names the calling panel; T3 harnesses get the same with a
+per-harness token. CLI and harness calls are gated by the workspace settings
+`cliEnabled` and `cli*Enabled` (per area, read or control). Session methods
+target a panel through the reserved `panelId` argument (`--panel` on the CLI),
+or the caller's sticky target (`cate panel set`).
 
 ### Key Patterns
 
-- **Functional React** with hooks for all logic
-- **Zustand** for global state (no Redux/Context boilerplate)
-- **Tailwind CSS** for styling
-- **IPC** for all main↔renderer communication (filesystem, git, terminal, shell)
-- Keyboard shortcuts via `useShortcuts` hook
-- File explorer is git-aware (tracks file status)
+- **Functional React** with hooks for the desktop UI, and only there
+  (`src/shells/desktop/`).
+- **The runtime is the application**: anything that is not rendering, input
+  or a native OS primitive goes into a module's `runtime/` side, never into
+  the desktop shell.
+- **Views ask, sessions act**: dialogs and confirmations only in views,
+  through `ClientUi`; the answer travels in the op (`close {discard: true}`).
+- **Records are state, never commands**: a record change never kills or
+  restarts a resource; resource work is an explicit op or capability call.
+- **Declare once**: capabilities, API methods, settings, actions and panel
+  types are declared once and consumed generically.
+- **Clean cuts**: no migration code, no shims or re-exports from old paths.
+- Actions (keys, menus, palette, toolbar tooltips) are declared with
+  `defineActions` by the module that runs them and registered with
+  `registerActions` (`client/host`); panel types get `panel.new.<type>` and
+  `panel.<type>.<command>` from their definitions. Menus, the palette, the
+  shortcuts settings and the native menu bar are generated from them; never
+  list actions or panel types in a menu by hand (`docs/architecture.md`
+  12.4).
+- **Tailwind CSS** for styling.

@@ -2,12 +2,13 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   // perf-stress asserts FPS / spawn-rate thresholds that depend on the host's
   // raw speed, so it's a local regression tool, not a CI gate. CI sets
   // E2E_SKIP_PERF=1 to run only the functional (smoke/drag/dock) specs.
   testIgnore: [
     ...(process.env.E2E_SKIP_PERF
-      ? ['**/perf-stress.spec.ts', '**/worktree-territory-perf.spec.ts', '**/workspace-transition-perf.spec.ts']
+      ? ['**/perf-stress.spec.ts', '**/worktree-territory-perf.spec.ts', '**/workspace-transition-perf.spec.ts', '**/runtime-startup-performance.spec.ts']
       : []),
     // Public-internet smoke coverage is intentionally opt-in: it verifies the
     // packaged browser against third-party TLS/DNS/HTTP, but external uptime

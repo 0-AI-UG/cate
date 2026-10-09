@@ -26,6 +26,7 @@ export default tseslint.config(
       '**/*.config.js',
       '**/*.config.ts',
       '**/*.config.mjs',
+      '.dependency-cruiser.cjs',
       'scripts/**',
       // Sample extensions and the (gitignored) catalog repo checkout are their
       // own JS/TS projects, not app source; don't lint them with the app config.
@@ -34,6 +35,10 @@ export default tseslint.config(
       // Gitignored generated output / local worktrees — never app source.
       'dist-runtime/**',
       '.cate/**',
+      'cate-local-install-*/**',
+      // The iOS app's build output and its bundled client core.
+      'ios/build/**',
+      'ios/Cate/Core/Web/core.js',
     ],
   },
   js.configs.recommended,
@@ -58,6 +63,8 @@ export default tseslint.config(
       'no-fallthrough': 'error',
       'no-cond-assign': ['error', 'except-parens'],
       'no-unsafe-optional-chaining': 'error',
+      // Composition roots declare late-bound services that closures read.
+      'prefer-const': ['error', { ignoreReadBeforeAssign: true }],
       // Terminal/PTY/ANSI code legitimately matches control characters
       // (\x00, \x1b, \x07) in regexes — this is intentional, not a typo.
       'no-control-regex': 'off',

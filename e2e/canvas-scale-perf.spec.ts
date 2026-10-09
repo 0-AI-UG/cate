@@ -13,11 +13,9 @@ test('large mixed canvas zoom keeps mounted panel contents visible', async () =>
 
     await page.evaluate(() => {
       const h = window.__cateE2E!
-      const terminal = h.createTerminal({ x: 40, y: 40 })
-      h.moveNode(terminal, { x: 40, y: 40 })
+      h.createOnCanvas('terminal', { x: 40, y: 40 })
       for (let i = 0; i < 100; i++) {
-        const node = h.createEditor({ x: 800 + (i % 10) * 720, y: 40 + Math.floor(i / 10) * 540 })
-        h.moveNode(node, { x: 800 + (i % 10) * 720, y: 40 + Math.floor(i / 10) * 540 })
+        h.createOnCanvas('editor', { x: 800 + (i % 10) * 720, y: 40 + Math.floor(i / 10) * 540 })
       }
       h.setZoom(0.3)
       h.resetViewport()
@@ -29,7 +27,6 @@ test('large mixed canvas zoom keeps mounted panel contents visible', async () =>
     const result = await page.evaluate(async () => {
       const h = window.__cateE2E!
       const perf = window.__catePerf!
-      const before = perf.renderCounts()
       perf.resetWindow()
       const started = performance.now()
       let hiddenPanelFrames = 0
@@ -45,12 +42,13 @@ test('large mixed canvas zoom keeps mounted panel contents visible', async () =>
       }
       // Include the single post-gesture visibility reconciliation in the result.
       await new Promise((resolve) => setTimeout(resolve, 160))
-      const after = perf.renderCounts()
       return {
         elapsedMs: performance.now() - started,
         frames: perf.frames(),
         longTasks: perf.longTasks(),
-        editorCreates: (after.editorCreate ?? 0) - (before.editorCreate ?? 0),
+        // The client has no editor-create counter; mounted Monaco instances
+        // bound what zooming created.
+        editorCreates: document.querySelectorAll('.monaco-editor').length,
         mountedNodes: document.querySelectorAll('[data-node-id]').length,
         hiddenPanelFrames,
       }

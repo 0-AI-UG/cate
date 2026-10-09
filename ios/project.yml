@@ -1,0 +1,125 @@
+# The iOS shell (architecture 15, `shells/mobile`): a SwiftUI app over the
+# client core, which runs headless in a hidden web view. Generate the Xcode
+# project with `xcodegen generate`; Cate.xcodeproj is not checked in.
+
+name: Cate
+options:
+  bundleIdPrefix: com.0ai.cate
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+# Team, bundle id and entitlements: Signing.xcconfig, which a Mac may
+# override for its own team in Local.xcconfig.
+configFiles:
+  Debug: Signing.xcconfig
+  Release: Signing.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  # The terminal screen (TerminalPanelView.swift). Pinned below 1.19, whose
+  # build-info plugin breaks iOS builds from xcodebuild.
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: 1.18.0
+  # An agent's reply as GitHub-flavored Markdown (MarkdownText.swift).
+  Textual:
+    url: https://github.com/gonzalezreal/textual
+    exactVersion: 0.5.0
+targets:
+  Cate:
+    type: application
+    platform: iOS
+    sources:
+      - path: Cate
+        excludes:
+          - Core/Web
+      # The client core's page and bundle, copied as the folder `Web`.
+      - path: Cate/Core/Web
+        type: folder
+        buildPhase: resources
+      # The push key and opening a push, shared with the extension.
+      - path: Shared
+    dependencies:
+      - package: SwiftTerm
+      - package: Textual
+      - target: CateNotifications
+    preBuildScripts:
+      - name: Build the client core
+        basedOnDependencyAnalysis: false
+        script: |
+          export PATH="/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          cd "$SRCROOT/.." && npm run --silent build:mobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(CATE_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+        # The core build writes into the source tree.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        # Cate.entitlements (push, the shared keychain group) or, for a
+        # team that cannot sign push, CateLocal.entitlements.
+        CODE_SIGN_ENTITLEMENTS: $(CATE_APP_ENTITLEMENTS)
+    info:
+      path: Cate/Info.plist
+      properties:
+        CateSharedKeychainGroup: $(AppIdentifierPrefix)$(CATE_BUNDLE_ID).shared
+        CFBundleDisplayName: Cate
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Pairing links (`cate://pair?...`) from a scanned QR code open the app.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.cate.pair
+            CFBundleURLSchemes:
+              - cate
+        # Same network: the LAN WebSocket and mDNS `_cate._tcp` (7.5).
+        NSLocalNetworkUsageDescription: Cate connects to workspaces running on computers on your network.
+        NSBonjourServices:
+          - _cate._tcp
+        # Runtimes speak plain ws:// on the LAN; Noise secures every frame (7.6).
+        # Browser panels load any page the session names, http:// included.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoadsInWebContent: true
+        # Scanning the pairing QR (client feature `camera`).
+        NSCameraUsageDescription: Cate scans the pairing code shown by the computer you connect to.
+
+  # Opens each push sealed for this device (the runtime seals it; Cate
+  # Connect and APNs only carry ciphertext) and shows what it says.
+  CateNotifications:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Notifications
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(CATE_BUNDLE_ID).notifications
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Notifications/Notifications.entitlements
+    info:
+      path: Notifications/Info.plist
+      properties:
+        CFBundleDisplayName: Cate Notifications
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CateSharedKeychainGroup: $(AppIdentifierPrefix)$(CATE_BUNDLE_ID).shared
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService

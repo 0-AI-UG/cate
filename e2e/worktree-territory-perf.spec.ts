@@ -41,11 +41,15 @@ test.afterAll(async () => closeApp(app))
 // Each scenario seeds its own world; clear the canvas first so node counts and
 // layout don't accumulate across tests (the app instance is shared via beforeAll).
 test.beforeEach(async () => {
-  await page.evaluate(() => window.__cateE2E!.clearCanvas())
-  // clearCanvas intentionally removes every panel, including the canvas shell.
-  // Recreate it before seeding positioned terminals or they land in the dock.
-  await page.evaluate(() => window.__cateE2E!.createPanel('canvas'))
-  await page.waitForSelector('[data-canvas-panel-id]', { timeout: 15_000 })
+  // Remove every panel but the canvas, and the seeded worktrees.
+  await page.evaluate(() => {
+    const h = window.__cateE2E!
+    const doc = h.document()!
+    const ids = Object.values(doc.panels).filter((p) => p.type !== 'canvas').map((p) => p.id)
+    if (ids.length) h.propose({ kind: 'removePanels', ids })
+    for (const id of Object.keys(doc.worktrees)) h.propose({ kind: 'removeWorktree', id })
+  })
+  await page.waitForFunction(() => window.__cateE2E!.nodes().length === 0, undefined, { timeout: 15_000 })
   await page.evaluate(() => { window.__cateE2E!.setZoom(1); window.__cateE2E!.resetViewport() })
   await page.waitForTimeout(150)
 })
@@ -91,7 +95,7 @@ async function measureTerritory(
   const polls = Math.max(1, Math.round(durationMs / 400))
   for (let i = 0; i < polls; i++) {
     await page.waitForTimeout(400)
-    const snap = await page.evaluate(() => window.electronAPI!.perfGetSnapshot())
+    const snap = await page.evaluate(() => window.cateDesktop!.app.perf())
     if (snap) for (const p of snap.procs) perProcCpu[p.type] = Math.max(perProcCpu[p.type] ?? 0, p.cpu)
   }
   await actionP
@@ -168,7 +172,7 @@ async function seedWorktreeWorld(
     const col = i % cols
     const row = Math.floor(i / cols)
     const id = await page.evaluate(
-      (p) => window.__cateE2E!.createTerminal(p),
+      (p) => window.__cateE2E!.createOnCanvas('terminal', p)!.nodeId,
       { x: 60 + col * step.x, y: 60 + row * step.y },
     )
     ids.push(id)

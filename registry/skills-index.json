@@ -820,7 +820,7 @@
     {
       "id": "cate/cate-cli",
       "name": "cate-cli",
-      "description": "Drive Cate browser, terminal, editor, panel, review, and coding-agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.",
+      "description": "Drive Cate browser, terminal, editor, panel, review, and agent orchestration surfaces from a Cate terminal. Browser page automation targets Cate's live webviews directly.",
       "tags": [],
       "format": "skill-md",
       "source": {

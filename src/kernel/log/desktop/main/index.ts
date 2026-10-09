@@ -1,0 +1,1 @@
+export { createElectronMainSink } from './electronMainSink'

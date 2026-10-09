@@ -1,0 +1,72 @@
+import type { ActionId } from '@kernel/interaction/contract'
+// =============================================================================
+// SidebarSectionHeader — unified header bar used by every right-sidebar view.
+// Keeps title typography, height, padding, and action button styling consistent.
+// =============================================================================
+
+import React from 'react'
+import { IconButton } from './Button'
+
+interface SidebarSectionHeaderProps {
+  title: React.ReactNode
+  leadingAction?: React.ReactNode
+  actions?: React.ReactNode
+  /** Optional small subtitle row rendered beneath the main header (no border). */
+  subtitle?: React.ReactNode
+  /** Larger, bolder title. Used only by the top-level Workspace header; every
+   *  other section (Source Control, Search, …) keeps the small default. */
+  large?: boolean
+}
+
+export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ title, leadingAction, actions, subtitle, large }) => {
+  return (
+    <div className="flex-shrink-0">
+      <div
+        className="app-header-bar"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        {leadingAction && (
+          <div className="flex items-center mr-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            {leadingAction}
+          </div>
+        )}
+        <span
+          className={`flex-1 truncate text-primary ${large ? 'text-[18px] font-semibold' : 'text-[13px]'}`}
+        >
+          {title}
+        </span>
+        {actions && (
+          <div
+            className="flex items-center gap-1 -mr-1"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            {actions}
+          </div>
+        )}
+      </div>
+      {subtitle && (
+        <div className="px-3 py-1 text-[12px] text-muted font-medium truncate">{subtitle}</div>
+      )}
+    </div>
+  )
+}
+
+/** Standard icon button styling for header actions. A `title` renders as the
+ *  portal Tooltip (native title tooltips are flaky in Electron) plus an
+ *  aria-label, instead of being passed through to the DOM. */
+export const SidebarHeaderButton: React.FC<
+  React.ButtonHTMLAttributes<HTMLButtonElement> & { spinning?: boolean; action?: ActionId }
+> = ({ children, className = '', spinning, title, 'aria-label': ariaLabel, ...rest }) => {
+  const label = typeof title === 'string' ? title : typeof ariaLabel === 'string' ? ariaLabel : 'Action'
+  return (
+    <IconButton
+      label={label}
+      loading={spinning}
+      size={22}
+      {...rest}
+      className={`my-1 ${className}`}
+    >
+      {children}
+    </IconButton>
+  )
+}

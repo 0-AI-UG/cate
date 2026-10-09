@@ -20,6 +20,7 @@
 
 import { test, expect } from '@playwright/test'
 import { launchApp, closeApp } from './fixtures/electron-app'
+import { installPerfHelpers } from './fixtures/perf-helpers'
 import type { ElectronApplication, Page } from 'playwright'
 
 let app: ElectronApplication
@@ -27,6 +28,7 @@ let page: Page
 
 test.beforeAll(async () => {
   ;({ electronApp: app, mainWindow: page } = await launchApp({ perf: true }))
+  await installPerfHelpers(page)
   // Confirm the profiler is actually live before any scenario runs.
   await page.waitForFunction(() => typeof window.__catePerf === 'object', { timeout: 15_000 })
   expect(await page.evaluate(() => window.__catePerf!.longTasksSupported())).toBe(true)
@@ -43,7 +45,7 @@ test.afterEach(async () => {
     longTasks: window.__catePerf!.longTasks(),
     longTasksSupported: window.__catePerf!.longTasksSupported(),
     counters: window.__catePerf!.renderCounts(),
-    main: await window.electronAPI!.perfGetSnapshot(),
+    main: await window.cateDesktop!.app.perf(),
   }))
   await testInfo.attach('performance.json', { body: JSON.stringify(metrics, null, 2), contentType: 'application/json' })
 })
@@ -71,8 +73,8 @@ interface Measurement {
     totalCpu: number
     focused: boolean
     procs: Array<{ type: string; cpu: number; memMB: number }>
-    terminal: { kbPerSec: number; chunksPerSec: number }
-    spawnsPerSec: Record<string, number>
+    /** Runtime (daemon) CPU over the window; PTY work happens there. */
+    runtimeCpu?: number
   } | null
 }
 
@@ -93,7 +95,7 @@ async function measure(label: string, action: () => Promise<void>, settleMs = 40
     fps: window.__catePerf!.fps(),
     frames: window.__catePerf!.frames(),
     longTasks: window.__catePerf!.longTasks(),
-    main: await window.electronAPI!.perfGetSnapshot(),
+    main: await window.cateDesktop!.app.perf(),
   }))
 
   const secs = Math.max(0.001, (after.t - before.t) / 1000)
@@ -118,8 +120,6 @@ async function measure(label: string, action: () => Promise<void>, settleMs = 40
           totalCpu: after.main.totalCpu,
           focused: after.main.focused,
           procs: after.main.procs.map((p) => ({ type: p.type, cpu: p.cpu, memMB: p.memMB })),
-          terminal: after.main.terminal,
-          spawnsPerSec: after.main.spawnsPerSec,
         }
       : null,
   }
@@ -136,8 +136,7 @@ function report(m: Measurement): void {
     `  renders/s:  ${top(m.renders)}`,
   ]
   if (m.main) {
-    lines.push(`  Electron cpu: ${m.main.totalCpu}%   terminal: ${m.main.terminal.kbPerSec}KB/s (${m.main.terminal.chunksPerSec} chunks/s)`)
-    lines.push(`  spawns/s:  ${Object.entries(m.main.spawnsPerSec).map(([k, v]) => `${k}=${v}`).join(' ') || '(none)'}`)
+    lines.push(`  Electron cpu: ${m.main.totalCpu}%${m.main.runtimeCpu !== undefined ? `   runtime cpu: ${Math.round(m.main.runtimeCpu)}%` : ''}`)
     lines.push(`  procs:  ${m.main.procs.slice(0, 4).map((p) => `${p.type} ${p.cpu}%/${p.memMB}MB`).join('  ')}`)
   }
   lines.push('────────────────────────────────────────────')
@@ -149,11 +148,20 @@ function report(m: Measurement): void {
 // Helpers to drive load over the canvas
 // -----------------------------------------------------------------------------
 
-/** A point on the canvas background known to be clear of seeded nodes. */
-async function emptyCanvasPoint(): Promise<{ x: number; y: number }> {
-  const box = await (await page.$('[data-canvas-container]'))!.boundingBox()
-  if (!box) throw new Error('no canvas container')
-  return { x: box.x + box.width * 0.85, y: box.y + box.height * 0.82 }
+/** Pans the viewport one step per animation frame, like a wheel pan. */
+async function panSweep(frames: number): Promise<void> {
+  await page.evaluate(async (frames) => {
+    const h = window.__cateE2E!
+    let x = 0
+    let y = 0
+    for (let i = 0; i < frames; i++) {
+      x -= (i % 20) - 10
+      y -= 6 + (i % 5)
+      h.setViewportOffset({ x, y })
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    }
+    h.resetViewport()
+  }, frames)
 }
 
 async function seedTerminals(count: number): Promise<string[]> {
@@ -162,7 +170,7 @@ async function seedTerminals(count: number): Promise<string[]> {
     const col = i % 3
     const row = Math.floor(i / 3)
     const id = await page.evaluate(
-      (p) => window.__cateE2E!.createTerminal(p),
+      (p) => window.__cateE2E!.createOnCanvas('terminal', p)!.nodeId,
       { x: 80 + col * 260, y: 80 + row * 220 },
     )
     ids.push(id)
@@ -200,19 +208,10 @@ test('profiler retains long tasks across HUD resets', async () => {
   expect(tasks.maxMs).toBeGreaterThanOrEqual(70)
 })
 
-test('canvas pan stress (wheel-pan over a populated canvas)', async () => {
+test('canvas pan stress (programmatic viewport sweep over a populated canvas)', async () => {
   await seedTerminals(6)
-  const pt = await emptyCanvasPoint()
-  await page.mouse.move(pt.x, pt.y)
-
-  const m = await measure('canvas pan (≈150 wheel events)', async () => {
-    for (let i = 0; i < 150; i++) {
-      const dx = (i % 20) - 10
-      const dy = 6 + (i % 5)
-      await page.mouse.wheel(dx, dy)
-      if (i % 10 === 0) await page.waitForTimeout(8)
-    }
-  })
+  // Programmatic pan at rAF cadence: a headless mouse does not reach the canvas.
+  const m = await measure('canvas pan (150 viewport frames)', () => panSweep(150))
   report(m)
   // A populated canvas should still pan without freezing or collapsing to a slideshow.
   expect(m.fps).toBeGreaterThan(20)
@@ -254,11 +253,7 @@ test('terminal flood (real shell blasting output)', async () => {
   const [nodeId] = await seedTerminals(1)
   // Wait for the PTY to spawn, then give the shell a beat to print its prompt
   // so the flood command isn't typed before the shell is reading input.
-  await page.waitForFunction(
-    (id) => !!window.__cateE2E!.terminalPtyId(id),
-    nodeId,
-    { timeout: 8000 },
-  )
+  await page.waitForFunction((id) => window.__perfE2E!.ptyIdOfNode(id), nodeId, { timeout: 8000 })
   await page.waitForTimeout(800)
 
   // Renderer-side deltas over the flood window.
@@ -272,22 +267,24 @@ test('terminal flood (real shell blasting output)', async () => {
   // window) yet still terminates. Exercises PTY -> disk-log -> IPC -> xterm
   // (audit #2: sync statSync+appendFileSync per 4KB on the data callback).
   await page.evaluate(
-    (id) => window.__cateE2E!.writeTerminal(id, 'yes 0123456789ABCDEFGHIJ | head -n 4000000\n'),
+    (id) => window.__perfE2E!.writeNode(id, 'yes 0123456789ABCDEFGHIJ | head -n 4000000\r'),
     nodeId,
   )
 
   // Poll the main snapshot for PEAK throughput — robust to where the burst
   // falls relative to the sampler's 2s buckets.
-  let peakKbPerSec = 0
-  let peakChunksPerSec = 0
+  // The main process no longer carries terminal bytes' accounting; the flood
+  // runs in the runtime daemon, so its CPU is the proof the path ran.
+  let peakRuntimeCpu = 0
   let peakTotalCpu = 0
+  await page.evaluate(() => window.__cateE2E!.call('runtime', 'perf'))
   let peakMainProcCpu = 0 // the 'Browser' process IS the main process in getAppMetrics
   for (let i = 0; i < 12; i++) {
     await page.waitForTimeout(400)
-    const snap = await page.evaluate(() => window.electronAPI!.perfGetSnapshot())
+    const snap = await page.evaluate(() => window.cateDesktop!.app.perf())
+    const runtime = await page.evaluate(() => window.__cateE2E!.call('runtime', 'perf')) as { cpu: number }
+    peakRuntimeCpu = Math.max(peakRuntimeCpu, runtime.cpu)
     if (snap) {
-      peakKbPerSec = Math.max(peakKbPerSec, snap.terminal.kbPerSec)
-      peakChunksPerSec = Math.max(peakChunksPerSec, snap.terminal.chunksPerSec)
       peakTotalCpu = Math.max(peakTotalCpu, snap.totalCpu)
       const main = snap.procs.find((p) => p.type === 'Browser')
       if (main) peakMainProcCpu = Math.max(peakMainProcCpu, main.cpu)
@@ -303,7 +300,7 @@ test('terminal flood (real shell blasting output)', async () => {
   }))
 
   // Best-effort: stop anything still running.
-  await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, '\x03'), nodeId)
+  await page.evaluate((id) => window.__perfE2E!.writeNode(id, '\x03'), nodeId)
 
   const secs = Math.max(0.001, (after.t - before.t) / 1000)
   const perSec = (a: Record<string, number>, b: Record<string, number>): Record<string, number> => {
@@ -325,14 +322,14 @@ test('terminal flood (real shell blasting output)', async () => {
       totalCpu: peakTotalCpu,
       focused: true,
       procs: [{ type: 'Browser(main)', cpu: peakMainProcCpu, memMB: 0 }],
-      terminal: { kbPerSec: peakKbPerSec, chunksPerSec: peakChunksPerSec },
-      spawnsPerSec: {},
+      runtimeCpu: peakRuntimeCpu,
     },
   })
 
   // The flood must have actually happened (proves the path was exercised) and
   // must not have frozen the main thread for seconds.
-  expect(peakKbPerSec).toBeGreaterThan(0)
+  expect(peakRuntimeCpu).toBeGreaterThan(0)
+  expect(await page.evaluate((id) => window.__perfE2E!.textOfNode(id), nodeId)).toContain('0123456789ABCDEFGHIJ')
   expect(after.longTasks.maxMs).toBeLessThan(3000)
 })
 
@@ -354,7 +351,7 @@ async function seedToTotal(total: number): Promise<void> {
     const col = i % 4
     const row = Math.floor(i / 4)
     const id = await page.evaluate(
-      (p) => window.__cateE2E!.createTerminal(p),
+      (p) => window.__cateE2E!.createOnCanvas('terminal', p)!.nodeId,
       { x: 60 + col * 300, y: 60 + row * 240 },
     )
     await page.waitForSelector(`[data-node-id="${id}"]`, { timeout: 5000 })
@@ -370,7 +367,6 @@ interface PeakSample {
   longTasks: { count: number; maxMs: number }
   renders: Record<string, number>
   perProcCpu: Record<string, number> // peak cpu per process type
-  peakTerminalKbPerSec: number
   peakSpawnsTotal: number
   activityScansPerSec: number
   runtimeSamples: number
@@ -384,36 +380,34 @@ async function measurePeak(durationMs: number, action?: () => Promise<void>): Pr
   await page.evaluate(() => window.__catePerf!.resetWindow())
 
   const perProcCpu: Record<string, number> = {}
-  let peakTerminalKbPerSec = 0
   let peakSpawnsTotal = 0
   let activityScans = 0
   let runtimeWindowSecs = 0
   let runtimeSamples = 0
-  const sampleIds = new Set<number>()
   const startedAt = Date.now()
   const actionP = action ? action() : Promise.resolve()
 
+  // The runtime's own sampler: each call returns the window since the last.
+  await page.evaluate(() => window.__cateE2E!.call('runtime', 'perf'))
   const polls = Math.max(1, Math.round(durationMs / 400))
   for (let i = 0; i < polls; i++) {
     await page.waitForTimeout(400)
-    const snap = await page.evaluate(() => window.electronAPI!.perfGetSnapshot())
+    const snap = await page.evaluate(() => window.cateDesktop!.app.perf())
+    const runtime = await page.evaluate(() => window.__cateE2E!.call('runtime', 'perf')) as {
+      windowMs: number; cpu: number; counters: Record<string, number>
+    }
+    if (runtime.windowMs > 0) {
+      runtimeSamples++
+      runtimeWindowSecs += runtime.windowMs / 1000
+      perProcCpu.Runtime = Math.max(perProcCpu.Runtime ?? 0, Math.round(runtime.cpu))
+      activityScans += (runtime.counters.activityScan ?? 0) * runtime.windowMs / 1000
+      const spawns = Object.entries(runtime.counters).filter(([k]) => k.startsWith('spawn')).reduce((a, [, v]) => a + v, 0)
+      peakSpawnsTotal = Math.max(peakSpawnsTotal, spawns)
+    }
     if (!snap) continue
     const byType: Record<string, number> = {}
     for (const p of snap.procs) byType[p.type] = (byType[p.type] ?? 0) + p.cpu
     for (const [type, cpu] of Object.entries(byType)) perProcCpu[type] = Math.max(perProcCpu[type] ?? 0, cpu)
-    if (snap.sampledAt && snap.sampledAt >= startedAt && !sampleIds.has(snap.sampledAt)) {
-      sampleIds.add(snap.sampledAt)
-      for (const runtime of snap.runtimes ?? []) {
-        const sample = runtime.sample
-        if (!sample || sample.windowMs <= 0) continue
-        runtimeSamples++
-        runtimeWindowSecs += sample.windowMs / 1000
-        activityScans += (sample.monitorScansPerSec.activity ?? 0) * sample.windowMs / 1000
-      }
-    }
-    peakTerminalKbPerSec = Math.max(peakTerminalKbPerSec, snap.terminal.kbPerSec)
-    const spawns = Object.values(snap.spawnsPerSec).reduce((a, b) => a + b, 0)
-    peakSpawnsTotal = Math.max(peakSpawnsTotal, spawns)
   }
   await actionP
 
@@ -435,7 +429,6 @@ async function measurePeak(durationMs: number, action?: () => Promise<void>): Pr
     longTasks: after.longTasks,
     renders: perSec(before.renders, after.renders),
     perProcCpu,
-    peakTerminalKbPerSec,
     peakSpawnsTotal,
     activityScansPerSec: runtimeWindowSecs ? activityScans / runtimeWindowSecs : 0,
     runtimeSamples,
@@ -453,7 +446,7 @@ function reportPeak(label: string, mounted: number, s: PeakSample): void {
     `  fps: ${s.fps}    longtasks: ${s.longTasks.count} (max ${Math.round(s.longTasks.maxMs)}ms)`,
     `  frame time: p95 ${s.frames.p95Ms.toFixed(1)}ms · max ${s.frames.maxMs.toFixed(1)}ms`,
     `  peak cpu by process:  ${procs}`,
-    `  terminal: ${s.peakTerminalKbPerSec} KB/s    spawns: ${s.peakSpawnsTotal}/s`,
+    `  runtime spawns: ${s.peakSpawnsTotal}/s    runtime samples: ${s.runtimeSamples}`,
     `  renders/s:  ${top(s.renders)}`,
     '────────────────────────────────────────────',
   ].join('\n'))
@@ -479,19 +472,23 @@ test('many terminals (9) with concurrent output in 4', async () => {
   const ids = await page.evaluate(() => window.__cateE2E!.nodes().map((n) => n.id))
   // Wait for PTYs, then start a MODERATE sustained output in 4 terminals (a
   // realistic "builds running in several tabs", not a max flood).
-  for (const id of ids.slice(0, 4)) {
-    await page.waitForFunction((x) => !!window.__cateE2E!.terminalPtyId(x), id, { timeout: 8000 }).catch(() => {})
+  // Four terminals whose PTY is running (a culled view may not have spawned one).
+  const live: string[] = []
+  for (const id of ids) {
+    if (live.length === 4) break
+    if (await page.evaluate((x) => window.__perfE2E!.ptyIdOfNode(x), id)) live.push(id)
   }
+  expect(live).toHaveLength(4)
   const s = await measurePeak(4000, async () => {
-    for (const id of ids.slice(0, 4)) {
+    for (const id of live) {
       await page.evaluate(
-        (x) => window.__cateE2E!.writeTerminal(x, 'yes 0123456789ABCDEFGHIJKLMNOP | head -n 1500000\n'),
+        (x) => window.__perfE2E!.writeNode(x, 'yes 0123456789ABCDEFGHIJKLMNOP | head -n 1500000\r'),
         id,
       )
     }
   })
   // Best-effort stop.
-  for (const id of ids.slice(0, 4)) await page.evaluate((x) => window.__cateE2E!.writeTerminal(x, '\x03'), id)
+  for (const id of live) await page.evaluate((x) => window.__perfE2E!.writeNode(x, '\x03'), id)
   reportPeak('9 terminals · output in 4', mounted, s)
 })
 
@@ -500,14 +497,7 @@ test('big canvas pan with 9 nodes visible', async () => {
   await page.evaluate(() => { window.__cateE2E!.setZoom(0.55); window.__cateE2E!.resetViewport() })
   await page.waitForTimeout(400)
   const mounted = await mountedNodeCount()
-  const pt = await emptyCanvasPoint()
-  await page.mouse.move(pt.x, pt.y)
-  const s = await measurePeak(2600, async () => {
-    for (let i = 0; i < 120; i++) {
-      await page.mouse.wheel((i % 16) - 8, 5 + (i % 4))
-      if (i % 10 === 0) await page.waitForTimeout(6)
-    }
-  })
+  const s = await measurePeak(2600, () => panSweep(120))
   reportPeak('big canvas pan · 9 nodes', mounted, s)
   expect(s.fps).toBeGreaterThan(20)
   expect(s.longTasks.maxMs).toBeLessThan(2000)
@@ -521,6 +511,9 @@ test('big canvas pan with 9 nodes visible', async () => {
 // spawn rate the main profiler counts.
 // =============================================================================
 
+// The runtime's terminal service counts its scans (`activityScan`) and the
+// subprocesses they spawn (`spawnPs`, `spawnLsof`) into the runtime perf
+// sampler; app focus reaches its cadence through each client's presence.
 test('idle spawn budget — 9 terminals, focused monitor cadence', async () => {
   await seedToTotal(9)
   await page.evaluate(() => { window.__cateE2E!.setZoom(0.5); window.__cateE2E!.resetViewport() })
@@ -548,10 +541,20 @@ test('background monitor cadence backs off on simulated focus events', async () 
   await page.waitForTimeout(800)
   const mounted = await mountedNodeCount()
 
+  // Quiet terminals scan only on the 5 s safety cadence either way, so keep
+  // one terminal doing I/O: a space and a backspace, a few times a second.
+  const terminalId = await page.evaluate(() => window.__cateE2E!.panels().find((p) => p.type === 'terminal')!.id)
+  const typing = (ms: number) => async () => {
+    for (const end = Date.now() + ms; Date.now() < end;) {
+      await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, ' \x7f'), terminalId)
+      await page.waitForTimeout(250)
+    }
+  }
+
   // Exercise the focused cadence through the production application event.
   await setMonitorFocus(true)
   await page.waitForTimeout(2200)
-  const focused = await measurePeak(4000)
+  const focused = await measurePeak(4000, typing(4000))
 
   // The windowless harness cannot change native OS focus; use its application
   // event boundary and measure actual daemon scan work at the resulting cadence.
@@ -559,7 +562,7 @@ test('background monitor cadence backs off on simulated focus events', async () 
   // Let the focused-cadence timer that was already armed drain, then sample the
   // backed-off cadence (activity 1s→5s, lsof 5s→15s).
   await page.waitForTimeout(2500)
-  const unfocused = await measurePeak(6000)
+  const unfocused = await measurePeak(6000, typing(6000))
 
   // Restore the focused monitor cadence for later scenarios.
   await setMonitorFocus(true)
@@ -588,7 +591,7 @@ test('background monitor cadence backs off on simulated focus events', async () 
 // =============================================================================
 
 test('editor typing stays smooth (no long tasks)', async () => {
-  const nodeId = await page.evaluate(() => window.__cateE2E!.createEditor({ x: 120, y: 120 }))
+  const nodeId = await page.evaluate(() => window.__cateE2E!.createOnCanvas('editor', { x: 120, y: 120 })!.nodeId)
   await page.waitForSelector(`[data-node-id="${nodeId}"]`, { timeout: 5000 })
   // Monaco mounts asynchronously — wait for its input textarea before typing.
   const textarea = await page.waitForSelector(
@@ -615,12 +618,13 @@ test('editor typing stays smooth (no long tasks)', async () => {
 })
 
 // =============================================================================
-// Viewport-cull cost — useVisibleNodeIds runs on EVERY store update, including
-// every pan/zoom frame (only the viewport changed, nodes are unchanged). The
-// expensive part is Object.values(nodes).sort(); it's memoized by nodes-object
-// identity, so a pure pan must hit the cache, not re-sort 60×/s. Instrumented
-// via perfCount: canvasCullEval (every selector run) vs canvasCullSort (the
-// real sort). This locks in the memoization fix.
+// Viewport-cull cost — the cull runs on every pan frame (only the viewport
+// changed, nodes are unchanged; a smooth zoom holds the mounted set and culls
+// once it settles). The expensive part is Object.values(nodes).sort(); it's
+// memoized by nodes-object identity, so a pure pan must hit the cache, not
+// re-sort 60×/s. Instrumented via the canvas perf counter: canvasCullEval
+// (every selector run) vs canvasCullSort (the real sort). This locks in the
+// memoization.
 // =============================================================================
 
 test('cull selector reuses the cached node sort across viewport changes', async () => {
@@ -628,17 +632,17 @@ test('cull selector reuses the cached node sort across viewport changes', async 
   await page.evaluate(() => { window.__cateE2E!.setZoom(1); window.__cateE2E!.resetViewport() })
   await page.waitForTimeout(300)
 
-  // Drive zoomLevel at rAF cadence from inside the page — deterministic (no
-  // mouse hit-testing, which gets flaky once nodes accumulate across tests) and
-  // faithful: zoomLevel is one of useVisibleNodeIds' inputs, so every frame
-  // re-runs the cull selector. The node SET is unchanged across the sweep, so
-  // the WeakMap sort-cache must serve every eval — this is the memoization fix.
+  // Drive the viewport offset at rAF cadence from inside the page —
+  // deterministic (no mouse hit-testing, which gets flaky once nodes
+  // accumulate across tests) and faithful: every pan frame re-runs the cull
+  // selector. The node SET is unchanged across the sweep, so the WeakMap
+  // sort-cache must serve every eval — this is the memoization fix.
   const m = await measure('cull eval under viewport sweep (90 frames)', async () => {
     await page.evaluate(async () => {
       const h = window.__cateE2E!
       const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)))
       for (let i = 0; i < 90; i++) {
-        h.setZoom(1 + 0.4 * Math.sin(i / 7))
+        h.setViewportOffset({ x: 200 * Math.sin(i / 7), y: 120 * Math.cos(i / 9) })
         await raf()
       }
     })
@@ -650,7 +654,7 @@ test('cull selector reuses the cached node sort across viewport changes', async 
   const sorts = m.renders['canvasCullSort'] ?? 0
   // eslint-disable-next-line no-console
   console.log(`  cull: ${evals} evals/s, ${sorts} sorts/s`)
-  // The sweep must drive the cull selector (zoomLevel changes each frame)…
+  // The sweep must drive the cull selector (the viewport changes each frame)…
   expect(evals).toBeGreaterThan(10)
   // …but the node set is unchanged, so the sort cache should serve nearly every
   // eval. A per-frame re-sort would push this up toward `evals`.
@@ -661,7 +665,7 @@ for (const total of [10, 25]) {
   test(`browser surface geometry with ${total} overlapping panels`, async () => {
     const have = await page.locator('[data-browser-surface-slot]').count()
     for (let index = have; index < total; index++) {
-      await page.evaluate((i) => window.__cateE2E!.createBrowser('about:blank', { x: 20 + (i % 5) * 60, y: 20 + Math.floor(i / 5) * 50 }), index)
+      await page.evaluate((i) => window.__cateE2E!.createOnCanvas('browser', { x: 20 + (i % 5) * 60, y: 20 + Math.floor(i / 5) * 50 }, { url: 'about:blank' }), index)
     }
     await expect(page.locator('[data-browser-surface-slot]')).toHaveCount(total)
     // Creation avoids overlap; move the cards explicitly to exercise occlusion.
@@ -673,9 +677,9 @@ for (const total of [10, 25]) {
     })
     await page.evaluate(() => { window.__cateE2E!.setZoom(0.4); window.__cateE2E!.resetViewport() })
     await page.waitForTimeout(1000)
-    await expect(page.locator('[data-browser-surface-visible="true"]')).toHaveCount(total)
-    await expect.poll(() => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-browser-surface-slot]')]
-      .filter((slot) => window.__cateE2E!.browserWebContentsId(slot.dataset.browserSurfaceSlot!) !== null).length), { timeout: 20_000 }).toBe(total)
+    const guests = () => page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-browser-surface-slot]')]
+      .map((slot) => ({ id: slot.dataset.browserSurfaceSlot!, guest: window.__perfE2E!.browserWebContentsId(slot.dataset.browserSurfaceSlot!) })))
+    await expect.poll(async () => (await guests()).filter((g) => g.guest !== null).length, { timeout: 20_000, message: 'every browser mounts its guest' }).toBe(total)
     const m = await measure(`${total} browser surfaces · zoom`, async () => {
       await page.evaluate(async () => {
         for (let frame = 0; frame < 90; frame++) {

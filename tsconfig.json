@@ -14,9 +14,13 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"],
-      "@renderer/*": ["src/renderer/*"],
-      "@main/*": ["src/main/*"]
+      "@kernel/*": ["src/kernel/*"],
+      "@runtime/*": ["src/runtime/*"],
+      "@workspace/*": ["src/workspace/*"],
+      "@services/*": ["src/services/*"],
+      "@client/*": ["src/client/*"],
+      "@panels/*": ["src/panels/*"],
+      "@shells/*": ["src/shells/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts"],

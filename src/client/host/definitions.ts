@@ -1,0 +1,73 @@
+// The panel definitions this client knows (architecture 11.1). The client's
+// entry registers the list once at boot; generic code asks the definition
+// instead of branching on the panel type.
+
+import type { Size } from '@workspace/canvas/contract'
+import type { AnyPanelDefinition, PanelOpenKind } from '@panels/framework/contract'
+import type { PanelCheckoutHooks } from '@workspace/repository/contract'
+
+/** Floor for a dock pane, whatever its panels ask for. */
+export const MIN_PANE_SIZE: Size = { width: 320, height: 220 }
+
+const definitions = new Map<string, AnyPanelDefinition>()
+
+export function registerPanelDefinitions(list: readonly AnyPanelDefinition[]): void {
+  for (const definition of list) definitions.set(definition.type, definition)
+}
+
+export function panelDefinition(type: string | undefined): AnyPanelDefinition | undefined {
+  return type ? definitions.get(type) : undefined
+}
+
+export function panelDefinitions(): AnyPanelDefinition[] {
+  return [...definitions.values()]
+}
+
+export function panelLabel(type: string): string {
+  return definitions.get(type)?.label ?? type
+}
+
+export function panelMinimumSize(type: string | undefined): Size {
+  return panelDefinition(type)?.minimumSize ?? MIN_PANE_SIZE
+}
+
+export function panelDefaultSize(type: string | undefined): Size {
+  return panelDefinition(type)?.defaultSize ?? { width: 600, height: 400 }
+}
+
+/** The footprint of a panel dropped onto a canvas from a dock. */
+export function panelDropSize(type: string | undefined): Size {
+  const definition = panelDefinition(type)
+  return definition?.dropSize ?? definition?.defaultSize ?? { width: 600, height: 400 }
+}
+
+export function canLiveOnCanvas(type: string | undefined): boolean {
+  return panelDefinition(type)?.canLiveOnCanvas ?? false
+}
+
+/** Views with a native surface stay mounted while their tab is hidden and
+ *  while their canvas node is off-screen: unmounting loses the page. */
+export function keepsMounted(type: string | undefined): boolean {
+  return !!panelDefinition(type)?.surface
+}
+
+/** The types people can create, in creation order: those with `creation`
+ *  (and, on a canvas, that can live there). Every creation menu lists these. */
+export function creatableDefinitions(where: { onCanvas?: boolean } = {}): AnyPanelDefinition[] {
+  return panelDefinitions()
+    .filter((definition) => definition.creation && (!where.onCanvas || definition.canLiveOnCanvas))
+    .sort((a, b) => a.creation!.order - b.creation!.order)
+}
+
+/** The type generic "open" actions create for `kind` (definition `opens`). */
+export function panelTypeOpening(kind: PanelOpenKind): string | undefined {
+  return panelDefinitions().find((definition) => definition.opens?.includes(kind))?.type
+}
+
+
+/** Checkout hooks from the panel definitions, so no code branches on type. */
+export const panelCheckoutHooks: PanelCheckoutHooks = {
+  checkoutPath: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
+  bound: (type) => !!panelDefinition(type)?.switchesWorktree,
+  workingDir: (record) => panelDefinition(record.type)?.checkoutPath?.(record),
+}

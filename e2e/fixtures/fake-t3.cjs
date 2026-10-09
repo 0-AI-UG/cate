@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process, require, setTimeout, URL */
+/* global process, require, setTimeout, setInterval, clearInterval, URL */
 /* eslint-disable @typescript-eslint/no-require-imports */
 
 // Deterministic T3-compatible server for Cate's Electron integration tests.
@@ -12,7 +12,9 @@ const path = require('node:path')
 const { WebSocketServer } = require('ws')
 
 const environmentId = 'e2e-env'
-const threads = new Map()
+// Like real T3, a thread page whose thread the shell does not know yet goes
+// back to "/". `thread-existing` is a thread the harness already has.
+const threads = new Map([['thread-existing', { id: 'thread-existing', title: 'Existing chat', updatedAt: new Date(0).toISOString() }]])
 let sequence = 0
 const port = Number(process.env.T3CODE_PORT)
 const t3Home = process.env.T3CODE_HOME
@@ -153,6 +155,10 @@ function pageHtml(route) {
             const textarea = document.querySelector('textarea')
             const value = textarea?.value.trim()
             if (!value) return
+            // "slow:" prompts model a new thread other clients learn about
+            // late, while its turn streams for a few seconds.
+            const slow = value.startsWith('slow:')
+            const threadId = slow ? 'thread-slow' : 'thread-e2e'
             const userMessage = document.createElement('p')
             userMessage.dataset.messageRole = 'user'
             userMessage.textContent = value
@@ -161,9 +167,17 @@ function pageHtml(route) {
             assistantMessage.textContent = 'Test reply'
             document.querySelector('#messages').append(userMessage, assistantMessage)
             textarea.value = ''
-            await fetch('/api/orchestration/dispatch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'thread.create', threadId: 'thread-e2e', title: value }) })
-            history.pushState({}, '', '/${environmentId}/thread-e2e')
+            await fetch('/api/orchestration/dispatch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'thread.create', threadId, title: value, ...(slow ? { visibleAfterMs: 2500, turnMs: 3000 } : {}) }) })
+            history.pushState({}, '', '/${environmentId}/' + threadId)
           })
+          // The thread route of real T3: a thread the shell does not know is
+          // "missing", and the page navigates home (replace).
+          const route = location.pathname.split('/').filter(Boolean)
+          if (route.length === 2 && route[0] === '${environmentId}') {
+            fetch('/api/orchestration/shell').then((r) => r.json()).then((shell) => {
+              if (!shell.threads.some((t) => t.id === route[1])) history.replaceState({}, '', '/')
+            })
+          }
         </script>
       </body>
     </html>`
@@ -220,11 +234,28 @@ process.stdin.on('end', () => {
       request.on('data', chunk => { body += chunk })
       request.on('end', () => {
         const command = JSON.parse(body)
-        if (command.type === 'thread.create') threads.set(command.threadId, { id: command.threadId, title: command.title, updatedAt: new Date().toISOString() })
-        else if (command.type === 'thread.delete') threads.delete(command.threadId)
+        const publish = () => {
+          sequence++
+          for (const socket of ws.clients) if (socket.shellRequestId) sendShell(socket)
+        }
+        if (command.type === 'thread.create') {
+          const thread = { id: command.threadId, title: command.title, updatedAt: new Date().toISOString() }
+          const visible = () => { threads.set(thread.id, thread); publish() }
+          if (command.visibleAfterMs) setTimeout(visible, command.visibleAfterMs)
+          else threads.set(thread.id, thread)
+          // A running turn: the thread changes every 200 ms until it ends.
+          if (command.turnMs) {
+            const ends = Date.now() + command.turnMs
+            const tick = setInterval(() => {
+              if (Date.now() > ends) clearInterval(tick)
+              if (!threads.has(thread.id)) return
+              thread.updatedAt = new Date().toISOString()
+              publish()
+            }, 200)
+          }
+        } else if (command.type === 'thread.delete') threads.delete(command.threadId)
         else { response.statusCode = 400; response.end('Unsupported command'); return }
-        sequence++
-        for (const socket of ws.clients) if (socket.shellRequestId) sendShell(socket)
+        if (!command.visibleAfterMs) publish()
         response.setHeader('content-type', 'application/json')
         response.end(JSON.stringify({ sequence }))
       })

@@ -1,11 +1,30 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
-import { patchT3ClientSource } from './patch-t3-client.mjs'
+import { patchT3ClientSource, patchT3Router, patchT3ThreadRoute } from './patch-t3-client.mjs'
 
 const directory = new URL('../node_modules/t3/dist/client/assets/', import.meta.url)
 const entry = readdirSync(directory).find((name) => /^ChatView-.*\.js$/.test(name))
 const source = patchT3ClientSource(readFileSync(new URL(entry, directory), 'utf8'))
+
+const assetSource = (pattern) => readFileSync(new URL(readdirSync(directory).find((name) => pattern.test(name)), directory), 'utf8')
+
+describe('pinned T3 routing', () => {
+  it('exposes the router for in-place navigation', () => {
+    const patched = patchT3Router(assetSource(/^main-.*\.js$/))
+    expect(patched).toMatch(/return window\.__cateRouter=\w+\(\{routeTree:/)
+    expect(patchT3Router(patched)).toBe(patched)
+    expect(() => patchT3Router('upstream changed')).toThrow('T3 router creation changed')
+  })
+
+  it('keeps a thread route the page does not know yet instead of going home', () => {
+    const patched = patchT3ThreadRoute(assetSource(/^_chat\._environmentId\._threadId-.*\.js$/))
+    expect(patched).toContain('/* cate: thread route waits */')
+    expect(patched).not.toContain('replace:!0')
+    expect(patchT3ThreadRoute(patched)).toBe(patched)
+    expect(() => patchT3ThreadRoute('upstream changed')).toThrow('T3 thread route changed')
+  })
+})
 
 describe('pinned T3 chat adapter', () => {
   it('is idempotent and rejects changed upstream code', () => {
