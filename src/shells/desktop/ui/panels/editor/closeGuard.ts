@@ -8,11 +8,11 @@ import type { CloseGuard } from '@client/host'
 import type { EditorOp, EditorSnapshot } from '@panels/editor/contract'
 import { confirmUnsaved } from './editorActions'
 
-export const editorCloseGuard: CloseGuard = async ({ workspaceId, record, session }) => {
+export const editorCloseGuard: CloseGuard = async ({ workspaceId, record, session, closing }) => {
   if (!session) return true
   const send = (op: EditorOp) => session.send(op)
   try {
-    await send({ kind: 'prepareClose' })
+    await send({ kind: 'prepareClose', closing: [...closing] })
     return true
   } catch (err) {
     if (!isRpcError(err, 'dirty')) throw err
@@ -24,6 +24,5 @@ export const editorCloseGuard: CloseGuard = async ({ workspaceId, record, sessio
   const file = snapshot ?? { filePath, draft: false, checkout: null }
   const answer = await confirmUnsaved(send, workspaceId, { ...file, dirty: true }, record.title)
   if (!answer) return false
-  if (answer === 'discard') await send({ kind: 'prepareClose', discard: true })
-  return true
+  return answer === 'discard' ? 'discard' : true
 }

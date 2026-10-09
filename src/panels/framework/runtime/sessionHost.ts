@@ -42,8 +42,10 @@ export interface SessionHost {
   subscribe(panelId: PanelId, subscriber: SessionSubscriber): () => void
   /** The `ApiSessionHost` of the kernel/api router. */
   handleApi(panelId: PanelId, method: string, args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown>
-  /** Asks each session before a close; `dirty` unless `discard`. */
-  prepareClose(panelIds: readonly PanelId[], options: { discard: boolean }): Promise<void>
+  /** Throws `RpcError('dirty')` when removing `removing` would lose a
+   *  panel's work, apart from the panels in `discard` (the document's
+   *  removal guard and `cate panel close`). */
+  checkRemoval(removing: ReadonlySet<PanelId>, discard: ReadonlySet<PanelId>): void
   /** Flushes state files and disposes every session (daemon stop). */
   dispose(): void
 }
@@ -114,20 +116,24 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
     entries.set(record.id, { session, store, started })
   }
 
-  const drop = (panelId: PanelId, reason: 'removed' | 'replaced') => {
+  const drop = (panelId: PanelId, reason: 'removed' | 'replaced', discard = false) => {
     const entry = entries.get(panelId)
     if (!entry) return
     entries.delete(panelId)
     const retired = entry.store.retire(reason === 'removed' ? removedFile(panelId) : null)
     retiring.set(panelId, retired)
     void retired.finally(() => { if (retiring.get(panelId) === retired) retiring.delete(panelId) })
-    try { entry.session.dispose(reason) } catch (err) { log.error('disposing panel %s failed: %O', panelId, err) }
+    try { entry.session.dispose(reason, discard) } catch (err) { log.error('disposing panel %s failed: %O', panelId, err) }
   }
 
   const follow = ({ op, before, doc }: AppliedEvent) => {
     const replaced = new Set<PanelId>()
-    for (const change of opChanges(op)) if (change.kind === 'replacePanel') replaced.add(change.record.id)
-    for (const id of Object.keys(before.panels)) if (!doc.panels[id]) drop(id, 'removed')
+    const discarded = new Set<PanelId>()
+    for (const change of opChanges(op)) {
+      if (change.kind === 'replacePanel') replaced.add(change.record.id)
+      if (change.kind === 'removePanels' || change.kind === 'closeWindow') for (const id of change.discard ?? []) discarded.add(id)
+    }
+    for (const id of Object.keys(before.panels)) if (!doc.panels[id]) drop(id, 'removed', discarded.has(id))
     for (const record of Object.values(doc.panels)) {
       const entry = entries.get(record.id)
       if (entry && (replaced.has(record.id) || entry.session.record.type !== record.type)) {
@@ -176,8 +182,12 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
       if (!entry.session.handleApi) throw new RpcError('unsupported', `${ctx.method} is not handled by this panel`)
       return entry.session.handleApi(method, args, ctx)
     },
-    async prepareClose(panelIds, options) {
-      for (const panelId of panelIds) await entries.get(panelId)?.session.prepareClose(options)
+    checkRemoval(removing, discard) {
+      for (const panelId of removing) {
+        if (discard.has(panelId)) continue
+        const blocker = entries.get(panelId)?.session.closeBlocker(removing)
+        if (blocker) throw blocker
+      }
     },
     dispose() {
       if (disposed) return

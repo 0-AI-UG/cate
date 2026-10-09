@@ -9,7 +9,7 @@ import { access, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { sessionApi } from '@kernel/api/contract'
 import { RpcError, isRpcError } from '@kernel/rpc/contract'
-import type { PanelRecord } from '@workspace/document/contract'
+import type { PanelId, PanelRecord } from '@workspace/document/contract'
 import {
   getDocumentType,
   pathDisplayName,
@@ -96,7 +96,6 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
   private shared = false
   private autosaveTimer: ReturnType<typeof setTimeout> | undefined
   private revealSeq = 0
-  private discardOnRelease = false
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: EditorSessionDeps) {
     super(kit, record, initialSnapshot(record))
@@ -136,10 +135,14 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     openFile: ({ path: file, line, column, discard }) => this.exclusive(() => this.openFile(file, { line, column, discard })),
     switchWorktree: ({ worktreeId, discard }) => this.exclusive(() => this.switchWorktree(worktreeId, discard === true)),
     close: async ({ discard }) => {
-      await this.prepareClose({ discard: discard === true })
-      this.kit.document.apply({ kind: 'removePanels', ids: [this.panelId] })
+      const blocker = discard === true ? null : this.closeBlocker(new Set([this.panelId]))
+      if (blocker) throw blocker
+      this.kit.document.apply({ kind: 'removePanels', ids: [this.panelId], ...(discard === true ? { discard: [this.panelId] } : {}) })
     },
-    prepareClose: ({ discard }) => this.prepareClose({ discard: discard === true }),
+    prepareClose: ({ closing }) => {
+      const blocker = this.closeBlocker(new Set([this.panelId, ...(closing ?? [])]))
+      if (blocker) throw blocker
+    },
   }
 
   override handleApi = sessionApi(editorApi, {
@@ -151,11 +154,11 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     this.publish({ reveal: { seq: ++this.revealSeq, line, column: column ?? null } })
   }
 
-  override async prepareClose({ discard }: { discard: boolean }): Promise<void> {
-    if (!discard && this.state.dirty && !this.othersShow(this.boundPath)) {
-      throw new RpcError('dirty', `${this.record.title} has unsaved changes`, { panelId: this.panelId })
-    }
-    this.discardOnRelease = discard
+  /** Unsaved edits are lost unless an editor outside the removal shows the
+   *  same buffer. */
+  override closeBlocker(removing: ReadonlySet<PanelId>): RpcError | null {
+    if (!this.state.dirty || this.othersShow(this.boundPath, removing)) return null
+    return new RpcError('dirty', `${this.record.title} has unsaved changes`, { panelId: this.panelId })
   }
 
   // ---- connected editors -----------------------------------------------------
@@ -219,11 +222,12 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     return best?.id ?? null
   }
 
-  /** Another open editor shows `file`, so its buffer outlives this panel. */
-  private othersShow(file: string | null): boolean {
+  /** Another open editor (not in `removing`) shows `file`, so its buffer
+   *  outlives this panel. */
+  private othersShow(file: string | null, removing: ReadonlySet<PanelId> = new Set()): boolean {
     if (!file) return false
     return Object.values(this.kit.document.get().panels).some((record) => {
-      const other = record.id !== this.panelId && record.type === 'editor' ? filePathOf(record) : undefined
+      const other = record.id !== this.panelId && !removing.has(record.id) && record.type === 'editor' ? filePathOf(record) : undefined
       return !!other && pathKey(other) === pathKey(file)
     })
   }
@@ -469,11 +473,11 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     })
   }
 
-  protected override release(reason: DisposeReason): void {
+  protected override release(reason: DisposeReason, discard: boolean): void {
     this.offMoved?.()
     const handle = this.unhook()
     if (!handle) return
-    if (reason === 'removed' && this.discardOnRelease) {
+    if (reason === 'removed' && discard) {
       void this.revertIfUnshown(handle).finally(() => handle.close())
     } else {
       handle.close()

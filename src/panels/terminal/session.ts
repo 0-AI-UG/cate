@@ -174,8 +174,14 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
     },
   })
 
-  override prepareClose({ discard }: { discard: boolean }): void {
-    this.requireIdle(discard)
+  /** A running program would be killed. */
+  override closeBlocker(): RpcError | null {
+    try {
+      this.requireIdle(false)
+      return null
+    } catch (err) {
+      return err as RpcError
+    }
   }
 
   protected override release(reason: DisposeReason): void {

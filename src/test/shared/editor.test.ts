@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { EditorSnapshot } from '@panels/editor/contract'
+import type { RefusedOp } from '@client/document'
 import { startSharedWorkspace, until, untilState, type SharedWorkspace, type TestBuffer } from '../sharedWorkspace'
 
 let ws: SharedWorkspace
@@ -45,6 +46,32 @@ async function editors(): Promise<{ panelId: string; a: TestBuffer; b: TestBuffe
 const dirty = (panelId: string) => Promise.all([ws.a, ws.b].map((c) => c.session<EditorSnapshot>(panelId).until(() => true).then((s) => s.dirty)))
 
 describe.skipIf(process.platform === 'win32')('shared workspace: editor', () => {
+  it('closing both editors of a dirty file in one removal is refused as dirty', async () => {
+    const { panelId, a } = await editors()
+    const second = ws.a.createPanel('editor', { filePath: file })
+    await ws.a.session<EditorSnapshot>(second).until((s) => !s.loading)
+    await type(a, 'unsaved')
+    await until(async () => ((await dirty(panelId)).every(Boolean) ? true : undefined), 10_000, 'dirty')
+    const refused: RefusedOp[] = []
+    ws.a.document.onRefused((r) => refused.push(r))
+    ws.a.document.propose({ kind: 'removePanels', ids: [panelId, second] })
+    await until(() => (ws.a.document.pending.length === 0 ? true : undefined), 5_000, 'an answer')
+    expect(refused.map((r) => r.code)).toEqual(['dirty'])
+    expect(ws.a.document.getSnapshot().panels[panelId]).toBeDefined()
+  })
+
+  it('a close the user cancelled leaves no discard behind for a later removal', async () => {
+    const { panelId, a } = await editors()
+    await type(a, 'keep me')
+    await until(async () => ((await dirty(panelId)).every(Boolean) ? true : undefined), 10_000, 'dirty')
+    // A close asked, then cancelled: no op removes the panel.
+    await ws.a.session(panelId).send({ kind: 'prepareClose', discard: true }).catch(() => {})
+    // Later the panel goes another way (an undo of its creation).
+    ws.a.document.propose({ kind: 'removePanels', ids: [panelId] })
+    await new Promise((r) => setTimeout(r, 500))
+    expect(a.text.toString()).toContain('keep me')
+  })
+
   it('both clients load the file and typing from both merges into one text', async () => {
     const { panelId, a, b } = await editors()
     expect(a.text.toString()).toBe('base\n')

@@ -231,7 +231,7 @@ describe('confirmCloseTerminals', () => {
     const answer = terminalCloseGuard({ workspaceId: 'ws', record: props(null).record, session, closing: new Set(['p1']) })
     state = { rev: 0, snapshot: snapshotOf({ activity: { type: 'running', processName: 'vim' } }) }
     for (const l of listeners) l()
-    await expect(answer).resolves.toBe(true)
+    await expect(answer).resolves.toBe('discard')
     expect(ui.confirmCloseTerminal).toHaveBeenCalledWith({ count: 1, processName: 'vim' })
   })
 })

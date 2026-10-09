@@ -70,11 +70,14 @@ export type DocChange =
    *  picked type). */
   | { kind: 'replacePanel'; record: PanelRecord }
   | { kind: 'updatePanel'; id: PanelId; patch: PanelPatch }
-  | { kind: 'removePanels'; ids: PanelId[] }
+  /** `discard`: panels whose unsaved work the user chose to drop (11.2 rule
+   *  6). Without it, a removal that would lose work is refused `dirty`. */
+  | { kind: 'removePanels'; ids: PanelId[]; discard?: PanelId[] }
   | { kind: 'placePanel'; id: PanelId; at: PlaceTarget }
   | { kind: 'setSplitRatio'; splitId: SplitId; ratios: number[] }
   | { kind: 'setNodeRects'; canvasId: CanvasId; rects: { nodeId: NodeId; rect: Rect }[] }
-  | { kind: 'closeWindow'; windowId: WindowId }
+  /** Removes the window's panels; `discard` as for `removePanels`. */
+  | { kind: 'closeWindow'; windowId: WindowId; discard?: PanelId[] }
   | { kind: 'addRelation'; relation: PanelRelation }
   | { kind: 'updateRelation'; id: RelationId; patch: RelationPatch }
   | { kind: 'removeRelation'; id: RelationId }
@@ -93,7 +96,8 @@ export type DocOp = (DocChange | DocBatch) & { opId: OpId }
 /** `gone`: the op names an id that does not exist. `rejected`: the op is
  *  malformed or breaks a rule (unknown panel type, a canvas on a canvas, an
  *  id already in use, ...). */
-export type OpErrorCode = 'gone' | 'rejected'
+/** `dirty`: a removal that would lose work without the user's choice. */
+export type OpErrorCode = 'gone' | 'rejected' | 'dirty'
 
 export interface OpError {
   code: OpErrorCode

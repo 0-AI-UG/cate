@@ -87,7 +87,7 @@ export function RepositoryHost({ workspaceId, children }: { workspaceId: string;
     async prepareWorktreeClose(worktreeId) {
       const doc = documentStoreFor(workspaceId)?.getSnapshot()
       if (!doc) return false
-      return confirmClose(workspaceId, panelsBoundTo(doc, worktreeId).map((p) => p.id))
+      return (await confirmClose(workspaceId, panelsBoundTo(doc, worktreeId).map((p) => p.id))) !== null
     },
     switchesWorktree: (panel) => panelDefinition(panel.type)?.switchesWorktree === true,
     switchPanelWorktree: (panelId, worktreeId) => switchPanelWorktree(workspaceId, panelId, worktreeId, root),

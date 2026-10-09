@@ -60,7 +60,9 @@ export type EditorOp =
   /** Readies the panel for a removal the client sends next (its close
    *  guard): fails `dirty` with unsaved edits only this panel shows, unless
    *  `discard`, which reverts them when the panel goes. */
-  | { kind: 'prepareClose'; discard?: boolean }
+  /** Fails `dirty` when closing this panel, with the panels in `closing`,
+   *  would lose unsaved edits. Changes nothing. */
+  | { kind: 'prepareClose'; closing?: string[] }
 
 const isMarkdown = (file: string) => /\.mdx?$/i.test(file)
 

@@ -5,18 +5,22 @@
 
 import fs from 'node:fs'
 import { createLogger, type Logger } from '@kernel/log/contract'
-import { RpcError } from '@kernel/rpc/contract'
+import { isRpcError, RpcError } from '@kernel/rpc/contract'
 import { quarantineCorruptFile, writeJsonAtomic, writeJsonAtomicSync } from '@kernel/state/node'
 import {
   DOCUMENT_FILE_VERSION,
   RUNTIME_CLIENT_ID,
   createDocument,
   createSequencer,
+  opChanges,
+  panelsInWindow,
+  removalSet,
   parseDocument,
   type AppliedOp,
   type DocBatch,
   type DocChange,
   type DocOp,
+  type PanelId,
   type SubmitResult,
   type WorkspaceDocument,
 } from '../contract'
@@ -34,8 +38,13 @@ export interface DocumentService {
   readonly seq: number
   /** New at every start (the sequencer's epoch). */
   readonly epoch: string
-  /** A client's op, deduped on its opId. */
+  /** A client's op, deduped on its opId. A removal the removal guard refuses
+   *  fails with its code (`dirty`). */
   submit(op: DocOp): SubmitResult
+  /** Who decides whether removing panels loses work (the session host): it
+   *  gets the whole removal set and the panels whose work may go, and throws
+   *  an `RpcError` to refuse. One guard; the last one set wins. */
+  guardRemovals(guard: RemovalGuard | null): void
   /** An op the runtime makes itself, with a runtime opId. Returns its seq;
    *  throws `RpcError` (`gone`, `rejected`) when it fails. */
   apply(change: DocChange | DocBatch): number
@@ -49,6 +58,8 @@ export interface DocumentService {
   /** Writes pending changes synchronously and stops. */
   dispose(): void
 }
+
+export type RemovalGuard = (removing: ReadonlySet<PanelId>, discard: ReadonlySet<PanelId>) => void
 
 export interface DocumentServiceOptions {
   /** `dataPaths(dir).document`. */
@@ -100,6 +111,7 @@ export function createDocumentService(options: DocumentServiceOptions): Document
   const initial = load(options.file, log)
   const sequencer = createSequencer({ ...initial, keep: options.keep })
   const listeners = new Set<(event: AppliedEvent) => void>()
+  let removalGuard: RemovalGuard | null = null
   let runtimeCounter = sequencer.counters.get(RUNTIME_CLIENT_ID) ?? 0
 
   // Every submit may change the document or a counter: bump `version`, and
@@ -159,7 +171,23 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     get: () => sequencer.doc,
     get seq() { return sequencer.seq },
     get epoch() { return sequencer.epoch },
-    submit,
+    submit(op) {
+      if (removalGuard) {
+        for (const change of opChanges(op)) {
+          if (change.kind !== 'removePanels' && change.kind !== 'closeWindow') continue
+          const ids = change.kind === 'removePanels' ? change.ids : panelsInWindow(sequencer.doc, change.windowId)
+          try {
+            removalGuard(removalSet(sequencer.doc, ids), new Set(change.discard ?? []))
+          } catch (err) {
+            if (!isRpcError(err)) throw err
+            const code = err.code === 'dirty' || err.code === 'gone' ? err.code : 'rejected'
+            return { status: 'failed', error: { code, message: err.message } }
+          }
+        }
+      }
+      return submit(op)
+    },
+    guardRemovals(guard) { removalGuard = guard },
     apply(change) {
       const op = { ...change, opId: { clientId: RUNTIME_CLIENT_ID, counter: ++runtimeCounter } } as DocOp
       const result = submit(op)

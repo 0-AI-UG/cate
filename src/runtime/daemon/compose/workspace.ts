@@ -366,6 +366,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   })
   const sessions = host
   sessionOf = (panelId) => sessions.session(panelId)
+  // A client's removal that would lose a panel's work is refused `dirty`.
+  document.guardRemovals((removing, discard) => sessions.checkRemoval(removing, discard))
   const factory = createPanelFactory({ document, registry })
   for (const module of modules) {
     const provided = module.attach?.({ services, host, factory, router, surfaces: broker, rpc })
@@ -375,7 +377,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   offs.push(registerDocumentApi(router, {
     document,
     presence,
-    prepareClose: (panelIds, options) => sessions.prepareClose(panelIds, options),
+    checkRemoval: (removing, discard) => sessions.checkRemoval(removing, discard),
     createPanel: (type, request) => factory.createPanel(type, { ...request }),
   }))
 

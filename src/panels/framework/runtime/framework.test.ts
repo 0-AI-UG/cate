@@ -86,8 +86,8 @@ class CounterSession extends PanelSession<CounterSnapshot, CounterOp> {
   override input(bytes: Uint8Array, ctx: OpContext): void {
     this.emitBytes(new TextEncoder().encode(`${ctx.clientId}:${new TextDecoder().decode(bytes)}`))
   }
-  override prepareClose({ discard }: { discard: boolean }): void {
-    if (this.state.dirty && !discard) throw new RpcError('dirty', 'unsaved')
+  override closeBlocker(): RpcError | null {
+    return this.state.dirty ? new RpcError('dirty', 'unsaved') : null
   }
   protected override release(reason: string): void {
     log.push(`dispose ${this.panelId} ${reason}`)
@@ -455,7 +455,7 @@ describe('panel and canvas API handlers', () => {
     registerDocumentApi(router, {
       document: w.document,
       presence: w.presence,
-      prepareClose: (ids, options) => w.host.prepareClose(ids, options),
+      checkRemoval: (removing, discard) => w.host.checkRemoval(removing, discard),
       createPanel: (type, request) => w.factory.createPanel(type, request),
     })
     return { ...w, router, tokens }

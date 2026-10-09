@@ -168,7 +168,8 @@ export function checkChange(v: unknown): Problem {
     case 'replacePanel': return checkRecord(c.record)
     case 'updatePanel': return isId(c.id) ? checkPanelPatch(c.patch) : 'no panel id'
     case 'removePanels':
-      return Array.isArray(c.ids) && c.ids.length > 0 && c.ids.every(isId) ? null : 'no panel ids'
+      if (!Array.isArray(c.ids) || c.ids.length === 0 || !c.ids.every(isId)) return 'no panel ids'
+      return c.discard === undefined || (Array.isArray(c.discard) && c.discard.every(isId)) ? null : 'bad discard ids'
     case 'placePanel': return isId(c.id) ? checkTarget(c.at) : 'no panel id'
     case 'setSplitRatio':
       return isId(c.splitId) && Array.isArray(c.ratios) && c.ratios.every((r) => Number.isFinite(r) && r > 0)
@@ -176,7 +177,9 @@ export function checkChange(v: unknown): Problem {
     case 'setNodeRects':
       return isId(c.canvasId) && Array.isArray(c.rects)
         && c.rects.every((r) => isObject(r) && isId(r.nodeId) && isRect(r.rect)) ? null : 'bad node rects'
-    case 'closeWindow': return isId(c.windowId) ? null : 'no window id'
+    case 'closeWindow':
+      if (!isId(c.windowId)) return 'no window id'
+      return c.discard === undefined || (Array.isArray(c.discard) && c.discard.every(isId)) ? null : 'bad discard ids'
     case 'addRelation': return checkRelation(c.relation)
     case 'updateRelation': return isId(c.id) ? checkRelationPatch(c.patch) : 'no relation id'
     case 'removeRelation': return isId(c.id) ? null : 'no relation id'

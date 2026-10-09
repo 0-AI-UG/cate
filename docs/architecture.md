@@ -1340,7 +1340,13 @@ Every panel type meets the same contract.
    panels (`closePanels` in `client/host`, from a tab's close button, a window
    closing) runs the close guard each type's view registered, with a session
    handle whether or not the view is mounted, and then sends one
-   `removePanels` op.
+   `removePanels` op carrying the panels the user chose to discard
+   (`removePanels {ids, discard}`; `closeWindow` likewise). The runtime asks
+   every session in the removal set (`closeBlocker`, which sees the whole
+   set, so two editors of one dirty file closing together count as losing
+   it) and refuses a removal that would lose work outside `discard` with
+   `dirty`, whichever client or undo sent it. Sessions keep no discard
+   state between the question and the removal.
    `clientUi.contract.test.ts` fails on a native call outside the port and on
    any `clientUi()` call in a session or runtime file.
 7. **Explicit lifecycle.** A session is disposed only when its panel is

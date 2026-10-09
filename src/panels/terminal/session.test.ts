@@ -172,13 +172,11 @@ describe('TerminalSession', () => {
   it('refuses to close with dirty while a program runs, unless discarded', async () => {
     const { session, terminal } = setup()
     await session.start()
-    expect(() => session.prepareClose({ discard: false })).not.toThrow()
+    expect(session.closeBlocker()).toBeNull()
     terminal.update('pty-1', { activity: { type: 'running', processName: 'npm' } })
-    let error: unknown
-    try { session.prepareClose({ discard: false }) } catch (err) { error = err }
+    const error = session.closeBlocker()
     expect(isRpcError(error, 'dirty')).toBe(true)
-    expect((error as RpcError).data).toEqual({ processName: 'npm' })
-    expect(() => session.prepareClose({ discard: true })).not.toThrow()
+    expect(error!.data).toEqual({ processName: 'npm' })
     await expect(session.handleOp({ kind: 'restart' }, opCtx)).rejects.toMatchObject({ code: 'dirty' })
   })
 

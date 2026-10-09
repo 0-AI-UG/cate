@@ -89,9 +89,10 @@ export abstract class PanelSession<S extends JsonObject = JsonObject, Op = never
 
   protected recordChanged(_previous: PanelRecord): void {}
 
-  /** Called before the panel is closed. Throw `RpcError('dirty')` for work
-   *  that would be lost unless `discard`. */
-  prepareClose(_options: { discard: boolean }): void | Promise<void> {}
+  /** Would removing the panels in `removing` (this one among them) lose this
+   *  panel's work? Answers `RpcError('dirty')` then, null otherwise. Asked
+   *  before every removal the user did not choose to discard (11.2 rule 6). */
+  closeBlocker(_removing: ReadonlySet<PanelId>): RpcError | null { return null }
 
   async handleOp(op: unknown, ctx: OpContext): Promise<unknown> {
     if (this.disposed) throw new RpcError('gone', `panel ${this.panelId} is gone`)
@@ -155,17 +156,18 @@ export abstract class PanelSession<S extends JsonObject = JsonObject, Op = never
     return this.kit.surface(op, args, options) as Promise<T>
   }
 
-  /** @internal Only the host disposes: on removePanels, replacePanel or shutdown. */
-  dispose(reason: DisposeReason): void {
+  /** @internal Only the host disposes: on removePanels, replacePanel or
+   *  shutdown. `discard`: the removal dropped this panel's unsaved work. */
+  dispose(reason: DisposeReason, discard = false): void {
     if (this.disposed) return
     this.disposed = true
     const subscribers = [...this.subscribers]
     this.subscribers.clear()
     for (const subscriber of subscribers) subscriber.gone()
-    this.release(reason)
+    this.release(reason, discard)
   }
 
-  protected release(_reason: DisposeReason): void {}
+  protected release(_reason: DisposeReason, _discard: boolean): void {}
 }
 
 /** A session class the registry holds. */

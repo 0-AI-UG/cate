@@ -52,5 +52,10 @@ function snapshotOf(session: SessionHandle | null): Promise<TerminalSnapshot | n
   })
 }
 
-export const terminalCloseGuard: CloseGuard = async ({ session }) =>
-  confirmCloseTerminals([await snapshotOf(session)])
+/** A running program closes only with the person's answer, which the
+ *  removal carries as `discard`. */
+export const terminalCloseGuard: CloseGuard = async ({ session }) => {
+  const snapshot = await snapshotOf(session)
+  if (runningProcess(snapshot) === undefined) return true
+  return (await confirmCloseTerminals([snapshot])) ? 'discard' : false
+}

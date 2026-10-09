@@ -12,11 +12,14 @@ export async function closeDetachedWindow(workspaceId: string, windowId: WindowI
   const doc = store?.getSnapshot()
   if (!store || !doc?.windows[windowId] || windowId === MAIN_WINDOW) return false
   const panels = panelsInWindow(doc, windowId)
+  let discard: string[] = []
   if (panels.length > 0) {
     const noun = panels.length === 1 ? 'panel' : 'panels'
     if (!(await clientUi().confirm(`Close this window and its ${panels.length} ${noun}?`))) return false
-    if (!(await confirmClose(workspaceId, panels))) return false
+    const confirmed = await confirmClose(workspaceId, panels)
+    if (!confirmed) return false
+    discard = confirmed.discard
   }
   if (!store.getSnapshot().windows[windowId]) return false
-  return store.propose({ kind: 'closeWindow', windowId }).ok
+  return store.propose({ kind: 'closeWindow', windowId, ...(discard.length ? { discard } : {}) }).ok
 }

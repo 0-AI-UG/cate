@@ -24,9 +24,9 @@ export type CreatePanelRequest = {
 export interface DocumentApiDeps {
   document: DocumentService
   presence: Pick<PresenceService, 'activePanelId'>
-  /** Asks the sessions of every panel a close removes. Throws
-   *  `RpcError('dirty')` for unsaved work unless `discard`. */
-  prepareClose(panelIds: PanelId[], options: { discard: boolean }): Promise<void>
+  /** Throws `RpcError('dirty')` when removing `removing` loses work outside
+   *  `discard` (the sessions' close blockers). */
+  checkRemoval(removing: ReadonlySet<PanelId>, discard: ReadonlySet<PanelId>): void
   /** Returns the new panel's id, or null when it could not be created. */
   createPanel(type: string, request: CreatePanelRequest): PanelId | null | Promise<PanelId | null>
   /** Extra columns of `cate panel list` for one record. */
@@ -72,9 +72,10 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
       },
       close: async ({ panelId, discard }) => {
         if (!document.get().panels[panelId]) throw new RpcError('gone', `panel ${panelId} is gone`)
-        const ids = [...removalSet(document.get(), [panelId])]
-        await deps.prepareClose(ids, { discard: discard === true })
-        document.apply({ kind: 'removePanels', ids: [panelId] })
+        const removing = removalSet(document.get(), [panelId])
+        const ids = [...removing]
+        deps.checkRemoval(removing, new Set(discard === true ? ids : []))
+        document.apply({ kind: 'removePanels', ids: [panelId], ...(discard === true ? { discard: ids } : {}) })
         return { panelIds: ids }
       },
       setTitle: ({ title, panelId }, ctx) => {

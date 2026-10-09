@@ -18,9 +18,15 @@ export interface CloseGuardContext {
   closing: ReadonlySet<PanelId>
 }
 
-/** Resolves false to keep the panel. It may send session ops first (save,
- *  discard) with the user's answer. */
-export type CloseGuard = (context: CloseGuardContext) => Promise<boolean> | boolean
+/** Resolves false to keep the panel, true to close it, `discard` to close it
+ *  dropping its unsaved work (the answer travels in the removal op, 11.2
+ *  rule 6). It may send session ops first (save) with the user's answer. */
+export type CloseGuard = (context: CloseGuardContext) => Promise<boolean | 'discard'> | boolean | 'discard'
+
+/** A close the guards agreed to, and the panels whose work it drops. */
+export interface ConfirmedClose {
+  discard: PanelId[]
+}
 
 const guards = new Map<string, CloseGuard>()
 
@@ -30,11 +36,12 @@ export function registerPanelCloseGuard(type: string, guard: CloseGuard): () => 
 }
 
 /** Asks every guard for the panels a close would remove, in document order.
- *  Resolves false when any declines. */
-export async function confirmClose(workspaceId: string, ids: readonly PanelId[]): Promise<boolean> {
+ *  Resolves null when any declines. */
+export async function confirmClose(workspaceId: string, ids: readonly PanelId[]): Promise<ConfirmedClose | null> {
   const store = documentStoreFor(workspaceId)
   const doc = store?.getSnapshot()
-  if (!store || !doc) return false
+  if (!store || !doc) return null
+  const discard: PanelId[] = []
   const known = ids.filter((id) => doc.panels[id])
   let closing = removalSet(doc, known)
   for (const id of [...closing]) {
@@ -46,25 +53,29 @@ export async function confirmClose(workspaceId: string, ids: readonly PanelId[])
     if (!record || !guard) continue
     const session = acquireSession(workspaceId, id)
     try {
-      if (!(await guard({ workspaceId, record, session, closing }))) return false
+      const answer = await guard({ workspaceId, record, session, closing })
+      if (!answer) return null
+      if (answer === 'discard') discard.push(id)
     } finally {
       session?.release()
     }
     const now = store.getSnapshot()
     closing = removalSet(now, known.filter((known) => now.panels[known]))
   }
-  return true
+  return { discard: discard.filter((id) => closing.has(id)) }
 }
 
 /** Closes panels after their guards agree. Resolves true once the op went. */
 export async function closePanels(workspaceId: string, ids: readonly PanelId[]): Promise<boolean> {
   if (ids.length === 0) return false
-  if (!(await confirmClose(workspaceId, ids))) return false
+  const confirmed = await confirmClose(workspaceId, ids)
+  if (!confirmed) return false
   const store = documentStoreFor(workspaceId)
   const doc = store?.getSnapshot()
   const remaining = ids.filter((id) => doc?.panels[id])
   if (!store || !doc || remaining.length === 0) return false
-  return store.propose({ kind: 'removePanels', ids: remaining }).ok
+  const { discard } = confirmed
+  return store.propose({ kind: 'removePanels', ids: remaining, ...(discard.length ? { discard } : {}) }).ok
 }
 
 export function closePanel(workspaceId: string, panelId: PanelId): Promise<boolean> {
