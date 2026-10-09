@@ -337,7 +337,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     if (!fresh) return
     setMenuOpen(false)
     setDownloadsOpen(true)
-  }, [snapshot.downloads])
+  }, [snapshot.downloads, localDownloads])
 
   // The capture is stored in the workspace data (`file.storeScreenshot`) as
   // soon as it is taken, so its drag carries a FileRef any panel can use.
