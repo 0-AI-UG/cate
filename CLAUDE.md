@@ -57,7 +57,7 @@ with `CATE_RUNTIME_BUNDLE=dist-runtime/runtime.cjs` (it then starts the daemon
 from that bundle with your `node`), rebuild with `npm run build:runtime`, and
 stop the running workspace runtime so the next open starts the new build.
 Without `CATE_RUNTIME_BUNDLE`, the app needs a runtime of its build (a hash of
-`src/`): `npm run dev` installs one with `runtime:dev` (instant when the build
+`src/`, `skills/`, the T3 patches and the lockfile): `npm run dev` installs one with `runtime:dev` (instant when the build
 is already installed, a few seconds otherwise), so no tarball is needed.
 
 ## Dependencies

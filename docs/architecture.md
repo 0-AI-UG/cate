@@ -795,7 +795,8 @@ when a registered capability is missing.
 ### 7.10 Versions
 
 - The client and runtime compare protocol majors on `hello`. The runtime
-  also sends its build: the version plus a hash of the sources
+  also sends its build: the version plus a hash of what the install is made
+  of (the sources, bundled skills, T3 patches and the lockfile)
   (`scripts/build-id.mjs`), baked into the daemon bundle and the desktop app.
   The desktop client treats a runtime of another build (or none) like another
   protocol major: every call fails until the runtime runs the app's build.
