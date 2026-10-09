@@ -40,6 +40,8 @@ export interface JsonStateStore<T> {
 }
 
 const DEFAULT_DEBOUNCE_MS = 150
+const ECHO_LIMIT = 16
+const ECHO_TTL_MS = 2_000
 
 export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): JsonStateStore<T> {
   const { defaults, normalize, backend } = options
@@ -48,6 +50,23 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
   let loaded = false
   let loading: Promise<T> | null = null
   let lastWrittenContent = ''
+  // Contents this store wrote whose watcher events may still arrive: a late
+  // event for an older write is an echo, not an external edit.
+  const echoes = new Map<string, number>()
+  const wrote = (content: string): void => {
+    lastWrittenContent = content
+    const now = Date.now()
+    echoes.delete(content)
+    echoes.set(content, now)
+    for (const [key, at] of echoes) {
+      if (echoes.size <= ECHO_LIMIT && now - at <= ECHO_TTL_MS) break
+      echoes.delete(key)
+    }
+  }
+  const isEcho = (raw: string): boolean => {
+    const at = echoes.get(raw)
+    return raw === lastWrittenContent || (at !== undefined && Date.now() - at <= ECHO_TTL_MS)
+  }
   let revision = 0
   let durableRevision = 0
   let lastWriteError: unknown
@@ -141,7 +160,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       const revisionAtWrite = revision
       writingRevision = revisionAtWrite
       // Record before writing so an eager watcher event still matches.
-      lastWrittenContent = content
+      wrote(content)
       try {
         lastWriteError = undefined
         await backend.write(value, content)
@@ -153,7 +172,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
           const correctionValue = current
           const correctionContent = serialize(correctionValue)
           const correctionRevision = revision
-          lastWrittenContent = correctionContent
+          wrote(correctionContent)
           try {
             await backend.write(correctionValue, correctionContent)
             durableRevision = Math.max(durableRevision, correctionRevision)
@@ -209,7 +228,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       return
     }
     if (readRevision !== revision || readGeneration !== externalReadGeneration || ownerGeneration !== watchGeneration) return
-    if (raw == null || raw === lastWrittenContent) return
+    if (raw == null || isEcho(raw)) return
     const next = parse(raw, 'external')
     if (next == null) return
     if (serialize(next) === serialize(current)) return
@@ -301,7 +320,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
     if (!hadTimer && !flushInFlight && revision === durableRevision) return
     try {
       backend.writeSync(current, content)
-      lastWrittenContent = content
+      wrote(content)
       durableRevision = revision
       lastWriteError = undefined
     } catch (error) {

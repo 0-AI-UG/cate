@@ -275,3 +275,39 @@ it('publishes accepted external revisions after an older in-flight write', async
   expect(JSON.parse(disk)).toEqual({ count: 2 })
   unsubscribe(); store.dispose()
 })
+
+it('takes a late watcher event for an earlier write as an echo, not an edit', async () => {
+  let disk: string | null = null
+  let fire: () => void = () => {}
+  let release: () => void = () => {}
+  const store = createJsonStateStore({
+    defaults,
+    normalize,
+    debounceMs: 60_000,
+    backend: {
+      read: async () => disk,
+      write: async (_value, content) => {
+        if (content.includes('2')) await new Promise<void>((resolve) => { release = resolve })
+        disk = content
+      },
+      watch: (onChange) => { fire = onChange; return () => {} },
+    },
+  })
+  await store.load()
+  const unsubscribe = store.subscribe(() => {})
+  await new Promise((r) => setTimeout(r, 0))
+  store.set({ count: 1 })
+  await store.flush()
+  store.set({ count: 2 })
+  const writing = store.flush()
+  // The event of the first write arrives while the second is being written:
+  // its read sees the first content.
+  fire()
+  await new Promise((r) => setTimeout(r, 10))
+  release()
+  await writing
+  await new Promise((r) => setTimeout(r, 10))
+  expect(store.get()).toEqual({ count: 2 })
+  expect(disk).toContain('2')
+  unsubscribe(); store.dispose()
+})
