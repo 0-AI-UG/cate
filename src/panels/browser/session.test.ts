@@ -72,7 +72,7 @@ function world(surface?: Surface): World {
       },
     },
     settings: { get: (key) => settings[key] },
-    files: { serveUrl: async (p) => `http://127.0.0.1:4000/token/${p.replace(/^\//, '')}` },
+    files: { serveUrl: async (p) => `http://127.0.0.1:4000/token/${p.replace(/^\//, '')}`, servedPath: () => null },
     newId: () => `n${++ids}`,
   }
   const entry = browserPanel(deps)

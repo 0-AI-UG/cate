@@ -2,9 +2,11 @@
 // the session, so a change from one client is the other's too (no webview in
 // node: this is the session state every client's webview follows).
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { BrowserSnapshot } from '@panels/browser/contract'
-import { startSharedWorkspace, type SharedWorkspace } from '../sharedWorkspace'
+import { startSharedWorkspace, untilState, type SharedWorkspace } from '../sharedWorkspace'
 
 let ws: SharedWorkspace
 
@@ -14,6 +16,18 @@ afterEach(async () => { await ws?.stop() })
 const code = (p: Promise<unknown>) => p.then(() => 'ok', (e: { code?: string }) => e.code ?? 'error')
 
 describe.skipIf(process.platform === 'win32')('shared workspace: browser', () => {
+  it('a tab on a workspace file loads from the restarted runtime\'s file server', async () => {
+    fs.writeFileSync(path.join(ws.root, 'page.html'), '<h1>hi</h1>')
+    const id = ws.a.createPanel('browser', { url: `file://${path.join(ws.root, 'page.html')}` })
+    const before = (await ws.a.session<BrowserSnapshot>(id).until((s) => s.tabs[0]!.url.startsWith('http://127.0.0.1'))).tabs[0]!.url
+    // The tab is saved before the runtime goes.
+    await new Promise((r) => setTimeout(r, 400))
+    await ws.restartRuntime()
+    await untilState(ws.a, 'connected', 15_000)
+    const after = await ws.a.session<BrowserSnapshot>(id).until((s) => s.tabs[0]!.url !== before, 10_000)
+    expect(await (await fetch(after.tabs[0]!.url)).text()).toBe('<h1>hi</h1>')
+  }, 40_000)
+
   for (const slow of [false, true]) {
     it(`tabs opened, navigated, pinned, selected and closed in one client are the other's${slow ? ' over a slow link' : ''}`, async () => {
       if (slow) ws.b.slow({ latencyMs: 80, jitterMs: 40 })

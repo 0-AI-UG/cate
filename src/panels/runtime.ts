@@ -173,7 +173,7 @@ const browser: PanelRuntime = (services) => ({
   ...browserPanel({
     browserData: services.browserData,
     settings: { get: (key) => services.settings.get(key as never) },
-    files: { serveUrl: (p) => services.files.serveUrl(p) },
+    files: { serveUrl: (p) => services.files.serveUrl(p), servedPath: (url) => services.files.servedPath(url) },
   }),
   attach: ({ host, router, surfaces, rpc }) => {
     const cells = new BrowserCodeCells()

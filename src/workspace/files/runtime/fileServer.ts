@@ -13,6 +13,8 @@ import type { AddressInfo } from 'node:net'
 export interface FileServer {
   /** The URL serving `absPath` (started on first use). */
   urlFor(absPath: string): Promise<string>
+  /** The workspace path a URL of this server serves, or null. */
+  pathOf(url: string): string | null
   close(): Promise<void>
 }
 
@@ -127,6 +129,11 @@ export function createFileServer(deps: FileServerDeps): FileServer {
       const safe = await deps.strict(absPath)
       const { port } = await start()
       return `http://127.0.0.1:${port}/${token}/${encodeServedPath(safe)}`
+    },
+    pathOf(url) {
+      const match = /^http:\/\/127\.0\.0\.1:\d+(\/[^?#]*)/.exec(url)
+      const prefix = `/${token}/`
+      return match && match[1].startsWith(prefix) ? decodeServedPath(match[1].slice(prefix.length)) : null
     },
     async close() {
       if (!started) return

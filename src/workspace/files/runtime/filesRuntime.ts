@@ -82,6 +82,8 @@ export interface FilesRuntime {
   /** A loopback URL of the runtime's machine serving the file (`fileServer`),
    *  so a browser panel loads it through loopback routing. */
   serveUrl(p: string): Promise<string>
+  /** The workspace file a `serveUrl` URL of this run serves, or null. */
+  servedPath(url: string): string | null
   /** Watches under `p`; `onChange` gets absolute paths. */
   watch(p: string, onChange: (changedPath: string, type: FsChangeType) => void): () => void
   searchFiles(query: string, opts?: { root?: string; maxResults?: number }): Promise<FileSearchResult[]>
@@ -206,6 +208,7 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
       return dir
     },
     serveUrl: (p) => server.urlFor(p),
+    servedPath: (url) => server.pathOf(url),
     watch(p, onChange) {
       return pool.subscribe(paths.resolve(p), onChange)
     },

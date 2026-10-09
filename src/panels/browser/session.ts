@@ -48,12 +48,18 @@ export interface BrowserSessionDeps {
   settings: { get(key: string): unknown }
   /** The workspace's files: a typed path or `file://` URL loads the
    *  workspace's file through `serveUrl`, never the client's disk. */
-  files: { serveUrl(path: string): Promise<string> }
+  files: {
+    serveUrl(path: string): Promise<string>
+    /** The workspace file a served URL shows, or null. */
+    servedPath(url: string): string | null
+  }
   newId?: () => string
 }
 
 type Persisted = {
-  tabs: Array<{ id: string; url: string; title: string; favicon: string | null; pinned: boolean }>
+  /** `file`: a workspace file the tab shows, served again at start (its URL
+   *  holds the file server's per-start port and token). */
+  tabs: Array<{ id: string; url: string; title: string; favicon: string | null; pinned: boolean; file?: string }>
   activeTabId: string
   viewport: BrowserViewport
 }
@@ -104,9 +110,15 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   override async start(): Promise<void> {
     const saved = this.persisted<Persisted>()
     if (saved && Array.isArray(saved.tabs) && saved.tabs.length > 0) {
-      const tabs = saved.tabs.map((tab): BrowserTab => ({
+      const served = await Promise.all(saved.tabs.map((tab) => (typeof tab.file === 'string'
+        ? this.deps.files.serveUrl(tab.file).catch((err) => {
+          this.kit.log.warn('browser %s: could not serve %s: %O', this.panelId, tab.file, err)
+          return null
+        })
+        : null)))
+      const tabs = saved.tabs.map((tab, index): BrowserTab => ({
         id: String(tab.id),
-        url: String(tab.url),
+        url: served[index] ?? String(tab.url),
         title: String(tab.title ?? ''),
         favicon: typeof tab.favicon === 'string' ? tab.favicon : null,
         pinned: tab.pinned === true,
@@ -156,7 +168,10 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private save(): void {
     const { tabs, activeTabId, viewport } = this.state
     this.persist({
-      tabs: tabs.map(({ id, url, title, favicon, pinned }) => ({ id, url, title, favicon, pinned })),
+      tabs: tabs.map(({ id, url, title, favicon, pinned }) => {
+        const file = this.deps.files.servedPath(url)
+        return { id, url, title, favicon, pinned, ...(file ? { file } : {}) }
+      }),
       activeTabId,
       viewport,
     } as unknown as Json)
