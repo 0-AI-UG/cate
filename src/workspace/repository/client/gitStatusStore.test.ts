@@ -8,12 +8,22 @@ function fakeVcs(files: string[] = ['a.ts', 'src/b.ts']) {
   const vcs = {
     lsFiles,
     status: (params: { cwd?: string }) => {
-      const listeners = new Set<(s: RepoStatus) => void>()
+      const listeners = new Set<(e: unknown) => void>()
       let fail!: (e: unknown) => void
       const done = new Promise<void>((_resolve, reject) => { fail = reject })
-      const sub = { cwd: params.cwd, emit: (s: RepoStatus) => listeners.forEach((l) => l(s)), fail, cancel: vi.fn() }
+      let rev = -1
+      const sub = {
+        cwd: params.cwd,
+        emit: (s: RepoStatus) => {
+          rev++
+          const event = rev === 0 ? { kind: 'snapshot', rev, snapshot: s } : { kind: 'change', rev, change: s }
+          listeners.forEach((l) => l(event))
+        },
+        fail,
+        cancel: vi.fn(),
+      }
       subs.push(sub)
-      return { onEvent: (l: (s: RepoStatus) => void) => { listeners.add(l); return () => listeners.delete(l) }, done, cancel: sub.cancel }
+      return { onEvent: (l: (e: unknown) => void) => { listeners.add(l); return () => listeners.delete(l) }, done, cancel: sub.cancel }
     },
   } as unknown as GitStatusClient
   return { vcs, subs, lsFiles }

@@ -138,8 +138,8 @@ export function PairedDevices({ workspaceId }: { workspaceId: string }): JSX.Ele
   useEffect(() => {
     if (!runtime) return
     const watch = runtime.pairing.watch(undefined, { resume: true })
-    watch.onEvent((list) => {
-      setDevices(list)
+    watch.onEvent((event) => {
+      setDevices(event.kind === 'snapshot' ? event.snapshot : event.change)
       setError(null)
     })
     watch.done.catch((err: unknown) => setError(errorMessage(err, 'Could not list paired devices.')))

@@ -84,8 +84,9 @@ export function createGitStatusStore(vcs: GitStatusClient): GitStatusStore {
       closed: false,
     }
     const sub = vcs.status({ cwd }, { resume: true })
-    sub.onEvent((status) => {
+    sub.onEvent((event) => {
       if (entry.closed) return
+      const status = event.kind === 'snapshot' ? event.snapshot : event.change
       update(entry, status)
       refreshTracked(entry, status)
     })

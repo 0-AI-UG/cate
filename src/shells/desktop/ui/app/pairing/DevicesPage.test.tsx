@@ -45,10 +45,11 @@ function fakeRuntime() {
       }),
       // The runtime sends the list, then again on every change.
       watch: vi.fn(() => ({
-        onEvent: (l: (list: PairedDevice[]) => void) => {
-          watchers.add(l)
-          queueMicrotask(() => l(devices))
-          return () => watchers.delete(l)
+        onEvent: (l: (event: { kind: 'snapshot'; snapshot: PairedDevice[] } | { kind: 'change'; change: PairedDevice[] }) => void) => {
+          const watcher = (list: PairedDevice[]) => l({ kind: 'change', change: list })
+          watchers.add(watcher)
+          queueMicrotask(() => l({ kind: 'snapshot', snapshot: devices }))
+          return () => watchers.delete(watcher)
         },
         done: new Promise(() => {}),
         cancel: () => watchers.clear(),

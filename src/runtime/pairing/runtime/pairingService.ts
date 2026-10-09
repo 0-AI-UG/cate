@@ -175,8 +175,9 @@ export function pairingCapabilityImpl(service: PairingService): CapabilityImpl<t
     createSecret: ({ mode }) => service.createSecret(mode),
     list: () => service.list(),
     watch: (_params, sink) => {
-      sink.emit(service.list())
-      return service.watch((devices) => sink.emit(devices))
+      let rev = 0
+      sink.emit({ kind: 'snapshot', rev, snapshot: service.list() })
+      return service.watch((devices) => sink.emit({ kind: 'change', rev: ++rev, change: devices }))
     },
     revoke: ({ deviceKey }) => service.revoke(deviceKey),
   }

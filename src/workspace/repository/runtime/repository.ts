@@ -399,7 +399,11 @@ export function vcsCapabilityImpl(repo: RepositoryRuntime): CapabilityImpl<VcsCa
     pullRequests: ({ refresh }) => github.pullRequests(refresh === true),
     status: async ({ cwd }, sink) => {
       const dir = await repo.resolveDir(cwd)
-      return repo.monitors.subscribe(dir, (status) => sink.emit(status))
+      let rev = -1
+      return repo.monitors.subscribe(dir, (status) => {
+        rev++
+        sink.emit(rev === 0 ? { kind: 'snapshot', rev, snapshot: status } : { kind: 'change', rev, change: status })
+      })
     },
   }
 }

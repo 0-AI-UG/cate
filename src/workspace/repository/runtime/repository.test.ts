@@ -240,7 +240,7 @@ describe('worktree lifecycle', () => {
     const impl = vcsCapabilityImpl(repo)
     const ctx = { connection: { id: 1 }, signal: new AbortController().signal } as unknown as CallContext
     const events: Array<{ dirty: boolean; files: unknown[] }> = []
-    const sink = { emit: (e: { dirty: boolean; files: unknown[] }) => events.push(e) } as never
+    const sink = { emit: (e: { kind: string; snapshot?: never; change?: never }) => events.push(e.snapshot ?? e.change!) } as never
     const stop = await impl.status({}, sink, ctx)
     await vi.waitFor(() => expect(events).toHaveLength(1))
     expect(events[0]).toMatchObject({ isRepo: true, dirty: false, files: [] })

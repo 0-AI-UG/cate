@@ -4,7 +4,7 @@
 // Every call fails with `untrusted` until the workspace is trusted: git runs
 // hooks and config the repository controls.
 
-import { defineCapability, method, stream } from '@kernel/rpc/contract'
+import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
 import type { WorktreeId, WorktreeMeta } from '@workspace/document/contract'
 import type {
   CreatePrResult,
@@ -121,10 +121,10 @@ export const vcsCapability = defineCapability('vcs', {
     pullRequests: method<{ refresh?: boolean }, PullRequestsResult>({ timeoutMs: NETWORK_MS }),
   },
   streams: {
-    /** One checkout's status: a snapshot on subscribe, then one per change.
-     *  The runtime polls (adaptive, 2 s to 30 s) and watches files while
-     *  anyone is subscribed. */
-    status: stream<AtCwd, RepoStatus>(),
+    /** One checkout's status: a snapshot, then the whole status after every
+     *  change. The runtime polls (adaptive, 2 s to 30 s) and watches files
+     *  while anyone is subscribed. */
+    status: channelStream<AtCwd, RepoStatus, RepoStatus>(),
   },
 })
 
