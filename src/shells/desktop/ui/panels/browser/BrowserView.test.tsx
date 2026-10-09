@@ -6,7 +6,7 @@ import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { installMockClientUi } from '@kernel/interaction/testing'
 import { createClientIdentity, installClientIdentity, type SessionHandle } from '@client/connections'
 import type { PanelRecord } from '@workspace/document/contract'
-import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/client'
+import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/desktop/renderer'
 import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
 import BrowserView from './BrowserView'
 

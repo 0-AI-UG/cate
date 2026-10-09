@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
-import { installBrowserPageBridge } from '@services/browser/client'
+import { installBrowserPageBridge } from '@services/browser/desktop/renderer'
 import { BrowserPasswordManagerPage } from './PasswordManagerPage'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true

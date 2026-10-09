@@ -6,9 +6,9 @@
 
 import { useSyncExternalStore } from 'react'
 import { eachConnection, type WorkspaceConnection, type WorkspaceConnections } from '@client/connections'
-import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/client'
+import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/desktop/renderer'
 import type { BrowserPageBridge } from '@services/browser/contract'
-import { installT3WebviewHost } from '@services/t3/client'
+import { installT3WebviewHost } from '@services/t3/desktop'
 import { serveBrowserCode } from '../ui/panels/browser'
 import { createLogger } from '@kernel/log/contract'
 import type { DesktopApi } from '../contract'

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
-import { installT3WebviewHost } from '@services/t3/client'
+import { installT3WebviewHost } from '@services/t3/desktop'
 import { UsageOverview } from './UsageOverview'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true

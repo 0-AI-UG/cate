@@ -12,27 +12,8 @@ import { LoadingState, Spinner, getActiveTheme, subscribeTheme } from '../../ker
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { openUrlFor, pickPanelPlace, registerSurface } from '@client/host'
 import { type PanelViewProps } from '../../client/host/views'
-import {
-  CANCEL_PENDING_SCRIPT,
-  T3_CHAT_ONLY_CSS,
-  createT3HostDispatcher,
-  hostReplyScript,
-  isAllowedT3Navigation,
-  isT3ProviderSettingsNavigation,
-  parseHostMessage,
-  prepareT3Page,
-  t3BrandingScript,
-  t3ChangesScript,
-  t3Conversations,
-  t3FileDropScript,
-  t3HostBridgeScript,
-  t3NavigateScript,
-  t3ProductCopy,
-  t3ThemeScript,
-  t3ThreadIdFromUrl,
-  type T3Guest,
-  type T3HostDispatcher,
-} from '@services/t3/client'
+import { CANCEL_PENDING_SCRIPT, T3_CHAT_ONLY_CSS, createT3HostDispatcher, hostReplyScript, isAllowedT3Navigation, isT3ProviderSettingsNavigation, parseHostMessage, t3BrandingScript, t3ChangesScript, t3Conversations, t3FileDropScript, t3HostBridgeScript, t3NavigateScript, t3ProductCopy, t3ThemeScript, t3ThreadIdFromUrl, type T3Guest, type T3HostDispatcher } from '@services/t3/client'
+import { prepareT3Page } from '@services/t3/desktop'
 import { T3ConversationPill } from '../../services/t3'
 import { WorktreePill } from '../../workspace/repository'
 import type { PlaceTarget } from '@workspace/document/contract'

@@ -8,7 +8,8 @@ import { useRuntime } from '../../kernel/rpc'
 import { LoadingState, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
 import type { T3PanelTarget } from '@services/t3/contract'
-import { T3_CHAT_ONLY_CSS, isAllowedT3Navigation, prepareT3Page, type T3Guest } from '@services/t3/client'
+import { T3_CHAT_ONLY_CSS, isAllowedT3Navigation, type T3Guest } from '@services/t3/client'
+import { prepareT3Page } from '@services/t3/desktop'
 import { USAGE_SURFACE_CSS, usageThemeScript } from './usageSurface'
 
 type State =

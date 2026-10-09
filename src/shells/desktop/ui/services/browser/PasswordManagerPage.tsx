@@ -9,7 +9,7 @@ import { clientUi, errorMessage } from '@kernel/interaction'
 import { LoadingState, Spinner, SecondaryButton, Select } from '../../kernel/interaction'
 import { useRuntime } from '../../kernel/rpc'
 import type { BrowserChromeImport, BrowserChromeProfiles, BrowserCredentialSuggestion } from '@services/browser/contract'
-import { browserPageBridge } from '@services/browser/client'
+import { browserPageBridge } from '@services/browser/desktop/renderer'
 
 type PasswordManagerTab = 'passwords' | 'advanced'
 

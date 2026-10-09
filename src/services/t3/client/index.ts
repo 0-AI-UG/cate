@@ -1,4 +1,5 @@
-// services/t3 client side: the harness page, its theming and the guest bridge.
+// services/t3 client side: the harness page's scripts, its theming and the
+// guest bridge (hosting the page in a webview is the desktop side's).
 
 export {
   T3_CHAT_ONLY_CSS,
@@ -19,5 +20,4 @@ export {
 } from './bridge'
 export { createT3HostDispatcher, type T3HostActions, type T3HostDispatcher } from './dispatcher'
 export { t3FileDropScript, t3ChangesScript, t3SendTextScript, t3NavigateScript, type T3Guest, type GuestDropFile } from './guest'
-export { installT3WebviewHost, t3WebviewHost, prepareT3Page, type T3WebviewHost } from './webview'
 export { t3Conversations, t3ProductCopy, type T3ConversationSource } from './conversations'
