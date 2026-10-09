@@ -4,12 +4,26 @@
 import { isRpcError, type RuntimeProxy } from '@kernel/rpc/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import type { DocChange, PanelId } from '@workspace/document/contract'
-import { boundWorktreeId, type JoinedWorktree, type PullRequestItem } from '../contract'
+import { boundWorktreeId, toBranchName, type JoinedWorktree, type PullRequestItem } from '../contract'
 import type { RepositoryHost } from './host'
 
 // "Open in Cate" for a pull request: check it out into its own worktree in
 // this workspace, make sure each worktree panel type runs there, and open a
 // review of the PR's changes.
+
+/** A new worktree on branch `rawName` (made a valid branch name; the name as
+ *  typed stays its label when it differs), from `baseRef` when given. */
+export function createWorktree(runtime: Pick<RuntimeProxy, 'vcs'>, rawName: string, baseRef?: string) {
+  const branch = toBranchName(rawName)
+  if (!branch) throw new Error('Please enter a name')
+  const label = rawName.trim() !== branch ? rawName.trim() : undefined
+  return runtime.vcs.worktreeCreate({ branch, ...(baseRef ? { base: baseRef } : {}), ...(label ? { label } : {}) })
+}
+
+/** A new worktree checking out pull request `pr`, labelled with its number. */
+export function checkoutPullRequest(runtime: Pick<RuntimeProxy, 'vcs'>, pr: { number: number; headRefName: string }) {
+  return runtime.vcs.worktreeCreate({ branch: pr.headRefName, fromPr: pr.number, label: `#${pr.number} ${pr.headRefName}` })
+}
 
 /** Opens `pr` in the workspace. Resolves false when the workspace's origin is
  *  not the PR's repository (the client tries its other workspaces). */
@@ -21,11 +35,7 @@ export async function openPullRequest(
   const context = await runtime.vcs.prContext({ repository: pr.repository, number: pr.number })
   if (!context) return false
   const worktree = host.worktrees.find((wt) => wt.prNumber === pr.number)
-    ?? await runtime.vcs.worktreeCreate({
-      branch: context.headRefName,
-      fromPr: pr.number,
-      label: `#${pr.number} ${context.headRefName}`,
-    })
+    ?? await checkoutPullRequest(runtime, { number: pr.number, headRefName: context.headRefName })
   for (const { type } of host.launchTypes.filter((launch) => launch.switches)) {
     if (host.panels.some((panel) => panel.type === type && panel.worktreeId === worktree.id)) continue
     if (!(await host.launchInWorktree(worktree, type))) return true

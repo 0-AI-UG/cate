@@ -5,6 +5,6 @@ export {
   type GitStatusSnapshot,
   type GitStatusStore,
 } from './gitStatusStore'
-export { discardWorktree, openPullRequest, pullRequestNotOpenMessage, switchPanelWorktree } from './flows'
+export { checkoutPullRequest, createWorktree, discardWorktree, openPullRequest, pullRequestNotOpenMessage, switchPanelWorktree } from './flows'
 export type { RepositoryHost, ReviewRequest, WorktreeLaunchType } from './host'
 export { fetchWorktreePrs, fetchWorktreeStatuses, type WorktreeStatusClient } from './worktrees'

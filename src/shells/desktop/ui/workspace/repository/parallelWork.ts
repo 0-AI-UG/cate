@@ -4,13 +4,13 @@
 // worktree surface bind their buttons to these.
 
 import { useCallback } from 'react'
-import { discardWorktree } from '@workspace/repository/client'
+import { checkoutPullRequest, createWorktree as createWorktreeIn, discardWorktree } from '@workspace/repository/client'
 import { useRuntime } from '../../kernel/rpc'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import type { WorktreeMeta } from '@workspace/document/contract'
 // Brings the `file` capability into the runtime proxy's type.
 
-import { pickWorktreeColor, samePath, toBranchName, type JoinedWorktree, type PrSummary } from '@workspace/repository/contract'
+import { pickWorktreeColor, samePath, type JoinedWorktree, type PrSummary } from '@workspace/repository/contract'
 import { useRepositoryUi } from './context'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
 
@@ -108,15 +108,12 @@ export function useParallelWork(
 
   const createWorktree = useCallback(async (rawName: string, baseRef?: string) => {
     if (!runtime) return null
-    const branch = toBranchName(rawName)
-    if (!branch) throw new Error('Please enter a name')
-    const label = rawName.trim() !== branch ? rawName.trim() : undefined
-    return runtime.vcs.worktreeCreate({ branch, ...(baseRef ? { base: baseRef } : {}), ...(label ? { label } : {}) })
+    return createWorktreeIn(runtime, rawName, baseRef)
   }, [runtime])
 
   const checkoutPr = useCallback(async (pr: PrSummary) => {
     if (!runtime) return null
-    return runtime.vcs.worktreeCreate({ branch: pr.headRefName, fromPr: pr.number, label: `#${pr.number} ${pr.headRefName}` })
+    return checkoutPullRequest(runtime, pr)
   }, [runtime])
 
   const launchInWorktree = useCallback(
