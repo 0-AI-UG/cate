@@ -86,6 +86,8 @@ export interface SharedWorkspace {
 
 export interface SharedWorkspaceOptions {
   git?: boolean
+  /** A trusts the workspace at start. Default true. */
+  trusted?: boolean
   files?: Record<string, string>
 }
 
@@ -248,7 +250,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
 
   const a = localClient('A')
   await a.document.ready
-  await a.connection.runtime.workspace.setTrust({ trusted: true })
+  await a.connection.runtime.workspace.setTrust({ trusted: opts.trusted ?? true })
   const b = await networkClient('B', a)
   await b.document.ready
 

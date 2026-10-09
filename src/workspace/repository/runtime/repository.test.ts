@@ -207,10 +207,18 @@ describe('worktree lifecycle', () => {
     await expect(Promise.resolve().then(() => impl.isRepo({}, ctx))).rejects.toSatisfy(untrusted)
     await expect(Promise.resolve().then(() => impl.commit({ message: 'm' }, ctx))).rejects.toSatisfy(untrusted)
     await expect(Promise.resolve().then(() => impl.githubConnection(undefined, ctx))).rejects.toSatisfy(untrusted)
-    const sink = { emit: vi.fn() } as never
-    await expect(Promise.resolve().then(() => impl.status({}, sink, ctx))).rejects.toSatisfy(untrusted)
+    // The status stream waits for trust: no snapshot, no git.
+    const emit = vi.fn()
+    const stop = await impl.status({}, { emit } as never, ctx)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(emit).not.toHaveBeenCalled()
     await repo.reconcileWorktrees()
     expect(document.ops).toEqual([])
+
+    trusted = true
+    repo.trustChanged()
+    await vi.waitFor(() => expect(emit).toHaveBeenCalled())
+    stop?.()
   })
 
   test('the status stream sends a snapshot and follows writes', async () => {

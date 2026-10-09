@@ -134,23 +134,13 @@ const editor: PanelRuntime = (services) => ({
 })
 
 const review: PanelRuntime = (services) => {
-  const { git, monitors, write } = services.repository
+  const { git, monitors } = services.repository
   const { agents } = services
   return reviewPanel({
     root: services.root,
+    // The repository's git checks trust and queues its writes.
     repository: {
-      compare: (params) => git.compare(params),
-      fileDiff: (params) => git.fileDiff(params),
-      fileContent: (params) => git.fileContent(params),
-      // Writes run in the repository's queue, like every other git write.
-      stage: (params) => write(() => git.stage(params)),
-      unstage: (params) => write(() => git.unstage(params)),
-      discardFile: (params) => write(() => git.discardFile(params)),
-      commit: (params) => write(() => git.commit(params)),
-      log: (params) => git.log(params),
-      branchList: (params) => git.branchList(params),
-      readStatus: (params) => git.readStatus(params),
-      createPr: (params) => git.createPr(params),
+      ...git,
       watchStatus: (cwd, listener) => monitors.subscribe(cwd, listener),
       refreshStatus: (cwd) => monitors.kick(cwd),
     },

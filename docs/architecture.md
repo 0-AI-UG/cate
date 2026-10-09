@@ -954,7 +954,11 @@ report their own view, focus and attention; presence is never persisted.
   workspace is trusted, the runtime serves the document and files, but runs
   no process at all (terminals, agents, T3, hooks, and git, whose config and
   hooks a repository controls) and applies nothing from `<project>/.cate/`
-  (skills); those calls fail with `untrusted`. The first client to open an
+  (skills); those calls fail with `untrusted`. The gate sits inside each
+  runtime that runs processes, not at its capability: the repository runtime
+  hands out only a `git` and `gh` that refuse while untrusted, and its status
+  monitors read nothing until trust is granted, so an in-process caller (a
+  panel session) cannot skip it. The first client to open an
   untrusted workspace shows the trust dialog once it is connected (an
   incompatible runtime is updated first, 7.10); the answer is
   `workspace.setTrust`. `cate serve` trusts the workspace it serves. Because

@@ -24,6 +24,9 @@ export interface StatusMonitorDeps {
   allIgnored?: (cwd: string, paths: string[]) => Promise<boolean>
   /** Every new snapshot, after subscribers got it. */
   onSnapshot?: (cwd: string, status: RepoStatus) => void
+  /** While false, monitors read nothing and wait for a kick (an untrusted
+   *  workspace runs no git). Default: always. */
+  active?: () => boolean
   log?: Logger
 }
 
@@ -65,7 +68,7 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
   async function tick(m: Monitor, force: boolean): Promise<void> {
     if (m.timer) clearTimeout(m.timer)
     m.timer = null
-    if (m.closed) return
+    if (m.closed || (deps.active && !deps.active())) return
     const epoch = ++m.epoch
     const stale = () => m.closed || m.epoch !== epoch
     let changed = false

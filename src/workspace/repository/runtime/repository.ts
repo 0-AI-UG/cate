@@ -1,6 +1,9 @@
 // The repository runtime: git and `gh` behind trust, status monitors, and the
 // worktree lifecycle, which writes `WorktreeMeta` status through the document
-// so every client sees a create or remove in progress.
+// so every client sees a create or remove in progress. Trust is enforced
+// here, not at the capability: the `git` and `github` it hands out refuse
+// every call while the workspace is untrusted, and the monitors run no git
+// until it is trusted.
 
 import { randomUUID } from 'node:crypto'
 import fsp from 'node:fs/promises'
@@ -23,6 +26,7 @@ import {
   type VcsCapability,
   type WorktreePruneResult,
   type WorktreeRemoveResult,
+  type PullRequestContext,
 } from '../contract'
 import { createGitHost, type GitHost } from './git'
 import { createGithubHost, type GithubHost } from './github'
@@ -68,18 +72,35 @@ export interface RepositoryRuntimeDeps {
   newId?: () => string
 }
 
+/** git calls that change the repository: they run in the write queue and
+ *  wake the status monitors. */
+const GIT_WRITES = [
+  'init', 'stage', 'stageAll', 'unstage', 'discardFile', 'commit', 'push', 'pull', 'fetch', 'branchCreate',
+  'branchDelete', 'checkout', 'stash', 'stashPop', 'worktreeMergeTo', 'worktreeUpdateFrom', 'createPr',
+] as const satisfies readonly (keyof GitHost)[]
+const GIT_READS = [
+  'isRepo', 'findRepos', 'lsFiles', 'readStatus', 'remotes', 'fileWebUrl', 'compare', 'fileDiff', 'fileContent',
+  'log', 'branchList', 'worktreeList', 'worktreeStatus', 'worktreeReview', 'prStatus', 'prList',
+] as const satisfies readonly (keyof GitHost)[]
+
+/** The git the rest of the runtime gets: every call needs trust. */
+export type RepositoryGit = Pick<GitHost, (typeof GIT_WRITES)[number] | (typeof GIT_READS)[number]>
+/** The `gh` the rest of the runtime gets: every call needs trust. */
+export type RepositoryGithub = Pick<GithubHost, 'connection' | 'pullRequests' | 'loginState' | 'startLogin' | 'cancelLogin'>
+  & { pullRequestContext(repository: string, number: number): Promise<PullRequestContext | null> }
+
 type CreateParams = ParamsOf<VcsCapability['methods']['worktreeCreate']>
 type RemoveParams = ParamsOf<VcsCapability['methods']['worktreeRemove']>
 
 export interface RepositoryRuntime {
   readonly root: string
-  readonly trust: RepositoryTrust
-  readonly git: GitHost
-  readonly github: GithubHost
-  readonly monitors: StatusMonitors
+  readonly git: RepositoryGit
+  readonly github: RepositoryGithub
+  /** Status monitors; they read nothing while the workspace is untrusted. */
+  readonly monitors: Pick<StatusMonitors, 'subscribe' | 'kick'>
+  /** Trust was granted or revoked: monitors resume, or stop reading. */
+  trustChanged(): void
   resolveDir(cwd?: string): Promise<string>
-  /** Runs `fn` in this repository's write queue. */
-  write<T>(fn: () => Promise<T>): Promise<T>
   createWorktree(params: CreateParams): Promise<WorktreeMeta>
   removeWorktree(params: RemoveParams): Promise<WorktreeRemoveResult>
   pruneWorktrees(): Promise<WorktreePruneResult>
@@ -98,21 +119,42 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
   const write = <T>(fn: () => Promise<T>) => lock.run(REPO, fn)
   const inFlight = new Map<string, Promise<unknown>>()
 
-  const git = createGitHost({
+  const raw = createGitHost({
     env: deps.env,
     resolveDir: (cwd) => deps.paths.resolveDir(cwd ?? root),
     addCheckout: (p) => deps.paths.addCheckout(p),
     removeCheckout: (p) => deps.paths.removeCheckout(p),
     prepareCateDir: deps.prepareCateDir,
   })
-  const github = createGithubHost({ env: deps.env })
+  const rawGithub = createGithubHost({ env: deps.env })
+
+  const gated = <A extends unknown[], R>(fn: (...args: A) => R) => (...args: A): R => {
+    trust.requireTrusted()
+    return fn(...args)
+  }
+  const git = Object.fromEntries([
+    ...GIT_READS.map((name) => [name, gated(raw[name] as (p: unknown) => Promise<unknown>)]),
+    ...GIT_WRITES.map((name) => [name, gated((p: unknown) =>
+      write(() => (raw[name] as (p: unknown) => Promise<unknown>)(p)).finally(() => monitors.kick()))]),
+  ]) as unknown as RepositoryGit
+  const github: RepositoryGithub = {
+    connection: gated(() => rawGithub.connection()),
+    pullRequests: gated((refresh?: boolean) => rawGithub.pullRequests(refresh)),
+    loginState: gated((owner: number) => rawGithub.loginState(owner)),
+    startLogin: gated((owner: number) => rawGithub.startLogin(owner)),
+    cancelLogin: gated((owner: number) => rawGithub.cancelLogin(owner)),
+    pullRequestContext: gated(async (repository: string, number: number) => {
+      if (!(await raw.isRepo({}))) return null
+      return rawGithub.pullRequestContext(root, repository, number)
+    }),
+  }
 
   async function snapshot(cwd: string): Promise<RepoStatus> {
-    if (!(await git.isRepo({ cwd }))) return EMPTY_REPO_STATUS
+    if (!(await raw.isRepo({ cwd }))) return EMPTY_REPO_STATUS
     const [status, probe, worktrees] = await Promise.all([
-      git.readStatus({ cwd }),
-      git.probe({ cwd }),
-      git.worktreeList({ cwd }),
+      raw.readStatus({ cwd }),
+      raw.probe({ cwd }),
+      raw.worktreeList({ cwd }),
     ])
     return {
       isRepo: true,
@@ -129,10 +171,11 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
 
   let lastRootWorktrees: string | null = null
   const monitors = createStatusMonitors({
-    probe: (cwd) => git.probe({ cwd }),
+    probe: (cwd) => raw.probe({ cwd }),
     snapshot,
     watch: deps.watch,
-    allIgnored: (cwd, paths) => git.allIgnored({ cwd, paths }),
+    allIgnored: (cwd, paths) => raw.allIgnored({ cwd, paths }),
+    active: () => trust.isTrusted(),
     log: deps.log,
     onSnapshot: (cwd, status) => {
       if (!samePath(cwd, root)) return
@@ -161,8 +204,8 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
 
   function createWorktree(params: CreateParams): Promise<WorktreeMeta> {
     trust.requireTrusted()
-    const raw = params.branch ?? ''
-    const branch = toBranchName(raw)
+    const typed = params.branch ?? ''
+    const branch = toBranchName(typed)
     if (!branch) return Promise.reject(new RpcError('rejected', 'Please enter a name'))
     const fromPr = params.fromPr
     if (fromPr !== undefined && (!Number.isSafeInteger(fromPr) || fromPr < 1)) {
@@ -171,7 +214,7 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
     const slug = worktreeSlug(fromPr !== undefined ? `pr-${fromPr}-${branch}` : branch)
     const targetPath = path.join(root, ...WORKTREES_DIR, slug)
     const label = params.label?.trim()
-      || (fromPr !== undefined ? `#${fromPr} ${raw.trim()}` : raw.trim() !== branch ? raw.trim() : undefined)
+      || (fromPr !== undefined ? `#${fromPr} ${typed.trim()}` : typed.trim() !== branch ? typed.trim() : undefined)
 
     const create = async (): Promise<WorktreeMeta> => {
       if (worktrees().some((w) => samePath(w.path, targetPath))) {
@@ -187,8 +230,8 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
       }
       await document.apply({ kind: 'setWorktree', worktree: meta })
       try {
-        if (fromPr !== undefined) await git.addWorktreeFromPr({ prNumber: fromPr, targetPath })
-        else await git.addWorktree({ branch, targetPath, createBranch: true, baseRef: params.base })
+        if (fromPr !== undefined) await raw.addWorktreeFromPr({ prNumber: fromPr, targetPath })
+        else await raw.addWorktree({ branch, targetPath, createBranch: true, baseRef: params.base })
       } catch (err) {
         await document.apply({ kind: 'removeWorktree', id: meta.id }).catch(() => {})
         throw err
@@ -221,13 +264,13 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
 
       let branch: string | null = null
       try {
-        const listed = await git.listWorktrees({})
+        const listed = await raw.listWorktrees({})
         branch = listed.find((w) => samePath(w.path, meta.path))?.branch ?? null
         const exists = await fsp.stat(meta.path).then((s) => s.isDirectory(), () => false)
         if (exists) {
-          await git.removeWorktree({ targetPath: meta.path, force: params.force })
+          await raw.removeWorktree({ targetPath: meta.path, force: params.force })
         } else {
-          await git.pruneWorktrees({})
+          await raw.pruneWorktrees({})
           deps.paths.removeCheckout(meta.path)
         }
       } catch (err) {
@@ -239,7 +282,7 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
       const result: WorktreeRemoveResult = {}
       if (branch && params.deleteBranch !== false) {
         try {
-          await git.branchDelete({ name: branch, force: true })
+          await raw.branchDelete({ name: branch, force: true })
         } catch (err) {
           result.branchDeleteError = errorText(err)
         }
@@ -255,8 +298,8 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
   function pruneWorktrees(): Promise<WorktreePruneResult> {
     trust.requireTrusted()
     return joined('prune', () => write(async () => {
-      const { output } = await git.pruneWorktrees({})
-      const live = await git.listWorktrees({})
+      const { output } = await raw.pruneWorktrees({})
+      const live = await raw.listWorktrees({})
       if (!live.some((w) => samePath(w.path, root))) {
         throw new Error('Couldn’t verify the live worktrees after cleanup. No saved entries were removed.')
       }
@@ -277,8 +320,8 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
   async function reconcileWorktrees(): Promise<void> {
     if (!trust.isTrusted()) return
     await write(async () => {
-      if (!(await git.isRepo({}))) return
-      const live = await git.listWorktrees({})
+      if (!(await raw.isRepo({}))) return
+      const live = await raw.listWorktrees({})
       const known = worktrees()
       const added: WorktreeMeta[] = []
       for (const wt of live) {
@@ -291,12 +334,11 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
 
   return {
     root,
-    trust,
     git,
     github,
     monitors,
+    trustChanged: () => monitors.kick(),
     resolveDir: async (cwd) => deps.paths.resolveDir(cwd ?? root),
-    write,
     createWorktree,
     removeWorktree,
     pruneWorktrees,
@@ -304,7 +346,7 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
     snapshot,
     dispose() {
       monitors.dispose()
-      github.dispose()
+      rawGithub.dispose()
     },
   }
 }
@@ -313,70 +355,25 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-/** The `vcs` capability. Every call needs trust; writes run in the
- *  repository's queue and wake the status monitors. */
+/** The `vcs` capability: the repository runtime's git, gh and monitors,
+ *  which check trust themselves. */
 export function vcsCapabilityImpl(repo: RepositoryRuntime): CapabilityImpl<VcsCapability> {
-  const { git, github, trust } = repo
-  const read = <P, R>(fn: (p: P) => Promise<R>) => (p: P): Promise<R> => {
-    trust.requireTrusted()
-    return fn(p)
-  }
-  const mutate = <P, R>(fn: (p: P) => Promise<R>) => (p: P): Promise<R> => {
-    trust.requireTrusted()
-    return repo.write(() => fn(p)).finally(() => repo.monitors.kick())
-  }
+  const { git, github } = repo
   return {
-    isRepo: read(git.isRepo),
-    findRepos: read(git.findRepos),
-    init: mutate(git.init),
-    lsFiles: read(git.lsFiles),
-    readStatus: read(git.readStatus),
-    remotes: read(git.remotes),
-    fileWebUrl: read(git.fileWebUrl),
-    compare: read(git.compare),
-    fileDiff: read(git.fileDiff),
-    fileContent: read(git.fileContent),
-    stage: mutate(git.stage),
-    stageAll: mutate(git.stageAll),
-    unstage: mutate(git.unstage),
-    discardFile: mutate(git.discardFile),
-    commit: mutate(git.commit),
-    log: read(git.log),
-    push: mutate(git.push),
-    pull: mutate(git.pull),
-    fetch: mutate(git.fetch),
-    branchList: read(git.branchList),
-    branchCreate: mutate(git.branchCreate),
-    branchDelete: mutate(git.branchDelete),
-    checkout: mutate(git.checkout),
-    stash: mutate(git.stash),
-    stashPop: mutate(git.stashPop),
-    worktreeList: read(git.worktreeList),
+    ...git,
     worktreeCreate: (p) => repo.createWorktree(p),
     worktreeRemove: (p) => repo.removeWorktree(p),
     worktreePrune: () => repo.pruneWorktrees(),
-    worktreeStatus: read(git.worktreeStatus),
-    worktreeReview: read(git.worktreeReview),
-    worktreeMergeTo: mutate(git.worktreeMergeTo),
-    worktreeUpdateFrom: mutate(git.worktreeUpdateFrom),
-    createPr: mutate(git.createPr),
-    prStatus: read(git.prStatus),
-    prList: read(git.prList),
-    prContext: mutate(async ({ repository, number }) => {
-      if (!(await git.isRepo({}))) return null
-      return github.pullRequestContext(repo.root, repository, number)
-    }),
-    githubConnection: read(() => github.connection()),
+    prContext: ({ repository, number }) => github.pullRequestContext(repository, number),
+    githubConnection: () => github.connection(),
     githubLogin: ({ operation }, ctx) => {
-      trust.requireTrusted()
       const owner = ctx.connection.id
       if (operation === 'start') return github.startLogin(owner)
       if (operation === 'cancel') github.cancelLogin(owner)
       return github.loginState(owner)
     },
-    pullRequests: read(({ refresh }) => github.pullRequests(refresh === true)),
+    pullRequests: ({ refresh }) => github.pullRequests(refresh === true),
     status: async ({ cwd }, sink) => {
-      trust.requireTrusted()
       const dir = await repo.resolveDir(cwd)
       return repo.monitors.subscribe(dir, (status) => sink.emit(status))
     },

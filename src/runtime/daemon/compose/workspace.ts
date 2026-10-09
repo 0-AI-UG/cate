@@ -403,6 +403,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     await skills.seedBundled().catch((err: Error) => log.warn('seeding bundled skills failed: %s', err.message))
   }
   offs.push(trust.onChange((state) => {
+    repository.trustChanged()
     if (state.trusted) void reconcileWorktrees().then(seedSkills)
   }))
 

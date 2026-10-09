@@ -6,7 +6,7 @@
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { sessionApi } from '@kernel/api/contract'
-import { RpcError } from '@kernel/rpc/contract'
+import { isRpcError, RpcError } from '@kernel/rpc/contract'
 import {
   activeAgentChanges,
   filterAgentChanges,
@@ -421,7 +421,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       this.deps.repository.refreshStatus(this.cwd)
       await this.refresh()
     })
-    if (failure !== undefined) throw new RpcError('rejected', errorText(failure, fallback))
+    if (failure !== undefined) throw isRpcError(failure) ? failure : new RpcError('rejected', errorText(failure, fallback))
   }
 
   private absolute(relativePath: string): string {

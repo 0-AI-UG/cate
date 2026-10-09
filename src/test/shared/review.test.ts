@@ -66,4 +66,16 @@ describe.skipIf(process.platform === 'win32')('shared workspace: review', () => 
     const restored = await ws.b.session<ReviewSnapshot>(id).until(settled)
     expect((restored.review.notes ?? []).map((n) => n.body)).toEqual(['keep me'])
   })
+
+  it('an untrusted workspace\'s review runs no git write', async () => {
+    ws = await startSharedWorkspace({ trusted: false, files: { 'a.txt': 'one\n' } })
+    fs.writeFileSync(path.join(ws.root, 'a.txt'), 'two\n')
+    execFileSync('git', ['add', 'a.txt'], { cwd: ws.root, stdio: 'ignore' })
+    const id = ws.a.createPanel('review')
+    const a = ws.a.session<ReviewSnapshot>(id)
+    await a.until(() => true)
+    await expect(a.send({ kind: 'commit', message: 'sneaky' })).rejects.toMatchObject({ code: 'untrusted' })
+    const commits = execFileSync('git', ['rev-list', '--count', 'HEAD'], { cwd: ws.root, encoding: 'utf8' }).trim()
+    expect(commits).toBe('1')
+  })
 })
