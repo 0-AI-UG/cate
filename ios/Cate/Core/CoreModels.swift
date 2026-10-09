@@ -53,12 +53,11 @@ struct OtherClient: Decodable, Equatable, Hashable, Identifiable {
 /// An agent a panel hosts (`MobileAgent`).
 struct Agent: Decodable, Equatable, Hashable, Identifiable {
     let panelId: String
-    /// `terminal` or `chat`.
+    /// The hosting panel's type.
     let panelType: String
     let title: String
     let agentId: String?
     let agentName: String?
-    let runner: String
     /// `notRunning`, `running`, `waitingForInput` or `finished`.
     let status: String
     let present: Bool
@@ -74,7 +73,7 @@ struct Agent: Decodable, Equatable, Hashable, Identifiable {
     /// Blocked on the person: a permission or a question.
     var needsYou: Bool { status == "waitingForInput" && !canReceivePrompt }
     var working: Bool { status == "running" }
-    var name: String { agentName ?? (runner == "t3" ? "T3 Code" : "Agent") }
+    var name: String { agentName ?? "Agent" }
 }
 
 /// The runtime's `power` state.

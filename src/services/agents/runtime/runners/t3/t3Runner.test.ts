@@ -97,9 +97,11 @@ describe('t3 runner', () => {
     publish({ 'thread-1': idle() })
     expect(agents.panel('chat')).toEqual({
       panelId: 'chat',
-      runner: 't3',
       agentId: 'codex',
       agentName: 'Codex',
+      label: 'Codex',
+      takesOverPanel: false,
+      contextPolicy: { kind: 'plain' },
       status: 'waitingForInput',
       present: true,
       canReceivePrompt: true,
@@ -130,6 +132,7 @@ describe('t3 runner', () => {
     publish({ 'thread-1': running() })
     await expect(agents.send('chat', 'x')).resolves.toEqual({ ok: false, error: 'agent-busy' })
     publish({ 'thread-1': idle() }, false)
+    expect(agents.panel('chat')?.label).toBe('Codex (disconnected)')
     await expect(agents.send('chat', 'x')).resolves.toEqual({ ok: false, error: 'agent-not-running' })
     expect(turns).toEqual([])
   })
@@ -145,7 +148,7 @@ describe('t3 runner', () => {
   it('sends a fresh chat\'s first prompt through its page composer', async () => {
     binding = { checkout: CHECKOUT }
     publish({})
-    expect(agents.panel('chat')).toMatchObject({ agentName: 'T3 Code', canReceivePrompt: true, session: null })
+    expect(agents.panel('chat')).toMatchObject({ agentName: 'T3 Code', label: 'T3 Code', canReceivePrompt: true, session: null })
     await expect(agents.send('chat', 'hi')).resolves.toEqual({ ok: true })
     expect(turns).toEqual([])
   })

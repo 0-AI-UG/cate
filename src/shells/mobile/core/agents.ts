@@ -164,21 +164,19 @@ export function createMobileAgents(client: MobileClient, bridge: MobileBridge): 
       const doc = documentStoreFor(workspaceId)?.getSnapshot()
       return Object.values(entry.states).flatMap((state): MobileAgent[] => {
         const panel = doc?.panels[state.panelId]
-        // A terminal shows as an agent only while one runs in it.
-        if (state.runner === 'terminal' && !state.present && state.status === 'notRunning') return []
+        if (!panel) return []
         return [{
           panelId: state.panelId,
-          panelType: panel?.type ?? (state.runner === 't3' ? 'chat' : 'terminal'),
-          title: panel?.title || state.agentName || 'Agent',
+          panelType: panel.type,
+          title: panel.title || state.agentName || 'Agent',
           agentId: state.agentId,
           agentName: state.agentName,
-          runner: state.runner,
           status: state.status,
           present: state.present,
           canReceivePrompt: state.canReceivePrompt,
           attention: state.status === 'waitingForInput' ? entry.attention.get(state.panelId) ?? null : null,
           since: entry.since.get(state.panelId)?.at ?? Date.now(),
-          checkout: state.session?.cwd ?? (panel?.worktreeId ? doc?.worktrees[panel.worktreeId]?.path ?? null : null),
+          checkout: state.session?.cwd ?? (panel.worktreeId ? doc?.worktrees[panel.worktreeId]?.path ?? null : null),
         }]
       })
     },

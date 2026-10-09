@@ -24,7 +24,7 @@ it('warns while the agent runs without Cate hooks and opens the hooks settings',
   act(() => root.render(<AgentHooksOffOverlay workspaceId="ws" record={{ id: 'term' } as PanelRecord} />))
   expect(host.textContent).toBe('')
 
-  const state = { panelId: 'term', runner: 'terminal', agentId: 'claude-code', agentName: 'Claude Code', status: 'running', present: true, canReceivePrompt: false, session: null } as const
+  const state = { panelId: 'term', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status: 'running', present: true, canReceivePrompt: false, session: null } as const
   act(() => panels.emit({ kind: 'snapshot', rev: 1, snapshot: { term: { ...state, hooksMissing: true } } }))
   expect(host.textContent).toBe('Hooks off')
   act(() => host.querySelector('button')!.click())

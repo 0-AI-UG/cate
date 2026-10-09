@@ -3,26 +3,21 @@ import type { PanelAgentState } from '@services/agents/contract'
 import { agentPanelInfo, agentPanelTitle, isAgentFallbackTitle } from './panelInfo'
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
-  panelId: 'p1', runner: 'terminal', agentId: 'claude-code', agentName: 'Claude Code', status: 'waitingForInput',
+  panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status: 'waitingForInput',
   present: true, canReceivePrompt: true, session: null, ...patch,
 })
 
 describe('agentPanelInfo', () => {
   it('names a present terminal agent with its logo', () => {
     const info = agentPanelInfo(state())
-    expect(info).toMatchObject({ status: 'waitingForInput', runner: 'terminal', name: 'Claude Code' })
+    expect(info).toMatchObject({ status: 'waitingForInput', takesOverPanel: true, name: 'Claude Code' })
     expect(info.logo).toEqual(expect.any(String))
   })
 
-  it('drops name and logo once the CLI exited but keeps the status', () => {
-    expect(agentPanelInfo(state({ present: false, status: 'finished' }))).toEqual({
-      status: 'finished', runner: 'terminal', name: null, logo: null,
+  it('drops name and logo with the label but keeps the status', () => {
+    expect(agentPanelInfo(state({ present: false, label: null, status: 'finished' }))).toEqual({
+      status: 'finished', takesOverPanel: true, name: null, logo: null,
     })
-  })
-
-  it('falls back to T3 Code for a chat without a provider and marks a disconnected one', () => {
-    expect(agentPanelInfo(state({ runner: 't3', agentId: null, agentName: null }))).toMatchObject({ name: 'T3 Code', logo: null })
-    expect(agentPanelInfo(state({ runner: 't3', present: false })).name).toBe('Claude Code (disconnected)')
   })
 })
 

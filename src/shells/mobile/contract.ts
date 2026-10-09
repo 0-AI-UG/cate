@@ -157,13 +157,12 @@ export interface MobileCanvas {
 /** An agent a panel hosts, as the agents home and the session show it. */
 export interface MobileAgent {
   panelId: string
-  /** The hosting panel's type: `terminal` or `chat`. */
+  /** The hosting panel's type. */
   panelType: string
   title: string
   agentId: AgentId | null
   /** Null until the agent is known. */
   agentName: string | null
-  runner: AgentRunner
   status: AgentStatus
   present: boolean
   canReceivePrompt: boolean

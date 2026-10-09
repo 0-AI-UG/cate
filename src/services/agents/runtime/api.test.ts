@@ -29,7 +29,7 @@ function fakeRunner(kind: AgentRunner) {
   }
   const set = (panelId: string, state: Partial<PanelAgentState>) => {
     states.set(panelId, {
-      panelId, runner: kind, agentId: 'codex', agentName: 'Codex', status: 'waitingForInput',
+      panelId, agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: kind === 'terminal', contextPolicy: null, status: 'waitingForInput',
       present: true, canReceivePrompt: true, session: null, ...state,
     })
     for (const listener of listeners) listener(panelId)

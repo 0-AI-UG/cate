@@ -17,7 +17,7 @@ function fakeRunner(kind: AgentRunner) {
   const set = (panelId: string, state: Partial<PanelAgentState> | null) => {
     if (state) {
       states.set(panelId, {
-        panelId, runner: kind, agentId: null, agentName: null, status: 'waitingForInput',
+        panelId, agentId: null, agentName: null, label: null, takesOverPanel: kind === 'terminal', contextPolicy: null, status: 'waitingForInput',
         present: true, canReceivePrompt: true, session: null, ...state,
       })
     } else states.delete(panelId)
@@ -35,7 +35,8 @@ describe('runner registry', () => {
     registry.register(t3.runner)
     terminal.set('term', { agentId: 'codex' })
     t3.set('chat', { agentId: 'claude-code' })
-    expect(registry.sessionFor('term')).toMatchObject({ runner: 'terminal', agentId: 'codex' })
+    expect(registry.sessionFor('term')).toMatchObject({ agentId: 'codex' })
+    expect(registry.runnerFor('term')).toBe(terminal.runner)
     expect(registry.runnerFor('chat')).toBe(t3.runner)
     expect(registry.sessionFor('editor')).toBeNull()
     expect(Object.keys(registry.all()).sort()).toEqual(['chat', 'term'])

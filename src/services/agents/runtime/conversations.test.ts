@@ -34,7 +34,7 @@ function setup() {
   registry.register(runner)
   const setStatus = (status: AgentStatus) => {
     states.set('p1', {
-      panelId: 'p1', runner: 'terminal', agentId: 'claude-code', agentName: 'Claude Code', status,
+      panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status,
       present: true, canReceivePrompt: status === 'waitingForInput', session,
     })
     for (const listener of listeners) listener('p1')

@@ -23,15 +23,30 @@ export interface AgentSession {
   profile?: string
 }
 
-/** What one panel hosts: its runner, agent and status. A panel hosting an
- *  agent has one even before a session exists (a CLI before its first hook, a
- *  fresh chat before its first prompt). */
+/** How relation context reaches an agent: as is, after guidance text, or
+ *  not at all (its CLI has no prompt context hook). */
+export type AgentContextPolicy =
+  | { kind: 'plain' }
+  | { kind: 'guided'; guidance: string | null }
+  | { kind: 'unsupported' }
+
+/** What one panel hosts: its agent and status, computed by the runner that
+ *  owns it. A panel hosting an agent has one even before a session exists (a
+ *  CLI before its first hook, a fresh chat before its first prompt). */
 export interface PanelAgentState {
   panelId: string
-  runner: AgentRunner
   agentId: AgentId | null
   /** Display name of the agent, or null while none is known. */
   agentName: string | null
+  /** What sidebar rows and tabs show for the agent, or null while none
+   *  runs (a terminal whose CLI exited). */
+  label: string | null
+  /** The agent stands in for its panel while it runs (a CLI in a terminal:
+   *  its name titles the panel and its logo marks the tab), rather than the
+   *  panel being the agent's own (a chat). */
+  takesOverPanel: boolean
+  /** How relation context reaches the agent; null while the agent is unknown. */
+  contextPolicy: AgentContextPolicy | null
   status: AgentStatus
   /** An agent is observable in the panel right now. */
   present: boolean

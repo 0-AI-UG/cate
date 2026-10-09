@@ -22,7 +22,7 @@ export function useAgentTabDecorations(workspaceId: string): Record<string, {
   const out: ReturnType<typeof useAgentTabDecorations> = {}
   for (const [panelId, agent] of Object.entries(info)) {
     out[panelId] = {
-      logo: agent.runner === 'terminal' ? agent.logo : null,
+      logo: agent.takesOverPanel ? agent.logo : null,
       logoAlt: agent.name,
       status: agent.status === 'waitingForInput'
         ? <AwaitingIndicator />

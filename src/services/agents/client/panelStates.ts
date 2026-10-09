@@ -101,21 +101,3 @@ export function peekAgentPanels(workspaceId: string): AgentPanelStates {
 export function openAgentOf(state: PanelAgentState | undefined): AgentId | null {
   return state?.present ? state.agentId : null
 }
-
-/** Terminal panels with a recognized agent CLI open (from launch). */
-export function cliAgentOpenByPanel(states: AgentPanelStates): Record<string, boolean> {
-  const out: Record<string, boolean> = {}
-  for (const [panelId, state] of Object.entries(states)) {
-    if (state.runner === 'terminal') out[panelId] = state.present
-  }
-  return out
-}
-
-/** The agent CLI open in each terminal panel; null once it exited. */
-export function cliAgentByPanel(states: AgentPanelStates): Record<string, AgentId | null> {
-  const out: Record<string, AgentId | null> = {}
-  for (const [panelId, state] of Object.entries(states)) {
-    if (state.runner === 'terminal') out[panelId] = openAgentOf(state)
-  }
-  return out
-}

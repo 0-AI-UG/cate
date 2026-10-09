@@ -53,9 +53,11 @@ const tabText = () => container.querySelector<HTMLElement>('[data-tab-panel-id="
 const setTitle = (title: string) => act(() => ws.remote({ kind: 'updatePanel', id: 't1', patch: { title } }))
 const agentState = (agent: (typeof AGENTS)[number], patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
   panelId: 't1',
-  runner: 'terminal',
   agentId: agent.id,
   agentName: agent.displayName,
+  label: agent.displayName,
+  takesOverPanel: true,
+  contextPolicy: null,
   status: 'waitingForInput',
   present: true,
   canReceivePrompt: true,
@@ -92,7 +94,7 @@ describe('dock tab titles for every agent CLI', () => {
         renderDock()
         emitState(agentState(agent))
 
-        emitState(agentState(agent, { present: false, agentName: null, status: 'notRunning' }))
+        emitState(agentState(agent, { present: false, agentName: null, label: null, status: 'notRunning' }))
         expect(tabText()).toContain('Terminal 1')
         expect(tabText()).not.toContain(agent.displayName)
       })

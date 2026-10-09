@@ -97,13 +97,17 @@ export function createT3Runner(agents: AgentsRuntime, t3: RunnerT3Service, bindi
     const session: AgentSession | null = bound.threadId
       ? { agentId, runner: 't3', sessionId: bound.threadId, cwd: bound.checkout, ...(worktreeId ? { worktreeId } : {}) }
       : null
+    // Like a terminal, name the agent CLI running the conversation; T3
+    // itself is the fallback until the thread's provider is known.
+    const agentName = agentId ? AGENT_DEFS[agentId].displayName : 'T3 Code'
     return {
       panelId,
-      runner: 't3',
       agentId,
-      // Like a terminal, name the agent CLI running the conversation; T3
-      // itself is the fallback until the thread's provider is known.
-      agentName: agentId ? AGENT_DEFS[agentId].displayName : 'T3 Code',
+      agentName,
+      label: bound.connected ? agentName : `${agentName} (disconnected)`,
+      takesOverPanel: false,
+      // The harness takes relation context as is.
+      contextPolicy: { kind: 'plain' },
       status,
       present: bound.connected,
       canReceivePrompt,

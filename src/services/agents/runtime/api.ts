@@ -8,10 +8,12 @@ import type { AgentStartRequest, PanelAgentState } from '../contract'
 import type { AgentsRuntime } from './agentsRuntime'
 import type { AgentStarter } from './start'
 
+const runnerOf = (agents: AgentsRuntime, panelId: string) => agents.registry.runnerFor(panelId)?.kind ?? 'terminal'
+
 function summary(agents: AgentsRuntime, state: PanelAgentState) {
   return {
     panelId: state.panelId,
-    runner: state.runner,
+    runner: runnerOf(agents, state.panelId),
     title: agents.document.panel(state.panelId)?.title ?? '',
     agentId: state.agentId,
     agentName: state.agentName,
@@ -25,12 +27,12 @@ function summary(agents: AgentsRuntime, state: PanelAgentState) {
  *  first prompt will start). */
 function liveAgents(agents: AgentsRuntime): PanelAgentState[] {
   return Object.values(agents.registry.all())
-    .filter((state) => state.runner === 't3' || state.status !== 'notRunning')
+    .filter((state) => runnerOf(agents, state.panelId) === 't3' || state.status !== 'notRunning')
 }
 
 function live(agents: AgentsRuntime, panelId: string): PanelAgentState {
   const state = agents.registry.sessionFor(panelId)
-  if (!state || (state.runner !== 't3' && state.status === 'notRunning')) throw new RpcError('gone', 'agent-panel-not-found')
+  if (!state || (runnerOf(agents, panelId) !== 't3' && state.status === 'notRunning')) throw new RpcError('gone', 'agent-panel-not-found')
   return state
 }
 

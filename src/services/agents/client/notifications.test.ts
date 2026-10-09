@@ -6,7 +6,7 @@ import { attachAgentNotifications, type NotificationConnection, type Notificatio
 import { fakeStream } from './testing'
 
 const panel = (status: PanelAgentState['status']): PanelAgentState => ({
-  panelId: 'p1', runner: 'terminal', agentId: 'codex', agentName: 'Codex', status,
+  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: true, contextPolicy: null, status,
   present: true, canReceivePrompt: status !== 'running', session: null,
 })
 

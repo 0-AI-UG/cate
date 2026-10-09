@@ -11,11 +11,13 @@ import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { createActionHandlers, taskWorktreeName, wordsFor } from './actions'
 import { createMobileAgents } from './agents'
 import { createMobileConversations } from './conversations'
+import { add, attachTestWorkspace, buildDocument } from '../../../test/clientWorkspace'
+import { MAIN_WINDOW } from '@workspace/document/contract'
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
-  panelId: 'p1', runner: 'terminal', agentId: 'claude-code', agentName: 'Claude Code', status: 'running',
+  panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status: 'running',
   present: true, canReceivePrompt: false, session: { agentId: 'claude-code', runner: 'terminal', sessionId: 's', cwd: '/repo/.cate/worktrees/a' }, ...patch,
 })
 
@@ -60,7 +62,10 @@ function setup() {
     return null
   }) as MobileBridge
   const agents = createMobileAgents(client, bridge)
-  return { agents, panels, notifications, power, runtime, shown, withdrawn, stopResolver, setConnection }
+  // The document names each agent's panel.
+  const ws = attachTestWorkspace('ws', buildDocument([add('p1', { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' })]))
+  const stop = () => { ws.detach(); stopResolver() }
+  return { agents, panels, notifications, power, runtime, shown, withdrawn, stopResolver: stop, setConnection }
 }
 
 let cleanup = () => {}

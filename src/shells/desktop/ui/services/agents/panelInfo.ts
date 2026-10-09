@@ -1,38 +1,29 @@
 // What sidebar rows, dock tabs and panel titles show about the agent a panel
 // hosts: its status, name and logo.
 
-import { AGENTS, type AgentId, type AgentPanelStates, type AgentRunner, type AgentStatus, type PanelAgentState } from '@services/agents/contract'
+import { AGENTS, type AgentId, type AgentPanelStates, type AgentStatus, type PanelAgentState } from '@services/agents/contract'
 import { openAgentOf } from '@services/agents/client'
 import { agentLogo } from './logos'
 
 export interface AgentPanelInfo {
   status: AgentStatus
-  runner: AgentRunner
-  /** Agent display name, or null once a terminal's agent exited. */
+  /** The agent's label, or null once a terminal's agent exited. */
   name: string | null
-  /** Logo URL for the agent, or null (a t3 panel then shows the T3 logo). */
+  /** Logo URL for the agent, or null (a chat then shows the T3 logo). */
   logo: string | null
+  /** The agent stands in for its panel (see `PanelAgentState`). */
+  takesOverPanel: boolean
 }
 
 export function agentPanelInfo(state: PanelAgentState): AgentPanelInfo {
-  if (state.runner === 't3') {
-    const name = state.agentName ?? 'T3 Code'
-    return {
-      status: state.status,
-      runner: 't3',
-      name: state.present ? name : `${name} (disconnected)`,
-      logo: agentLogo(state.agentId),
-    }
-  }
-  // The agent id outlives the process. Gate name and logo on presence so the
-  // icon reverts to the terminal glyph once the CLI is gone; the status stays
-  // so finished and awaiting indicators still show.
-  const open = openAgentOf(state)
+  // Name and logo go with the label, so the icon reverts to the panel's once
+  // the agent is gone; the status stays so finished and awaiting indicators
+  // still show.
   return {
     status: state.status,
-    runner: 'terminal',
-    name: open ? state.agentName : null,
-    logo: agentLogo(open),
+    name: state.label,
+    logo: state.label ? agentLogo(state.agentId) : null,
+    takesOverPanel: state.takesOverPanel,
   }
 }
 
@@ -44,7 +35,7 @@ export function agentInfoByPanel(states: AgentPanelStates): Record<string, Agent
 
 export function agentInfoEqual(a: AgentPanelInfo | undefined, b: AgentPanelInfo | undefined): boolean {
   if (!a || !b) return a === b
-  return a.status === b.status && a.runner === b.runner && a.name === b.name && a.logo === b.logo
+  return a.status === b.status && a.takesOverPanel === b.takesOverPanel && a.name === b.name && a.logo === b.logo
 }
 
 export function recordEqual<T>(a: Record<string, T>, b: Record<string, T>, eq: (x: T, y: T) => boolean = Object.is): boolean {
@@ -66,8 +57,8 @@ export function agentPanelTitle(title: string, state: PanelAgentState | undefine
   return state.agentName
 }
 
-/** `agentPanelTitle` over the info a tab or sidebar row already holds: a
- *  terminal's info names its agent only while the CLI is open. */
+/** `agentPanelTitle` over the info a tab or sidebar row already holds: an
+ *  agent that stands in for its panel names it only while it runs. */
 export function agentInfoTitle(title: string, info: AgentPanelInfo | undefined): string {
-  return info?.runner === 'terminal' && info.name && isAgentFallbackTitle(title) ? info.name : title
+  return info?.takesOverPanel && info.name && isAgentFallbackTitle(title) ? info.name : title
 }

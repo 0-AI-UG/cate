@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { notifyRuntimesChanged, setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent } from '@kernel/rpc/contract'
 import type { AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '../contract'
-import { acquireAgentPanels, cliAgentByPanel, cliAgentOpenByPanel, peekAgentPanels } from './panelStates'
+import { acquireAgentPanels, peekAgentPanels } from './panelStates'
 import { fakeStream } from './testing'
 
 type PanelsEvent = ChannelEvent<AgentPanelStates, AgentPanelStatesChange>
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
-  panelId: 'p1', runner: 'terminal', agentId: 'codex', agentName: 'Codex', status: 'running',
+  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: true, contextPolicy: null, status: 'running',
   present: true, canReceivePrompt: false, session: null, ...patch,
 })
 
@@ -41,7 +41,7 @@ describe('agent panel states', () => {
     const seen = vi.fn()
     b.subscribe(seen)
     streams[0].emit({ kind: 'snapshot', rev: 1, snapshot: { p1: state() } })
-    streams[0].emit({ kind: 'change', rev: 2, change: { p2: state({ panelId: 'p2', runner: 't3' }), p1: null } })
+    streams[0].emit({ kind: 'change', rev: 2, change: { p2: state({ panelId: 'p2', takesOverPanel: false }), p1: null } })
     expect(Object.keys(a.getSnapshot())).toEqual(['p2'])
     expect(peekAgentPanels('ws')).toBe(a.getSnapshot())
     expect(seen).toHaveBeenCalledTimes(2)
@@ -76,15 +76,3 @@ describe('agent panel states', () => {
   })
 })
 
-describe('terminal CLI selectors', () => {
-  it('report the open agent of terminal panels only', () => {
-    const states: AgentPanelStates = {
-      t1: state({ panelId: 't1' }),
-      t2: state({ panelId: 't2', present: false }),
-      c1: state({ panelId: 'c1', runner: 't3' }),
-    }
-    expect(cliAgentOpenByPanel(states)).toEqual({ t1: true, t2: false })
-    // An exited agent keeps its id but is not open.
-    expect(cliAgentByPanel(states)).toEqual({ t1: 'codex', t2: null })
-  })
-})

@@ -56,7 +56,7 @@ it("prefers the agent session's checkout, then the caller's", async () => {
 
   const handle = acquireAgentPanels('ws')
   panels.emit({ kind: 'snapshot', rev: 1, snapshot: { agent: {
-    panelId: 'agent', runner: 't3', agentId: 'codex', agentName: 'Codex', status: 'finished', present: true, canReceivePrompt: true,
+    panelId: 'agent', agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: false, contextPolicy: { kind: 'plain' }, status: 'finished', present: true, canReceivePrompt: true,
     session: { agentId: 'codex', runner: 't3', sessionId: 'thread', cwd: '/repo/other' },
   } } })
   await click()

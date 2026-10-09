@@ -284,11 +284,17 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
     const present = status.present(terminalId)
     if (current === 'notRunning' && !present) return null
     const agentId = status.agentId(terminalId)
+    const def = agentId ? AGENT_DEFS[agentId] : null
+    const agentName = present && def ? def.displayName : null
     return {
       panelId,
-      runner: 'terminal',
       agentId,
-      agentName: present && agentId ? AGENT_DEFS[agentId].displayName : null,
+      agentName,
+      // The agent id outlives the process; the label goes once it exits so
+      // the panel shows the terminal again, the status stays.
+      label: agentName,
+      takesOverPanel: true,
+      contextPolicy: !def ? null : def.promptContextHook ? { kind: 'guided', guidance: def.promptGuidance } : { kind: 'unsupported' },
       status: current,
       present,
       canReceivePrompt: status.canReceivePrompt(terminalId),

@@ -35,8 +35,8 @@ const rowText = (title: string, agent?: AgentPanelInfo) => {
 describe('sidebar row titles for every agent CLI', () => {
   for (const agent of AGENTS) {
     it(agent.displayName, () => {
-      const open: AgentPanelInfo = { status: 'waitingForInput', runner: 'terminal', name: agent.displayName, logo: agentLogo(agent.id) }
-      const exited: AgentPanelInfo = { status: 'notRunning', runner: 'terminal', name: null, logo: null }
+      const open: AgentPanelInfo = { status: 'waitingForInput', takesOverPanel: true, name: agent.displayName, logo: agentLogo(agent.id) }
+      const exited: AgentPanelInfo = { status: 'notRunning', takesOverPanel: true, name: null, logo: null }
 
       expect(rowText('Terminal 1')).toContain('Terminal 1')
       expect(rowText('Terminal 1', open)).toContain(agent.displayName)

@@ -144,7 +144,7 @@ describe('terminal runner', () => {
     expect(agents.registry.sessionFor('term')).toBeNull()
 
     terminal.scan('pty-1', 'term', 'claude')
-    expect(agents.registry.sessionFor('term')).toMatchObject({ runner: 'terminal', present: true, status: 'notRunning', canReceivePrompt: false })
+    expect(agents.registry.sessionFor('term')).toMatchObject({ takesOverPanel: true, present: true, status: 'notRunning', canReceivePrompt: false })
 
     await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
     expect(agents.registry.sessionFor('term')).toMatchObject({
