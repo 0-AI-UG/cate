@@ -9,19 +9,20 @@ export type { DownloadOwner, LocalDownloads } from './localDownloads'
 let bridge: BrowserPageBridge | null = null
 let downloads: LocalDownloads | null = null
 
-/** The desktop shell installs its page bridge (preload); other shells none.
- *  The bridge's downloads are followed from then on. */
+/** The desktop shell installs its page bridge (preload); other shells none. */
 export function installBrowserPageBridge(next: BrowserPageBridge | null): void {
   bridge = next
-  downloads = next ? createLocalDownloads(next) : null
+  downloads = null
 }
 
 export function browserPageBridge(): BrowserPageBridge | null {
   return bridge
 }
 
-/** The downloads this client's webviews made, while a bridge is installed. */
+/** The downloads this client's webviews made, while a bridge is installed;
+ *  followed from the first browser view that asks. */
 export function browserLocalDownloads(): LocalDownloads | null {
+  if (!downloads && bridge) downloads = createLocalDownloads(bridge)
   return downloads
 }
 
