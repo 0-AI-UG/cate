@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { installLayout, runtimeInstallDir } from '../contract'
-import { ensureRuntimeInstalled, installRuntimeTarball, isRuntimeInstalled, markRuntimeInUse, pruneRuntimeInstalls } from './install'
+import { ensureRuntimeInstalled, installRuntimeTarball, isRuntimeInstalled, markRuntimeInUse, pruneRuntimeInstalls, spawnDetachedDaemon } from './install'
 
 let dir: string
 let cateHome: string
@@ -115,4 +115,14 @@ it.skipIf(process.platform === 'win32')('keeps a build a daemon is starting from
   markRuntimeInUse(runtimeInstallDir(cateHome, A, process.platform), process.pid)
   expect(await pruneRuntimeInstalls({ cateHome, keep: [] })).toEqual([])
   expect(isRuntimeInstalled(runtimeInstallDir(cateHome, A, process.platform), process.platform)).toBe(true)
+})
+
+it('starts a daemon on a fresh log once the old one passed 5 MB', () => {
+  const logFile = path.join(cateHome, 'logs', 'daemon.out.log')
+  fs.mkdirSync(path.dirname(logFile), { recursive: true })
+  fs.writeFileSync(logFile, Buffer.alloc(6 * 1024 * 1024, 'x'))
+  const script = path.join(cateHome, 'exit.cjs')
+  fs.writeFileSync(script, '')
+  spawnDetachedDaemon({ node: process.execPath, bundle: script, args: { root: cateHome }, logFile })
+  expect(fs.statSync(logFile).size).toBeLessThan(1024 * 1024)
 })

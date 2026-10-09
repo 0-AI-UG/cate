@@ -62,10 +62,11 @@ async function answers(endpoint: string): Promise<boolean> {
 async function serve(args: ServeArgs): Promise<number> {
   const root = await canonicalRoot(args.root)
   const dataDir = workspaceDataDir(runtimeIdFromCanonicalRoot(root), os.homedir())
-  installLogSink(combineSinks(
-    createFileSink({ file: path.join(dataDir, 'logs', 'daemon.log') }),
-    createConsoleSink('warn'),
-  ))
+  // Warnings go to the terminal of a `cate serve` in the foreground; a
+  // detached daemon's stdout is daemon.out.log, which they would only grow
+  // (they are in the rotated daemon.log).
+  const file = createFileSink({ file: path.join(dataDir, 'logs', 'daemon.log') })
+  installLogSink(process.stdout.isTTY ? combineSinks(file, createConsoleSink('warn')) : file)
 
   // The login shell environment is captured once the socket is bound, so a
   // slow shell profile does not hold up the client's start.

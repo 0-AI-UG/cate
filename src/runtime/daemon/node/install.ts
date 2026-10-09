@@ -271,6 +271,8 @@ export async function pruneRuntimeInstalls(opts: {
   return removed
 }
 
+const DAEMON_OUT_LOG_MAX_BYTES = 5 * 1024 * 1024
+
 /**
  * Starts `node bundle serve <root>` as a detached process that outlives its
  * parent, with stdout and stderr appended to `logFile`. Does not wait. Node's
@@ -287,7 +289,10 @@ export function spawnDetachedDaemon(opts: {
   let out: number | 'ignore' = 'ignore'
   if (opts.logFile) {
     fs.mkdirSync(path.dirname(opts.logFile), { recursive: true })
-    out = fs.openSync(opts.logFile, 'a', 0o600)
+    // Only what the daemon prints outside its logger lands here (a crash
+    // before the logger, a native addon); start over past 5 MB.
+    const size = fs.statSync(opts.logFile, { throwIfNoEntry: false })?.size ?? 0
+    out = fs.openSync(opts.logFile, size > DAEMON_OUT_LOG_MAX_BYTES ? 'w' : 'a', 0o600)
   }
   try {
     const child = spawn(opts.node, [opts.bundle, ...serveArgv({ ...opts.args, detach: false })], {
