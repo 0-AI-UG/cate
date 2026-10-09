@@ -959,7 +959,9 @@ report their own view, focus and attention; presence is never persisted.
   runtime that runs processes, not at its capability: the repository runtime
   hands out only a `git` and `gh` that refuse while untrusted, and its status
   monitors read nothing until trust is granted, so an in-process caller (a
-  panel session) cannot skip it. The first client to open an
+  panel session) cannot skip it. Revoking trust ends what runs: every
+  terminal's process, every T3 harness, and the git monitors' polling. The
+  first client to open an
   untrusted workspace shows the trust dialog once it is connected (an
   incompatible runtime is updated first, 7.10); the answer is
   `workspace.setTrust`. `cate serve` trusts the workspace it serves. Because

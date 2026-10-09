@@ -54,6 +54,14 @@ describe.skipIf(process.platform === 'win32')('shared workspace: sessions', () =
     await resumed
   }, 40_000)
 
+  it('revoking trust ends every terminal', async () => {
+    const id = ws.a.createPanel('terminal')
+    await ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'running')
+    await ws.a.connection.runtime.workspace.setTrust({ trusted: false })
+    await ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'exited', 10_000)
+    expect(ws.daemon.workspace.terminal.list().filter((t) => t.alive)).toEqual([])
+  }, 20_000)
+
   it('a session survives a runtime restart for both clients', async () => {
     const id = ws.b.createPanel('terminal')
     await ws.b.session<TerminalSnapshot>(id).until((s) => s.status === 'running')

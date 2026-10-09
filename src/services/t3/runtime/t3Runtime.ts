@@ -209,6 +209,11 @@ export class T3Runtime {
     return false
   }
 
+  /** Stops every harness (trust revoked); later calls start them again. */
+  async stopAll(): Promise<void> {
+    await Promise.all([...this.states.keys()].map((checkout) => this.stopHarness(checkout)))
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true
     for (const auth of this.providerAuth.values()) {

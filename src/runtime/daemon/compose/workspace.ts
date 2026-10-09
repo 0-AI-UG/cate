@@ -402,9 +402,16 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     if (!trust.isTrusted() || !settings.get('cliSkillInstallEnabled')) return
     await skills.seedBundled().catch((err: Error) => log.warn('seeding bundled skills failed: %s', err.message))
   }
+  // Granting runs the trusted work; revoking ends every process the
+  // workspace runs (terminals, T3 harnesses) and stops the git monitors.
   offs.push(trust.onChange((state) => {
     repository.trustChanged()
-    if (state.trusted) void reconcileWorktrees().then(seedSkills)
+    if (state.trusted) {
+      void reconcileWorktrees().then(seedSkills)
+      return
+    }
+    for (const term of terminal.list()) if (term.alive) terminal.kill(term.id)
+    void t3.stopAll().catch((err: Error) => log.warn('stopping T3 on revoke failed: %s', err.message))
   }))
 
   return {
