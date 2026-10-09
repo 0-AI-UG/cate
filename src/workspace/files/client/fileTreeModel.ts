@@ -5,10 +5,11 @@
 
 import { createLogger } from '@kernel/log/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { fileRefs, fsClient, watchFsRoot, type FileRefs, type FsClient, type FsWatchListener } from '@workspace/files/client'
-import { pathDisplayName, type FileEntry, type FileRef } from '@workspace/files/contract'
+import { pathDisplayName, type FileEntry, type FileRef } from '../contract'
 import { createExplorerRefresh } from './explorerRefresh'
-import { readDroppedEntries, type DroppedItems } from './droppedEntries'
+import { fileRefs, type FileRefs } from './fileRefs'
+import { fsClient, type FsClient, type ImportSource } from './fsClient'
+import { watchFsRoot, type FsWatchListener } from './watchManager'
 import './clientUi'
 
 const log = createLogger('file-explorer')
@@ -28,6 +29,13 @@ export interface FileTreeSavedState {
   rootPath: string
   expandedPaths: string[]
   selectedPaths: string[]
+}
+
+/** Files dropped from outside Cate: how many, and how to read them once
+ *  the person confirmed. */
+export interface DroppedImport {
+  count: number
+  read(): Promise<ImportSource[]>
 }
 
 export type FileTreeFs = Pick<FsClient, 'readDir' | 'mkdir' | 'write' | 'rename' | 'copy' | 'remove'>
@@ -87,15 +95,15 @@ export class FileTreeModel {
 
   /** Uploads files dropped from the OS into destDir after this client
    *  confirms. True when anything was imported. */
-  importDropped = async (dropped: DroppedItems, destDir: string, destName?: string): Promise<boolean> => {
-    if (this.disposed || !destDir || dropped.length === 0) return false
+  importDropped = async (dropped: DroppedImport, destDir: string, destName?: string): Promise<boolean> => {
+    if (this.disposed || !destDir || dropped.count === 0) return false
     try {
       const ask = clientUi().confirmImportEntries
       if (ask) {
-        const choice = await ask({ count: dropped.length, destName: destName ?? pathDisplayName(destDir) })
+        const choice = await ask({ count: dropped.count, destName: destName ?? pathDisplayName(destDir) })
         if (choice === 'cancel' || this.disposed) return false
       }
-      const sources = await readDroppedEntries(dropped)
+      const sources = await dropped.read()
       if (this.disposed) return false
       return (await this.refs.upload(sources, { workspaceId: this.workspaceId, destDir })).length > 0
     } catch (error) {

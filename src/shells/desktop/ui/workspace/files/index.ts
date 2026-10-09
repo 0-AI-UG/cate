@@ -5,18 +5,10 @@ import './clientUi'
 export { FileViewsContext, useFileViewsHost, type FileViewsHost } from './FileViewsContext'
 export { FileExplorer, type FileExplorerProps } from './FileExplorer'
 export { FileTreeNode, getFileIcon, type IconDef } from './FileTreeNode'
-export {
-  FileTreeModel,
-  type FileTreeModelOptions,
-  type FileTreeSnapshot,
-  type FileTreeSavedState,
-  type FileTreeFs,
-} from './fileTreeModel'
 export { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
 export { CreateFileForm, type CreateFileFormProps } from './CreateFileForm'
 export { SavePathDialog, showSavePathDialog, type SavePathRequest } from './SavePathDialog'
 export { InlineEditInput, type InlineEditInputProps } from './InlineEditInput'
-export { createExplorerRefresh } from './explorerRefresh'
 export { canCopyFiles, copyFileRefs, clipboardFileRefs } from './fileClipboard'
 export { isNavKey, resolveTreeNavAction, type NavRow, type NavAction, type NavKey } from './treeKeyboardNav'
 export {
@@ -50,6 +42,7 @@ export {
   refDropMode,
   takeDroppedItems,
   readDroppedEntries,
+  droppedImport,
   type DroppedItem,
   type DroppedItems,
 } from './droppedEntries'
@@ -66,7 +59,6 @@ export {
   type SearchOptionFields,
 } from './searchStore'
 export { SearchStoreContext, useSearchStoreContext } from './SearchStoreContext'
-export { createSearchRunner, type SearchRunner, type SearchRunnerOptions } from './searchRunner'
 export {
   panelSearchStore,
   releasePanelSearchStore,

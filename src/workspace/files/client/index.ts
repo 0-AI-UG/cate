@@ -3,4 +3,7 @@ export { createWatchManager, watchManager, watchFsRoot, type WatchManager, type 
 export { attachBuffer, type AttachedBuffer } from './bufferClient'
 export { recordRecentFile, getRecentFiles } from './recentFiles'
 export { createFileRefs, fileRefs, type FileRefs, type RefFs, type RefTarget } from './fileRefs'
+export { FileTreeModel, type DroppedImport, type FileTreeFs, type FileTreeModelOptions, type FileTreeSavedState, type FileTreeSnapshot } from './fileTreeModel'
+export { createExplorerRefresh } from './explorerRefresh'
+export { createSearchRunner, type SearchRunner, type SearchRunnerOptions, type SearchRunState, type SearchRunStore } from './searchRunner'
 export { acquireBufferText, type SharedBufferText } from './bufferText'

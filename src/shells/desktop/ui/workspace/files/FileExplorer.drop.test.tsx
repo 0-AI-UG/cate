@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { installMockClientUi } from '@kernel/interaction/testing'
 import { createFileRefs, type RefFs } from '@workspace/files/client'
 import { FILE_REFS_MIME, fileRefsToText, type FileRef } from '@workspace/files/contract'
-import { FileTreeModel, type FileTreeFs } from './fileTreeModel'
+import { FileTreeModel, type FileTreeFs } from '@workspace/files/client'
 import { FileViewsContext } from './FileViewsContext'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true

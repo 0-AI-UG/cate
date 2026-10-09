@@ -10,8 +10,8 @@ import path from 'node:path'
 import { installMockClientUi } from '@kernel/interaction/testing'
 import { createFileRefs, createWatchManager, type FsClient } from '@workspace/files/client'
 import type { FileEntry, FileRef } from '@workspace/files/contract'
-import { FileTreeModel } from './fileTreeModel'
-import { resolveFileDrop } from './droppedEntries'
+import { FileTreeModel } from '@workspace/files/client'
+import { droppedImport, resolveFileDrop } from './droppedEntries'
 import { makeWorkspace, until } from '@workspace/files/testing.test-helpers'
 
 type Workspace = Awaited<ReturnType<typeof makeWorkspace>>
@@ -75,7 +75,7 @@ describe('explorer tree', () => {
 
     const bytes = new Uint8Array(300 * 1024).map((_, i) => i % 199)
     const dropped = [{ file: new File(['note'], 'note.txt') }, { file: new File([bytes], 'blob.bin') }]
-    expect(await first.importDropped(dropped, a.root)).toBe(true)
+    expect(await first.importDropped(droppedImport(dropped), a.root)).toBe(true)
     expect(await fs.readFile(path.join(a.root, 'note.txt'), 'utf8')).toBe('note')
     expect(new Uint8Array(await fs.readFile(path.join(a.root, 'blob.bin')))).toEqual(bytes)
 
@@ -86,7 +86,7 @@ describe('explorer tree', () => {
   it('never overwrites: a drop of an existing name gets a free one', async () => {
     const tree = client({ a: await a.connect() }).tree('a', a.root)
     await fs.writeFile(path.join(a.root, 'note.txt'), 'old')
-    expect(await tree.importDropped([{ file: new File(['new'], 'note.txt') }], a.root)).toBe(true)
+    expect(await tree.importDropped(droppedImport([{ file: new File(['new'], 'note.txt') }]), a.root)).toBe(true)
     expect(await fs.readFile(path.join(a.root, 'note.txt'), 'utf8')).toBe('old')
     expect(await fs.readFile(path.join(a.root, 'note (2).txt'), 'utf8')).toBe('new')
   })

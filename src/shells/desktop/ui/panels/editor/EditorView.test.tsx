@@ -86,12 +86,12 @@ vi.mock('@workspace/files/client', async () => {
     fsClient: () => ({ read: async () => ({ content: 'on disk', hash: 'h' }), readBinary: async () => new Uint8Array() }),
     watchFsRoot: () => () => {},
     recordRecentFile: vi.fn(),
+    FileTreeModel: class { constructor(readonly rootPath: string, readonly workspaceId: string) {} activate() {} capture() { return { rootPath: '', expandedPaths: [], selectedPaths: [] } } dispose() {} },
   }
 })
 vi.mock('../../workspace/files', () => ({
   FileExplorer: (props: any) => { h.explorerOpen = props.onOpenFiles; return <div>Explorer</div> },
   SearchView: () => <div>Search</div>,
-  FileTreeModel: class { constructor(readonly rootPath: string, readonly workspaceId: string) {} activate() {} capture() { return { rootPath: '', expandedPaths: [], selectedPaths: [] } } dispose() {} },
   panelSearchStore: () => ({}),
   releasePanelSearchStore: () => {},
   useFileViewsHost: () => ({ openFiles: h.openFiles, openMatch: () => {}, openTerminal: () => {} }),

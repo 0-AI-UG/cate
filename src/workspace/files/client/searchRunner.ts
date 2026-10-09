@@ -3,13 +3,38 @@
 // search are dropped by the store's search id check.
 
 import { errorMessage } from '@kernel/interaction'
-import { fsClient, type ContentSearch, type FsClient } from '@workspace/files/client'
-import type { SearchStore } from './searchStore'
+import type { SearchFileResult, SearchStats } from '../contract'
+import { fsClient, type ContentSearch, type FsClient } from './fsClient'
 
 const DEBOUNCE_MS = 250
 
-export interface SearchRunner {
-  readonly store: SearchStore
+/** The state of a search view the runner reads and moves. */
+export interface SearchRunState {
+  query: string
+  isRegex: boolean
+  matchCase: boolean
+  wholeWord: boolean
+  includes: string
+  excludes: string
+  respectIgnore: boolean
+  status: 'idle' | 'searching' | 'done'
+  currentSearchId: string | null
+  lastQueryKey: string | null
+  clearResults(): void
+  beginSearch(searchId: string, queryKey?: string): void
+  addBatch(searchId: string, files: SearchFileResult[]): void
+  finishSearch(searchId: string, stats: SearchStats, error?: string): void
+}
+
+/** A store of that state (a view's store satisfies it). */
+export interface SearchRunStore {
+  getState(): SearchRunState
+  setState(patch: Partial<SearchRunState>): void
+  subscribe(listener: () => void): () => void
+}
+
+export interface SearchRunner<T extends SearchRunStore = SearchRunStore> {
+  readonly store: T
   readonly rootPath: string
   dispose(): void
 }
@@ -25,12 +50,12 @@ let nextId = 0
 const newSearchId = (): string => `search-${Date.now().toString(36)}-${++nextId}`
 
 /** Starts searching whenever the store's query or options change, until disposed. */
-export function createSearchRunner(
-  store: SearchStore,
+export function createSearchRunner<T extends SearchRunStore>(
+  store: T,
   rootPath: string,
   workspaceId: string,
   options: SearchRunnerOptions = {},
-): SearchRunner {
+): SearchRunner<T> {
   const fs = options.fs ?? (() => fsClient(workspaceId))
   let timer: ReturnType<typeof setTimeout> | undefined
   let key: string | undefined

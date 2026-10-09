@@ -1,7 +1,7 @@
 // Search state belongs to the panel, not its temporarily mounted view: each
 // panel keeps one store and one runner per root until it is released.
 
-import { createSearchRunner, type SearchRunnerOptions } from './searchRunner'
+import { createSearchRunner, type SearchRunnerOptions } from '@workspace/files/client'
 import { createSearchStore, type SearchState, type SearchStore } from './searchStore'
 
 /** The portable options of a panel's search, as views persist them. */

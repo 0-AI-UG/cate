@@ -2,7 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { FsChange } from '@workspace/files/contract'
-import { FileTreeModel, type FileTreeFs, type FileTreeModelOptions } from './fileTreeModel'
+import { FileTreeModel, type FileTreeFs, type FileTreeModelOptions } from '@workspace/files/client'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const mocks = vi.hoisted(() => ({ watch: vi.fn(), read: vi.fn() }))

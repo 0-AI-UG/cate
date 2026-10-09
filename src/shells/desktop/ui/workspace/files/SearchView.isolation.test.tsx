@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Simulate } from 'react-dom/test-utils'
 import { expect, it, vi } from 'vitest'
 import type { SearchFileResult, SearchOptions } from '@workspace/files/contract'
-import { createSearchRunner } from './searchRunner'
+import { createSearchRunner } from '@workspace/files/client'
 import { createSearchStore } from './searchStore'
 import { SearchView } from './SearchView'
 

@@ -4,9 +4,13 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const h = vi.hoisted(() => ({ readDir: vi.fn(), unwatch: vi.fn() }))
-vi.mock('@workspace/files/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@workspace/files/client')>()),
+// The tree model reads through these modules directly.
+vi.mock('@workspace/files/client/fsClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@workspace/files/client/fsClient')>()),
   fsClient: () => ({ readDir: h.readDir }),
+}))
+vi.mock('@workspace/files/client/watchManager', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@workspace/files/client/watchManager')>()),
   watchFsRoot: () => h.unwatch,
 }))
 vi.mock('../../workspace/files/gitTree', () => ({ useGitTree: () => undefined }))

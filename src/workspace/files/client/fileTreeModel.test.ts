@@ -1,14 +1,11 @@
-// @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { installMockClientUi } from '@kernel/interaction/testing'
 import { createFileRefs, type RefFs } from '@workspace/files/client'
 import { FileTreeModel, type FileTreeFs } from './fileTreeModel'
-import type { DroppedItems } from './droppedEntries'
+import type { DroppedImport } from './fileTreeModel'
 
-const dropped = [
-  { file: new File(['aa'], 'a.txt') },
-  { file: new File(['b'], 'b.txt') },
-] as DroppedItems
+const source = (path: string, text: string) => ({ path, kind: 'file' as const, size: text.length, bytes: async () => new TextEncoder().encode(text) })
+const dropped: DroppedImport = { count: 2, read: async () => [source('a.txt', 'aa'), source('b.txt', 'b')] }
 
 function model() {
   const importEntries = vi.fn(async () => ({ created: ['/repo/dest/a.txt'], failed: 0 }))

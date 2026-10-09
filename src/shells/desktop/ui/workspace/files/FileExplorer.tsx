@@ -9,7 +9,7 @@ import { clientUi } from '@kernel/interaction'
 import { LoadingState, SidebarSectionHeader, SidebarHeaderButton } from '../../kernel/interaction'
 import { hasFileRefDrag, pathDisplayName, readFileRefDrag, type FileEntry as FileTreeNodeType } from '@workspace/files/contract'
 import { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
-import type { FileTreeModel } from './fileTreeModel'
+import type { FileTreeModel } from '@workspace/files/client'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { useFileViewsHost } from './FileViewsContext'
 import { FileTreeNode } from './FileTreeNode'
@@ -17,7 +17,7 @@ import { CreateFileForm } from './CreateFileForm'
 import { isNavKey, resolveTreeNavAction } from './treeKeyboardNav'
 import { useGitTree } from './gitTree'
 import { canCopyFiles, clipboardFileRefs, copyFileRefs } from './fileClipboard'
-import { isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
+import { droppedImport, isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
 import { setTreeDropDir, useTreeDropDir } from './treeDropDir'
 
 // -----------------------------------------------------------------------------
@@ -480,7 +480,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
         if (!inRootDropArea(e)) return
         if (external) {
           const dropped = takeDroppedItems(e.dataTransfer)
-          void resource.importDropped(dropped, rootPath, folderName).then((ok) => {
+          void resource.importDropped(droppedImport(dropped), rootPath, folderName).then((ok) => {
             if (ok) handleReload()
           })
           return

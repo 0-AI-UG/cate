@@ -3,7 +3,8 @@
 // live with the view, over the files client, not in the session.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { FileExplorer, FileTreeModel, SearchView, panelSearchStore, releasePanelSearchStore, type FileTreeSavedState } from '../../workspace/files'
+import { FileExplorer, SearchView, panelSearchStore, releasePanelSearchStore } from '../../workspace/files'
+import { FileTreeModel, type FileTreeSavedState } from '@workspace/files/client'
 
 const MIN_WIDTH = 180
 const MAX_WIDTH = 480

@@ -20,9 +20,9 @@ import {
 import { clientUi } from '@kernel/interaction'
 import { Spinner } from '../../kernel/interaction'
 import { hasFileRefDrag, readFileRefDrag, relativeDisplayPath, writeFileRefDrag, type FileEntry } from '@workspace/files/contract'
-import { isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
+import { droppedImport, isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
 import { setTreeDropDir, useTreeDropDir } from './treeDropDir'
-import type { FileTreeModel } from './fileTreeModel'
+import type { FileTreeModel } from '@workspace/files/client'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { folderColorClass, lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
 import { canCopyFiles, clipboardFileRefs, copyFileRefs } from './fileClipboard'
@@ -416,7 +416,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
       e.stopPropagation()
       setTreeDropDir(null)
       const dropped = takeDroppedItems(e.dataTransfer)
-      const ok = await resource.importDropped(dropped, dropTargetDir, node.name)
+      const ok = await resource.importDropped(droppedImport(dropped), dropTargetDir, node.name)
       if (ok) onTreeChanged?.()
       return
     }

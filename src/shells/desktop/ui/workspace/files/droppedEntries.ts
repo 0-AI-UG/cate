@@ -3,7 +3,7 @@
 // `fileDrop` feature can upload them). Everything must be taken from the
 // DataTransfer inside the drop handler; contents are read afterwards.
 
-import { fileRefs, type FileRefs, type ImportSource, type RefTarget } from '@workspace/files/client'
+import { fileRefs, type DroppedImport, type FileRefs, type ImportSource, type RefTarget } from '@workspace/files/client'
 import { hasFileRefDrag, readFileRefDrag, type FileLineLocation, type FileRef } from '@workspace/files/contract'
 
 /** True when the drag carries OS files (an external drop), not an internal
@@ -48,6 +48,9 @@ const fileSource = (path: string, file: File): ImportSource => ({
 })
 
 /** The upload manifest: directories before their contents. */
+/** Dropped items as the file tree imports them. */
+export const droppedImport = (items: DroppedItems): DroppedImport => ({ count: items.length, read: () => readDroppedEntries(items) })
+
 export async function readDroppedEntries(items: DroppedItems): Promise<ImportSource[]> {
   const out: ImportSource[] = []
   const walk = async (entry: FileSystemEntry, path: string): Promise<void> => {
