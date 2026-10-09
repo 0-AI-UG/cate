@@ -1,12 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installClientIdentity } from '@client/connections'
 import type { BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
 import type { ChatSnapshot } from '@panels/chat/contract'
 import type { MobileBridge, MobileViewEvent } from '../contract'
-import type { MobileClient } from './boot'
+import { attachSessions } from '@client/host'
 import { createMobileBrowsers } from './browser'
 import { createMobileChats } from './chat'
-import { createMobileViews } from './views'
+import { createMobileViews, type MobileViews } from './views'
+
+let detach = () => {}
+let created: MobileViews[] = []
+// Views follow the attached sessions; a test's views close with it.
+afterEach(() => {
+  for (const views of created.splice(0)) views.get('v')?.close()
+  detach()
+})
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
 
@@ -24,9 +32,7 @@ function setup<S>(initial: S) {
     release() { this.released = true },
   }
   const connection = { subscribeSession: () => session }
-  const client = {
-    connections: { get: (id: string) => (id === 'ws1' ? connection : undefined), subscribe: () => () => {} },
-  } as unknown as MobileClient
+  detach = attachSessions({ get: (id: string) => (id === 'ws1' ? connection : undefined), subscribe: () => () => {} } as never)
   const events: Array<{ viewId: string; event: MobileViewEvent }> = []
   const bridge = (async (method: string, params: { viewId: string; json: string }) => {
     if (method === 'view.event') events.push({ viewId: params.viewId, event: JSON.parse(params.json) })
@@ -36,7 +42,9 @@ function setup<S>(initial: S) {
     snapshot = next
     for (const l of listeners) l()
   }
-  return { client, bridge, session, sent, events, set, views: createMobileViews(client, bridge) }
+  const views = createMobileViews(bridge)
+  created.push(views)
+  return { bridge, session, sent, events, set, views }
 }
 
 describe('mobile panel views', () => {

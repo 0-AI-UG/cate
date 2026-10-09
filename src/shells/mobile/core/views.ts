@@ -1,14 +1,14 @@
 // Panel views in the app (`panel.*` in the core API). Each follows its
-// panel's session on the workspace's connection, across reconnects, and
+// panel's session (the host's `acquireSession`, across reconnects) and
 // pushes the snapshot whole to the app as `snapshot` events; the app sends
 // the panel type's ops back. Browser and chat views add what their pages
 // need on top (browser.ts, chat.ts).
 
-import type { SessionHandle, WorkspaceConnection } from '@client/connections'
+import type { SessionHandle } from '@client/connections'
+import { acquireSession, sessionOwner, subscribeSessions } from '@client/host'
 import { errorMessage } from '@kernel/interaction'
 import { isRpcError } from '@kernel/rpc/contract'
 import type { MobileBridge, MobileOpResult, MobileViewEvent } from '../contract'
-import type { MobileClient } from './boot'
 
 export interface PanelViewParams {
   viewId: string
@@ -43,11 +43,11 @@ export function opResult(promise: Promise<unknown>): Promise<MobileOpResult> {
   )
 }
 
-export function createMobileViews(client: MobileClient, bridge: MobileBridge): MobileViews {
+export function createMobileViews(bridge: MobileBridge): MobileViews {
   const views = new Map<string, PanelView>()
 
   function openView<S>({ viewId, workspaceId, panelId }: PanelViewParams): PanelView<S> {
-    let connection: WorkspaceConnection | null = null
+    let owner: unknown = null
     let session: SessionHandle<S> | null = null
     let offSession: (() => void) | null = null
     let closed = false
@@ -70,16 +70,16 @@ export function createMobileViews(client: MobileClient, bridge: MobileBridge): M
       session = null
     }
     const follow = () => {
-      const next = client.connections.get(workspaceId) ?? null
-      if (next === connection) return
+      const next = sessionOwner(workspaceId)
+      if (next === owner) return
       unsubscribe()
-      connection = next
-      if (!connection) return
-      session = connection.subscribeSession<S>(panelId)
+      owner = next
+      session = acquireSession<S>(workspaceId, panelId)
+      if (!session) return
       offSession = session.subscribe(update)
       update()
     }
-    const offConnections = client.connections.subscribe(follow)
+    const offConnections = subscribeSessions(follow)
 
     const view: PanelView<S> = {
       workspaceId,

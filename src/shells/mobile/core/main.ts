@@ -25,7 +25,7 @@ declare global {
 async function start(): Promise<void> {
   const bridge = nativeBridge()
   const client = await bootMobileClient(bridge)
-  const views = createMobileViews(client, bridge)
+  const views = createMobileViews(bridge)
   const agents = createMobileAgents(client, bridge)
   const api = createCoreApi(client, {
     terminals: createMobileTerminals(client, bridge),

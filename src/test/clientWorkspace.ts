@@ -15,7 +15,7 @@ import {
   type WorkspaceDocument,
 } from '@workspace/document/contract'
 import type { SessionHandle, WorkspaceConnection } from '@client/connections'
-import type { SessionSource } from '@client/host'
+import type { ConnectionLookup } from '@client/host'
 import { attachDocument, clientStateFor, documentStoreFor, type ClientStateStore, type DocumentStore } from '@client/document'
 
 function subscription<E>(onListen: (emit: (event: E) => void) => () => void): Subscription<E, void> {
@@ -149,7 +149,7 @@ export const add = (id: string, at: PlaceTarget, type = 'terminal', extra: Parti
 // --- Fake session channels ------------------------------------------------------------
 
 export interface FakeSessions {
-  source: SessionSource
+  connections: ConnectionLookup
   /** Open references per panel. */
   refs(panelId: string): number
   /** Publishes a snapshot to every view of the panel. */
@@ -165,8 +165,8 @@ export function fakeSessions(): FakeSessions {
     return e
   }
   const sent: { panelId: string; op: unknown }[] = []
-  const source: SessionSource = {
-    acquire(_workspaceId, panelId) {
+  const connection = {
+    subscribeSession(panelId: string) {
       const e = entry(panelId)
       e.refs++
       let released = false
@@ -186,11 +186,10 @@ export function fakeSessions(): FakeSessions {
       }
       return handle
     },
-    owner: () => source,
-    subscribe: () => () => {},
   }
+  const connections: ConnectionLookup = { get: () => connection, subscribe: () => () => {} }
   return {
-    source,
+    connections,
     refs: (panelId) => state.get(panelId)?.refs ?? 0,
     publish(panelId, snapshot) {
       const e = entry(panelId)

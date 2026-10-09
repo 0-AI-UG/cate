@@ -9,7 +9,7 @@ import type { AnyCapability, ClientFeature, DeviceInfo } from '@kernel/rpc/contr
 import type { DeviceStore } from '@kernel/state/contract'
 import { createClientIdentity, installClientIdentity, WorkspaceConnections, type ClientIdentity, type ShellTransports } from '@client/connections'
 import { attachDocuments } from '@client/document'
-import { installSessionSource, registerPanelDefinitions, serveSurfaces, sessionSourceFrom } from '@client/host'
+import { attachSessions, registerPanelDefinitions, serveSurfaces } from '@client/host'
 import { nameJoinedWorkspaces, WorkspaceList } from '@client/workspaces'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 
@@ -46,8 +46,7 @@ export async function startClientCore(options: ClientCoreOptions): Promise<Clien
     ...(options.build ? { build: options.build } : {}),
   })
   const stops: (() => void)[] = [attachDocuments(connections)]
-  installSessionSource(sessionSourceFrom(connections))
-  stops.push(() => installSessionSource(null))
+  stops.push(attachSessions(connections))
   stops.push(serveSurfaces(connections))
   const workspaces = new WorkspaceList({ store: options.deviceStore, connections })
   await workspaces.load()

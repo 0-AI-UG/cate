@@ -1,19 +1,7 @@
-// Where views get their session channels: the open workspace connections.
-// The client's entry installs them; tests install a fake.
+// Where views get their session channels: the open workspace connections,
+// attached once by the client core (`attachSessions`); tests attach a fake.
 
 import type { SessionHandle } from '@client/connections'
-
-export interface SessionSource {
-  /** A new reference on the panel's session channel, or null while the
-   *  workspace has no connection. */
-  acquire(workspaceId: string, panelId: string): SessionHandle | null
-  /** What issues the workspace's handles (its connection), or null. A view
-   *  keeps its handle while this stays the same, so another workspace's
-   *  connection opening or closing never detaches it. */
-  owner(workspaceId: string): unknown
-  /** Called when connections open or close. */
-  subscribe(listener: () => void): () => void
-}
 
 /** The part of `WorkspaceConnections` the host uses. */
 export interface ConnectionLookup {
@@ -21,7 +9,7 @@ export interface ConnectionLookup {
   subscribe(listener: () => void): () => void
 }
 
-let source: SessionSource | null = null
+let connections: ConnectionLookup | null = null
 const listeners = new Set<() => void>()
 let unsubscribe: (() => void) | null = null
 
@@ -31,32 +19,36 @@ const changed = () => {
   }
 }
 
-export function installSessionSource(next: SessionSource | null): void {
+/** Views acquire their sessions from `next` until the returned stop. */
+export function attachSessions(next: ConnectionLookup): () => void {
   unsubscribe?.()
-  source = next
-  unsubscribe = next ? next.subscribe(changed) : null
+  connections = next
+  unsubscribe = next.subscribe(changed)
   changed()
-}
-
-export function sessionSourceFrom(connections: ConnectionLookup): SessionSource {
-  return {
-    acquire: (workspaceId, panelId) => connections.get(workspaceId)?.subscribeSession(panelId) ?? null,
-    owner: (workspaceId) => connections.get(workspaceId) ?? null,
-    subscribe: (listener) => connections.subscribe(listener),
+  return () => {
+    if (connections !== next) return
+    unsubscribe?.()
+    unsubscribe = null
+    connections = null
+    changed()
   }
 }
 
-export function acquireSession(workspaceId: string, panelId: string): SessionHandle | null {
-  return source?.acquire(workspaceId, panelId) ?? null
+/** A new reference on the panel's session channel, or null while the
+ *  workspace has no connection. */
+export function acquireSession<S = unknown>(workspaceId: string, panelId: string): SessionHandle<S> | null {
+  return (connections?.get(workspaceId)?.subscribeSession(panelId) as SessionHandle<S> | undefined) ?? null
 }
 
-export function subscribeSessionSource(listener: () => void): () => void {
+/** Called when connections open or close. */
+export function subscribeSessions(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
 
-/** The current owner of the workspace's session handles (see
- *  `SessionSource.owner`); changes when its connection or the source does. */
+/** What issues the workspace's handles (its connection), or null. A view
+ *  keeps its handle while this stays the same, so another workspace's
+ *  connection opening or closing never detaches it. */
 export function sessionOwner(workspaceId: string): unknown {
-  return source?.owner(workspaceId) ?? null
+  return connections?.get(workspaceId) ?? null
 }

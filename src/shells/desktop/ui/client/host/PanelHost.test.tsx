@@ -7,7 +7,7 @@ import { add, attachTestWorkspace, buildDocument, fakeSessions, testPanelDefinit
 import { registerPanelDefinitions } from '@client/host'
 import { PanelHost } from './PanelHost'
 import { PersistentPanelHost } from './PersistentPanelHost'
-import { installSessionSource } from '@client/host'
+import { attachSessions } from '@client/host'
 import { registerPanelView, type PanelViewProps } from './views'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -32,6 +32,7 @@ beforeAll(() => {
 const main = { windowId: MAIN_WINDOW }
 let ws: TestWorkspace
 let sessions: FakeSessions
+let detachSessions = () => {}
 let container: HTMLDivElement
 let root: Root
 
@@ -43,7 +44,7 @@ beforeEach(() => {
     add('odd', { to: 'stack', dock: main, stackId: 's1' }, 'review'),
   ]))
   sessions = fakeSessions()
-  installSessionSource(sessions.source)
+  detachSessions = attachSessions(sessions.connections)
   installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] }))
   container = document.createElement('div')
   document.body.append(container)
@@ -54,7 +55,7 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   ws.detach()
-  installSessionSource(null)
+  detachSessions()
   installClientIdentity(null)
 })
 
@@ -78,7 +79,7 @@ describe('PanelHost', () => {
 
   it('keeps the view and its session when another workspace connects', async () => {
     let connectionsChanged = () => {}
-    installSessionSource({ ...sessions.source, subscribe: (listener) => { connectionsChanged = listener; return () => {} } })
+    detachSessions = attachSessions({ ...sessions.connections, subscribe: (listener) => { connectionsChanged = listener; return () => {} } })
     await render(<PanelHost workspaceId="w" panelId="t1" />)
     const view = container.querySelector('[data-testid="view"]')
     expect(view).not.toBeNull()

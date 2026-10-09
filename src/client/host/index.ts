@@ -19,12 +19,10 @@ export {
   MIN_PANE_SIZE,
 } from './definitions'
 export {
-  installSessionSource,
-  sessionSourceFrom,
+  attachSessions,
   acquireSession,
   sessionOwner,
-  subscribeSessionSource,
-  type SessionSource,
+  subscribeSessions,
   type ConnectionLookup,
 } from './sessions'
 export { demandSurface, isSurfaceDemanded, demandedSurfaces, subscribeDemandedSurfaces } from './surfaceDemand'

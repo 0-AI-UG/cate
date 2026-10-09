@@ -8,7 +8,7 @@ import type { SessionHandle } from '@client/connections'
 import { useClientState } from '../document'
 import { LoadingState } from '../../kernel/interaction'
 import type { PanelViewProps } from './views'
-import { acquireSession, sessionOwner, subscribeSessionSource } from '@client/host'
+import { acquireSession, sessionOwner, subscribeSessions } from '@client/host'
 
 /** Whether the panel is on screen: its tab is active, its canvas node is in
  *  view. Hosts that hide a mounted panel provide false. */
@@ -19,7 +19,7 @@ const noSubscribe = () => () => {}
 
 /** The session handle for a panel while the calling component is mounted. */
 export function usePanelSession<S = unknown>(workspaceId: string, panelId: string): SessionHandle<S> | null {
-  const owner = useSyncExternalStore(subscribeSessionSource, () => sessionOwner(workspaceId))
+  const owner = useSyncExternalStore(subscribeSessions, () => sessionOwner(workspaceId))
   const [handle, setHandle] = useState<SessionHandle<S> | null>(null)
   // Layout effect: the view mounts before the first paint.
   useLayoutEffect(() => {
