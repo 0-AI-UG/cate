@@ -78,7 +78,9 @@ export async function installRuntimeTarball(opts: {
     const installDir = runtimeInstallDir(cateHome, build, platform)
     if (isRuntimeInstalled(installDir, platform)) return installDir
     await writeFile(layout.marker, build)
-    // An incomplete leftover of this build (no marker) is set aside.
+    // Another process may have finished this build meanwhile: a complete
+    // install is never moved, only an incomplete leftover (no marker).
+    if (isRuntimeInstalled(installDir, platform)) return installDir
     if (fs.existsSync(installDir)) await rename(installDir, retired)
     try {
       await rename(staging, installDir)
@@ -203,6 +205,28 @@ function isAlive(pid: number): boolean {
   }
 }
 
+const IN_USE_DIR = 'in-use'
+
+/** Marks an install as used by the daemon `pid` (written by the spawner
+ *  right after spawning it): pruning keeps an install while a marked pid
+ *  lives, which covers a daemon before its runtime.json exists. */
+export function markRuntimeInUse(installDir: string, pid: number): void {
+  try {
+    fs.mkdirSync(path.join(installDir, IN_USE_DIR), { recursive: true })
+    fs.writeFileSync(path.join(installDir, IN_USE_DIR, String(pid)), '')
+  } catch { /* best effort: runtime.json keeps it once the daemon starts */ }
+}
+
+/** The daemon `pid` no longer uses `installDir` (it is exiting). */
+export function releaseRuntimeInUse(installDir: string, pid: number): void {
+  try { fs.rmSync(path.join(installDir, IN_USE_DIR, String(pid)), { force: true }) } catch { /* gone */ }
+}
+
+async function markedInUse(installDir: string): Promise<boolean> {
+  const pids = await readdir(path.join(installDir, IN_USE_DIR)).catch(() => [] as string[])
+  return pids.some((pid) => /^\d+$/.test(pid) && isAlive(Number(pid)))
+}
+
 /** Builds that running daemons on this machine run (their `runtime.json`). */
 async function liveBuilds(cateHome: string): Promise<string[]> {
   const dir = path.join(cateHome, 'workspaces')
@@ -238,6 +262,7 @@ export async function pruneRuntimeInstalls(opts: {
     if (name === CURRENT_FILE || name.startsWith(`${CURRENT_FILE}.`) || keep.has(name)) continue
     const temp = /^\.[a-z]+-(\d+)-/.exec(name)
     if (temp && isAlive(Number(temp[1]))) continue
+    if (await markedInUse(path.join(root, name))) continue
     try {
       await rm(path.join(root, name), { recursive: true, force: true })
       removed.push(name)
@@ -273,6 +298,9 @@ export function spawnDetachedDaemon(opts: {
     })
     child.on('error', () => { /* the caller notices when the socket never answers */ })
     child.unref()
+    // A daemon from an install keeps it from pruning until it exits.
+    const installDir = path.dirname(opts.bundle)
+    if (child.pid && isRuntimeInstalled(installDir)) markRuntimeInUse(installDir, child.pid)
     return child.pid
   } finally {
     if (typeof out === 'number') fs.closeSync(out)

@@ -19,7 +19,7 @@ import { dialLocal, dialLocalRetrying } from '@runtime/transports/node'
 import { pairOverLocal, printPairing } from './compose/pairOverLocal'
 import { installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_RELEASE, RUNTIME_VERSION, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
 import { prepareDaemonProcess, serveWorkspace } from './entry'
-import { pruneRuntimeInstalls, spawnDetachedDaemon } from './node'
+import { pruneRuntimeInstalls, releaseRuntimeInUse, spawnDetachedDaemon } from './node'
 
 const log = createLogger('daemon')
 
@@ -94,6 +94,7 @@ async function serve(args: ServeArgs): Promise<number> {
   process.once('SIGINT', onSignal)
 
   const reason = await daemon.stopped
+  releaseRuntimeInUse(installDirFromExecPath(process.execPath, process.platform), process.pid)
   if (reason.kind === 'update') {
     const next = installLayout(reason.installDir, process.platform)
     spawnDetachedDaemon({
