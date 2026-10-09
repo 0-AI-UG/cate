@@ -3,7 +3,7 @@
 // client mirrors it. All ids are created by the sender of the op that
 // introduces them (crypto.randomUUID() on clients).
 
-import type { CanvasModel, Point, Rect } from '@workspace/canvas/contract'
+import type { Point, Rect } from '@workspace/canvas/contract'
 import type { DockNode } from './dock'
 
 export type PanelId = string
@@ -47,6 +47,22 @@ export interface DocWindow {
   /** Null only for an empty main window; a detached window is removed when
    *  its last panel leaves. */
   dock: DockNode | null
+}
+
+/** One node on a canvas: a mini dock at a rect. */
+export interface CanvasNode {
+  id: NodeId
+  rect: Rect
+  /** The node's mini dock; never empty (an emptied node is removed). */
+  dock: DockNode
+}
+
+/** A canvas: its nodes, placed with `workspace/canvas` geometry. */
+export interface CanvasModel {
+  id: CanvasId
+  /** In creation order: the last node is the newest. Stacking order is
+   *  client state. */
+  nodes: Record<NodeId, CanvasNode>
 }
 
 export type RelationKind = 'use' | 'context' | 'verify' | 'trigger'

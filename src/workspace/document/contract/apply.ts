@@ -2,7 +2,7 @@
 // are shared with the input, and a failed op returns the input unchanged.
 // The runtime and every client mirror run this same function.
 
-import type { CanvasModel, CanvasNode } from '@workspace/canvas/contract'
+import type { CanvasModel, CanvasNode } from './schema'
 import {
   dockPanels,
   findDockNode,
@@ -133,7 +133,7 @@ function targetsCanvas(target: PlaceTarget): boolean {
 
 /** Check that a target exists and its new ids are free. Throws otherwise. */
 function checkTargetIn(doc: Doc, record: PanelRecord, target: PlaceTarget): void {
-  if (record.type === 'canvas' && targetsCanvas(target)) rejected('a canvas panel cannot be placed on a canvas')
+  if (record.canvasId !== undefined && targetsCanvas(target)) rejected('a canvas panel cannot be placed on a canvas')
   switch (target.to) {
     case 'stack': {
       const tree = dockOf(doc, target.dock)
@@ -199,12 +199,15 @@ function placeAt(doc: Doc, panelId: PanelId, target: PlaceTarget): Doc {
 }
 
 // --- Records ---------------------------------------------------------------------
+//
+// A record that shows a canvas carries its `canvasId`; the reducer reads that,
+// never the panel type.
 
 function addPanel(doc: Doc, record: PanelRecord, at: PlaceTarget): Doc {
   if (doc.panels[record.id]) rejected(`panel id ${record.id} is in use`)
   let next: Doc = { ...doc, panels: { ...doc.panels, [record.id]: record } }
-  if (record.type === 'canvas') {
-    const canvasId = record.canvasId!
+  if (record.canvasId !== undefined) {
+    const canvasId = record.canvasId
     if (doc.canvases[canvasId]) rejected(`canvas id ${canvasId} is in use`)
     next = { ...next, canvases: { ...next.canvases, [canvasId]: { id: canvasId, nodes: {} } } }
   }
@@ -216,15 +219,15 @@ function replacePanel(doc: Doc, record: PanelRecord): Doc {
   const old = doc.panels[record.id]
   if (!old) gone(`panel ${record.id}`)
   let next: Doc = { ...doc, panels: { ...doc.panels, [record.id]: record } }
-  if (old.type === 'canvas') {
-    const canvasId = old.canvasId!
-    if (record.type === 'canvas' && record.canvasId === canvasId) return next
+  if (old.canvasId !== undefined) {
+    const canvasId = old.canvasId
+    if (record.canvasId === canvasId) return next
     if (Object.keys(doc.canvases[canvasId].nodes).length > 0) rejected('only an empty canvas panel can be replaced')
     const { [canvasId]: _removed, ...canvases } = next.canvases
     next = { ...next, canvases }
   }
-  if (record.type === 'canvas') {
-    const canvasId = record.canvasId!
+  if (record.canvasId !== undefined) {
+    const canvasId = record.canvasId
     if (next.canvases[canvasId]) rejected(`canvas id ${canvasId} is in use`)
     const placement = placementOf(doc, record.id)
     if (placement && isCanvasDock(placement.dock)) rejected('a canvas panel cannot be placed on a canvas')
@@ -259,8 +262,8 @@ export function removalSet(doc: Doc, ids: readonly PanelId[]): Set<PanelId> {
   for (const id of ids) {
     removed.add(id)
     const record = doc.panels[id]
-    if (record?.type !== 'canvas') continue
-    for (const node of Object.values(doc.canvases[record.canvasId!]?.nodes ?? {})) {
+    if (record?.canvasId === undefined) continue
+    for (const node of Object.values(doc.canvases[record.canvasId]?.nodes ?? {})) {
       for (const panelId of dockPanels(node.dock)) removed.add(panelId)
     }
   }
@@ -274,7 +277,7 @@ function removePanels(doc: Doc, ids: readonly PanelId[]): Doc {
   const canvases = { ...doc.canvases }
   for (const id of removed) {
     const record = doc.panels[id]
-    if (record.type === 'canvas') delete canvases[record.canvasId!]
+    if (record.canvasId !== undefined) delete canvases[record.canvasId]
   }
   next = { ...next, canvases }
   for (const id of removed) {

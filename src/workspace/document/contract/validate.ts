@@ -53,9 +53,7 @@ export function checkRecord(v: unknown): Problem {
   if (typeof v.title !== 'string') return 'record title is not a string'
   if (!optional(v.worktreeId, isId)) return 'record worktreeId is not an id'
   if (!isObject(v.fields) || !isJson(v.fields)) return 'record fields are not a JSON object'
-  if (v.type === 'canvas' ? !isId(v.canvasId) : v.canvasId !== undefined) {
-    return 'canvasId belongs on canvas panels, and only there'
-  }
+  if (!optional(v.canvasId, isId)) return 'record canvasId is not an id'
   const known = ['id', 'type', 'title', 'worktreeId', 'canvasId', 'fields']
   if (Object.keys(v).some((key) => !known.includes(key))) return 'record has unknown keys'
   return null

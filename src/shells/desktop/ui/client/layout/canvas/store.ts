@@ -29,7 +29,7 @@ import {
   type Rect,
   type Size,
 } from '@workspace/canvas/contract'
-import type { CanvasModel } from '@workspace/canvas/contract'
+import type { CanvasModel } from '@workspace/document/contract'
 import {
   canvasOf,
   canvasPanelOf,

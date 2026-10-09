@@ -65,7 +65,7 @@ function buildIndex(doc: WorkspaceDocument): DocIndex {
     }
   }
   for (const panel of Object.values(doc.panels)) {
-    if (panel.type === 'canvas' && panel.canvasId) canvasPanels.set(panel.canvasId, panel.id)
+    if (panel.canvasId) canvasPanels.set(panel.canvasId, panel.id)
   }
   return { placements, stacks, splits, nodes, canvasPanels }
 }

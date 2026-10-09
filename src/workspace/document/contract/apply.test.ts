@@ -94,8 +94,8 @@ describe('addPanel', () => {
   it('rejects malformed records', () => {
     const doc = threeTabs()
     fails(doc, { kind: 'addPanel', record: { ...record('d'), fields: undefined as never }, at: tab('s1') }, 'rejected')
-    fails(doc, { kind: 'addPanel', record: { ...record('d'), canvasId: 'c' }, at: tab('s1') }, 'rejected')
-    fails(doc, { kind: 'addPanel', record: { id: 'd', type: 'canvas', title: '', fields: {} }, at: tab('s1') }, 'rejected')
+    // A record shows a canvas when it carries a canvas id, whatever its type.
+    fails(doc, { kind: 'addPanel', record: { ...record('d'), canvasId: '' }, at: tab('s1') }, 'rejected')
     fails(doc, { kind: 'addPanel', record: { ...record('d'), extra: 1 } as PanelRecord, at: tab('s1') }, 'rejected')
     fails(doc, { kind: 'addPanel', record: record('d'), at: node('c', 'n', 'sn', rect(0, 0, 0, 10)) }, 'rejected')
   })

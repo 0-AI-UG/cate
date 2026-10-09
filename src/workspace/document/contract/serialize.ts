@@ -64,7 +64,7 @@ export function validateDocument(value: unknown): string | null {
       const record = doc.panels[panelId]
       if (!record) return `${where}: panel ${panelId} does not exist`
       if (placed.has(panelId)) return `panel ${panelId} is placed twice`
-      if (onCanvas && record.type === 'canvas') return `canvas panel ${panelId} is on a canvas`
+      if (onCanvas && record.canvasId !== undefined) return `canvas panel ${panelId} is on a canvas`
       placed.add(panelId)
     }
     return null
@@ -86,7 +86,7 @@ export function validateDocument(value: unknown): string | null {
 
   const canvasPanels = new Map<string, string>()
   for (const record of Object.values(doc.panels)) {
-    if (record.type !== 'canvas') continue
+    if (record.canvasId === undefined) continue
     if (canvasPanels.has(record.canvasId!)) return `canvas ${record.canvasId} has two panels`
     canvasPanels.set(record.canvasId!, record.id)
   }
