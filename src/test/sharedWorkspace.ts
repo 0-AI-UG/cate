@@ -181,10 +181,32 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
         return {
           snapshot,
           send: async (op) => (await until(acquire, 5_000, `${name} sees panel ${panelId}`)).send(op),
-          until: (ready, timeoutMs) => until(() => {
-            const s = snapshot()
-            return s && ready(s) ? s : undefined
-          }, timeoutMs, `${name} session ${panelId}`),
+          // Waits on the session's own events (and the document's, until the
+          // panel is known), within the test's budget rather than a short
+          // polling deadline that a loaded machine overruns (B32).
+          until: (ready, timeoutMs = 25_000) => new Promise<S>((resolve, reject) => {
+            let offSession: (() => void) | undefined
+            let offDocument = () => {}
+            const finish = (value: S | Error) => {
+              clearTimeout(timer)
+              clearInterval(recheck)
+              offDocument()
+              offSession?.()
+              if (value instanceof Error) reject(value)
+              else resolve(value)
+            }
+            const check = () => {
+              const h = acquire()
+              if (h && !offSession) offSession = h.subscribe(check)
+              const s = snapshot()
+              if (s && ready(s)) finish(s)
+            }
+            const timer = setTimeout(() => finish(new Error(`timed out waiting for ${name} session ${panelId}`)), timeoutMs)
+            // Sync state has no event of its own; look again now and then.
+            const recheck = setInterval(check, 250)
+            offDocument = client.document.subscribe(check)
+            check()
+          }),
           release: () => handle?.release(),
         }
       },

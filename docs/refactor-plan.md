@@ -433,6 +433,10 @@ the full suite, passes alone.
 - Test: run it 20 times under `--pool=forks` with the full suite; record
   the failure rate.
 - Fix: wait on the PTY restart event instead of polling a fixed deadline.
+  Measured: it failed in about half of the full-suite runs on a loaded
+  machine (an earlier, partly contaminated sample). The 20-run measurement
+  was not repeated after the fix, to keep the machine's load down; the
+  session probe now waits on session events within the test's budget.
 
 ### P2
 
