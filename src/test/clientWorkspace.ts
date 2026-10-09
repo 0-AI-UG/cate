@@ -70,7 +70,7 @@ export function attachTestWorkspace(workspaceId: string, doc: WorkspaceDocument 
           return result.status === 'applied' ? { status: 'applied' as const, seq: result.seq } : { status: 'duplicate' as const }
         },
         subscribe: () => subscription<DocumentEvent>((emit) => {
-          emit({ kind: 'doc', seq: sequencer.seq, doc: sequencer.doc })
+          emit({ kind: 'doc', seq: sequencer.seq, epoch: sequencer.epoch, doc: sequencer.doc })
           listeners.add(emit)
           return () => { listeners.delete(emit) }
         }),

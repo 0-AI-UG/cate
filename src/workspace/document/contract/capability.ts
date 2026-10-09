@@ -11,7 +11,7 @@ export const RUNTIME_CLIENT_ID: ClientId = 'runtime'
 /** Events of `document.subscribe`: the full document or the missed ops
  *  first, then every applied op in order. */
 export type DocumentEvent =
-  | { kind: 'doc'; seq: number; doc: WorkspaceDocument }
+  | { kind: 'doc'; seq: number; epoch: string; doc: WorkspaceDocument }
   | { kind: 'op'; seq: number; op: DocOp }
 
 /** A failed op rejects with its code (`gone`, `rejected`); a resent op that
@@ -23,9 +23,10 @@ export const documentCapability = defineCapability('document', {
     apply: method<{ op: DocOp }, ApplyResult>({ mutates: true }),
   },
   streams: {
-    /** With `sinceSeq`, only the ops after it when they are still kept;
-     *  otherwise the full document. */
-    subscribe: stream<{ sinceSeq?: number }, DocumentEvent>(),
+    /** With `sinceSeq` of the runtime's current `epoch` (from its last `doc`
+     *  event), only the ops after it when they are still kept; otherwise the
+     *  full document. */
+    subscribe: stream<{ sinceSeq?: number; epoch?: string }, DocumentEvent>(),
   },
 })
 

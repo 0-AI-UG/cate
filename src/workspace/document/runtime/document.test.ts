@@ -71,12 +71,14 @@ describe('document service', () => {
     expect(again.seq).toBe(2)
     expect(Object.keys(again.get().panels)).toEqual(['a', 'b'])
     expect(again.submit(op('c1', 1, addPanel('a')))).toEqual({ status: 'duplicate' })
-    // Nothing is kept for reconnects after a restart: older seqs get the doc.
-    expect(again.since(2)).toEqual([])
-    expect(again.since(1)).toBeNull()
+    // A seq of the previous run gets the doc: the runtime may have lost ops
+    // the client saw. Nothing older is kept either.
+    expect(again.since(2, again.epoch)).toEqual([])
+    expect(again.since(2, 'previous run')).toBeNull()
+    expect(again.since(1, again.epoch)).toBeNull()
     // The runtime's own counter continues too.
     expect(again.apply(addPanel('c'))).toBe(3)
-    expect(again.since(2)).toHaveLength(1)
+    expect(again.since(2, again.epoch)).toHaveLength(1)
     again.dispose()
   })
 
@@ -155,12 +157,12 @@ describe('document capability', () => {
     const a = connectClient(server, 'ca')
     await a.ready
     const missed: DocumentEvent[] = []
-    a.doc.subscribe({ sinceSeq: 1 }).onEvent((e) => missed.push(e))
+    a.doc.subscribe({ sinceSeq: 1, epoch: service.epoch }).onEvent((e) => missed.push(e))
     await tick()
     expect(missed).toMatchObject([{ kind: 'op', seq: 2 }, { kind: 'op', seq: 3 }])
 
     const full: DocumentEvent[] = []
-    a.doc.subscribe({ sinceSeq: 99 }).onEvent((e) => full.push(e))
+    a.doc.subscribe({ sinceSeq: 99, epoch: service.epoch }).onEvent((e) => full.push(e))
     await tick()
     expect(full).toMatchObject([{ kind: 'doc', seq: 3 }])
     expect(Object.keys((full[0] as { doc: { panels: object } }).doc.panels)).toEqual(['p1', 'p2', 'p3'])

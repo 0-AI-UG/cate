@@ -18,11 +18,11 @@ export function documentCapabilityImpl(
       if (result.status === 'failed') throw new RpcError(result.error.code, result.error.message)
       return result
     },
-    subscribe: ({ sinceSeq } = {}, sink) => {
+    subscribe: ({ sinceSeq, epoch } = {}, sink) => {
       // Catch-up and registration happen in one turn, so no op falls between.
-      const missed = typeof sinceSeq === 'number' ? document.since(sinceSeq) : null
+      const missed = typeof sinceSeq === 'number' && typeof epoch === 'string' ? document.since(sinceSeq, epoch) : null
       if (missed) for (const { seq, op } of missed) sink.emit({ kind: 'op', seq, op })
-      else sink.emit({ kind: 'doc', seq: document.seq, doc: document.get() })
+      else sink.emit({ kind: 'doc', seq: document.seq, epoch: document.epoch, doc: document.get() })
       return document.subscribe(({ seq, op }) => sink.emit({ kind: 'op', seq, op }))
     },
   }

@@ -44,7 +44,7 @@ function fakeRuntime(keep = 10_000) {
     subscribe: ({ sinceSeq } = {}, sink) => {
       const missed = typeof sinceSeq === 'number' ? sequencer.since(sinceSeq) : null
       if (missed) for (const { seq, op } of missed) sink.emit({ kind: 'op', seq, op })
-      else sink.emit({ kind: 'doc', seq: sequencer.seq, doc: sequencer.doc })
+      else sink.emit({ kind: 'doc', seq: sequencer.seq, epoch: sequencer.epoch, doc: sequencer.doc })
       const listener = (event: DocumentEvent) => sink.emit(event)
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -195,7 +195,7 @@ describe('document store', () => {
             cancel: () => {},
             [Symbol.asyncIterator]: () => { throw new Error('unused') },
           }
-          queueMicrotask(() => emit!({ kind: 'doc', seq: 0, doc: createDocument() }))
+          queueMicrotask(() => emit!({ kind: 'doc', seq: 0, epoch: 'e', doc: createDocument() }))
           return sub
         },
       },

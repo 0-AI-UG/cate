@@ -22,7 +22,7 @@ import {
 /** The part of the `document` proxy the store uses. */
 export interface DocumentRemote {
   apply(params: { op: DocOp }): Promise<ApplyResult>
-  subscribe(params: { sinceSeq?: number }): Subscription<DocumentEvent, void>
+  subscribe(params: { sinceSeq?: number; epoch?: string }): Subscription<DocumentEvent, void>
 }
 
 export interface DocumentLink {
@@ -88,6 +88,8 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
   let redoStack: DocChange[][] = []
   let undoState: UndoState = { canUndo: false, canRedo: false }
   let synced = false
+  // The runtime epoch the mirror's seq belongs to.
+  let epoch = ''
   let disposed = false
   let sub: Subscription<DocumentEvent, void> | null = null
   let markReady!: () => void
@@ -120,7 +122,7 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
   }
 
   const open = () => {
-    const next = link.remote.subscribe(synced ? { sinceSeq: mirror.seq } : {})
+    const next = link.remote.subscribe(synced ? { sinceSeq: mirror.seq, epoch } : {})
     sub = next
     next.onEvent((event) => { if (sub === next) onEvent(event) })
     next.done.then(
@@ -132,6 +134,7 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
   const onEvent = (event: DocumentEvent) => {
     if (event.kind === 'doc') {
       mirror.reset(event.doc, event.seq)
+      epoch = event.epoch
       if (!synced) {
         synced = true
         markReady()

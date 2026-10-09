@@ -39,7 +39,7 @@ describe('attachDocuments', () => {
         if (result.status === 'failed') throw new RpcError(result.error.code, result.error.message)
         return result
       },
-      subscribe: (_params, sink) => { sink.emit({ kind: 'doc', seq: sequencer.seq, doc: sequencer.doc }) },
+      subscribe: (_params, sink) => { sink.emit({ kind: 'doc', seq: sequencer.seq, epoch: sequencer.epoch, doc: sequencer.doc }) },
     }
     server.register(documentCapability, documentImpl)
     server.register(presenceCapability, {

@@ -157,3 +157,38 @@ describe('op convergence', () => {
     expect(total.reconnects).toBeGreaterThan(100)
   }, 60_000)
 })
+
+describe('runtime restart', () => {
+  it('a client that saw ops a crashed runtime never saved converges on the restarted runtime', () => {
+    const rng = createRng(7)
+    let ids = 0
+    const newId = () => `crash-${++ids}`
+    let counter = 0
+    const op = (doc: ReturnType<typeof createDocument>, clientId: string): DocOp => ({ ...randomChange(doc, rng, newId), opId: { clientId, counter: ++counter } })
+    const submit = (runtime: Sequencer, clientId: string) => {
+      for (;;) if (runtime.submit(op(runtime.doc, clientId)).status === 'applied') return
+    }
+
+    const before = createSequencer({ doc: createDocument() })
+    const a = createMirror('a', before.doc, before.seq)
+    let aEpoch = before.epoch
+    while (before.seq < 7) submit(before, 'x')
+    // What document.json held when the runtime crashed.
+    const saved = { doc: before.doc, seq: before.seq, counters: [...before.counters] }
+    while (before.seq < 10) submit(before, 'x')
+    for (const entry of before.since(0)!) a.applied(entry.seq, entry.op)
+    expect(a.seq).toBe(10)
+
+    const after = createSequencer(saved)
+    while (after.seq < 10) submit(after, 'b')
+
+    const missed = after.since(a.seq, aEpoch)
+    if (missed) for (const entry of missed) a.applied(entry.seq, entry.op)
+    else {
+      a.reset(after.doc, after.seq)
+      aEpoch = after.epoch
+    }
+    expect(a.confirmed).toEqual(after.doc)
+    expect(aEpoch).toBe(after.epoch)
+  })
+})

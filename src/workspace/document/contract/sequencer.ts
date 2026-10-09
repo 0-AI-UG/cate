@@ -21,13 +21,18 @@ export interface Sequencer {
   readonly doc: WorkspaceDocument
   /** The seq of the last applied op; 0 before any. */
   readonly seq: number
+  /** This run of the sequencer: a seq means something only in its epoch. A
+   *  runtime that restarts from document.json may reuse seqs a client saw
+   *  before a crash, so a new run gets a new epoch. */
+  readonly epoch: string
   /** The highest counter handled per client. Persist it with the document so
    *  a restart does not apply a resent op twice. */
   readonly counters: ReadonlyMap<ClientId, number>
   submit(op: DocOp): SubmitResult
-  /** The ops applied after `seq`, or null when they are no longer kept (or
-   *  `seq` is unknown) and the client needs the full document. */
-  since(seq: number): AppliedOp[] | null
+  /** The ops applied after `seq`, or null when they are no longer kept, `seq`
+   *  is unknown or belongs to another epoch, and the client needs the full
+   *  document. */
+  since(seq: number, epoch?: string): AppliedOp[] | null
 }
 
 export interface SequencerInit {
@@ -35,6 +40,8 @@ export interface SequencerInit {
   seq?: number
   counters?: Iterable<[ClientId, number]>
   keep?: number
+  /** Default: a new random one. */
+  epoch?: string
 }
 
 function isValidOpId(opId: unknown): opId is OpId {
@@ -48,11 +55,13 @@ export function createSequencer(init: SequencerInit): Sequencer {
   let seq = init.seq ?? 0
   const keep = init.keep ?? 10_000
   const counters = new Map(init.counters ?? [])
+  const epoch = init.epoch ?? globalThis.crypto.randomUUID()
   let log: AppliedOp[] = []
 
   return {
     get doc() { return doc },
     get seq() { return seq },
+    get epoch() { return epoch },
     get counters() { return counters },
     submit(op) {
       if (!isValidOpId(op?.opId)) return { status: 'failed', error: { code: 'rejected', message: 'op has no valid opId' } }
@@ -67,7 +76,8 @@ export function createSequencer(init: SequencerInit): Sequencer {
       if (log.length > keep * 2) log = log.slice(-keep)
       return { status: 'applied', seq }
     },
-    since(from) {
+    since(from, fromEpoch) {
+      if (fromEpoch !== undefined && fromEpoch !== epoch) return null
       if (from === seq) return []
       if (from > seq || from < 0) return null
       const kept = log.length > keep ? log.slice(-keep) : log

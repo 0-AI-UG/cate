@@ -32,13 +32,16 @@ export interface AppliedEvent {
 export interface DocumentService {
   get(): WorkspaceDocument
   readonly seq: number
+  /** New at every start (the sequencer's epoch). */
+  readonly epoch: string
   /** A client's op, deduped on its opId. */
   submit(op: DocOp): SubmitResult
   /** An op the runtime makes itself, with a runtime opId. Returns its seq;
    *  throws `RpcError` (`gone`, `rejected`) when it fails. */
   apply(change: DocChange | DocBatch): number
-  /** The ops after `seq`, or null when the client needs the full document. */
-  since(seq: number): AppliedOp[] | null
+  /** The ops after `seq` of `epoch`, or null when the client needs the full
+   *  document. */
+  since(seq: number, epoch: string): AppliedOp[] | null
   /** Runs synchronously after each applied op, in order. */
   subscribe(listener: (event: AppliedEvent) => void): () => void
   /** Writes pending changes now. */
@@ -155,6 +158,7 @@ export function createDocumentService(options: DocumentServiceOptions): Document
   return {
     get: () => sequencer.doc,
     get seq() { return sequencer.seq },
+    get epoch() { return sequencer.epoch },
     submit,
     apply(change) {
       const op = { ...change, opId: { clientId: RUNTIME_CLIENT_ID, counter: ++runtimeCounter } } as DocOp
@@ -163,7 +167,7 @@ export function createDocumentService(options: DocumentServiceOptions): Document
       if (result.status === 'duplicate') throw new RpcError('rejected', 'runtime op counter reused')
       return result.seq
     },
-    since: (seq) => sequencer.since(seq),
+    since: (seq, epoch) => sequencer.since(seq, epoch),
     subscribe(listener) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }

@@ -1566,9 +1566,12 @@ so the runtime orders it and no client ever holds a lock.
   then snapshot changes, plus the terminal byte stream or Yjs updates.
 - **Large data** (file contents, diffs, screenshots) is fetched when needed,
   never pushed.
-- **On reconnect** the client sends its last sequence number and gets the ops
-  it missed, or the full document if they are no longer kept. Then it resends
-  its unconfirmed ops; their `opId`s make that safe.
+- **On reconnect** the client sends its last sequence number with the
+  runtime's epoch it belongs to and gets the ops it missed, or the full
+  document if they are no longer kept. Each daemon start has a new epoch, so
+  a runtime restarted from a `document.json` older than what the client saw
+  (a crash inside the write debounce) answers with the full document. Then
+  the client resends its unconfirmed ops; their `opId`s make that safe.
 
 ### 13.5 Optimistic updates
 
