@@ -999,10 +999,14 @@ here" row in the workspace.
 
 ### 9.3 Canvas
 
-**`workspace/canvas`**: the canvas model in `contract.ts`: canvases, nodes,
-geometry, node mini docks, free-slot placement (finding a rect for a new node)
-and arrangement. It is pure document logic used by the document runtime and by
-the client's optimistic mirror. Each shell draws it (the desktop: `shells/desktop/ui/client/layout/canvas`).
+**`workspace/canvas`**: canvas geometry in `contract.ts`: rects, free-slot
+placement (finding a rect for a new node), arrangement, and the curves
+between two rects that relations draw. It imports nothing. The canvas model
+itself (`CanvasModel`, `CanvasNode`: nodes with a rect and a mini dock) is
+part of the document schema; the reducer and the client's optimistic mirror
+run this geometry over it, and treat a record that carries a `canvasId` as
+one that shows a canvas, never testing the type name. Each shell draws it
+(the desktop: `shells/desktop/ui/client/layout/canvas`).
 
 ### 9.4 Files
 
@@ -1089,8 +1093,11 @@ the client's optimistic mirror. Each shell draws it (the desktop: `shells/deskto
 **`workspace/relations`**:
 
 - **contract**: the typed relation graph between panels (`use`, `context`,
-  `verify`, `trigger`) and `compileRelationContext`, which the agents service
-  uses for prompt context.
+  `verify`, `trigger`), `compileRelationContext`, which the agents service
+  uses for prompt context, and the relation context mode (`once`, `always`,
+  `off`: a record field with its one parser). It imports only the document.
+  What a prompt would take is the runtime's own preview
+  (`agents.previewContext`); clients never compile it themselves.
 - **runtime**: **connected editors**: an editor connected to a terminal or chat
   panel shares a working file with the agent (an untitled editor gets
   `.cate/tmp/<id>.md`), autosaves, and is flushed before a prompt is
@@ -1421,7 +1428,7 @@ Every panel type meets the same contract.
 | terminal | services/terminal, services/agents | pty status, title, cwd, activity, agent session and status; screen as serialized stream | xterm | shows terminal-runner sessions |
 | chat | services/t3, services/agents | thread binding, harness status, the thread's change summaries | T3 client in a webview | shows t3-runner sessions |
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
-| editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client |
+| editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
 | review | workspace/repository, services/agents | source (git diff or agent changes), file list, notes, agent review, status, reveal | diff views | filter, focused file, collapsed and expanded files and context lines are per client |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
