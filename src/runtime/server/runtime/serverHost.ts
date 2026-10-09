@@ -1,14 +1,14 @@
 // Long-lived HTTP server children (T3 runs on this). A child gets a free
 // loopback port in `env[portEnv]`, its output is streamed, and `start`
 // resolves only once an HTTP request to its ready path gets any response.
-// Live pids are recorded in the data dir so the next daemon can reap children
-// a crashed one left behind.
+// Live pids are recorded in the data dir, with the command and start time the
+// OS reports, so the next daemon can reap children a crashed one left behind
+// and never a process that reused one of their pids.
 
-import { spawn, type ChildProcess } from 'node:child_process'
-import fs from 'node:fs'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import http from 'node:http'
 import net from 'node:net'
-import path from 'node:path'
+import { readJsonFile, writeJsonFile, removeFile } from '@kernel/state/node'
 import {
   RUNTIME_INSTALL_ROOT_PLACEHOLDER,
   RUNTIME_NODE_EXECUTABLE,
@@ -41,33 +41,39 @@ export interface ServerHost {
   running(): number
 }
 
-interface PidRecord { pid: number; id: string; startedAt: number; ownerPid: number }
+interface PidRecord { pid: number; id: string; ownerPid: number; command: string; startedAt: string }
 
 const READY_PROBE_INTERVAL_MS = 150
 const OUTPUT_TAIL_LIMIT = 8192
 
 function readPidFile(file: string): PidRecord[] {
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'))
-    return Array.isArray(parsed) ? parsed.filter((r): r is PidRecord => !!r && typeof r.pid === 'number') : []
-  } catch {
-    return []
-  }
+  const parsed = readJsonFile<unknown>(file, [])
+  return Array.isArray(parsed)
+    ? parsed.filter((r): r is PidRecord => !!r && typeof r.pid === 'number' && typeof r.command === 'string' && typeof r.startedAt === 'string')
+    : []
 }
 
 function writePidFile(file: string, records: PidRecord[]): void {
-  try {
-    if (records.length === 0) {
-      fs.rmSync(file, { force: true })
-      return
-    }
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    fs.writeFileSync(file, JSON.stringify(records), { mode: 0o600 })
-  } catch { /* best effort: a stale pid is reaped next start */ }
+  if (records.length === 0) removeFile(file)
+  else writeJsonFile(file, records, { mode: 0o600 })
 }
 
-/** Kills the children of a previous daemon of this workspace that is gone.
- *  Run once the socket lock is held, so no live daemon owns the file. */
+/** What the OS reports for `pid`: its start time and command, or null when
+ *  it is gone (or `ps` is unavailable, as on Windows). */
+function processIdentity(pid: number): { startedAt: string; command: string } | null {
+  if (process.platform === 'win32') return null
+  try {
+    const out = execFileSync('ps', ['-o', 'lstart=,command=', '-p', String(pid)], { encoding: 'utf-8', timeout: 2000 }).trim()
+    // lstart is a fixed 24 characters: "Thu Oct  9 10:00:00 2026".
+    return out.length > 24 ? { startedAt: out.slice(0, 24), command: out.slice(24).trim() } : null
+  } catch {
+    return null
+  }
+}
+
+/** Kills the children of a previous daemon of this workspace that is gone,
+ *  when the pid still runs the recorded command started at the recorded
+ *  time. Run once the socket lock is held, so no live daemon owns the file. */
 export function reapOrphanServers(pidFile: string): void {
   const retained: PidRecord[] = []
   for (const record of readPidFile(pidFile)) {
@@ -76,6 +82,8 @@ export function reapOrphanServers(pidFile: string): void {
       retained.push(record)
       continue
     }
+    const now = processIdentity(record.pid)
+    if (!now || now.command !== record.command || now.startedAt !== record.startedAt) continue
     try { process.kill(record.pid, 'SIGKILL') } catch { /* already gone */ }
   }
   writePidFile(pidFile, retained)
@@ -147,7 +155,8 @@ export function createServerHost(deps: ServerHostDeps): ServerHost {
         child.stdin?.end(opts.bootstrapStdin)
       }
       children.set(id, child)
-      if (child.pid) recordPid({ pid: child.pid, id, startedAt: Date.now(), ownerPid: process.pid })
+      const identity = child.pid ? processIdentity(child.pid) : null
+      if (child.pid && identity) recordPid({ pid: child.pid, id, ownerPid: process.pid, ...identity })
 
       // The last few KB of output explain an early exit or a failed probe.
       let tail = ''

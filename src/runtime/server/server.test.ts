@@ -68,12 +68,36 @@ it('rejects when the ready probe times out', async () => {
   await expect(start).rejects.toThrow(/timed out after 400ms/)
 })
 
-it('reaps children whose daemon is gone', async () => {
-  const orphan = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+it.skipIf(process.platform === 'win32')('reaps children whose daemon is gone', async () => {
+  const handle = await host.start(
+    { command: [RUNTIME_NODE_EXECUTABLE, '-e', httpServer], cwd: dir, portEnv: 'APP_PORT', readyPath: '/', readyTimeoutMs: 5000 },
+    () => {},
+    () => {},
+  )
+  // As if a crashed daemon had started it.
   const deadOwner = 2 ** 22 + 12345
-  fs.writeFileSync(pidFile, JSON.stringify([{ pid: orphan.pid, id: 'x', startedAt: 0, ownerPid: deadOwner }]))
-  const exited = new Promise((resolve) => orphan.once('exit', resolve))
+  const records = JSON.parse(fs.readFileSync(pidFile, 'utf-8')) as { ownerPid: number }[]
+  fs.writeFileSync(pidFile, JSON.stringify(records.map((r) => ({ ...r, ownerPid: deadOwner }))))
+  const exited = new Promise<void>((resolve) => {
+    const timer = setInterval(() => {
+      try { process.kill(handle.pid, 0) } catch { clearInterval(timer); resolve() }
+    }, 20)
+  })
   reapOrphanServers(pidFile)
   await exited
   expect(fs.existsSync(pidFile)).toBe(false)
+})
+
+it.skipIf(process.platform === 'win32')('leaves alone a recorded pid that now runs another program', async () => {
+  const other = spawn('sleep', ['30'], { stdio: 'ignore' })
+  try {
+    const deadOwner = 2 ** 22 + 12345
+    fs.writeFileSync(pidFile, JSON.stringify([{ pid: other.pid, id: 'x', command: 'node t3.js', startedAt: 'Thu Jan  1 00:00:00 2026', ownerPid: deadOwner }]))
+    reapOrphanServers(pidFile)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(other.exitCode).toBeNull()
+    expect(other.signalCode).toBeNull()
+  } finally {
+    other.kill('SIGKILL')
+  }
 })
