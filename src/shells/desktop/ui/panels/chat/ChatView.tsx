@@ -1,23 +1,21 @@
 // The chat panel view: the T3 client in a webview. It renders the session's
-// snapshot, owns the page (branding, theme, navigation guard, the `__cateHost`
-// bridge, file drops) and sends ops. The page is loaded afresh for every
-// `loadId`; otherwise it moves in place through T3's router: a conversation
-// the page creates itself is adopted, one another client moved the panel to
-// is followed (T3's own stream brings this page the thread).
+// snapshot and hosts the page, which the core's chat page controller drives
+// (thread binding, navigation guard, the `__cateHost` bridge); file drops and
+// theme changes are the view's. The page is loaded afresh for every `loadId`.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import { LoadingState, Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { openUrlFor, pickPanelPlace, registerSurface } from '@client/host'
+import { openUrlFor, registerSurface } from '@client/host'
 import { type PanelViewProps } from '../../client/host/views'
-import { CANCEL_PENDING_SCRIPT, T3_CHAT_ONLY_CSS, createT3HostDispatcher, hostReplyScript, isAllowedT3Navigation, isT3ProviderSettingsNavigation, parseHostMessage, t3BrandingScript, t3ChangesScript, t3Conversations, t3FileDropScript, t3HostBridgeScript, t3NavigateScript, t3ProductCopy, t3ThemeScript, t3ThreadIdFromUrl, type T3Guest, type T3HostDispatcher } from '@services/t3/client'
+import { t3Conversations, t3FileDropScript, t3ProductCopy, t3ThemeScript, type T3Guest } from '@services/t3/client'
+import { createChatPageController } from '@panels/chat/client'
 import { prepareT3Page } from '@services/t3/desktop'
 import { T3ConversationPill } from '../../services/t3'
 import { WorktreePill } from '../../workspace/repository'
-import type { PlaceTarget } from '@workspace/document/contract'
-import { chatPageUrl, type ChatOp, type ChatSnapshot } from '@panels/chat/contract'
+import type { ChatOp, ChatSnapshot } from '@panels/chat/contract'
 import { readFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { droppedImages, droppedRefImages, useFileDragActive } from './parts/fileDrop'
 import { chatSurfaceHandler } from './parts/surfaces'
@@ -80,11 +78,6 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
   focused: boolean
 }) {
   const { loadId } = snapshot
-  // Fixed for this load: a new harness or binding is a new load (the
-  // component is keyed by it), and a thread the page adopts does not navigate.
-  const [harness] = useState(() => snapshot.harness!)
-  const [src] = useState(() => chatPageUrl(harness, snapshot.threadId))
-  const [token] = useState(() => crypto.randomUUID())
   const [partition, setPartition] = useState<string | null>(null)
   const [guest, setGuest] = useState<Guest | null>(null)
   const [guestReady, setGuestReady] = useState(false)
@@ -93,16 +86,29 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
   const sendRef = useRef(sendProp)
   sendRef.current = sendProp
   const send = useCallback<Send>((op) => sendRef.current(op), [])
-  const dispatcher = useRef<T3HostDispatcher | null>(null)
-  const pushedChanges = useRef('')
-
-  // A thread the page moved to counts as bound until the session confirms it,
-  // so the navigation guard does not send the page back meanwhile.
-  const adopted = useRef<{ from: string | null; to: string | null } | null>(null)
-  if (adopted.current && snapshot.threadId !== adopted.current.from) adopted.current = null
-  const threadId = adopted.current ? adopted.current.to : snapshot.threadId
-  const latest = useRef({ threadId, bound: snapshot.threadId })
-  latest.current = { threadId, bound: snapshot.threadId }
+  const guestRef = useRef<Guest | null>(null)
+  guestRef.current = guest
+  // One controller per load (the component is keyed by it): the page's
+  // thread binding, navigation guard and host requests.
+  const [controller] = useState(() => createChatPageController({
+    workspaceId,
+    panelId,
+    snapshot,
+    theme: getActiveTheme(),
+    port: {
+      run: (script) => {
+        try {
+          void guestRef.current?.executeJavaScript(script).catch(() => undefined)
+        } catch { /* A destroyed guest can throw before returning a promise. */ }
+      },
+      send: (op) => sendRef.current(op),
+      openLink: (url) => openUrlFor(workspaceId, url, panelId),
+      openProviderSettings: () => clientUi().openSettings('t3 code'),
+    },
+  }))
+  const harness = snapshot.harness!
+  useEffect(() => () => controller.dispose(), [controller])
+  useEffect(() => { controller.update(snapshot) }, [controller, snapshot])
 
   useEffect(() => {
     let current = true
@@ -113,89 +119,27 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
     return () => { current = false }
   }, [harness, loadId, send, workspaceId])
 
-  /** Placements and pending page requests belong to one thread binding. */
-  const resetHost = useCallback(() => {
-    dispatcher.current?.dispose()
-    dispatcher.current = null
-    try {
-      void guest?.executeJavaScript(CANCEL_PENDING_SCRIPT).catch(() => undefined)
-    } catch { /* A destroyed guest can throw before returning a promise. */ }
-  }, [guest])
-
-  useEffect(() => { resetHost() }, [threadId, resetHost])
-
   useEffect(() => {
     if (!guest) return
     let alive = true
-    const goBound = () => { void guest.executeJavaScript(t3NavigateScript(chatPageUrl(harness, latest.current.threadId))).catch(() => undefined) }
-
-    // Keeps the page on this panel's thread and records a thread it created.
     // did-navigate-in-page can arrive before getURL() reflects a pushState
     // route, so the event URL wins.
     const navigated = (event?: { url?: string; isMainFrame?: boolean }) => {
       if (event?.isMainFrame === false) return
-      const { threadId } = latest.current
-      const url = event?.url ?? guest.getURL()
-      if (isT3ProviderSettingsNavigation(url, harness.origin)) {
-        clientUi().openSettings('t3 code')
-        goBound()
-        return
-      }
-      if (!isAllowedT3Navigation(url, harness.origin, harness.environmentId, 'thread', threadId ?? undefined)) {
-        goBound()
-        return
-      }
-      const next = t3ThreadIdFromUrl(url, harness.environmentId)
-      if (next === threadId) return
-      adopted.current = { from: latest.current.bound, to: next }
-      latest.current = { ...latest.current, threadId: next }
-      resetHost()
-      void send({ kind: 'adoptThread', threadId: next })
-    }
-
-    const dispatcherFor = (thread: string | null): T3HostDispatcher => {
-      const place = async (panelType: 'editor' | 'chat' | 'review'): Promise<PlaceTarget | null> => {
-        const picked = await pickPanelPlace({ workspaceId, panelType, availability: 'new', sourcePanelId: panelId })
-        return picked?.kind === 'new' ? picked.at : null
-      }
-      const bound = thread ?? undefined
-      return createT3HostDispatcher<PlaceTarget>(bound, {
-        pick: (kind) => place(kind === 'file' ? 'editor' : 'chat'),
-        openDiff: async (filePath, turnId, isActive) => {
-          const at = await place('review')
-          if (!at || !isActive()) return false
-          return (await send({ kind: 'openChanges', at, filePath, turnId, threadId: bound })) === true
-        },
-        openFile: (filePath, at) => send({ kind: 'openFile', path: filePath, at, threadId: bound }),
-        openChat: (thread, title, at) => send({ kind: 'openChat', at, threadId: thread, title }),
-        openLink: (url) => openUrlFor(workspaceId, url, panelId),
-        relationContext: async (provider) => (await send({ kind: 'relationContext', provider })) as string | null,
-      })
+      controller.navigation(event?.url ?? guest.getURL(), true)
     }
 
     const hostMessage = (event: { message?: string }) => {
-      const request = parseHostMessage(event.message, token)
-      if (!request) return
-      const handler = dispatcher.current ??= dispatcherFor(latest.current.threadId)
-      const current = () => alive && dispatcher.current === handler
-      const reply = (result: unknown, error?: string) => {
-        if (current()) void guest.executeJavaScript(hostReplyScript(request.id, result, error)).catch(() => undefined)
-      }
-      handler.handle(request.action, request.payload).then((result) => {
-        if (current()) setHostError('')
-        reply(result)
-      }, (cause: unknown) => {
-        const text = errorMessage(cause, 'Could not open panel.')
-        if (current()) setHostError(text)
-        reply(null, text)
+      void controller.hostMessage(event.message).then((answer) => {
+        if (!answer || !alive) return
+        setHostError(answer.error ?? '')
+        void guest.executeJavaScript(answer.reply).catch(() => undefined)
       })
     }
 
     const loaded = async () => {
       // CSS and page setup are independent; reveal only after both finish.
-      const setup = [t3BrandingScript('thread'), t3HostBridgeScript(token), t3ThemeScript(getActiveTheme())]
-        .map((script) => `try { ${script}; } catch {}`).join('\n')
-      await Promise.allSettled([guest.insertCSS(T3_CHAT_ONLY_CSS), guest.executeJavaScript(setup)])
+      await Promise.allSettled([guest.insertCSS(controller.setup.css), guest.executeJavaScript(controller.setup.script)])
       if (!alive) return
       navigated()
       setGuestReady(true)
@@ -203,15 +147,7 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
 
     const handlers: Record<string, (event: any) => void> = {
       'will-navigate': (event: { url?: string; preventDefault?: () => void }) => {
-        if (!event.url) return
-        if (isT3ProviderSettingsNavigation(event.url, harness.origin)) {
-          event.preventDefault?.()
-          clientUi().openSettings('t3 code')
-          return
-        }
-        if (!isAllowedT3Navigation(event.url, harness.origin, harness.environmentId, 'thread', latest.current.threadId ?? undefined)) {
-          event.preventDefault?.()
-        }
+        if (event.url && !controller.navigation(event.url, false)) event.preventDefault?.()
       },
       'did-navigate': navigated,
       'did-navigate-in-page': navigated,
@@ -219,9 +155,8 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
       // dom-ready. Only a new top-level document needs branding again.
       'did-start-navigation': (event: { isMainFrame?: boolean; isInPlace?: boolean }) => {
         if (!event.isMainFrame || event.isInPlace) return
-        pushedChanges.current = ''
         setGuestReady(false)
-        resetHost()
+        controller.documentStarted()
       },
       'dom-ready': () => { void loaded().catch(() => undefined) },
       'did-fail-load': (event: { isMainFrame?: boolean; errorCode?: number; errorDescription?: string }) => {
@@ -235,9 +170,8 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
     return () => {
       alive = false
       for (const [type, handler] of Object.entries(handlers)) guest.removeEventListener(type, handler)
-      resetHost()
     }
-  }, [guest, harness, loadId, panelId, resetHost, send, token, workspaceId])
+  }, [controller, guest, loadId, send])
 
   useEffect(() => {
     if (!guest || !guestReady) return
@@ -245,27 +179,6 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
     const stopSurface = registerSurface(workspaceId, panelId, chatSurfaceHandler(guest))
     return () => { stopTheme(); stopSurface() }
   }, [guest, guestReady, panelId, workspaceId])
-
-  // A thread another client's page moved the panel to (`adoptThread` is not
-  // a new load): this page follows in place. The page that adopted it is
-  // already there.
-  useEffect(() => {
-    if (!guest || !guestReady) return
-    let url = ''
-    try { url = guest.getURL() } catch { return }
-    if (t3ThreadIdFromUrl(url, harness.environmentId) === threadId) return
-    void guest.executeJavaScript(t3NavigateScript(chatPageUrl(harness, threadId))).catch(() => undefined)
-  }, [guest, guestReady, harness, threadId])
-
-  // Change summaries for the bound thread, for the page's turn chips.
-  useEffect(() => {
-    const { changes } = snapshot
-    if (!guest || !guestReady || !changes || changes.threadId !== threadId) return
-    const script = t3ChangesScript(changes)
-    if (script === pushedChanges.current) return
-    pushedChanges.current = script
-    void guest.executeJavaScript(script).catch(() => undefined)
-  }, [guest, guestReady, snapshot, threadId])
 
   useEffect(() => {
     if (!focused || !guestReady || !guest) return
@@ -301,7 +214,7 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
       {partition && (
         <webview
           ref={setGuest as never}
-          src={src}
+          src={controller.setup.url}
           partition={partition}
           data-chat-webview={panelId}
           data-chat-guest-ready={guestReady ? 'true' : 'false'}

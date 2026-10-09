@@ -152,6 +152,7 @@ describe('mobile chat views', () => {
     t.set(chatSnapshot({ threadId: 'th2' }))
     await tick()
     const scripts = t.events.filter((e) => e.event.kind === 'script').map((e) => (e.event as { script: string }).script)
+      .filter((script) => script.includes('router.navigate'))
     expect(scripts).toHaveLength(1)
     expect(scripts[0]).toContain('router.navigate({ href: "/env/th2", replace: true })')
   })

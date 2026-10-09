@@ -9,7 +9,7 @@ import { installMockClientUi } from '@kernel/interaction/testing'
 import { HOST_MESSAGE_PREFIX } from '@services/t3/client'
 import { installT3WebviewHost } from '@services/t3/desktop'
 import { MAIN_WINDOW, type PanelRecord } from '@workspace/document/contract'
-import type { ChatOp, ChatSnapshot } from '@panels/chat/contract'
+import { chatPageUrl, type ChatOp, type ChatSnapshot } from '@panels/chat/contract'
 import { runSurfaceRequest } from '@client/host'
 import ChatView from './ChatView'
 
@@ -210,7 +210,7 @@ describe('ChatView page', () => {
   it('pushes change summaries for the bound thread', async () => {
     const changes = { threadId: 'one', turns: { t1: [{ path: 'a.ts', kind: 'modified' as const, additions: 1, deletions: 0 }] } }
     await render(ready({ threadId: 'one', changes }))
-    const { guest } = await readyGuest()
+    const { guest } = await readyGuest(chatPageUrl(harness, 'one'))
     const pushed = guest.executeJavaScript.mock.calls.map(([script]) => String(script)).filter((script) => script.includes('__cateChanges'))
     expect(pushed).toHaveLength(1)
     expect(pushed[0]).toContain('"a.ts"')
