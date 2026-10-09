@@ -4,7 +4,8 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type { AgentPanelStates, PanelAgentState } from '@services/agents/contract'
 import { acquireAgentPanels, peekAgentPanels } from '@services/agents/client'
-import { agentInfoByPanel, agentInfoEqual, agentPanelInfo, agentPanelTitle, recordEqual, type AgentPanelInfo } from './panelInfo'
+import { agentPanelTitle } from '@services/agents/client'
+import { agentInfoByPanel, agentInfoEqual, agentPanelInfo, recordEqual, type AgentPanelInfo } from './panelInfo'
 
 const EMPTY: AgentPanelStates = {}
 const noop = () => () => {}

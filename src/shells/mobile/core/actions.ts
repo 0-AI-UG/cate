@@ -99,9 +99,7 @@ export function createActionHandlers(agents: MobileAgents, conversations: Mobile
       }
     },
     async 'agents.review'({ workspaceId, panelId }) {
-      const checkout = agents.agents(workspaceId).find((agent) => agent.panelId === panelId)?.checkout
-      const cwd = checkout ?? (await runtimeFor(workspaceId).runtime.info()).root
-      return openAgentChanges({ workspaceId, panelId, cwd })
+      return openAgentChanges({ workspaceId, panelId })
     },
 
     'power.set': ({ workspaceId, duration }) => attempt(() => runtimeFor(workspaceId).power.set({ duration })),

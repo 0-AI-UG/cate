@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent } from '@kernel/rpc/contract'
 import type { AgentPanelStates, AgentPanelStatesChange } from '@services/agents/contract'
-import { acquireAgentPanels } from '@services/agents/client'
 import { fakeStream } from '@services/agents/client/testing'
 import { AgentChangesPill } from './AgentChangesPill'
 import { setAgentChangesOpener } from './changesOpener'
@@ -26,10 +25,10 @@ beforeEach(() => {
 
 afterEach(() => { for (const stop of cleanup) stop() })
 
-function render(props: { checkout?: string } = {}) {
+function render() {
   const host = document.createElement('div')
   const root = createRoot(host)
-  act(() => root.render(<AgentChangesPill workspaceId="ws" panelId="agent" {...props} />))
+  act(() => root.render(<AgentChangesPill workspaceId="ws" panelId="agent" />))
   const click = () => act(async () => { host.querySelector<HTMLButtonElement>('[aria-label="Open agent changes"]')!.click() })
   return { host, click, unmount: () => act(() => root.unmount()) }
 }
@@ -42,26 +41,10 @@ it('does not reserve label spacing while collapsed', () => {
   unmount()
 })
 
-it('opens the changes in the workspace root without a known checkout', async () => {
+it('opens the agent panel\'s changes; the opener finds its checkout', async () => {
   const { click, unmount } = render()
   await click()
-  expect(open).toHaveBeenCalledWith({ workspaceId: 'ws', panelId: 'agent', cwd: '/repo' })
-  unmount()
-})
-
-it("prefers the agent session's checkout, then the caller's", async () => {
-  const { click, unmount } = render({ checkout: '/repo/wt' })
-  await click()
-  expect(open).toHaveBeenLastCalledWith({ workspaceId: 'ws', panelId: 'agent', cwd: '/repo/wt' })
-
-  const handle = acquireAgentPanels('ws')
-  panels.emit({ kind: 'snapshot', rev: 1, snapshot: { agent: {
-    panelId: 'agent', agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: false, contextPolicy: 'supported', status: 'finished', present: true, canReceivePrompt: true,
-    session: { agentId: 'codex', runner: 't3', sessionId: 'thread', cwd: '/repo/other' },
-  } } })
-  await click()
-  expect(open).toHaveBeenLastCalledWith({ workspaceId: 'ws', panelId: 'agent', cwd: '/repo/other' })
-  handle.release()
+  expect(open).toHaveBeenCalledWith({ workspaceId: 'ws', panelId: 'agent' })
   unmount()
 })
 

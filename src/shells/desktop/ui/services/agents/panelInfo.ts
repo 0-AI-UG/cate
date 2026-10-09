@@ -1,8 +1,8 @@
 // What sidebar rows, dock tabs and panel titles show about the agent a panel
 // hosts: its status, name and logo.
 
-import { AGENTS, type AgentId, type AgentPanelStates, type AgentStatus, type PanelAgentState } from '@services/agents/contract'
-import { openAgentOf } from '@services/agents/client'
+import type { AgentPanelStates, AgentStatus, PanelAgentState } from '@services/agents/contract'
+import { isAgentFallbackTitle } from '@services/agents/client'
 import { agentLogo } from './logos'
 
 export interface AgentPanelInfo {
@@ -41,20 +41,6 @@ export function agentInfoEqual(a: AgentPanelInfo | undefined, b: AgentPanelInfo 
 export function recordEqual<T>(a: Record<string, T>, b: Record<string, T>, eq: (x: T, y: T) => boolean = Object.is): boolean {
   const keys = Object.keys(a)
   return keys.length === Object.keys(b).length && keys.every((key) => key in b && eq(a[key], b[key]))
-}
-
-/** Cate's generic labels (a numbered "Terminal", an agent's name). A panel
- *  titled this way shows the open agent's name instead; a real title wins. */
-export function isAgentFallbackTitle(title: string): boolean {
-  return /^Terminal(?: \d+)?$/.test(title) || AGENTS.some((agent) => agent.displayName === title)
-}
-
-/** The title to show for a panel: the agent's name while an agent is open
- *  and the record carries only a fallback title. */
-export function agentPanelTitle(title: string, state: PanelAgentState | undefined): string {
-  const open: AgentId | null = openAgentOf(state)
-  if (!open || !state?.agentName || !isAgentFallbackTitle(title)) return title
-  return state.agentName
 }
 
 /** `agentPanelTitle` over the info a tab or sidebar row already holds: an

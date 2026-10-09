@@ -19,11 +19,14 @@ vi.mock('@client/document', () => ({
   }),
   clientStateFor: () => ({ getSnapshot: () => ({ focusedPanelId: h.focused }), focus: h.focus, setActiveTab: () => {} }),
 }))
-vi.mock('@kernel/rpc/client', () => ({ runtimeFor: () => ({ session: { op: h.op } }) }))
+vi.mock('@kernel/rpc/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@kernel/rpc/client')>()),
+  runtimeFor: () => ({ session: { op: h.op }, workspace: { info: async () => ({ root: '/root' }) } }),
+}))
 
 import { registerPanelDefinitions } from '@client/host'
 import review from '../definition'
-import { openAgentChanges, openReviewPanel } from './openReview'
+import { agentCheckout, openAgentChanges, openReviewPanel } from './openReview'
 
 registerPanelDefinitions([review])
 
@@ -76,4 +79,12 @@ it('places a new agent changes review where the caller picked', async () => {
   const id = await openAgentChanges({ workspaceId: 'ws', panelId: 'chat', cwd: '/wt', sessionId: 'thread', focusedFile: 'a.ts', at: picked })
   expect(h.doc.panels[id!]).toMatchObject({ fields: { request: { focusedFile: 'a.ts', agentChanges: { panelId: 'chat', sessionId: 'thread' } } } })
   expect(placementOf(h.doc, id!)?.stackId).toBe('picked')
+})
+
+it('finds an agent\'s checkout: its panel\'s worktree, else the workspace root', async () => {
+  add('term', 'terminal')
+  expect(await agentCheckout('ws', 'term')).toBe('/root')
+  h.doc = { ...h.doc, worktrees: { wt: { id: 'wt', path: '/repo/wt', color: 'green', status: 'ready' } } }
+  h.doc = applyOp(h.doc, { kind: 'updatePanel', id: 'term', patch: { worktreeId: 'wt' } }).doc
+  expect(await agentCheckout('ws', 'term')).toBe('/repo/wt')
 })

@@ -6,8 +6,6 @@ export interface AgentChangesRequest {
   workspaceId: string
   /** The terminal or chat panel whose changes to show. */
   panelId: string
-  /** Absolute path of the checkout the agent works in. */
-  cwd: string
 }
 
 export type AgentChangesOpener = (request: AgentChangesRequest) => boolean | Promise<boolean>

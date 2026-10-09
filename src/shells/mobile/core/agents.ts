@@ -9,7 +9,7 @@ import { eachConnection, type WorkspaceConnection } from '@client/connections'
 import { documentStoreFor } from '@client/document'
 import type { PowerState } from '@runtime/power/contract'
 import { pushCollapseId, type PushStatus } from '@runtime/push/contract'
-import { acquireAgentPanels, onAgentsWorking } from '@services/agents/client'
+import { acquireAgentPanels, agentPanelTitle, onAgentsWorking } from '@services/agents/client'
 import { attachNotifications, createNotificationGate } from '@workspace/notifications/client'
 import type { AgentPanelStates, AgentStatus } from '@services/agents/contract'
 import type { MobileAgent, MobileBridge } from '../contract'
@@ -181,7 +181,7 @@ export function createMobileAgents(client: MobileClient, bridge: MobileBridge): 
         return [{
           panelId: state.panelId,
           panelType: panel.type,
-          title: panel.title || state.agentName || 'Agent',
+          title: agentPanelTitle(panel.title, state) || state.agentName || 'Agent',
           agentId: state.agentId,
           agentName: state.agentName,
           status: state.status,

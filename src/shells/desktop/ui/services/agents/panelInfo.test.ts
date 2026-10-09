@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PanelAgentState } from '@services/agents/contract'
-import { agentPanelInfo, agentPanelTitle, isAgentFallbackTitle } from './panelInfo'
+import { agentPanelTitle, isAgentFallbackTitle } from '@services/agents/client'
+import { agentPanelInfo } from './panelInfo'
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
   panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status: 'waitingForInput',

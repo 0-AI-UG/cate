@@ -1,22 +1,11 @@
 import { useState } from 'react'
 import { GitCompareArrows as GitDiff } from 'lucide-react'
-import { tryRuntimeFor } from '@kernel/rpc/client'
 import { errorMessage } from '@kernel/interaction'
-import { peekAgentPanels } from '@services/agents/client'
 import { agentChangesOpener } from './changesOpener'
 
 const FAILED = 'Could not open agent changes'
 
-/** The checkout the agent works in: its session's, else the one the caller
- *  knows (the panel's worktree), else the workspace root. */
-async function checkoutOf(workspaceId: string, panelId: string, checkout: string | undefined): Promise<string | null> {
-  const cwd = peekAgentPanels(workspaceId)[panelId]?.session?.cwd ?? checkout
-  if (cwd) return cwd
-  const runtime = tryRuntimeFor(workspaceId)
-  return runtime ? (await runtime.workspace.info()).root : null
-}
-
-export function AgentChangesPill({ workspaceId, panelId, checkout }: { workspaceId: string; panelId: string; checkout?: string }) {
+export function AgentChangesPill({ workspaceId, panelId }: { workspaceId: string; panelId: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   return <>
@@ -29,8 +18,7 @@ export function AgentChangesPill({ workspaceId, panelId, checkout }: { workspace
         if (busy || !open) return
         setBusy(true); setError('')
         try {
-          const cwd = await checkoutOf(workspaceId, panelId, checkout)
-          if (cwd && !(await open({ workspaceId, panelId, cwd }))) setError(FAILED)
+          if (!(await open({ workspaceId, panelId }))) setError(FAILED)
         } catch (cause) { setError(errorMessage(cause, FAILED)) }
         finally { setBusy(false) }
       }}>

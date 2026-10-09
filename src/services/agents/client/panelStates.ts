@@ -4,7 +4,7 @@
 
 import { mirrorChannel, subscribeRuntimes, tryRuntimeFor, type ChannelMirror } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
-import { applyAgentPanelStatesChange, type AgentId, type AgentPanelStates, type PanelAgentState } from '../contract'
+import { AGENTS, applyAgentPanelStatesChange, type AgentId, type AgentPanelStates, type PanelAgentState } from '../contract'
 
 const EMPTY: AgentPanelStates = Object.freeze({}) as AgentPanelStates
 
@@ -100,4 +100,18 @@ export function peekAgentPanels(workspaceId: string): AgentPanelStates {
 /** The agent open in a panel right now: present, with a known agent. */
 export function openAgentOf(state: PanelAgentState | undefined): AgentId | null {
   return state?.present ? state.agentId : null
+}
+
+/** Cate's generic labels (a numbered "Terminal", an agent's name). A panel
+ *  titled this way shows the open agent's name instead; a real title wins. */
+export function isAgentFallbackTitle(title: string): boolean {
+  return /^Terminal(?: \d+)?$/.test(title) || AGENTS.some((agent) => agent.displayName === title)
+}
+
+/** The title to show for a panel: the agent's name while an agent is open
+ *  and the record carries only a fallback title. */
+export function agentPanelTitle(title: string, state: PanelAgentState | undefined): string {
+  const open = openAgentOf(state)
+  if (!open || !state?.agentName || !isAgentFallbackTitle(title)) return title
+  return state.agentName
 }

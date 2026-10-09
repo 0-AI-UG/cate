@@ -1,4 +1,5 @@
 export {
+  agentCheckout,
   openAgentChanges,
   openReviewPanel,
   type OpenAgentChangesOptions,

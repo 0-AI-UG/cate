@@ -6,6 +6,7 @@ import { clientStateFor, documentStoreFor } from '@client/document'
 import { createPanel, revealPanel } from '@client/host'
 import { runtimeFor } from '@kernel/rpc/client'
 import type { AgentChangesFilter } from '@services/agents/contract'
+import { peekAgentPanels } from '@services/agents/client'
 import type { PanelId, PanelRecord, PlaceTarget, WorkspaceDocument } from '@workspace/document/contract'
 import { samePath, type GitComparisonSpec } from '@workspace/repository/contract'
 import { reviewRepoPath, type ReviewCreateOptions, type ReviewOp, type ReviewOpenRequest, type ReviewSourceAgent } from '../contract'
@@ -55,11 +56,23 @@ export async function openReviewPanel(options: OpenReviewOptions): Promise<Panel
   return addReview(workspaceId, { repoPath: options.repoPath, request, ...(near ? { near } : {}) })
 }
 
+/** The checkout an agent works in: its session's, else its panel's
+ *  worktree, else the workspace root. */
+export async function agentCheckout(workspaceId: string, panelId: PanelId): Promise<string> {
+  const session = peekAgentPanels(workspaceId)[panelId]?.session?.cwd
+  if (session) return session
+  const doc = documentStoreFor(workspaceId)?.getSnapshot()
+  const worktreeId = doc?.panels[panelId]?.worktreeId
+  const worktree = worktreeId ? doc?.worktrees[worktreeId]?.path : undefined
+  return worktree ?? (await runtimeFor(workspaceId).workspace.info()).root
+}
+
 export interface OpenAgentChangesOptions {
   workspaceId: string
   /** The terminal or chat panel whose changes to show. */
   panelId: PanelId
-  cwd: string
+  /** The checkout to show; default: the agent's (`agentCheckout`). */
+  cwd?: string
   sessionId?: string
   turnId?: string
   focusedFile?: string
@@ -73,9 +86,10 @@ export interface OpenAgentChangesOptions {
  *  checkout), else in a new "Agent changes" review next to the agent. The
  *  review's id, or null when it could not be shown. */
 export async function openAgentChanges(options: OpenAgentChangesOptions): Promise<PanelId | null> {
-  const { workspaceId, panelId, cwd, focusedFile } = options
+  const { workspaceId, panelId, focusedFile } = options
   const doc = documentStoreFor(workspaceId)?.getSnapshot()
   if (!doc?.panels[panelId]) return null
+  const cwd = options.cwd ?? await agentCheckout(workspaceId, panelId)
   const agentChanges: AgentChangesFilter = {
     panelId,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),

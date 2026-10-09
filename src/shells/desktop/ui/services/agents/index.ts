@@ -6,9 +6,7 @@ export { agentLogo } from './logos'
 export {
   agentPanelInfo,
   agentInfoByPanel,
-  agentPanelTitle,
   agentInfoTitle,
-  isAgentFallbackTitle,
   type AgentPanelInfo,
 } from './panelInfo'
 export {
