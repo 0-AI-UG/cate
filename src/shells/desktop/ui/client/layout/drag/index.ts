@@ -23,7 +23,6 @@ export { dropChanges, detachChange, detachBounds, type DropContext } from './com
 export { reduce as reduceDrag } from './runtime'
 export { setupCrossWindowDrops, shouldIgnoreDragEnd } from './crossWindow'
 export { installDragShell, dragShell, type DragShell, type DragGhostPort, type CrossWindowPort, type CrossWindowDrag } from './ports'
-export * as dragShellLogic from './shellLogic'
 export {
   useFileDropTracker,
   FileDropOverlay,

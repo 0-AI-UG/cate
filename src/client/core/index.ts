@@ -7,6 +7,7 @@
 
 import type { AnyCapability, ClientFeature, DeviceInfo } from '@kernel/rpc/contract'
 import type { DeviceStore } from '@kernel/state/contract'
+import { setRuntimeResolver } from '@kernel/rpc/client'
 import { createClientIdentity, installClientIdentity, WorkspaceConnections, type ClientIdentity, type ShellTransports } from '@client/connections'
 import { attachDocuments } from '@client/document'
 import { attachSessions, registerPanelDefinitions, serveSurfaces } from '@client/host'
@@ -45,7 +46,11 @@ export async function startClientCore(options: ClientCoreOptions): Promise<Clien
     version: options.version,
     ...(options.build ? { build: options.build } : {}),
   })
-  const stops: (() => void)[] = [attachDocuments(connections)]
+  // `runtimeFor` answers from these connections, installed once here.
+  const stops: (() => void)[] = [
+    setRuntimeResolver((workspaceId) => connections.get(workspaceId)?.runtime ?? null),
+    attachDocuments(connections),
+  ]
   stops.push(attachSessions(connections))
   stops.push(serveSurfaces(connections))
   const workspaces = new WorkspaceList({ store: options.deviceStore, connections })

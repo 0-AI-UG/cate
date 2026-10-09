@@ -15,6 +15,7 @@ import {
 } from '@workspace/document/contract'
 import { createRng, randomChange } from '@workspace/document/contract/fuzz'
 import { createDocumentStore, type DocumentLink, type DocumentStore, type RefusedOp } from './store'
+import { createLifecycleBus } from '@kernel/lifecycle/contract'
 
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 
@@ -26,7 +27,7 @@ const title = (id: string, value: string): DocChange => ({ kind: 'updatePanel', 
 function fakeRuntime(keep = 10_000) {
   const sequencer = createSequencer({ doc: createDocument(), keep })
   const listeners = new Set<(event: DocumentEvent) => void>()
-  const server = new RpcServer({ version: 'test' })
+  const server = new RpcServer({ lifecycle: createLifecycleBus(), version: 'test' })
   const ports = new Map<string, FramePort>()
   let loseNextApply: string | null = null
   const impl: CapabilityImpl<typeof documentCapability> = {

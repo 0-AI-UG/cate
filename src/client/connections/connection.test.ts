@@ -5,7 +5,7 @@ import {
   type ByteDuplex,
   type ProtocolVersion,
 } from '@kernel/rpc/contract'
-import { runtimeFor, tryRuntimeFor } from '@kernel/rpc/client'
+import { runtimeFor, setRuntimeResolver, tryRuntimeFor } from '@kernel/rpc/client'
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
 import { workspaceCapability } from '@workspace/lifecycle/contract/capability'
 import { tunnelCapability } from '@runtime/tunnel/contract/capability'
@@ -14,6 +14,7 @@ import { createClientIdentity, type ClientIdentity } from './identity'
 import { sessionCapability } from '@panels/framework/contract/capability'
 import type { ShellTransports } from './transports'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
+import { createLifecycleBus } from '@kernel/lifecycle/contract'
 
 /** Two ends of an in-memory byte pipe; delivery is asynchronous. */
 function bytePipe(): [ByteDuplex, ByteDuplex] {
@@ -54,6 +55,7 @@ interface FakeRuntime {
 function fakeRuntime(opts: { protocol?: ProtocolVersion; build?: string; refuse?: boolean } = {}): FakeRuntime {
   const rt: FakeRuntime = {
     server: new RpcServer({
+      lifecycle: createLifecycleBus(),
       version: '9.0.0',
       build: opts.build,
       protocol: opts.protocol,
@@ -100,7 +102,11 @@ const identity: ClientIdentity = createClientIdentity({
 })
 
 let registry: WorkspaceConnections | null = null
+// The client core installs the runtime slot over its connections; so do
+// these tests.
+let stopResolver = () => {}
 afterEach(() => {
+  stopResolver()
   registry?.dispose()
   registry = null
   vi.useRealTimers()
@@ -109,6 +115,8 @@ afterEach(() => {
 function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }, build?: string) {
   registry = new WorkspaceConnections({
       capabilities: RUNTIME_CAPABILITIES, identity, transports: transportsFor(rt, extra), version: '9.0.0', build, backoff })
+  const opened = registry
+  stopResolver = setRuntimeResolver((workspaceId) => opened.get(workspaceId)?.runtime ?? null)
   return registry.open('ws1', { kind: 'local', root: '/w' })
 }
 

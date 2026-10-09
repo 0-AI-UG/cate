@@ -22,7 +22,7 @@ import {
   type ResultOf,
   type WireError,
 } from '../contract'
-import { lifecycle as defaultLifecycle, type ClientConnection, type LifecycleBus } from '@kernel/lifecycle/runtime'
+import type { ClientConnection, LifecycleBus } from '@kernel/lifecycle/runtime'
 
 export interface ConnectionInfo {
   readonly id: number
@@ -78,7 +78,7 @@ export interface RpcServerOptions {
   /** Daemon build, sent in `hello`. */
   build?: string
   protocol?: ProtocolVersion
-  lifecycle?: LifecycleBus
+  lifecycle: LifecycleBus
   /** Throw (ideally an RpcError) to refuse a connection: bad token, device
    *  key that does not match the handshake. */
   acceptHello?: (hello: HelloMessage, connectionId: number) => void | Promise<void>
@@ -114,7 +114,7 @@ export class RpcServer {
 
   constructor(readonly opts: RpcServerOptions) {
     this.protocol = opts.protocol ?? PROTOCOL
-    this.lifecycle = opts.lifecycle ?? defaultLifecycle
+    this.lifecycle = opts.lifecycle
   }
 
   register<C extends AnyCapability>(cap: C, impl: CapabilityImpl<C>): () => void {

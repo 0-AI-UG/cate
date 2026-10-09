@@ -1,7 +1,7 @@
 // The open workspace connections of this client. It fills the kernel/rpc
 // runtime slot, so `runtimeFor(workspaceId)` works for everything above.
 
-import { notifyRuntimesChanged, setRuntimeResolver } from '@kernel/rpc/client'
+import { notifyRuntimesChanged } from '@kernel/rpc/client'
 import type { AnyCapability } from '@kernel/rpc/contract'
 import { WorkspaceConnection, type Backoff } from './connection'
 import type { ClientIdentity } from './identity'
@@ -23,11 +23,7 @@ export class WorkspaceConnections {
   private readonly byId = new Map<string, WorkspaceConnection>()
   private readonly listeners = new Set<() => void>()
   private snapshot: readonly WorkspaceConnection[] = []
-  private readonly uninstall: () => void
-
-  constructor(private readonly opts: WorkspaceConnectionsOptions) {
-    this.uninstall = setRuntimeResolver((workspaceId) => this.byId.get(workspaceId)?.runtime ?? null)
-  }
+  constructor(private readonly opts: WorkspaceConnectionsOptions) {}
 
   /** Opens (and starts) the workspace's connection, or returns the open one. */
   open(workspaceId: string, target: ConnectionTarget): WorkspaceConnection {
@@ -61,7 +57,6 @@ export class WorkspaceConnections {
 
   dispose(): void {
     for (const id of [...this.byId.keys()]) this.close(id)
-    this.uninstall()
     this.listeners.clear()
   }
 

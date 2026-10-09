@@ -10,7 +10,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createLogger, type Logger } from '@kernel/log/contract'
-import { lifecycle as defaultLifecycle, type LifecycleBus } from '@kernel/lifecycle/runtime'
+import { createLifecycleBus, type LifecycleBus } from '@kernel/lifecycle/runtime'
 import { RpcError } from '@kernel/rpc/contract'
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
 import { settingsCapability } from '@kernel/settings/contract'
@@ -127,7 +127,7 @@ export async function prepareDaemonProcess(): Promise<void> {
 export async function serveWorkspace(options: ServeOptions): Promise<ServeResult> {
   const home = options.home ?? os.homedir()
   const version = options.version ?? RUNTIME_VERSION
-  const lifecycle = options.lifecycle ?? defaultLifecycle
+  const lifecycle = options.lifecycle ?? createLifecycleBus()
   const log = options.log ?? createLogger('daemon')
   const installDir = options.installDir ?? installDirFromExecPath(process.execPath, process.platform)
 

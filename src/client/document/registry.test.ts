@@ -12,6 +12,7 @@ import {
 import { WorkspaceConnections, createClientIdentity } from '@client/connections'
 import { attachDocuments, clientStateFor, documentStoreFor } from './registry'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
+import { createLifecycleBus } from '@kernel/lifecycle/contract'
 
 function pipe(): [ByteDuplex, ByteDuplex] {
   const data: ((b: Uint8Array) => void)[] = [() => {}, () => {}]
@@ -33,7 +34,7 @@ describe('attachDocuments', () => {
   it('gives each open connection a document mirror, client state and presence', async () => {
     const sequencer = createSequencer({ doc: createDocument() })
     const reports: PresenceReport[] = []
-    const server = new RpcServer({ version: 'test' })
+    const server = new RpcServer({ lifecycle: createLifecycleBus(), version: 'test' })
     const documentImpl: CapabilityImpl<typeof documentCapability> = {
       apply: ({ op }) => {
         const result = sequencer.submit(op)

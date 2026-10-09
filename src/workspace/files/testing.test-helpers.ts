@@ -12,6 +12,7 @@ import { dataPaths } from '@runtime/data/runtime'
 import { fileCapability, searchCapability, type FsChangeType } from './contract'
 import { createFilesRuntime, fileCapabilityImpl, searchCapabilityImpl, type FilesRuntimeDeps } from './runtime'
 import { createFsClient } from './client'
+import { createLifecycleBus } from '@kernel/lifecycle/contract'
 
 type ParcelCb = (err: Error | null, events: Array<{ path: string; type: FsChangeType }>) => void
 
@@ -49,7 +50,7 @@ export async function makeWorkspace(overrides: Partial<FilesRuntimeDeps> = {}) {
     ...overrides,
   }
   const files = createFilesRuntime(deps)
-  const server = new RpcServer({ version: '1.0.0' })
+  const server = new RpcServer({ lifecycle: createLifecycleBus(), version: '1.0.0' })
   server.register(fileCapability, fileCapabilityImpl(files))
   server.register(searchCapability, searchCapabilityImpl(files))
   const clients: RpcClient[] = []

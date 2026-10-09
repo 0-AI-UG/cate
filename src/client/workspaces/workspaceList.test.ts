@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { tryRuntimeFor } from '@kernel/rpc/client'
+import { setRuntimeResolver, tryRuntimeFor } from '@kernel/rpc/client'
 import { KNOWN_RUNTIMES_DOCUMENT } from '@runtime/pairing/client'
 import { WorkspaceConnections, createClientIdentity, type ShellTransports } from '@client/connections'
 import { WORKSPACES_DOCUMENT, WorkspaceList } from './workspaceList'
@@ -21,7 +21,9 @@ async function setup(store = createMemoryDeviceStore()) {
   const connections = new WorkspaceConnections({
       capabilities: RUNTIME_CAPABILITIES, identity, transports, version: '1.0.0' })
   const list = new WorkspaceList({ store, connections, now: () => ++t })
-  cleanup.push(() => list.dispose(), () => connections.dispose())
+  // As the client core does.
+  const stopResolver = setRuntimeResolver((workspaceId) => connections.get(workspaceId)?.runtime ?? null)
+  cleanup.push(() => list.dispose(), () => connections.dispose(), stopResolver)
   await list.load()
   return { store, connections, list }
 }

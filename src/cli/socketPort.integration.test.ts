@@ -10,6 +10,7 @@ import { ApiRouter, ApiTokenRegistry, acceptCallerHello, apiCapabilityImpl, regi
 import { CLI_VERSION, runCli, type CliDeps } from './engine'
 import { connectSocket } from './socketPort'
 import { CATE_API } from '@panels/api'
+import { createLifecycleBus } from '@kernel/lifecycle/contract'
 
 function serverDuplex(socket: net.Socket): ByteDuplex {
   return {
@@ -37,7 +38,7 @@ async function startRuntime(settings: Record<string, unknown>) {
     tokens,
   })
   registerKernelApi(router, { publishNotification: () => {} })
-  const rpc = new RpcServer({ version: 'test', acceptHello: (hello) => acceptCallerHello(router, hello) })
+  const rpc = new RpcServer({ lifecycle: createLifecycleBus(), version: 'test', acceptHello: (hello) => acceptCallerHello(router, hello) })
   rpc.register(apiCapability, apiCapabilityImpl(router))
   const server = net.createServer((socket) => rpc.serve(framePortOver(serverDuplex(socket), 'stream')))
   await new Promise<void>((resolve) => server.listen(socketPath, resolve))
