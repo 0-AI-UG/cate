@@ -36,6 +36,9 @@ export default tseslint.config(
       'dist-runtime/**',
       '.cate/**',
       'cate-local-install-*/**',
+      // The iOS app's build output and its bundled client core.
+      'ios/build/**',
+      'ios/Cate/Core/Web/core.js',
     ],
   },
   js.configs.recommended,
