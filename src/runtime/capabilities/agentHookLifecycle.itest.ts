@@ -109,6 +109,9 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           if (scenario === 'automatic-denial') {
             launch.args[1] = 'sonnet'
             launch.args.unshift('--permission-mode', 'auto')
+          } else if (agentId === 'claude-code') {
+            // Claude Code defaults to auto mode, which approves without a PermissionRequest.
+            launch.args.unshift('--permission-mode', 'default')
           }
           if (scenario === 'automatic-approval') {
             if (agentId === 'codex') {
@@ -187,7 +190,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 if (Date.now() - approvalMenuAt < 1000) return undefined
                 approved = true
                 const keys = scenario === 'permission-deny'
-                  ? agentId === 'grok' ? '4\r' : agentId === 'hermes' ? '\x1b[B\x1b[B\x1b[B\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r' : '\x1b[B\x1b[B\r'
+                  ? agentId === 'grok' ? '4\r' : agentId === 'hermes' ? '\x1b[B\x1b[B\x1b[B\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r' : agentId === 'claude-code' ? '\x1b' : '\x1b[B\x1b[B\r'
                   : agentId === 'grok' ? '3\r' : '\r'
                 if (keys.length > 1) {
                   approvalEnterAt = Date.now()
