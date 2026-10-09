@@ -77,6 +77,8 @@ interface PersistedMeta {
 }
 
 const decoder = new TextDecoder()
+const strictDecoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+const BOM = '\uFEFF'
 const encoder = new TextEncoder()
 /** Origin of changes the runtime makes itself (reload, merge). */
 const RUNTIME_ORIGIN = Symbol('buffer-runtime')
@@ -119,6 +121,10 @@ class OpenBuffer {
   refs = 0
   ready: Promise<void> = Promise.resolve()
   dropped = false
+  /** The file starts with a UTF-8 byte order mark; saves write it back. */
+  private bom = false
+  /** The file is not UTF-8: it shows as decoded but never saves. */
+  private readOnly = false
   private stopWatch: (() => void) | null = null
   private settleTimer: ReturnType<typeof setTimeout> | null = null
   private persistTimer: ReturnType<typeof setTimeout> | null = null
@@ -139,7 +145,7 @@ class OpenBuffer {
   }
 
   state(): BufferState {
-    return { path: this.path, baseHash: this.baseHash, dirty: this.dirty, conflict: this.conflict }
+    return { path: this.path, baseHash: this.baseHash, dirty: this.dirty, conflict: this.conflict, ...(this.readOnly ? { readOnly: true as const } : {}) }
   }
 
   current(): string {
@@ -171,7 +177,24 @@ class OpenBuffer {
     this.baseHash = hash
   }
 
+  /** The text of the file's bytes; notes a byte order mark and bytes that
+   *  are not UTF-8. */
+  private decodeDisk(bytes: Uint8Array): string {
+    try {
+      const text = strictDecoder.decode(bytes)
+      this.readOnly = false
+      this.bom = text.startsWith(BOM)
+      return this.bom ? text.slice(1) : text
+    } catch {
+      this.readOnly = true
+      this.bom = false
+      return decoder.decode(bytes)
+    }
+  }
+
   async load(): Promise<void> {
+    const onDisk = await readBytesOrNull(this.path)
+    if (onDisk) this.decodeDisk(onDisk)
     const saved = await readBytesOrNull(this.file)
     const persisted = saved ? decodePersisted(saved) : null
     if (persisted && pathKey(persisted.meta.path) === pathKey(this.path)) {
@@ -180,9 +203,8 @@ class OpenBuffer {
       this.persisted = true
       await this.checkDisk()
     } else {
-      const bytes = await readBytesOrNull(this.path)
-      const text = bytes ? decoder.decode(bytes) : ''
-      this.setBase(text, bytes ? contentHash(bytes) : null)
+      const text = onDisk ? this.decodeDisk(onDisk) : ''
+      this.setBase(text, onDisk ? contentHash(onDisk) : null)
       this.replaceText(text)
     }
     this.refresh()
@@ -222,7 +244,7 @@ class OpenBuffer {
     } else if (!bytes) {
       this.conflict = { kind: 'deleted', baseText: this.baseText }
     } else {
-      const diskText = decoder.decode(bytes)
+      const diskText = this.decodeDisk(bytes)
       if (this.current() === diskText || this.current() === this.baseText) {
         this.setBase(diskText, hash)
         this.replaceText(diskText)
@@ -242,9 +264,11 @@ class OpenBuffer {
         await this.checkDisk()
         throw new RpcError('conflict', 'The file changed on disk since it was loaded', { hash: diskHash })
       }
+      if (this.readOnly) throw new RpcError('rejected', 'The file is not UTF-8 text; it opens read-only')
       const content = this.current()
-      await writeAtomic(await this.svc.deps.paths.forCreation(this.path), content)
-      this.setBase(content, contentHash(content))
+      const written = this.bom ? BOM + content : content
+      await writeAtomic(await this.svc.deps.paths.forCreation(this.path), written)
+      this.setBase(content, contentHash(written))
       this.conflict = null
       this.refresh()
       await this.watchDisk()
@@ -255,7 +279,7 @@ class OpenBuffer {
   async resolve(resolution: BufferResolution): Promise<BufferState> {
     return this.svc.deps.lock.run(pathKey(this.path), async () => {
       const disk = await readBytesOrNull(this.path)
-      const diskText = disk ? decoder.decode(disk) : null
+      const diskText = disk ? this.decodeDisk(disk) : null
       const diskHash = disk ? contentHash(disk) : null
       if (resolution === 'reload') {
         this.setBase(diskText ?? '', diskHash)

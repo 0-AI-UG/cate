@@ -19,6 +19,8 @@ export interface BufferState {
   baseHash: string | null
   dirty: boolean
   conflict: BufferConflict | null
+  /** The file is not UTF-8 text: shown, never saved. */
+  readOnly?: true
 }
 
 /** How a conflict is settled:

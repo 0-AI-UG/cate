@@ -75,6 +75,27 @@ describe('open buffers', () => {
     a.close()
   })
 
+  it('keeps a UTF-8 byte order mark through open and save', async () => {
+    const bytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('hello\n')])
+    await fs.writeFile(file, bytes)
+    const handle = await ws.files.buffers.open(file)
+    expect(handle.text.toString()).toBe('hello\n')
+    await handle.save()
+    expect(Buffer.compare(await fs.readFile(file), bytes)).toBe(0)
+    handle.close()
+  })
+
+  it('opens a file that is not UTF-8 read-only and refuses to save it', async () => {
+    const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]) // "café" in Latin-1
+    await fs.writeFile(file, latin1)
+    const handle = await ws.files.buffers.open(file)
+    expect(handle.state().readOnly).toBe(true)
+    const err = await handle.save().catch((e: unknown) => e)
+    expect(isRpcError(err, 'rejected')).toBe(true)
+    expect(Buffer.compare(await fs.readFile(file), latin1)).toBe(0)
+    handle.close()
+  })
+
   it('save fails with conflict when the disk moved since load', async () => {
     const handle = await ws.files.buffers.open(file)
     handle.text.insert(0, 'mine ')
