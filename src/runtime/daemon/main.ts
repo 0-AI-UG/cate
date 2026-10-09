@@ -13,14 +13,10 @@ import path from 'node:path'
 import { createConsoleSink, combineSinks, createLogger, installLogSink } from '@kernel/log/contract'
 import { createFileSink } from '@kernel/log/node'
 import { runtimeIdFromCanonicalRoot } from '@runtime/data/contract'
-import QRCode from 'qrcode'
-import { framePortOver } from '@kernel/rpc/contract'
-import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
-import { settingsCapability } from '@kernel/settings/contract'
 import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '@runtime/data/node'
 import { ensureDataDir } from '@runtime/data/runtime'
-import { pairingCapability, PAIRING_SECRET_TTL_MS, type CreatedSecret, type PairingMode } from '@runtime/pairing/contract'
 import { dialLocal, dialLocalRetrying } from '@runtime/transports/node'
+import { pairOverLocal, printPairing } from './compose/pairOverLocal'
 import { installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_RELEASE, RUNTIME_VERSION, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
 import { prepareDaemonProcess, serveWorkspace } from './entry'
 import { pruneRuntimeInstalls, spawnDetachedDaemon } from './node'
@@ -109,40 +105,6 @@ async function serve(args: ServeArgs): Promise<number> {
     log.info('restarting into %s', reason.version)
   }
   return 0
-}
-
-/** Asks a running daemon, as a local client, to turn network on and for a
- *  pairing secret. */
-async function pairOverLocal(endpoint: string, mode: PairingMode, root: string, json?: boolean): Promise<void> {
-  const client = new RpcClient({
-    version: RUNTIME_VERSION,
-    identity: { client: { clientId: `serve-${process.pid}`, device: { name: 'cate serve', keyFingerprint: '' }, features: [] } },
-  })
-  try {
-    await client.attach(framePortOver(await dialLocal(endpoint), 'stream'))
-    await createCapabilityProxy(client, settingsCapability).set({ key: 'runtimeNetwork', value: mode })
-    await printPairing(root, await createCapabilityProxy(client, pairingCapability).createSecret({ mode }), json)
-  } finally {
-    client.close()
-  }
-}
-
-async function printPairing(root: string, created: CreatedSecret, json?: boolean): Promise<void> {
-  if (json) {
-    process.stdout.write(`${JSON.stringify({ root, uri: created.uri, code: created.code, expiresAt: created.expiresAt })}\n`)
-    return
-  }
-  const qr = await QRCode.toString(created.uri, { type: 'terminal', small: true })
-  const minutes = Math.round(PAIRING_SECRET_TTL_MS / 60_000)
-  process.stdout.write([
-    `Serving ${root}`,
-    'Scan this code in Cate to pair a device:',
-    '',
-    qr,
-    `Or type the pairing code: ${created.code}`,
-    `It works once and expires in ${minutes} minutes.`,
-    '',
-  ].join('\n'))
 }
 
 async function main(): Promise<void> {

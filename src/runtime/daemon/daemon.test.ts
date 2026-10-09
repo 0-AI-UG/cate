@@ -12,6 +12,7 @@ import { socketAnswers } from '@runtime/data/runtime'
 import { dialLocal } from '@runtime/transports/node'
 import { runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
+import { pairOverLocal } from './compose/pairOverLocal'
 
 // Short paths: a Unix socket path must fit in ~104 bytes.
 let tmp: string
@@ -185,6 +186,20 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     const result = await start()
     expect(result.kind).toBe('serving')
     expect(exitedAt).toBeGreaterThan(0)
+  })
+
+  it('cate serve on a workspace already running trusts it', async () => {
+    const result = await serveWorkspace({ root, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
+    if (result.kind !== 'serving') throw new Error('expected to serve')
+    expect(result.daemon.workspace.trust.isTrusted()).toBe(false)
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      await pairOverLocal(result.daemon.endpoint, 'sameNetwork', root, true)
+    } finally {
+      write.mockRestore()
+    }
+    expect(result.daemon.workspace.trust.isTrusted()).toBe(true)
+    await result.daemon.stop({ kind: 'signal' })
   })
 
   it('binds the socket before a slow process preparation finishes', async () => {
