@@ -23,7 +23,7 @@ const canvasNodeSource: DragSource = {
 const dockTabSource: DragSource = {
   workspaceId: 'ws',
   panelId: 'panel-1',
-  origin: { kind: 'dock-tab', dock: { windowId: 'main' }, stackId: 'stack-1' },
+  origin: { kind: 'dock-tab', dock: { windowId: 'main', layoutId: 'main' }, stackId: 'stack-1' },
 }
 
 const panel = { id: 'panel-1', type: 'editor', title: 'Test' }

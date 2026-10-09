@@ -14,6 +14,7 @@ import {
 import { placeTargetFor, type PanelCreateOptions, type PanelKit } from '@panels/framework/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { panelDefinition } from './definitions'
+import { withActiveLayout } from './layouts'
 
 export const newId = (): string => globalThis.crypto.randomUUID()
 
@@ -38,7 +39,7 @@ export function clientPanelKit(workspaceId: string): PanelKit {
       const store = documentStoreFor(workspaceId)
       const definition = panelDefinition(record.type)
       if (!store || !definition) return null
-      const at = placeTargetFor(store.getSnapshot(), definition, placement, newId)
+      const at = placeTargetFor(store.getSnapshot(), definition, withActiveLayout(workspaceId, placement), newId)
       const result = store.propose({ kind: 'addPanel', record, at })
       return result.ok ? record.id : null
     },

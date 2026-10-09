@@ -103,6 +103,34 @@ const selectTabRecords = (stack: DockStack) => (doc: { panels: Record<string, Pa
 const sameTabRecords = (a: ReturnType<ReturnType<typeof selectTabRecords>>, b: ReturnType<ReturnType<typeof selectTabRecords>>) =>
   a.worktrees === b.worktrees && a.records.length === b.records.length && a.records.every((r, i) => r === b.records[i])
 
+/** The dashed chip a drag leaves where its drop would land (a tab bar's "+ new tab"). */
+export function DropGhostChip({ compact, icon, start, style, children, ...rest }: {
+  compact?: boolean
+  icon?: React.ReactNode
+  /** Content from the left edge (a full-width row) instead of centred. */
+  start?: boolean
+  children: React.ReactNode
+} & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      aria-hidden
+      {...rest}
+      className={`flex flex-shrink-0 items-center ${start ? 'justify-start' : 'justify-center'} gap-1.5 whitespace-nowrap select-none rounded-[10px] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
+      style={{
+        minWidth: 100,
+        color: 'var(--focus-blue, #3b82f6)',
+        backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
+        border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
+        borderRadius: 10,
+        ...style,
+      }}
+    >
+      {icon}
+      {children}
+    </div>
+  )
+}
+
 export function DockTabBar(props: DockTabBarProps) {
   const {
     workspaceId, stack, activePanelId, compact, onClosePanel,
@@ -123,22 +151,7 @@ export function DockTabBar(props: DockTabBarProps) {
   const remaining = selfTabDrag ? stack.panels.filter((id) => id !== selfTabDrag.draggedPanelId) : stack.panels
   const placeholderAt = selfTabDrag ? Math.min(Math.max(selfTabDrag.originalIndex, 1), remaining.length) : remaining.length
 
-  const placeholder = showTabPlaceholder ? (
-    <div
-      key="__tab-placeholder__"
-      aria-hidden
-      className={`flex flex-shrink-0 items-center justify-center whitespace-nowrap select-none rounded-[10px] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
-      style={{
-        minWidth: 100,
-        color: 'var(--focus-blue, #3b82f6)',
-        backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
-        border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
-        borderRadius: 10,
-      }}
-    >
-      + new tab
-    </div>
-  ) : null
+  const placeholder = showTabPlaceholder ? <DropGhostChip key="__tab-placeholder__" compact={compact}>+ new tab</DropGhostChip> : null
 
   return (
     <div

@@ -7,7 +7,7 @@ import './index'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const rect = { origin: { x: 40, y: 40 }, size: { width: 400, height: 300 } }
 
 function twoCanvases() {

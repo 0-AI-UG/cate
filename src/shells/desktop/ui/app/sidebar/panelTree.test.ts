@@ -4,7 +4,7 @@ import { sortByWorktree, workspacePanelTree } from './panelTree'
 import { moveId } from './WorkspaceList'
 
 const rec = (id: string, type: string, extra: Partial<PanelRecord> = {}): PanelRecord => ({ id, type, title: id, fields: {}, ...extra } as PanelRecord)
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const rect = { origin: { x: 0, y: 0 }, size: { width: 100, height: 100 } }
 
 function build(changes: DocChange[]): WorkspaceDocument {
@@ -23,7 +23,7 @@ describe('workspacePanelTree', () => {
     { kind: 'addPanel', record: rec('t1', 'terminal'), at: { to: 'canvas', canvasId: 'cv1', nodeId: 'n1', stackId: 'ns1', rect } },
     { kind: 'addPanel', record: rec('e1', 'editor'), at: { to: 'canvas', canvasId: 'cv1', nodeId: 'n2', stackId: 'ns2', rect } },
     { kind: 'addPanel', record: rec('b1', 'browser'), at: { to: 'stack', dock: main, stackId: 's1' } },
-    { kind: 'addPanel', record: rec('c2', 'canvas', { canvasId: 'cv2' }), at: { to: 'window', windowId: 'w2', stackId: 's2' } },
+    { kind: 'addPanel', record: rec('c2', 'canvas', { canvasId: 'cv2' }), at: { to: 'window', windowId: 'w2', layoutId: 'main', stackId: 's2' } },
     { kind: 'addPanel', record: rec('t2', 'terminal'), at: { to: 'canvas', canvasId: 'cv2', nodeId: 'n3', stackId: 'ns3', rect } },
   ])
 
@@ -31,6 +31,24 @@ describe('workspacePanelTree', () => {
     const tree = workspacePanelTree(doc)
     expect(tree.primary.canvases.map((c) => [c.record.id, c.children.map((p) => p.id)])).toEqual([['c1', ['t1', 'e1']]])
     expect(tree.primary.topLevel.map((p) => p.id)).toEqual(['b1'])
+  })
+
+  it('groups a window\'s panels by layout, in switcher order, and still counts every row', () => {
+    const layered = build([
+      { kind: 'addPanel', record: rec('a', 'terminal'), at: { to: 'stack', dock: main, stackId: 's1' } },
+      { kind: 'addLayout', windowId: MAIN_WINDOW, layoutId: 'two', name: 'Build' },
+      { kind: 'addPanel', record: rec('c', 'canvas', { canvasId: 'cv' }), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'two' }, stackId: 's2' } },
+      { kind: 'addPanel', record: rec('t', 'terminal'), at: { to: 'canvas', canvasId: 'cv', nodeId: 'n', stackId: 'ns', rect } },
+      { kind: 'addPanel', record: rec('b', 'browser'), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'two' }, stackId: 's2' } },
+    ])
+    const tree = workspacePanelTree(layered)
+    expect(tree.primary.layouts.map((l) => [l.layoutId, l.name, l.topLevel.map((p) => p.id), l.canvases.map((c) => c.record.id)])).toEqual([
+      ['main', 'Layout 1', ['a'], []],
+      ['two', 'Build', ['b'], ['c']],
+    ])
+    // The flat lists keep every layout's panels.
+    expect(tree.primary.topLevel.map((p) => p.id)).toEqual(['a', 'b'])
+    expect(tree.count).toBe(4)
   })
 
   it('lists other windows after this one and counts every row', () => {

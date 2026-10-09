@@ -28,7 +28,7 @@ beforeEach(() => {
   const { doc } = applyOp(createDocument(), {
     kind: 'addPanel',
     record: { id: 'p1', type: 'terminal', title: 'Terminal', fields: {} },
-    at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+    at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' },
   })
   h.doc = doc
   h.state = createClientStateStore()

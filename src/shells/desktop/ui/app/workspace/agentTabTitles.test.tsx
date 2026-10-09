@@ -21,7 +21,7 @@ import { useAgentTabDecorations } from '../../services/agents'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 let ws: TestWorkspace
 let container: HTMLDivElement
 let root: Root

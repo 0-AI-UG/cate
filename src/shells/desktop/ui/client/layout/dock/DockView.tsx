@@ -55,7 +55,7 @@ export interface DockViewProps {
 }
 
 export function dockKey(dock: DockRef): string {
-  return isCanvasDock(dock) ? `node:${dock.canvasId}:${dock.nodeId}` : `window:${dock.windowId}`
+  return isCanvasDock(dock) ? `node:${dock.canvasId}:${dock.nodeId}` : `window:${dock.windowId}:${dock.layoutId}`
 }
 
 export function DockView({
@@ -86,7 +86,7 @@ export function DockView({
   useEffect(() => {
     if (onCanvas) return
     return registerDropZone({
-      id: `dock-${workspaceId}-${'windowId' in dock ? dock.windowId : ''}`,
+      id: `dock-${workspaceId}-${'windowId' in dock ? `${dock.windowId}-${dock.layoutId}` : ''}`,
       workspaceId,
       dock,
       getRect: () => rootRef.current?.getBoundingClientRect() ?? null,

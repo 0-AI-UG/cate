@@ -8,7 +8,7 @@ import { rect, type Rect } from '@workspace/canvas/contract'
 import { dockStacks, visitDock, type SplitSide } from './dock'
 import { placementOf } from './placement'
 import type { DocChange, PlaceTarget } from './ops'
-import { MAIN_WINDOW, PANEL_TYPES, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
+import { PANEL_TYPES, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
 import { allStacks } from './selectors'
 
 export interface Rng {
@@ -55,7 +55,7 @@ function randomTarget(doc: WorkspaceDocument, rng: Rng, newId: () => string, can
     const { dock } = rng.pick(stacks)
     const tree = 'canvasId' in dock
       ? doc.canvases[dock.canvasId].nodes[dock.nodeId].dock
-      : doc.windows[dock.windowId].dock
+      : doc.windows[dock.windowId].layouts.find((l) => l.id === dock.layoutId)!.dock
     const ids: string[] = []
     visitDock(tree, (n) => { ids.push(n.id) })
     return { to: 'split', dock, beside: rng.pick(ids), side: rng.pick(SIDES), stackId: newId(), splitId: newId() }
@@ -63,10 +63,10 @@ function randomTarget(doc: WorkspaceDocument, rng: Rng, newId: () => string, can
   if (roll < 8 && canvases.length && !canvasPanel) {
     return { to: 'canvas', canvasId: rng.pick(canvases), nodeId: newId(), stackId: newId(), rect: randomRect(rng) }
   }
-  if (!doc.windows[MAIN_WINDOW].dock && rng.chance(0.7)) {
-    return { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: newId() }
-  }
-  return { to: 'window', windowId: newId(), stackId: newId() }
+  // An empty layout takes a first stack.
+  const empty = Object.values(doc.windows).flatMap((w) => w.layouts.filter((l) => !l.dock).map((l) => ({ windowId: w.id, layoutId: l.id })))
+  if (empty.length && rng.chance(0.7)) return { to: 'stack', dock: rng.pick(empty), stackId: newId() }
+  return { to: 'window', windowId: newId(), layoutId: rng.pick(['main', newId()]), stackId: newId() }
 }
 
 function randomRecord(rng: Rng, newId: () => string, type: PanelType): PanelRecord {
@@ -82,7 +82,9 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   const panelIds = panels.map((p) => p.id)
   const someId = () => (panelIds.length && !rng.chance(0.05) ? rng.pick(panelIds) : 'no-such-panel')
   const splits: string[] = []
-  for (const w of Object.values(doc.windows)) visitDock(w.dock, (n) => { if (n.kind === 'split') splits.push(n.id) })
+  for (const w of Object.values(doc.windows)) {
+    for (const l of w.layouts) visitDock(l.dock, (n) => { if (n.kind === 'split') splits.push(n.id) })
+  }
   for (const c of Object.values(doc.canvases)) {
     for (const n of Object.values(c.nodes)) visitDock(n.dock, (d) => { if (d.kind === 'split') splits.push(d.id) })
   }
@@ -132,6 +134,15 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   }
   if (roll < 83 && detached.length) {
     return { kind: 'closeWindow', windowId: rng.pick(detached).id }
+  }
+  if (roll < 86) {
+    const window = rng.pick(Object.values(doc.windows))
+    const layout = rng.pick(window.layouts)
+    const pick = rng.int(4)
+    if (pick === 3) return { kind: 'moveLayout', windowId: window.id, layoutId: layout.id, index: rng.int(window.layouts.length + 1) }
+    if (pick === 0) return { kind: 'addLayout', windowId: window.id, layoutId: rng.chance(0.1) ? layout.id : newId(), name: rng.chance(0.5) ? `L${rng.int(9)}` : undefined }
+    if (pick === 1) return { kind: 'removeLayout', windowId: window.id, layoutId: layout.id }
+    return { kind: 'renameLayout', windowId: window.id, layoutId: layout.id, name: `n${rng.int(9)}` }
   }
   if (roll < 88) {
     return {

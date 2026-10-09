@@ -143,7 +143,7 @@ describe('canvas view store', () => {
     document.propose({
       kind: 'addPanel',
       record: { id: 'loose', type: 'terminal', title: 'loose', fields: {} },
-      at: { to: 'stack', dock: { windowId: 'main' }, stackId: 'main-stack' },
+      at: { to: 'stack', dock: { windowId: 'main', layoutId: 'main' }, stackId: 'main-stack' },
     })
     const nodeId = store.getState().placePanel('loose', { size: { width: 400, height: 300 } })
     expect(nodeId).not.toBeNull()

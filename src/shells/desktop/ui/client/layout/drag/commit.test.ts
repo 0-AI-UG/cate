@@ -16,7 +16,7 @@ import type { DragPanel, DragSource, DropTarget } from './types'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const rect = (x: number, y: number) => ({ origin: { x, y }, size: { width: 400, height: 300 } })
 
 function fixture(): WorkspaceDocument {
@@ -149,7 +149,7 @@ describe('canvas node drops', () => {
     const next = run(doc, [detachChange(panel(doc, 'b'), 'W9', ctx.newId)])
     expect(next.windows.W9).toMatchObject({ kind: 'detached' })
     expect(next.windows.W9).not.toHaveProperty('bounds')
-    expect(dockPanels(next.windows.W9.dock)).toEqual(['b'])
+    expect(dockPanels(next.windows.W9.layouts[0].dock)).toEqual(['b'])
     expect(detachBounds({ x: 900, y: 500 }, { x: 12, y: 12 }, { width: 400, height: 300 })).toEqual({ origin: { x: 888, y: 488 }, size: { width: 400, height: 300 } })
   })
 })

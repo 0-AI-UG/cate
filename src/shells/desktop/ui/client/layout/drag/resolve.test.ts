@@ -8,7 +8,7 @@ import type { DragSource } from './types'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main: DockRef = { windowId: MAIN_WINDOW }
+const main: DockRef = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const rect = (x: number, y: number, w: number, h: number) => new DOMRectShim(x, y, w, h) as unknown as DOMRect
 
 class DOMRectShim {

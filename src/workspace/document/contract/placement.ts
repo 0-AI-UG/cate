@@ -57,7 +57,9 @@ function buildIndex(doc: WorkspaceDocument): DocIndex {
       node.panels.forEach((panelId, index) => placements.set(panelId, { dock, stackId: node.id, index }))
     })
   }
-  for (const window of Object.values(doc.windows)) add(window.dock, { windowId: window.id })
+  for (const window of Object.values(doc.windows)) {
+    for (const layout of window.layouts) add(layout.dock, { windowId: window.id, layoutId: layout.id })
+  }
   for (const canvas of Object.values(doc.canvases)) {
     for (const node of Object.values(canvas.nodes)) {
       nodes.set(node.id, canvas.id)
@@ -81,12 +83,12 @@ export function isCanvasDock(dock: DockRef): dock is { canvasId: CanvasId; nodeI
 
 export function sameDockRef(a: DockRef, b: DockRef): boolean {
   if (isCanvasDock(a)) return isCanvasDock(b) && a.canvasId === b.canvasId && a.nodeId === b.nodeId
-  return !isCanvasDock(b) && a.windowId === b.windowId
+  return !isCanvasDock(b) && a.windowId === b.windowId && a.layoutId === b.layoutId
 }
 
-/** The tree of a dock; undefined when its window or node does not exist,
- *  null for an empty main window. */
+/** The tree of a dock; undefined when its window, layout or node does not
+ *  exist, null for an empty layout. */
 export function dockOf(doc: WorkspaceDocument, dock: DockRef): DockNode | null | undefined {
   if (isCanvasDock(dock)) return doc.canvases[dock.canvasId]?.nodes[dock.nodeId]?.dock
-  return doc.windows[dock.windowId]?.dock
+  return doc.windows[dock.windowId]?.layouts.find((l) => l.id === dock.layoutId)?.dock
 }

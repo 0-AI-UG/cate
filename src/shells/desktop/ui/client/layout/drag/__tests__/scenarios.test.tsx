@@ -8,7 +8,7 @@ import { add, buildDocument } from '../../../../../../../test/clientWorkspace'
 import type { CrossWindowPort, DragGhostPort } from '../ports'
 import { WS, renderScene, type Scene } from './harness'
 
-const main = { windowId: MAIN_WINDOW }
+const main = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const rect = (x: number, y: number, w = 200, h = 150) => ({ origin: { x, y }, size: { width: w, height: h } })
 
 let scene: Scene | null = null
@@ -135,7 +135,7 @@ describe('leaving the window', () => {
     scene.mouse.up()
     await vi.waitFor(() => expect(Object.values(scene!.doc().windows).some((w) => w.kind === 'detached')).toBe(true))
     const detached = Object.values(scene.doc().windows).find((w) => w.kind === 'detached')!
-    expect(dockPanels(detached.dock)).toEqual(['n1'])
+    expect(dockPanels(detached.layouts[0].dock)).toEqual(['n1'])
     expect(scene.doc().canvases.C.nodes.N1).toBeUndefined()
     expect(scene.drag().pendingDetach).toEqual([])
   })

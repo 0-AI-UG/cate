@@ -17,7 +17,7 @@ vi.mock('@client/document', () => ({
       return { ok: true }
     },
   }),
-  clientStateFor: () => ({ getSnapshot: () => ({ focusedPanelId: h.focused }), focus: h.focus, setActiveTab: () => {} }),
+  clientStateFor: () => ({ getSnapshot: () => ({ focusedPanelId: h.focused, activeLayouts: {} }), focus: h.focus, setActiveTab: () => {}, setActiveLayout: () => {} }),
 }))
 vi.mock('@kernel/rpc/client', () => ({ runtimeFor: () => ({ session: { op: h.op } }) }))
 
@@ -27,7 +27,7 @@ import { openAgentChanges, openReviewPanel } from './openReview'
 
 registerPanelDefinitions([review])
 
-const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW }, stackId: 's1' }
+const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' }
 const add = (id: string, type: 'review' | 'terminal', fields = {}) => {
   h.doc = applyOp(h.doc, { kind: 'addPanel', record: { id, type, title: id, fields }, at }).doc
 }

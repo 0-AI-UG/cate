@@ -6,7 +6,7 @@ import type { DocChange, DockRef, PlaceTarget } from './ops'
 import { createDocument, MAIN_WINDOW, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
 
 type Doc = WorkspaceDocument
-const MAIN: DockRef = { windowId: MAIN_WINDOW }
+const MAIN: DockRef = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const R = rect(0, 0, 400, 300)
 
 const record = (id: string, type: PanelType = 'terminal'): PanelRecord =>
@@ -47,7 +47,7 @@ function sample(): Doc {
     add('x', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n1', stackId: 'sn1', rect: R }),
     add('y', tab('sn1', { canvasId: 'canvas-cv', nodeId: 'n1' })),
     add('z', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n2', stackId: 'sn2', rect: rect(500, 0, 300, 200) }),
-    add('w', { to: 'window', windowId: 'w1', stackId: 'sw' }),
+    add('w', { to: 'window', windowId: 'w1', layoutId: 'main', stackId: 'sw' }),
     { kind: 'addRelation', relation: { id: 'r1', fromPanelId: 'a', toPanelId: 'x', kind: 'context', label: 'L' } },
     { kind: 'setWorktree', worktree: { id: 'wt', path: '/r/wt', color: '#fff', status: 'ready' } },
   )
@@ -75,7 +75,7 @@ describe('invertOp', () => {
     roundTrip(doc, { kind: 'placePanel', id: 'b', at: { to: 'stack', dock: MAIN, stackId: 's1', after: null } })
     roundTrip(doc, { kind: 'placePanel', id: 'z', at: tab('s3') })
     roundTrip(doc, { kind: 'placePanel', id: 'w', at: tab('s2') })
-    roundTrip(doc, { kind: 'placePanel', id: 'd', at: { to: 'window', windowId: 'w2', stackId: 'sw2' } })
+    roundTrip(doc, { kind: 'placePanel', id: 'd', at: { to: 'window', windowId: 'w2', layoutId: 'main', stackId: 'sw2' } })
     roundTrip(doc, { kind: 'placePanel', id: 'a', at: { to: 'split', dock: MAIN, beside: 'p1', side: 'bottom', stackId: 's9', splitId: 'p9' } })
   })
 

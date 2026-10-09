@@ -40,7 +40,7 @@ function placements(doc: WorkspaceDocument) {
 function withoutTrees(doc: WorkspaceDocument) {
   return {
     ...doc,
-    windows: Object.fromEntries(Object.entries(doc.windows).map(([id, w]) => [id, { ...w, dock: null }])),
+    windows: Object.fromEntries(Object.entries(doc.windows).map(([id, w]) => [id, { ...w, layouts: w.layouts.map((l) => ({ ...l, dock: null })) }])),
     canvases: Object.fromEntries(Object.entries(doc.canvases).map(([id, c]) => [id, {
       ...c,
       nodes: Object.fromEntries(Object.entries(c.nodes).map(([nodeId, n]) => [nodeId, { ...n, dock: null }])),

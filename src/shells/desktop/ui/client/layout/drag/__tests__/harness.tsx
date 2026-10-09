@@ -173,7 +173,7 @@ export function renderScene(spec: SceneSpec): Scene {
     root.render(
       <>
         <div data-test-main>
-          <DockView workspaceId={WS} dock={{ windowId: MAIN_WINDOW }} renderPanel={() => null} />
+          <DockView workspaceId={WS} dock={{ windowId: MAIN_WINDOW, layoutId: 'main' }} renderPanel={() => null} />
         </div>
         {spec.canvases?.map((c) => <TestCanvas key={c.canvasId} spec={c} workspace={workspace} />)}
       </>,

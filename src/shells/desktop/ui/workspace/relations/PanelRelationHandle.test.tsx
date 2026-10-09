@@ -35,7 +35,7 @@ function openDocument(panels: PanelRecord[], nodes: WorkspaceDocument['canvases'
   detach = openTestDocument('ws', {
     ...createDocument(),
     panels: Object.fromEntries([canvas, ...panels].map((p) => [p.id, p])),
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } }]} },
     canvases: { c: { id: 'c', nodes } },
   })
 }

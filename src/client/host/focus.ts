@@ -2,7 +2,7 @@
 // and which tab each stack shows. Placement for new panels and routing of
 // shortcuts derive from these.
 
-import { placementOf, dockOf, dockStacks, type DockStack, type PanelId, type WorkspaceDocument } from '@workspace/document/contract'
+import { placementOf, dockOf, dockStacks, findStack, type DockStack, type PanelId, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor, type ClientState } from '@client/document'
 
 /** The tab a stack shows: the client's choice while it is still in the
@@ -27,6 +27,20 @@ export function selectTab(workspaceId: string, panelId: PanelId): boolean {
   const placement = doc ? placementOf(doc, panelId) : null
   if (!state || !placement) return false
   state.setActiveTab(placement.stackId, panelId)
+  return true
+}
+
+/** Shows and focuses the n-th tab (0-based) of the stack the focused leaf sits
+ *  in: the split group, or the tabs of a canvas node. False when there is none. */
+export function selectTabAt(workspaceId: string, index: number): boolean {
+  const doc = documentStoreFor(workspaceId)?.getSnapshot()
+  const state = clientStateFor(workspaceId)
+  const leaf = focusedLeafPanelId(workspaceId)
+  const placement = doc && leaf ? placementOf(doc, leaf) : null
+  const target = doc && placement ? findStack(dockOf(doc, placement.dock), placement.stackId)?.panels[index] : undefined
+  if (!state || !placement || !target) return false
+  state.setActiveTab(placement.stackId, target)
+  state.focus(target)
   return true
 }
 

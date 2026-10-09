@@ -28,7 +28,7 @@ afterEach(async () => { await fs.rm(dir, { recursive: true, force: true }) })
 
 const record = (id: string, type: PanelType = 'terminal'): PanelRecord => ({ id, type, title: id, fields: {} })
 const addPanel = (id: string, type: PanelType = 'terminal'): DocChange =>
-  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } })
+  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } })
 const op = (clientId: string, counter: number, change: DocChange): DocOp => ({ ...change, opId: { clientId, counter } })
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 
@@ -64,7 +64,7 @@ describe('document service', () => {
     await new Promise((r) => setTimeout(r, 30))
     await doc.flush()
     const saved = JSON.parse(await fs.readFile(file, 'utf8'))
-    expect(saved).toMatchObject({ version: 1, seq: 2, counters: { c1: 1, runtime: 1 } })
+    expect(saved).toMatchObject({ version: 2, seq: 2, counters: { c1: 1, runtime: 1 } })
     doc.dispose()
 
     const again = createDocumentService({ file })

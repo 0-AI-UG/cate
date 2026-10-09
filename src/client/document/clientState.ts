@@ -2,7 +2,7 @@
 // where its attention is. Held in memory, never sent to the runtime, except
 // the viewed and focused panel, which presence reports.
 
-import type { CanvasId, NodeId, PanelId, StackId, WindowId } from '@workspace/document/contract'
+import type { CanvasId, LayoutId, NodeId, PanelId, StackId, WindowId } from '@workspace/document/contract'
 
 export interface Viewport {
   x: number
@@ -30,6 +30,9 @@ export interface ClientState {
   /** Which tab each stack shows. A stack without an entry shows its first. */
   activeTabs: Readonly<Record<StackId, PanelId>>
   focusedPanelId: PanelId | null
+  /** Which layout of each window this client shows (a window without an
+   *  entry, or one whose layout is gone, shows its first). */
+  activeLayouts: Readonly<Record<WindowId, LayoutId>>
   /** Increases on every focus call, so re-focusing the same panel is visible. */
   focusEpoch: number
   /** The panels this client shows (presence). */
@@ -51,6 +54,7 @@ export interface ClientStateStore {
   getSnapshot(): ClientState
   subscribe(listener: () => void): () => void
   setActiveTab(stackId: StackId, panelId: PanelId): void
+  setActiveLayout(windowId: WindowId, layoutId: LayoutId): void
   focus(panelId: PanelId | null): void
   setViewing(panelIds: readonly PanelId[]): void
   setSelection(canvasId: CanvasId, selection: CanvasSelection): void
@@ -73,6 +77,7 @@ function withEntry<K extends string, V>(map: Readonly<Record<K, V>>, key: K, val
 export function createClientStateStore(): ClientStateStore {
   let state: ClientState = {
     activeTabs: {},
+    activeLayouts: {},
     focusedPanelId: null,
     focusEpoch: 0,
     viewing: [],
@@ -102,6 +107,10 @@ export function createClientStateStore(): ClientStateStore {
     setActiveTab(stackId, panelId) {
       if (state.activeTabs[stackId] === panelId) return
       update({ activeTabs: { ...state.activeTabs, [stackId]: panelId } })
+    },
+    setActiveLayout(windowId, layoutId) {
+      if (state.activeLayouts[windowId] === layoutId) return
+      update({ activeLayouts: { ...state.activeLayouts, [windowId]: layoutId } })
     },
     focus(panelId) {
       update({ focusedPanelId: panelId, focusEpoch: state.focusEpoch + 1 })

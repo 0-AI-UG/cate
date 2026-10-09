@@ -49,7 +49,7 @@ export function canvasDocument(nodes: { nodeId: string; panelId: string; rect: R
   apply({
     kind: 'addPanel',
     record: { id: 'canvas-panel', type: 'canvas', title: 'Canvas', canvasId, fields: {} },
-    at: { to: 'stack', dock: { windowId: 'main' }, stackId: 'main-stack' },
+    at: { to: 'stack', dock: { windowId: 'main', layoutId: 'main' }, stackId: 'main-stack' },
   })
   for (const n of nodes) {
     apply({

@@ -23,6 +23,9 @@ export interface PanelPlacementOptions {
   near?: PanelId
   /** Canvas point to place near, when the panel lands on a canvas. */
   position?: Point
+  /** The main window layout a panel with no better place goes to (the
+   *  creating client's active one). Defaults to the first. */
+  layoutId?: string
 }
 
 /** What every create accepts; a type's own options extend it. */

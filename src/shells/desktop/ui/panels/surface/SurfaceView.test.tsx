@@ -19,7 +19,7 @@ let root: Root
 
 beforeEach(() => {
   h.propose.mockClear()
-  h.doc = applyOp(createDocument(), { kind: 'addPanel', record: surface, at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } }).doc
+  h.doc = applyOp(createDocument(), { kind: 'addPanel', record: surface, at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' } }).doc
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)

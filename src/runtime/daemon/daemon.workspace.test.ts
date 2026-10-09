@@ -89,7 +89,7 @@ describe.skipIf(process.platform === 'win32')('daemon workspace', () => {
     const op = {
       kind: 'addPanel',
       record: { id: 'term-1', type: 'terminal', title: 'Terminal 1', fields: {} },
-      at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+      at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' },
       opId: { clientId: 'c1', counter: 1 },
     } as DocOp
     await expect(document.apply({ op })).resolves.toMatchObject({ status: 'applied', seq: 1 })

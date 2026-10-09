@@ -64,6 +64,12 @@ export default function TerminalView({
   })
   const zoom = useClientState(workspaceId, (state) => (canvasId ? state.viewports[canvasId]?.zoom ?? 1 : 1))
 
+  // The theme's terminal background also fills the box around the grid: the
+  // grid takes whole rows and columns, and the leftover strip would otherwise
+  // show the app background as a bar under the last row.
+  const [terminalBackground, setTerminalBackground] = useState(() => getActiveTheme().terminal.background)
+  useEffect(() => subscribeTheme((theme) => setTerminalBackground(theme.terminal.background)), [])
+
   // ---- The xterm: built once per view ---------------------------------------
 
   useEffect(() => {
@@ -352,6 +358,7 @@ export default function TerminalView({
       <div
         ref={containerRef}
         className="flex-1 relative min-h-0 overflow-hidden"
+        style={terminalBackground ? { backgroundColor: terminalBackground } : undefined}
         data-filedrop="terminal"
         data-filedrop-label="Drop to paste path"
         onDragOver={onDragOver}

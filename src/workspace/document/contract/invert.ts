@@ -20,7 +20,7 @@ import {
 } from './dock'
 import { opChanges, type DocBatch, type DocChange, type DocOp, type PanelPatch, type PlaceTarget, type RelationPatch } from './ops'
 import { docIndex, dockOf, isCanvasDock, placementOf } from './placement'
-import { documentOrder } from './selectors'
+import { documentOrder, windowDockPanels } from './selectors'
 import type { PanelId, WorkspaceDocument } from './schema'
 
 type Doc = WorkspaceDocument
@@ -35,7 +35,10 @@ export function invertOp(before: Doc, op: DocOp | DocChange | DocBatch, newId: (
     const result = applyOp(doc, change)
     if (result.error) return []
     const inverse = invertChange(doc, result.doc, change, newId)
-    parts.push([...inverse, ...restoreRatios(doc, applyOp(result.doc, { kind: 'batch', changes: inverse }).doc)])
+    const undone = applyOp(result.doc, { kind: 'batch', changes: inverse }).doc
+    const ratios = restoreRatios(doc, undone)
+    const layouts = restoreLayouts(doc, applyOp(undone, { kind: 'batch', changes: ratios }).doc)
+    parts.push([...inverse, ...ratios, ...layouts])
     doc = result.doc
   }
   return parts.reverse().flat()
@@ -73,7 +76,26 @@ function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => s
     case 'removePanels':
       return restore(before, after, removalSet(before, change.ids), 'add', newId)
     case 'closeWindow':
-      return restore(before, after, removalSet(before, dockPanels(before.windows[change.windowId].dock)), 'add', newId)
+      return restore(before, after, removalSet(before, windowDockPanels(before.windows[change.windowId])), 'add', newId)
+    case 'addLayout':
+      return [{ kind: 'removeLayout', windowId: change.windowId, layoutId: change.layoutId }]
+    case 'removeLayout': {
+      const layouts = before.windows[change.windowId].layouts
+      const layout = layouts.find((l) => l.id === change.layoutId)!
+      const add: DocChange = { kind: 'addLayout', windowId: change.windowId, layoutId: layout.id, index: layouts.indexOf(layout), ...(layout.name ? { name: layout.name } : {}) }
+      // A detached window left with no panel went too; restoring its panels recreates it.
+      if (!after.windows[change.windowId]) return restore(before, after, removalSet(before, dockPanels(layout.dock)), 'add', newId)
+      const sim = applyOp(after, add).doc
+      return [add, ...restore(before, sim, removalSet(before, dockPanels(layout.dock)), 'add', newId)]
+    }
+    case 'moveLayout': {
+      const index = before.windows[change.windowId].layouts.findIndex((l) => l.id === change.layoutId)
+      return [{ kind: 'moveLayout', windowId: change.windowId, layoutId: change.layoutId, index }]
+    }
+    case 'renameLayout': {
+      const old = before.windows[change.windowId].layouts.find((l) => l.id === change.layoutId)!
+      return [{ kind: 'renameLayout', windowId: change.windowId, layoutId: change.layoutId, name: old.name ?? old.id }]
+    }
     case 'placePanel':
       return restore(before, after, new Set([change.id]), 'move', newId)
     case 'setSplitRatio': {
@@ -121,6 +143,13 @@ function restore(before: Doc, after: Doc, panels: Set<PanelId>, mode: 'add' | 'm
 
   for (const id of documentOrder(before)) {
     if (!panels.has(id)) continue
+    // A closed window comes back with its first layout; recreate the others.
+    const dock = placementOf(before, id)?.dock
+    if (dock && !isCanvasDock(dock) && sim.windows[dock.windowId] && dockOf(sim, dock) === undefined) {
+      const layouts = before.windows[dock.windowId].layouts
+      const layout = layouts.find((l) => l.id === dock.layoutId)
+      if (layout) push({ kind: 'addLayout', windowId: dock.windowId, layoutId: layout.id, index: layouts.indexOf(layout), ...(layout.name ? { name: layout.name } : {}) })
+    }
     const at = targetLike(before, sim, id, newId)
     if (!at) continue
     push(mode === 'add' ? { kind: 'addPanel', record: before.panels[id], at } : { kind: 'placePanel', id, at })
@@ -133,12 +162,27 @@ function restore(before: Doc, after: Doc, panels: Set<PanelId>, mode: 'add' | 'm
   return changes
 }
 
+/** Empty layouts `before` had that moving or removing panels took away
+ *  (an emptied layout is removed), added back where they were. */
+function restoreLayouts(before: Doc, doc: Doc): DocChange[] {
+  const changes: DocChange[] = []
+  for (const window of Object.values(before.windows)) {
+    const now = doc.windows[window.id]
+    if (!now) continue
+    window.layouts.forEach((layout, index) => {
+      if (now.layouts.some((l) => l.id === layout.id)) return
+      changes.push({ kind: 'addLayout', windowId: window.id, layoutId: layout.id, index, ...(layout.name ? { name: layout.name } : {}) })
+    })
+  }
+  return changes
+}
+
 /** Split ratios that differ from `before` in splits both documents have,
  *  set back. Inserting and removing a child equalises or rescales them. */
 function restoreRatios(before: Doc, doc: Doc): DocChange[] {
   const changes: DocChange[] = []
   const trees = [
-    ...Object.values(before.windows).map((w) => w.dock),
+    ...Object.values(before.windows).flatMap((w) => w.layouts.map((l) => l.dock)),
     ...Object.values(before.canvases).flatMap((c) => Object.values(c.nodes).map((n) => n.dock)),
   ]
   for (const tree of trees) {
@@ -171,8 +215,8 @@ function targetLike(before: Doc, sim: Doc, panelId: PanelId, newId: () => string
       const nodeId = docIndex(sim).nodes.has(node.id) ? newId() : node.id
       return { to: 'canvas', canvasId: dock.canvasId, nodeId, stackId: free(stack.id), rect: node.rect }
     }
-    const window = before.windows[dock.windowId]
-    return { to: 'window', windowId: window.id, stackId: free(stack.id) }
+    const name = before.windows[dock.windowId].layouts.find((l) => l.id === dock.layoutId)?.name
+    return { to: 'window', windowId: dock.windowId, layoutId: dock.layoutId, stackId: free(stack.id), ...(name ? { layoutName: name } : {}) }
   }
   if (simTree === null) return { to: 'stack', dock, stackId: free(stack.id) }
 

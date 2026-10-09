@@ -103,6 +103,19 @@ describe('Sidebar', () => {
     expect(list.close).toHaveBeenCalledWith('local:/p/site')
   })
 
+  it('a workspace is draggable only while its own row is pressed (not its panel tree)', () => {
+    act(() => root.render(<Sidebar />))
+    const entry = rowOf('cate').closest('[draggable]') as HTMLElement
+    expect(entry.draggable).toBe(false)
+    act(() => { rowOf('cate').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })) })
+    expect(entry.draggable).toBe(true)
+    const tree = document.createElement('div')
+    tree.setAttribute('role', 'group')
+    entry.append(tree)
+    act(() => { tree.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })) })
+    expect(entry.draggable).toBe(false)
+  })
+
   it('hides itself and toggles settings', () => {
     act(() => root.render(<Sidebar />))
     act(() => { (host.querySelector('[aria-label="Settings"]') as HTMLButtonElement).click() })

@@ -82,7 +82,7 @@ async function addChat(fields: PanelRecord['fields'] = {}, extra: Partial<PanelR
   document.apply({
     kind: 'addPanel',
     record: { id: 'chat', type: 'chat', title: 'T3 Code', fields, ...extra },
-    at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+    at: { to: 'stack', dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's1' },
   })
   await host.started('chat')
   await settle()
@@ -211,7 +211,7 @@ describe('ChatSession and the harness', () => {
 })
 
 describe('ChatSession ops', () => {
-  const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW }, stackId: 's2' }
+  const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW, layoutId: 'main' }, stackId: 's2' }
 
   it('opens files of its checkout and refuses paths outside it or a stale thread', async () => {
     await addChat({ threadId: 'one' })

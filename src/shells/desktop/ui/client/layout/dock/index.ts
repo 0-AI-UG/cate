@@ -5,7 +5,7 @@
 export { DockView, dockKey, sameDockTree, type DockViewProps } from './DockView'
 export { EmptyDockChooser } from './EmptyDockChooser'
 export { DockTabStack, type DockTabStackProps } from './DockTabStack'
-export { DockTabBar, TabIcon, TabPill, type DockTabBarProps } from './DockTabBar'
+export { DockTabBar, DropGhostChip, TabIcon, TabPill, type DockTabBarProps } from './DockTabBar'
 export { DockLayout } from './DockLayout'
 export { DockSplitContainer } from './DockSplitContainer'
 export { DockResizeHandle } from './DockResizeHandle'

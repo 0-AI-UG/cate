@@ -281,7 +281,7 @@ function clampToClip(rect: Rect, clip: Rect | null): Rect | null {
 function lookupStackRect(target: DropTarget): { rect: Rect; clip: Rect | null } | null {
   if (target.kind !== 'dock-split' && target.kind !== 'dock-tab' && target.kind !== 'dock-zone') return null
   for (const entry of getDropZoneEntries()) {
-    if (entry.workspaceId !== target.workspaceId || !sameDockRef(entry.dock, target.dock)) continue
+    if (entry.workspaceId !== target.workspaceId || !sameDockRef(entry.dock, target.dock) || entry.layoutChip) continue
     const matches = target.kind === 'dock-zone'
       ? !entry.stackId && !entry.edge
       : entry.stackId === target.stackId

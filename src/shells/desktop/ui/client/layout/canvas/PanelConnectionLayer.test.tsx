@@ -28,7 +28,7 @@ function docWith(panels: PanelRecord[], nodes: WorkspaceDocument['canvases'][str
   return {
     ...doc,
     panels: Object.fromEntries([canvas, ...panels].map((p) => [p.id, p])),
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } }]} },
     canvases: { c: { id: 'c', nodes } },
     relations,
   }

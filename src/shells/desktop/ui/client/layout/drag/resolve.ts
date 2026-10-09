@@ -94,6 +94,8 @@ function resolveDockHit(client: Point, source: DragSource, panelType: string, en
   })
   const { entry, rect } = hits[0]
   const workspaceId = entry.workspaceId
+  if (entry.noopFor?.(source)) return null
+  if (entry.newLayout && !isCanvasDock(entry.dock)) return { kind: 'layout-new', workspaceId, windowId: entry.dock.windowId }
 
   if (entry.stackId) {
     const edge = resolveDropEdge(client.x, client.y, rect)
