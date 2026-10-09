@@ -2,16 +2,27 @@
 // and the workspace partitions the desktop shell fills for its webviews.
 
 import { workspacePartition, type BrowserPageBridge } from '../../contract'
+import { createLocalDownloads, type LocalDownloads } from './localDownloads'
+
+export type { DownloadOwner, LocalDownloads } from './localDownloads'
 
 let bridge: BrowserPageBridge | null = null
+let downloads: LocalDownloads | null = null
 
-/** The desktop shell installs its page bridge (preload); other shells none. */
+/** The desktop shell installs its page bridge (preload); other shells none.
+ *  The bridge's downloads are followed from then on. */
 export function installBrowserPageBridge(next: BrowserPageBridge | null): void {
   bridge = next
+  downloads = next ? createLocalDownloads(next) : null
 }
 
 export function browserPageBridge(): BrowserPageBridge | null {
   return bridge
+}
+
+/** The downloads this client's webviews made, while a bridge is installed. */
+export function browserLocalDownloads(): LocalDownloads | null {
+  return downloads
 }
 
 /** The shell's partitions: null for a workspace whose partition is not

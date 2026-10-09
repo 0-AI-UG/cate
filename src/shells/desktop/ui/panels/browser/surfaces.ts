@@ -9,7 +9,7 @@ import { RpcError, type CapabilityProxy } from '@kernel/rpc/contract'
 import type { SurfaceRequest } from '@panels/framework/contract'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import type { BrowserSurfaceArgs, BrowserSurfaceOp, browserCodeCapability } from '@panels/browser/contract'
-import type { BrowserPageHost } from './pageHost'
+import type { BrowserPageHost } from '@panels/browser/desktop'
 
 /** Running cells and the runtime each one's `cua.*` calls go back to. */
 const cellOwners = new Map<string, CapabilityProxy<typeof browserCodeCapability>>()

@@ -38,14 +38,12 @@ export function createMobileBrowsers(views: MobileViews): MobileBrowsers {
     },
     navigated({ viewId, tabId, url, title, inPage, canGoBack, canGoForward }) {
       const found = find(viewId)
-      if (!found || !url || url === 'about:blank') return
-      report(found.view, found.follower.report(tabId, { url, title: title ?? undefined, inPage, canGoBack, canGoForward }))
+      const op = found?.follower.report(tabId, { url, title: title ?? undefined, inPage, canGoBack, canGoForward })
+      if (found && op) report(found.view, op)
     },
     loading({ viewId, tabId, loading, loadError }) {
       const found = find(viewId)
-      if (!found) return
-      if (!loading) found.follower.loadEnded(tabId)
-      report(found.view, { kind: 'reportLoad', tabId, loading, ...(loadError !== null ? { loadError } : {}) })
+      if (found) report(found.view, found.follower.load(tabId, { loading, ...(loadError !== null ? { loadError } : {}) }))
     },
     title({ viewId, tabId, title }) {
       const found = find(viewId)

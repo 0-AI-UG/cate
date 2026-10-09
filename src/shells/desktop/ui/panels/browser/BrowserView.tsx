@@ -23,16 +23,15 @@ import { clientIdentity } from '@client/connections'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
 import { BROWSER_NEW_TAB_URL, queryBrowserHistoryEntries, type BrowserShortcutAction } from '@services/browser/contract'
-import { browserPageBridge, browserPartition, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
+import { browserLocalDownloads, browserPageBridge, browserPartition, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
 import { fsClient } from '@workspace/files/client'
 import { base64ToBytes, writeFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { BrowserPasswordManagerPage, useBrowserData } from '../../services/browser'
 import type { BrowserOp, BrowserSnapshot, BrowserViewport } from '@panels/browser/contract'
 import { BROWSER_HISTORY_URL, BROWSER_PASSWORD_MANAGER_URL, isBrowserInternalPage, stepBrowserZoom } from '@panels/browser/contract'
-import { BrowserPageHost, type BrowserGuest } from './pageHost'
+import { BrowserPageHost, type BrowserGuest } from '@panels/browser/desktop'
 import { registerSurface } from '@client/host'
 import { runPageOp } from './surfaces'
-import { actOnLocalDownload, isLocalDownload, localDownloadsVersion, ownGuest, relayDownloads, subscribeLocalDownloads } from './localDownloads'
 import { AgentCursorOverlay } from './parts/AgentCursorOverlay'
 import { BrowserDownloadsPopover, type BrowserPanelDownload } from './parts/BrowserDownloadsPopover'
 import { BrowserHistoryPage } from './parts/BrowserHistoryPage'
@@ -127,6 +126,9 @@ function ErrorOverlay({ title, description, buttonLabel, onRetry }: { title: str
   )
 }
 
+const noSubscribe = () => () => {}
+const noVersion = () => 0
+
 export default function BrowserView({ workspaceId, panelId, snapshot, send, visible, focused }: PanelViewProps<BrowserSnapshot, BrowserOp>) {
   const partition = useSyncExternalStore(subscribeBrowserPartitions, () => browserPartition(workspaceId))
   if (!snapshot || !partition) return <PanelCenteredState icon={<Spinner size={18} />} title="Loading" />
@@ -144,6 +146,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
 }) {
   const runtime = useRuntime(workspaceId)
   const bridge = browserPageBridge()
+  const localDownloads = browserLocalDownloads()
   const { store: browserData, state: { bookmarks, history } } = useBrowserData(workspaceId)
   const quietly = useCallback((op: BrowserOp) => { void send(op).catch(() => { /* shown by the next snapshot */ }) }, [send])
 
@@ -238,14 +241,13 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
         const current = live.current.runtime
         if (!current) return
         const storeDownload = (filename: string, bytes: Uint8Array) => fsClient(workspaceId).storeDownload(filename, bytes)
-        try { ownGuest(element.getWebContentsId(), { panelId, browserData: current.browserData, storeDownload }) } catch { /* not attached yet */ }
+        try { localDownloads?.ownGuest(element.getWebContentsId(), { panelId, browserData: current.browserData, storeDownload }) } catch { /* not attached yet */ }
       })
     }
     host.refreshLocal()
-  }, [host, bridge, panelId, workspaceId])
+  }, [host, bridge, localDownloads, panelId, workspaceId])
 
-  useEffect(() => { if (bridge) relayDownloads(bridge) }, [bridge])
-  useSyncExternalStore(subscribeLocalDownloads, localDownloadsVersion)
+  useSyncExternalStore(localDownloads?.subscribe ?? noSubscribe, localDownloads?.version ?? noVersion)
 
   // New windows a page opens become tabs of its panel.
   useEffect(() => bridge?.onOpenTab(({ openerWebContentsId, url }) => {
@@ -326,11 +328,11 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   const [downloadsOpen, setDownloadsOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const downloadButtonRef = useRef<HTMLButtonElement>(null)
-  const downloads: BrowserPanelDownload[] = snapshot.downloads.map((download) => ({ ...download, local: isLocalDownload(download.id) }))
+  const downloads: BrowserPanelDownload[] = snapshot.downloads.map((download) => ({ ...download, local: !!localDownloads?.isLocal(download.id) }))
   // A new download opens the popover once; remounting does not reopen it.
   const seenDownloads = useRef(new Set(snapshot.downloads.map((download) => download.id)))
   useEffect(() => {
-    const fresh = snapshot.downloads.some((download) => !seenDownloads.current.has(download.id) && isLocalDownload(download.id))
+    const fresh = snapshot.downloads.some((download) => !seenDownloads.current.has(download.id) && !!localDownloads?.isLocal(download.id))
     for (const download of snapshot.downloads) seenDownloads.current.add(download.id)
     if (!fresh) return
     setMenuOpen(false)
@@ -567,7 +569,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
         {downloadsOpen && downloads.length > 0 && (
           <BrowserDownloadsPopover
             downloads={downloads}
-            onAction={(download, action) => { if (bridge) void actOnLocalDownload(bridge, download.id, action) }}
+            onAction={(download, action) => { void localDownloads?.act(download.id, action) }}
             onClose={() => setDownloadsOpen(false)}
             triggerRef={downloadButtonRef}
           />

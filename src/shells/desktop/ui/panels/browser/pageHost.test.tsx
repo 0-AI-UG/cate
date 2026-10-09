@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
-import { BrowserPageHost, type BrowserGuest } from './pageHost'
+import { BrowserPageHost, type BrowserGuest } from '@panels/browser/desktop'
 import { registerSurface, runSurfaceRequest, subscribeDemandedSurfaces, demandedSurfaces } from '@client/host'
 import { runCodeOp, runPageOp } from './surfaces'
 

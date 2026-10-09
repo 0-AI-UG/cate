@@ -208,8 +208,9 @@ export class BrowserPageHost {
     const { webview } = page
     const active = () => tabId === this.shownTabId
     const report = (op: BrowserOp) => { void this.deps.send(op).catch(() => { /* the panel went away */ }) }
-    const reportLoad = (patch: { loading?: boolean; loadError?: string | null; crashed?: boolean }) => {
-      if (active() && this.visible) report({ kind: 'reportLoad', tabId, ...patch })
+    const reportLoad = (patch: { loading?: boolean; loadError?: string; crashed?: boolean }) => {
+      const op = this.follower.load(tabId, patch)
+      if (active() && this.visible) report(op)
     }
     const handlers: Record<string, (event: any) => void> = {
       'dom-ready': () => {
@@ -251,7 +252,6 @@ export class BrowserPageHost {
         reportLoad({ loading: true })
       },
       'did-stop-loading': () => {
-        this.follower.loadEnded(tabId)
         if (active()) this.setLocal({ isLoading: false })
         reportLoad({ loading: false })
       },
@@ -276,7 +276,6 @@ export class BrowserPageHost {
   private navigated(tabId: string, page: Page, eventUrl: string | undefined, inPage: boolean): void {
     let url = eventUrl ?? ''
     try { url ||= page.webview.getURL() } catch { return }
-    if (!url || url === 'about:blank') return
     let canGoBack = false
     let canGoForward = false
     let title = ''
@@ -285,12 +284,11 @@ export class BrowserPageHost {
       canGoForward = page.webview.canGoForward()
       title = page.webview.getTitle()
     } catch { /* detached */ }
+    const op = this.follower.report(tabId, { url, title, inPage, canGoBack, canGoForward })
+    if (!op) return
     if (tabId === this.shownTabId) {
       this.setLocal({ url, canGoBack, canGoForward, ...(inPage ? {} : { isLoading: false, loadError: null }) })
     }
-    // A followed navigation reports no URL (clients' redirects could
-    // ping-pong), only its history state.
-    const op: BrowserOp = this.follower.report(tabId, { url, title, inPage, canGoBack, canGoForward })
     void this.deps.send(op).catch(() => { /* the panel went away */ })
   }
 

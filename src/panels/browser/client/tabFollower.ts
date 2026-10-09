@@ -26,9 +26,13 @@ export interface BrowserTabFollower {
   toFollow(snapshot: BrowserSnapshot): { tabId: string; url: string }[]
   /** The last `nav` of a tab this client has applied. */
   seenNav(tabId: string): number | undefined
-  /** The op reporting a page's navigation. */
-  report(tabId: string, navigation: TabNavigation): BrowserOp
-  /** A tab's load ended (or its page went): it no longer follows. */
+  /** The op reporting a page's navigation; null for a blank page (a page
+   *  being set up, which no client should follow). */
+  report(tabId: string, navigation: TabNavigation): BrowserOp | null
+  /** The op reporting a page's load state. A load that stopped ends the
+   *  tab's following. */
+  load(tabId: string, state: { loading?: boolean; loadError?: string; crashed?: boolean }): BrowserOp
+  /** The tab's page went or is already on the URL: it no longer follows. */
   loadEnded(tabId: string): void
   isFollowing(tabId: string): boolean
 }
@@ -51,9 +55,14 @@ export function createBrowserTabFollower(ownClientId: () => string): BrowserTabF
     },
     seenNav: (tabId) => seen.get(tabId),
     report(tabId, { url, title, inPage, canGoBack, canGoForward }) {
+      if (!url || url === 'about:blank') return null
       return following.has(tabId)
         ? { kind: 'reportLoad', tabId, canGoBack, canGoForward }
         : { kind: 'reportNavigation', tabId, url, ...(inPage ? { inPage } : title ? { title } : {}), canGoBack, canGoForward }
+    },
+    load(tabId, state) {
+      if (state.loading === false) following.delete(tabId)
+      return { kind: 'reportLoad', tabId, ...state }
     },
     loadEnded(tabId) { following.delete(tabId) },
     isFollowing: (tabId) => following.has(tabId),
