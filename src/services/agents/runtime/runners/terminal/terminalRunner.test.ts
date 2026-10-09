@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import fs, { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,7 +6,8 @@ import { panelDefinition } from '@panels/definitions'
 import { createTerminalService, type ActivityScan, type EnvContributor, type LaunchResolver, type PtyProcess, type PtySpawner, type SpawnInfo } from '@services/terminal/runtime'
 import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentNotificationEvent, type TerminalResumeStamp } from '../../../contract'
+import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
+import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentNotificationEvent } from '../../../contract'
 import { AGENT_SESSION_STORES, createAgentsRuntime, type AgentsDocument, type AgentsRuntime, type RelationContextMode } from '../..'
 import { createTerminalRunner, type RunnerTerminalService, type TerminalRunner } from './terminalRunner'
 
@@ -71,7 +72,12 @@ function fakeDocument(panels: PanelRecord[], relations: PanelRelation[] = []) {
     setTitleFromAgent: (panelId, title) => { titles.push({ panelId, title }) },
     onChange: () => () => {},
   }
-  return { document, modes, titles }
+  /** Patches a panel record, as a document op would. */
+  const set = (id: string, patch: Partial<PanelRecord>) => {
+    const index = panels.findIndex((panel) => panel.id === id)
+    panels[index] = { ...panels[index], ...patch }
+  }
+  return { document, modes, titles, set }
 }
 
 /** The process table both the scan and a hook post's pid lookup see. */
@@ -89,6 +95,7 @@ let agents: AgentsRuntime
 let runner: TerminalRunner
 let notifications: AgentNotificationEvent[]
 let root: string
+let stampsFile: string
 let hookConfig: Partial<Record<AgentId, 'auto' | 'on' | 'off'>>
 
 async function post(env: Record<string, string>, agentId: string, payload: Record<string, unknown>, pid?: number): Promise<string> {
@@ -104,6 +111,7 @@ beforeEach(() => {
   procTree = { nameByPid: new Map(), childrenByPid: new Map() }
   hookConfig = {}
   root = tmp('root')
+  stampsFile = path.join(tmp('agents-stamps'), 'stamps.json')
   terminal = fakeTerminal()
   doc = fakeDocument([
     { id: 'term', type: 'terminal', title: 'Terminal', fields: {} },
@@ -126,7 +134,7 @@ beforeEach(() => {
   })
   notifications = []
   agents.notifications.subscribe((event) => notifications.push(event))
-  runner = createTerminalRunner(agents, terminal.service)
+  runner = createTerminalRunner(agents, terminal.service, { stampsFile })
   agents.registry.register(runner)
 })
 
@@ -185,16 +193,22 @@ describe('terminal runner', () => {
     expect(agents.registry.sessionFor('term')).toMatchObject({ present: false, status: 'finished' })
   })
 
-  it('publishes resume stamps as panel session state and clears them when the agent exits', async () => {
-    const stamps: Array<{ panelId: string; stamp: TerminalResumeStamp | null }> = []
-    runner.onResumeStamp((panelId, stamp) => stamps.push({ panelId, stamp }))
+  it('persists a terminal panel\'s resume stamp and types it back when the panel is restored', async () => {
+    const restore = () => terminal.intents.get(TERMINAL_RESTORE_LAUNCH.kind)!(undefined, { cwd: root, panelId: 'term' })
+    expect(await restore()).toEqual({})
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     await post(env, 'codex', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
-    expect(runner.resumeStamp('term')).toEqual({ agentId: 'codex', sessionId: 'sess-1', cwd: root })
-    expect(runner.resumeLaunch(runner.resumeStamp('term')!)).toEqual({ kind: AGENT_LAUNCH.resume, params: runner.resumeStamp('term') })
-    expect(await terminal.intents.get(AGENT_LAUNCH.resume)!(runner.resumeStamp('term'), { cwd: root, panelId: 'term' }))
-      .toEqual({ input: 'codex resume sess-1' })
-    expect(stamps).toEqual([{ panelId: 'term', stamp: { agentId: 'codex', sessionId: 'sess-1', cwd: root } }])
+    expect(await restore()).toEqual({ input: 'codex resume sess-1' })
+
+    // After a runtime restart, from the file.
+    runner.dispose()
+    runner = createTerminalRunner(agents, terminal.service, { stampsFile })
+    expect(JSON.parse(fs.readFileSync(stampsFile, 'utf8')).term).toMatchObject({ agentId: 'codex', sessionId: 'sess-1' })
+    expect(await restore()).toEqual({ input: 'codex resume sess-1' })
+
+    // A panel moved to another checkout does not resume the old session.
+    doc.set('term', { worktreeId: 'wt-1' })
+    expect(await restore()).toEqual({})
   })
 
   it('resolves a start launch to the canonical argv', async () => {
@@ -309,7 +323,7 @@ describe('terminal runner over the terminal service', () => {
   it('forgets a terminal that was closed', async () => {
     const terminals = service(latePty())
     runner.dispose()
-    runner = createTerminalRunner(agents, terminals)
+    runner = createTerminalRunner(agents, terminals, { stampsFile })
     const { id } = await terminals.spawn({ cols: 80, rows: 24, panelId: 'term' })
     expect(runner.terminalOf('term')).toBe(id)
     terminals.close(id)
@@ -321,7 +335,7 @@ describe('terminal runner over the terminal service', () => {
   it('forgets a terminal whose spawn failed', async () => {
     const terminals = service(() => { throw new Error('posix_spawnp failed') })
     runner.dispose()
-    runner = createTerminalRunner(agents, terminals)
+    runner = createTerminalRunner(agents, terminals, { stampsFile })
     await expect(terminals.spawn({ cols: 80, rows: 24, panelId: 'term' })).rejects.toThrow()
     expect(runner.terminalOf('term')).toBeNull()
     await expect(runner.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-not-running' })

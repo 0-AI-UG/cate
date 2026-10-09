@@ -2,7 +2,6 @@
 // Output bytes do not travel on this channel: a view attaches to the terminal
 // service's `process.attach` with the snapshot's `ptyId` (see session.ts).
 
-import type { AgentId } from '@services/agents/contract'
 import type { LaunchIntent, TerminalActivity } from '@services/terminal/contract'
 import type { PanelCreateOptions } from '@panels/framework/contract'
 
@@ -55,8 +54,6 @@ export type TerminalOpenTarget =
 export type TerminalPersisted = {
   /** The last known cwd; a restored terminal reopens there. */
   cwd: string | null
-  /** The agent session typed back as a resume command on restore. */
-  stamp: { agentId: AgentId; sessionId: string; cwd: string; profile?: string } | null
 }
 
 export type { LaunchIntent }

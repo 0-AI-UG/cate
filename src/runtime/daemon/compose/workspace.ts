@@ -260,7 +260,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     relationRole: (type) => relationRole(type),
     log: log.child('agents'),
   })
-  const terminalRunner = createTerminalRunner(agents, terminal)
+  const terminalRunner = createTerminalRunner(agents, terminal, { stampsFile: path.join(paths.agents, 'stamps.json') })
   offs.push(agents.registry.register(terminalRunner))
 
   // Which thread each chat panel shows, from the document, for the t3 runner.

@@ -26,6 +26,7 @@ import type {
   ViewParams,
   terminalSettings,
 } from '../contract'
+import { TERMINAL_RESTORE_LAUNCH } from '../contract'
 import type {
   ActivityObserver,
   EnvContributor,
@@ -554,6 +555,8 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
 
   const resolveLaunch = async (launch: LaunchIntent, cwd: string, panelId: string | null): Promise<LaunchPlan> => {
     const resolver = launchResolvers.get(launch.kind)
+    // A restore nobody resolves is the plain shell.
+    if (!resolver && launch.kind === TERMINAL_RESTORE_LAUNCH.kind) return {}
     if (!resolver) throw new RpcError('rejected', `Unknown launch intent "${launch.kind}"`)
     const plan = await resolver(launch.params, { cwd, panelId })
     const command = plan.command

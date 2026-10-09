@@ -1,9 +1,14 @@
 // The terminal runner: an agent CLI in a PTY, observed through injected hooks
 // and pid presence. Plugs into the terminal service's extension points (env
 // contributors, input/exit/activity observers, launch intents), so terminal
-// never imports agents.
+// never imports agents. It owns each terminal panel's resume stamp and
+// persists them (`agents/stamps.json`); a restored panel's restore launch
+// types the stamped session's resume command back.
 
+import { createJsonStateFile } from '@kernel/state/node'
+import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
 import type { TerminalService } from '@services/terminal/runtime'
+import type { PanelRecord } from '@workspace/document/contract'
 import {
   AGENT_DEFS,
   AGENT_INTERRUPT_INPUT,
@@ -47,14 +52,39 @@ export interface TerminalRunner extends AgentRunnerImpl {
   readonly kind: 'terminal'
   /** The live terminal of a panel (its most recent PTY). */
   terminalOf(panelId: string): string | null
-  /** The resume stamp a terminal panel persists (session state). */
-  resumeStamp(panelId: string): TerminalResumeStamp | null
-  onResumeStamp(listener: (panelId: string, stamp: TerminalResumeStamp | null) => void): () => void
-  /** The launch intent a restored terminal passes to `spawn` to resume. */
-  resumeLaunch(stamp: TerminalResumeStamp): { kind: string; params: TerminalResumeStamp } | null
   /** A panel's PTY exited. */
   onExit(listener: (panelId: string, exitCode: number) => void): () => void
   dispose(): void
+}
+
+export interface TerminalRunnerOptions {
+  /** `agents/stamps.json`: each terminal panel's resume stamp. */
+  stampsFile: string
+}
+
+/** A stamp with the panel checkout it was taken in: a panel moved to another
+ *  checkout does not resume it. */
+type StoredStamp = TerminalResumeStamp & { binding: string }
+type StampsFile = Record<string, StoredStamp>
+
+const bindingOf = (record: PanelRecord | undefined): string =>
+  JSON.stringify([record?.worktreeId ?? null, typeof record?.fields.cwd === 'string' ? record.fields.cwd : null])
+
+function normalizeStamps(parsed: unknown): StampsFile {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+  const out: StampsFile = {}
+  for (const [panelId, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const stamp = value as Partial<StoredStamp> | null
+    if (!stamp || !isAgentId(stamp.agentId) || typeof stamp.sessionId !== 'string' || typeof stamp.cwd !== 'string' || typeof stamp.binding !== 'string') continue
+    out[panelId] = {
+      agentId: stamp.agentId,
+      sessionId: stamp.sessionId,
+      cwd: stamp.cwd,
+      binding: stamp.binding,
+      ...(typeof stamp.profile === 'string' ? { profile: stamp.profile } : {}),
+    }
+  }
+  return out
 }
 
 interface TerminalInfo {
@@ -66,13 +96,15 @@ const ENTER_DELAY_MS = 0
 /** Between two interrupt keys (opencode's second Esc confirms the first). */
 const INTERRUPT_KEY_GAP_MS = 500
 
-export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerminalService): TerminalRunner {
+export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerminalService, options: TerminalRunnerOptions): TerminalRunner {
   const { hooks, presence, promptContext, document, notifications } = agents
   const terminals = new Map<string, TerminalInfo>()
   const panelTerminal = new Map<string, string>()
-  const stampsByPanel = new Map<string, TerminalResumeStamp>()
+  const stampsFile = createJsonStateFile<StampsFile>({ file: options.stampsFile, defaults: {}, normalize: normalizeStamps })
+  stampsFile.load()
+  // Stamps of panels the document no longer has go at startup.
+  stampsFile.update((all) => Object.fromEntries(Object.entries(all).filter(([panelId]) => document.panel(panelId))))
   const changeListeners = new Set<(panelId: string) => void>()
-  const stampListeners = new Set<(panelId: string, stamp: TerminalResumeStamp | null) => void>()
   const exitListeners = new Set<(panelId: string, exitCode: number) => void>()
   /** Contexts last published per terminal, to skip identical updates. */
   const sentContext = new Map<string, string | null>()
@@ -105,9 +137,10 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
     emit(terminalId, stamp) {
       const panelId = panelOf(terminalId)
       if (!panelId) return
-      if (stamp) stampsByPanel.set(panelId, stamp)
-      else stampsByPanel.delete(panelId)
-      for (const listener of stampListeners) listener(panelId, stamp)
+      stampsFile.update((all) => {
+        const { [panelId]: _previous, ...rest } = all
+        return stamp ? { ...rest, [panelId]: { ...stamp, binding: bindingOf(document.panel(panelId)) } } : rest
+      })
       changed(terminalId)
     },
   })
@@ -167,11 +200,12 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
     return { command: agentLaunchCommand({ agentId, prompt }) }
   }))
 
-  offs.push(terminal.registerLaunchIntent(AGENT_LAUNCH.resume, (params) => {
-    const stamp = (params ?? {}) as Partial<TerminalResumeStamp>
-    const command = typeof stamp.agentId === 'string' && typeof stamp.sessionId === 'string'
-      ? resumeCommandForAgent(stamp.agentId, stamp.sessionId, stamp.profile ? { profile: stamp.profile } : undefined)
-      : null
+  // A restored terminal panel types its stamped session's resume command,
+  // unless the panel moved to another checkout since.
+  offs.push(terminal.registerLaunchIntent(TERMINAL_RESTORE_LAUNCH.kind, (_params, { panelId }) => {
+    const stamp = panelId ? stampsFile.get()[panelId] : undefined
+    if (!stamp || stamp.binding !== bindingOf(document.panel(panelId!))) return {}
+    const command = resumeCommandForAgent(stamp.agentId, stamp.sessionId, stamp.profile ? { profile: stamp.profile } : undefined)
     return command ? { input: command } : {}
   }))
 
@@ -246,7 +280,7 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
         ...(latest.profile ? { profile: latest.profile } : {}),
       }
     }
-    const stamp = stampsByPanel.get(panelId)
+    const stamp = stampsFile.get()[panelId]
     return stamp
       ? {
           agentId: stamp.agentId,
@@ -374,22 +408,13 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
       return () => { changeListeners.delete(listener) }
     },
     terminalOf: liveTerminal,
-    resumeStamp: (panelId) => stampsByPanel.get(panelId) ?? null,
-    onResumeStamp(listener) {
-      stampListeners.add(listener)
-      return () => { stampListeners.delete(listener) }
-    },
-    resumeLaunch(stamp) {
-      return resumeCommandForAgent(stamp.agentId, stamp.sessionId, stamp.profile ? { profile: stamp.profile } : undefined)
-        ? { kind: AGENT_LAUNCH.resume, params: stamp }
-        : null
-    },
     onExit(listener) {
       exitListeners.add(listener)
       return () => { exitListeners.delete(listener) }
     },
     dispose() {
       for (const off of offs.splice(0)) off()
+      stampsFile.dispose()
     },
   }
 }

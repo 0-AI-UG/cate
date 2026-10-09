@@ -1,7 +1,8 @@
 // The terminal panel session (architecture 11.2, 11.3): owns the panel's PTY in
 // the runtime. It spawns (or restores) the PTY in `start()` in its checkout,
-// follows the terminal service's status of that PTY, hosts the resume stamp
-// the agents service hands it, and serves `cate.terminal.*`.
+// follows the terminal service's status of that PTY, and serves
+// `cate.terminal.*`. A restored panel spawns with the terminal service's
+// restore launch, which other modules resolve (agents resume their session).
 //
 // Output does not go through the session channel. A view attaches to the
 // terminal service's `process.attach` with the snapshot's `ptyId` (through
@@ -13,8 +14,7 @@
 import { sessionApi } from '@kernel/api/contract'
 import { RpcError, isRpcError } from '@kernel/rpc/contract'
 import type { Json, PanelRecord } from '@workspace/document/contract'
-import type { TerminalResumeStamp } from '@services/agents/contract'
-import type { LaunchIntent, TerminalStatus } from '@services/terminal/contract'
+import { TERMINAL_RESTORE_LAUNCH, type LaunchIntent, type TerminalStatus } from '@services/terminal/contract'
 import type { TerminalService } from '@services/terminal/runtime'
 import { PanelSession, type OpHandlers, type SessionKit, type DisposeReason } from '@panels/framework/runtime'
 import { terminalApi } from './contract/api'
@@ -32,18 +32,10 @@ export type SessionTerminalService = Pick<
   'spawn' | 'write' | 'kill' | 'close' | 'read' | 'statuses' | 'onStatusChange'
 >
 
-/** The agents terminal runner, as a terminal panel sees it. */
-export interface TerminalAgentRunner {
-  onResumeStamp(listener: (panelId: string, stamp: TerminalResumeStamp | null) => void): () => void
-  /** The launch intent that resumes a stamp in a fresh shell. */
-  resumeLaunch(stamp: TerminalResumeStamp): LaunchIntent | null
-}
-
 export interface TerminalSessionDeps {
   terminal: SessionTerminalService
   /** Canonical workspace root: the cwd of a terminal bound to no checkout. */
   root: string
-  agents?: TerminalAgentRunner
   /** Opens a clicked link inside Cate (a browser or editor panel near this one). */
   open?(target: TerminalOpenTarget, fromPanelId: string): unknown
   /** A one-shot launch for the panel's first spawn (a started agent). */
@@ -74,7 +66,6 @@ interface SpawnOptions {
 export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> {
   private readonly offs: Array<() => void> = []
   private shell = ''
-  private stamp: TerminalResumeStamp | null = null
   private lastCwd: string | null = null
   /** Bumped by every spawn and by dispose; a stale spawn closes its PTY. */
   private generation = 0
@@ -93,24 +84,15 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
 
   override async start(): Promise<void> {
     const saved = this.persisted<TerminalPersisted>()
-    this.stamp = saved?.stamp ?? null
     this.lastCwd = saved?.cwd ?? null
     this.offs.push(this.deps.terminal.onStatusChange((change) => {
       const id = this.state.ptyId
       if (id && Object.prototype.hasOwnProperty.call(change, id)) this.followStatus(change[id])
     }))
-    const agents = this.deps.agents
-    if (agents) {
-      this.offs.push(agents.onResumeStamp((panelId, stamp) => {
-        if (panelId !== this.panelId) return
-        this.stamp = stamp
-        this.save()
-      }))
-    }
     const launch = this.deps.takeLaunch?.(this.panelId)
     await this.respawn(launch
       ? { launch }
-      : { cwd: this.lastCwd ?? undefined, launch: this.resumeLaunch(), restore: true })
+      : { cwd: this.lastCwd ?? undefined, launch: TERMINAL_RESTORE_LAUNCH, restore: true })
   }
 
   /** Runs `launch` as the panel's process in a fresh PTY; whatever ran dies.
@@ -214,20 +196,15 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
     return worktree?.path ?? (typeof cwd === 'string' && cwd ? cwd : this.deps.root)
   }
 
-  /** Records the checkout switch; the stamp and cwd of the old one go. */
+  /** Records the checkout switch; the cwd of the old one goes. */
   private bind(worktreeId: string | null, cwd: string | undefined): void {
     this.kit.document.apply({
       kind: 'updatePanel',
       id: this.panelId,
       patch: { worktreeId, fields: { cwd: cwd ?? null } },
     })
-    this.stamp = null
     this.lastCwd = null
     this.save()
-  }
-
-  private resumeLaunch(): LaunchIntent | undefined {
-    return (this.stamp && this.deps.agents?.resumeLaunch(this.stamp)) || undefined
   }
 
   private closePty(id: string): void {
@@ -304,7 +281,7 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
   }
 
   private save(): void {
-    const value: TerminalPersisted = { cwd: this.lastCwd, stamp: this.stamp }
+    const value: TerminalPersisted = { cwd: this.lastCwd }
     this.persist(JSON.parse(JSON.stringify(value)) as Json)
   }
 }

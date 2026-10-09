@@ -14,7 +14,6 @@ export { terminalDefinition } from './definition'
 export {
   TerminalSession,
   type SessionTerminalService,
-  type TerminalAgentRunner,
   type TerminalSessionDeps,
 } from './session'
 

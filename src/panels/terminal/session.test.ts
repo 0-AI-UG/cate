@@ -4,10 +4,9 @@ import { isRpcError, RpcError } from '@kernel/rpc/contract'
 import type { ApiSessionContext } from '@kernel/api/contract'
 import type { Json, PanelRecord, WorkspaceDocument } from '@workspace/document/contract'
 import { createDocument } from '@workspace/document/contract'
-import type { TerminalResumeStamp } from '@services/agents/contract'
-import type { SpawnParams, TerminalStatus, TerminalStatusChange } from '@services/terminal/contract'
+import { TERMINAL_RESTORE_LAUNCH, type SpawnParams, type TerminalStatus, type TerminalStatusChange } from '@services/terminal/contract'
 import type { SessionKit } from '@panels/framework/runtime'
-import { TerminalSession, type SessionTerminalService, type TerminalAgentRunner } from './session'
+import { TerminalSession, type SessionTerminalService } from './session'
 import { createTerminalPanels } from './runtime'
 import type { TerminalSnapshot } from './contract'
 
@@ -52,20 +51,6 @@ function fakeTerminal() {
   return { service, spawns, writes, closed, killed, update, failOnce: (err: Error) => { failNext = err } }
 }
 
-function fakeAgents() {
-  const stampListeners = new Set<(panelId: string, stamp: TerminalResumeStamp | null) => void>()
-  const runner: TerminalAgentRunner = {
-    onResumeStamp: (l) => { stampListeners.add(l); return () => { stampListeners.delete(l) } },
-    resumeLaunch: (stamp) => ({ kind: 'agents.resume', params: stamp }),
-  }
-  return {
-    runner,
-    stamp(panelId: string, stamp: TerminalResumeStamp | null) {
-      for (const l of stampListeners) l(panelId, stamp)
-    },
-  }
-}
-
 function fakeKit(record: PanelRecord, saved?: Json) {
   let doc: WorkspaceDocument = {
     ...createDocument(),
@@ -105,18 +90,16 @@ const record = (fields: Record<string, Json> = {}, worktreeId?: string): PanelRe
   id: 'p1', type: 'terminal', title: 'Terminal 1', fields, ...(worktreeId ? { worktreeId } : {}),
 })
 
-function setup(options: { fields?: Record<string, Json>; worktreeId?: string; saved?: Json; agents?: boolean } = {}) {
+function setup(options: { fields?: Record<string, Json>; worktreeId?: string; saved?: Json } = {}) {
   const terminal = fakeTerminal()
-  const agents = options.agents ? fakeAgents() : undefined
   const k = fakeKit(record(options.fields, options.worktreeId), options.saved)
   const open = vi.fn()
   const session = new TerminalSession(k.kit, record(options.fields, options.worktreeId), {
     terminal: terminal.service,
     root: '/repo',
-    agents: agents?.runner,
     open,
   })
-  return { terminal, agents, session, open, ...k }
+  return { terminal, session, open, ...k }
 }
 
 const snap = (session: TerminalSession): TerminalSnapshot => session.snapshot()
@@ -130,7 +113,7 @@ describe('TerminalSession', () => {
     await session.start()
     expect(terminal.spawns).toHaveLength(1)
     expect(terminal.spawns[0]).toMatchObject({ cwd: '/repo/.worktrees/wt', panelId: 'p1', restore: true })
-    expect(terminal.spawns[0].launch).toBeUndefined()
+    expect(terminal.spawns[0].launch).toEqual(TERMINAL_RESTORE_LAUNCH)
     expect(snap(session)).toMatchObject({ ptyId: 'pty-1', status: 'running', title: 'zsh', cwd: '/repo/.worktrees/wt' })
   })
 
@@ -201,38 +184,34 @@ describe('TerminalSession', () => {
     await expect(session.handleApi!('type', { text: 'x' }, ctx)).rejects.toMatchObject({ code: 'rejected' })
   })
 
-  it('persists resume stamps and resumes them on restore', async () => {
-    const first = setup({ agents: true })
+  it('restores with the terminal service\'s restore launch', async () => {
+    const first = setup()
     await first.session.start()
-    const stamp: TerminalResumeStamp = { agentId: 'codex', sessionId: 's-1', cwd: '/repo' }
-    first.agents!.stamp('p1', stamp)
-    first.agents!.stamp('other', { ...stamp, sessionId: 'nope' })
-    expect(first.stored()).toEqual({ cwd: '/repo', stamp })
+    expect(first.stored()).toEqual({ cwd: '/repo' })
 
-    const second = setup({ agents: true, saved: first.stored() })
+    const second = setup({ saved: first.stored() })
     await second.session.start()
-    expect(second.terminal.spawns[0]).toMatchObject({ cwd: '/repo', restore: true, launch: { kind: 'agents.resume', params: stamp } })
+    expect(second.terminal.spawns[0]).toMatchObject({ cwd: '/repo', restore: true, launch: TERMINAL_RESTORE_LAUNCH })
   })
 
   it('restores in its last cwd and falls back to the checkout when it is gone', async () => {
-    const { session, terminal } = setup({ saved: { cwd: '/repo/gone', stamp: null } })
+    const { session, terminal } = setup({ saved: { cwd: '/repo/gone' } })
     terminal.failOnce(new Error('ENOENT'))
     await session.start()
     expect(terminal.spawns.map((s) => s.cwd)).toEqual(['/repo/gone', '/repo'])
     expect(snap(session)).toMatchObject({ status: 'running', cwd: '/repo' })
   })
 
-  it('switches worktree: records it, drops the stamp and spawns a fresh shell there', async () => {
-    const { session, terminal, agents, applied, stored } = setup({ agents: true })
+  it('switches worktree: records it and spawns a fresh shell there', async () => {
+    const { session, terminal, applied, stored } = setup()
     await session.start()
-    agents!.stamp('p1', { agentId: 'codex', sessionId: 's', cwd: '/repo' })
     await session.handleOp({ kind: 'switchWorktree', worktreeId: 'wt' }, opCtx)
     expect(applied).toEqual([{ kind: 'updatePanel', id: 'p1', patch: { worktreeId: 'wt', fields: { cwd: '/repo/.worktrees/wt' } } }])
     expect(terminal.closed).toEqual(['pty-1'])
     expect(terminal.spawns[1]).toMatchObject({ cwd: '/repo/.worktrees/wt' })
     expect(terminal.spawns[1].restore).toBeUndefined()
     expect(snap(session).ptyId).toBe('pty-2')
-    expect(stored()).toEqual({ cwd: '/repo/.worktrees/wt', stamp: null })
+    expect(stored()).toEqual({ cwd: '/repo/.worktrees/wt' })
     await expect(session.handleOp({ kind: 'switchWorktree', worktreeId: 'missing' }, opCtx)).rejects.toMatchObject({ code: 'gone' })
   })
 

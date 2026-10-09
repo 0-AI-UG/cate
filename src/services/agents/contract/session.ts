@@ -125,6 +125,4 @@ export function openTerminalAgent(
 export const AGENT_LAUNCH = {
   /** A started agent: `{ agentId, prompt }`, run in place of the shell. */
   start: 'agents.start',
-  /** A restored session: a resume stamp, typed into the fresh shell. */
-  resume: 'agents.resume',
 } as const

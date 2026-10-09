@@ -91,10 +91,6 @@ const terminal: PanelRuntime = (services) => {
   const panels = createTerminalPanels({
     terminal: services.terminal,
     root: services.root,
-    agents: {
-      onResumeStamp: (listener) => services.terminalRunner.onResumeStamp(listener),
-      resumeLaunch: (stamp) => services.terminalRunner.resumeLaunch(stamp),
-    },
     open: (target, near) => target.kind === 'url'
       ? factory?.createPanel('browser', { url: target.url, near })
       : factory?.createPanel('editor', { filePath: target.path, near }),

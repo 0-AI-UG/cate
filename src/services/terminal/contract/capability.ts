@@ -13,6 +13,11 @@ export interface LaunchIntent {
   params?: unknown
 }
 
+/** The launch a restored terminal panel spawns with: whatever another module
+ *  resolves for the panel (agents types back the session it ran), else the
+ *  plain shell. */
+export const TERMINAL_RESTORE_LAUNCH: LaunchIntent = { kind: 'terminal.restore' }
+
 export interface SpawnParams {
   cols: number
   rows: number
