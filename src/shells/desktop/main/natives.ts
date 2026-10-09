@@ -14,6 +14,7 @@ import {
 import type { CanvasBackgrounds } from './canvasBackgrounds'
 import { handle } from './ipc'
 import type { WindowRegistry } from './windowRegistry'
+import { externalUrl } from './externalUrl'
 
 export interface NativesDeps {
   registry: WindowRegistry<BrowserWindow>
@@ -95,8 +96,7 @@ export function registerNatives(deps: NativesDeps): void {
   handle(C.canvasBackgroundPrune, (_event, keep: unknown) => deps.backgrounds.prune(typeof keep === 'string' ? keep : ''))
 
   handle(C.osOpenExternal, async (_event, url: unknown) => {
-    if (typeof url !== 'string' || !/^(https?|mailto):/i.test(url)) throw new Error('Only web and mail links open externally.')
-    await shell.openExternal(url)
+    await shell.openExternal(externalUrl(url))
   })
 
   handle(C.osOpenSettingsFile, async () => {

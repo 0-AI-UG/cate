@@ -16,7 +16,7 @@ export function createDesktopClientUi(api: DesktopApi, features: readonly Client
   const ask = (request: MessageBoxRequest) => api.dialogs.messageBox(request)
 
   const ui: ClientUi = {
-    openExternal: (url) => { void api.os.openExternal(url) },
+    openExternal: (url) => { void api.os.openExternal(url).catch(() => { /* refused: not a web link */ }) },
     openSettings: (section) => useUIStore.getState().openSettings(section || undefined),
     async confirm(message) {
       return (await ask({ type: 'question', message, buttons: ['OK', 'Cancel'], defaultId: 0, cancelId: 1 })) === 0

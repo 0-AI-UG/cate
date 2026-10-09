@@ -455,6 +455,11 @@ Each item gets a unit test in the named module that fails today.
 - Windows named pipe has no ACL (`runtime/data/node/paths.ts:48`). Fix: a
   security descriptor for the current user only. Test only on Windows CI;
   otherwise document as untested.
+  Not fixed: Node's `net` cannot set a named pipe's security descriptor
+  (`readableAll`/`writableAll` only widen it). The default descriptor gives
+  other local users read access only, which cannot send the `hello` a
+  connection needs. Untested on Windows; a native helper is the fix when
+  Windows ships.
 - `shells/desktop/main/natives.ts:97-99` `openExternal` accepts loopback
   URLs (D10). Fix: refuse loopback there, so every caller is covered.
 
