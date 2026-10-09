@@ -61,6 +61,7 @@ import { createDesktopShellTransports, serveLoopbackRequests } from './transport
 import { installWebviewHosts, prepareWebviewPartitions, serveBrowserCodeCells, type WebviewPartitions } from './webviews'
 import { attachDetachedWindow, createWindowsPort } from './windows'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
+import { restartStaleLocalRuntimes } from './staleRuntimes'
 
 const log = createLogger('renderer')
 
@@ -152,7 +153,8 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     return workspaceId ? connections.get(workspaceId) : undefined
   }, api))
 
-  installClientApp({ workspaces, connections, version: info.version, pair: transports.pair, ssh: api.ssh })
+  installClientApp({ workspaces, connections, version: info.version, build: RUNTIME_BUILD, pair: transports.pair, ssh: api.ssh })
+  stops.push(restartStaleLocalRuntimes({ connections, workspaces, version: info.version, build: RUNTIME_BUILD }))
   installDesktopPort(createDesktopPort(api, info))
   const uiState = createUiStateStore(device)
   await uiState.load()

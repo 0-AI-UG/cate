@@ -1,6 +1,6 @@
 // The question an incompatible workspace runtime raises (7.10): another
-// protocol major, or another build than this app (a stale runtime). Every
-// call fails until the runtime is updated or restarted, which ends its
+// protocol major than this app. Every call fails until the runtime is
+// updated, which ends its
 // terminals and agents. When nothing else uses the runtime (no other client,
 // no running work) the update happens without asking; otherwise the card
 // asks first. It cannot list the work: an incompatible runtime answers only
@@ -158,7 +158,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
 
   const incompatible = state.kind === 'incompatible' ? state : null
   const version = app?.version ?? ''
-  const target = incompatible ? { version, ...(incompatible.build ? { build: incompatible.build.app } : {}) } : null
+  const target = incompatible ? { version, ...(app?.build ? { build: app.build } : {}) } : null
   // Never move a runtime back to an older release (another device may need it).
   const newer = incompatible !== null && compareSemver(incompatible.runtimeVersion, version) > 0
 
@@ -199,9 +199,6 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
     )
   }
 
-  // Same version, other build: a stale runtime that a restart replaces.
-  const restart = incompatible.runtimeVersion === version
-
   const confirm = async () => {
     setError(null)
     const failed = await runUpdate(connection, target)
@@ -212,33 +209,31 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
     <ModalCard
       className="w-[440px] max-w-[92%]"
       icon={icon}
-      title={restart ? 'Workspace runtime is out of date' : 'Workspace runtime needs an update'}
+      title="Workspace runtime needs an update"
       showClose={false}
       bodyClassName="px-5 py-4"
     >
       <p className="text-[13px] leading-relaxed text-secondary">
         <span className="text-primary font-medium">{name}</span>
-        {restart
-          ? ' runs a different build of the Cate runtime than this app. Cate can\'t use it until it restarts.'
-          : ` runs Cate runtime ${incompatible.runtimeVersion}, which this app can't talk to. Update it to ${version} to use the workspace.`}
+        {` runs Cate runtime ${incompatible.runtimeVersion}, which this app can't talk to. Update it to ${version} to use the workspace.`}
       </p>
 
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2.5 py-2 rounded-md bg-surface-5 border border-subtle text-[12px]">
         <dt className="text-muted">This app</dt>
-        <dd className="font-mono text-secondary break-all">{incompatible.build?.app ?? version}</dd>
+        <dd className="font-mono text-secondary break-all">{version}</dd>
         <dt className="text-muted">Runtime</dt>
-        <dd className="font-mono text-secondary break-all">{incompatible.build ? (incompatible.build.runtime ?? `${incompatible.runtimeVersion} (no build)`) : incompatible.runtimeVersion}</dd>
+        <dd className="font-mono text-secondary break-all">{incompatible.runtimeVersion}</dd>
       </dl>
 
       <p className="mt-3 text-[12px] leading-relaxed text-muted">
-        {restart ? 'Restarting' : 'Updating'} ends the workspace's terminals and running agents for everyone connected to it.
+        Updating ends the workspace's terminals and running agents for everyone connected to it.
       </p>
 
       {error && <p className="mt-3 text-[12px] text-danger">{error}</p>}
 
       <div className="mt-5 flex justify-end gap-2">
         <button type="button" className={btn.primary} onClick={() => void confirm()}>
-          {restart ? 'Restart runtime' : `Update to ${version}`}
+          {`Update to ${version}`}
         </button>
       </div>
     </ModalCard>

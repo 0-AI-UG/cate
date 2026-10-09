@@ -11,6 +11,9 @@ export interface ClientApp {
   connections: WorkspaceConnections
   /** This client's release version, sent with `runtime.update`. */
   version: string
+  /** This client's build, sent with `runtime.update` so the runtime runs
+   *  exactly it. */
+  build?: string
   /** The shell's `ShellTransports.pair`; absent on a shell that cannot join
    *  network workspaces. */
   pair?: NonNullable<ShellTransports['pair']>

@@ -11,7 +11,7 @@ import {
   type RuntimeProxy,
 } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy, createRuntimeProxy, type RpcClientState } from '@kernel/rpc/client'
-import { framePortOver } from '@kernel/rpc/contract'
+import { framePortOver, type ProtocolVersion } from '@kernel/rpc/contract'
 import { nestedRefusalRoot } from '@runtime/daemon/contract'
 import { FRAME_MODE } from '@runtime/transports/contract'
 import type { ClientIdentity } from './identity'
@@ -21,12 +21,15 @@ import { tunnelDuplex } from './tunnel'
 
 export type ConnectionState =
   | { kind: 'connecting' }
-  | { kind: 'connected' }
+  /** `stale`: the runtime runs another build of the same protocol than
+   *  this app (an older install, or a checkout's runtime before
+   *  `runtime:dev`); it is fully usable (7.10). */
+  | { kind: 'connected'; stale?: { runtime: string | null; app: string } }
   /** `lastSeen` is when the runtime was last connected (null: never). */
   | { kind: 'offline'; lastSeen: number | null; retrying: boolean; error?: string }
-  /** A different protocol major, or another build than this app (a stale
-   *  runtime, `build`). `runtime.update` still works (7.10). */
-  | { kind: 'incompatible'; runtimeVersion: string; build?: { runtime: string | null; app: string } }
+  /** A different protocol major: nothing but `runtime.info` and
+   *  `runtime.update` answers (7.10). */
+  | { kind: 'incompatible'; runtimeVersion: string }
   /** Someone stopped the runtime on purpose: no reconnecting until
    *  `retryNow` (which starts a local runtime again). */
   | { kind: 'stopped' }
@@ -50,7 +53,9 @@ export interface WorkspaceConnectionOptions {
   identity: ClientIdentity
   /** App version, sent in `hello`. */
   version: string
-  /** App build: a runtime of another build is incompatible. */
+  /** The protocol this client speaks; default: `PROTOCOL`. */
+  protocol?: ProtocolVersion
+  /** App build: a runtime of another build connects as `stale`. */
   build?: string
   backoff?: Partial<Backoff>
   now?: () => number
@@ -97,7 +102,7 @@ export class WorkspaceConnection {
     this.now = opts.now ?? Date.now
     this.rpc = new RpcClient({
       version: opts.version,
-      build: opts.build,
+      ...(opts.protocol ? { protocol: opts.protocol } : {}),
       identity: {
         client: {
           clientId: opts.identity.clientId,
@@ -209,17 +214,16 @@ export class WorkspaceConnection {
   private onRpcState(state: RpcClientState): void {
     if (this.closed) return
     switch (state) {
-      case 'ready':
+      case 'ready': {
         this.attempt = 0
         this.lastSeen = this.now()
-        this.setState({ kind: 'connected' })
-        return
-      case 'incompatible': {
-        const remote = this.rpc.remote
-        const build = this.build !== undefined && remote?.build !== this.build ? { runtime: remote?.build ?? null, app: this.build } : undefined
-        this.setState({ kind: 'incompatible', runtimeVersion: remote?.version ?? 'unknown', ...(build ? { build } : {}) })
+        const runtime = this.rpc.remote?.build ?? null
+        this.setState({ kind: 'connected', ...(this.build !== undefined && runtime !== this.build ? { stale: { runtime, app: this.build } } : {}) })
         return
       }
+      case 'incompatible':
+        this.setState({ kind: 'incompatible', runtimeVersion: this.rpc.remote?.version ?? 'unknown' })
+        return
       case 'refused': {
         const error = this.rpc.remote?.error
         const nestedIn = nestedRefusalRoot(error?.data)

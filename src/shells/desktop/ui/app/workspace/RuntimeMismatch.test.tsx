@@ -43,6 +43,7 @@ const render = (connection: ReturnType<typeof fakeConnection>, strict = false) =
     workspaces: { get: () => ({ name: 'cate' }) } as unknown as WorkspaceList,
     connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
     version: '2.0.4',
+    build: '2.0.4+new',
   })
   const tree = (
     <>
@@ -73,19 +74,18 @@ afterEach(() => {
 
 describe('RuntimeMismatchCard', () => {
   it('asks inside the workspace only: no dialog over the app, the sidebar stays usable', async () => {
-    await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.4', build: { runtime: null, app: '2.0.4+new' } }))
-    expect(card()?.textContent).toContain('Workspace runtime is out of date')
+    await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
+    expect(card()?.textContent).toContain('Workspace runtime needs an update')
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(host.querySelector('[data-sidebar]')!.closest('[inert]')).toBeNull()
   })
 
-  it('shows both builds of a stale runtime and restarts it', async () => {
-    const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.4', build: { runtime: null, app: '2.0.4+new' } })
+  it('updates a runtime of another protocol to this app\'s build', async () => {
+    const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' })
     await render(connection)
     expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
-    expect(card()?.textContent).toContain('2.0.4+new')
-    expect(card()?.textContent).toContain('2.0.4 (no build)')
-    await act(async () => button('Restart runtime').click())
+    expect(card()?.textContent).toContain('1.9.0')
+    await act(async () => button('Update to 2.0.4').click())
     expect(connection.runtime.runtime.update).toHaveBeenLastCalledWith({ version: '2.0.4', build: '2.0.4+new' })
     await act(async () => connection.set({ kind: 'connected' }))
     expect(card()).toBeNull()
@@ -126,18 +126,18 @@ describe('RuntimeMismatchCard', () => {
   })
 
   it('asks once the idle update is refused under StrictMode', async () => {
-    await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.4', build: { runtime: '2.0.4+old', app: '2.0.4+new' } }), true)
-    expect(button('Restart runtime')).toBeTruthy()
+    await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }), true)
+    expect(button('Update to 2.0.4')).toBeTruthy()
   })
 
   it('says so when the runtime does not restart', async () => {
     vi.useFakeTimers()
     try {
-      await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.4', build: { runtime: '2.0.4+old', app: '2.0.4+new' } }))
-      await act(async () => button('Restart runtime').click())
+      await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
+      await act(async () => button('Update to 2.0.4').click())
       await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
       expect(card()?.textContent).toContain('The runtime did not restart. Stop it (process 727)')
-      expect(button('Restart runtime').disabled).toBe(false)
+      expect(button('Update to 2.0.4').disabled).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -151,7 +151,7 @@ describe('RuntimeMismatchCard', () => {
 
   it('updates a runtime nothing else uses without asking', async () => {
     idle = true
-    const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.3', build: { runtime: '2.0.3+old', app: '2.0.4+new' } })
+    const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.3' })
     await render(connection)
     expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
     // The fake update returns at once: it is restarting.
@@ -161,7 +161,7 @@ describe('RuntimeMismatchCard', () => {
 
   it('never moves a newer runtime back to this app', async () => {
     idle = true
-    const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.1.0', build: { runtime: '2.1.0+x', app: '2.0.4+new' } })
+    const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.1.0' })
     await render(connection)
     expect(connection.runtime.runtime.update).not.toHaveBeenCalled()
     expect(card()?.textContent).toContain('Update Cate to use this workspace')

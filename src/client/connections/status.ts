@@ -24,7 +24,7 @@ export function connectionLabel(state: ConnectionState, now?: number): string | 
         ? `Offline, last seen ${relativeTime(state.lastSeen, now)}${state.retrying ? '. Retrying.' : ''}`
         : `Not reachable${state.error ? `: ${state.error}` : ''}${state.retrying ? '. Retrying.' : ''}`
     case 'incompatible':
-      return state.build ? 'The workspace runtime is out of date' : `The workspace runtime (${state.runtimeVersion}) needs an update`
+      return `The workspace runtime (${state.runtimeVersion}) needs an update`
     case 'refused': return state.message
     case 'stopped': return 'The workspace runtime was stopped. Its terminals and agents have ended.'
     default: return null

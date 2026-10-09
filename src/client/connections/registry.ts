@@ -13,7 +13,7 @@ export interface WorkspaceConnectionsOptions {
   /** The capabilities of each runtime proxy (`RUNTIME_CAPABILITIES`). */
   capabilities: readonly AnyCapability[]
   version: string
-  /** App build: a runtime of another build is incompatible. */
+  /** App build: a runtime of another build connects as `stale`. */
   build?: string
   backoff?: Partial<Backoff>
   now?: () => number

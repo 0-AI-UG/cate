@@ -62,10 +62,10 @@ describe('ConnectionBlocker', () => {
   })
 
   it('covers an incompatible workspace at once with the way to resolve it, and makes it inert', async () => {
-    mount(fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.5', build: { runtime: null, app: '2.0.5+a' } }))
+    mount(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
     await act(async () => { await Promise.resolve() })
-    expect(cover()?.textContent).toContain('Workspace runtime is out of date')
-    expect(cover()?.textContent).toContain('Restart runtime')
+    expect(cover()?.textContent).toContain('Workspace runtime needs an update')
+    expect(cover()?.textContent).toContain('Update to')
     expect(content().hasAttribute('inert')).toBe(true)
   })
 

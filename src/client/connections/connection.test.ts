@@ -180,18 +180,18 @@ describe('WorkspaceConnection', () => {
     await vi.waitFor(() => expect(connection.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.0' }))
   })
 
-  it('reports a runtime of another build as incompatible and fails its calls', async () => {
+  it('connects to a runtime of another build of the same protocol, as stale', async () => {
     const stale = openLocal(fakeRuntime({ build: '9.0.0+old' }), {}, undefined, '9.0.0+new')
-    await vi.waitFor(() => expect(stale.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.0', build: { runtime: '9.0.0+old', app: '9.0.0+new' } }))
-    await expect(stale.runtime.workspace.info()).rejects.toThrow('The runtime runs build 9.0.0+old, this app is build 9.0.0+new')
+    await vi.waitFor(() => expect(stale.state).toEqual({ kind: 'connected', stale: { runtime: '9.0.0+old', app: '9.0.0+new' } }))
+    await expect(stale.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
     registry!.close('ws1')
 
     const unbuilt = openLocal(fakeRuntime(), {}, undefined, '9.0.0+new')
-    await vi.waitFor(() => expect(unbuilt.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.0', build: { runtime: null, app: '9.0.0+new' } }))
+    await vi.waitFor(() => expect(unbuilt.state).toEqual({ kind: 'connected', stale: { runtime: null, app: '9.0.0+new' } }))
     registry!.close('ws1')
 
     const same = openLocal(fakeRuntime({ build: '9.0.0+new' }), {}, undefined, '9.0.0+new')
-    await expect(same.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
+    await vi.waitFor(() => expect(same.state).toEqual({ kind: 'connected' }))
   })
 
   it('stops retrying when the runtime refuses the client', async () => {

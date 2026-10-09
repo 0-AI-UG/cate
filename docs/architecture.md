@@ -813,13 +813,18 @@ fails to compile when a registered capability is missing.
 
 ### 7.10 Versions
 
-- The client and runtime compare protocol majors on `hello`. The runtime
-  also sends its build: the version plus a hash of what the install is made
-  of (the sources, bundled skills, T3 patches and the lockfile)
-  (`scripts/build-id.mjs`), baked into the daemon bundle and the desktop app.
-  The desktop client treats a runtime of another build (or none) like another
-  protocol major: every call fails until the runtime runs the app's build.
-- The fix is `runtime.update { version, build }` with the client's own
+- The client and runtime compare protocol majors on `hello`: that alone
+  decides compatibility, so clients of different releases or builds of one
+  protocol (the App Store iOS app, teammates' desktops) share a runtime.
+  The runtime also sends its build: the version plus a hash of what the
+  install is made of (the sources, bundled skills, T3 patches and the
+  lockfile) (`scripts/build-id.mjs`), baked into the daemon bundle and the
+  desktop app. A runtime of another build of the same protocol connects as
+  `stale` and is fully usable. The desktop restarts a stale runtime on its
+  own machine into its build once per connection, and only while nothing
+  else uses it (`ifIdle`, below); otherwise it keeps running as it is.
+- Another protocol major answers only `crossMajor` methods. The fix is
+  `runtime.update { version, build }` with the client's own
   version and build: the daemon restarts into the install of that build, or
   downloads release `version` from GitHub Releases (checked against its
   `.sha256`) when the build is not on its machine, refusing a release of
@@ -829,7 +834,7 @@ fails to compile when a registered capability is missing.
 - When nothing else uses the runtime the client updates it without asking:
   it sends `ifIdle`, which the daemon refuses (`dirty`) while another client
   is connected or work runs. Otherwise the workspace's cover shows both
-  builds and says what updating ends before it acts (an incompatible runtime
+  versions and says what updating ends before it acts (an incompatible runtime
   answers only `crossMajor` methods, so it cannot list them). A runtime newer
   than the app is never moved back to the app's version: the cover asks to
   update the app. The question is asked in that workspace only, never in a
