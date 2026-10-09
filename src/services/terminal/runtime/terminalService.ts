@@ -48,6 +48,9 @@ import { TerminalLog, isSafeLogKey, readSavedScreen, removeLogFiles } from './te
 
 /** How long shells get to end their jobs on shutdown before SIGKILL. */
 const SHUTDOWN_GRACE_MS = 1_000
+/** The exit code observers get for a terminal closed or never spawned. */
+const CLOSED_EXIT_CODE = -1
+
 export interface PtyProcess {
   readonly pid: number
   onData(listener: (data: string) => void): unknown
@@ -511,7 +514,9 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     term.log.writeScrollbackSync(capture.screen + capture.pending.join(''))
   }
 
-  const onPtyExit = (term: Term, exitCode: number): void => {
+  /** Ends a terminal once, whichever comes first: its PTY exits, it is
+   *  closed. Viewers get the exit and exit observers are told. */
+  const endTerminal = (term: Term, exitCode: number): void => {
     if (!term.alive) return
     term.alive = false
     term.exitCode = exitCode
@@ -558,6 +563,29 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     return plan
   }
 
+  const spawnWithEnv = async (
+    id: string,
+    panelId: string | null,
+    cwd: string,
+    params: SpawnParams,
+    executable: string,
+    args: readonly string[],
+  ): Promise<PtyProcess> => {
+    let env = sanitizeEnv(deps.env())
+    for (const contribute of envContributors) {
+      const info: SpawnInfo = { terminalId: id, panelId, cwd, launch: params.launch ?? null, executable, args, env }
+      try {
+        const patch = await contribute(info)
+        if (patch) env = { ...env, ...patch }
+      } catch (err) {
+        log.warn('terminal env contributor failed: %O', err)
+      }
+    }
+    // Trust may have been revoked while contributors ran.
+    deps.trust.requireTrusted()
+    return spawnPty(executable, [...args], { name: 'xterm-256color', cols: params.cols, rows: params.rows, cwd, env })
+  }
+
   const service: TerminalService = {
     async spawn(params) {
       deps.trust.requireTrusted()
@@ -570,20 +598,15 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       const args = plan.command?.args ?? shell!.args
       const id = randomUUID()
 
-      let env = sanitizeEnv(deps.env())
-      for (const contribute of envContributors) {
-        const info: SpawnInfo = { terminalId: id, panelId, cwd, launch: params.launch ?? null, executable, args, env }
-        try {
-          const patch = await contribute(info)
-          if (patch) env = { ...env, ...patch }
-        } catch (err) {
-          log.warn('terminal env contributor failed: %O', err)
-        }
+      // From here the env contributors know the terminal: a spawn that fails
+      // ends it for them like an exit.
+      let pty: PtyProcess
+      try {
+        pty = await spawnWithEnv(id, panelId, cwd, params, executable, args)
+      } catch (err) {
+        notify(exitObservers, id, CLOSED_EXIT_CODE)
+        throw err
       }
-      // Trust may have been revoked while contributors ran.
-      deps.trust.requireTrusted()
-
-      const pty = await spawnPty(executable, [...args], { name: 'xterm-256color', cols: params.cols, rows: params.rows, cwd, env })
       const logKey = panelId ?? id
       const term: Term = {
         id,
@@ -621,7 +644,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       if (shell?.notice) output(term, shell.notice, false)
 
       pty.onData((data) => { if (term.alive) output(term, data, true) })
-      pty.onExit(({ exitCode }) => onPtyExit(term, exitCode))
+      pty.onExit(({ exitCode }) => endTerminal(term, exitCode))
       if (plan.input) pty.write(plan.input + '\r')
 
       syncTimers()
@@ -715,9 +738,10 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         viewer.sink.end({ reason: 'closed' })
       }
       terms.delete(id)
-      term.alive = false
+      // Its log files go below, so nothing to save.
       term.log?.dispose()
       term.log = null
+      endTerminal(term, CLOSED_EXIT_CODE)
       term.screen.dispose()
       const key = term.panelId ?? term.id
       if (isSafeLogKey(key)) removeLogFiles(deps.logDir, key)

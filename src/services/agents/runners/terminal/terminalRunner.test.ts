@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { panelDefinition } from '@panels/definitions'
-import type { ActivityScan, EnvContributor, LaunchResolver, SpawnInfo } from '@services/terminal/runtime'
+import { createTerminalService, type ActivityScan, type EnvContributor, type LaunchResolver, type PtyProcess, type PtySpawner, type SpawnInfo } from '@services/terminal/runtime'
+import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentNotificationEvent, type TerminalResumeStamp } from '../../contract'
 import { AGENT_SESSION_STORES, createAgentsRuntime, type AgentsDocument, type AgentsRuntime, type RelationContextMode } from '../../runtime'
@@ -274,6 +275,57 @@ describe('terminal runner', () => {
     expect(runner.terminalOf('term')).toBeNull()
     expect(agents.registry.sessionFor('term')).toBeNull()
     expect(changes).toHaveBeenLastCalledWith({ term: null })
+  })
+})
+
+describe('terminal runner over the terminal service', () => {
+  // As node-pty: a killed PTY reports its exit later, not inside kill().
+  const latePty = (): PtySpawner => () => {
+    const exits: Array<(e: { exitCode: number }) => void> = []
+    const pty: PtyProcess = {
+      pid: 4242,
+      onData: () => {},
+      onExit: (listener) => { exits.push(listener) },
+      write: () => {},
+      resize: () => {},
+      kill: () => { setTimeout(() => { for (const listener of exits) listener({ exitCode: 0 }) }, 0) },
+      pause: () => {},
+      resume: () => {},
+    }
+    return pty
+  }
+  const service = (spawnPty: PtySpawner) => createTerminalService({
+    root,
+    logDir: path.join(root, 'logs'),
+    trust: { isTrusted: () => true, requireTrusted: () => {} },
+    settings: { getAll: () => ({ defaultShellPath: '', terminalScrollback: 100, autoSuspendIdleTerminals: false }), subscribe: () => () => {} },
+    log: createLogger('test'),
+    env: () => ({ PATH: '/usr/bin' }),
+    spawnPty,
+    resolveShell: () => ({ path: '/bin/sh', args: [] }),
+    signalGroup: () => {},
+  })
+
+  it('forgets a terminal that was closed', async () => {
+    const terminals = service(latePty())
+    runner.dispose()
+    runner = createTerminalRunner(agents, terminals)
+    const { id } = await terminals.spawn({ cols: 80, rows: 24, panelId: 'term' })
+    expect(runner.terminalOf('term')).toBe(id)
+    terminals.close(id)
+    await new Promise((r) => setTimeout(r, 10))
+    expect(runner.terminalOf('term')).toBeNull()
+    await terminals.shutdown()
+  })
+
+  it('forgets a terminal whose spawn failed', async () => {
+    const terminals = service(() => { throw new Error('posix_spawnp failed') })
+    runner.dispose()
+    runner = createTerminalRunner(agents, terminals)
+    await expect(terminals.spawn({ cols: 80, rows: 24, panelId: 'term' })).rejects.toThrow()
+    expect(runner.terminalOf('term')).toBeNull()
+    await expect(runner.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-not-running' })
+    await terminals.shutdown()
   })
 })
 

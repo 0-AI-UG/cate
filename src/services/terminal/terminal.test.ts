@@ -449,6 +449,42 @@ describe('terminal service', () => {
   })
 })
 
+describe('terminal service: ending terminals', () => {
+  // node-pty reports the exit of a killed PTY later, not inside kill().
+  class LatePty extends FakePty {
+    kill() { this.killed = true; setTimeout(() => this.exit(0), 0) }
+  }
+
+  it('tells exit observers once when a terminal is closed', async () => {
+    const { service } = setup({ spawnPty: (file, args, options) => new LatePty(file, args, options) })
+    const exits: string[] = []
+    service.onExit((id) => exits.push(id))
+    const { id } = await service.spawn({ cols: 80, rows: 24 })
+    service.close(id)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(exits).toEqual([id])
+  })
+
+  it('tells exit observers about a terminal whose spawn failed after the env contributors saw it', async () => {
+    const { service } = setup({ spawnPty: () => { throw new Error('posix_spawnp failed') } })
+    const seen: string[] = []
+    service.registerEnvContributor((info) => { seen.push(info.terminalId) })
+    const exits: string[] = []
+    service.onExit((id) => exits.push(id))
+    await expect(service.spawn({ cols: 80, rows: 24 })).rejects.toThrow('posix_spawnp failed')
+    expect(exits).toEqual(seen)
+  })
+
+  it('tells exit observers about a spawn refused by the trust re-check', async () => {
+    const { service, trust } = setup()
+    service.registerEnvContributor(() => { trust.trusted = false })
+    const exits: string[] = []
+    service.onExit((id) => exits.push(id))
+    await expect(service.spawn({ cols: 80, rows: 24 })).rejects.toMatchObject({ code: 'untrusted' })
+    expect(exits).toHaveLength(1)
+  })
+})
+
 const posixIt = process.platform === 'win32' ? it.skip : it
 
 describe('terminal service with node-pty', () => {
