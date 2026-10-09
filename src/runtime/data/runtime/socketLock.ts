@@ -35,24 +35,21 @@ export async function acquireRuntimeSocket(
 
   const probeMs = options.probeTimeoutMs ?? 1000
   if (await socketAnswers(endpoint, probeMs)) return running
-  if (platform !== 'win32') {
-    await awaitPreviousOwner(dataDir, options.ownerExitMs ?? RUNTIME_STOP_DEADLINE_MS + 1000)
-    // Another start may have bound while this one waited.
-    if (await socketAnswers(endpoint, probeMs)) return running
+  if (platform !== 'win32') await awaitPreviousOwner(dataDir, options.ownerExitMs ?? RUNTIME_STOP_DEADLINE_MS + 1000)
+  // Of two starts binding a free endpoint, exactly one succeeds.
+  let server = await tryListen(endpoint)
+  if (!server) {
+    if (platform === 'win32' || await socketAnswers(endpoint, probeMs)) return running
+    // A socket file nobody answers on, left by a daemon that died.
     await removeStaleSocket(endpoint)
+    server = await tryListen(endpoint)
+    if (!server) {
+      if (await socketAnswers(endpoint, probeMs)) return running
+      throw new Error(`${endpoint} is in use and nothing answers on it`)
+    }
+    // Two starts taking over the same dead daemon's socket can still both
+    // unlink and bind in the gap between the other's probe and its bind.
   }
-
-  const server = net.createServer()
-  try {
-    await listen(server, endpoint)
-  } catch (error) {
-    server.close()
-    if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE' && await socketAnswers(endpoint, probeMs)) return running
-    throw error
-  }
-  // Two starts can still both unlink and bind in the gap between the other's
-  // last probe and its bind; it needs a crashed daemon plus two starts within
-  // a few milliseconds.
   if (platform !== 'win32') await fs.chmod(endpoint, 0o600)
   return { kind: 'acquired', server, endpoint }
 }
@@ -119,13 +116,19 @@ async function removeStaleSocket(endpoint: string): Promise<void> {
   await fs.rm(endpoint, { force: true })
 }
 
-function listen(server: net.Server, endpoint: string): Promise<void> {
+/** A server bound to `endpoint`, or null when the endpoint is in use. */
+function tryListen(endpoint: string): Promise<net.Server | null> {
+  const server = net.createServer()
   return new Promise((resolve, reject) => {
-    const onError = (error: Error) => reject(error)
+    const onError = (error: NodeJS.ErrnoException) => {
+      server.close()
+      if (error.code === 'EADDRINUSE') resolve(null)
+      else reject(error)
+    }
     server.once('error', onError)
     server.listen(endpoint, () => {
       server.off('error', onError)
-      resolve()
+      resolve(server)
     })
   })
 }
