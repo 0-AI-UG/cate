@@ -164,6 +164,8 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   private recordsError: string | null = null
   private comparisonKey = ''
   private generation = 0
+  /** A checkout the record moved to while a file operation ran. */
+  private queuedCheckout: string | null = null
   private activeLoads = 0
   private queue: Array<{ run(): void; reject(error: Error): void }> = []
   private revealSeq = 1
@@ -224,6 +226,9 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       return undefined
     } finally {
       this.set({ [flag]: false })
+      const queued = flag === 'busy' ? this.queuedCheckout : null
+      this.queuedCheckout = null
+      if (queued && !this.disposed && reviewRepoPath(this.record.fields) === queued) this.switchCheckout({ path: queued })
     }
   }
 
@@ -257,7 +262,11 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
 
   protected override recordChanged(previous: PanelRecord): void {
     const next = reviewRepoPath(this.record.fields)
-    if (next && next !== reviewRepoPath(previous.fields) && next !== this.review.repoPath) this.switchCheckout({ path: next })
+    if (next && next !== reviewRepoPath(previous.fields) && next !== this.review.repoPath) {
+      // A record change (undo, another client) is followed once a file
+      // operation in progress ends.
+      if (!this.switchCheckout({ path: next })) this.queuedCheckout = next
+    }
   }
 
   // ---- Git comparison --------------------------------------------------------

@@ -237,6 +237,18 @@ it('switches worktrees by id and follows the checkout in the record', async () =
   expect(saved().notes![0].body).toBe('Main note')
 })
 
+it('follows a record checkout change that came while a commit ran, once it ends', async () => {
+  let finish!: () => void
+  repo.commit.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
+  const committing = op({ kind: 'commit', message: 'm' })
+  await vi.waitFor(() => expect(snap().busy).toBe(true))
+  document.apply({ kind: 'updatePanel', id: 'review', patch: { fields: { repoPath: '/feature' } } })
+  session.updateRecord(document.get().panels.review!)
+  finish()
+  await committing
+  await vi.waitFor(() => expect(snap().review.repoPath).toBe('/feature'))
+})
+
 it('restores its persisted review instead of the record request', async () => {
   await op({ kind: 'setSpec', spec: { kind: 'staged' } })
   session.dispose('shutdown')
