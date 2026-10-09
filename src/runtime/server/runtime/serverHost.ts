@@ -34,8 +34,8 @@ export type ServerExitListener = (id: string, code: number | null, signal: strin
 
 export interface ServerHost {
   start(opts: ServerStartOptions, onOutput: ServerOutputListener, onExit: ServerExitListener): Promise<ServerHandle>
-  /** SIGTERM, then SIGKILL after a second. */
-  stop(id: string): void
+  /** SIGTERM, then SIGKILL after 3 s; resolves once the child exited. */
+  stop(id: string): Promise<void>
   /** SIGKILL every child now (daemon shutdown). */
   killAll(): void
   running(): number
@@ -44,6 +44,7 @@ export interface ServerHost {
 interface PidRecord { pid: number; id: string; ownerPid: number; command: string; startedAt: string }
 
 const READY_PROBE_INTERVAL_MS = 150
+const STOP_GRACE_MS = 3_000
 const OUTPUT_TAIL_LIMIT = 8192
 
 function readPidFile(file: string): PidRecord[] {
@@ -121,10 +122,13 @@ export function createServerHost(deps: ServerHostDeps): ServerHost {
   const recordPid = (record: PidRecord) => writePidFile(deps.pidFile, [...readPidFile(deps.pidFile), record])
   const forgetPid = (pid: number) => writePidFile(deps.pidFile, readPidFile(deps.pidFile).filter((r) => r.pid !== pid))
 
-  const killChild = (child: ChildProcess) => {
+  const killChild = (child: ChildProcess): Promise<void> => {
+    if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve()
+    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
     try { child.kill('SIGTERM') } catch { /* gone */ }
-    const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* gone */ } }, 1000)
+    const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch { /* gone */ } }, STOP_GRACE_MS)
     timer.unref?.()
+    return exited.finally(() => clearTimeout(timer))
   }
 
   const resolveArg = (value: string) => value.replaceAll(RUNTIME_INSTALL_ROOT_PLACEHOLDER, deps.installDir)
@@ -184,7 +188,7 @@ export function createServerHost(deps: ServerHostDeps): ServerHost {
           settled = true
           clearTimers()
           children.delete(id)
-          killChild(child)
+          void killChild(child)
           reject(new Error(message))
         }
         const exited = (code: number | null, signal: string | null, message: string) => {
@@ -217,11 +221,11 @@ export function createServerHost(deps: ServerHostDeps): ServerHost {
       })
     },
 
-    stop(id) {
+    async stop(id) {
       const child = children.get(id)
       if (!child) return
       children.delete(id)
-      killChild(child)
+      await killChild(child)
     },
 
     killAll() {

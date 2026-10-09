@@ -121,7 +121,7 @@ beforeEach(async () => {
       exits.set(id, onExit)
       return { id, pid: 100 + next, port: t3.port }
     }),
-    stop: vi.fn<ServerHost['stop']>((id) => exits.get(id)?.(id, null, 'SIGTERM')),
+    stop: vi.fn<ServerHost['stop']>(async (id) => exits.get(id)?.(id, null, 'SIGTERM')),
   }
   const write = vi.fn<(data: string) => void>()
   const kill = vi.fn<() => void>()
@@ -136,6 +136,24 @@ afterEach(async () => {
 })
 
 describe('T3 harness', () => {
+  it('a restart starts the next harness only once the previous process exited', async () => {
+    const events: string[] = []
+    server.stop.mockImplementation((id) => {
+      events.push(`stop ${id}`)
+      return new Promise<void>((resolve) => setTimeout(() => {
+        events.push(`exit ${id}`)
+        exits.get(id)?.(id, null, 'SIGTERM')
+        resolve()
+      }, 100))
+    })
+    const start = server.start.getMockImplementation()!
+    server.start.mockImplementation((...args) => { events.push('start'); return start(...args) })
+    await runtime.panelUrl({})
+    await runtime.restart({})
+    await runtime.panelUrl({})
+    expect(events).toEqual(['start', 'stop srv-1', 'exit srv-1', 'start'])
+  })
+
   it('runs one instance per checkout under the workspace data dir, with the cate socket and token', async () => {
     const [first, second] = await Promise.all([runtime.panelUrl({}), runtime.panelUrl({ threadId: 'saved' })])
     expect(server.start).toHaveBeenCalledOnce()

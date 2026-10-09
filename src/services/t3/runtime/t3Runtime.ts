@@ -150,6 +150,9 @@ function errorMessage(error: unknown): string {
 
 export class T3Runtime {
   private readonly states = new Map<string, InstanceState>()
+  /** A checkout's harness being stopped: the next start waits for its exit,
+   *  so two harnesses never share one state directory. */
+  private readonly stopping = new Map<string, Promise<void>>()
   /** Checkouts whose providers page was opened: their settings are published
    *  on shutdown in case the page never reported closing. */
   private readonly providerPages = new Set<string>()
@@ -230,10 +233,11 @@ export class T3Runtime {
     if (existing?.start) return existing.start
 
     const state: InstanceState = { phase: 'starting' }
-    const start = this.startInstance(checkout, state).then((instance) => {
+    const previous = this.stopping.get(checkout) ?? Promise.resolve()
+    const start = previous.then(() => this.startInstance(checkout, state)).then((instance) => {
       if (state.cancelled) {
         instance.shells.stop()
-        this.deps.server.stop(instance.serverId)
+        void this.deps.server.stop(instance.serverId)
         throw new Error('The T3 harness start was cancelled')
       }
       state.phase = 'running'
@@ -324,7 +328,7 @@ export class T3Runtime {
       this.log.info('running instance=%s pid=%d port=%d', paths.instanceId, handle.pid, handle.port)
       return { checkout, paths, serverId: handle.id, port: handle.port, url, environmentId, cookie, shells }
     } catch (error) {
-      this.deps.server.stop(handle.id)
+      await this.deps.server.stop(handle.id)
       throw error
     }
   }
@@ -356,16 +360,20 @@ export class T3Runtime {
     return pair
   }
 
-  private async stopHarness(checkout: string): Promise<void> {
+  private stopHarness(checkout: string): Promise<void> {
     const state = this.states.get(checkout)
-    if (!state) return
+    if (!state) return this.stopping.get(checkout) ?? Promise.resolve()
     this.states.delete(checkout)
     state.cancelled = true
-    const instance = state.instance ?? (state.start ? await state.start.catch(() => undefined) : undefined)
-    state.instance = undefined
-    if (!instance) return
-    instance.shells.stop()
-    this.deps.server.stop(instance.serverId)
+    const stopped = (async () => {
+      const instance = state.instance ?? (state.start ? await state.start.catch(() => undefined) : undefined)
+      state.instance = undefined
+      if (!instance) return
+      instance.shells.stop()
+      await this.deps.server.stop(instance.serverId)
+    })().finally(() => { if (this.stopping.get(checkout) === stopped) this.stopping.delete(checkout) })
+    this.stopping.set(checkout, stopped)
+    return stopped
   }
 
   // ---- Thread shells ---------------------------------------------------------
