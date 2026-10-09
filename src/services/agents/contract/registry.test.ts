@@ -100,7 +100,7 @@ describe('agent registry coverage', () => {
 
 test('the t3 runner exists exactly for claude-code, codex, cursor, grok and opencode', () => {
   expect(T3_AGENTS.map((a) => a.id)).toEqual(['claude-code', 'codex', 'cursor', 'grok', 'opencode'])
-  expect(T3_AGENTS.map((a) => a.runners.t3.driverId).sort()).toEqual(['claudeAgent', 'codex', 'cursor', 'grok', 'opencode'])
+  expect(T3_AGENTS.map((a) => a.runners.t3.providerId).sort()).toEqual(['claude', 'codex', 'cursor', 'grok', 'opencode'])
   for (const provider of T3_AGENTS) expect(provider.skills).not.toBeNull()
 })
 

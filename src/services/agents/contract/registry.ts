@@ -17,6 +17,7 @@
 
 import type { SkillTargetId } from '@workspace/skills/contract'
 import { AGENT_HOOK_SPECS, type AgentHookSpec } from './hooks'
+import { t3ProviderNamed, type T3ProviderId } from '@services/t3/contract'
 
 export type AgentId =
   | 'claude-code'
@@ -51,8 +52,6 @@ export interface AgentSkillTarget {
   beta?: boolean
 }
 
-export type T3ProviderId = 'codex' | 'claude' | 'cursor' | 'grok' | 'opencode'
-export type T3DriverId = 'codex' | 'claudeAgent' | 'cursor' | 'grok' | 'opencode'
 
 export type AgentInterruptKey = 'escape' | 'ctrl-c'
 
@@ -85,7 +84,6 @@ export interface TerminalRunnerDef {
 
 export interface T3RunnerDef {
   providerId: T3ProviderId
-  driverId: T3DriverId
 }
 
 export interface AgentDef {
@@ -140,7 +138,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         promptArgs: (prompt) => [prompt],
         interruptKeys: ['escape'],
       },
-      t3: { providerId: 'claude', driverId: 'claudeAgent' },
+      t3: { providerId: 'claude' },
     },
     matchProcess: (n) => n === 'claude' || n === 'claude-code',
     promptContextHook: 'additional-context',
@@ -160,7 +158,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         promptArgs: (prompt) => [prompt],
         interruptKeys: ['ctrl-c'],
       },
-      t3: { providerId: 'codex', driverId: 'codex' },
+      t3: { providerId: 'codex' },
     },
     matchProcess: (n) => n === 'codex',
     promptContextHook: 'additional-context',
@@ -187,7 +185,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         promptArgs: (prompt) => [prompt],
         interruptKeys: ['escape'],
       },
-      t3: { providerId: 'cursor', driverId: 'cursor' },
+      t3: { providerId: 'cursor' },
     },
     matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
     promptContextHook: null,
@@ -212,7 +210,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         promptArgs: (prompt) => [prompt],
         interruptKeys: ['ctrl-c'],
       },
-      t3: { providerId: 'grok', driverId: 'grok' },
+      t3: { providerId: 'grok' },
     },
     matchProcess: (n) => n === 'grok' || /^grok-\d/.test(n),
     promptContextHook: null,
@@ -234,7 +232,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
         promptArgs: (prompt) => ['--prompt', prompt],
         interruptKeys: ['escape', 'escape'],
       },
-      t3: { providerId: 'opencode', driverId: 'opencode' },
+      t3: { providerId: 'opencode' },
     },
     matchProcess: (n) => n === 'opencode',
     promptContextHook: 'endpoint',
@@ -343,11 +341,10 @@ export function matchAgentDef(procName: string): AgentDef | null {
   return AGENTS.find((a) => a.matchProcess(lower)) ?? null
 }
 
-/** The agent behind a T3 provider. T3 has used both its public provider id
- *  and its internal driver id at integration boundaries, so accept either. */
+/** The agent behind a provider T3 names (its provider or driver id). */
 export function agentIdForT3Provider(provider: string): AgentId | null {
-  return AGENTS.find((agent) =>
-    agent.runners.t3?.providerId === provider || agent.runners.t3?.driverId === provider)?.id ?? null
+  const providerId = t3ProviderNamed(provider)?.providerId
+  return providerId ? AGENTS.find((agent) => agent.runners.t3?.providerId === providerId)?.id ?? null : null
 }
 
 // A resume command is typed into a restored shell, so the session id is

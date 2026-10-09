@@ -1,7 +1,8 @@
 // Starting an agent (`cate.agent.start`): what the CLI runs in a terminal in
 // place of the shell, and the agent CLIs a start can pick. Pure.
 
-import { AGENT_DEFS, type AgentId, type T3ProviderId } from './registry'
+import type { T3ProviderId } from '@services/t3/contract'
+import { AGENT_DEFS, type AgentId } from './registry'
 
 /** An agent CLI a start can pick (`cate.agent.types`). */
 export interface AgentTypeInfo {

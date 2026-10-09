@@ -1,27 +1,34 @@
-// The providers T3 runs: the agents registry's `runners.t3` entries (provider
-// and T3 driver id), plus what T3 itself needs to know of each.
+// The providers T3 runs, and what T3 needs to know of each. The agents
+// service maps its agents onto these (an agent's `runners.t3`); t3 knows
+// nothing of agents.
 
-import { AGENTS, type T3ProviderId } from '@services/agents/contract/registry'
-
-export type { T3ProviderId }
+export type T3ProviderId = 'codex' | 'claude' | 'cursor' | 'grok' | 'opencode'
+export type T3DriverId = 'codex' | 'claudeAgent' | 'cursor' | 'grok' | 'opencode'
 
 export interface T3ProviderDef {
   providerId: T3ProviderId
   /** Key under T3 settings' `providers`. */
-  driverId: string
+  driverId: T3DriverId
   /** Probing it launches a CLI process, so Cate leaves it off until chosen. */
   optIn: boolean
 }
 
-const OPT_IN: ReadonlySet<T3ProviderId> = new Set(['grok', 'opencode'])
-
-export const T3_PROVIDERS: readonly T3ProviderDef[] = AGENTS.flatMap((agent) => {
-  const t3 = agent.runners.t3
-  return t3 ? [{ providerId: t3.providerId, driverId: t3.driverId, optIn: OPT_IN.has(t3.providerId) }] : []
-})
+export const T3_PROVIDERS: readonly T3ProviderDef[] = [
+  { providerId: 'claude', driverId: 'claudeAgent', optIn: false },
+  { providerId: 'codex', driverId: 'codex', optIn: false },
+  { providerId: 'cursor', driverId: 'cursor', optIn: false },
+  { providerId: 'grok', driverId: 'grok', optIn: true },
+  { providerId: 'opencode', driverId: 'opencode', optIn: true },
+]
 
 export function t3Provider(providerId: T3ProviderId): T3ProviderDef {
   const def = T3_PROVIDERS.find((provider) => provider.providerId === providerId)
   if (!def) throw new Error(`Unknown agent provider ${providerId}`)
   return def
+}
+
+/** The provider T3 names. T3 has used both its public provider id and its
+ *  internal driver id at integration boundaries, so accept either. */
+export function t3ProviderNamed(name: string): T3ProviderDef | undefined {
+  return T3_PROVIDERS.find((provider) => provider.providerId === name || provider.driverId === name)
 }

@@ -156,6 +156,9 @@ const serviceRules = [
   forbid('terminal-no-agents', 'the terminal service never imports agents; agents plugs into its extension points',
     { path: ['^src/services/terminal/', '^src/shells/desktop/ui/services/terminal/'] },
     { path: ['^src/services/agents/', '^src/shells/desktop/ui/services/agents/'] }),
+  forbid('t3-no-agents', 'the t3 service never imports agents; agents maps its agents onto t3 providers',
+    { path: ['^src/services/t3/', '^src/shells/desktop/ui/services/t3/'] },
+    { path: ['^src/services/agents/', '^src/shells/desktop/ui/services/agents/'] }),
 ]
 
 module.exports = {
