@@ -249,6 +249,11 @@ while a debounced async write may be in flight.
   services, each with its own timeout. The deadline handler flushes again
   before exiting. `document.json` moves onto `kernel/state` (R12), which
   already handles the in-flight write; do that move as part of this fix.
+- Not reproduced: with a shutdown step that never ends, the debounced write
+  still lands within the stop deadline (the test's op was on disk), and a
+  stop during an in-flight write ends with the newest document (the write
+  loop writes again after the synchronous one). Both tests are kept as
+  guards; the `document.json` move happens in R7.
 
 **B11. A worktree interrupted during create or remove can never be removed.**
 `workspace/repository/runtime/repository.ts:186,219`: `creating` and

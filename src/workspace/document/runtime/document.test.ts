@@ -46,6 +46,18 @@ describe('document service', () => {
     doc.dispose()
   })
 
+  it('a stop while a write is in flight keeps the newest document on disk', async () => {
+    const doc = createDocumentService({ file, debounceMs: 60_000 })
+    doc.apply(addPanel('a'))
+    const writing = doc.flush()
+    doc.apply(addPanel('b'))
+    doc.dispose()
+    await writing.catch(() => {})
+    await new Promise((r) => setTimeout(r, 20))
+    const saved = JSON.parse(await fs.readFile(file, 'utf8')) as { document: { panels: Record<string, unknown> } }
+    expect(Object.keys(saved.document.panels)).toEqual(['a', 'b'])
+  })
+
   it('throws coded errors for failed runtime ops', () => {
     const doc = createDocumentService({ file })
     try {

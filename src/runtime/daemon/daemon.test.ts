@@ -186,6 +186,18 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     expect(exitedAt).toBeGreaterThan(0)
   })
 
+  it('a stuck shutdown step does not lose the last document change', async () => {
+    const lifecycle = createLifecycleBus()
+    lifecycle.onShutdown(() => new Promise<void>(() => {}))
+    const result = await serveWorkspace({ root, home, lifecycle, log: createLogger('test') })
+    if (result.kind !== 'serving') throw new Error('expected to serve')
+    result.daemon.workspace.document.apply({ kind: 'setWorktree', worktree: { id: 'wt-last', path: path.join(root, 'x'), color: 'blue', status: 'ready' } })
+    void result.daemon.stop({ kind: 'signal' })
+    await result.daemon.stopped
+    const saved = JSON.parse(fs.readFileSync(path.join(result.daemon.paths.dir, 'document.json'), 'utf8')) as { document: { worktrees: Record<string, unknown> } }
+    expect(Object.keys(saved.document.worktrees)).toContain('wt-last')
+  }, RUNTIME_STOP_DEADLINE_MS + 10_000)
+
   it('a stuck shutdown still resolves stopped once the stop deadline passes', async () => {
     const lifecycle = createLifecycleBus()
     lifecycle.onShutdown(() => new Promise<void>(() => {}))
