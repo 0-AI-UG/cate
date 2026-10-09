@@ -11,6 +11,7 @@ import type {
   AgentSession,
   PanelAgentState,
 } from '../contract'
+import type { StoredAgentChange } from './changes/store'
 
 /** One way agent sessions execute. Implemented by runners/terminal and runners/t3. */
 export interface AgentRunnerImpl {
@@ -30,6 +31,9 @@ export interface AgentRunnerImpl {
   interrupt(panelId: string): Promise<AgentSendResult>
   /** A panel's state may have changed. */
   onChange(listener: (panelId: string) => void): () => void
+  /** The panels that showed a recorded change this runner's sessions made,
+   *  or null when the change is not this runner's. */
+  changePanels(record: StoredAgentChange): string[] | null
 }
 
 export interface RunnerRegistry {
@@ -41,6 +45,8 @@ export interface RunnerRegistry {
   subscribe(listener: (change: AgentPanelStatesChange) => void): () => void
   /** Re-reads a panel's state, e.g. after its context was sent. */
   refresh(panelId: string): void
+  /** The panels that showed a recorded change (its runner answers). */
+  changePanels(record: StoredAgentChange): string[]
 }
 
 export interface RunnerRegistryOptions {
@@ -111,5 +117,12 @@ export function createRunnerRegistry(options: RunnerRegistryOptions = {}): Runne
       return () => { listeners.delete(listener) }
     },
     refresh,
+    changePanels(record) {
+      for (const runner of runners.keys()) {
+        const panels = runner.changePanels(record)
+        if (panels) return panels
+      }
+      return []
+    },
   }
 }

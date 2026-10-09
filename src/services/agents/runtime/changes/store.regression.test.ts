@@ -9,6 +9,15 @@ import { filesFromTool } from './edits'
 import { filterAgentChanges, summarizeAgentChanges } from '../../contract'
 import type { AgentId } from '../../contract'
 
+import type { StoredAgentChange } from './store'
+/** Stored records as the runners resolve them: a terminal's panel, or the
+ *  panels a thread was shown in. */
+const shown = (records: StoredAgentChange[]) => records.map((record) => ({
+  ...record,
+  panelIds: record.source === 'terminal' ? (record.panelId ? [record.panelId] : []) : record.panelIds ?? [],
+}))
+
+
 // Deliberately provider-shaped fixtures, not generated from our normalizer.
 const adapters = [
   { id: 'claude-code', tool: 'Edit', wrap: (input: unknown, output: unknown, session: string, call: string) => ({ hook_event_name: 'PostToolUse', session_id: session, tool_use_id: call, tool_name: 'Edit', tool_input: input, tool_response: output }) },
@@ -65,11 +74,11 @@ describe.each(adapters)('$id capture contract', (adapter) => {
     await post(adapter.id, { ...adapter.wrap({ ...input, new_string: 'next-turn' }, {}, 'session-one', 'call'), turn_id: 'turn-two' })
     const records = await hooks.listChanges('/repo')
     expect(records).toHaveLength(3)
-    const own = filterAgentChanges(records, { agentId: adapter.id, panelId: 'panel-one', turnId: 'turn-one' })
+    const own = filterAgentChanges(shown(records), { agentId: adapter.id, panelId: 'panel-one', turnId: 'turn-one' })
     expect(own).toHaveLength(1)
     expect(own[0]).toMatchObject({ sessionId: 'session-one', files: [{ path: 'shared.ts', coverage: 'fragment', additions: 1, deletions: 1 }] })
     expect(own[0].files[0].hunks.flatMap((h) => h.lines.map((l) => l.text))).toEqual(['before', 'after'])
-    expect(filterAgentChanges(records, { panelId: 'panel-two' })).toHaveLength(1)
+    expect(filterAgentChanges(shown(records), { panelId: 'panel-two' })).toHaveLength(1)
     expect(await createAgentChangesStore(path.join(directory, 'history')).list('/repo')).toEqual(records)
     expect(await hooks.listChanges('/other-repo')).toEqual([])
     for (const file of await readdir(path.join(directory, 'history'), { recursive: true, withFileTypes: true })) {
@@ -117,7 +126,7 @@ describe.each(['claude', 'codex', 'cursor', 'grok', 'opencode'])('%s canonical T
     await Promise.all([store.ingestT3('harness', event('one', 'completed')), store.ingestT3('harness', event('two', 'completed')), store.bind('/repo', 'one', 'panel-one')])
     await store.ingestT3('harness', event('one', 'completed'))
     expect(await store.list('/repo')).toHaveLength(2)
-    expect(filterAgentChanges(await store.list('/repo'), { panelId: 'panel-one' })).toMatchObject([{ sourceId: 'one', files: [{ path: 'one.ts', additions: 1, deletions: 1 }] }])
+    expect(filterAgentChanges(shown(await store.list('/repo')), { panelId: 'panel-one' })).toMatchObject([{ sourceId: 'one', files: [{ path: 'one.ts', additions: 1, deletions: 1 }] }])
     expect(await store.summary('harness', 'two', 'turn')).toMatchObject([{ path: 'two.ts' }])
   })
 })
@@ -140,5 +149,5 @@ it('executes the generated OpenCode plugin and retains child-session linkage', a
     await bridge.event({ event: { type: 'message.part.updated', properties: { part: { sessionID: 'child', type: 'tool', tool: 'edit', callID: 'edit', state: { status: 'completed', input: { filePath: 'plugin.ts', oldString: 'old', newString: 'new' } } } } } });
   `
   await new Promise<void>((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', script], { env, timeout: 10000 }, (error) => error ? reject(error) : resolve()))
-  expect(filterAgentChanges(await hooks.listChanges('/repo'), { sessionId: 'parent' })).toMatchObject([{ agentId: 'opencode', sessionId: 'child', parentSessionId: 'parent', files: [{ path: 'plugin.ts', additions: 1, deletions: 1 }] }])
+  expect(filterAgentChanges(shown(await hooks.listChanges('/repo')), { sessionId: 'parent' })).toMatchObject([{ agentId: 'opencode', sessionId: 'child', parentSessionId: 'parent', files: [{ path: 'plugin.ts', additions: 1, deletions: 1 }] }])
 })

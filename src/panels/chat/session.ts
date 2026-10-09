@@ -36,13 +36,11 @@ export interface ChatT3Service {
   watchThreadShells(listener: (event: T3ShellEvent) => void): () => void
 }
 
-/** A thread's recorded agent edits, from the agents service. */
+/** The panel's recorded agent edits, from the agents service. */
 export interface ChatChangesFeed {
-  /** Records that the thread's changes were shown in this panel. */
-  bind(checkout: string, threadId: string, panelId: string): Promise<void>
-  /** Per-turn files the thread changed that are still changed in the
-   *  checkout: now, then on every change. */
-  watch(checkout: string, threadId: string, listener: (turns: Record<string, ChatTurnChange[]>) => void): () => void
+  /** Per-turn files the panel's current conversation changed that are still
+   *  changed in the checkout: now, then on every change (null: none). */
+  watch(panelId: PanelId, listener: (changes: { sessionId: string; turns: Record<string, ChatTurnChange[]> } | null) => void): () => void
 }
 
 export interface ChatSessionDeps {
@@ -86,7 +84,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
   private shell: T3ShellSnapshot | undefined
   private stopShells: (() => void) | undefined
   private stopChanges: (() => void) | undefined
-  private changesKey = ''
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: ChatSessionDeps) {
     super(kit, record, initial(deps.root, chatThreadId(record) ?? null))
@@ -94,6 +91,11 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
 
   override start(): void {
     this.stopShells = this.deps.t3.watchThreadShells((event) => this.onShells(event))
+    // The agents service follows the panel's conversation; its session id
+    // is the thread.
+    this.stopChanges = this.deps.changes?.watch(this.panelId, (changes) => {
+      this.publish({ changes: changes && changes.sessionId === chatThreadId(this.record) ? { threadId: changes.sessionId, turns: changes.turns } : null })
+    })
     // Starting a harness can take a while; ops must not wait for it.
     void this.load()
   }
@@ -164,7 +166,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
           ...(filePath ? { focusedFile: filePath } : {}),
         },
       })
-      if (id && sessionId) void this.deps.changes?.bind(this.checkout(), sessionId, id).catch(() => undefined)
       return id !== null
     },
     openChat: ({ at, threadId, title }) => this.create('chat', {
@@ -183,7 +184,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     const generation = ++this.generation
     this.identity = identityOf(checkout, threadId)
     this.publish({ checkout, threadId: threadId ?? null, phase: 'loading', error: null })
-    this.bound()
     try {
       const target = await this.deps.t3.panelUrl({ checkout, ...(threadId ? { threadId } : {}), route: 'thread' })
       if (this.disposed || generation !== this.generation) return
@@ -238,7 +238,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     this.identity = identityOf(this.checkout(), threadId)
     this.applyDoc({ kind: 'updatePanel', id: this.panelId, patch: { fields: { threadId: threadId ?? null } } })
     this.publish({ threadId: threadId ?? null })
-    this.bound()
   }
 
   private onShells(event: T3ShellEvent): void {
@@ -257,23 +256,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
     this.shell = snapshot
     this.publish({ connected: snapshot.connected })
     if (snapshot.connected && (wasConnected === false || this.state.phase === 'error')) void this.reconnect()
-  }
-
-  /** Follows the current binding's change summaries. */
-  private bound(): void {
-    const checkout = this.checkout()
-    const threadId = chatThreadId(this.record)
-    const key = identityOf(checkout, threadId)
-    if (key === this.changesKey) return
-    this.changesKey = key
-    this.stopChanges?.()
-    this.stopChanges = undefined
-    this.publish({ changes: null })
-    if (!threadId || !this.deps.changes) return
-    void this.deps.changes.bind(checkout, threadId, this.panelId).catch(() => undefined)
-    this.stopChanges = this.deps.changes.watch(checkout, threadId, (turns) => {
-      if (chatThreadId(this.record) === threadId) this.publish({ changes: { threadId, turns } })
-    })
   }
 
   private requireBinding(threadId: string | undefined): void {

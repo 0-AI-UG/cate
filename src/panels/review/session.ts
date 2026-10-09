@@ -97,8 +97,6 @@ export interface ReviewAgents {
   send(panelId: string, prompt: string): Promise<void>
   /** A terminal panel's process exited. */
   onExit(listener: (panelId: string) => void): () => void
-  /** The T3 thread a chat panel shows. */
-  threadIdOf(panelId: string): string | undefined
 }
 
 export interface ReviewSessionDeps {
@@ -585,31 +583,20 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   recordedSelection(): AgentChangeRecord[] {
     const state = this.review
     const filter = state.agentChanges ?? {}
-    const thread = filter.panelId ? this.deps.agents.threadIdOf(filter.panelId) : undefined
     const status = this.status
     const pool = state.showHistory
       ? this.records
       : status ? activeAgentChanges(this.records, { isRepo: status.isRepo, statusFiles: status.files }) : []
-    return filterAgentChanges(pool, filter, thread)
+    return filterAgentChanges(pool, filter)
   }
 
   private publishRecorded(): void {
     if (!this.review.agentChanges) return
-    const panels = Object.keys(this.kit.document.get().panels)
-    const threadPanels = new Map<string, string[]>()
-    for (const id of panels) {
-      const thread = this.deps.agents.threadIdOf(id)
-      if (thread) threadPanels.set(thread, [...(threadPanels.get(thread) ?? []), id])
-    }
     const files: RecordedFileSummary[] = this.recordedSelection().flatMap((record) => {
-      const panelIds = record.source === 'terminal'
-        ? (record.panelId ? [record.panelId] : [])
-        : [...new Set([...(record.panelIds ?? []), ...(threadPanels.get(record.sourceId) ?? [])])]
       return record.files.map((file) => ({
         recordId: record.id,
         agentId: record.agentId,
-        source: record.source,
-        panelIds,
+        panelIds: record.panelIds,
         path: file.path,
         ...(file.oldPath ? { oldPath: file.oldPath } : {}),
         additions: file.additions,

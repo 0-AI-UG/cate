@@ -22,6 +22,7 @@ function setup() {
   const conversation = vi.fn(async () => ({ session, messages: [...messages] }))
   const runner: AgentRunnerImpl = {
     kind: 'terminal' as AgentRunner,
+    changePanels: () => null,
     state: (panelId) => states.get(panelId) ?? null,
     panelIds: () => states.keys(),
     send: async () => ({ ok: true }),

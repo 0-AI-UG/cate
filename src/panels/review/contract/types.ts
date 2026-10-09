@@ -107,8 +107,7 @@ export type ReviewComparisonKind = GitComparisonSpec['kind'] | 'agent'
 export interface RecordedFileSummary {
   recordId: string
   agentId: AgentId
-  source: 'terminal' | 't3'
-  /** Panels that showed the edit: its terminal, or chats of its thread. */
+  /** Panels that showed the edit's agent session. */
   panelIds: string[]
   path: string
   oldPath?: string

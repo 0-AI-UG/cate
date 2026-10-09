@@ -107,7 +107,6 @@ beforeEach(async () => {
         exitListeners.push(listener)
         return () => { exitListeners = exitListeners.filter((l) => l !== listener) }
       },
-      threadIdOf: () => undefined,
     },
   }
   await start()
@@ -304,7 +303,7 @@ it('sends open findings to the source agent and asks for another agent when it i
 it('lists recorded agent edits still changed in git, and serves their hunks on demand', async () => {
   const hunk = diff.hunks[0]
   records = [{
-    id: 'rec', agentId: 'codex', sessionId: 's', turnId: 't', source: 'terminal', sourceId: 'term', panelId: 'term', cwd: '/repo',
+    id: 'rec', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo',
     createdAt: '1', mode: 'operation',
     files: [
       { path: 'src/a.ts', hunks: [hunk], additions: 1, deletions: 0, coverage: 'patch' },

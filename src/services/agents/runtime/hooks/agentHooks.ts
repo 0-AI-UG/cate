@@ -29,7 +29,7 @@ import http from 'http'
 import os from 'os'
 import path from 'path'
 import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promises'
-import { createAgentChangesStore, type AgentChangeSource } from '../changes/store'
+import { createAgentChangesStore, type AgentChangeSource, type StoredAgentChange, type StoredChangesSnapshot } from '../changes/store'
 import { AGENT_SESSION_STORES, createAgentTitleTracker } from '../sessions'
 import type { AgentSessionStores } from '../sessions/types'
 import { HERMES_PLUGIN_ID, ensureHermesIntegration, inspectHermesIntegration } from './hermes'
@@ -53,8 +53,6 @@ import {
   type AgentHookAgentState,
   type AgentHookConfig,
   type AgentHookEvent,
-  type AgentChangeRecord,
-  type AgentChangesSnapshot,
   type AgentConversationMessage,
   type AgentId,
   type AgentSessionLocator,
@@ -73,8 +71,8 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024
 export interface AgentHooks {
   registerChangeSource(id: string, source: AgentChangeSource): void
   unregisterChangeSource(id: string): void
-  listChanges(cwd: string): Promise<AgentChangeRecord[]>
-  readChanges(cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot>
+  listChanges(cwd: string): Promise<StoredAgentChange[]>
+  readChanges(cwd: string, knownRevision?: string): Promise<StoredChangesSnapshot>
   bindChanges(cwd: string, threadId: string, panelId: string): Promise<void>
   /** Replace the graph context returned by this terminal's next and later
    * native prompt-submit hooks. Null clears it. */

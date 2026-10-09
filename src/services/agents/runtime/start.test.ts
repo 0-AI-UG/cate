@@ -45,6 +45,7 @@ beforeEach(() => {
     },
     resolveCheckout: async (cwd) => cwd ?? root,
     snapshot: async () => ({ nameByPid: new Map(), childrenByPid: new Map() }),
+    watchStatus: () => () => {},
   })
   ports = {
     terminals: {

@@ -174,7 +174,7 @@ it('shows recorded agent edits and fetches their hunks from the session', async 
   render(gitSnapshot({
     review: { ...gitSnapshot().review, agentChanges: { panelId: 'term' } },
     comparison: null,
-    recorded: { loading: false, error: null, files: [{ recordId: 'rec', agentId: 'codex', source: 'terminal', panelIds: ['term'], path: 'src/a.ts', additions: 1, deletions: 0, coverage: 'patch', lineCount: 1 }] },
+    recorded: { loading: false, error: null, files: [{ recordId: 'rec', agentId: 'codex', panelIds: ['term'], path: 'src/a.ts', additions: 1, deletions: 0, coverage: 'patch', lineCount: 1 }] },
   }))
   await flush()
   expect(send).toHaveBeenCalledWith({ kind: 'recordedDiff', recordId: 'rec', path: 'src/a.ts' })

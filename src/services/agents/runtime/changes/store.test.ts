@@ -9,6 +9,15 @@ import { AGENT_HOOK_SPECS, normalizeAgentHookPayload } from '../../contract'
 import type { AgentId } from '../../contract'
 import { createAgentHooks } from '../hooks/agentHooks'
 
+import type { StoredAgentChange } from './store'
+/** Stored records as the runners resolve them: a terminal's panel, or the
+ *  panels a thread was shown in. */
+const shown = (records: StoredAgentChange[]) => records.map((record) => ({
+  ...record,
+  panelIds: record.source === 'terminal' ? (record.panelId ? [record.panelId] : []) : record.panelIds ?? [],
+}))
+
+
 const patch = (file: string, before = 'old', after = 'new') => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n-${before}\n+${after}\n`
 let directory: string
 beforeEach(async () => { directory = await mkdtemp(path.join(os.tmpdir(), 'cate-changes-test-')) })
@@ -55,7 +64,7 @@ describe('reported agent changes', () => {
     store.registerSource('harness', { cwd, kind: 't3' })
     await store.ingestT3('harness', { provider: 'codex', type: 'turn.diff.updated', threadId: 'chat', turnId: 'turn', payload: { unifiedDiff: patch('a.ts') } })
     await store.bind(alias, 'chat', 'panel')
-    expect(filterAgentChanges(await store.list(alias), { panelId: 'panel' })).toHaveLength(1)
+    expect(filterAgentChanges(shown(await store.list(alias)), { panelId: 'panel' })).toHaveLength(1)
   })
   it('ingests real HTTP hook/provider posts with source-bound authorization', async () => {
     const hooks = createAgentHooks({ hooksDir: directory, changesDir: path.join(directory, 'history') })
@@ -124,7 +133,7 @@ describe('reported agent changes', () => {
     await store.ingestT3('harness', event('chat-a', patch('stale.ts')))
     const records = await createAgentChangesStore(directory).list('/repo')
     expect(records).toHaveLength(2)
-    expect(summarizeAgentChanges(filterAgentChanges(records, { panelId: 'panel-a' })).map((file) => file.path)).toEqual(['a.ts'])
+    expect(summarizeAgentChanges(filterAgentChanges(shown(records), { panelId: 'panel-a' })).map((file) => file.path)).toEqual(['a.ts'])
     expect((await store.summary('harness', 'chat-b', 'turn')).map((file) => file.path)).toEqual(['b.ts'])
     expect(await store.list('/another')).toEqual([])
     await store.ingestT3('harness', event('chat-a', '', '2026-09-06T00:00:02Z'))
@@ -140,6 +149,6 @@ describe('reported agent changes', () => {
     await store.ingestT3('harness', event)
     expect(await store.list('/repo')).toEqual([])
     await store.ingestT3('harness', { ...event, payload: { ...event.payload, status: 'completed' } })
-    expect(filterAgentChanges(await store.list('/repo'), { sessionId: 'chat' })[0]).toMatchObject({ sessionId: 'chat:child', parentSessionId: 'chat', sourceId: 'chat' })
+    expect(filterAgentChanges(shown(await store.list('/repo')), { sessionId: 'chat' })[0]).toMatchObject({ sessionId: 'chat:child', parentSessionId: 'chat', sourceId: 'chat' })
   })
 })

@@ -126,6 +126,7 @@ beforeEach(() => {
     document: doc.document,
     resolveCheckout: async (cwd) => cwd ?? root,
     snapshot: async () => procTree,
+    watchStatus: () => () => {},
     homeDir: tmp('home'),
     hookOptions: {
       titleRetryDelaysMs: [0],

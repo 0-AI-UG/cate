@@ -149,8 +149,26 @@ export function createT3Runner(agents: AgentsRuntime, t3: RunnerT3Service, bindi
     }
   }
 
+  /** A thread's recorded changes stay attributed to every panel that showed
+   *  it, so a chat that moves on keeps its history. Recorded once per run. */
+  const shown = new Set<string>()
+  const recordShown = (panelId: string): void => {
+    const binding = bindings.binding(panelId)
+    if (!binding?.threadId) return
+    const key = JSON.stringify([binding.checkout, binding.threadId, panelId])
+    if (shown.has(key)) return
+    shown.add(key)
+    void agents.resolveCheckout(binding.checkout)
+      .then((checkout) => hooks.bindChanges(checkout, binding.threadId!, panelId))
+      .catch(() => { shown.delete(key) })
+  }
+  for (const panelId of bindings.panelIds()) recordShown(panelId)
+
   const offShells = t3.watchThreadShells(onShells)
-  const offBindings = bindings.onChange(notify)
+  const offBindings = bindings.onChange((panelId) => {
+    recordShown(panelId)
+    notify(panelId)
+  })
 
   return {
     kind: 't3',
@@ -192,6 +210,11 @@ export function createT3Runner(agents: AgentsRuntime, t3: RunnerT3Service, bindi
       if (!session) return null
       const messages = await t3.readConversation({ checkout: session.cwd, threadId: session.sessionId })
       return messages ? { session, messages } : null
+    },
+    changePanels(record) {
+      if (record.source !== 't3') return null
+      const showing = [...bindings.panelIds()].filter((panelId) => bindings.binding(panelId)?.threadId === record.sourceId)
+      return [...new Set([...(record.panelIds ?? []), ...showing])].sort()
     },
     onChange(listener) {
       listeners.add(listener)

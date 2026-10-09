@@ -11,12 +11,6 @@ export function agentsCapabilityImpl(agents: AgentsRuntime, starter: AgentStarte
     send: ({ panelId, prompt }) => sendToAgent(agents, panelId, prompt),
     interrupt: ({ panelId }) => interruptAgent(agents, panelId),
     inspectHooks: ({ cwd }) => agents.inspectHooks(cwd),
-    async readChanges({ cwd, knownRevision }) {
-      return agents.hooks.readChanges(await agents.resolveCheckout(cwd), knownRevision)
-    },
-    async bindChanges({ cwd, threadId, panelId }) {
-      await agents.hooks.bindChanges(await agents.resolveCheckout(cwd), threadId, panelId)
-    },
     panel: ({ panelId }) => agents.panel(panelId),
     busy: () => ({ panelIds: agents.busy() }),
     panels(_params, sink) {

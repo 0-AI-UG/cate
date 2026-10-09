@@ -8,7 +8,6 @@ import {
   agentIdForT3Provider,
   summarizeAgentChanges,
   type AgentChangeRecord,
-  type AgentChangesSnapshot,
   type AgentHookEvent,
   type AgentId,
   type AgentToolCall,
@@ -18,6 +17,21 @@ import { filesFromPatch, filesFromTool, object, string } from './edits'
 /** Where a hook post or T3 event with edits comes from: a terminal's PTY or a
  *  T3 harness, bound to the checkout it runs in. */
 export interface AgentChangeSource { cwd: string; panelId?: string; kind: 'terminal' | 't3' }
+
+/** A record as stored: where it came from (a terminal's PTY, or a T3 thread
+ *  with the panels that showed it). The agents service resolves it to the
+ *  contract's record for consumers. */
+export type StoredAgentChange = Omit<AgentChangeRecord, 'panelIds'> & {
+  source: 'terminal' | 't3'
+  sourceId: string
+  panelId?: string
+  panelIds?: string[]
+}
+
+export interface StoredChangesSnapshot {
+  revision: string
+  records?: StoredAgentChange[]
+}
 
 export type AgentChangesStore = ReturnType<typeof createAgentChangesStore>
 
@@ -35,7 +49,7 @@ export function createAgentChangesStore(directory: string) {
   const queues = new Map<string, Set<Promise<void>>>()
   const hash = (value: string) => createHash('sha256').update(value).digest('hex')
   const folderFor = (cwd: string) => path.join(directory, hash(canonical(cwd)) + '.d')
-  type Entry = { record: AgentChangeRecord; receivedAt: number } | { threadId: string; panelId: string }
+  type Entry = { record: StoredAgentChange; receivedAt: number } | { threadId: string; panelId: string }
   const entries = new Map<string, Entry>()
 
   const publish = async (cwd: string, name: string, entry: Entry): Promise<void> => {
@@ -48,13 +62,13 @@ export function createAgentChangesStore(directory: string) {
       if (!active.size) queues.delete(cwd)
     }
   }
-  const save = (record: AgentChangeRecord) => {
+  const save = (record: StoredAgentChange) => {
     // Provider timestamps have millisecond precision; consecutive cumulative
     // snapshots can share one timestamp. Preserve their local receipt order.
     const receivedAt = performance.timeOrigin + performance.now()
     return publish(record.cwd, `${record.id}${record.mode === 'snapshot' ? '-' + hash(JSON.stringify([record, receivedAt])) : ''}.json`, { record, receivedAt })
   }
-  const readChanges = async (cwd: string, knownRevision?: string, attempt = 0): Promise<AgentChangesSnapshot> => {
+  const readChanges = async (cwd: string, knownRevision?: string, attempt = 0): Promise<StoredChangesSnapshot> => {
     cwd = canonical(cwd)
     await Promise.all(queues.get(cwd) ?? [])
     const folder = folderFor(cwd)
@@ -64,10 +78,10 @@ export function createAgentChangesStore(directory: string) {
     })).filter((name) => name.endsWith('.json')).sort()
     const revision = hash(JSON.stringify(names))
     if (knownRevision === revision) return { revision }
-    const records = new Map<string, AgentChangeRecord>()
+    const records = new Map<string, StoredAgentChange>()
     const bindings = new Map<string, Set<string>>()
     const receivedTimes = new Map<string, number>()
-    const latestSnapshots = new Map<string, { file: string; record: AgentChangeRecord; receivedAt: number }>()
+    const latestSnapshots = new Map<string, { file: string; record: StoredAgentChange; receivedAt: number }>()
     const superseded: string[] = []
     for (const name of names) {
       const file = path.join(folder, name)

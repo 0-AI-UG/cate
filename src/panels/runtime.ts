@@ -15,7 +15,6 @@ import type { ConnectedEditors } from '@workspace/relations/runtime'
 import type { TerminalService } from '@services/terminal/runtime'
 import type { BrowserDataRuntime } from '@services/browser/runtime'
 import type { T3Runtime } from '@services/t3/runtime'
-import { activeAgentChanges, summarizeAgentChanges } from '@services/agents/contract'
 import {
   evaluateAgentCliHooks,
   inspectAgentCliHooks,
@@ -32,7 +31,7 @@ import { reviewPanel } from './review/runtime'
 import { BrowserCodeCells, browserCodeCapabilityImpl, browserPanel, browserServiceHandlers } from './browser/runtime'
 import { browserApi, browserCodeCapability } from './browser/contract'
 import { surfacePanel } from './surface/runtime'
-import { chatPanel, type ChatChangesFeed, type ChatThreads } from './chat/runtime'
+import { chatPanel, type ChatThreads } from './chat/runtime'
 import { canvasPanel } from './canvas/runtime'
 
 /** The runtime services the daemon hands panel types. */
@@ -141,7 +140,7 @@ const review: PanelRuntime = (services) => {
       writeText: async (p, text) => { await services.files.write(p, text) },
     },
     agents: {
-      readChanges: async (cwd, knownRevision) => agents.hooks.readChanges(await agents.resolveCheckout(cwd), knownRevision),
+      readChanges: (cwd, knownRevision) => agents.changes(cwd, knownRevision),
       async readiness(cwd) {
         const states = await inspectAgentCliHooks((dir) => agents.hooks.inspectWorkspace(dir), cwd)
         const config = agents.settings.agentHookInjection()
@@ -156,7 +155,6 @@ const review: PanelRuntime = (services) => {
         if (!result.ok) throw new Error(result.error)
       },
       onExit: (listener) => services.terminalRunner.onExit((panelId) => listener(panelId)),
-      threadIdOf: (panelId) => services.chatThreads.binding(panelId)?.threadId,
     },
   })
 }
@@ -182,45 +180,10 @@ const chat: PanelRuntime = (services) => {
       root: services.root,
       t3: services.t3,
       relationContext: (panelId, agentId) => agents.promptContext.prepareForSend(panelId, agentId),
-      changes: chatChanges(services),
+      changes: { watch: (panelId, listener) => agents.watchChanges(panelId, listener) },
       createPanel: (type, options) => factory?.createPanel(type, options) ?? null,
     }),
     attach: ({ factory: panelFactory }) => { factory = panelFactory },
-  }
-}
-
-/** A thread's recorded edits, summed per turn, counting only files still
- *  changed in the checkout: re-read whenever the checkout's status changes. */
-function chatChanges(services: PanelServices): ChatChangesFeed {
-  const { agents, repository } = services
-  return {
-    bind: async (checkout, threadId, panelId) => agents.hooks.bindChanges(await agents.resolveCheckout(checkout), threadId, panelId),
-    watch(checkout, threadId, listener) {
-      let stopped = false
-      let revision: string | undefined
-      let records: Parameters<typeof activeAgentChanges>[0] = []
-      let pending = Promise.resolve()
-      const stop = repository.monitors.subscribe(checkout, (status) => {
-        pending = pending.then(async () => {
-          try {
-            const snapshot = await agents.hooks.readChanges(await agents.resolveCheckout(checkout), revision)
-            if (snapshot.records) records = snapshot.records
-            revision = snapshot.revision
-          } catch {
-            return
-          }
-          if (stopped) return
-          const mine = activeAgentChanges(records, { isRepo: status.isRepo, statusFiles: status.files })
-            .filter((record) => record.source === 't3' && record.sourceId === threadId)
-          const turns = [...new Set(mine.map((record) => record.turnId))]
-          listener(Object.fromEntries(turns.map((turnId) => [turnId, summarizeAgentChanges(mine.filter((record) => record.turnId === turnId))])))
-        })
-      })
-      return () => {
-        stopped = true
-        stop()
-      }
-    },
   }
 }
 

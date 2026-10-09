@@ -1,17 +1,16 @@
 import type { AgentId } from './registry'
 import type { GitDiffHunk } from '@workspace/repository/contract'
 
-/** Agent identity owns a change. A panel is only a place that displayed it. */
+/** Agent identity owns a change. A panel is only a place that displayed it:
+ *  `panelIds` are the panels that showed the agent session, resolved by the
+ *  agents service (consumers never see terminals or threads). */
 export interface AgentChangeRecord {
   id: string
   agentId: AgentId
   sessionId: string
   turnId: string
   parentSessionId?: string
-  source: 'terminal' | 't3'
-  sourceId: string
-  panelId?: string
-  panelIds?: string[]
+  panelIds: string[]
   cwd: string
   createdAt: string
   /** Provider turn snapshots supersede tool edits for that session/turn. */
@@ -43,9 +42,16 @@ export interface AgentChangesSnapshot {
   records?: AgentChangeRecord[]
 }
 
-export function effectiveAgentChanges(records: readonly AgentChangeRecord[]): AgentChangeRecord[] {
-  const snapshots = new Map<string, AgentChangeRecord>()
-  const key = (r: AgentChangeRecord) => JSON.stringify([r.source, r.agentId, r.sessionId, r.turnId])
+/** What the helpers below read of a record, stored or resolved. */
+type ChangeLike = Pick<AgentChangeRecord, 'agentId' | 'sessionId' | 'turnId' | 'parentSessionId' | 'createdAt' | 'mode' | 'files'>
+
+/** Per-turn summaries of the changes of one agent session. */
+export type AgentSessionChanges = { sessionId: string; turns: Record<string, AgentChangeSummary[]> }
+export type AgentChangeSummary = { path: string; kind: 'modified'; additions: number; deletions: number }
+
+export function effectiveAgentChanges<R extends ChangeLike>(records: readonly R[]): R[] {
+  const snapshots = new Map<string, R>()
+  const key = (r: R) => JSON.stringify([r.agentId, r.sessionId, r.turnId])
   for (const record of records) {
     if (record.mode !== 'snapshot') continue
     const previous = snapshots.get(key(record))
@@ -54,23 +60,18 @@ export function effectiveAgentChanges(records: readonly AgentChangeRecord[]): Ag
   return records.filter((r) => !snapshots.has(key(r)) || snapshots.get(key(r)) === r)
 }
 
-export function filterAgentChanges(
-  records: readonly AgentChangeRecord[],
-  filter: AgentChangesFilter,
-  /** The current conversation also matches when opened in another panel. */
-  panelThreadId?: string,
-): AgentChangeRecord[] {
+export function filterAgentChanges(records: readonly AgentChangeRecord[], filter: AgentChangesFilter): AgentChangeRecord[] {
   return effectiveAgentChanges(records).filter((r) =>
     (!filter.agentId || r.agentId === filter.agentId)
-    && (!filter.panelId || r.panelId === filter.panelId || r.panelIds?.includes(filter.panelId) || (r.source === 't3' && r.sourceId === panelThreadId))
+    && (!filter.panelId || r.panelIds.includes(filter.panelId))
     && (!filter.sessionId || r.sessionId === filter.sessionId || r.parentSessionId === filter.sessionId)
     && (!filter.turnId || r.turnId === filter.turnId),
   )
 }
 
 /** Counts describe recorded edits, not the current checkout's net Git diff. */
-export function summarizeAgentChanges(records: readonly AgentChangeRecord[]) {
-  const files = new Map<string, { path: string; kind: 'modified'; additions: number; deletions: number }>()
+export function summarizeAgentChanges(records: readonly ChangeLike[]): AgentChangeSummary[] {
+  const files = new Map<string, AgentChangeSummary>()
   for (const record of effectiveAgentChanges(records)) for (const file of record.files) {
     const previous = files.get(file.path) ?? { path: file.path, kind: 'modified' as const, additions: 0, deletions: 0 }
     files.set(file.path, { ...previous, additions: previous.additions + file.additions, deletions: previous.deletions + file.deletions })
@@ -84,10 +85,10 @@ function comparablePath(value: string): string {
 
 /** Recorded edits still represented by a staged or unstaged file in the
  *  checkout. The durable records remain available as history. */
-export function activeAgentChanges(
-  records: readonly AgentChangeRecord[],
+export function activeAgentChanges<R extends ChangeLike>(
+  records: readonly R[],
   git: { isRepo: boolean; statusFiles: readonly { path: string }[] },
-): AgentChangeRecord[] {
+): R[] {
   const effective = effectiveAgentChanges(records)
   if (!git.isRepo) return effective
   const changed = new Set(git.statusFiles.map((file) => comparablePath(file.path)))

@@ -408,6 +408,7 @@ export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerm
       return () => { changeListeners.delete(listener) }
     },
     terminalOf: liveTerminal,
+    changePanels: (record) => record.source === 'terminal' ? (record.panelId ? [record.panelId] : []) : null,
     onExit(listener) {
       exitListeners.add(listener)
       return () => { exitListeners.delete(listener) }

@@ -7,6 +7,7 @@ import type { T3ShellEvent, T3Thread } from '@services/t3/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import type { AgentNotificationEvent } from '../../../contract'
 import { createAgentsRuntime, type AgentsDocument, type AgentsRuntime, type RelationContextMode } from '../..'
+import { createAgentChangesStore } from '../../changes/store'
 import { createT3Runner, type RunnerT3Service, type T3PanelBindings, type T3Runner } from './t3Runner'
 
 const CHECKOUT = '/repo'
@@ -36,6 +37,7 @@ let doc: ReturnType<typeof fakeDocument>
 let agents: AgentsRuntime
 let runner: T3Runner
 let notifications: AgentNotificationEvent[]
+let statusListener: (status: { isRepo: boolean; files: { path: string }[] }) => void = () => {}
 const dirs: string[] = []
 
 function publish(threads: Record<string, T3Thread>, connected = true): void {
@@ -78,6 +80,7 @@ beforeEach(() => {
     document: doc.document,
     resolveCheckout: async (cwd) => cwd ?? CHECKOUT,
     snapshot: async () => ({ nameByPid: new Map(), childrenByPid: new Map() }),
+    watchStatus: (_cwd, listener) => { statusListener = listener; return () => {} },
   })
   notifications = []
   agents.notifications.subscribe((event) => notifications.push(event))
@@ -92,6 +95,24 @@ afterEach(() => {
 })
 
 describe('t3 runner', () => {
+  it('attributes a thread\'s recorded edits to the panels showing it, and follows the panel\'s session', async () => {
+    const store = createAgentChangesStore(path.join(dirs.at(-1)!, 'changes'))
+    store.registerSource('harness', { cwd: CHECKOUT, kind: 't3' })
+    const diff = 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n'
+    await store.ingestT3('harness', { provider: 'codex', type: 'turn.diff.updated', threadId: 'thread-1', turnId: 'turn', payload: { unifiedDiff: diff } })
+    publish({ 'thread-1': idle() })
+
+    const { records } = await agents.changes(CHECKOUT)
+    expect(records).toMatchObject([{ sessionId: 'thread-1', panelIds: ['chat'] }])
+    expect(records![0]).not.toHaveProperty('sourceId')
+
+    const seen: unknown[] = []
+    const stop = agents.watchChanges('chat', (changes) => seen.push(changes))
+    statusListener({ isRepo: true, files: [{ path: 'a.ts' }] })
+    await vi.waitFor(() => expect(seen.at(-1)).toEqual({ sessionId: 'thread-1', turns: { turn: [{ path: 'a.ts', kind: 'modified', additions: 1, deletions: 1 }] } }))
+    stop()
+  })
+
   it('hosts nothing until the harness reports the panel\'s thread', () => {
     expect(agents.panel('chat')).toBeNull()
     publish({ 'thread-1': idle() })

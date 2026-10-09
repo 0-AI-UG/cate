@@ -1,5 +1,4 @@
 import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
-import type { AgentChangesSnapshot } from './changes'
 import type { AgentConversation, AgentConversationChange } from './conversation'
 import type { AgentHookAgentState } from './hooks'
 import type { AgentNotificationEvent, AgentRunner, PanelAgentState } from './session'
@@ -41,10 +40,6 @@ export const agentsCapability = defineCapability('agents', {
   methods: {
     /** Per-agent hook injection state of a checkout (defaults to the root). */
     inspectHooks: method<{ cwd?: string }, AgentHookAgentState[]>(),
-    /** Recorded agent edits in a checkout; an unchanged revision omits records. */
-    readChanges: method<{ cwd: string; knownRevision?: string }, AgentChangesSnapshot>(),
-    /** Record that a T3 thread's changes were shown in a panel. */
-    bindChanges: method<{ cwd: string; threadId: string; panelId: string }, void>({ mutates: true }),
     /** The agent a panel hosts, or null. */
     panel: method<{ panelId: string }, PanelAgentState | null>(),
     /** Agents running a turn right now (closing their panels interrupts them). */

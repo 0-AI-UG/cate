@@ -256,6 +256,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     document: agentsDocument(document),
     resolveCheckout,
     snapshot: snapshotProcessTree,
+    watchStatus: (cwd, listener) => repository.monitors.subscribe(cwd, listener),
     flushConnected: (panelId) => connectedEditors.flush(panelId),
     relationRole: (type) => relationRole(type),
     log: log.child('agents'),

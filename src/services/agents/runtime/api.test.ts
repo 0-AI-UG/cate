@@ -17,6 +17,7 @@ function fakeRunner(kind: AgentRunner) {
   const listeners = new Set<(panelId: string) => void>()
   const runner: AgentRunnerImpl = {
     kind,
+    changePanels: () => null,
     state: (panelId) => states.get(panelId) ?? null,
     panelIds: () => states.keys(),
     send: vi.fn(async () => ({ ok: true as const })),
@@ -78,6 +79,7 @@ beforeEach(() => {
     },
     resolveCheckout: async (cwd) => cwd ?? '/repo',
     snapshot: async () => ({ nameByPid: new Map(), childrenByPid: new Map() }),
+    watchStatus: () => () => {},
   })
   terminal = fakeRunner('terminal')
   t3 = fakeRunner('t3')
