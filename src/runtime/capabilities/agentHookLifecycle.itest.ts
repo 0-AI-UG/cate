@@ -109,6 +109,9 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           if (scenario === 'automatic-denial') {
             launch.args[1] = 'sonnet'
             launch.args.unshift('--permission-mode', 'auto')
+          } else if (agentId === 'claude-code') {
+            // Claude Code defaults to auto mode, which approves without a PermissionRequest.
+            launch.args.unshift('--permission-mode', 'default')
           }
           if (scenario === 'automatic-approval') {
             if (agentId === 'codex') {
