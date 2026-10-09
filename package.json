@@ -101,7 +101,7 @@
     "react-dom": "^18.3.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "simple-git": "^3.27.0",
+    "simple-git": "^4.0.1",
     "t3": "0.0.39",
     "tldts": "^7.4.9",
     "use-sync-external-store": "^1.6.0",
