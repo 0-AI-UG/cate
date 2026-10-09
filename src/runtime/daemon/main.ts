@@ -71,8 +71,9 @@ async function serve(args: ServeArgs): Promise<number> {
     createConsoleSink('warn'),
   ))
 
-  await prepareDaemonProcess()
-  const result = await serveWorkspace({ root, network: args.network, log })
+  // The login shell environment is captured once the socket is bound, so a
+  // slow shell profile does not hold up the client's start.
+  const result = await serveWorkspace({ root, network: args.network, log, prepareProcess: prepareDaemonProcess })
   if (result.kind === 'nested') {
     log.error(result.message)
     await result.closed

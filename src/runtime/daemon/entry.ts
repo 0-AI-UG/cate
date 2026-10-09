@@ -80,6 +80,10 @@ export interface ServeOptions {
   connect?: { url?: string; webSocket?: WebSocketFactory; peerConnection?: () => Promise<PeerConnectionFactory> }
   /** Panel types; default every panel in `@panels/runtime`. */
   panels?: readonly PanelRuntime[]
+  /** Runs once the socket is bound and before anything is spawned (the
+   *  daemon's login shell environment, `prepareDaemonProcess`). Clients
+   *  connect meanwhile and are served after it. */
+  prepareProcess?: () => Promise<void>
   /** Test seam: runs before the workspace restores. */
   beforeStart?: () => Promise<void>
 }
@@ -172,6 +176,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   // Written now, not once the workspace has restored: nesting checks and
   // install pruning read it to see this runtime while it starts.
   await writeInfo()
+  await options.prepareProcess?.()
 
   const secrets = openSecretsFile(paths.dir)
   const keys = await ensureRuntimeKeyPair(secrets)

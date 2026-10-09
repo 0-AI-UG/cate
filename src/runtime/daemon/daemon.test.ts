@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -8,6 +8,7 @@ import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
 import { RUNTIME_STOP_DEADLINE_MS } from '@runtime/data/contract'
 import { runtimeIdFor } from '@runtime/data/node'
+import { socketAnswers } from '@runtime/data/runtime'
 import { dialLocal } from '@runtime/transports/node'
 import { runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
@@ -185,6 +186,24 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     expect(result.kind).toBe('serving')
     expect(exitedAt).toBeGreaterThan(0)
   })
+
+  it('binds the socket before a slow process preparation finishes', async () => {
+    let release!: () => void
+    const started = Date.now()
+    const serving = serveWorkspace({
+      root,
+      home,
+      lifecycle: createLifecycleBus(),
+      log: createLogger('test'),
+      prepareProcess: () => new Promise<void>((resolve) => { release = resolve; setTimeout(resolve, 8_000) }),
+    })
+    const endpoint = path.join(home, '.cate', 'workspaces', await runtimeIdFor(root), 'runtime.sock')
+    await vi.waitFor(async () => expect(await socketAnswers(endpoint, 200)).toBe(true), { timeout: 1_000, interval: 50 })
+    expect(Date.now() - started).toBeLessThan(1_000)
+    release()
+    const result = await serving
+    if (result.kind === 'serving') await result.daemon.stop({ kind: 'signal' })
+  }, 15_000)
 
   it('a stuck shutdown step does not lose the last document change', async () => {
     const lifecycle = createLifecycleBus()
