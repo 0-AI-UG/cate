@@ -2,12 +2,11 @@
 // connected to it, compiled at the last moment so relation edits made right
 // before a submit are honored by terminals and chats alike.
 
-import { compileRelationContext, relationPanels, type RelationRoleOf } from '@workspace/relations/contract'
+import { compileRelationContext, relationContextMode, relationPanels, type RelationContextMode, type RelationRoleOf } from '@workspace/relations/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { AGENT_DEFS, type AgentId } from '../contract'
 
 /** `once`: sent with the next prompt, then off. `always`: every prompt. */
-export type RelationContextMode = 'once' | 'always' | 'off'
 
 /** The document as the agents service reads and writes it. */
 export interface AgentsDocument {
@@ -16,8 +15,6 @@ export interface AgentsDocument {
   relations(): Iterable<PanelRelation>
   /** Absolute checkout path of a worktree, if it is known. */
   worktreePath(worktreeId: string): string | undefined
-  /** A panel's relation context mode; `once` when never set. */
-  relationContextMode(panelId: string): RelationContextMode
   setRelationContextMode(panelId: string, mode: RelationContextMode): void
   /** The agent's own session title, shown until the user renames the panel. */
   setTitleFromAgent(panelId: string, title: string): void
@@ -58,7 +55,8 @@ export function addAgentPromptGuidance(context: string, agentId: AgentId | null)
 export function createPromptContext(deps: PromptContextDeps): PromptContext {
   const peek = (panelId: string, agentId: AgentId | null): string | null => {
     if (!deps.relationsEnabled()) return null
-    if (!deps.document.panel(panelId) || deps.document.relationContextMode(panelId) === 'off') return null
+    const record = deps.document.panel(panelId)
+    if (!record || relationContextMode(record.fields) === 'off') return null
     const panels = relationPanels(deps.document.panels(), deps.relationRole)
     const context = compileRelationContext(panelId, panels, [...deps.document.relations()])?.text
     return context ? addAgentPromptGuidance(context, agentId) : null
@@ -68,7 +66,8 @@ export function createPromptContext(deps: PromptContextDeps): PromptContext {
   const consume = (panelId: string, agentId: AgentId | null): string | null => {
     const context = peek(panelId, agentId)
     if (!context) return null
-    if (deps.document.relationContextMode(panelId) === 'once') {
+    const record = deps.document.panel(panelId)
+    if (record && relationContextMode(record.fields) === 'once') {
       deps.document.setRelationContextMode(panelId, 'off')
     }
     sent.set(panelId, Date.now())

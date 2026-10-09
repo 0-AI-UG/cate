@@ -73,7 +73,6 @@ beforeEach(() => {
       panels: () => panels,
       relations: () => [],
       worktreePath: () => undefined,
-      relationContextMode: () => 'once',
       setRelationContextMode: () => {},
       setTitleFromAgent: () => {},
       onChange: () => () => {},

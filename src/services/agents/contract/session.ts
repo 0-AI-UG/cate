@@ -24,12 +24,10 @@ export interface AgentSession {
   profile?: string
 }
 
-/** How relation context reaches an agent: as is, after guidance text, or
- *  not at all (its CLI has no prompt context hook). */
-export type AgentContextPolicy =
-  | { kind: 'plain' }
-  | { kind: 'guided'; guidance: string | null }
-  | { kind: 'unsupported' }
+/** Whether relation context reaches an agent (a CLI without a prompt
+ *  context hook cannot take it). What would go is the runtime's preview
+ *  (`agents.previewContext`). */
+export type AgentContextPolicy = 'supported' | 'unsupported'
 
 /** What one panel hosts: its agent and status, computed by the runner that
  *  owns it. A panel hosting an agent has one even before a session exists (a

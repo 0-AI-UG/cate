@@ -6,7 +6,8 @@ import { panelDefinition } from '@panels/definitions'
 import type { T3ShellEvent, T3Thread } from '@services/t3/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { createAgentsCore, type AgentsCore } from '../../core'
-import type { AgentsDocument, RelationContextMode } from '../../promptContext'
+import type {AgentsDocument } from '../../promptContext'
+import type { RelationContextMode } from '@workspace/relations/contract'
 import { createAgentChangesStore } from '../../changes/store'
 import { createT3Runner, type RunnerT3Service, type T3PanelBindings, type T3Runner } from './t3Runner'
 import type { NotificationEvent } from '@workspace/notifications/contract'
@@ -22,8 +23,11 @@ function fakeDocument(panels: PanelRecord[], relations: PanelRelation[]) {
     panels: () => panels,
     relations: () => relations,
     worktreePath: () => undefined,
-    relationContextMode: (id) => modes.get(id) ?? 'once',
-    setRelationContextMode: (id, mode) => { modes.set(id, mode) },
+    setRelationContextMode: (id, mode) => {
+      modes.set(id, mode)
+      const record = panels.find((panel) => panel.id === id)
+      if (record) record.fields = { ...record.fields, relationContextMode: mode }
+    },
     setTitleFromAgent: (panelId, title) => { titles.push({ panelId, title }) },
     onChange: () => () => {},
   }
@@ -124,7 +128,7 @@ describe('t3 runner', () => {
       agentName: 'Codex',
       label: 'Codex',
       takesOverPanel: false,
-      contextPolicy: { kind: 'plain' },
+      contextPolicy: 'supported',
       status: 'waitingForInput',
       present: true,
       canReceivePrompt: true,

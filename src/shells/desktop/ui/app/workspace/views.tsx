@@ -16,7 +16,7 @@ import {
   type CanvasToolbarAction,
   type CanvasToolbarItemProps,
 } from '../../client/layout/canvas'
-import { AgentChangesOverlay, AgentHooksOffOverlay, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
+import { AgentChangesOverlay, AgentHooksOffOverlay, agentContextPreview, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
 import { t3Conversations } from '@services/t3/client'
 import { T3ConversationMenu, UsageOverview } from '../../services/t3'
 import { SkillsDialog } from '../../workspace/skills'
@@ -154,6 +154,7 @@ export function registerWorkspaceViews(): () => void {
   installRelationUiPort({
     showMenu: async (items) => (await clientUi().showContextMenu?.(items.map((item) => (item.type === 'separator' ? { type: 'separator' } : { id: item.id, label: item.label, enabled: item.enabled })))) ?? null,
     useContextTransport: useAgentContextTransport,
+    previewContext: agentContextPreview,
     openTextPreview: ({ title, content }) => openTextPreview({ title, content }),
   })
   const stops = [

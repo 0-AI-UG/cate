@@ -42,6 +42,9 @@ export const agentsCapability = defineCapability('agents', {
     inspectHooks: method<{ cwd?: string }, AgentHookAgentState[]>(),
     /** The agent a panel hosts, or null. */
     panel: method<{ panelId: string }, PanelAgentState | null>(),
+    /** The relation context the panel's next prompt would take, exactly as
+     *  sent (null: none). */
+    previewContext: method<{ panelId: string }, string | null>(),
     /** Agents running a turn right now (closing their panels interrupts them). */
     busy: method<void, { panelIds: string[] }>(),
     /** The same functions as `cate agent start / types / send / interrupt`. */

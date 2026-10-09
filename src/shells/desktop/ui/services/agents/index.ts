@@ -21,7 +21,7 @@ export {
 export { AwaitingIndicator, RunningIndicator } from './indicators'
 export { useAgentTabDecorations, AgentChangesOverlay, AgentHooksOffOverlay } from './tabDecorations'
 export { AgentChangesPill } from './AgentChangesPill'
-export { useAgentContextTransport } from './contextTransport'
+export { agentContextPreview, useAgentContextTransport } from './contextTransport'
 export { setAgentChangesOpener, type AgentChangesOpener, type AgentChangesRequest } from './changesOpener'
 export { AgentHooksSettings } from './AgentHooksSettings'
 export { AgentSettings } from './AgentSettings'

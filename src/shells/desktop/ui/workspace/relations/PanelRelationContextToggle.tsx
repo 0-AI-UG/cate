@@ -8,8 +8,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Waypoints } from 'lucide-react'
 import type { PanelRecord } from '@workspace/document/contract'
-import { compileRelationContext, isExecutionSurface, relationPanelOf, relationPanels } from '@workspace/relations/contract'
-import { relationContextMode, setRelationContextMode } from './actions'
+import { compileRelationContext, isExecutionSurface, relationContextMode, relationPanelOf, relationPanels } from '@workspace/relations/contract'
+import { setRelationContextMode } from './actions'
 import { relationRoleOf, useRelationMap, useRelationPanels, useRelationsEnabled } from './host'
 import { relationUiPort } from './port'
 
@@ -29,7 +29,6 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
   const compiled = useMemo(() => {
     return compileRelationContext(panel.id, relationPanels(Object.values(records), relationRoleOf), Object.values(relationMap))
   }, [panel.id, records, relationMap])
-  const promptContext = panelRelationsEnabled && compiled && transport ? transport.decorate(compiled.text) : null
   const mode = relationContextMode(currentPanel.fields)
   const enabled = mode !== 'off'
   const justSent = useJustSent(transport?.sentAt)
@@ -56,12 +55,9 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
       if (choice === 'once' || choice === 'always' || choice === 'off') {
         setRelationContextMode(workspaceId, panel.id, choice)
       } else if (choice === 'preview') {
-        await relationUiPort().openTextPreview({
-          workspaceId,
-          sourcePanelId: panel.id,
-          title: 'Connected panel context.md',
-          content: promptContext ?? compiled.text,
-        })
+        // What the runtime would send, guidance included.
+        const content = (await relationUiPort().previewContext(workspaceId, panel.id)) ?? compiled.text
+        await relationUiPort().openTextPreview({ workspaceId, sourcePanelId: panel.id, title: 'Connected panel context.md', content })
       }
     } finally {
       setMenuOpen(false)

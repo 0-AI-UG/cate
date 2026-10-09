@@ -9,7 +9,8 @@ import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
 import { AGENT_DEFS, AGENT_LAUNCH, type AgentId } from '../../../contract'
 import { createAgentsCore, type AgentsCore } from '../../core'
-import type { AgentsDocument, RelationContextMode } from '../../promptContext'
+import type {AgentsDocument } from '../../promptContext'
+import type { RelationContextMode } from '@workspace/relations/contract'
 import { AGENT_SESSION_STORES } from '../../sessions'
 import { createTerminalRunner, type RunnerTerminalService, type TerminalRunner } from './terminalRunner'
 import type { NotificationEvent } from '@workspace/notifications/contract'
@@ -71,8 +72,11 @@ function fakeDocument(panels: PanelRecord[], relations: PanelRelation[] = []) {
     panels: () => panels,
     relations: () => relations,
     worktreePath: () => undefined,
-    relationContextMode: (id) => modes.get(id) ?? 'once',
-    setRelationContextMode: (id, mode) => { modes.set(id, mode) },
+    setRelationContextMode: (id, mode) => {
+      modes.set(id, mode)
+      const record = panels.find((panel) => panel.id === id)
+      if (record) record.fields = { ...record.fields, relationContextMode: mode }
+    },
     setTitleFromAgent: (panelId, title) => { titles.push({ panelId, title }) },
     onChange: () => () => {},
   }
@@ -230,6 +234,7 @@ describe('terminal runner', () => {
     await expect(agents.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-busy' })
     await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root })
     // The first turn took the one-shot context; arm it again for the send.
+    doc.document.setRelationContextMode('term', 'once')
     doc.modes.delete('term')
 
     await expect(agents.send('term', 'line one\nline two')).resolves.toEqual({ ok: true })

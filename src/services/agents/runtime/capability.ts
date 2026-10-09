@@ -12,6 +12,7 @@ export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter):
     interrupt: ({ panelId }) => interruptAgent(agents, panelId),
     inspectHooks: ({ cwd }) => agents.inspectHooks(cwd),
     panel: ({ panelId }) => agents.panel(panelId),
+    previewContext: ({ panelId }) => agents.promptContext.peek(panelId, agents.panel(panelId)?.agentId ?? null),
     busy: () => ({ panelIds: agents.busy() }),
     panels(_params, sink) {
       let rev = 0

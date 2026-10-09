@@ -9,8 +9,6 @@ export type RelationMenuItem =
   | { type?: undefined; id?: string; label: string; enabled?: boolean }
 
 export interface RelationContextTransport {
-  /** Adds the agent's prompt guidance to the compiled context. */
-  decorate(text: string): string
   /** When context last went with the panel's prompt (epoch ms). */
   sentAt?: number
   /** Context cannot reach the agent: a short label and why. */
@@ -23,14 +21,17 @@ export interface RelationUiPort {
   /** React hook: how the panel's running agent takes relation context, or
    *  null when no agent runs there (the toggle then hides). */
   useContextTransport(workspaceId: string, panel: PanelRecord): RelationContextTransport | null
+  /** The context the panel's next prompt would take, exactly as sent. */
+  previewContext(workspaceId: string, panelId: string): Promise<string | null>
   openTextPreview(request: { workspaceId: string; sourcePanelId: string; title: string; content: string }): Promise<unknown>
 }
 
-const PASS_THROUGH: RelationContextTransport = { decorate: (text) => text }
+const PASS_THROUGH: RelationContextTransport = {}
 
 const DEFAULT_PORT: RelationUiPort = {
   showMenu: async () => null,
   useContextTransport: () => PASS_THROUGH,
+  previewContext: async () => null,
   openTextPreview: async () => null,
 }
 

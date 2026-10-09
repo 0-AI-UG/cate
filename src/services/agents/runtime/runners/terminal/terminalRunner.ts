@@ -328,7 +328,7 @@ export function createTerminalRunner(agents: AgentsCore, terminal: RunnerTermina
       // the panel shows the terminal again, the status stays.
       label: agentName,
       takesOverPanel: true,
-      contextPolicy: !def ? null : def.promptContextHook ? { kind: 'guided', guidance: def.promptGuidance } : { kind: 'unsupported' },
+      contextPolicy: !def ? null : def.promptContextHook ? 'supported' : 'unsupported',
       status: current,
       present,
       canReceivePrompt: status.canReceivePrompt(terminalId),

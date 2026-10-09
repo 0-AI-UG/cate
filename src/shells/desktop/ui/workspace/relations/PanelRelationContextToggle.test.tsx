@@ -38,7 +38,8 @@ describe('PanelRelationContextToggle', () => {
     installRelationUiPort({
       showMenu,
       openTextPreview,
-      useContextTransport: () => (supported ? { decorate: (text) => `${text}\nguidance`, sentAt, blocked } : null),
+      useContextTransport: () => (supported ? { sentAt, blocked } : null),
+      previewContext: async () => 'what the runtime would send',
     })
     detach = openTestDocument('ws', {
       ...createDocument(),
@@ -122,7 +123,7 @@ describe('PanelRelationContextToggle', () => {
     ]))
   })
 
-  it('opens the exact context in an unsaved text panel from the preview action', async () => {
+  it('opens the runtime\'s preview of the sent context in an unsaved text panel', async () => {
     showMenu.mockResolvedValueOnce('preview')
     await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
     await act(async () => { host.querySelector('button')!.click() })
@@ -130,7 +131,7 @@ describe('PanelRelationContextToggle', () => {
       workspaceId: 'ws',
       sourcePanelId: 'source',
       title: 'Connected panel context.md',
-      content: expect.stringContaining('<cate-connected-panels>'),
+      content: 'what the runtime would send',
     })
     expect(openTextPreview.mock.calls[0]).toBeDefined()
     const menu = showMenu.mock.calls[0][0]

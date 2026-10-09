@@ -10,10 +10,7 @@ export {
   updateRelationMeaning,
   moveRelation,
   removeRelation,
-  relationContextMode,
   setRelationContextMode,
-  RELATION_CONTEXT_MODE_FIELD,
-  type RelationContextMode,
 } from './actions'
 export { useRelationUi } from './state'
 export {

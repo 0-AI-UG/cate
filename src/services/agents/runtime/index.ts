@@ -4,7 +4,7 @@
 
 export { createAgentsRuntime, type AgentsRuntime, type AgentsRuntimeDeps } from './agentsRuntime'
 export type { AgentsSettingsReader, TrustGate } from './core'
-export type { AgentsDocument, RelationContextMode } from './promptContext'
+export type { AgentsDocument } from './promptContext'
 export type { AgentPlacement, AgentStartArgs, AgentStartPorts, AgentTerminalLaunch } from './start'
 export type { RunnerTerminalService } from './runners/terminal'
 export type { RunnerT3Service, T3PanelBindings } from './runners/t3'

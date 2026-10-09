@@ -39,7 +39,7 @@ import { createRepositoryRuntime, vcsCapabilityImpl } from '@workspace/repositor
 import { skillsCapability, type SkillTarget } from '@workspace/skills/contract'
 import { createSkillsRuntime, skillsCapabilityImpl } from '@workspace/skills/runtime'
 import { createConnectedEditors, type SharedEditor } from '@workspace/relations/runtime'
-import type { RelationRoleOf } from '@workspace/relations/contract'
+import { RELATION_CONTEXT_MODE_FIELD, type RelationRoleOf } from '@workspace/relations/contract'
 import { processCapability } from '@services/terminal/contract'
 import {
   cateCliEnvContributor,
@@ -63,7 +63,6 @@ import {
   type AgentStartPorts,
   type AgentsDocument,
   type AgentsRuntime,
-  type RelationContextMode,
 } from '@services/agents/runtime'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract'
 import {
@@ -505,8 +504,6 @@ function sharedEditor(session: unknown): SharedEditor | undefined {
     : undefined
 }
 
-const CONTEXT_MODES: readonly RelationContextMode[] = ['once', 'always', 'off']
-
 /** The document as the agents service reads and writes it. The relation
  *  context mode and the user's own title live in record fields. */
 function agentsDocument(document: ReturnType<typeof createDocumentService>): AgentsDocument {
@@ -520,11 +517,7 @@ function agentsDocument(document: ReturnType<typeof createDocumentService>): Age
     panels: () => Object.values(document.get().panels),
     relations: () => Object.values(document.get().relations),
     worktreePath: (worktreeId) => document.get().worktrees[worktreeId]?.path,
-    relationContextMode(panelId) {
-      const mode = document.get().panels[panelId]?.fields.relationContextMode
-      return CONTEXT_MODES.includes(mode as RelationContextMode) ? mode as RelationContextMode : 'once'
-    },
-    setRelationContextMode: (panelId, mode) => update(panelId, { fields: { relationContextMode: mode } }),
+    setRelationContextMode: (panelId, mode) => update(panelId, { fields: { [RELATION_CONTEXT_MODE_FIELD]: mode } }),
     setTitleFromAgent(panelId, title) {
       const record = document.get().panels[panelId]
       if (!record || record.fields.titleUserOverridden === true || record.title === title) return

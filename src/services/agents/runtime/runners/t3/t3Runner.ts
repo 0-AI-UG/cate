@@ -106,8 +106,8 @@ export function createT3Runner(agents: AgentsCore, t3: RunnerT3Service, bindings
       agentName,
       label: bound.connected ? agentName : `${agentName} (disconnected)`,
       takesOverPanel: false,
-      // The harness takes relation context as is.
-      contextPolicy: { kind: 'plain' },
+      // The page asks for relation context before it sends.
+      contextPolicy: 'supported',
       status,
       present: bound.connected,
       canReceivePrompt,

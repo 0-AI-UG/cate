@@ -4,11 +4,7 @@
 import { relationUiHost } from './host'
 import type { Point } from '@workspace/canvas/contract'
 import type { RelationKind, RelationSide } from '@workspace/document/contract'
-
-export type RelationContextMode = 'once' | 'always' | 'off'
-
-/** Record field holding when an execution panel attaches relation context. */
-export const RELATION_CONTEXT_MODE_FIELD = 'relationContextMode'
+import { RELATION_CONTEXT_MODE_FIELD, type RelationContextMode } from '@workspace/relations/contract'
 
 /** Adds a relation, or re-points the existing one for the same pair. Returns
  *  its id, or null when the op failed. */
@@ -56,11 +52,6 @@ export function moveRelation(workspaceId: string, relationId: string, waypoint: 
 
 export function removeRelation(workspaceId: string, relationId: string): void {
   relationUiHost().document(workspaceId)?.propose({ kind: 'removeRelation', id: relationId })
-}
-
-export function relationContextMode(fields: Record<string, unknown>): RelationContextMode {
-  const mode = fields[RELATION_CONTEXT_MODE_FIELD]
-  return mode === 'always' || mode === 'off' ? mode : 'once'
 }
 
 export function setRelationContextMode(workspaceId: string, panelId: string, mode: RelationContextMode): void {

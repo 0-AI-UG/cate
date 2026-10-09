@@ -4,6 +4,7 @@
 
 export * from './contract/graph'
 export * from './contract/settings'
+export * from './contract/contextMode'
 export {
   RELATION_KINDS,
   RELATION_SIDES,

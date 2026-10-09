@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { panelDefinition } from '@panels/definitions'
-import { createPromptContext, type AgentsDocument, type PromptContext, type RelationContextMode } from './promptContext'
+import {createPromptContext, type AgentsDocument, type PromptContext } from './promptContext'
+import type { RelationContextMode } from '@workspace/relations/contract'
 
 const relationRole = (type: string) => panelDefinition(type)?.relation
 
@@ -12,8 +13,11 @@ function fakeDocument(panels: PanelRecord[], relations: PanelRelation[]) {
     panels: () => panels,
     relations: () => relations,
     worktreePath: () => undefined,
-    relationContextMode: (id) => modes.get(id) ?? 'once',
-    setRelationContextMode: (id, mode) => { modes.set(id, mode) },
+    setRelationContextMode: (id, mode) => {
+      modes.set(id, mode)
+      const record = panels.find((panel) => panel.id === id)
+      if (record) record.fields = { ...record.fields, relationContextMode: mode }
+    },
     setTitleFromAgent: () => {},
     onChange: () => () => {},
   }
@@ -22,6 +26,7 @@ function fakeDocument(panels: PanelRecord[], relations: PanelRelation[]) {
 
 let enabled = true
 let modes: Map<string, RelationContextMode>
+let setMode: AgentsDocument['setRelationContextMode']
 let context: PromptContext
 
 beforeEach(() => {
@@ -31,6 +36,7 @@ beforeEach(() => {
     { id: 'browser', type: 'browser', title: 'Browser', fields: {} },
   ], [{ id: 'relation', fromPanelId: 'source', toPanelId: 'browser', kind: 'use' }])
   modes = fake.modes
+  setMode = fake.document.setRelationContextMode
   context = createPromptContext({ document: fake.document, relationsEnabled: () => enabled, relationRole })
 })
 
@@ -64,14 +70,14 @@ describe('one-shot panel relation context', () => {
   })
 
   it('keeps always-on context armed after a send', () => {
-    modes.set('source', 'always')
+    setMode('source', 'always')
     expect(context.consume('source', null)).toContain('Browser')
     expect(modes.get('source')).toBe('always')
     expect(context.peek('source', null)).toContain('Browser')
   })
 
   it('does not return context when the receiving agent has it turned off', () => {
-    modes.set('source', 'off')
+    setMode('source', 'off')
     expect(context.consume('source', null)).toBeNull()
     expect(modes.get('source')).toBe('off')
   })
