@@ -2,7 +2,7 @@
 // while the other works, and the runtime restarting under both.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { RefusedOp } from '@client/document'
+import { otherClientsOf, type RefusedOp } from '@client/document'
 import { startSharedWorkspace, until, untilState, type SharedWorkspace, type TestClient } from '../sharedWorkspace'
 
 let ws: SharedWorkspace
@@ -122,4 +122,12 @@ describe.skipIf(process.platform === 'win32')('shared workspace: document', () =
     expect(refused).toEqual([])
     await until(() => (title(ws.b, id) === 'sixth' ? true : undefined), 5_000, 'sixth title in B')
   }, 20_000)
+
+  it('each client sees the others in the workspace, and not itself', async () => {
+    await until(() => (otherClientsOf(ws.a.workspaceId).some((c) => c.device.name === 'B') ? true : undefined), 5_000, 'B in A')
+    await until(() => (otherClientsOf(ws.b.workspaceId).some((c) => c.device.name === 'A') ? true : undefined), 5_000, 'A in B')
+    expect(otherClientsOf(ws.a.workspaceId).map((c) => c.device.name)).toEqual(['B'])
+    ws.b.close()
+    await until(() => (otherClientsOf(ws.a.workspaceId).length === 0 ? true : undefined), 5_000, 'B gone from A')
+  })
 })

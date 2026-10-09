@@ -1,7 +1,7 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react'
-import { createDocument, type WorkspaceDocument } from '@workspace/document/contract'
+import { createDocument, type PresenceClient, type WorkspaceDocument } from '@workspace/document/contract'
 import type { ClientState } from '@client/document'
-import { clientStateFor, documentStoreFor, documentStoresVersion, subscribeDocumentStores } from '@client/document'
+import { clientStateFor, documentStoreFor, documentStoresVersion, otherClientsOf, subscribeDocumentStores } from '@client/document'
 
 const EMPTY_DOCUMENT = createDocument()
 const noop = () => () => {}
@@ -76,4 +76,9 @@ export function usePanelView<T>(
   const stored = useClientState(workspaceId, (state) => state.panelViews[panelId]?.[key])
   const set = useCallback((value: T) => clientStateFor(workspaceId)?.setPanelView(panelId, key, value), [workspaceId, panelId, key])
   return [stored === undefined ? fallback : stored as T, set]
+}
+
+/** The other clients in a workspace (presence); none while it is not open. */
+export function useOtherClients(workspaceId: string): readonly PresenceClient[] {
+  return useSyncExternalStore(subscribeDocumentStores, () => otherClientsOf(workspaceId))
 }

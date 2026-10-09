@@ -23,6 +23,7 @@ import { panelsWithPorts, terminalCwd, useTerminalStatuses } from '../state/stat
 import { useUIStore } from '../state/uiStore'
 import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
+import { PresenceAvatars } from './PresenceAvatars'
 import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type WindowTree } from './panelTree'
 
@@ -248,6 +249,7 @@ export function WorkspaceRow({
             {displayTitle}
           </span>
         )}
+        {isOpen && <PresenceAvatars workspaceId={entry.id} />}
         {canExpand && !isExpanded && (
           <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">
             {tree.count}

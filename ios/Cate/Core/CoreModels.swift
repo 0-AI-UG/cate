@@ -21,6 +21,23 @@ struct Workspace: Decodable, Equatable, Identifiable, Hashable {
     let power: PowerState?
     /// This device's pushes from the workspace; nil until registered.
     let push: PushStatus?
+    /// The other clients in the workspace; empty while not connected.
+    let others: [OtherClient]
+}
+
+/// Another client in a workspace (`MobileOtherClient`).
+struct OtherClient: Decodable, Equatable, Hashable, Identifiable {
+    let clientId: String
+    let name: String
+    let attentive: Bool
+    var id: String { clientId }
+
+    /// The device name's initials, for its avatar.
+    var initials: String {
+        let words = name.split(whereSeparator: { $0 == " " || $0 == "-" || $0 == "'" || $0 == "’" })
+        let letters = words.prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined()
+        return letters.isEmpty ? "?" : letters
+    }
 }
 
 /// An agent a panel hosts (`MobileAgent`).

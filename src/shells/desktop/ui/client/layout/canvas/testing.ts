@@ -36,7 +36,7 @@ export function openTestDocument(workspaceId: string, doc: WorkspaceDocument): (
           cancel() { emit = null },
         }),
       },
-      presence: { report: async () => {} },
+      presence: { report: async () => {}, subscribe: () => ({ onEvent: () => () => {}, cancel: () => {} }) },
     },
   } as unknown as WorkspaceConnection
   const detach = attachDocument(connection)

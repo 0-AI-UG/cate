@@ -75,7 +75,7 @@ export function attachTestWorkspace(workspaceId: string, doc: WorkspaceDocument 
           return () => { listeners.delete(emit) }
         }),
       },
-      presence: { report: async () => {} },
+      presence: { report: async () => {}, subscribe: () => ({ onEvent: () => () => {}, cancel: () => {} }) },
     },
   } as unknown as WorkspaceConnection
   const detach = attachDocument(connection)

@@ -3,7 +3,7 @@
 // change, coalesced to one push per task; it is small.
 
 import { clientIdentity, connectionLabel, connectionRemedy, type ConnectionState } from '@client/connections'
-import { documentStoreFor, subscribeDocumentStores } from '@client/document'
+import { documentStoreFor, otherClientsOf, subscribeDocumentStores } from '@client/document'
 import type { PairedWorkspace } from '@client/workspaces'
 import { panelDefinition } from '@panels/definitions'
 import { canvasOf, dockPanels, type WorkspaceDocument } from '@workspace/document/contract'
@@ -58,6 +58,7 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents): MobileCo
         agents: agents.agents(entry.id),
         power: agents.power(entry.id),
         push: agents.push(entry.id),
+        others: connection ? otherClientsOf(entry.id).map((client) => ({ clientId: client.clientId, name: client.device.name, attentive: client.attentive })) : [],
       }
     })
   return { clientId: clientIdentity().clientId, workspaces }

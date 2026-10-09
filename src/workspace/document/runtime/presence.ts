@@ -47,7 +47,9 @@ export function createPresence(deps: { lifecycle: LifecycleBus; now?: () => numb
   const changed = () => {
     if (listeners.size === 0) return
     const next = event()
-    for (const listener of [...listeners]) listener(next)
+    for (const listener of [...listeners]) {
+      try { listener(next) } catch { /* a subscriber whose connection went */ }
+    }
   }
   const activate = (entry: Entry) => {
     entry.activeTick = ++tick

@@ -189,6 +189,17 @@ export interface MobileWorkspace {
   /** This device's pushes from the workspace; null while not connected or
    *  before the app gave the core a push token. */
   push: PushStatus | null
+  /** The other clients in the workspace (presence); empty while not connected. */
+  others: MobileOtherClient[]
+}
+
+/** Another client in a workspace, as the app shows it. */
+export interface MobileOtherClient {
+  clientId: string
+  /** Its device's name. */
+  name: string
+  /** It has its person's attention. */
+  attentive: boolean
 }
 
 export interface MobileCoreState {

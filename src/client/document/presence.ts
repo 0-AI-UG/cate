@@ -3,7 +3,7 @@
 // Presence is not persisted, so the report goes again after each reconnect.
 
 import type { ClientStateStore } from './clientState'
-import type { PresenceReport } from '@workspace/document/contract'
+import type { PresenceClient, PresenceEvent, PresenceReport } from '@workspace/document/contract'
 
 export interface PresenceLink {
   report(params: PresenceReport): Promise<void>
@@ -64,4 +64,24 @@ export function reportPresence(state: ClientStateStore, link: PresenceLink): () 
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i])
+}
+
+/** The other clients of a workspace, as its presence stream tells them: one
+ *  entry per client (a client with two connections shows once). */
+export function watchOtherClients(
+  remote: { subscribe(params: undefined, options: { resume: true }): { onEvent(listener: (event: PresenceEvent) => void): () => void; cancel(): void } },
+  ownClientId: string,
+  onChange: (others: readonly PresenceClient[]) => void,
+): () => void {
+  const sub = remote.subscribe(undefined, { resume: true })
+  sub.onEvent((event) => {
+    const byClient = new Map<string, PresenceClient>()
+    for (const client of event.clients) {
+      if (client.clientId === ownClientId) continue
+      const seen = byClient.get(client.clientId)
+      if (!seen || client.lastActiveAt > seen.lastActiveAt) byClient.set(client.clientId, client)
+    }
+    onChange([...byClient.values()])
+  })
+  return () => sub.cancel()
 }

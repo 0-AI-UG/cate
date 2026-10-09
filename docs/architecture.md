@@ -956,6 +956,10 @@ key fingerprint, `clientId`, declared features) and the panel each one views
 and focuses, and whether the client's app has the user's attention (the
 terminal service scans at a background cadence when no client does). Clients
 report their own view, focus and attention; presence is never persisted.
+The client core watches the other clients of each open workspace
+(`otherClientsOf` in `client/document`), and each shell shows them: the
+desktop as small avatars on the workspace's sidebar row, iOS as an "Also
+here" row in the workspace.
 
 ### 9.2 Lifecycle and trust
 

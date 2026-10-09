@@ -27,6 +27,11 @@ struct WorkspaceView: View {
                     }
                 }
             }
+            if let workspace, connected, !workspace.others.isEmpty {
+                Section {
+                    PresenceRow(others: workspace.others)
+                }
+            }
             if let workspace, connected {
                 Section("Agents") {
                     if workspace.agents.isEmpty {
@@ -101,6 +106,31 @@ struct WorkspaceView: View {
                 created = PanelRoute(workspaceId: workspaceId, panelId: panelId)
             }
         }
+    }
+}
+
+/// Who else is in the workspace: one avatar per other client, its device's
+/// initials, faded while it does not have its person's attention.
+private struct PresenceRow: View {
+    let others: [OtherClient]
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: -4) {
+                ForEach(others.prefix(4)) { client in
+                    Text(client.initials)
+                        .font(.caption2.weight(.semibold))
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color(.secondarySystemFill)))
+                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1.5))
+                        .opacity(client.attentive ? 1 : 0.6)
+                }
+            }
+        } label: {
+            Label("Also here", systemImage: "person.2")
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Also here: \(others.map(\.name).joined(separator: ", "))")
     }
 }
 

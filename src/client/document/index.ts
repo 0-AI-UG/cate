@@ -16,13 +16,14 @@ export {
   type Intent,
   type Viewport,
 } from './clientState'
-export { reportPresence, setClientAttentive, type PresenceLink } from './presence'
+export { reportPresence, setClientAttentive, watchOtherClients, type PresenceLink } from './presence'
 export {
   attachDocument,
   attachDocuments,
   documentStoreFor,
   documentWorkspaceIds,
   clientStateFor,
+  otherClientsOf,
   subscribeDocumentStores,
   documentStoresVersion,
 } from './registry'

@@ -3,13 +3,16 @@
 
 import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
 import { createClientStateStore, type ClientStateStore } from './clientState'
-import { reportPresence } from './presence'
+import type { PresenceClient } from '@workspace/document/contract'
+import { reportPresence, watchOtherClients } from './presence'
 import { createDocumentStore, type DocumentStore } from './store'
 
 interface Open {
   connection: WorkspaceConnection
   document: DocumentStore
   state: ClientStateStore
+  /** The other clients in the workspace now. */
+  others: readonly PresenceClient[]
   stop: () => void
 }
 
@@ -31,6 +34,14 @@ export function documentStoreFor(workspaceId: string): DocumentStore | null {
 export function clientStateFor(workspaceId: string): ClientStateStore | null {
   return open.get(workspaceId)?.state ?? null
 }
+
+/** The other clients in an open workspace (presence, section 7.6); changes
+ *  reach `subscribeDocumentStores` listeners. */
+export function otherClientsOf(workspaceId: string): readonly PresenceClient[] {
+  return open.get(workspaceId)?.others ?? NO_CLIENTS
+}
+
+const NO_CLIENTS: readonly PresenceClient[] = []
 
 /** The workspaces with a document store, in attach order. */
 export function documentWorkspaceIds(): string[] {
@@ -62,11 +73,17 @@ export function attachDocument(connection: WorkspaceConnection): () => void {
     connection,
     document,
     state,
+    others: NO_CLIENTS,
     stop: () => {
       stopPresence()
+      stopOthers()
       document.dispose()
     },
   }
+  const stopOthers = watchOtherClients(connection.runtime.presence, connection.clientId, (others) => {
+    entry.others = others
+    if (open.get(connection.workspaceId) === entry) changed()
+  })
   open.get(connection.workspaceId)?.stop()
   open.set(connection.workspaceId, entry)
   changed()
