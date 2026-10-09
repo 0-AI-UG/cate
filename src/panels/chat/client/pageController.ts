@@ -6,7 +6,7 @@
 // dispatcher. A shell drives it from its page's events and runs the scripts
 // it hands back through the page port.
 
-import { pickPanelPlace } from '@client/host'
+import { openUrlFor, pickPanelPlace } from '@client/host'
 import { openAgentChanges } from '@panels/review/client'
 import type { Theme } from '@kernel/interaction/contract'
 import {
@@ -34,8 +34,6 @@ export interface ChatPagePort {
   run(script: string): void
   /** Sends a session op. */
   send(op: ChatOp): Promise<unknown>
-  /** A link the page opens. */
-  openLink(url: string): void
   /** The page asked for provider settings, which the shell may show (the
    *  page itself stays on its thread). */
   openProviderSettings?(): void
@@ -142,7 +140,8 @@ export function createChatPageController(options: {
       },
       openFile: (filePath, at) => port.send({ kind: 'openFile', path: filePath, at, threadId }),
       openChat: (other, title, at) => port.send({ kind: 'openChat', at, threadId: other, title }),
-      openLink: (url) => port.openLink(url),
+      // Loopback pages open in the workspace, anything else outside Cate.
+      openLink: (url) => openUrlFor(workspaceId, url, panelId),
       relationContext: async (provider) => (await port.send({ kind: 'relationContext', provider })) as string | null,
     })
   }

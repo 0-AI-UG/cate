@@ -8,7 +8,7 @@ import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lu
 import { useRuntime } from '../../kernel/rpc'
 import { LoadingState, Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { openUrlFor, registerSurface } from '@client/host'
+import { registerSurface } from '@client/host'
 import { type PanelViewProps } from '../../client/host/views'
 import { t3Conversations, t3FileDropScript, t3ProductCopy, t3ThemeScript, type T3Guest } from '@services/t3/client'
 import { createChatPageController } from '@panels/chat/client'
@@ -102,7 +102,6 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
         } catch { /* A destroyed guest can throw before returning a promise. */ }
       },
       send: (op) => sendRef.current(op),
-      openLink: (url) => openUrlFor(workspaceId, url, panelId),
       openProviderSettings: () => clientUi().openSettings('t3 code'),
     },
   }))

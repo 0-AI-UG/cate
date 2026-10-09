@@ -114,7 +114,7 @@ const chatSnapshot = (patch: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
 describe('mobile chat views', () => {
   it('loads the bound thread with the harness cookie', async () => {
     const t = setup(chatSnapshot())
-    const chats = createMobileChats(t.views, t.bridge)
+    const chats = createMobileChats(t.views)
     chats.open({ viewId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     await tick()
     const page = chats.page({ viewId: 'v', dark: true })!
@@ -124,7 +124,7 @@ describe('mobile chat views', () => {
 
   it('keeps the page on its thread and adopts a thread the page created', async () => {
     const t = setup(chatSnapshot({ threadId: null }))
-    const chats = createMobileChats(t.views, t.bridge)
+    const chats = createMobileChats(t.views)
     chats.open({ viewId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     await tick()
     chats.page({ viewId: 'v', dark: true })
@@ -139,7 +139,7 @@ describe('mobile chat views', () => {
 
   it('moves a page that left its thread back in place', async () => {
     const t = setup(chatSnapshot())
-    const chats = createMobileChats(t.views, t.bridge)
+    const chats = createMobileChats(t.views)
     chats.open({ viewId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     await tick()
     chats.page({ viewId: 'v', dark: true })
@@ -152,7 +152,7 @@ describe('mobile chat views', () => {
 
   it('follows a thread another client moved the panel to in place', async () => {
     const t = setup(chatSnapshot())
-    const chats = createMobileChats(t.views, t.bridge)
+    const chats = createMobileChats(t.views)
     chats.open({ viewId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     await tick()
     chats.page({ viewId: 'v', dark: true })
@@ -167,7 +167,7 @@ describe('mobile chat views', () => {
 
   it('answers the page bridge for its token only', async () => {
     const t = setup(chatSnapshot())
-    const chats = createMobileChats(t.views, t.bridge)
+    const chats = createMobileChats(t.views)
     chats.open({ viewId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     await tick()
     const page = chats.page({ viewId: 'v', dark: true })!

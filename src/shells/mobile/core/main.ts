@@ -15,6 +15,8 @@ import { createMobileBuffers } from './buffers'
 import { createMobileStreams } from './streams'
 import { createMobileAgents } from './agents'
 import { createMobileConversations } from './conversations'
+import { installClientUi } from '@kernel/interaction'
+import { createMobileClientUi } from './clientUi'
 
 declare global {
   interface Window {
@@ -24,6 +26,7 @@ declare global {
 
 async function start(): Promise<void> {
   const bridge = nativeBridge()
+  installClientUi(createMobileClientUi(bridge))
   const client = await bootMobileClient(bridge)
   const views = createMobileViews(bridge)
   const agents = createMobileAgents(client, bridge)
@@ -31,7 +34,7 @@ async function start(): Promise<void> {
     terminals: createMobileTerminals(client, bridge),
     views,
     browsers: createMobileBrowsers(views),
-    chats: createMobileChats(views, bridge),
+    chats: createMobileChats(views),
     buffers: createMobileBuffers(bridge),
     streams: createMobileStreams(client, bridge),
     agents,
