@@ -87,12 +87,14 @@ export function createNetworkAccess(deps: NetworkAccessDeps): NetworkAccess {
         runtimeKeys: deps.runtimeKeys,
         webSocket: deps.connect.webSocket,
         peerConnection: deps.connect.peerConnection,
-        onConnection: (port) => void deps.peers.accept(port),
+        onConnection: (port) => void deps.peers.accept(port, { transport: 'cateConnect' }),
         log: deps.log,
       })
     } else if (mode !== 'cateConnect' && registration) {
       registration.close()
       registration = null
+      // Its WebRTC sessions go with it, handshakes included.
+      deps.peers.close('cateConnect')
     }
     if (JSON.stringify(endpoints()) !== before) deps.onEndpointsChanged(endpoints())
   }

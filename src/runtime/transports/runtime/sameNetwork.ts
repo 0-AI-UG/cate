@@ -50,7 +50,8 @@ export async function serveSameNetwork(options: SameNetworkOptions): Promise<Sam
   const addresses = () => (options.addresses ?? lanAddresses)(port)
 
   server.on('connection', (socket: WebSocket, request: IncomingMessage) => {
-    void options.peers.accept(webSocketPort(socket as unknown as WebSocketLike), request.socket.remoteAddress)
+    const address = request.socket.remoteAddress
+    void options.peers.accept(webSocketPort(socket as unknown as WebSocketLike), { transport: 'sameNetwork', ...(address ? { address } : {}) })
   })
   server.on('error', (error) => options.onError?.(error))
 

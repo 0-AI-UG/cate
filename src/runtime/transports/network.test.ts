@@ -166,7 +166,7 @@ describe('same network', () => {
     const stall = (source?: string) => {
       const [a, b] = createMemoryPortPair()
       idle.push(a)
-      void peers.accept(b, source)
+      void peers.accept(b, { transport: 'sameNetwork', ...(source ? { address: source } : {}) })
       return b
     }
     try {

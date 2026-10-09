@@ -23,47 +23,62 @@ export interface NetworkPeersOptions {
   pairing: NetworkPairing
   log?: Logger
   handshakeTimeoutMs?: number
-  /** Connections not yet proven paired, in all. Default 32. */
+  /** Connections not yet proven paired, per transport, so one transport's
+   *  unproven peers (anyone can reach Cate Connect) never lock out another.
+   *  Default 32. */
   maxUnproven?: number
   /** Of those, from one remote address. Default 4. */
   maxUnprovenPerSource?: number
 }
 
+/** What carried a connection in. */
+export type NetworkTransport = 'sameNetwork' | 'cateConnect'
+
+export interface ConnectionSource {
+  transport: NetworkTransport
+  /** The remote address, where the transport knows one. */
+  address?: string
+}
+
 export interface NetworkPeers {
   /** Secures and serves one incoming connection. Resolves once it is served
-   *  or refused; a refusal closes the port. `source` is the remote address,
-   *  where the transport knows one. */
-  accept(port: MessagePortLike, source?: string): Promise<void>
+   *  or refused; a refusal closes the port. */
+  accept(port: MessagePortLike, from: ConnectionSource): Promise<void>
   /** Live connections by device (hex public key). */
   connected(): string[]
+  /** Drops the connections one transport carried, live or still in their
+   *  handshake (that transport was turned off). */
+  close(transport: NetworkTransport): void
   /** Drops every network connection (network access turned off). */
   closeAll(): void
   dispose(): void
 }
 
 export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
-  const live = new Map<SecureChannel, string>()
+  const live = new Map<SecureChannel, { key: string; transport: NetworkTransport }>()
   const maxUnproven = options.maxUnproven ?? 32
   const maxPerSource = options.maxUnprovenPerSource ?? 4
-  // Connections between accept and a proven key, in all and by source.
-  let unproven = 0
+  // Connections between accept and a proven key, by transport and by source.
+  const unproven = new Map<MessagePortLike, NetworkTransport>()
   const unprovenBySource = new Map<string, number>()
+  const unprovenOn = (transport: NetworkTransport) => [...unproven.values()].filter((t) => t === transport).length
 
   const offRevoked = options.pairing.onRevoked((publicKey) => {
-    for (const [channel, key] of live) {
-      if (key === publicKey) channel.close(new Error('device removed'))
+    for (const [channel, entry] of live) {
+      if (entry.key === publicKey) channel.close(new Error('device removed'))
     }
   })
 
   return {
-    async accept(port, source) {
+    async accept(port, from) {
+      const source = from.address
       const fromSource = source === undefined ? 0 : unprovenBySource.get(source) ?? 0
-      if (unproven >= maxUnproven || fromSource >= maxPerSource) {
+      if (unprovenOn(from.transport) >= maxUnproven || fromSource >= maxPerSource) {
         options.log?.info('refused a network connection: too many unpaired connections')
         port.close()
         return
       }
-      unproven++
+      unproven.set(port, from.transport)
       if (source !== undefined) unprovenBySource.set(source, fromSource + 1)
       let channel: SecureChannel
       try {
@@ -77,7 +92,7 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
         options.log?.info('refused a network connection: %s', (error as Error).message)
         return
       } finally {
-        unproven--
+        unproven.delete(port)
         if (source !== undefined) {
           const left = (unprovenBySource.get(source) ?? 1) - 1
           if (left > 0) unprovenBySource.set(source, left)
@@ -91,13 +106,20 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
         channel.close(new Error('device removed'))
         return
       }
-      live.set(channel, key)
+      live.set(channel, { key, transport: from.transport })
       channel.onClose(() => live.delete(channel))
       options.pairing.markSeen(channel.remoteStatic)
       options.rpc.serve(checkedHello(secureFramePort(channel), fingerprint(channel.remoteStatic), options.rpc))
     },
-    connected: () => [...live.values()],
+    connected: () => [...live.values()].map((entry) => entry.key),
+    close(transport) {
+      for (const [port, carried] of [...unproven]) if (carried === transport) port.close()
+      for (const [channel, entry] of [...live]) {
+        if (entry.transport === transport) channel.close(new Error('network access turned off'))
+      }
+    },
     closeAll() {
+      for (const port of [...unproven.keys()]) port.close()
       for (const channel of [...live.keys()]) channel.close(new Error('network access turned off'))
     },
     dispose() {
