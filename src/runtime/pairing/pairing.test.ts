@@ -29,15 +29,15 @@ import {
   PairingFormatError,
 } from './contract'
 import { KnownRuntimes, pairWithRuntime, PairingError } from './client'
-import { openPairingsFile, PairingService, type PairingsFile, type PairingsStore } from './runtime'
+import { openDevicesFile, PairingService, type DevicesFile, type DevicesStore } from './runtime'
 
 const RUNTIME_KEYS = generateKeyPair()
 const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 
-/** The pairings file in memory; `edit` changes it as a hand edit does. */
-function memoryStore(): PairingsStore & { edit(next: PairingsFile): void } {
-  let value: PairingsFile = { devices: [] }
-  const listeners = new Set<(next: PairingsFile, origin: 'local' | 'external') => void>()
+/** The devices file in memory; `edit` changes it as a hand edit does. */
+function memoryStore(): DevicesStore & { edit(next: DevicesFile): void } {
+  let value: DevicesFile = { devices: [] }
+  const listeners = new Set<(next: DevicesFile, origin: 'local' | 'external') => void>()
   return {
     get: () => value,
     update: (fn) => { value = fn(value); for (const l of [...listeners]) l(value, 'local') },
@@ -162,7 +162,29 @@ describe('pairing flow', () => {
     expect(client.closed || runtime.closed).toBe(false)
   })
 
-  it('revokes a device removed by editing pairings.json, as removing it in the app does', async () => {
+  it('records a device that connected as a user of the machine, which is then known on the network too', async () => {
+    const ctx = setup()
+    const deviceKeys = generateKeyPair()
+    const publicKey = bytesToHex(deviceKeys.publicKey)
+    ctx.service.connected({ name: 'Laptop', publicKey })
+    // A connection that is no device (`cate serve`) is not recorded.
+    ctx.service.connected({ name: 'cate serve', publicKey: '' })
+    expect(ctx.service.list()).toMatchObject([{ publicKey, name: 'Laptop', admittedBy: 'machineUser' }])
+    expect(ctx.service.isPaired(deviceKeys.publicKey)).toBe(true)
+
+    // Connecting again only updates its name and when it was seen.
+    ctx.service.connected({ name: 'Laptop 2', publicKey })
+    expect(ctx.service.list()).toMatchObject([{ publicKey, name: 'Laptop 2', admittedBy: 'machineUser' }])
+  })
+
+  it('a paired device that connects stays paired', async () => {
+    const ctx = setup()
+    const { deviceKeys } = await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri))
+    ctx.service.connected({ name: 'phone', publicKey: bytesToHex(deviceKeys.publicKey) })
+    expect(ctx.service.list()).toMatchObject([{ name: 'phone', admittedBy: 'pairing' }])
+  })
+
+  it('revokes a device removed by editing devices.json, as removing it in the app does', async () => {
     const ctx = setup()
     const revoked: string[] = []
     ctx.service.onRevoked((key) => revoked.push(key))
@@ -272,15 +294,15 @@ describe('pairing flow', () => {
     expect(await pins.get(RUNTIME_ID)).toBeUndefined()
   })
 
-  it('persists pairings.json 0600', async () => {
+  it('persists devices.json 0600', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cp-'))
     try {
-      const file = openPairingsFile(dir)
-      file.update(() => ({ devices: [{ publicKey: 'ab'.repeat(32), name: 'n', pairedAt: 1, lastSeen: 1 }] }))
+      const file = openDevicesFile(dir)
+      file.update(() => ({ devices: [{ publicKey: 'ab'.repeat(32), name: 'n', admittedBy: 'pairing', addedAt: 1, lastSeen: 1 }] }))
       await file.flushDurable()
       file.dispose()
-      expect((await fs.stat(path.join(dir, 'pairings.json'))).mode & 0o777).toBe(0o600)
-      const reopened = openPairingsFile(dir)
+      expect((await fs.stat(path.join(dir, 'devices.json'))).mode & 0o777).toBe(0o600)
+      const reopened = openDevicesFile(dir)
       expect(reopened.get().devices).toHaveLength(1)
       reopened.dispose()
     } finally {

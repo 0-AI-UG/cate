@@ -13,6 +13,8 @@ import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
 import type { AgentConversationMessage, AgentId, AgentStatus, AgentTypeInfo } from '@services/agents/contract'
 import type { T3Conversation, T3ProviderModels } from '@services/t3/contract'
+import type { RelationKind } from '@workspace/document/contract'
+import type { RelationContextMode } from '@workspace/relations/contract'
 
 export interface MobileAppInfo {
   /** The device's name, sent in `hello` and shown in pairing lists. */
@@ -78,6 +80,9 @@ export type MobileViewEvent =
   | { kind: 'load'; tabId: string; url: string }
   /** `chat.*`: run `script` in the page. */
   | { kind: 'script'; script: string }
+  /** `chat.*`: show or hide the page (hidden while it loads and while it is
+   *  on T3's start page). */
+  | { kind: 'reveal'; shown: boolean }
   /** `buffer.open`: the buffer's whole text, once synced and on every change
    *  not made by this view. */
   | { kind: 'text'; text: string }
@@ -119,12 +124,20 @@ export type MobileBridge = <M extends MobileBridgeMethod>(
   params: MobileBridgeMethods[M]['params'],
 ) => Promise<MobileBridgeMethods[M]['result']>
 
-/** A connection's state as the app shows it; the wording lives here once. */
+/** What the app offers for a connection state: try again
+ *  (`workspaces.retry`), pair again (the join sheet), or forget the
+ *  workspace (`workspaces.forget`). */
+export type MobileConnectionAction = 'retry' | 'pair' | 'forget'
+
+/** A connection's state as the app shows it; the wording lives here once
+ *  (`connectionStatus` in the client core). */
 export interface MobileConnection {
   kind: 'connecting' | 'connected' | 'offline' | 'incompatible' | 'stopped' | 'refused' | 'closed'
+  /** A short heading; empty when connected or closed. */
+  title: string
   text: string
-  /** Whether "Retry now" makes sense. */
-  retryable: boolean
+  /** Main action first. */
+  actions: MobileConnectionAction[]
 }
 
 export interface MobilePanel {
@@ -139,6 +152,62 @@ export interface MobilePanel {
   onCanvas: string | null
   /** Canvas panels: the canvas they show. */
   canvas: MobileCanvas | null
+  /** It takes prompts (a terminal, a chat): its relations go with them as
+   *  context. */
+  execution: boolean
+  /** When its prompts take its relations' context (9.7). */
+  contextMode: RelationContextMode
+  /** What it shows, in a few words (its type's `describe`): a terminal's
+   *  directory, an editor's file, a browser's URL; null when its type says
+   *  nothing. */
+  detail: string | null
+  /** The checkout it belongs to (one of its workspace's `worktrees`); null
+   *  when it is in none or the workspace has no parallel checkouts. */
+  worktreeId: string | null
+  /** It can be moved to another checkout (`panel.setWorktree`). */
+  switchesWorktree: boolean
+}
+
+/** A checkout of the workspace's repository, as the app shows it. */
+export interface MobileWorktree {
+  id: string
+  /** Its label, else its folder's name; the main checkout is `main`. */
+  label: string
+  /** A theme palette key (`green`, `brightCyan`, ...): its territory on a
+   *  canvas and its mark on a panel. */
+  color: string
+  isPrimary: boolean
+}
+
+/** An agent a review can hand its work to. */
+export interface MobileReviewAgent {
+  agentId: AgentId
+  name: string
+  /** Its CLI is installed where the review runs. */
+  ready: boolean
+}
+
+/** A relation between two panels (9.7), as the app shows it. */
+export interface MobileRelation {
+  id: string
+  fromPanelId: string
+  toPanelId: string
+  kind: RelationKind
+  /** Its flow (`relationFlows`), which picks its color; null when no
+   *  execution surface reaches it. */
+  flow: number | null
+  /** Its words for its pair: its own label, else the kind's ("Reference",
+   *  "Send findings to"). */
+  label: string
+  /** The meanings it can take, the recommended one first. */
+  options: MobileRelationOption[]
+}
+
+/** A meaning a new relation can take, the recommended one first. */
+export interface MobileRelationOption {
+  kind: RelationKind
+  label: string
+  description: string
 }
 
 export interface MobileCanvasNode {
@@ -163,6 +232,10 @@ export interface MobileAgent {
   agentId: AgentId | null
   /** Null until the agent is known. */
   agentName: string | null
+  /** The agent whose logo marks its panel, as on the desktop's tabs: a CLI
+   *  standing in for its terminal while it runs; null shows the panel's
+   *  own icon (a chat's is T3's). */
+  logo: AgentId | null
   status: AgentStatus
   present: boolean
   canReceivePrompt: boolean
@@ -181,6 +254,13 @@ export interface MobileWorkspace {
   connection: MobileConnection
   /** Null until the document arrives from the runtime. */
   panels: MobilePanel[] | null
+  /** Its ready checkouts, the main one first; empty unless there are two or
+   *  more (one checkout is no parallel branch). */
+  worktrees: MobileWorktree[]
+  /** Empty while not connected or while relations are off. */
+  relations: MobileRelation[]
+  /** The workspace setting `panelRelationsEnabled`. */
+  relationsEnabled: boolean
   /** Empty while not connected. */
   agents: MobileAgent[]
   /** Keep-awake on the runtime's machine; null while not connected. */
@@ -214,6 +294,10 @@ export interface MobileCoreState {
 /** The answer to an agent or git action: ok, or what went wrong in words. */
 export type MobileActionResult = { ok: true } | { ok: false; message: string }
 
+/** The answer to `panel.setWorktree`: `dirty` when the panel is busy and
+ *  switching would stop what runs; the app asks, then sends `discard`. */
+export type MobileSwitchResult = MobileActionResult | { ok: false; message: string; dirty: true }
+
 /** An agent CLI a new agent can run, as the composer offers it
  *  (`cate.agent.types`). */
 export type MobileAgentChoice = AgentTypeInfo
@@ -225,11 +309,21 @@ export type MobileAgentLaunch =
   | { runner: 't3'; instanceId: string; model: string }
 
 /** Where a new panel goes: on the canvas a canvas panel shows, centred on
- *  `point` (canvas coordinates) or, without one, where there is room. A
- *  create without a placement goes to the dock. */
+ *  `point` (canvas coordinates) or, without one, where there is room; at
+ *  `size`, else its type's default size. A create without a placement goes
+ *  to the dock. */
 export interface MobilePlacement {
   canvasPanelId: string
   point?: { x: number; y: number }
+  size?: { width: number; height: number }
+}
+
+/** A rect in canvas coordinates: its top-left and size. */
+export interface MobileCanvasRect {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 export type MobileJoinResult = { ok: true; workspaceId: string } | { ok: false; message: string }
@@ -277,6 +371,9 @@ export interface MobileCoreMethods {
   /** Closes a panel (`closePanel`; a canvas takes the panels on it); true
    *  once the op went. */
   'panel.remove': { params: { workspaceId: string; panelId: string }; result: boolean }
+  /** Moves a panel to the checkout `worktreeId` (a `switchesWorktree`
+   *  panel); `discard` stops what runs in it. */
+  'panel.setWorktree': { params: { workspaceId: string; panelId: string; worktreeId: string; discard?: boolean }; result: MobileSwitchResult }
   /** The panel types a surface can become where it sits. */
   'surface.choices': { params: { workspaceId: string; panelId: string }; result: MobilePanelChoice[] }
   /** Turns a surface into `type`, in place. */
@@ -302,13 +399,17 @@ export interface MobileCoreMethods {
   'browser.title': { params: { viewId: string; tabId: string; title: string }; result: null }
 
   /** A chat panel's view: `panel.open`, and the page's binding (`script`
-   *  events). */
+   *  and `reveal` events). */
   'chat.open': { params: { viewId: string; workspaceId: string; panelId: string }; result: null }
   /** The page of the snapshot's `loadId`; null until the harness is ready. */
   'chat.page': { params: { viewId: string; dark: boolean }; result: MobileChatPage | null }
   /** Whether the page may go to `url` (`committed`: it already did, in page;
    *  a refused one is moved back with a `script` event). */
   'chat.navigation': { params: { viewId: string; url: string; committed: boolean }; result: { allow: boolean } }
+  /** A new top-level document of the page starts loading. */
+  'chat.documentStarted': { params: { viewId: string }; result: null }
+  /** The document's setup ran; `url` is where the page is. */
+  'chat.documentReady': { params: { viewId: string; url: string }; result: null }
   /** A bridge request the page logged; answers with the script that replies. */
   'chat.hostMessage': { params: { viewId: string; message: string }; result: string | null }
   /** The conversations of the panel's checkout, latest first. Selecting one
@@ -339,6 +440,47 @@ export interface MobileCoreMethods {
   /** Shows the changes of the agent a panel hosts in a review panel filtered
    *  to it (reusing a review of its checkout); the review's id, or null. */
   'agents.review': { params: { workspaceId: string; panelId: string }; result: string | null }
+
+  /** The panels `panelId` can connect to (none that would close a cycle). */
+  'relations.targets': { params: { workspaceId: string; panelId: string }; result: string[] }
+  /** The meanings a relation from `fromPanelId` to `toPanelId` can take. */
+  'relations.options': { params: { workspaceId: string; fromPanelId: string; toPanelId: string }; result: MobileRelationOption[] }
+  /** Connects two panels, or gives their relation a new meaning; false when
+   *  the op failed. */
+  'relations.connect': { params: { workspaceId: string; fromPanelId: string; toPanelId: string; kind: RelationKind }; result: boolean }
+  /** Gives a relation another meaning; its own label stays. */
+  'relations.setKind': { params: { workspaceId: string; relationId: string; kind: RelationKind }; result: boolean }
+  'relations.remove': { params: { workspaceId: string; relationId: string }; result: boolean }
+  /** When the panel's prompts take its relations' context. */
+  'relations.setContextMode': { params: { workspaceId: string; panelId: string; mode: RelationContextMode }; result: boolean }
+  /** The context the panel's next prompt would take, as the runtime would
+   *  send it; null when none would go. */
+  'relations.preview': { params: { workspaceId: string; panelId: string }; result: string | null }
+
+  /** A review view's agents that can review or take its findings, by name
+   *  (`reviewAgents`). */
+  'review.agents': { params: { viewId: string }; result: MobileReviewAgent[] }
+  /** The review's notes as Markdown, as the desktop copies them. */
+  'review.notes': { params: { viewId: string }; result: string }
+  /** Opens a changed file in a new editor panel next to the review; its id,
+   *  or null. */
+  'review.openFile': { params: { viewId: string; path: string }; result: string | null }
+  /** A changed image's versions, base64; null for a file that is no image. */
+  'review.images': {
+    params: { viewId: string; path: string; oldPath?: string }
+    result: { mime: string; old: string | null; new: string | null } | null
+  }
+
+  /** Moves a canvas node to `origin` (canvas coordinates), keeping its
+   *  size; false when the op failed. */
+  'canvas.moveNode': { params: { workspaceId: string; canvasId: string; nodeId: string; origin: { x: number; y: number } }; result: boolean }
+  /** Where a new panel of `type` could go on the canvas a canvas panel
+   *  shows, the desktop's recommended spots (`recommendPlacements`) for the
+   *  part of it on screen (`visible`), best first. */
+  'canvas.suggest': {
+    params: { workspaceId: string; canvasPanelId: string; type: string; visible: MobileCanvasRect }
+    result: MobileCanvasRect[]
+  }
 
   /** Keeps the runtime's machine awake for a while (`power.set`). */
   'power.set': { params: { workspaceId: string; duration: KeepAwakeDuration }; result: MobileActionResult }

@@ -1,7 +1,8 @@
 import { useId, useMemo } from 'react'
 import type { Point } from '@workspace/canvas/contract'
-import { dockStacks, type DockNode, type PanelId, type PanelRecord, type PanelRelation } from '@workspace/document/contract'
+import { dockStacks, type DockNode, type PanelId, type PanelRelation } from '@workspace/document/contract'
 import { panelConnectionMidpoint, panelConnectionPath } from '@workspace/canvas/contract'
+import { relationFlows } from '@workspace/relations/contract'
 import {
   PanelRelationSelector,
   RelationCanvasProvider,
@@ -42,44 +43,6 @@ function visiblePanelIds(dock: DockNode, activeTabs: Readonly<Record<string, Pan
   })
 }
 
-const takesPrompts = (record: PanelRecord) => relationRoleOf(record.type)?.execution === true
-
-/** A flow starts at an execution surface and stops when it reaches the next
- * one. The incoming handoff relation keeps the sender's color; relations
- * leaving the receiving terminal/T3 start that panel's new flow color. */
-function relationFlowIndexes(
-  relations: readonly PanelRelation[],
-  panels: Record<string, PanelRecord>,
-): Map<string, number> {
-  const outgoing = new Map<string, PanelRelation[]>()
-  for (const relation of relations) {
-    const connected = outgoing.get(relation.fromPanelId) ?? []
-    connected.push(relation)
-    outgoing.set(relation.fromPanelId, connected)
-  }
-
-  const indexes = new Map<string, number>()
-  let flowIndex = 0
-  for (const source of Object.values(panels)) {
-    if (!takesPrompts(source) || !outgoing.has(source.id)) continue
-    const queue = [source.id]
-    const seenPanels = new Set<string>()
-    while (queue.length > 0) {
-      const panelId = queue.shift()!
-      if (seenPanels.has(panelId)) continue
-      seenPanels.add(panelId)
-      for (const relation of outgoing.get(panelId) ?? []) {
-        if (indexes.has(relation.id)) continue
-        indexes.set(relation.id, flowIndex)
-        const target = panels[relation.toPanelId]
-        if (target && !takesPrompts(target)) queue.push(target.id)
-      }
-    }
-    flowIndex += 1
-  }
-  return indexes
-}
-
 export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
   const markerPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const canvasStore = useCanvasViewStore()
@@ -97,7 +60,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
 
   const connections = useMemo(() => {
     const enabledRelations = panelRelationsEnabled ? relations : EMPTY_RELATIONS
-    const flowIndexes = relationFlowIndexes(enabledRelations, panels)
+    const flowIndexes = relationFlows(enabledRelations, panels, relationRoleOf)
     const panelToNode = new Map<string, ViewNode>()
     for (const node of Object.values(nodes)) {
       if (node.animationState === 'exiting') continue

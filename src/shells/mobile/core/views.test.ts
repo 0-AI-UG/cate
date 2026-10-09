@@ -18,7 +18,7 @@ afterEach(() => {
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
 
-installClientIdentity({ clientId: 'me', device: { name: 'phone', keyFingerprint: 'k' }, features: [] } as never)
+installClientIdentity({ clientId: 'me', device: { name: 'phone', publicKey: 'k' }, features: [] } as never)
 
 function setup<S>(initial: S) {
   let snapshot: S = initial

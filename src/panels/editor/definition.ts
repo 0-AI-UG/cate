@@ -6,7 +6,7 @@ import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { pathDisplayName } from '@workspace/files/contract'
-import { isPreviewPath } from './contract/drafts'
+import { isEditorDraft, isPreviewPath } from './contract/drafts'
 import { editorApi, type EditorOp, type EditorSnapshot } from './contract'
 
 interface EditorCreateOptions extends PanelCreateOptions {
@@ -50,7 +50,11 @@ export const editorDefinition = definePanel({
     return kit.add(record, options)
   },
   checkoutPath: (record) => filePathOf(record.fields),
-  describe: (record) => filePathOf(record.fields),
+  // A draft's path is Cate's own temporary file, not something to show.
+  describe: (record) => {
+    const filePath = filePathOf(record.fields)
+    return isEditorDraft(filePath) ? undefined : filePath
+  },
   claimsShortcuts: ['saveFile', 'toggleFileExplorer', 'toggleSearch'],
   commands: [
     { id: 'editor.save', title: 'Save File', op: { kind: 'save' } },

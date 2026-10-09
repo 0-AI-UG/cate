@@ -35,7 +35,7 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
 
   const first = await startLocalRuntime(options)
   expect(first.started).toBe(true)
-  const client = new RpcClient({ version: 'test', identity: { client: { clientId: 'c', device: { name: 'd', keyFingerprint: 'f' }, features: [] } } })
+  const client = new RpcClient({ version: 'test', identity: { client: { clientId: 'c', device: { name: 'd', publicKey: 'f' }, features: [] } } })
   await client.attach(framePortOver(first.duplex, 'stream'))
   const runtime = createCapabilityProxy(client, runtimeCapability)
   const info = await runtime.info()

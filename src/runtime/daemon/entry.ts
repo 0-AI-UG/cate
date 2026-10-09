@@ -29,14 +29,14 @@ import {
 } from '@runtime/data/runtime'
 import { DEFAULT_CATE_CONNECT_URL } from '@runtime/connect/contract'
 import { pairingCapability } from '@runtime/pairing/contract'
-import { openPairingsFile, PairingService, pairingCapabilityImpl } from '@runtime/pairing/runtime'
+import { openDevicesFile, PairingService, pairingCapabilityImpl } from '@runtime/pairing/runtime'
 import { powerCapability } from '@runtime/power/contract'
 import { createPowerService, powerCapabilityImpl } from '@runtime/power/runtime'
 import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
 import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
 import { createServerHost, reapOrphanServers, type ServerHost } from '@runtime/server/runtime'
-import type { PeerConnectionFactory, WebSocketFactory } from '@runtime/transports/contract'
+import { pairingEndpoints, type PeerConnectionFactory, type WebSocketFactory } from '@runtime/transports/contract'
 import { loadNodePeerConnection, nodeWebSocketFactory } from '@runtime/transports/node'
 import { createNetworkPeers, serveLocal, type SameNetworkOptions } from '@runtime/transports/runtime'
 import { tunnelCapability } from '@runtime/tunnel/contract'
@@ -142,8 +142,8 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   const overlapping = await overlappingRuntime(root, home)
   if (overlapping) {
     const message = overlapping.root.length < root.length
-      ? `${root} is inside the workspace ${overlapping.root}, which is already open in Cate. Open that workspace instead, or close it first.`
-      : `${root} contains the workspace ${overlapping.root}, which is already open in Cate. Close that workspace first.`
+      ? `${root} is inside the workspace ${overlapping.root}, which is already running. Open that workspace instead, or stop its runtime and try again.`
+      : `${root} contains the workspace ${overlapping.root}, which is already running. Stop its runtime, then try again.`
     const data: NestedRefusal = { nested: { root: overlapping.root } }
     const refusing = serveLocal(lock.server, new RpcServer({
       version,
@@ -199,11 +199,17 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     withCateCli: (env) => ({ ...env, ...prependPath(env, cateBin) }),
   })
 
-  const pairingsFile = openPairingsFile(paths.dir)
+  const devicesFile = openDevicesFile(paths.dir)
   const pairing = new PairingService({
     runtimePublicKey: keys.publicKey,
-    store: pairingsFile,
+    store: devicesFile,
     addresses: () => network.addresses(),
+  })
+  // Every client is a device of the workspace, whatever carried it in, and
+  // removing a device drops all its connections (7.6).
+  const offDeviceConnected = lifecycle.onClientConnected((client) => pairing.connected(client.device))
+  const offDeviceRevoked = pairing.onRevoked((publicKey) => {
+    rpc.disconnect((connection) => connection.client?.device.publicKey === publicKey, 'device removed')
   })
 
   const ws = composeWorkspace({
@@ -275,9 +281,11 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
       power.dispose()
       offPushEvents()
       offPushRevoked()
+      offDeviceConnected()
+      offDeviceRevoked()
       await removeSocket(endpoint)
       settings.dispose()
-      pairingsFile.dispose()
+      devicesFile.dispose()
       pushFile.dispose()
       secrets.dispose()
       clearTimeout(deadline)
@@ -292,6 +300,10 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     version,
     rpc,
     perf,
+    endpoints: () => {
+      const mode = settings.get('runtimeNetwork')
+      return mode === 'off' ? [] : pairingEndpoints(network.addresses(), mode)
+    },
     busy: busy.busy,
     stop: () => void stop({ kind: 'stop' }),
     onStopping(listener) {

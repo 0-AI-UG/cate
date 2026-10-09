@@ -11,7 +11,7 @@ import type { CapabilityProxy } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
 import type { workspaceCapability } from '@workspace/lifecycle/contract'
 import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
-import type { WorkspaceList } from './workspaceList'
+import { workspaceLocation, type WorkspaceList } from './workspaceList'
 
 const log = createLogger('trust')
 
@@ -123,7 +123,7 @@ async function ensureOpenedTrusted(
 ): Promise<'trusted' | 'declined' | 'closed'> {
   const entry = deps.workspaces.get(workspaceId)
   if (!entry || !(await whenConnected(deps.connections.get(workspaceId)))) return 'closed'
-  const label = entry.kind === 'local' ? entry.root : entry.name
+  const label = workspaceLocation(entry) ?? entry.name
   return (await (deps.store ?? trustStore).ensureTrusted(workspaceId, label)) ? 'trusted' : 'declined'
 }
 

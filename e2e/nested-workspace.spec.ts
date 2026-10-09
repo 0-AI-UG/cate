@@ -26,13 +26,15 @@ test('a folder inside the open workspace explains itself and offers the open one
   await addFolder(app, realpathSync(inner))
   const page = app.mainWindow
   const blocker = page.locator('[data-connection-blocker]')
-  await expect(blocker).toContainText(`is inside the workspace ${outer}, which is already open in Cate`, { timeout: 30_000 })
+  await expect(blocker).toContainText(`is inside the workspace ${outer}, which is already running`, { timeout: 30_000 })
   await expect(page.locator('[role="dialog"]')).toHaveCount(0)
   await expect(page.locator('[data-connection-status]')).toHaveAttribute('aria-label', /is inside the workspace/)
 
   await blocker.getByRole('button', { name: `Open ${path.basename(outer)}` }).click()
   await expect.poll(() => page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())).toBe(outerId)
-  await expect.poll(() => entries(app!)).toEqual([outerId])
+  // The folder the person opened stays in the list, to open once the outer one stops.
+  await expect.poll(() => entries(app!)).toContain(outerId)
+  await expect.poll(async () => (await entries(app!)).length).toBe(2)
   await expect(blocker).toHaveCount(0)
 })
 

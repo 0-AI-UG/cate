@@ -1,6 +1,6 @@
 // The iOS shell (architecture 15): native SwiftUI over the client core, which
 // runs headless in a hidden web view (CoreHost). One stack: the workspaces,
-// then a workspace with its agents and panels. A `cate://pair` link, from a
+// then a workspace's places (its dock and canvases) and its panels. A `cate://pair` link, from a
 // QR code scanned with the Camera app, opens the join sheet and joins; a
 // notification opens its workspace and the agent it is about.
 
@@ -34,6 +34,7 @@ struct RootView: View {
                 .navigationDestination(for: String.self) { WorkspaceView(workspaceId: $0) }
                 .agentDestinations()
         }
+        .environment(\.joinWorkspace) { joining = JoinRequest(link: nil) }
         .sheet(item: $joining) { request in
             JoinView(link: request.link) { workspaceId in
                 joining = nil
@@ -78,12 +79,14 @@ struct RootView: View {
 }
 
 extension View {
-    /// The screens a workspace leads to: its panels, its agents' chats and a
-    /// new agent chat.
+    /// The screens a workspace leads to: its panels, its agents and their
+    /// chats, a new agent chat and the workspace itself.
     func agentDestinations() -> some View {
         navigationDestination(for: PanelRoute.self) { PanelView(route: $0) }
             .navigationDestination(for: AgentRoute.self) { AgentChatView(workspaceId: $0.workspaceId, panelId: $0.panelId) }
-            .navigationDestination(for: NewAgentRoute.self) { AgentChatView(workspaceId: $0.workspaceId, panelId: nil, canvasPanelId: $0.canvasPanelId) }
+            .navigationDestination(for: NewAgentRoute.self) { AgentChatView(workspaceId: $0.workspaceId, panelId: nil, placement: $0.placement) }
+            .navigationDestination(for: AgentsRoute.self) { AgentsView(workspaceId: $0.workspaceId) }
+            .navigationDestination(for: WorkspaceInfoRoute.self) { WorkspaceInfoView(workspaceId: $0.workspaceId) }
     }
 }
 

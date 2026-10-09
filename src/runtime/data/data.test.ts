@@ -58,7 +58,11 @@ describe('workspace data directory', () => {
     expect(paths.socket).toBe(path.join(dir, 'runtime.sock'))
     expect(paths.session('panel-1')).toBe(path.join(dir, 'sessions', 'panel-1.json'))
     expect(() => paths.session('../x')).toThrow()
-    expect(localEndpoint(dir, 'abcdefghijklmnop', 'win32')).toBe('\\\\.\\pipe\\cate-abcdefghijklmnop')
+    const pipe = localEndpoint(dir, 'abcdefghijklmnop', 'win32')
+    expect(pipe).toMatch(/^\\\\\.\\pipe\\cate-[0-9a-f]{16}-abcdefghijklmnop$/)
+    // Stable for the user, and private to them.
+    expect(localEndpoint(dir, 'abcdefghijklmnop', 'win32')).toBe(pipe)
+    expect((await fs.stat(path.join(tmp, '.cate', 'pipe-key'))).mode & 0o077).toBe(0)
     expect(localEndpointFor('abcdefghijklmnop', '/home/me', 'darwin')).toBe('/home/me/.cate/workspaces/abcdefghijklmnop/runtime.sock')
   })
 

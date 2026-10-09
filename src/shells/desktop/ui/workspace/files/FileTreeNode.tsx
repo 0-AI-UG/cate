@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import { Spinner } from '../../kernel/interaction'
-import { hasFileRefDrag, readFileRefDrag, relativeDisplayPath, writeFileRefDrag, type FileEntry } from '@workspace/files/contract'
+import { hasFileRefDrag, joinPath, parentDir, readFileRefDrag, relativeDisplayPath, writeFileRefDrag, type FileEntry } from '@workspace/files/contract'
 import { droppedImport, isExternalFileDrag, refDropMode, takeDroppedItems } from './droppedEntries'
 import { setTreeDropDir, useTreeDropDir } from './treeDropDir'
 import type { FileTreeModel } from '@workspace/files/client'
@@ -197,7 +197,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   // Helpers
   // ---------------------------------------------------------------------------
 
-  const parentDir = node.isDirectory ? node.path : node.path.substring(0, node.path.lastIndexOf('/'))
+  const folder = node.isDirectory ? node.path : parentDir(node.path)
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -312,7 +312,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     setIsRenaming(false)
     const trimmed = renameValue.trim()
     if (!trimmed || trimmed === node.name) return
-    const newPath = node.path.substring(0, node.path.lastIndexOf('/') + 1) + trimmed
+    const newPath = joinPath(parentDir(node.path), trimmed)
     try {
       await resource.rename(node.path, newPath)
       onTreeChanged?.()
@@ -352,8 +352,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     setIsCreating(null)
     const trimmed = createValue.trim()
     if (!trimmed || !type) return
-    const dir = node.isDirectory ? node.path : parentDir
-    const newPath = dir + '/' + trimmed
+    const newPath = joinPath(folder, trimmed)
     try {
       await resource.create(newPath, type)
       // onTreeChanged → loadTree → refreshExpandedChildren re-reads this folder.
@@ -361,16 +360,16 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     } catch (err) {
       console.error('[file-tree] Failed to create entry:', err)
     }
-  }, [isCreating, createValue, node.isDirectory, node.path, parentDir, onTreeChanged, resource])
+  }, [isCreating, createValue, folder, onTreeChanged, resource])
 
   // --- Paste (copy from clipboard) ---
   const handlePaste = useCallback(async () => {
     const refs = await clipboardFileRefs()
     if (refs.length === 0) return
-    const destDir = node.isDirectory ? node.path : parentDir
+    const destDir = folder
     if (node.isDirectory) void onExpand(node.path)
     if (await resource.transfer(refs, destDir, 'copy')) onTreeChanged?.()
-  }, [node.isDirectory, node.path, parentDir, onExpand, onTreeChanged, resource])
+  }, [node.isDirectory, node.path, folder, onExpand, onTreeChanged, resource])
 
   // --- Delete ---
   const handleDelete = useCallback(async () => {
@@ -385,7 +384,7 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
   }, [node.name, node.path, node.isDirectory, onTreeChanged, resource])
 
   // --- Drag-and-drop move ---
-  const dropTargetDir = node.isDirectory ? node.path : parentDir
+  const dropTargetDir = folder
 
   // Every row takes the drag: a folder row drops into the folder, a file row
   // into the file's folder. A drop that missed every row used to fall through

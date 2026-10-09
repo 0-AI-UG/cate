@@ -26,7 +26,7 @@ const WORDS: Record<string, string> = {
   'agent-not-running': 'The agent is not running.',
   'agent-panel-not-found': 'The agent\'s panel was closed.',
   'agent-panel-unavailable': 'The agent\'s panel is not available.',
-  'prompt-required': 'Describe the task first.',
+  'prompt-required': 'Say what to work on first.',
   't3-provider-not-ready': 'That T3 Code provider is not ready on your computer.',
   't3-project-not-found': 'T3 Code is still opening this checkout. Try again in a moment.',
   untrusted: 'Trust this workspace on your computer first.',
@@ -50,11 +50,11 @@ async function attempt(work: () => Promise<unknown>): Promise<MobileActionResult
   }
 }
 
-/** A worktree name for a task: its first words, and a suffix so two tasks
- *  with the same start do not collide. */
-export function taskWorktreeName(prompt: string, suffix = Math.random().toString(36).slice(2, 6)): string {
+/** A worktree name for a new agent: its prompt's first words, and a suffix
+ *  so two agents with the same start do not collide. */
+export function agentWorktreeName(prompt: string, suffix = Math.random().toString(36).slice(2, 6)): string {
   const words = prompt.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/, '')
-  return `task-${words || 'work'}-${suffix}`
+  return `agent-${words || 'work'}-${suffix}`
 }
 
 export function createActionHandlers(agents: MobileAgents, conversations: MobileConversations): Handlers<ActionMethod> {
@@ -89,7 +89,7 @@ export function createActionHandlers(agents: MobileAgents, conversations: Mobile
           ...(launch.runner === 'terminal'
             ? { runner: 'terminal' as const, agentId: launch.agentId }
             : { runner: 't3' as const, instanceId: launch.instanceId, model: launch.model }),
-          ...(worktree ? { newWorktree: taskWorktreeName(prompt) } : {}),
+          ...(worktree ? { newWorktree: agentWorktreeName(prompt) } : {}),
           ...(near ? { canvasPanelId: near } : {}),
           ...(position ? { position } : {}),
         })

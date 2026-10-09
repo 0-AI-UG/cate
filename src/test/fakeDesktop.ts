@@ -51,7 +51,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
     isPackaged: false,
     e2e: false,
     features: options.features ?? [],
-    device: { name: 'test', keyFingerprint: 'FP' },
+    device: { name: 'test', publicKey: 'FP' },
     window: { kind: 'main' },
   }
   const pipes = new Map<string, ByteDuplex>()
@@ -128,11 +128,12 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       onPointer: off,
       onEnded: off,
     },
-    ssh: {
-      ensureRuntime: async () => { throw new Error('no ssh') },
-      listDir: async () => { throw new Error('no ssh') },
-      mkdir: async () => { throw new Error('no ssh') },
-      serve: async () => { throw new Error('no ssh') },
+    machines: {
+      ensureRuntime: async () => { throw new Error('no machines') },
+      listDir: async () => { throw new Error('no machines') },
+      mkdir: async () => { throw new Error('no machines') },
+      wslDistros: async () => [],
+      cancel: async () => {},
     },
     transports: {
       async dialLocal() {
@@ -143,6 +144,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
         pipes.set(id, client)
         return id
       },
+      dialMachine: async () => { throw new Error('no machines') },
       dialNetwork: async () => { throw new Error('no network') },
       dialLoopbackTcp: async () => { throw new Error('no loopback') },
       pair: async () => { throw new Error('no pairing') },

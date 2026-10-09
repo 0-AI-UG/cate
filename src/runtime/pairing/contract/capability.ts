@@ -1,13 +1,26 @@
 import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
 import type { PairingMode } from './payload'
 
-export interface PairedDevice {
+/** How a device got in the first time: it paired with a one-time code over
+ *  the network, or it connected as a user of the runtime's machine (the
+ *  local socket, or a bridge over SSH or WSL). Either way it is a known
+ *  device afterwards, on every transport (7.6). */
+export type DeviceAdmission = 'pairing' | 'machineUser'
+
+/** A device that has opened this workspace. */
+export interface WorkspaceDevice {
   /** hex X25519 public key */
   publicKey: string
   fingerprint: string
   name: string
-  pairedAt: number
+  admittedBy: DeviceAdmission
+  addedAt: number
   lastSeen: number
+}
+
+/** A hex X25519 public key, as devices.json and a client hello carry it. */
+export function isDeviceKey(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 }
 
 export interface CreatedSecret {
@@ -21,13 +34,13 @@ export interface CreatedSecret {
 export const pairingCapability = defineCapability('pairing', {
   methods: {
     createSecret: method<{ mode: PairingMode }, CreatedSecret>({ mutates: true }),
-    list: method<void, PairedDevice[]>(),
+    list: method<void, WorkspaceDevice[]>(),
     revoke: method<{ deviceKey: string }, { removed: boolean }>({ mutates: true }),
   },
   streams: {
     /** The device list: a snapshot, then the whole list after every change
-     *  (paired, seen, removed). */
-    watch: channelStream<void, PairedDevice[], PairedDevice[]>(),
+     *  (paired, connected, removed). */
+    watch: channelStream<void, WorkspaceDevice[], WorkspaceDevice[]>(),
   },
 })
 

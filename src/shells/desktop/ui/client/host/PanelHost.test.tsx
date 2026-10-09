@@ -45,7 +45,7 @@ beforeEach(() => {
   ]))
   sessions = fakeSessions()
   detachSessions = attachSessions(sessions.connections)
-  installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] }))
+  installClientIdentity(createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: [] }))
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -105,7 +105,7 @@ describe('PanelHost', () => {
   })
 
   it('a surface type renders only its geometry slot here', async () => {
-    installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: ['webview'] }))
+    installClientIdentity(createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: ['webview'] }))
     await render(<PanelHost workspaceId="w" panelId="b1" />)
     expect(container.querySelector('[data-browser-surface-slot="b1"]')).not.toBeNull()
   })

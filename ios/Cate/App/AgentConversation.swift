@@ -35,7 +35,7 @@ final class AgentConversation {
 
     var working: Bool { status == "running" }
 
-    /// Follows the panel's conversation until the task is cancelled.
+    /// Follows the panel's conversation until cancelled.
     func run(_ core: CoreHost, workspaceId: String, panelId: String, pending: String?) async {
         self.pending = pending
         core.watchAgent(viewId, workspaceId: workspaceId, panelId: panelId, pending: pending) { [weak self] data in

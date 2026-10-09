@@ -1,6 +1,7 @@
 // "Devices" settings page of a workspace: add a device (turn on network
 // access if it is off, then show a one-time QR code and pairing code with its
-// expiry), and the paired devices with revoke.
+// expiry), and every device that has opened the workspace, paired or as a
+// user of the runtime's machine, with revoke.
 
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
@@ -9,7 +10,9 @@ import { useRuntime } from '../../kernel/rpc'
 import { SecondaryButton, Select, SearchableBlock, Spinner } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSetting } from '../../kernel/settings'
-import type { CreatedSecret, PairedDevice, PairingMode } from '@runtime/pairing/contract'
+import type { CreatedSecret, PairingMode, WorkspaceDevice } from '@runtime/pairing/contract'
+import { clientIdentity } from '@client/connections'
+import { useOtherClients } from '../../client/document'
 import type { SettingsPageProps } from '../settings/registry'
 
 export function DevicesPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
@@ -17,7 +20,7 @@ export function DevicesPage({ workspaceId }: SettingsPageProps): JSX.Element | n
   return (
     <div className="flex flex-col gap-1">
       <AddDevice workspaceId={workspaceId} />
-      <PairedDevices workspaceId={workspaceId} />
+      <WorkspaceDevices workspaceId={workspaceId} />
     </div>
   )
 }
@@ -69,7 +72,10 @@ export function AddDevice({ workspaceId }: { workspaceId: string }): JSX.Element
     setBusy(true)
     setError(null)
     try {
-      if (network !== mode) await setWorkspaceSetting(workspaceId, 'runtimeNetwork', mode)
+      // Only ever widens access: Cate Connect serves the same network too.
+      if (network === 'off' || (network === 'sameNetwork' && mode === 'cateConnect')) {
+        await setWorkspaceSetting(workspaceId, 'runtimeNetwork', mode)
+      }
       setSecret(await runtime.pairing.createSecret({ mode }))
     } catch (err) {
       setError(errorMessage(err, 'Could not create a pairing code.'))
@@ -129,12 +135,16 @@ export function AddDevice({ workspaceId }: { workspaceId: string }): JSX.Element
   )
 }
 
-export function PairedDevices({ workspaceId }: { workspaceId: string }): JSX.Element {
+export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.Element {
   const runtime = useRuntime(workspaceId)
-  const [devices, setDevices] = useState<PairedDevice[] | null>(null)
+  const others = useOtherClients(workspaceId)
+  const [devices, setDevices] = useState<WorkspaceDevice[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const ownKey = clientIdentity().device.publicKey
+  const online = new Set([ownKey, ...others.map((client) => client.device.publicKey)])
 
-  // Live: a device paired or removed from another client shows here too.
+  // Live: a device paired, connected or removed from another client shows
+  // here too.
   useEffect(() => {
     if (!runtime) return
     const watch = runtime.pairing.watch(undefined, { resume: true })
@@ -142,13 +152,16 @@ export function PairedDevices({ workspaceId }: { workspaceId: string }): JSX.Ele
       setDevices(event.kind === 'snapshot' ? event.snapshot : event.change)
       setError(null)
     })
-    watch.done.catch((err: unknown) => setError(errorMessage(err, 'Could not list paired devices.')))
+    watch.done.catch((err: unknown) => setError(errorMessage(err, 'Could not list the devices.')))
     return () => watch.cancel()
   }, [runtime])
 
-  const revoke = async (device: PairedDevice) => {
+  const revoke = async (device: WorkspaceDevice) => {
     if (!runtime) return
-    if (!(await clientUi().confirm(`Remove "${device.name}"? It can no longer open this workspace until it pairs again.`))) return
+    const consequence = device.admittedBy === 'pairing'
+      ? 'It can no longer open this workspace until it pairs again.'
+      : 'It is disconnected, and comes back when it opens the workspace again as a user of this machine.'
+    if (!(await clientUi().confirm(`Remove "${device.name}"? ${consequence}`))) return
     try {
       await runtime.pairing.revoke({ deviceKey: device.publicKey })
     } catch (err) {
@@ -157,23 +170,30 @@ export function PairedDevices({ workspaceId }: { workspaceId: string }): JSX.Ele
   }
 
   return (
-    <SearchableBlock keywords="paired devices revoke remove phone">
+    <SearchableBlock keywords="devices paired revoke remove phone">
       <div className="py-3 flex flex-col gap-2">
-        <span className="text-[13px] font-medium text-primary">Paired devices</span>
+        <span className="text-[13px] font-medium text-primary">Devices</span>
         {error && <span className="text-xs text-danger">{error}</span>}
         {devices === null ? (
           !error && <Spinner size={12} />
         ) : devices.length === 0 ? (
-          <span className="text-xs text-muted">No other device can open this workspace.</span>
+          <span className="text-xs text-muted">No device has opened this workspace.</span>
         ) : (
-          <ul className="flex flex-col" aria-label="Paired devices">
+          <ul className="flex flex-col" aria-label="Devices">
             {devices.map((device) => (
-              <li key={device.publicKey} className="flex items-center gap-3 py-1.5">
+              <li key={device.publicKey} data-device-key={device.publicKey} className="flex items-center gap-3 py-1.5">
+                <span
+                  aria-label={online.has(device.publicKey) ? 'Connected' : 'Not connected'}
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${online.has(device.publicKey) ? 'bg-green-500' : 'bg-transparent'}`}
+                />
                 <Smartphone size={14} className="text-muted shrink-0" />
                 <div className="flex flex-col min-w-0 flex-1">
-                  <span className="text-[13px] text-primary truncate">{device.name}</span>
+                  <span className="text-[13px] text-primary truncate">
+                    {device.name}
+                    {device.publicKey === ownKey && <span className="text-muted"> (this device)</span>}
+                  </span>
                   <span className="text-[11px] text-muted font-mono truncate">
-                    {device.fingerprint} · last seen {new Date(device.lastSeen).toLocaleString()}
+                    {device.fingerprint} · {device.admittedBy === 'pairing' ? 'paired' : "as this machine's user"} · last seen {new Date(device.lastSeen).toLocaleString()}
                   </span>
                 </div>
                 <button

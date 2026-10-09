@@ -17,7 +17,11 @@ import type {
 } from '../contract'
 import { NotARepositoryError, githubRepositoryUrl, parseReviewPatch } from '../contract'
 
-const execFileP = promisify(execFile)
+const execFileAsync = promisify(execFile)
+/** The daemon has no console on Windows: without `windowsHide` every git and
+ *  gh call would flash a console window. */
+const execFileP = ((file: string, args: readonly string[], options: Parameters<typeof execFileAsync>[2]) =>
+  execFileAsync(file, args, { windowsHide: true, ...options })) as typeof execFileAsync
 
 const REVIEW_PATCH_MAX_BYTES = 2 * 1024 * 1024
 const REVIEW_PATCH_MAX_LINES = 20_000
@@ -102,7 +106,7 @@ export interface GitHostDeps {
 
 function gitBuffer(cwd: string, args: string[], env: NodeJS.ProcessEnv, input?: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = execFile('git', ['-C', cwd, ...args], { env, encoding: 'buffer', maxBuffer: REVIEW_CONTENT_MAX_BYTES }, (error, stdout) => {
+    const child = execFile('git', ['-C', cwd, ...args], { env, encoding: 'buffer', maxBuffer: REVIEW_CONTENT_MAX_BYTES, windowsHide: true }, (error, stdout) => {
       if (error) reject(error)
       else resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout))
     })

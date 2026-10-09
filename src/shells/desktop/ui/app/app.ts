@@ -2,7 +2,7 @@
 // the open connections, and how to pair with an unknown runtime. The shell
 // builds these at start and installs them once.
 
-import type { SshSetup } from '@runtime/daemon/contract'
+import type { MachineSetup } from '@runtime/daemon/contract'
 import type { ShellTransports, WorkspaceConnections } from '@client/connections'
 import type { WorkspaceList } from '@client/workspaces'
 
@@ -17,9 +17,9 @@ export interface ClientApp {
   /** The shell's `ShellTransports.pair`; absent on a shell that cannot join
    *  network workspaces. */
   pair?: NonNullable<ShellTransports['pair']>
-  /** Setting up a runtime on another machine over SSH; absent on a shell
-   *  that cannot run ssh. */
-  ssh?: SshSetup
+  /** Setting up and browsing machines this device runs commands on (SSH,
+   *  WSL); absent on a shell that cannot run commands. */
+  machines?: MachineSetup
 }
 
 let installed: ClientApp | null = null

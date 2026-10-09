@@ -22,7 +22,7 @@ Three ideas shape everything below:
 The guiding rule for every decision: state lives where it is most natural, and
 the model stays simple and complete. State is shared; clients render it. Every
 client is the same to the runtime. Connections are secure: every network
-connection is encrypted and mutually authenticated, and only paired devices
+connection is encrypted and mutually authenticated, and only known devices
 connect. Once connected, a client has full access; per-person state and
 permissions are deliberately left for later, and nothing here makes them
 harder to add.
@@ -36,7 +36,7 @@ The choices this document is built on.
 | D1 | One daemon per workspace, on every machine. No shared local daemon. |
 | D2 | Everything that is not rendering, input or a native OS primitive runs in the daemon. |
 | D3 | Every client is the same to the runtime. No roles, no per-client permissions. |
-| D4 | Every network connection runs inside a Noise handshake with pinned keys; only paired devices connect (section 7.6). The local transport is protected by the OS user (a `0600` socket). |
+| D4 | Every network connection runs inside a Noise handshake with pinned keys; only known devices connect (section 7.6). The local transport is protected by the OS user (a `0600` socket). Every client is a device of the workspace, whatever let it in. |
 | D5 | All workspace state lives in the workspace data directory on the runtime's machine. The repository's `.cate/` holds only skills, temporary files and worktree checkouts. |
 | D6 | Nothing is shared between workspaces. A new workspace starts from defaults. |
 | D7 | Native OS primitives stay in the client's shell (the desktop shell): windows, webviews and the page driver, the loopback web proxy, passkeys, native dialogs, notification display, drag ghost, screenshot capture, the updater. |
@@ -305,11 +305,14 @@ shell's native side.
 - No runtime id inside a path string. The connection a path came through is
   the routing.
 - No session asks for UI (section 11.2, rule 6).
-- No shared local daemon, no SSH or WSL transport (SSH only sets a runtime
-  up on another machine, section 7.1; it never carries a connection), no
-  project lock file, no
+- No shared local daemon, no protocol of its own for SSH or WSL (a machine's
+  bridge carries the local transport over the command's stdio, sections 7.1
+  and 7.5), no project lock file, no
   reverse tunnel for the CLI, no per-feature IPC between the desktop shell's
   main process and its renderer for workspace work.
+- No client served differently for how it arrived. The transport decides who
+  is admitted (7.5, 7.6); after `hello` every client is the same to the
+  runtime (D3), and nothing past the door knows the transport.
 - No state shared by the workspaces of a machine: settings, skills, T3 state,
   browser data, trust, grants, agent hooks and agent changes all belong to one
   workspace.
@@ -327,7 +330,7 @@ Every piece of state belongs to exactly one class.
 | **Document** | the runtime | panel records, windows and dock trees, canvases, nodes and geometry, node mini docks, relations, worktree metadata | every client of the workspace |
 | **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, chat thread binding, a review's comparison, notes and agent review, agent status | every client viewing the panel |
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes, T3 servers | through the runtime |
-| **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), T3 state and provider logins, browser history and bookmarks, skill sources, trust, granted paths, paired devices | every client of the workspace |
+| **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), T3 state and provider logins, browser history and bookmarks, skill sources, trust, granted paths, devices | every client of the workspace |
 | **Device** | one client device | client settings, workspace list and recents, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
 | **Client** | one running client, in memory | viewport, zoom, active tab per stack, the maximized stack of a window and node of a canvas, the tab a browser panel shows and its page zoom, an editor's source or preview, a review's file filter, focused file, collapsed and expanded files and context lines, focus, selection, undo history, open overlays, a drag in progress, one-shot intents (reveal a line), mounted webviews | never |
 
@@ -451,23 +454,26 @@ the pieces that make it reachable and secure.
   `cateConnect` with `--connect`), marks it trusted, and prints a pairing QR
   code and pairing code. `serve` is a command of the installed runtime, not a
   `cate` API method.
-- **Over SSH.** The desktop app sets a runtime up on another machine from
-  the client settings page "Remote machines" (machines saved in the client
-  setting `sshMachines`). Its main process runs the system `ssh`
-  non-interactively (`BatchMode`, so keys and the agent only;
-  `StrictHostKeyChecking=accept-new`) and pipes small scripts to the
-  machine's `sh -s` (`runtime/daemon/contract/ssh.ts`). For the person it is
-  one step; underneath it is two: `ensureRuntime` looks for this app's build
-  in `~/.cate/runtime/<build>/` and only when it is missing runs that
-  release's `install.sh` (pinned to the app's version, so the build matches);
-  `serve` never installs and runs exactly that build's `cate serve <folder>
-  --connect --json`. Between them a folder browser lists and creates folders
-  over the same SSH. The printed pairing link goes through the ordinary join
-  (7.7), so afterwards the workspace is a paired one reached through Cate
-  Connect and SSH is not used again, so the machine needs no inbound port
-  but SSH. The ssh command line is built in main
-  from validated fields (destination, port, identity file, jump host), never
-  from text the renderer passes.
+- **Machines (SSH, WSL).** The desktop app opens folders on machines it runs
+  commands on: SSH machines from the client settings page "Remote machines"
+  (saved in the client setting `sshMachines`), and on Windows the WSL distros
+  (`wsl.exe --list`). A machine is `{kind: 'ssh', target}` or
+  `{kind: 'wsl', distro}` (`runtime/daemon/contract/machine.ts`). The main
+  process runs the system `ssh` non-interactively (`BatchMode`, so keys and
+  the agent only; `StrictHostKeyChecking=accept-new`; no tty; a keepalive
+  that notices a dead link within 45 s) or `wsl.exe -d <distro>`, and pipes
+  small scripts to the machine's `sh -s` (`runtime/daemon/contract/ssh.ts`):
+  `ensureRuntime` looks for this app's build in `~/.cate/runtime/<build>/` and
+  only when it is missing runs that release's `install.sh` (pinned to the
+  app's version, so the build matches; glibc Linux and macOS, x64 or arm64);
+  a folder browser lists and creates folders. Opening a folder records it as
+  a workspace on that machine (`{machine, root}` in the workspace list); its
+  connection runs `runtime.cjs bridge <root>` of that build on the machine
+  (7.3, 7.5). Nothing needs to listen on the network and no pairing happens:
+  SSH (or the Windows user, for WSL) is the trust boundary, as the OS user is
+  for the local socket. The command line is built in main from validated
+  fields (destination, port, identity file, jump host, distro), never from
+  text the renderer passes.
 - **Pruning.** A daemon started from an install removes installs nothing
   uses: not its own, not the current one, not one a live daemon runs (the
   `build` in its `runtime.json`). Clients never prune. Only release bundles
@@ -497,7 +503,8 @@ persisted session and document file. It is created with mode `0700`.
   buffers/<hash>.bin    unsaved editor buffers (Yjs updates)
   settings.json         workspace settings (hand-editable)
   secrets.json          0600: browser passwords, runtime key pair
-  pairings.json         paired devices: public key, name, paired at, last seen
+  devices.json          0600: every device that has opened the workspace: public
+                        key, name, how it was admitted, added at, last seen
   push.json             0600: devices registered for pushes: key fingerprint,
                         delivery target (opaque), the key pushes are sealed with
   trust.json            { trusted, decidedAt }
@@ -532,7 +539,9 @@ persisted session and document file. It is created with mode `0700`.
   `runtime.sock` only after a connect to it fails, then binds it. Binding is
   atomic: a second daemon for the same workspace fails to bind and exits. The
   OS releases it when the daemon dies. On Windows the socket is a named pipe
-  `\\.\pipe\cate-<runtimeId>`, with the same rule.
+  `\\.\pipe\cate-<user key>-<runtimeId>`, with the same rule; a pipe that is
+  taken but does not answer belongs to a daemon still stopping, and is taken
+  over once it is gone.
   A stopping daemon closes its socket before it lets go of the workspace's
   files, so before removing a stale socket a starting daemon waits for the
   daemon that last owned it (the pid in `runtime.json`) to exit. Every daemon
@@ -554,8 +563,16 @@ persisted session and document file. It is created with mode `0700`.
   detached process, stdio to `logs/daemon.out.log`, and retries
   until connected (10 s budget). It also starts the runtime of the last
   selected workspace when the app launches, before the window asks for it.
-- **A client on another machine** finds the runtime through the network
-  transport (7.5) using the network id it paired with (7.2).
+- **A client that runs commands on the runtime's machine** (SSH, WSL; 7.1)
+  runs `runtime.cjs bridge <root>` there. The bridge does what a client on
+  the machine does (connect, or start the runtime and retry), then prints
+  `CATE-BRIDGE-READY` and carries the socket over its stdin and stdout until
+  either side closes; output before that line (a chatty login file) is
+  ignored. So a stopped runtime on such a machine starts again when the
+  workspace opens, as a local one does.
+- **A client on another machine** that cannot run commands there (a phone, a
+  teammate's device) finds the runtime through the network transport (7.5)
+  using the network id it paired with (7.2).
 
 ### 7.4 Lifetime
 
@@ -584,13 +601,28 @@ and T3 servers.
 
 **`runtime/transports`**. Every transport carries the same frames (7.8).
 
+**The transport decides who is admitted, never how a client is served.**
+Each transport has its own door (the OS user, SSH, Noise with a paired key);
+behind it every client is the same `ClientInfo` (`clientId`, device,
+features) with no transport in it, and nothing in the runtime branches on how
+a client arrived. A client asks for what differs between clients through
+client features (12.2). A test runs one scenario over the local socket, a
+machine's bridge and the network and requires the same result
+(`src/test/shared/transports.test.ts`).
+
 - **`local`**: the Unix socket in the workspace data directory, or the named
-  pipe `\\.\pipe\cate-<runtimeId>` on Windows. Access is the OS user: the
-  directory is `0700` and the socket `0600`; the pipe's ACL admits only the
-  user. No handshake beyond the protocol `hello`. Used by clients on the same
-  machine, by the `cate` CLI in terminals the runtime spawned, and by the T3
-  harness. Anything running as the same OS user can connect; that is the
-  trust boundary (D4).
+  pipe `\\.\pipe\cate-<user key>-<runtimeId>` on Windows. Access is the OS
+  user: the directory is `0700` and the socket `0600`. Node cannot set a
+  pipe's ACL, so the pipe name carries a random key kept in
+  `~/.cate/pipe-key`, which only the user can read: another user can neither
+  find the pipe nor take its name first. No handshake beyond the protocol
+  `hello`. Used by clients on the same machine, by the `cate` CLI in
+  terminals the runtime spawned, and by the T3 harness. Anything running as
+  the same OS user can connect; that is the trust boundary (D4).
+- **`machine`**: the local transport carried over the stdio of a command the
+  client runs on the runtime's machine (`ssh`, `wsl.exe`): `runtime.cjs
+  bridge` (7.3). Same frames and framing as the socket; the door is SSH or
+  the Windows user.
 - **`network`**, established one of two ways, always wrapped by the security
   layer (7.6):
   - **Same network**: the runtime listens for WebSocket connections on a
@@ -628,6 +660,20 @@ and T3 servers.
   could not connect and suggest same network.
 - The runtime's WebRTC (`node-datachannel`, libjuice) uses TURN over UDP
   only; the iOS web view also uses TURN over TCP.
+- **Paired endpoints follow the runtime.** `runtime.info` carries the
+  runtime's current network endpoints; on every connect a client stores them
+  with the paired workspace and dials them next time, since a machine's
+  private addresses change (DHCP, a WSL restart).
+- **Liveness.** A peer that slept or changed networks never says goodbye. The
+  same-network listener pings every WebSocket peer every 30 s and drops one
+  that missed the previous ping (every WebSocket client answers pings on its
+  own). A client checks its connections when the machine wakes (a timer that
+  fired late), when the network comes back, and when the iOS app returns to
+  the front (`checkAlive`): one that does not answer `runtime.info` within
+  5 s is dropped and dialed again.
+- **`localhost` on the runtime's machine** (the `tunnel` capability and the
+  local loopback dial, 12.3) tries `127.0.0.1`, then `::1`: a dev server
+  bound to `localhost` listens on either.
 
 ### 7.6 Security
 
@@ -646,7 +692,7 @@ pure-JS Noise implementation), so the iOS app uses the same code.
 - **Known peers only.** After the handshake:
   - the client checks that the runtime's key is the one it pinned for that
     network id and that the key derives the id, and aborts otherwise;
-  - the runtime checks that the client's key is in `pairings.json`; if not, the
+  - the runtime checks that the client's key is in `devices.json`; if not, the
     only message it accepts is `pair` (below), and it closes the connection
     after one failed attempt.
 - **Why not transport security alone.** WebRTC's DTLS authenticates whatever
@@ -662,13 +708,27 @@ pure-JS Noise implementation), so the iOS app uses the same code.
   remote address on the same-network listener; more are closed at once. An
   unknown key has 10 s to send `pair`. The refusal to an unpaired device
   names no version.
-- **Revocation.** The workspace's settings page lists its paired devices
-  live (`pairing.watch`, so a device paired or removed from another client
-  shows at once). Removing
-  one deletes it from `pairings.json` and drops its live connections. A device
-  can forget a workspace, which deletes its pinned key.
+- **Every client is a device.** The workspace's devices are every device
+  that has opened it, whatever let it in: one that paired over the network
+  (`admittedBy: pairing`), and one that connected as a user of the runtime's
+  machine, over the local socket or a machine's bridge (`machineUser`). A
+  client's hello names its device key; the runtime adds an unknown key when
+  the client connects (only the local socket can bring one: an unknown key on
+  the network never gets to hello) and marks a known one seen. A connection
+  that names no key (`cate serve`) is no device. On the local socket the key
+  is taken as given: its door is the machine's user, who can already create
+  a pairing secret. A device admitted as the machine's user is known on the
+  network too, like a paired one.
+- **Revocation.** The workspace's settings page lists its devices live
+  (`pairing.watch`, so a device paired, connected or removed from another
+  client shows at once), with the one viewing marked and those connected.
+  Removing one deletes it from `devices.json` and drops its live connections
+  on every transport. A paired device stays out until it pairs again; one
+  admitted as the machine's user is added again when it next connects, since
+  its door is still open. A device can forget a workspace, which deletes its
+  pinned key.
 - **After connecting**, a client has full access (D3). The runtime knows which
-  device each connection is (its key fingerprint and name), which is what
+  device each connection is (its key and name), which is what
   presence shows and what later permissions would build on.
 
 ### 7.7 Pairing and Cate Connect
@@ -699,12 +759,15 @@ connected client or by `cate serve`.
   runtime answers with `HMAC-SHA256(secret, "cate-pair-runtime" ||
   handshakeHash)`. Each side verifies the other's proof, which binds the
   secret to this exact encrypted session, so a party in the middle learns
-  nothing usable. The runtime then stores the device key in `pairings.json`
+  nothing usable. The runtime then stores the device key in `devices.json`
   and burns the secret; the client checks that the runtime key derives the
   network id it paired with and pins the key under it in
   `known-runtimes.json`, refusing another key for an id already pinned. A
   wrong proof burns the secret too.
 - **Afterwards** both sides reconnect by key; no code is needed again.
+- **No pairing for the machine's user.** A client that reaches the runtime
+  over the local socket or a machine's bridge does not pair: it is added to
+  the devices when it connects (7.6).
 - **Cate Connect** (registry, signaling, STUN, TURN relay) lives in its own repository and
   is deployed separately. This repository holds only its client,
   **`runtime/connect`**: the runtime's registration and connection setup on
@@ -745,7 +808,7 @@ connected client or by `cate serve`.
   `ack {stream, bytes}` (flow control for byte streams). Parameters are named
   objects, never positional arrays.
 - **Hello.** Both sides send their `protocol: [major, minor]` and version. A
-  client also sends its `clientId`, `device {name, keyFingerprint}` (checked
+  client also sends its `clientId`, `device {name, publicKey}` (checked
   against the handshake on network transports) and `features`
   (section 12.2), fixed for the life of the connection. A caller (the CLI, a
   T3 harness) sends its token instead (section 14). Same major is
@@ -820,9 +883,10 @@ fails to compile when a registered capability is missing.
   install is made of (the sources, bundled skills, T3 patches and the
   lockfile) (`scripts/build-id.mjs`), baked into the daemon bundle and the
   desktop app. A runtime of another build of the same protocol connects as
-  `stale` and is fully usable. The desktop restarts a stale runtime on its
-  own machine into its build once per connection, and only while nothing
-  else uses it (`ifIdle`, below); otherwise it keeps running as it is.
+  `stale` and is fully usable. The desktop restarts a stale runtime into its
+  build once per connection, whatever the transport, and only while nothing
+  else uses it (`ifIdle`, below) and its machine can get that build;
+  otherwise it keeps running as it is.
 - Another protocol major answers only `crossMajor` methods. The fix is
   `runtime.update { version, build }` with the client's own
   version and build: the daemon restarts into the install of that build, or
@@ -1107,6 +1171,9 @@ one that shows a canvas, never testing the type name. Each shell draws it
   panel shares a working file with the agent (an untitled editor gets
   `.cate/tmp/<id>.md`), autosaves, and is flushed before a prompt is
   submitted (`docs/connected-editors.md`).
+- **client**: the relation edits every client makes on its document mirror
+  (add or re-point, meaning, waypoint, remove, context mode) and the panels a
+  panel can connect to (`relationTargets`: none that would close a cycle).
 - **Desktop UI** (`shells/desktop/ui/workspace/relations`): the relation handle, selector and context toggle. Relation drawing
   is in the desktop UI (`shells/desktop/ui/client/layout/canvas`).
 
@@ -1456,14 +1523,23 @@ headless.
   (`attachSessions`) and page operations (`serveSurfaces`) itself, so a shell
   fills none of the client layer's slots.
 - **`client/connections`**: one connection per open workspace runtime: finding
-  it (the local socket, mDNS, Cate Connect), starting a local one, pairing,
+  it (the local socket, a machine's bridge, mDNS, Cate Connect), starting a
+  local one, pairing,
   the security layer, the typed capability proxies (filling the
   `kernel/rpc` slot), session channel subscriptions, reconnect with backoff,
   the "offline" state (last-seen time, retrying in the background) and the
   "stopped" state (stopped on purpose, no retrying until started again);
   `eachConnection` runs something per open connection.
   Each connection implements `dialLoopback(port)` (section 12.3).
-- **`client/workspaces`**: the device's workspace list: local recents, paired
+  `connectionStatus(state, {startsRuntime})` is the one table of what a state
+  means and what can be done about it, which every shell shows: a title, a
+  message without socket paths, errno codes or timings, and its remedies,
+  main one first (try again; start again, only where the transport starts the
+  runtime; remove a local or machine entry; forget a paired one; pair again
+  after a refusal of this device; open the workspace a folder is nested in;
+  resolve an update). A folder that is gone says so and offers removing it.
+- **`client/workspaces`**: the device's workspace list: local recents,
+  workspaces on machines (`{machine, root}`), paired
   workspaces and their pinned keys (`known-runtimes.json`), sidebar order;
   and the trust question (`trustStore`, `ensureOpenedTrusted`): opening an
   untrusted workspace queues one question, every shell shows its head, and
@@ -1481,7 +1557,8 @@ headless.
 Logic a view needs that every shell's view would need too sits in the
 `client/` side of its module, never in a view: the chat page controller
 (`panels/chat/client`: thread binding, navigation guard, the T3 host bridge
-over a small page port), the browser tab follower (`panels/browser/client`),
+over a small page port, and when the page is shown: once its setup ran and
+it is on a conversation, never on T3's start page), the browser tab follower (`panels/browser/client`),
 the file tree and search models (`workspace/files/client`), and the
 repository flows (`workspace/repository/client`: opening a pull request,
 discarding a worktree, switching a panel's checkout).
@@ -1647,6 +1724,9 @@ Someone in the workspace turns on network access and adds a device; the joiner
 scans the QR (or types the code), pairs (section 7.7) and connects. The joiner
 receives the document, the workspace settings and presence, and subscribes to
 the sessions they view.
+The device that opened the workspace on its machine needs no code: it is a
+device of the workspace from its first connection (7.6), listed next to the
+devices that paired.
 
 ### 13.3 Concurrency
 
@@ -1822,7 +1902,17 @@ not CLI commands (`cli: {command: false}`); the CLI reaches them through
   core pieces the desktop views do (the chat page controller, the browser
   tab follower, `acquireSession`, the trust question, shown as an alert). Its state carries each
   connected workspace's agents (panel states with what each asked for),
-  keep-awake state and this device's push status; the app
+  keep-awake state and this device's push status, and its relations (each
+  with its words for its pair) with the `panelRelationsEnabled` setting. The
+  app shows a workspace the way Cate lays it out: one place at a time, the
+  dock (its panels as cards) or a canvas (a map of its nodes where they sit,
+  its relations drawn between them). On the map a card moves by its top strip
+  (`canvas.moveNode`, one `setNodeRects` op), a relation is dragged out of a
+  card's handle onto another card and given its meaning there, and a
+  relation's label changes its meaning or removes it. A card zooms into its
+  panel, and every panel shows its relations one tap away (connect, change
+  the meaning, remove, the context mode and its preview), all through the
+  core's `relations.*` methods over the shared relation edits. The app
   shows each agent of a workspace as a chat (the conversation pushed as it
   changes through `agents.watch`, replies, what it is doing while it works,
   stopping its turn; permissions are answered in the
@@ -1868,7 +1958,7 @@ src/
                             channel; client, node and runtime sides
     security/               Noise handshake, keys, fingerprints
     pairing/                the pairing capability, secrets, codes, QR payload,
-                            pairings.json
+                            devices.json
     connect/                Cate Connect client (registration, signaling,
                             pushes)
     push/                   the push capability, sealing, push.json

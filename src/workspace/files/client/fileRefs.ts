@@ -5,7 +5,7 @@
 // the OS are uploaded the same way. There is one path for every runtime,
 // wherever it runs. Portable: no Node, no Electron.
 
-import { pathDisplayName, pathHasPrefix, type FileRef } from '../contract'
+import { joinPath, pathDisplayName, pathHasPrefix, pathKey, type FileRef } from '../contract'
 import { fsClient, type FsClient, type ImportSource } from './fsClient'
 
 export type RefFs = Pick<FsClient, 'readDir' | 'stat' | 'readBinary' | 'rename' | 'copy' | 'importEntries' | 'tempDir'>
@@ -89,9 +89,9 @@ export function createFileRefs(fsOf: (workspaceId: string) => RefFs): FileRefs {
           out.push((await fs.copy(path, target.destDir)).path)
           continue
         }
-        const dest = `${target.destDir}/${pathDisplayName(path)}`
+        const dest = joinPath(target.destDir, pathDisplayName(path))
         // Onto itself, or a folder into itself or its own subtree.
-        if (dest === path || pathHasPrefix(target.destDir, path)) continue
+        if (pathKey(dest) === pathKey(path) || pathHasPrefix(pathKey(target.destDir), pathKey(path))) continue
         out.push((await fs.rename(path, dest)).path)
       }
       if (foreign.length > 0) out.push(...(await copyIn(foreign, target)).values())

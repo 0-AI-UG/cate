@@ -108,9 +108,9 @@ export function WorkspaceRow({
       { id: 'close-panels', label: 'Close All Panels', enabled: isOpen && tree.count > 0 },
       { type: 'separator' },
       { id: 'close', label: 'Close Workspace', enabled: isOpen },
-      entry.kind === 'local'
-        ? { id: 'remove', label: 'Remove from Recents' }
-        : { id: 'forget', label: 'Forget Workspace…' },
+      entry.kind === 'paired'
+        ? { id: 'forget', label: 'Forget Workspace…' }
+        : { id: 'remove', label: 'Remove from Recents' },
     ]
     setMenuOpen(true)
     const id = await showMenu(items)

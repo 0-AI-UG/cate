@@ -36,20 +36,23 @@ import { openTextPreview } from './textPreview'
 
 // --- Overlays --------------------------------------------------------------------
 
-/** Application overlays draw over the content area (next to settings). */
-function ContentOverlay({ children }: { children: ReactNode }) {
+/** The shell's content area, where application overlays draw (next to settings). */
+function useContentSlot(): HTMLElement | null {
   const [slot, setSlot] = useState<HTMLElement | null>(null)
   useLayoutEffect(() => setSlot(document.getElementById('settings-content-slot')), [])
+  return slot
+}
+
+function ContentOverlay({ children }: { children: ReactNode }) {
+  const slot = useContentSlot()
   const body = <div className="absolute inset-0 flex flex-col bg-canvas-bg pointer-events-auto">{children}</div>
   return slot ? createPortal(body, slot) : body
 }
 
 function SkillsOverlay({ workspaceId, onClose }: OverlayViewProps) {
-  return (
-    <ContentOverlay>
-      <SkillsDialog workspaceId={workspaceId} onClose={onClose} renderHeader={(actions) => <OverlayHeader title="Skills">{actions}</OverlayHeader>} />
-    </ContentOverlay>
-  )
+  const slot = useContentSlot()
+  if (!slot) return null
+  return <SkillsDialog workspaceId={workspaceId} onClose={onClose} container={slot} renderHeader={(actions) => <OverlayHeader title="Skills">{actions}</OverlayHeader>} />
 }
 
 function RepositoryOverlay({ workspaceId }: OverlayViewProps) {

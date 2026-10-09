@@ -1,6 +1,7 @@
 // The `runtime` host capability (architecture 7.9, 7.10).
 
 import { defineCapability, method, stream, type ClientFeature, type DeviceInfo, type ProtocolVersion } from '@kernel/rpc/contract'
+import type { NetworkEndpoint } from '@runtime/transports/contract'
 
 export interface RuntimeClientInfo {
   clientId: string
@@ -15,6 +16,9 @@ export interface RuntimeStatus {
   protocol: ProtocolVersion
   pid: number
   clients: RuntimeClientInfo[]
+  /** Where paired devices reach it now (its addresses change with the
+   *  network); empty with network access off. Absent from older runtimes. */
+  endpoints?: NetworkEndpoint[]
 }
 
 export interface RuntimePerfSample {

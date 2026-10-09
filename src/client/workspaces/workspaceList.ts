@@ -1,11 +1,13 @@
-// The device's workspace list (12.1, 16): local recents by root path, paired
-// workspaces by runtimeId, and the sidebar order, in the `workspaces` device
-// document. Pinned runtime keys live in `known-runtimes` (runtime/pairing).
+// The device's workspace list (12.1, 16): local recents by root path,
+// workspaces on machines this device runs commands on (SSH, WSL) by machine
+// and root, paired workspaces by runtimeId, and the sidebar order, in the
+// `workspaces` device document. Pinned runtime keys live in `known-runtimes` (runtime/pairing).
 // Opening a workspace is opening its connection.
 
 import type { DeviceStore } from '@kernel/state/contract'
 import type { WorkspaceConnection, WorkspaceConnections, ConnectionTarget } from '@client/connections'
 import type { NetworkEndpoint } from '@runtime/transports/contract'
+import { isMachine, machineKey, machineLabel, type Machine } from '@runtime/daemon/contract'
 import { KnownRuntimes } from '@runtime/pairing/client'
 
 export const WORKSPACES_DOCUMENT = 'workspaces'
@@ -14,6 +16,15 @@ const RECENTS_LIMIT = 30
 export interface LocalWorkspace {
   kind: 'local'
   id: string
+  root: string
+  name: string
+  lastOpenedAt: number
+}
+
+export interface MachineWorkspace {
+  kind: 'machine'
+  id: string
+  machine: Machine
   root: string
   name: string
   lastOpenedAt: number
@@ -29,10 +40,11 @@ export interface PairedWorkspace {
   lastOpenedAt: number | null
 }
 
-export type WorkspaceEntry = LocalWorkspace | PairedWorkspace
+export type WorkspaceEntry = LocalWorkspace | MachineWorkspace | PairedWorkspace
 
 interface WorkspacesFile {
   local: Omit<LocalWorkspace, 'kind' | 'id'>[]
+  machine: Omit<MachineWorkspace, 'kind' | 'id'>[]
   paired: Omit<PairedWorkspace, 'kind' | 'id'>[]
   /** Sidebar order by workspace id; entries not named follow, newest first. */
   order: string[]
@@ -48,12 +60,27 @@ export interface WorkspaceListSnapshot {
 export const localWorkspaceId = (root: string) => `local:${root}`
 /** The root of a local workspace id, or null for another kind. */
 export const localRootOf = (id: string): string | null => id.startsWith('local:') ? id.slice('local:'.length) : null
+export const machineWorkspaceId = (machine: Machine, root: string) => `machine:${machineKey(machine)}:${root}`
 export const pairedWorkspaceId = (runtimeId: string) => `paired:${runtimeId}`
 
 export function targetOf(entry: WorkspaceEntry): ConnectionTarget {
-  return entry.kind === 'local'
-    ? { kind: 'local', root: entry.root }
-    : { kind: 'network', runtimeId: entry.runtimeId, endpoints: entry.endpoints }
+  if (entry.kind === 'local') return { kind: 'local', root: entry.root }
+  if (entry.kind === 'machine') return { kind: 'machine', machine: entry.machine, root: entry.root }
+  return { kind: 'network', runtimeId: entry.runtimeId, endpoints: entry.endpoints }
+}
+
+/** Where the workspace lives, to show next to its name: its folder, with
+ *  the machine when it is on another one; null for a paired workspace. */
+export function workspaceLocation(entry: WorkspaceEntry): string | null {
+  if (entry.kind === 'local') return entry.root
+  if (entry.kind === 'machine') return `${machineLabel(entry.machine)}:${entry.root}`
+  return null
+}
+
+const idOf = {
+  local: (w: { root: string }) => localWorkspaceId(w.root),
+  machine: (w: { machine: Machine; root: string }) => machineWorkspaceId(w.machine, w.root),
+  paired: (w: { runtimeId: string }) => pairedWorkspaceId(w.runtimeId),
 }
 
 export interface WorkspaceListOptions {
@@ -67,7 +94,7 @@ export class WorkspaceList {
   private readonly store: DeviceStore
   private readonly connections: WorkspaceConnections
   private readonly now: () => number
-  private file: WorkspacesFile = { local: [], paired: [], order: [] }
+  private file: WorkspacesFile = { local: [], machine: [], paired: [], order: [] }
   private snapshot: WorkspaceListSnapshot = { entries: [], open: [] }
   private readonly listeners = new Set<() => void>()
   private readonly stops: (() => void)[] = []
@@ -110,6 +137,17 @@ export class WorkspaceList {
     return this.get(localWorkspaceId(root)) as LocalWorkspace
   }
 
+  /** Records a workspace on a machine this device runs commands on (or
+   *  refreshes it) as just opened. */
+  async addMachine(machine: Machine, root: string, name = basename(root)): Promise<MachineWorkspace> {
+    const id = machineWorkspaceId(machine, root)
+    const lastOpenedAt = this.now()
+    const rest = this.file.machine.filter((w) => idOf.machine(w) !== id)
+    this.file = { ...this.file, machine: [{ machine, root, name, lastOpenedAt }, ...rest].slice(0, RECENTS_LIMIT) }
+    await this.save()
+    return this.get(id) as MachineWorkspace
+  }
+
   /** Records a workspace this device just paired with and pins its key. */
   async addPaired(opts: { runtimeId: string; name: string; endpoints: NetworkEndpoint[]; publicKey: Uint8Array }): Promise<PairedWorkspace> {
     await this.known.pin(opts.runtimeId, opts.publicKey)
@@ -123,8 +161,9 @@ export class WorkspaceList {
   async rename(id: string, name: string): Promise<void> {
     this.file = {
       ...this.file,
-      local: this.file.local.map((w) => (localWorkspaceId(w.root) === id ? { ...w, name } : w)),
-      paired: this.file.paired.map((w) => (pairedWorkspaceId(w.runtimeId) === id ? { ...w, name } : w)),
+      local: this.file.local.map((w) => (idOf.local(w) === id ? { ...w, name } : w)),
+      machine: this.file.machine.map((w) => (idOf.machine(w) === id ? { ...w, name } : w)),
+      paired: this.file.paired.map((w) => (idOf.paired(w) === id ? { ...w, name } : w)),
     }
     await this.save()
   }
@@ -133,25 +172,52 @@ export class WorkspaceList {
   async open(id: string): Promise<WorkspaceConnection> {
     const entry = this.get(id)
     if (!entry) throw new Error(`Unknown workspace ${id}`)
+    const fresh = !this.connections.get(id)
     const connection = this.connections.open(id, targetOf(entry))
+    if (fresh && entry.kind === 'paired') this.followEndpoints(connection, entry.runtimeId)
     const lastOpenedAt = this.now()
     this.file = {
       ...this.file,
-      local: this.file.local.map((w) => (localWorkspaceId(w.root) === id ? { ...w, lastOpenedAt } : w)),
-      paired: this.file.paired.map((w) => (pairedWorkspaceId(w.runtimeId) === id ? { ...w, lastOpenedAt } : w)),
+      local: this.file.local.map((w) => (idOf.local(w) === id ? { ...w, lastOpenedAt } : w)),
+      machine: this.file.machine.map((w) => (idOf.machine(w) === id ? { ...w, lastOpenedAt } : w)),
+      paired: this.file.paired.map((w) => (idOf.paired(w) === id ? { ...w, lastOpenedAt } : w)),
     }
     await this.save()
     return connection
+  }
+
+  /** Keeps a paired workspace's addresses current: on every connect the
+   *  runtime says where it is reachable now, for the next dial and the next
+   *  launch. */
+  private followEndpoints(connection: WorkspaceConnection, runtimeId: string): void {
+    let asked = false
+    connection.subscribe(() => {
+      if (connection.state.kind !== 'connected') { asked = false; return }
+      if (asked) return
+      asked = true
+      connection.runtime.runtime.info().then(async (info) => {
+        const endpoints = info.endpoints
+        const current = this.file.paired.find((w) => w.runtimeId === runtimeId)
+        if (!endpoints?.length || !current || JSON.stringify(endpoints) === JSON.stringify(current.endpoints)) return
+        connection.retarget({ kind: 'network', runtimeId, endpoints })
+        this.file = { ...this.file, paired: this.file.paired.map((w) => (w.runtimeId === runtimeId ? { ...w, endpoints } : w)) }
+        await this.save()
+      }).catch(() => { /* asked again on the next connect */ })
+    })
   }
 
   close(id: string): void {
     this.connections.close(id)
   }
 
-  /** Drops a local workspace from the recents. */
+  /** Drops a local workspace, or one on a machine, from the recents. */
   async removeRecent(id: string): Promise<void> {
     this.close(id)
-    this.file = { ...this.file, local: this.file.local.filter((w) => localWorkspaceId(w.root) !== id) }
+    this.file = {
+      ...this.file,
+      local: this.file.local.filter((w) => idOf.local(w) !== id),
+      machine: this.file.machine.filter((w) => idOf.machine(w) !== id),
+    }
     await this.save()
   }
 
@@ -196,13 +262,14 @@ export class WorkspaceList {
 function entriesOf(file: WorkspacesFile): WorkspaceEntry[] {
   return [
     ...file.local.map((w): LocalWorkspace => ({ kind: 'local', id: localWorkspaceId(w.root), ...w })),
+    ...file.machine.map((w): MachineWorkspace => ({ kind: 'machine', id: idOf.machine(w), ...w })),
     ...file.paired.map((w): PairedWorkspace => ({ kind: 'paired', id: pairedWorkspaceId(w.runtimeId), ...w })),
   ]
 }
 
 function sortEntries(entries: WorkspaceEntry[], order: readonly string[]): WorkspaceEntry[] {
   const rank = new Map(order.map((id, i) => [id, i]))
-  const recency = (e: WorkspaceEntry) => (e.kind === 'local' ? e.lastOpenedAt : e.lastOpenedAt ?? e.pairedAt)
+  const recency = (e: WorkspaceEntry) => (e.kind === 'paired' ? e.lastOpenedAt ?? e.pairedAt : e.lastOpenedAt)
   return [...entries].sort((a, b) => {
     const ra = rank.get(a.id)
     const rb = rank.get(b.id)
@@ -239,6 +306,13 @@ function normalize(value: unknown): WorkspacesFile {
     if (!isStr(w.root) || local.some((l) => l.root === w.root)) continue
     local.push({ root: w.root, name: isStr(w.name) ? w.name : basename(w.root), lastOpenedAt: isNum(w.lastOpenedAt) ? w.lastOpenedAt : 0 })
   }
+  const machine: WorkspacesFile['machine'] = []
+  for (const w of list(raw.machine)) {
+    if (!isStr(w.root) || !isMachine(w.machine)) continue
+    const id = machineWorkspaceId(w.machine, w.root)
+    if (machine.some((m) => idOf.machine(m) === id)) continue
+    machine.push({ machine: w.machine, root: w.root, name: isStr(w.name) ? w.name : basename(w.root), lastOpenedAt: isNum(w.lastOpenedAt) ? w.lastOpenedAt : 0 })
+  }
   const paired: WorkspacesFile['paired'] = []
   for (const w of list(raw.paired)) {
     if (!isStr(w.runtimeId) || paired.some((p) => p.runtimeId === w.runtimeId)) continue
@@ -251,5 +325,5 @@ function normalize(value: unknown): WorkspacesFile {
     })
   }
   const order = Array.isArray(raw.order) ? [...new Set(raw.order.filter(isStr))] : []
-  return { local, paired, order }
+  return { local, machine, paired, order }
 }

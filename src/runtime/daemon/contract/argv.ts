@@ -1,6 +1,6 @@
 // The daemon's command line: `runtime.cjs serve <root> [--detach] [--network
-// sameNetwork|cateConnect] [--json]`. Pure, so the desktop shell and the
-// daemon agree on it.
+// sameNetwork|cateConnect] [--json]`, or `runtime.cjs bridge <root>`. Pure,
+// so the desktop shell and the daemon agree on it.
 
 import type { RuntimeNetwork } from './settings'
 
@@ -22,12 +22,26 @@ export function serveArgv(args: ServeArgs): string[] {
   return argv
 }
 
-export type ParsedDaemonArgs = { command: 'serve'; args: ServeArgs } | { command: 'error'; message: string }
+export type ParsedDaemonArgs =
+  | { command: 'serve'; args: ServeArgs }
+  /** Starts the workspace's runtime when nothing answers, then carries its
+   *  local socket over stdin and stdout (7.5). */
+  | { command: 'bridge'; root: string }
+  | { command: 'error'; message: string }
 
-export const DAEMON_USAGE = 'usage: runtime.cjs serve <root> [--detach] [--network sameNetwork|cateConnect] [--json]'
+export const DAEMON_USAGE = 'usage: runtime.cjs serve <root> [--detach] [--network sameNetwork|cateConnect] [--json]\n       runtime.cjs bridge <root>'
+
+/** What `bridge` prints on stdout once it is connected; the bytes after it
+ *  are the socket's. Anything before it (a chatty login file) is not. */
+export const BRIDGE_READY = 'CATE-BRIDGE-READY\n'
 
 export function parseDaemonArgv(argv: readonly string[]): ParsedDaemonArgs {
   const [command, ...rest] = argv
+  if (command === 'bridge') {
+    return rest.length === 1 && rest[0] && !rest[0].startsWith('--')
+      ? { command: 'bridge', root: rest[0] }
+      : { command: 'error', message: DAEMON_USAGE }
+  }
   if (command !== 'serve') return { command: 'error', message: DAEMON_USAGE }
   let root: string | undefined
   let detach = false

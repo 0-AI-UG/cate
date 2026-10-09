@@ -8,7 +8,24 @@ import { useRuntime } from '../../kernel/rpc'
 import { SecondaryButton, Select, SettingRow, Spinner } from '../../kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSettings } from '../../kernel/settings'
 import type { RuntimeLifetime, RuntimeNetwork, RuntimeStatus } from '@runtime/daemon/contract'
+import { clientUi, errorMessage } from '@kernel/interaction'
 import { RunningWorkConfirm } from './RunningWork'
+
+const REACH: Record<RuntimeNetwork, number> = { off: 0, sameNetwork: 1, cateConnect: 2 }
+
+/** Sets network access, asking first when the change cuts devices off. */
+async function changeNetwork(workspaceId: string, from: RuntimeNetwork, to: RuntimeNetwork): Promise<void> {
+  if (REACH[to] < REACH[from]) {
+    const who = to === 'off'
+      ? 'Every paired device disconnects'
+      : 'Paired devices that are not on the same network disconnect'
+    const ok = await clientUi().confirm(`${who}, this one too if it reaches the workspace that way. Only someone on its machine can turn network access back on. Continue?`)
+    if (!ok) return
+  }
+  await setWorkspaceSetting(workspaceId, 'runtimeNetwork', to)
+}
+
+const showError = (fallback: string) => (err: unknown) => clientUi().showError(errorMessage(err, fallback))
 
 export interface RuntimeSettingsPageProps {
   workspaceId: string | null
@@ -45,7 +62,7 @@ export function RuntimeSettingsPage({ workspaceId, panelTitle, children }: Runti
       >
         <Select
           value={settings.runtimeLifetime}
-          onChange={(v) => { void setWorkspaceSetting(workspaceId, 'runtimeLifetime', v as RuntimeLifetime).catch(() => {}) }}
+          onChange={(v) => { void setWorkspaceSetting(workspaceId, 'runtimeLifetime', v as RuntimeLifetime).catch(showError('Could not change the setting.')) }}
           options={[
             { value: 'stopWhenIdle', label: 'Stop when idle' },
             { value: 'keepRunning', label: 'Keep running' },
@@ -59,7 +76,7 @@ export function RuntimeSettingsPage({ workspaceId, panelTitle, children }: Runti
       >
         <Select
           value={network}
-          onChange={(v) => { void setWorkspaceSetting(workspaceId, 'runtimeNetwork', v as RuntimeNetwork).catch(() => {}) }}
+          onChange={(v) => { void changeNetwork(workspaceId, network, v as RuntimeNetwork).catch(showError('Could not change network access.')) }}
           options={[
             { value: 'off', label: 'Off' },
             { value: 'sameNetwork', label: 'Same network' },
@@ -87,7 +104,7 @@ export function RuntimeSettingsPage({ workspaceId, panelTitle, children }: Runti
           <RunningWorkConfirm
             runtime={runtime}
             actionLabel="Stop runtime"
-            consequence="Stopping the runtime ends everything below for everyone in this workspace. Opening the workspace again starts it."
+            consequence="Stopping the runtime ends everything below for everyone in this workspace. Opening the workspace on its machine, or over SSH or WSL, starts it again; paired devices cannot."
             title={panelTitle}
             onCancel={() => setConfirmingStop(false)}
             onConfirm={async () => {

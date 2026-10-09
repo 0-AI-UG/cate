@@ -1,7 +1,8 @@
 // A files panel: the file it shows, edited through its shared buffer
 // (`buffer.*`, the Yjs buffer every editor of the file shares), with Save,
-// the on-disk conflict choice, a markdown preview, previews of documents
-// (images, PDFs) and a file browser to open another file in the panel.
+// the on-disk conflict choice, previews of documents (images, PDFs) and a
+// file browser to open another file in the panel. A text file with a
+// preview (markdown, HTML, CSV) shows it first; Edit switches to its source.
 
 import SwiftUI
 import UIKit
@@ -31,18 +32,17 @@ struct EditorPanelView: View {
     @State private var browsing = false
     @State private var discarding: [String: Any]?
     @State private var failure: OpFailure?
-    /// Source or preview of a markdown file is this device's pick, for the
-    /// file it was made on (the runtime shares only a conflict's diff).
+    /// Source or preview of a previewable file is this device's pick, for
+    /// the file it was made on (the runtime shares only a conflict's diff).
     @State private var sourceFor: String?
 
     var body: some View {
         content
-            .navigationTitle(panel.title)
-            .navigationBarTitleDisplayMode(.inline)
+            .panelTitle(panel.title)
             .toolbar {
-                if let snapshot = session.snapshot, let path = snapshot.filePath, isMarkdown(path), snapshot.documentType == nil {
+                if let snapshot = session.snapshot, let path = snapshot.filePath, TextPreview.kind(path) != nil, snapshot.documentType == nil, !snapshot.draft {
                     ToolbarItem(placement: .primaryAction) {
-                        let preview = showsPreview(snapshot)
+                        let preview = showsPreview(snapshot) != nil
                         Button(preview ? "Edit" : "Preview", systemImage: preview ? "pencil" : "eye") {
                             sourceFor = preview ? path : nil
                         }
@@ -88,10 +88,10 @@ struct EditorPanelView: View {
             .task { await session.run(core, workspaceId: workspaceId, panelId: panel.id) }
     }
 
-    /// A saved markdown file shows its preview until this device picks the source.
-    private func showsPreview(_ snapshot: EditorSnapshot) -> Bool {
-        guard let path = snapshot.filePath, isMarkdown(path), snapshot.documentType == nil, !snapshot.draft else { return false }
-        return sourceFor != path
+    /// A saved file with a preview shows it until this device picks the source.
+    private func showsPreview(_ snapshot: EditorSnapshot) -> TextPreview? {
+        guard let path = snapshot.filePath, let kind = TextPreview.kind(path), snapshot.documentType == nil, !snapshot.draft else { return nil }
+        return sourceFor == path ? nil : kind
     }
 
     @ViewBuilder
@@ -126,11 +126,6 @@ struct EditorPanelView: View {
         } else {
             ProgressView()
         }
-    }
-
-    private func isMarkdown(_ path: String) -> Bool {
-        let ext = (path as NSString).pathExtension.lowercased()
-        return ext == "md" || ext == "markdown" || ext == "mdx"
     }
 
     /// Runs an op; one that would lose unsaved edits asks first.
@@ -337,7 +332,7 @@ private struct BufferEditor: View {
     @Environment(CoreHost.self) private var core
     let workspaceId: String
     let path: String
-    let preview: Bool
+    let preview: TextPreview?
     @State private var model = BufferModel()
 
     var body: some View {
@@ -345,13 +340,16 @@ private struct BufferEditor: View {
             if let error = model.error {
                 ContentUnavailableView("Could not open the file", systemImage: "doc.questionmark", description: Text(error))
             } else if let text = model.text {
-                if preview {
+                switch preview {
+                case .markdown:
                     ScrollView {
-                        MarkdownPreview(text: text)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding()
+                        MarkdownText(text: text).padding()
                     }
-                } else {
+                case .html:
+                    HTMLPreview(workspaceId: workspaceId, path: path, html: text)
+                case .table(let separator):
+                    TablePreview(text: text, separator: separator)
+                case nil:
                     BufferTextView(model: model, initial: text)
                 }
             } else {
@@ -359,54 +357,6 @@ private struct BufferEditor: View {
             }
         }
         .task { await model.run(core, workspaceId: workspaceId, path: path) }
-    }
-}
-
-/// Markdown, line by line: headings, list items and quotes as blocks, inline
-/// styling within each.
-private struct MarkdownPreview: View {
-    let text: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                block
-            }
-        }
-        .textSelection(.enabled)
-    }
-
-    private var blocks: [Text] {
-        var out: [Text] = []
-        var fenced = false
-        for line in text.components(separatedBy: "\n") {
-            if line.hasPrefix("```") {
-                fenced.toggle()
-                continue
-            }
-            if fenced {
-                out.append(Text(line).font(.callout.monospaced()))
-                continue
-            }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { continue }
-            let level = trimmed.prefix { $0 == "#" }.count
-            if level > 0, level <= 6, trimmed.dropFirst(level).hasPrefix(" ") {
-                let fonts: [Font] = [.title, .title2, .title3, .headline, .subheadline, .subheadline]
-                out.append(Text(Self.inline(String(trimmed.dropFirst(level + 1)))).font(fonts[level - 1]).bold())
-            } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
-                out.append(Text("• \(Self.inline(String(trimmed.dropFirst(2))))"))
-            } else if trimmed.hasPrefix("> ") {
-                out.append(Text(Self.inline(String(trimmed.dropFirst(2)))).italic().foregroundStyle(.secondary))
-            } else {
-                out.append(Text(Self.inline(trimmed)))
-            }
-        }
-        return out
-    }
-
-    private static func inline(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
     }
 }
 
@@ -500,5 +450,129 @@ private struct BufferTextView: UIViewRepresentable {
             let inserted = new.substring(with: NSRange(location: prefix, length: newLength - prefix - suffix)) as NSString
             return (prefix, oldLength - prefix - suffix, inserted)
         }
+    }
+}
+
+// MARK: Previews
+
+/// The preview a text file has besides its source, by its extension.
+enum TextPreview: Equatable {
+    case markdown
+    case html
+    /// Rows of cells split by `separator`.
+    case table(Character)
+
+    static func kind(_ path: String) -> TextPreview? {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "md", "markdown", "mdx": .markdown
+        case "html", "htm": .html
+        case "csv": .table(",")
+        case "tsv": .table("\t")
+        default: nil
+        }
+    }
+}
+
+/// An HTML file as a page, from its buffer's text; links and assets resolve
+/// next to the file as the runtime serves it.
+private struct HTMLPreview: View {
+    @Environment(CoreHost.self) private var core
+    let workspaceId: String
+    let path: String
+    let html: String
+    @State private var page: WebPageController?
+    @State private var base: URL?
+
+    var body: some View {
+        Group {
+            if let page {
+                WebPage(controller: page)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task(id: path) {
+            let url = try? await core.call("files.url", ["workspaceId": workspaceId, "path": path], as: String.self)
+            base = url.flatMap(URL.init(string:))
+            if let base { await core.routeLoopback(workspaceId, base) }
+            let controller = WebPageController(store: core.webDataStore(workspaceId)) { [core, workspaceId] in await core.routeLoopback(workspaceId, $0) }
+            controller.webView.loadHTMLString(html, baseURL: base)
+            page = controller
+        }
+        .onChange(of: html) { _, next in page?.webView.loadHTMLString(next, baseURL: base) }
+    }
+}
+
+/// CSV or TSV as a table, the first row as its header.
+private struct TablePreview: View {
+    let text: String
+    let separator: Character
+
+    var body: some View {
+        let rows = Self.rows(text, separator: separator)
+        if rows.isEmpty {
+            ContentUnavailableView("Empty file", systemImage: "tablecells")
+        } else {
+            ScrollView([.vertical, .horizontal]) {
+                SwiftUI.Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                    ForEach(Array(rows.prefix(2_000).enumerated()), id: \.offset) { index, row in
+                        GridRow {
+                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                Text(cell)
+                                    .font(.callout)
+                                    .fontWeight(index == 0 ? .semibold : .regular)
+                                    .lineLimit(3)
+                                    .frame(maxWidth: 280, alignment: .leading)
+                            }
+                        }
+                        if index == 0 { Divider() }
+                    }
+                }
+                .padding()
+                .textSelection(.enabled)
+            }
+        }
+    }
+
+    /// The rows, with quoted cells (which may hold the separator, quotes
+    /// doubled and line breaks) taken whole.
+    static func rows(_ text: String, separator: Character) -> [[String]] {
+        var rows: [[String]] = []
+        var row: [String] = []
+        var cell = ""
+        var quoted = false
+        var iterator = text.makeIterator()
+        var pending: Character?
+        while let char = pending ?? iterator.next() {
+            pending = nil
+            if quoted {
+                if char == "\"" {
+                    if let next = iterator.next() {
+                        if next == "\"" { cell.append("\"") } else { quoted = false; pending = next }
+                    } else {
+                        quoted = false
+                    }
+                } else {
+                    cell.append(char)
+                }
+            } else if char == "\"" && cell.isEmpty {
+                quoted = true
+            } else if char == separator {
+                row.append(cell)
+                cell = ""
+            } else if char == "\n" || char == "\r\n" || char == "\r" {
+                row.append(cell)
+                rows.append(row)
+                row = []
+                cell = ""
+            } else {
+                cell.append(char)
+            }
+        }
+        if !cell.isEmpty || !row.isEmpty {
+            row.append(cell)
+            rows.append(row)
+        }
+        return rows
     }
 }

@@ -55,6 +55,12 @@ export class WorkspaceConnections {
     return () => { this.listeners.delete(listener) }
   }
 
+  /** `checkAlive` on every connection (after sleep, or when the network
+   *  changed). */
+  checkAll(): void {
+    for (const connection of this.byId.values()) void connection.checkAlive()
+  }
+
   dispose(): void {
     for (const id of [...this.byId.keys()]) this.close(id)
     this.listeners.clear()
@@ -67,4 +73,18 @@ export class WorkspaceConnections {
       try { listener() } catch { /* isolate listeners */ }
     }
   }
+}
+
+/** Calls `onWake` when the machine seems to have slept: a timer that fires
+ *  much later than asked. Returns the stop. */
+export function watchForWake(onWake: () => void, opts: { intervalMs?: number; now?: () => number } = {}): () => void {
+  const interval = opts.intervalMs ?? 10_000
+  const now = opts.now ?? Date.now
+  let last = now()
+  const timer = setInterval(() => {
+    const at = now()
+    if (at - last > interval * 3) onWake()
+    last = at
+  }, interval)
+  return () => clearInterval(timer)
 }

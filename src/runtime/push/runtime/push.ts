@@ -7,6 +7,8 @@ import { RpcError } from '@kernel/rpc/contract'
 import type { CapabilityImpl, CallContext } from '@kernel/rpc/runtime'
 import type { Logger } from '@kernel/log/contract'
 import type { ConnectPush, ConnectPushResult } from '@runtime/connect/contract'
+import { isDeviceKey } from '@runtime/pairing/contract'
+import { fingerprint, hexToBytes } from '@runtime/security/contract'
 import {
   decodeBase64,
   isPushTarget,
@@ -124,9 +126,9 @@ export function createPushService(deps: PushDeps): PushService {
 }
 
 function deviceOf(ctx: CallContext): string {
-  const device = ctx.connection.client?.device.keyFingerprint
-  if (!device) throw new RpcError('rejected', 'Only a paired device registers for pushes')
-  return device
+  const key = ctx.connection.client?.device.publicKey
+  if (!isDeviceKey(key)) throw new RpcError('rejected', 'Only a device registers for pushes')
+  return fingerprint(hexToBytes(key))
 }
 
 export function pushCapabilityImpl(service: PushService): CapabilityImpl<typeof pushCapability> {

@@ -27,8 +27,7 @@ struct TerminalPanelView: View {
                         .padding(.top, 8)
                 }
             }
-            .navigationTitle(panel.title)
-            .navigationBarTitleDisplayMode(.inline)
+            .panelTitle(panel.title)
             .toolbar {
                 if controller.fitsElsewhere {
                     ToolbarItem(placement: .primaryAction) {

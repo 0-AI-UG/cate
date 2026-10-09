@@ -9,6 +9,7 @@ import { runtimeFor, setRuntimeResolver, tryRuntimeFor } from '@kernel/rpc/clien
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
 import { workspaceCapability } from '@workspace/lifecycle/contract/capability'
 import { tunnelCapability } from '@runtime/tunnel/contract/capability'
+import { runtimeCapability } from '@runtime/daemon/contract'
 import { WorkspaceConnections } from './registry'
 import { createClientIdentity, type ClientIdentity } from './identity'
 import { sessionCapability } from '@panels/framework/contract/capability'
@@ -97,7 +98,7 @@ function transportsFor(rt: FakeRuntime, extra: Partial<ShellTransports> = {}): S
 }
 
 const identity: ClientIdentity = createClientIdentity({
-  device: { name: 'test', keyFingerprint: 'FP' },
+  device: { name: 'test', publicKey: 'FP' },
   features: ['canvas', 'webview'],
 })
 
@@ -121,6 +122,36 @@ function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backof
 }
 
 describe('WorkspaceConnection', () => {
+  it('reaches a machine through its bridge, framed like the local socket', async () => {
+    const rt = fakeRuntime()
+    const local = transportsFor(rt)
+    const dialMachine = vi.fn((_machine: unknown, _root: string) => local.dialLocal('/srv/app'))
+    registry = new WorkspaceConnections({
+      capabilities: RUNTIME_CAPABILITIES, identity, transports: { ...local, dialMachine }, version: '9.0.0' })
+    const machine = { kind: 'ssh' as const, target: { destination: 'u@box' } }
+    const connection = registry.open('ws1', { kind: 'machine', machine, root: '/srv/app' })
+    await expect(connection.runtime.workspace.info()).resolves.toMatchObject({ runtimeId: 'r1' })
+    expect(dialMachine).toHaveBeenCalledWith(machine, '/srv/app')
+    expect(connection.startsRuntime).toBe(true)
+  })
+
+  it('drops a connection that stops answering and dials again', async () => {
+    const rt = fakeRuntime()
+    let answer = true
+    const impl = new Proxy({
+      info: () => answer ? { runtimeId: 'r1' } as never : new Promise<never>(() => {}),
+    } as Record<string, unknown>, { get: (target, name: string) => target[name] ?? (() => { throw new Error('not here') }) })
+    rt.server.register(runtimeCapability, impl as never)
+    const connection = openLocal(rt)
+    await connection.runtime.workspace.info()
+    await connection.checkAlive(50)
+    expect(rt.dials).toHaveLength(1)
+    answer = false
+    await connection.checkAlive(50)
+    await vi.waitFor(() => expect(rt.dials).toHaveLength(2))
+    await vi.waitFor(() => expect(connection.state.kind).toBe('connected'))
+  })
+
   it('makes typed calls and fills the runtime slot', async () => {
     const rt = fakeRuntime()
     const connection = openLocal(rt)

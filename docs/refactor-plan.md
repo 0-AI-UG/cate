@@ -464,6 +464,10 @@ Each item gets a unit test in the named module that fails today.
   other local users read access only, which cannot send the `hello` a
   connection needs. Untested on Windows; a native helper is the fix when
   Windows ships.
+  Mitigated: the pipe name carries a random per-user key from
+  `~/.cate/pipe-key` (`pipeKey`), so another user can neither find the pipe
+  nor squat its name first, and a taken pipe that does not answer is waited
+  for instead of counted as running. Still untested on Windows.
 - `shells/desktop/main/natives.ts:97-99` `openExternal` accepts loopback
   URLs (D10). Fix: refuse loopback there, so every caller is covered.
 

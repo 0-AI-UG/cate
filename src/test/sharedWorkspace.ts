@@ -22,7 +22,7 @@ import { createPanel, registerPanelDefinitions } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 import { KnownRuntimes } from '@runtime/pairing/client'
-import { fingerprint, generateKeyPair } from '@runtime/security/contract'
+import { encodePublicKey, generateKeyPair } from '@runtime/security/contract'
 import { dialSameNetwork } from '@runtime/transports/client'
 import { dialLocal } from '@runtime/transports/node'
 import * as Y from 'yjs'
@@ -74,8 +74,9 @@ export interface SharedWorkspace {
   readonly daemon: Daemon
   a: TestClient
   b: TestClient
-  /** Another client: `local` on A's machine, or a newly paired device. */
-  join(name: string, transport: 'local' | 'network', features?: ClientFeature[]): Promise<TestClient>
+  /** Another client: `local` on A's machine, `machine` through a bridge
+   *  (as over SSH or WSL), or a newly paired device. */
+  join(name: string, transport: 'local' | 'machine' | 'network', features?: ClientFeature[]): Promise<TestClient>
   /** A local client of another app build or protocol; not waited for. */
   connect(name: string, options: { build?: string; protocol?: ProtocolVersion }): TestClient
   /** Closes a local client and opens a new connection with the same
@@ -233,19 +234,23 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     identity?: ClientIdentity,
     features: ClientFeature[] = ['canvas', 'windows'],
     app: { build?: string; protocol?: ProtocolVersion } = {},
+    viaMachine = false,
   ): TestClient => {
     const link = createLink()
+    // A machine's bridge is the local socket carried over a command's stdio:
+    // the same bytes, reached through `dialMachine`.
     const transports: ShellTransports = {
       dialLocal: link.wrap(() => dialLocal(daemon.endpoint)),
+      dialMachine: link.wrap(() => dialLocal(daemon.endpoint)),
       dialLoopbackTcp: () => Promise.reject(new Error('no loopback in tests')),
     }
     const workspaceId = `local-${name}-${counter++}`
     return makeClient(name, workspaceId, new WorkspaceConnection({
       workspaceId,
       capabilities: RUNTIME_CAPABILITIES,
-      target: { kind: 'local', root },
+      target: viaMachine ? { kind: 'machine', machine: { kind: 'ssh', target: { destination: 'test@box' } }, root } : { kind: 'local', root },
       transports,
-      identity: identity ?? createClientIdentity({ device: { name, keyFingerprint: '' }, features }),
+      identity: identity ?? createClientIdentity({ device: { name, publicKey: encodePublicKey(generateKeyPair().publicKey) }, features }),
       version: 'test',
       ...app,
       backoff: { initialMs: 20, maxMs: 200 },
@@ -256,6 +261,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     const keys = generateKeyPair()
     const host = createShellTransportHost({
       startLocal: () => Promise.reject(new Error('a paired device has no local runtime')),
+      dialMachine: () => Promise.reject(new Error('a paired device runs no commands on the machine')),
       deviceKeys: () => keys,
       deviceName: () => name,
       pins: new KnownRuntimes(createMemoryDeviceStore()),
@@ -276,7 +282,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
         dialNetwork: link.wrap((target) => host.dialNetwork(target)),
         dialLoopbackTcp: () => Promise.reject(new Error('no loopback in tests')),
       },
-      identity: createClientIdentity({ device: { name, keyFingerprint: fingerprint(keys.publicKey) }, features: ['canvas'] }),
+      identity: createClientIdentity({ device: { name, publicKey: encodePublicKey(keys.publicKey) }, features: ['canvas'] }),
       version: 'test',
       backoff: { initialMs: 20, maxMs: 200 },
     }), link)
@@ -295,7 +301,9 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     a,
     b,
     async join(name, transport, features) {
-      const c = transport === 'local' ? localClient(name, undefined, features) : await networkClient(name, a)
+      const c = transport === 'network'
+        ? await networkClient(name, a)
+        : localClient(name, undefined, features, {}, transport === 'machine')
       await c.document.ready
       return c
     },

@@ -26,7 +26,7 @@ function fixture() {
 }
 
 beforeEach(() => {
-  installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] }))
+  installClientIdentity(createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: [] }))
   ws = attachTestWorkspace('w', fixture())
   container = document.createElement('div')
   document.body.append(container)
@@ -83,7 +83,7 @@ describe('DockView', () => {
   it('Move into New Window is offered only with `windows`, and detaches', async () => {
     const menu = vi.fn().mockResolvedValue('move-window')
     installMockClientUi({ showContextMenu: menu })
-    installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: ['windows'] }))
+    installClientIdentity(createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: ['windows'] }))
     renderDock()
     await act(async () => { tab('p2').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })) })
     expect(menu.mock.calls[0][0].map((item: { id?: string }) => item.id)).toContain('move-window')

@@ -13,7 +13,7 @@ import {
 import { RpcClient, createCapabilityProxy, createRuntimeProxy, type RpcClientState } from '@kernel/rpc/client'
 import { framePortOver, type ProtocolVersion } from '@kernel/rpc/contract'
 import { nestedRefusalRoot } from '@runtime/daemon/contract'
-import { FRAME_MODE } from '@runtime/transports/contract'
+import { FRAME_MODE, isUnpairedRefusal } from '@runtime/transports/contract'
 import type { ClientIdentity } from './identity'
 import { SessionSubscriptions, type SessionHandle } from './session'
 import type { ConnectionKind, ConnectionTarget, ShellTransports } from './transports'
@@ -31,11 +31,12 @@ export type ConnectionState =
    *  `runtime.update` answers (7.10). */
   | { kind: 'incompatible'; runtimeVersion: string }
   /** Someone stopped the runtime on purpose: no reconnecting until
-   *  `retryNow` (which starts a local runtime again). */
+   *  `retryNow` (which starts it again where the transport can). */
   | { kind: 'stopped' }
-  /** The runtime refused this client (unknown or revoked device, or its
-   *  folder overlaps the open workspace `nestedIn`). */
-  | { kind: 'refused'; message: string; nestedIn?: string }
+  /** The runtime refused this client: an unknown or revoked device
+   *  (`unpaired`), its folder overlapping the open workspace `nestedIn`, or
+   *  another reason in `message`. */
+  | { kind: 'refused'; message: string; nestedIn?: string; unpaired?: boolean }
   | { kind: 'closed' }
 
 export interface Backoff {
@@ -69,7 +70,7 @@ export class WorkspaceConnection {
   /** How it dials, for diagnostics (presence, e2e). Nothing outside this
    *  module branches on it: every workspace works the same over either. */
   readonly kind: ConnectionKind
-  readonly target: ConnectionTarget
+  private _target: ConnectionTarget
   readonly rpc: RpcClient
   /** Typed proxy over every declared capability. Calls queue while offline. */
   readonly runtime: RuntimeProxy
@@ -93,7 +94,7 @@ export class WorkspaceConnection {
 
   constructor(opts: WorkspaceConnectionOptions) {
     this.workspaceId = opts.workspaceId
-    this.target = opts.target
+    this._target = opts.target
     this.kind = opts.target.kind
     this.transports = opts.transports
     this.identity = opts.identity
@@ -119,6 +120,16 @@ export class WorkspaceConnection {
   }
 
   get clientId(): string { return this.identity.clientId }
+  get target(): ConnectionTarget { return this._target }
+  /** Dials `target` from the next attempt on: a paired runtime's addresses
+   *  change with its network. Same kind only. */
+  retarget(target: ConnectionTarget): void {
+    if (target.kind === this.kind) this._target = target
+  }
+  /** Dialing starts the runtime when nothing answers (on this machine, or
+   *  through a machine's bridge); a paired runtime is started only on its
+   *  own machine. */
+  get startsRuntime(): boolean { return this.kind !== 'network' }
   get state(): ConnectionState { return this._state }
 
   getState = (): ConnectionState => this._state
@@ -159,7 +170,26 @@ export class WorkspaceConnection {
     this.dial()
   }
 
-  /** A pipe to `port` on the runtime's machine (12.3). */
+  /** After sleep or a network change, when a connection may be dead without
+   *  knowing it: one that does not answer within `timeoutMs` is dropped and
+   *  dialed again; one that is down is dialed at once. */
+  async checkAlive(timeoutMs = 5000): Promise<void> {
+    if (this.closed || !this.started) return
+    if (this._state.kind !== 'connected') {
+      if (this._state.kind === 'offline') this.retryNow()
+      return
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const answered = await Promise.race([
+      this.runtime.runtime.info().then(() => true, () => false),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs) }),
+    ])
+    clearTimeout(timer)
+    if (!answered && !this.closed && this.rpc.state === 'ready') this.rpc.detach('The runtime stopped answering')
+  }
+
+  /** A pipe to `port` on the runtime's machine (12.3): a TCP connection on
+   *  this machine, through the runtime's tunnel otherwise. */
   dialLoopback(port: number): Promise<ByteDuplex> {
     if (this.kind === 'local') return this.transports.dialLoopbackTcp(port)
     return tunnelDuplex(this.runtime.tunnel.connect({ port }))
@@ -194,7 +224,8 @@ export class WorkspaceConnection {
           return
         }
         // The outcome arrives as rpc state changes.
-        this.rpc.attach(framePortOver(duplex, FRAME_MODE[this.kind])).catch(() => {})
+        // A machine's bridge carries the runtime's local socket.
+        this.rpc.attach(framePortOver(duplex, FRAME_MODE[this.kind === 'network' ? 'network' : 'local'])).catch(() => {})
       },
       (err: unknown) => {
         this.dialing = false
@@ -207,6 +238,10 @@ export class WorkspaceConnection {
   private openPipe(): Promise<ByteDuplex> {
     const target = this.target
     if (target.kind === 'local') return this.transports.dialLocal(target.root)
+    if (target.kind === 'machine') {
+      if (!this.transports.dialMachine) return Promise.reject(new Error('This client cannot run commands on other machines'))
+      return this.transports.dialMachine(target.machine, target.root)
+    }
     if (!this.transports.dialNetwork) return Promise.reject(new Error('This client cannot reach network runtimes'))
     return this.transports.dialNetwork({ runtimeId: target.runtimeId, endpoints: target.endpoints })
   }
@@ -227,7 +262,12 @@ export class WorkspaceConnection {
       case 'refused': {
         const error = this.rpc.remote?.error
         const nestedIn = nestedRefusalRoot(error?.data)
-        this.setState({ kind: 'refused', message: error?.message ?? 'Runtime refused the connection', ...(nestedIn ? { nestedIn } : {}) })
+        this.setState({
+          kind: 'refused',
+          message: error?.message ?? 'Runtime refused the connection',
+          ...(nestedIn ? { nestedIn } : {}),
+          ...(isUnpairedRefusal(error?.data) ? { unpaired: true } : {}),
+        })
         return
       }
       case 'disconnected':

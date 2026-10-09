@@ -104,7 +104,7 @@ export { installBuiltinWallpapers, BUILTIN_WALLPAPER_PREFIX, type BuiltinWallpap
 
 // Pairing.
 export { JoinWorkspaceDialog } from './pairing/JoinWorkspaceDialog'
-export { DevicesPage, AddDevice, PairedDevices } from './pairing/DevicesPage'
+export { DevicesPage, AddDevice, WorkspaceDevices } from './pairing/DevicesPage'
 
 // Notifications (display of runtime notification events).
 export * from './notifications'

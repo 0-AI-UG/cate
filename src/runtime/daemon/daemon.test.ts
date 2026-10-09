@@ -47,7 +47,7 @@ async function start(graceMs?: number) {
 async function connect(endpoint: string) {
   const client = new RpcClient({
     version: 'test',
-    identity: { client: { clientId: 'c1', device: { name: 'laptop', keyFingerprint: 'fp' }, features: ['canvas', 'nope'] } },
+    identity: { client: { clientId: 'c1', device: { name: 'laptop', publicKey: 'fp' }, features: ['canvas', 'nope'] } },
   })
   await client.attach(framePortOver(await dialLocal(endpoint), 'stream'))
   return { client, runtime: createCapabilityProxy(client, runtimeCapability) }
@@ -67,7 +67,7 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
       runtimeId: daemon.runtimeId,
       root: fs.realpathSync(root),
       pid: process.pid,
-      clients: [{ clientId: 'c1', device: { name: 'laptop', keyFingerprint: 'fp' }, features: ['canvas'] }],
+      clients: [{ clientId: 'c1', device: { name: 'laptop', publicKey: 'fp' }, features: ['canvas'] }],
     })
     const written = JSON.parse(fs.readFileSync(daemon.paths.runtimeInfo, 'utf-8'))
     expect(written).toMatchObject({ runtimeId: daemon.runtimeId, pid: process.pid, endpoints: { local: daemon.endpoint } })
@@ -112,7 +112,7 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
       if (result.kind !== 'nested') throw new Error(`expected ${at} to be refused`)
       expect(result.message).toContain(fs.realpathSync(root))
       const endpoint = path.join(home, '.cate', 'workspaces', (await runtimeIdFor(at)), 'runtime.sock')
-      await expect(connect(endpoint)).rejects.toThrow('which is already open in Cate')
+      await expect(connect(endpoint)).rejects.toThrow('which is already running')
     }
   })
 
@@ -122,7 +122,7 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     fs.mkdirSync(inner)
     const result = await serveWorkspace({ root: inner, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
     if (result.kind !== 'nested') throw new Error('expected a refusal')
-    expect(result.message).toBe(`${fs.realpathSync(inner)} is inside the workspace ${fs.realpathSync(root)}, which is already open in Cate. Open that workspace instead, or close it first.`)
+    expect(result.message).toBe(`${fs.realpathSync(inner)} is inside the workspace ${fs.realpathSync(root)}, which is already running. Open that workspace instead, or stop its runtime and try again.`)
     const endpoint = path.join(home, '.cate', 'workspaces', await runtimeIdFor(inner), 'runtime.sock')
     const refused = await connect(endpoint).then(() => null, (err: { data?: unknown }) => err)
     expect(refused?.data).toEqual({ nested: { root: fs.realpathSync(root) } })

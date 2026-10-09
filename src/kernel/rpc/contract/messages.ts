@@ -12,8 +12,10 @@ export type ProtocolVersion = readonly [major: number, minor: number]
 
 export interface DeviceInfo {
   name: string
-  /** Checked against the handshake on network transports. */
-  keyFingerprint: string
+  /** The device's hex X25519 public key; '' for a connection that is no
+   *  device (`cate serve`). Checked against the handshake on network
+   *  transports; the local socket's door is the machine's user (7.5). */
+  publicKey: string
 }
 
 /** Hello payload of a client. Fixed for the connection. */

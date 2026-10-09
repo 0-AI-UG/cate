@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { bytesEqual, createMemoryPortPair, fingerprint, generateKeyPair, networkIdOf } from '@runtime/security/contract'
 import { acceptPeer } from '@runtime/security/runtime'
-import { PairingService, type PairingsFile, type PairingsStore } from '@runtime/pairing/runtime'
+import { PairingService, type DevicesFile, type DevicesStore } from '@runtime/pairing/runtime'
 import { pairWithRuntime } from '@runtime/pairing/client'
 import type { PairedRuntime, WorkspaceConnections } from '@client/connections'
 import { joinErrorMessage, joinWorkspace, parsePairingInput } from './join'
@@ -11,8 +11,8 @@ import { WorkspaceList } from './workspaceList'
 const RUNTIME_KEYS = generateKeyPair()
 const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 
-function memoryStore(): PairingsStore {
-  let value: PairingsFile = { devices: [] }
+function memoryStore(): DevicesStore {
+  let value: DevicesFile = { devices: [] }
   return { get: () => value, update: (fn) => { value = fn(value) }, subscribe: () => () => {} }
 }
 

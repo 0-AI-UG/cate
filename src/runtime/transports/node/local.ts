@@ -67,3 +67,22 @@ export async function dialLocalRetrying(
     }
   }
 }
+
+/** A TCP connection to `port` on this machine's loopback. Without a host it
+ *  tries 127.0.0.1, then ::1: a dev server bound to `localhost` listens on
+ *  either, as a browser on that machine would find it. */
+export function connectLoopback(port: number, host?: string): Promise<net.Socket> {
+  const attempt = (address: string) => new Promise<net.Socket>((resolve, reject) => {
+    const socket = net.connect({ host: address, port })
+    socket.once('connect', () => {
+      socket.removeListener('error', reject)
+      resolve(socket)
+    })
+    socket.once('error', reject)
+  })
+  if (host) return attempt(host)
+  return attempt('127.0.0.1').catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== 'ECONNREFUSED' && err.code !== 'EADDRNOTAVAIL') throw err
+    return attempt('::1').catch(() => { throw err })
+  })
+}

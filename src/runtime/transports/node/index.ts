@@ -1,4 +1,4 @@
-export { dialLocal, dialLocalRetrying, socketDuplex, type DialOptions } from './local'
+export { connectLoopback, dialLocal, dialLocalRetrying, socketDuplex, type DialOptions } from './local'
 export {
   advertiseRuntime,
   discoverRuntime,

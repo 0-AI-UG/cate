@@ -9,7 +9,7 @@ import type { MobileBridge, MobileNotification, MobileViewEvent } from '../contr
 import type { MobileClient } from './boot'
 import { registerPanelDefinitions } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
-import { createActionHandlers, taskWorktreeName, wordsFor } from './actions'
+import { createActionHandlers, agentWorktreeName, wordsFor } from './actions'
 import { createMobileAgents } from './agents'
 import { createMobileConversations } from './conversations'
 import { add, attachTestWorkspace, buildDocument } from '../../../test/clientWorkspace'
@@ -188,13 +188,13 @@ describe('mobile actions', () => {
     })
     await actions['agents.start']({ workspaceId: 'ws', prompt: 'Fix it', launch: { runner: 't3', instanceId: 'codex-1', model: 'gpt' }, worktree: true })
     expect(t.runtime.agents.start).toHaveBeenLastCalledWith({
-      prompt: 'Fix it', runner: 't3', instanceId: 'codex-1', model: 'gpt', newWorktree: expect.stringMatching(/^task-fix-it-/),
+      prompt: 'Fix it', runner: 't3', instanceId: 'codex-1', model: 'gpt', newWorktree: expect.stringMatching(/^agent-fix-it-/),
     })
   })
 
-  it('names a task worktree after the prompt', () => {
-    expect(taskWorktreeName('Fix the flaky login test!', 'x1y2')).toBe('task-fix-the-flaky-login-test-x1y2')
-    expect(taskWorktreeName('???', 'x1y2')).toBe('task-work-x1y2')
+  it('names a new agent worktree after its prompt', () => {
+    expect(agentWorktreeName('Fix the flaky login test!', 'x1y2')).toBe('agent-fix-the-flaky-login-test-x1y2')
+    expect(agentWorktreeName('???', 'x1y2')).toBe('agent-work-x1y2')
   })
 
   it('puts runtime error codes in words', () => {

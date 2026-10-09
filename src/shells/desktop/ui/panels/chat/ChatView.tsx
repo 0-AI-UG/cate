@@ -1,7 +1,8 @@
 // The chat panel view: the T3 client in a webview. It renders the session's
 // snapshot and hosts the page, which the core's chat page controller drives
 // (thread binding, navigation guard, the `__cateHost` bridge); file drops and
-// theme changes are the view's. The page is loaded afresh for every `loadId`.
+// theme changes are the view's. The page is loaded afresh for every `loadId`
+// and shown when the controller reveals it.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lucide-react'
@@ -101,6 +102,7 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
           void guestRef.current?.executeJavaScript(script).catch(() => undefined)
         } catch { /* A destroyed guest can throw before returning a promise. */ }
       },
+      reveal: setGuestReady,
       send: (op) => sendRef.current(op),
       openProviderSettings: () => clientUi().openSettings('t3 code'),
     },
@@ -137,11 +139,10 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
     }
 
     const loaded = async () => {
-      // CSS and page setup are independent; reveal only after both finish.
+      // CSS and page setup are independent; the page is ready after both.
       await Promise.allSettled([guest.insertCSS(controller.setup.css), guest.executeJavaScript(controller.setup.script)])
       if (!alive) return
-      navigated()
-      setGuestReady(true)
+      controller.documentReady(guest.getURL())
     }
 
     const handlers: Record<string, (event: any) => void> = {
@@ -154,7 +155,6 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
       // dom-ready. Only a new top-level document needs branding again.
       'did-start-navigation': (event: { isMainFrame?: boolean; isInPlace?: boolean }) => {
         if (!event.isMainFrame || event.isInPlace) return
-        setGuestReady(false)
         controller.documentStarted()
       },
       'dom-ready': () => { void loaded().catch(() => undefined) },

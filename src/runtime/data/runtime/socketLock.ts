@@ -38,8 +38,19 @@ export async function acquireRuntimeSocket(
   if (platform !== 'win32') await awaitPreviousOwner(dataDir, options.ownerExitMs ?? RUNTIME_STOP_DEADLINE_MS + 1000)
   // Of two starts binding a free endpoint, exactly one succeeds.
   let server = await tryListen(endpoint)
+  if (!server && platform === 'win32') {
+    // A pipe goes when its owner dies: one that is taken but does not answer
+    // belongs to a daemon still stopping. Wait for it, then take it.
+    const until = Date.now() + (options.ownerExitMs ?? RUNTIME_STOP_DEADLINE_MS + 1000)
+    while (!server) {
+      if (await socketAnswers(endpoint, probeMs)) return running
+      if (Date.now() > until) throw new Error(`${endpoint} is in use and nothing answers on it`)
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      server = await tryListen(endpoint)
+    }
+  }
   if (!server) {
-    if (platform === 'win32' || await socketAnswers(endpoint, probeMs)) return running
+    if (await socketAnswers(endpoint, probeMs)) return running
     // A socket file nobody answers on, left by a daemon that died.
     await removeStaleSocket(endpoint)
     server = await tryListen(endpoint)

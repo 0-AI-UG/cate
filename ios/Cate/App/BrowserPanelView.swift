@@ -53,8 +53,7 @@ struct BrowserPanelView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle(panel.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .panelTitle(panel.title)
         .onChange(of: pages.url) { if !editingAddress { address = pages.url } }
         .onChange(of: editingAddress) { if !editingAddress { address = pages.url } }
         .onChange(of: session.snapshot) {

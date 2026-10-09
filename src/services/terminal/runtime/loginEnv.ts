@@ -67,9 +67,14 @@ export function captureLoginEnv(shell: string): Promise<Record<string, string> |
   })
 }
 
-/** Merges the login-shell env over process.env. Best effort: a failed
- *  capture leaves the env as it is. Call once before serving requests. */
+/** Drops the Electron and npm variables the daemon inherited from the app
+ *  that started it, then merges the login-shell env over process.env. Best
+ *  effort: a failed capture leaves the env as it is. Call once before
+ *  serving requests: every program the daemon starts inherits the result. */
 export async function applyLoginEnv(): Promise<void> {
+  for (const key of Object.keys(process.env)) {
+    if (isForeignEnvKey(key)) delete process.env[key]
+  }
   const alreadyResolved = process.env[LOGIN_ENV_MARKER] === '1'
   delete process.env[LOGIN_ENV_MARKER]
   if (alreadyResolved || process.platform === 'win32') return

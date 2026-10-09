@@ -31,7 +31,12 @@ export interface SameNetworkOptions {
   /** Whether to serve a peer at this address. Default: private addresses only. */
   isAllowed?: (remoteAddress: string) => boolean
   onError?: (error: Error) => void
+  /** How often peers are pinged; default `HEARTBEAT_MS`. */
+  heartbeatMs?: number
 }
+
+/** A peer is dropped after missing a ping for this long. */
+export const HEARTBEAT_MS = 30_000
 
 export interface SameNetworkListener {
   readonly port: number
@@ -49,7 +54,23 @@ export async function serveSameNetwork(options: SameNetworkOptions): Promise<Sam
   const port = (server.address() as { port: number }).port
   const addresses = () => (options.addresses ?? lanAddresses)(port)
 
+  // A peer that slept or changed networks never says goodbye: one that
+  // misses a ping for a whole interval is dropped, so it stops counting as
+  // connected (and blocking idle updates). Every WebSocket client answers
+  // pings by itself.
+  const alive = new WeakMap<WebSocket, boolean>()
+  const heartbeat = setInterval(() => {
+    for (const client of server.clients) {
+      if (alive.get(client) === false) { client.terminate(); continue }
+      alive.set(client, false)
+      client.ping()
+    }
+  }, options.heartbeatMs ?? HEARTBEAT_MS)
+  heartbeat.unref()
+
   server.on('connection', (socket: WebSocket, request: IncomingMessage) => {
+    alive.set(socket, true)
+    socket.on('pong', () => alive.set(socket, true))
     const address = request.socket.remoteAddress
     void options.peers.accept(webSocketPort(socket as unknown as WebSocketLike), { transport: 'sameNetwork', ...(address ? { address } : {}) })
   })
@@ -69,6 +90,7 @@ export async function serveSameNetwork(options: SameNetworkOptions): Promise<Sam
     port,
     addresses,
     async close() {
+      clearInterval(heartbeat)
       await advertisement?.stop().catch(() => {})
       for (const client of server.clients) client.terminate()
       const httpServer = server.options.server as http.Server

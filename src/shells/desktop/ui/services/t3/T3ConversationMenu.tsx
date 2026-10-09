@@ -10,6 +10,24 @@ import { errorMessage } from '@kernel/interaction'
 import type { T3Conversation } from '@services/t3/contract'
 import type { T3ConversationSource } from '@services/t3/client'
 
+/** How long a deletion counts down before it runs; until then it can be
+ *  cancelled. */
+const DELETE_DELAY_MS = 3000
+
+/** A red ring that fills over the countdown, resumed from `startedAt` so it
+ *  stays in step with the timer when the menu reopens. */
+function DeleteCountdown({ startedAt }: { startedAt: number }) {
+  const ring = useRef<SVGCircleElement>(null)
+  useEffect(() => {
+    const animation = ring.current?.animate?.([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: DELETE_DELAY_MS, delay: startedAt - Date.now(), fill: 'forwards' })
+    return () => animation?.cancel()
+  }, [startedAt])
+  return <svg width={12} height={12} viewBox="0 0 12 12" className="-rotate-90">
+    <circle cx={6} cy={6} r={4.5} fill="none" stroke="currentColor" strokeOpacity={0.25} strokeWidth={1.5} />
+    <circle ref={ring} cx={6} cy={6} r={4.5} fill="none" stroke="currentColor" strokeWidth={1.5} pathLength={1} strokeDasharray={1} strokeDashoffset={1} />
+  </svg>
+}
+
 /** What the menu works on, decided when it opens (the checkout of the current
  *  selection). */
 export interface T3ConversationMenuTarget {
@@ -44,8 +62,10 @@ export function T3ConversationMenu({ target, menuSide, onOpenChange, renderTrigg
   const [threads, setThreads] = useState<T3Conversation[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [deleting, setDeleting] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  // Conversations counting down to deletion, by id: when each countdown
+  // started. Any number run at once; clicking the ring cancels one.
+  const [pendingDelete, setPendingDelete] = useState<Record<string, number>>({})
+  const deleteTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
   const [renaming, setRenaming] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [saving, setSaving] = useState(false)
@@ -62,21 +82,32 @@ export function T3ConversationMenu({ target, menuSide, onOpenChange, renderTrigg
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [position, current])
+  useEffect(() => () => { for (const timer of deleteTimers.current.values()) clearTimeout(timer) }, [])
 
   const create = (thread?: T3Conversation) => {
     close()
     current?.open(thread)
   }
-  const remove = async (thread: T3Conversation) => {
-    if (!current) return
-    setDeleting(thread.id)
+  const settleDelete = (id: string) => setPendingDelete(({ [id]: _, ...rest }) => rest)
+  const scheduleDelete = (thread: T3Conversation) => {
+    const source = current?.conversations
+    if (!source || deleteTimers.current.has(thread.id)) return
     setError('')
-    try {
-      await current.conversations.remove(thread.id)
-      setThreads((list) => list.filter((item) => item.id !== thread.id))
-      setConfirmDelete(null)
-    } catch (cause) { setError(errorMessage(cause, 'Could not delete conversation.')) }
-    finally { setDeleting(null) }
+    setPendingDelete((pending) => ({ ...pending, [thread.id]: Date.now() }))
+    deleteTimers.current.set(thread.id, setTimeout(() => {
+      deleteTimers.current.delete(thread.id)
+      void source.remove(thread.id).then(() => {
+        setThreads((list) => list.filter((item) => item.id !== thread.id))
+      }).catch((cause) => setError(errorMessage(cause, 'Could not delete conversation.')))
+        .finally(() => settleDelete(thread.id))
+    }, DELETE_DELAY_MS))
+  }
+  const cancelDelete = (id: string) => {
+    const timer = deleteTimers.current.get(id)
+    if (!timer) return
+    clearTimeout(timer)
+    deleteTimers.current.delete(id)
+    settleDelete(id)
   }
   const rename = async (thread: T3Conversation) => {
     if (!current || !title.trim() || saving) return
@@ -96,7 +127,6 @@ export function T3ConversationMenu({ target, menuSide, onOpenChange, renderTrigg
     if (!rect || !next) return
     setCurrent(next)
     setSearch('')
-    setConfirmDelete(null)
     setRenaming(null)
     setPosition({
       left: Math.max(8, Math.min(menuSide === 'right' ? rect.right + 8 : rect.left + rect.width / 2 - 110, window.innerWidth - 228)),
@@ -123,13 +153,12 @@ export function T3ConversationMenu({ target, menuSide, onOpenChange, renderTrigg
           {renaming === thread.id ? <form className="px-1.5 py-1" onSubmit={(event) => { event.preventDefault(); void rename(thread) }}>
             <input autoFocus aria-label="Conversation name" value={title} disabled={saving} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setRenaming(null) } }} className="w-full rounded bg-surface-3 px-1 py-1 text-primary" />
             <div className="flex gap-3 py-1"><button disabled={saving || !title.trim()} className="inline-flex items-center gap-1 text-secondary disabled:opacity-50">{saving && <Spinner size={11} />}{saving ? 'Saving' : 'Save'}</button><button type="button" disabled={saving} onClick={() => setRenaming(null)} className="text-muted">Cancel</button></div>
-          </form> : confirmDelete === thread.id ? <div className="px-1.5 py-1 text-[11px]">
-            <p className="text-secondary">Delete “{thread.title}”?</p>
-            <div className="flex gap-3 py-1"><button disabled={!!deleting} onClick={() => void remove(thread)} className="text-red-400 disabled:opacity-50">{deleting === thread.id ? <Spinner size={12} label="Deleting conversation" /> : 'Delete'}</button><button disabled={!!deleting} onClick={() => setConfirmDelete(null)} className="text-muted">Cancel</button></div>
-          </div> : <div className="flex items-center">
-            <button onClick={() => create(thread)} className="min-w-0 flex flex-1 items-center gap-2 h-[26px] px-1.5 text-[12px] text-secondary hover:text-primary transition-colors" title={thread.title}><T3Logo size={13} className="shrink-0 text-muted" /><span className="truncate">{thread.title}</span></button>
-            <button aria-label={`Delete ${thread.title}`} disabled={!!deleting} onClick={() => setConfirmDelete(thread.id)} className="p-1.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-400"><Trash size={12} /></button>
-            <button aria-label={`Rename ${thread.title}`} onClick={() => { setTitle(thread.title); setRenaming(thread.id) }} className="p-1.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-primary"><PencilSimple size={12} /></button>
+          </form> : <div className="flex items-center">
+            <button onClick={() => create(thread)} className={`min-w-0 flex flex-1 items-center gap-2 h-[26px] px-1.5 text-[12px] text-secondary hover:text-primary transition-colors ${pendingDelete[thread.id] ? 'opacity-50' : ''}`} title={thread.title}><T3Logo size={13} className="shrink-0 text-muted" /><span className="truncate">{thread.title}</span></button>
+            {pendingDelete[thread.id]
+              ? <Tooltip label="Cancel delete"><button aria-label={`Cancel deleting ${thread.title}`} onClick={() => cancelDelete(thread.id)} className="p-1.5 text-red-400"><DeleteCountdown startedAt={pendingDelete[thread.id]} /></button></Tooltip>
+              : <button aria-label={`Delete ${thread.title}`} onClick={() => scheduleDelete(thread)} className="p-1.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-400"><Trash size={12} /></button>}
+            <button aria-label={`Rename ${thread.title}`} disabled={!!pendingDelete[thread.id]} onClick={() => { setTitle(thread.title); setRenaming(thread.id) }} className="p-1.5 text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-primary disabled:invisible"><PencilSimple size={12} /></button>
           </div>}
         </div>)}
       </div>

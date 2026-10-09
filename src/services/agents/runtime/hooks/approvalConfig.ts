@@ -42,6 +42,8 @@ export function readCodexApprovalConfig(
   return new Promise((resolve) => {
     const child = spawn(options.command ?? 'codex', ['app-server'], {
       cwd, env: { ...process.env, ...options.env }, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true,
+      // npm installs `codex.cmd` on Windows, which only a shell runs.
+      shell: process.platform === 'win32',
     })
     let done = false
     let buffer = ''

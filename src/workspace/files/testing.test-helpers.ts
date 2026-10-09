@@ -58,7 +58,7 @@ export async function makeWorkspace(overrides: Partial<FilesRuntimeDeps> = {}) {
   const connect = async (clientId = `c${clients.length + 1}`) => {
     const client = new RpcClient({
       version: '1.0.0',
-      identity: { client: { clientId, device: { name: 'test', keyFingerprint: 'fp' }, features: [] } },
+      identity: { client: { clientId, device: { name: 'test', publicKey: 'fp' }, features: [] } },
     })
     const [serverPort, clientPort] = createMemoryPortPair()
     server.serve(serverPort)

@@ -56,7 +56,7 @@ function fakeRuntime(keep = 10_000) {
   const client = (clientId: string) => {
     let counter = 0
     const nextCounter = () => ++counter
-    const rpc = new RpcClient({ version: 'test', identity: { client: { clientId, device: { name: clientId, keyFingerprint: 'FP' }, features: [] } }, nextOpCounter: nextCounter })
+    const rpc = new RpcClient({ version: 'test', identity: { client: { clientId, device: { name: clientId, publicKey: 'FP' }, features: [] } }, nextOpCounter: nextCounter })
     const connect = () => {
       const [mine, theirs] = createMemoryPortPair()
       ports.set(clientId, mine)

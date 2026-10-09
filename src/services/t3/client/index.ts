@@ -6,6 +6,7 @@ export {
   t3BrandingScript,
   isT3ProviderSettingsNavigation,
   isAllowedT3Navigation,
+  t3ShowsConversation,
   t3ThreadIdFromUrl,
 } from './surface'
 export { t3ThemeScript } from './theme'

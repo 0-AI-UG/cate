@@ -44,6 +44,7 @@ export const BUILTIN_ACTIONS = defineActions({
   undo: { title: 'Undo', key: key('z', { command: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   redo: { title: 'Redo', key: key('z', { command: true, shift: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   openFolder: { title: 'Open Folder…', key: key('o', { command: true }), menu: { bar: 'file', group: 'open' } },
+  openRemoteFolder: { title: 'Open Folder on Another Machine…', menu: { bar: 'file', group: 'open' } },
   newWorkspace: { title: 'New Workspace', menu: { bar: 'file', group: 'open' } },
   showTutorial: { title: 'Show Tutorial', menu: { bar: 'help', group: 'learn' } },
   saveFile: { title: 'Save', key: key('s', { command: true }), menu: { bar: 'file', group: 'save' } },
@@ -56,8 +57,8 @@ export const BUILTIN_ACTIONS = defineActions({
   openRepository: { title: 'Repository / Source Control Changes', key: key('g', { command: true, shift: true }) },
   openPullRequests: { title: 'Pull Requests', key: key('g', { command: true, option: true }) },
   openUsage: { title: 'Usage', key: key('u', { command: true, option: true }) },
-  reloadWorkspace: { title: 'Reload Workspace from Disk' },
-  deleteRuntime: { title: 'Delete Runtime' },
+  reconnectWorkspace: { title: 'Reconnect Workspace' },
+  forgetWorkspace: { title: 'Forget Workspace…' },
 })
 
 const selectedDocument = () => {
@@ -130,6 +131,10 @@ export function registerBuiltinActions(): () => void {
         run: () => { void pickAndOpenFolder() },
         enabled: () => !!desktopPort(),
       },
+      openRemoteFolder: {
+        run: () => useUIStore.getState().openSettings('remote-machines'),
+        enabled: () => !!tryClientApp()?.machines,
+      },
       newWorkspace: {
         // The welcome screen opens or joins a workspace.
         run: () => {
@@ -158,7 +163,7 @@ export function registerBuiltinActions(): () => void {
       openRepository: overlay('pullRequests'),
       openPullRequests: overlay('pullRequests', 'pullRequests'),
       openUsage: overlay('usage'),
-      reloadWorkspace: {
+      reconnectWorkspace: {
         // Reconnects: the document and sessions load again from the runtime.
         async run({ workspaceId }) {
           if (!workspaceId) return
@@ -167,15 +172,15 @@ export function registerBuiltinActions(): () => void {
         },
         enabled: ({ workspaceId }) => !!workspaceId,
       },
-      deleteRuntime: {
+      forgetWorkspace: {
         async run({ workspaceId }) {
           const entry = entryOf(workspaceId)
-          if (!entry || entry.kind === 'local') return
+          if (entry?.kind !== 'paired') return
           const ok = await clientUi().confirm(`Forget "${entry.name}"? This device can open it again only after pairing with a new code.`)
           if (!ok) return
           await clientApp().workspaces.forget(entry.id).catch((err) => clientUi().showError(errorMessage(err, 'Could not forget the workspace.')))
         },
-        enabled: ({ workspaceId }) => { const entry = entryOf(workspaceId); return !!entry && entry.kind !== 'local' },
+        enabled: ({ workspaceId }) => entryOf(workspaceId)?.kind === 'paired',
       },
     }),
     registerPanelActions((type, { workspaceId }) => newPanel(type, workspaceId)),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getDocumentType, pathDisplayName, pathHasPrefix, pathKey, relativeDisplayPath, toAbsolutePath, toRelativePath } from './paths'
+import { getDocumentType, joinPath, parentDir, pathDisplayName, pathHasPrefix, pathKey, relativeDisplayPath, toAbsolutePath, toRelativePath } from './paths'
 import { textDelta } from './buffer'
 import { base64ToBytes, bytesToBase64, contentHash } from './hash'
 
@@ -46,5 +46,18 @@ describe('buffer helpers', () => {
     expect(contentHash('é')).toBe(contentHash(new Uint8Array([0xc3, 0xa9])))
     const bytes = new Uint8Array([0, 1, 250, 255])
     expect(base64ToBytes(bytesToBase64(bytes))).toEqual(bytes)
+  })
+})
+
+describe('parentDir and joinPath', () => {
+  it('keep the path style of the runtime, whatever the client', () => {
+    expect(parentDir('C:\\p\\a.ts')).toBe('C:\\p')
+    expect(parentDir('C:\\a.ts')).toBe('C:\\')
+    expect(parentDir('/srv/app/a.ts')).toBe('/srv/app')
+    expect(parentDir('/a.ts')).toBe('/')
+    expect(parentDir('a.ts')).toBe('')
+    expect(joinPath('C:\\p', 'b.ts')).toBe('C:\\p\\b.ts')
+    expect(joinPath('/srv/app', 'b.ts')).toBe('/srv/app/b.ts')
+    expect(joinPath('/', 'b.ts')).toBe('/b.ts')
   })
 })

@@ -8,7 +8,7 @@ import {
   parsePairingCode,
   PairingFormatError,
 } from '@runtime/pairing/contract'
-import { PairingError } from '@runtime/pairing/client'
+import { PairingError, pairingErrorMessage } from '@runtime/pairing/client'
 import type { ShellTransports } from '@client/connections'
 import { pairingEndpoints, type NetworkEndpoint } from '@runtime/transports/contract'
 import type { PairedWorkspace, WorkspaceList } from './workspaceList'
@@ -37,15 +37,8 @@ export function parsePairingInput(text: string): PairingTarget {
 /** A message for a failed join. */
 export function joinErrorMessage(err: unknown): string {
   if (err instanceof PairingFormatError) return 'That is not a Cate pairing code.'
-  if (err instanceof PairingError) {
-    switch (err.reason) {
-      case 'fingerprint-mismatch': return 'The workspace that answered is not the one in the code.'
-      case 'timeout': return 'The workspace did not answer in time.'
-      case 'closed': return 'The workspace closed the connection.'
-      case 'bad-runtime-proof': return 'The workspace could not prove it knows the code.'
-      default: return 'The code was refused. Codes work once and expire after 10 minutes; ask for a new one.'
-    }
-  }
+  if (err instanceof PairingError) return pairingErrorMessage(err)
+  // A shell that pairs in another process already sent the words.
   return err instanceof Error ? err.message : String(err)
 }
 

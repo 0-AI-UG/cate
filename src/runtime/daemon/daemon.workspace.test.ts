@@ -71,7 +71,7 @@ describe.skipIf(process.platform === 'win32')('daemon workspace', () => {
     const { endpoint } = daemon
 
     const client = await connect(endpoint, {
-      client: { clientId: 'c1', device: { name: 'laptop', keyFingerprint: 'fp' }, features: [] },
+      client: { clientId: 'c1', device: { name: 'laptop', publicKey: 'fp' }, features: [] },
     })
     const workspace = createCapabilityProxy(client, workspaceCapability)
     const document = createCapabilityProxy(client, documentCapability)

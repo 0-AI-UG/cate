@@ -70,16 +70,18 @@ export const DESKTOP_CHANNELS = {
   dragEnded: 'cate-desktop:drag:ended',
 
   dialLocal: 'cate-desktop:transport:dial-local',
+  dialMachine: 'cate-desktop:transport:dial-machine',
   dialNetwork: 'cate-desktop:transport:dial-network',
   dialLoopbackTcp: 'cate-desktop:transport:dial-loopback-tcp',
   pipePort: 'cate-desktop:transport:port',
   loopbackRequest: 'cate-desktop:transport:loopback-request',
   pair: 'cate-desktop:transport:pair',
 
-  sshEnsureRuntime: 'cate-desktop:ssh:ensure-runtime',
-  sshListDir: 'cate-desktop:ssh:list-dir',
-  sshMkdir: 'cate-desktop:ssh:mkdir',
-  sshServe: 'cate-desktop:ssh:serve',
+  machineEnsureRuntime: 'cate-desktop:machine:ensure-runtime',
+  machineListDir: 'cate-desktop:machine:list-dir',
+  machineMkdir: 'cate-desktop:machine:mkdir',
+  machineWslDistros: 'cate-desktop:machine:wsl-distros',
+  machineCancel: 'cate-desktop:machine:cancel',
 
   webPartition: 'cate-desktop:web:partition',
   webRelease: 'cate-desktop:web:release',

@@ -11,12 +11,10 @@ import {
   parseDirListing,
   parseMkdir,
   parseProbe,
-  parseServeOutput,
   parseSshCommand,
   probeScript,
-  serveScript,
-  sshArgs,
 } from './ssh'
+import { bridgeScript, isMachine, machineCommand, machineKey } from './machine'
 
 describe('parseSshCommand', () => {
   it('reads a host or an ssh command line', () => {
@@ -43,14 +41,25 @@ describe('parseSshCommand', () => {
   })
 })
 
-it('builds ssh argv only from validated fields', () => {
+it('builds machine commands only from validated fields', () => {
   expect(isSshTarget({ destination: '-oProxyCommand=x' })).toBe(false)
   expect(isSshTarget({ destination: 'h', jump: 'a,-oX' })).toBe(false)
   expect(isSshTarget({ destination: 'h', identityFile: '-x' })).toBe(false)
-  expect(sshArgs({ destination: 'u@h', port: 2 })).toEqual([
-    '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15',
-    '-p', '2', '--', 'u@h', 'sh', '-s',
-  ])
+  expect(isMachine({ kind: 'wsl', distro: 'Ubuntu-22.04' })).toBe(true)
+  expect(isMachine({ kind: 'wsl', distro: '-d' })).toBe(false)
+  expect(isMachine({ kind: 'wsl', distro: 'a b' })).toBe(false)
+  expect(machineCommand({ kind: 'ssh', target: { destination: 'u@h', port: 2 } }, 'stdin')).toEqual({
+    command: 'ssh',
+    args: [
+      '-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15',
+      '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
+      '-p', '2', '--', 'u@h', 'sh', '-s',
+    ],
+  })
+  expect(machineCommand({ kind: 'ssh', target: { destination: 'h' } }, "echo 'x'").args.slice(-4)).toEqual(['h', 'sh', '-c', `'echo '\\''x'\\'''`])
+  expect(machineCommand({ kind: 'wsl', distro: 'Ubuntu' }, 'echo x')).toEqual({ command: 'wsl.exe', args: ['-d', 'Ubuntu', '--exec', 'sh', '-c', 'echo x'] })
+  expect(machineKey({ kind: 'wsl', distro: 'Ubuntu' })).toBe('wsl:Ubuntu')
+  expect(() => bridgeScript('nope', '/w')).toThrow(/invalid build/)
 })
 
 describe.skipIf(process.platform === 'win32')('scripts on a real sh', () => {
@@ -88,15 +97,5 @@ describe.skipIf(process.platform === 'win32')('scripts on a real sh', () => {
 
     expect(parseMkdir(sh(mkdirScript("projects/it's new")))).toBe(path.join(home, 'projects', "it's new"))
     expect(fs.statSync(path.join(home, 'projects', "it's new")).isDirectory()).toBe(true)
-  })
-
-  it('serves only with the installed build', () => {
-    expect(() => parseServeOutput(sh(serveScript(BUILD, '')))).toThrow(/not installed/)
-    const bin = path.join(home, '.cate', 'runtime', BUILD, 'cate', 'bin')
-    fs.mkdirSync(bin, { recursive: true })
-    // A stand-in `cate` that prints what `cate serve --json` prints.
-    fs.writeFileSync(path.join(bin, 'cate'), '#!/bin/sh\nprintf \'{"root":"%s","uri":"cate://pair?x","code":"abcd"}\\n\' "$2"\n', { mode: 0o755 })
-    expect(parseServeOutput(sh(serveScript(BUILD, '')))).toEqual({ root: home, uri: 'cate://pair?x', code: 'abcd' })
-    expect(() => parseServeOutput(sh(serveScript(BUILD, 'missing')))).toThrow(/is not a folder/)
   })
 })

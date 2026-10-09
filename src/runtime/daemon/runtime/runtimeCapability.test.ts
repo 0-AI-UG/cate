@@ -13,10 +13,11 @@ function setup(opts: { clients?: number[]; busy?: boolean } = {}) {
   })
   const rpc = {
     protocol: [1, 0],
-    connections: () => (opts.clients ?? [1]).map((id) => ({ id, client: { clientId: `c${id}`, device: { name: 'd', keyFingerprint: 'f' }, features: [] } })),
+    connections: () => (opts.clients ?? [1]).map((id) => ({ id, client: { clientId: `c${id}`, device: { name: 'd', publicKey: 'f' }, features: [] } })),
   } as unknown as RpcServer
   const impl = runtimeCapabilityImpl({
     runtimeId: 'r', root: '/w', version: '2.0.4', rpc, perf: {} as PerfSampler,
+    endpoints: () => [{ kind: 'lan', address: '10.0.0.2', port: 4000 }],
     busy: () => opts.busy ?? false,
     stop: () => {},
     onStopping: () => () => {},
@@ -26,8 +27,13 @@ function setup(opts: { clients?: number[]; busy?: boolean } = {}) {
   const call = (params: { version: string; build?: string; ifIdle?: boolean }) =>
     (impl.update as (p: typeof params, c: CallContext) => Promise<void>)(params, ctx)
   const progress = () => (impl.updateProgress as () => RuntimeUpdateProgress | null)()
-  return { call, update, progress, report: (p: RuntimeUpdateProgress) => report(p), finish: () => finish() }
+  return { impl, call, update, progress, report: (p: RuntimeUpdateProgress) => report(p), finish: () => finish() }
 }
+
+it('says where paired devices reach it now', () => {
+  const { impl } = setup()
+  expect((impl.info as unknown as () => { endpoints?: unknown })().endpoints).toEqual([{ kind: 'lan', address: '10.0.0.2', port: 4000 }])
+})
 
 it('validates the version and build', async () => {
   const { call } = setup()

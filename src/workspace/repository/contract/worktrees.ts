@@ -127,6 +127,19 @@ export function worktreeForPanel<W extends WorktreeLike>(
   return worktreeForPath(hooks.checkoutPath?.(record), worktrees)
 }
 
+/** The checkout a panel shows as its own: `worktreeForPanel`, else, for a
+ *  type bound to a checkout, the main one, which every other checkout lives
+ *  under (the shortest path). */
+export function panelCheckout<W extends WorktreeLike>(
+  record: PanelRecord | undefined,
+  worktrees: readonly W[],
+  hooks: PanelCheckoutHooks = {},
+): W | undefined {
+  const own = worktreeForPanel(record, worktrees, hooks)
+  if (own || !record || !hooks.bound?.(record.type)) return own
+  return [...worktrees].sort((a, b) => a.path.length - b.path.length)[0]
+}
+
 export interface InheritedWorktree {
   /** The selected bound panel's own directory, or the checkout root. */
   cwd?: string

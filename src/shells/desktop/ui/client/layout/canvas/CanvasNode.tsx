@@ -10,7 +10,7 @@ import { Tooltip, getActiveTheme, subscribeTheme } from '../../../kernel/interac
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { useClientState, useDocument } from '../../document'
 import { dockPanels, placementOf, stackOfPanel, findStack, type NodeId, type PanelId } from '@workspace/document/contract'
-import { worktreeForPanel } from '@workspace/repository/contract'
+import { panelCheckout } from '@workspace/repository/contract'
 import { PanelRelationHandle, connectPanelToExisting } from '../../../workspace/relations'
 import { canvasDrag, canvasHost, panelMinimumSize } from './ports'
 import { useWorkspaceSetting } from './settingsHooks'
@@ -151,13 +151,8 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const [theme, setTheme] = useState(getActiveTheme)
   useEffect(() => subscribeTheme(setTheme), [])
   const activeWorktree = useMemo(() => {
-    if (readyWorktrees.length < 2 || !activePanel) return undefined
-    const own = worktreeForPanel(activePanel, readyWorktrees, panelCheckoutHooks)
-    if (own) return own
-    // An untagged checkout-bound panel runs in the main checkout, which
-    // every other checkout lives under: the shortest path.
-    if (!panelCheckoutHooks.bound?.(activePanel.type)) return undefined
-    return [...readyWorktrees].sort((a, b) => a.path.length - b.path.length)[0]
+    if (readyWorktrees.length < 2) return undefined
+    return panelCheckout(activePanel, readyWorktrees, panelCheckoutHooks)
   }, [readyWorktrees, activePanel])
   const activeWorktreeId = activeWorktree?.id ?? null
   const worktreeTint = activeWorktree ? paletteColor(activeWorktree.color, theme) : null

@@ -2,7 +2,8 @@
 // target panel, then the meaning.
 
 import type { RelationKind } from '@workspace/document/contract'
-import { panelRelationOptions, relationPanelOf, wouldCreatePanelRelationCycle } from '@workspace/relations/contract'
+import { panelRelationOptions, relationPanelOf } from '@workspace/relations/contract'
+import { relationTargets } from '@workspace/relations/client'
 import { addRelation } from './actions'
 import { relationRoleOf, relationUiHost, relationsEnabled } from './host'
 import { relationUiPort } from './port'
@@ -12,9 +13,7 @@ export async function connectPanelToExisting(workspaceId: string, sourcePanelId:
   const doc = relationUiHost().document(workspaceId)?.getSnapshot()
   const source = doc?.panels[sourcePanelId]
   if (!doc || !source) return
-  const relations = Object.values(doc.relations)
-  const targets = Object.values(doc.panels).filter((panel) =>
-    panel.id !== sourcePanelId && !wouldCreatePanelRelationCycle(relations, sourcePanelId, panel.id))
+  const targets = relationTargets(doc, sourcePanelId)
   const menu = relationUiPort().showMenu
   if (targets.length === 0) {
     await menu([{ label: 'No panels available to connect', enabled: false }])

@@ -181,6 +181,7 @@ export function createMobileAgents(client: MobileClient, bridge: MobileBridge): 
           title: agentPanelTitle(panel.title, state) || state.agentName || 'Agent',
           agentId: state.agentId,
           agentName: state.agentName,
+          logo: state.takesOverPanel && state.label ? state.agentId : null,
           status: state.status,
           present: state.present,
           canReceivePrompt: state.canReceivePrompt,

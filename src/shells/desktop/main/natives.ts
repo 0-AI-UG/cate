@@ -15,6 +15,7 @@ import type { CanvasBackgrounds } from './canvasBackgrounds'
 import { handle } from './ipc'
 import type { WindowRegistry } from './windowRegistry'
 import { externalUrl } from './externalUrl'
+import { realPath } from './openRequests'
 
 export interface NativesDeps {
   registry: WindowRegistry<BrowserWindow>
@@ -78,7 +79,10 @@ export function registerNatives(deps: NativesDeps): void {
       properties,
     }
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
-    return result.canceled || result.filePaths.length === 0 ? null : result.filePaths
+    if (result.canceled || result.filePaths.length === 0) return null
+    // A folder's real path: one folder reached two ways (a symlink, `c:` and
+    // `C:`) is one workspace.
+    return request.directory ? result.filePaths.map(realPath) : result.filePaths
   })
 
   handle(C.canvasBackgroundPick, async (event) => {

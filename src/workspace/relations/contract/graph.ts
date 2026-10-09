@@ -75,6 +75,45 @@ export function isExecutionSurface(panel: Pick<RelationPanel, 'role'>): boolean 
   return panel.role.execution === true
 }
 
+/** Each relation's flow, numbered from 0. A flow starts at an execution
+ *  surface and stops when it reaches the next one: the incoming handoff
+ *  keeps the sender's flow, relations leaving the receiver start its own.
+ *  A relation no execution surface reaches has no flow. */
+export function relationFlows(
+  relations: readonly PanelRelation[],
+  panels: Readonly<Record<string, PanelRecord>>,
+  roleOf: RelationRoleOf,
+): Map<string, number> {
+  const takesPrompts = (record: PanelRecord) => roleOf(record.type)?.execution === true
+  const outgoing = new Map<string, PanelRelation[]>()
+  for (const relation of relations) {
+    const connected = outgoing.get(relation.fromPanelId) ?? []
+    connected.push(relation)
+    outgoing.set(relation.fromPanelId, connected)
+  }
+
+  const flows = new Map<string, number>()
+  let flow = 0
+  for (const source of Object.values(panels)) {
+    if (!takesPrompts(source) || !outgoing.has(source.id)) continue
+    const queue = [source.id]
+    const seenPanels = new Set<string>()
+    while (queue.length > 0) {
+      const panelId = queue.shift()!
+      if (seenPanels.has(panelId)) continue
+      seenPanels.add(panelId)
+      for (const relation of outgoing.get(panelId) ?? []) {
+        if (flows.has(relation.id)) continue
+        flows.set(relation.id, flow)
+        const target = panels[relation.toPanelId]
+        if (target && !takesPrompts(target)) queue.push(target.id)
+      }
+    }
+    flow += 1
+  }
+  return flows
+}
+
 export const PANEL_RELATION_LABELS: Record<PanelRelationKind, string> = {
   use: 'Work in',
   context: 'Reference',

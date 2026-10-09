@@ -9,18 +9,32 @@ SwiftUI; the client core runs headless in a hidden `WKWebView`
 - `Cate/Core/`: the core's host (`CoreHost`), the bridge (`ShellBridge`),
   device storage, mDNS, and loopback routing for web views (`LoopbackPorts`).
 - `Cate/App/`: the UI (iOS 26, Liquid Glass). Workspaces and joining; a
-  workspace with its agents, each a chat (`AgentChatView`: a new agent
-  starts from an empty chat whose box picks a terminal agent or a T3 Code
-  model and a worktree; replies, task decisions, one tap into the agent's
-  terminal or T3 Code chat, Review into a review panel filtered to the
-  agent), keep-awake and alerts per computer; notifications (`Notifier`:
-  banners, push registration, Reply); and one view per panel type:
-  terminal (SwiftTerm), files (the shared buffer as text, previews, a file
-  browser), browser and chat (`WKWebView`s in the workspace's data store),
-  diff review, canvas (a map of its nodes; `+` adds a panel or an agent to
-  it) and surface (the type picker). A new panel or agent goes where you
-  are: on the canvas it was asked from, at the spot tapped in its map
-  (`PlacementSheet`), or in the dock from anywhere else.
+  workspace as Cate lays it out (`WorkspaceView`, `PlaceViews`): one of its
+  dock's panels on screen at a time, picked in the title menu. A canvas panel
+  shows a map of its panels where they sit, each a tile (its kind, title,
+  where it is and its agent's state, drawn at the map's scale so it is the
+  same at every zoom), with their connections
+  (relations) drawn between them; UIKit pans and pinches it natively and the
+  map is laid out again at the new scale when a pinch ends. Tap a card to
+  zoom into its panel, long-press it to move it, drag its `+` handle onto
+  another card to connect them (the meaning is picked right there), tap a
+  connection's label to change its meaning or remove it; a card's `…` menu
+  moves the panel to another worktree (as its screen's toolbar does). A
+  card shows an agent as the desktop's tabs do (its logo and status mark);
+  agents themselves live only in the Agents screen. With two or more worktrees, each one's
+  cards sit on a terraced territory in its color (`Worktrees`), as on the
+  desktop. Connections are made only on the map. `+` adds a
+  panel to the dock, or places it on the canvas on screen: the map zooms out
+  to the desktop's recommended spots (`canvas.suggest`) and a tap on one puts
+  it there. A new agent goes where you are looking. Agents (`AgentsView`, each a chat:
+  `AgentChatView`, a new agent starts from an empty chat whose box picks a
+  terminal agent or a T3 Code model and a worktree), the workspace's own
+  screen (who else is here, keep-awake and alerts, disconnecting);
+  notifications (`Notifier`: banners, push registration, Reply); and one view
+  per panel type: terminal (SwiftTerm), files (the shared buffer as text,
+  previews, a file browser), browser and chat (`WKWebView`s in the
+  workspace's data store), diff review, canvas (its map) and surface (the
+  type picker).
 
 - `Notifications/`: the notification service extension, which opens each
   push sealed for this device; `Shared/` holds the push key (a Keychain group

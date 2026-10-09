@@ -33,6 +33,22 @@ export function toAbsolutePath(relPath: string, rootPath: string): string {
   return isWindowsPath(rootPath) ? joined.replace(/\//g, '\\') : joined
 }
 
+/** The folder `p` is in, in the path's own style; '' when it has none. A
+ *  client may show paths of a runtime on another OS, so never split on its
+ *  own separator. */
+export function parentDir(p: string): string {
+  const cut = Math.max(p.lastIndexOf('/'), isWindowsPath(p) ? p.lastIndexOf('\\') : -1)
+  if (cut < 0) return ''
+  const dir = p.slice(0, cut || 1)
+  return /^[A-Za-z]:$/.test(dir) ? `${dir}\\` : dir
+}
+
+/** `name` inside `dir`, with the separator `dir` uses. */
+export function joinPath(dir: string, name: string): string {
+  if (dir.endsWith('/') || dir.endsWith('\\')) return dir + name
+  return dir + (isWindowsPath(dir) ? '\\' : '/') + name
+}
+
 /** Last non-empty segment, for display. */
 export function pathDisplayName(p: string): string {
   const sep = isWindowsPath(p) ? /[\\/]/ : /\//

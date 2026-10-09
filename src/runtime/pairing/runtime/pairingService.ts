@@ -1,12 +1,15 @@
-// The runtime side of pairing: one-time secrets, the paired device list, the
-// pair message handler and revocation.
+// The runtime side of pairing: one-time secrets, the workspace's device list
+// (every device that has opened it, however it got in), the pair message
+// handler and revocation.
 
 import { randomBytes as nobleRandomBytes } from '@noble/hashes/utils.js'
+import type { DeviceInfo } from '@kernel/rpc/contract'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import { bytesToHex, fingerprint, hexToBytes, networkIdOf, type SecureChannel } from '../../security/contract'
 import type { PeerPolicy } from '../../security/runtime'
 import {
   cleanDeviceName,
+  isDeviceKey,
   decodePairMessage,
   encodePairingUri,
   encodePairMessage,
@@ -19,16 +22,16 @@ import {
   verifyClientProof,
   type CreatedSecret,
   type PairAnswer,
-  type PairedDevice,
   type PairingMode,
   type pairingCapability,
+  type WorkspaceDevice,
 } from '../contract'
-import type { PairingsFile, PairingsStore } from './pairingsFile'
+import type { DevicesFile, DevicesStore } from './devicesFile'
 
 export interface PairingServiceOptions {
   /** The runtime's static key; codes carry its network id. */
   runtimePublicKey: Uint8Array
-  store: PairingsStore
+  store: DevicesStore
   /** LAN addresses (`host:port`) to put in the QR payload. */
   addresses?: () => string[]
   now?: () => number
@@ -50,14 +53,14 @@ export class PairingService implements PeerPolicy {
   /** Wrong proofs against the live secrets since they last burned. */
   private wrongProofs = 0
   private readonly revokeListeners = new Set<(publicKey: string) => void>()
-  private readonly listListeners = new Set<(devices: PairedDevice[]) => void>()
+  private readonly listListeners = new Set<(devices: WorkspaceDevice[]) => void>()
   private readonly now: () => number
   private readonly random: (length: number) => Uint8Array
 
   constructor(private readonly options: PairingServiceOptions) {
     this.now = options.now ?? Date.now
     this.random = options.randomBytes ?? nobleRandomBytes
-    // A device removed by editing pairings.json is revoked like one removed
+    // A device removed by editing devices.json is revoked like one removed
     // in the app: its live connections drop.
     let known = new Set(options.store.get().devices.map((device) => device.publicKey))
     options.store.subscribe((next, origin) => {
@@ -90,7 +93,7 @@ export class PairingService implements PeerPolicy {
     }
   }
 
-  list(): PairedDevice[] {
+  list(): WorkspaceDevice[] {
     return this.options.store.get().devices.map((device) => ({
       ...device,
       fingerprint: fingerprint(hexToBytes(device.publicKey)),
@@ -102,15 +105,30 @@ export class PairingService implements PeerPolicy {
     return this.options.store.get().devices.some((device) => device.publicKey === hex)
   }
 
-  markSeen(publicKey: Uint8Array): void {
-    const hex = bytesToHex(publicKey)
+  /**
+   * A client connected as `device`. A known device is marked seen under the
+   * name it gives now; an unknown one connected as a user of this machine
+   * (a network connection with an unknown key never says hello), so it is
+   * added. A connection without a key (`cate serve`) is no device.
+   */
+  connected(device: DeviceInfo): void {
+    if (!isDeviceKey(device.publicKey)) return
+    const hex = device.publicKey
+    const name = cleanDeviceName(device.name)
     const now = this.now()
-    this.update((file) => ({
-      devices: file.devices.map((device) => (device.publicKey === hex ? { ...device, lastSeen: now } : device)),
-    }))
+    this.update((file) => {
+      const known = file.devices.some((entry) => entry.publicKey === hex)
+      return {
+        devices: known
+          ? file.devices.map((entry) => (entry.publicKey === hex ? { ...entry, name, lastSeen: now } : entry))
+          : [...file.devices, { publicKey: hex, name, admittedBy: 'machineUser', addedAt: now, lastSeen: now }],
+      }
+    })
   }
 
-  /** Removes the device and tells listeners to drop its live connections. */
+  /** Removes the device and tells listeners to drop its live connections,
+   *  whatever carried them. One admitted as a user of this machine comes
+   *  back when it connects again. */
   revoke(deviceKey: string): { removed: boolean } {
     const hex = deviceKey.toLowerCase()
     let removed = false
@@ -124,12 +142,12 @@ export class PairingService implements PeerPolicy {
   }
 
   /** Every change of the device list (a device paired, seen or removed). */
-  watch(listener: (devices: PairedDevice[]) => void): () => void {
+  watch(listener: (devices: WorkspaceDevice[]) => void): () => void {
     this.listListeners.add(listener)
     return () => this.listListeners.delete(listener)
   }
 
-  private update(fn: (file: PairingsFile) => PairingsFile): void {
+  private update(fn: (file: DevicesFile) => DevicesFile): void {
     this.options.store.update(fn)
     const devices = this.list()
     for (const listener of [...this.listListeners]) listener(devices)
@@ -175,7 +193,7 @@ export class PairingService implements PeerPolicy {
     const now = this.now()
     const name = cleanDeviceName(request.deviceName)
     this.update((file) => ({
-      devices: [...file.devices.filter((device) => device.publicKey !== hex), { publicKey: hex, name, pairedAt: now, lastSeen: now }],
+      devices: [...file.devices.filter((device) => device.publicKey !== hex), { publicKey: hex, name, admittedBy: 'pairing', addedAt: now, lastSeen: now }],
     }))
     return this.answer(channel, { type: 'paired', proof: proofToWire(runtimeProof(match.secret, channel.handshakeHash)) })
   }

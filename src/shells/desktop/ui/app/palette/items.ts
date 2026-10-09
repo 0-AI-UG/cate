@@ -5,7 +5,7 @@
 import { displayString, isIconName, type ActionId, type ActionSpec, type IconName, type StoredShortcut } from '@kernel/interaction/contract'
 import { documentOrder, windowOf, type WindowId, type WorkspaceDocument } from '@workspace/document/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
-import type { WorkspaceEntry } from '@client/workspaces'
+import { workspaceLocation, type WorkspaceEntry } from '@client/workspaces'
 
 interface CommandItem {
   kind: 'command'
@@ -95,7 +95,7 @@ export function workspaceItems(entries: readonly WorkspaceEntry[], currentId: st
       kind: 'workspace',
       id: entry.id,
       name: entry.name,
-      detail: entry.kind === 'local' ? entry.root : undefined,
+      detail: workspaceLocation(entry) ?? undefined,
       current: entry.id === currentId,
     }))
     .filter((item) => matches(query, item.name, item.detail))

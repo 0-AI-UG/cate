@@ -1,4 +1,4 @@
-// An agent as a chat. A new chat starts empty: write the task, pick what
+// An agent as a chat. A new chat starts empty: say what to do, pick what
 // runs it in the box, send. Your message shows at once and the reply line
 // shimmers while the agent starts and works; the same screen then follows
 // the agent. A permission or question is answered in the panel it runs in
@@ -9,19 +9,18 @@
 
 import SwiftUI
 
-/// A new agent chat in a workspace; from a canvas panel, its canvas is the
-/// place picked first.
+/// A new agent chat in a workspace; from a canvas, its panel goes there.
 struct NewAgentRoute: Hashable {
     let workspaceId: String
-    var canvasPanelId: String?
+    var placement: Placement?
 }
 
 struct AgentChatView: View {
     @Environment(CoreHost.self) private var core
     @Environment(Notifier.self) private var notifier
     let workspaceId: String
-    /// The canvas a new agent was asked for from.
-    let canvasPanelId: String?
+    /// Where a new agent's panel goes; nil for the dock.
+    let placement: Placement?
     /// The agent's panel; nil until a new chat's agent started.
     @State private var panelId: String?
     /// The followed conversation; nil until the chat has an agent.
@@ -37,19 +36,20 @@ struct AgentChatView: View {
     @AppStorage("agents.launch") private var remembered = ""
     @AppStorage("agents.worktree") private var worktree = true
     @State private var failure: OpFailure?
-    @State private var placing: PendingPlacement?
     @State private var reviewing: PanelRoute?
     @State private var interrupting = false
     /// The conversation is scrolled to its end: what comes in stays in view.
     @State private var atEnd = true
+    /// The composer has the keyboard.
+    @FocusState private var typing: Bool
 
     /// How long a started agent may take to show up before the chat stops
     /// waiting for it.
     private static let startWindow: TimeInterval = 60
 
-    init(workspaceId: String, panelId: String?, canvasPanelId: String? = nil) {
+    init(workspaceId: String, panelId: String?, placement: Placement? = nil) {
         self.workspaceId = workspaceId
-        self.canvasPanelId = canvasPanelId
+        self.placement = placement
         _panelId = State(initialValue: panelId)
     }
 
@@ -67,7 +67,6 @@ struct AgentChatView: View {
             .toolbar { toolbar(agent, panel) }
             .navigationDestination(item: $reviewing) { PanelView(route: $0) }
             .alert(item: $failure) { Alert(title: Text($0.message)) }
-            .placementSheet($placing, workspaceId: workspaceId)
             .task { _ = await core.connected(workspaceId) }
             .task(id: connected && panelId == nil) { await loadOptions(connected) }
             .onChange(of: options.selected) { _, launch in remember(launch) }
@@ -156,6 +155,9 @@ struct AgentChatView: View {
                 if prompt != nil { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
             }
             .scrollDismissesKeyboard(.interactively)
+            // A tap on the conversation puts the keyboard away; a drag only
+            // does when it reaches the keyboard.
+            .onTapGesture { typing = false }
         }
         .overlay {
             if isNew { NewChatPrompt(workspaceName: workspace?.name, draft: $draft) }
@@ -197,7 +199,8 @@ struct AgentChatView: View {
                 sending: sending,
                 options: options,
                 worktree: $worktree,
-                send: start
+                send: start,
+                typing: $typing
             )
         } else {
             let canSend = connected && conversation?.canReceivePrompt == true
@@ -208,7 +211,8 @@ struct AgentChatView: View {
                 canSend: canSend,
                 sending: sending,
                 send: reply,
-                stop: stop
+                stop: stop,
+                typing: $typing
             )
         }
     }
@@ -238,17 +242,11 @@ struct AgentChatView: View {
 
     // MARK: Prompts
 
-    /// Asks where on the canvas the agent's panel goes when started from one;
-    /// otherwise it goes to the dock.
+    /// Starts the agent; its panel goes where the chat was asked from.
     private func start() {
         guard let launch = options.launch else { return }
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
-        guard let canvasPanelId else { return start(prompt, launch, at: nil) }
-        placing = PendingPlacement(title: "Start Agent", action: "Start", canvasPanelId: canvasPanelId) { start(prompt, launch, at: $0) }
-    }
-
-    private func start(_ prompt: String, _ launch: AgentLaunch, at placement: Placement?) {
         starting = prompt
         draft = ""
         startFailure = nil
@@ -324,7 +322,7 @@ struct AgentChatView: View {
     }
 }
 
-/// An empty chat: what to ask, and a few tasks to start from.
+/// An empty chat: what to ask, and a few prompts to start from.
 private struct NewChatPrompt: View {
     let workspaceName: String?
     @Binding var draft: String

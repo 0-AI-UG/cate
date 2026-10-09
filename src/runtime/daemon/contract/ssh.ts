@@ -1,9 +1,10 @@
-// Setting up a runtime on another machine over SSH (architecture 7.1): what
-// the person types, the scripts the desktop shell pipes to the machine's
-// `sh -s`, and how their output reads. SSH only installs, browses and starts
-// `cate serve`; the workspace is then reached like any paired runtime. Pure.
+// Setting up a runtime on a machine the client runs commands on (architecture
+// 7.1): what the person types to name an SSH machine, the scripts the desktop
+// shell pipes to the machine's `sh -s` (over SSH or in a WSL distro), and how
+// their output reads. Pure.
 
 import { GH_OWNER, GH_REPO, isBuildId, releaseTag, runtimeTarget, type RuntimeTarget } from './install'
+import type { Machine } from './machine'
 
 /** How to reach a machine; the shell builds the `ssh` argv from these fields
  *  only, so no other ssh option ever reaches the command line. */
@@ -120,20 +121,6 @@ export function formatSshTarget(target: SshTarget): string {
   ].join(' ')
 }
 
-/** The `ssh` arguments that run `sh -s` on the machine, non-interactively:
- *  keys and agent only, and a host seen for the first time is remembered. */
-export function sshArgs(target: SshTarget): string[] {
-  return [
-    '-o', 'BatchMode=yes',
-    '-o', 'StrictHostKeyChecking=accept-new',
-    '-o', 'ConnectTimeout=15',
-    ...(target.port ? ['-p', String(target.port)] : []),
-    ...(target.identityFile ? ['-i', target.identityFile, '-o', 'IdentitiesOnly=yes'] : []),
-    ...(target.jump ? ['-J', target.jump] : []),
-    '--', target.destination, 'sh', '-s',
-  ]
-}
-
 // ---- Scripts ---------------------------------------------------------------
 
 /** Output lines the scripts mean are `CATE:<key>=<value>`; anything else (a
@@ -169,6 +156,8 @@ export function probeScript(build: string): string {
   return [
     `printf '${MARK}os=%s\\n' "$(uname -s)"`,
     `printf '${MARK}arch=%s\\n' "$(uname -m)"`,
+    // The runtime's Node is built against glibc.
+    `ldd --version 2>&1 | grep -qi musl && printf '${MARK}musl=1\\n'`,
     `printf '${MARK}home=%s\\n' "$HOME"`,
     `[ -f ${dir}/.ok ] && [ -x ${dir}/cate/bin/cate ] && printf '${MARK}installed=1\\n'`,
     `command -v curl >/dev/null 2>&1 && printf '${MARK}curl=1\\n'`,
@@ -183,12 +172,17 @@ export function installScriptUrl(version: string): string {
   return `https://github.com/${GH_OWNER}/${GH_REPO}/releases/download/${releaseTag(version)}/install.sh`
 }
 
-/** Installs release `version` with its install script. */
+/** Installs release `version` with its install script. The script is
+ *  downloaded first: piped into `sh`, a failed download would install
+ *  nothing and still succeed. */
 export function installScript(version: string): string {
   if (!/^\d+\.\d+\.\d+(-[\w.-]+)?$/.test(version)) throw new Error(`invalid version ${version}`)
   return [
     'set -e',
-    `curl -fsSL ${shQuote(installScriptUrl(version))} | CATE_VERSION=${shQuote(version)} sh`,
+    't=$(mktemp)',
+    `trap 'rm -f "$t"' EXIT`,
+    `curl -fsSL ${shQuote(installScriptUrl(version))} -o "$t"`,
+    `CATE_VERSION=${shQuote(version)} sh "$t"`,
   ].join('\n')
 }
 
@@ -212,18 +206,6 @@ export function mkdirScript(path: string): string {
     resolvePath(path),
     `mkdir -p -- "$p" 2>/dev/null || { printf '${MARK}error=could not create %s\\n' "$p"; exit 0; }`,
     `printf '${MARK}path=%s\\n' "$(cd -- "$p" && pwd)"`,
-  ].join('\n')
-}
-
-/** Serves `path` with exactly `build`'s `cate` (network access on through
- *  Cate Connect) and prints the pairing as JSON. Never installs. */
-export function serveScript(build: string, path: string): string {
-  const cate = `${installDir(build)}/cate/bin/cate`
-  return [
-    `[ -x ${cate} ] || { printf '${MARK}error=not-installed\\n'; exit 0; }`,
-    resolvePath(path),
-    `[ -d "$p" ] || { printf '${MARK}error=%s is not a folder\\n' "$p"; exit 0; }`,
-    `exec ${cate} serve "$p" --connect --json`,
   ].join('\n')
 }
 
@@ -260,12 +242,12 @@ export function parseProbe(stdout: string): SshProbe {
   const first = (key: string) => m.get(key)?.[0] ?? ''
   const os = first('os')
   const arch = first('arch')
-  const platform = os === 'Linux' ? 'linux' : os === 'Darwin' ? 'darwin' : os.toLowerCase()
+  const platform = os === 'Linux' && !m.has('musl') ? 'linux' : os === 'Darwin' ? 'darwin' : os.toLowerCase()
   const cpu = arch === 'x86_64' || arch === 'amd64' ? 'x64' : arch === 'aarch64' || arch === 'arm64' ? 'arm64' : arch
   if (!os) throw new Error('The machine did not answer like a Unix shell.')
   return {
     target: runtimeTarget(platform, cpu),
-    system: `${os} ${arch}`.trim(),
+    system: `${os}${m.has('musl') ? ' (musl)' : ''} ${arch}`.trim(),
     home: first('home'),
     installed: m.has('installed'),
     current: first('current') || null,
@@ -300,36 +282,16 @@ export function parseMkdir(stdout: string): string {
   return path
 }
 
-/** What `cate serve --json` prints. */
-export interface ServeJson {
-  root: string
-  uri: string
-  code: string
-}
-
-export function parseServeOutput(stdout: string): ServeJson {
-  const error = readMarked(stdout).get('error')?.[0]
-  if (error === 'not-installed') throw new Error('The Cate runtime of this app is not installed on that machine.')
-  if (error) throw new Error(error)
-  const line = stdout.split(/\r?\n/).reverse().find((l) => l.startsWith('{'))
-  if (line) {
-    try {
-      const json = JSON.parse(line) as Partial<ServeJson>
-      if (typeof json.uri === 'string' && typeof json.root === 'string' && typeof json.code === 'string') {
-        return { root: json.root, uri: json.uri, code: json.code }
-      }
-    } catch { /* below */ }
-  }
-  throw new Error('The runtime did not print a pairing code.')
-}
-
-/** What a client shell offers to set up a runtime over SSH. */
-export interface SshSetup {
+/** What a client shell offers to set up and browse a machine. */
+export interface MachineSetup {
   /** Installs this app's runtime there unless it is installed already. */
-  ensureRuntime(target: SshTarget): Promise<SshProbe & { installedNow: boolean }>
-  listDir(target: SshTarget, path: string): Promise<SshDirListing>
+  ensureRuntime(machine: Machine): Promise<SshProbe & { installedNow: boolean }>
+  listDir(machine: Machine, path: string): Promise<SshDirListing>
   /** Creates the folder; its absolute path. */
-  mkdir(target: SshTarget, path: string): Promise<string>
-  /** Serves the folder with the installed runtime; the pairing. */
-  serve(target: SshTarget, path: string): Promise<ServeJson>
+  mkdir(machine: Machine, path: string): Promise<string>
+  /** The WSL distros of this machine; empty where there is no WSL. */
+  wslDistros(): Promise<string[]>
+  /** Stops what still runs on the machine for this client (an install, a
+   *  listing): the person closed what asked for it. */
+  cancel(machine: Machine): Promise<void>
 }

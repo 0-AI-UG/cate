@@ -23,6 +23,8 @@ export interface PanelPlacementOptions {
   near?: PanelId
   /** Canvas point to place near, when the panel lands on a canvas. */
   position?: Point
+  /** Its size when it lands on a canvas, in place of the type's default. */
+  size?: Size
 }
 
 /** What every create accepts; a type's own options extend it. */

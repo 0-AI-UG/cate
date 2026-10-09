@@ -9,7 +9,7 @@ import type { WorkspaceList } from '@client/workspaces'
 import { knownFeatures } from '@kernel/rpc/contract'
 import { RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/contract'
 import { KnownRuntimes } from '@runtime/pairing/client'
-import { fingerprint } from '@runtime/security/contract'
+import { encodePublicKey } from '@runtime/security/contract'
 import type { MobileBridge } from '../contract'
 import { createDeviceStore, loadDeviceKeys } from './device'
 import { createMobileShellTransports } from './transports'
@@ -42,7 +42,7 @@ export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClie
   // The core is built from this checkout's sources, like the runtime it
   // talks to, so it carries the same version and build.
   const { connections, workspaces } = await startClientCore({
-    device: { name: info.device, keyFingerprint: fingerprint(deviceKeys.publicKey) },
+    device: { name: info.device, publicKey: encodePublicKey(deviceKeys.publicKey) },
     features: knownFeatures(info.features),
     deviceStore: device,
     transports,

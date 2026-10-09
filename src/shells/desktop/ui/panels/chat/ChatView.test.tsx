@@ -139,8 +139,8 @@ describe('ChatView page', () => {
   })
 
   it('reveals the page only after branding and setup', async () => {
-    await render(ready())
-    const guest = mockGuest()
+    await render(ready({ threadId: 'one' }))
+    const guest = mockGuest(`${harness.origin}/env/one`)
     let finishCss!: (value: string) => void
     guest.insertCSS.mockImplementation(() => new Promise((resolve) => { finishCss = resolve }))
     await fire(guest, 'dom-ready')
@@ -148,6 +148,16 @@ describe('ChatView page', () => {
     expect(String(guest.executeJavaScript.mock.calls[0][0])).toContain('__cateHost')
     await act(async () => finishCss('css'))
     expect(guest.getAttribute('data-chat-guest-ready')).toBe('true')
+  })
+
+  it('keeps a new chat hidden on the start page until its draft shows', async () => {
+    await render(ready())
+    const { guest } = await readyGuest()
+    expect(guest.getAttribute('data-chat-guest-ready')).toBe('false')
+    await fire(guest, 'did-navigate-in-page', { url: `${harness.origin}/draft/d1` })
+    expect(guest.getAttribute('data-chat-guest-ready')).toBe('true')
+    await fire(guest, 'did-start-navigation', { isMainFrame: true, isInPlace: false })
+    expect(guest.getAttribute('data-chat-guest-ready')).toBe('false')
   })
 
   it('adopts a thread the page created without reloading it', async () => {
@@ -294,7 +304,7 @@ describe('ChatView file drops', () => {
   afterEach(() => installClientIdentity(null))
 
   it('takes OS image files on a client with fileDrop', async () => {
-    installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: ['fileDrop'] }))
+    installClientIdentity(createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: ['fileDrop'] }))
     await render(ready())
     const { guest } = await readyGuest()
     await dropOsImage()

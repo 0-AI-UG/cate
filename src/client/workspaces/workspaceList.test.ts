@@ -3,12 +3,12 @@ import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { setRuntimeResolver, tryRuntimeFor } from '@kernel/rpc/client'
 import { KNOWN_RUNTIMES_DOCUMENT } from '@runtime/pairing/client'
 import { WorkspaceConnections, createClientIdentity, type ShellTransports } from '@client/connections'
-import { WORKSPACES_DOCUMENT, WorkspaceList } from './workspaceList'
+import { targetOf, workspaceLocation, WORKSPACES_DOCUMENT, WorkspaceList } from './workspaceList'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
 const never = () => new Promise<never>(() => {})
 const transports: ShellTransports = { dialLocal: never, dialNetwork: never, dialLoopbackTcp: never }
-const identity = createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] })
+const identity = createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: [] })
 const key = new Uint8Array(32).fill(7)
 
 const cleanup: (() => void)[] = []
@@ -29,6 +29,29 @@ async function setup(store = createMemoryDeviceStore()) {
 }
 
 describe('WorkspaceList', () => {
+  it('keeps workspaces on machines, reached through the machine', async () => {
+    const store = createMemoryDeviceStore()
+    const { list } = await setup(store)
+    const box = { kind: 'ssh' as const, target: { destination: 'u@box', port: 2222 } }
+    const entry = await list.addMachine(box, '/srv/app')
+    expect(entry).toMatchObject({ kind: 'machine', name: 'app', root: '/srv/app' })
+    expect(targetOf(entry)).toEqual({ kind: 'machine', machine: box, root: '/srv/app' })
+    expect(workspaceLocation(entry)).toBe('u@box:/srv/app')
+    await list.addMachine({ kind: 'wsl', distro: 'Ubuntu' }, '/srv/app')
+    expect(list.getSnapshot().entries).toHaveLength(2)
+
+    // A hand-edited entry that names no valid machine is dropped.
+    await store.set(WORKSPACES_DOCUMENT, { ...(await store.get(WORKSPACES_DOCUMENT) as object), machine: [
+      ...((await store.get(WORKSPACES_DOCUMENT)) as { machine: unknown[] }).machine,
+      { machine: { kind: 'ssh', target: { destination: '-oProxyCommand=x' } }, root: '/x' },
+    ] })
+    const reloaded = (await setup(store)).list
+    expect(reloaded.getSnapshot().entries.map((e) => e.id)).toEqual(list.getSnapshot().entries.map((e) => e.id))
+
+    await reloaded.removeRecent(entry.id)
+    expect(reloaded.get(entry.id)).toBeUndefined()
+  })
+
   it('keeps recents, paired workspaces and the sidebar order across loads', async () => {
     const { store, list } = await setup()
     await list.addLocal('/home/me/alpha')
@@ -78,7 +101,7 @@ describe('WorkspaceList', () => {
     expect(list.getSnapshot().entries).toEqual([])
     expect(await list.known.get('RT2')).toBeUndefined()
     expect(await store.get(KNOWN_RUNTIMES_DOCUMENT)).toEqual({ runtimes: {} })
-    expect(await store.get(WORKSPACES_DOCUMENT)).toEqual({ local: [], paired: [], order: [] })
+    expect(await store.get(WORKSPACES_DOCUMENT)).toEqual({ local: [], machine: [], paired: [], order: [] })
   })
 
   it('follows outside edits and ignores malformed entries', async () => {

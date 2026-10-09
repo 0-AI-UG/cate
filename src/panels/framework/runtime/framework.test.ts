@@ -226,7 +226,7 @@ function world(opts: { document?: DocumentService } = {}): World {
 function connect(server: RpcServer, clientId: string, features: ClientFeature[] = []) {
   const client = new RpcClient({
     version: '1.0.0',
-    identity: { client: { clientId, device: { name: clientId, keyFingerprint: `fp-${clientId}` }, features } },
+    identity: { client: { clientId, device: { name: clientId, publicKey: `fp-${clientId}` }, features } },
   })
   const [serverPort, clientPort] = createMemoryPortPair()
   server.serve(serverPort)

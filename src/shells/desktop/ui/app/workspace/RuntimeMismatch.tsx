@@ -21,6 +21,7 @@ import { compareSemver, type RuntimeUpdateProgress } from '@runtime/daemon/contr
 import type { WorkspaceConnection } from '@client/connections'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
+import { runWindowAction } from '../actions/run'
 
 /** How long a restarting runtime may take to drop the connection. */
 const RESTART_TIMEOUT_MS = 10_000
@@ -195,6 +196,9 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
           <span className="text-primary font-medium">{name}</span>
           {` runs Cate runtime ${incompatible.runtimeVersion}, which is newer than this app (${version}). Update Cate to use the workspace.`}
         </p>
+        <div className="mt-4 flex justify-end">
+          <button type="button" className={btn.primary} onClick={() => runWindowAction('checkForUpdates')}>Check for Updates…</button>
+        </div>
       </ModalCard>
     )
   }

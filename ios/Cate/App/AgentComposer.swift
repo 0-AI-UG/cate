@@ -3,7 +3,7 @@
 // (a new worktree keeps it off the branch you are on); the picker on the
 // right picks what runs it: an agent CLI in a terminal, or a T3 Code
 // provider and model. The last choice is remembered on this device. While
-// a task runs, the send button is its stop button.
+// the agent works, the send button is its stop button.
 
 import SwiftUI
 
@@ -114,16 +114,17 @@ struct AgentComposer: View {
     var options: AgentLaunchOptions?
     var worktree: Binding<Bool>?
     let send: () -> Void
-    /// Stops the running task; nil when nothing runs that can be stopped.
+    /// Stops the agent's work; nil when nothing runs that can be stopped.
     var stop: (() -> Void)?
-    @FocusState private var typing: Bool
+    /// The box has the keyboard; the chat around it can take it away.
+    var typing: FocusState<Bool>.Binding
 
     var body: some View {
         let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         VStack(alignment: .leading, spacing: 12) {
             TextField(placeholder, text: $text, axis: .vertical)
                 .lineLimit(1...8)
-                .focused($typing)
+                .focused(typing)
                 .padding(.horizontal, 4)
             HStack(spacing: 10) {
                 if let worktree {
@@ -168,7 +169,7 @@ struct AgentComposer: View {
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28))
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
-        .onAppear { if options != nil { typing = true } }
+        .onAppear { if options != nil { typing.wrappedValue = true } }
     }
 
     private func plusMenu(_ worktree: Binding<Bool>) -> some View {

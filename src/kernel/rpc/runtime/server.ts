@@ -143,6 +143,11 @@ export class RpcServer {
     return [...this.conns].filter((c) => c.info !== null).map((c) => c.info!)
   }
 
+  /** Closes the connections whose peer `match` accepts. */
+  disconnect(match: (connection: ConnectionInfo) => boolean, reason: string): void {
+    for (const conn of [...this.conns]) if (conn.info && match(conn.info)) conn.port.close(reason)
+  }
+
   close(reason = 'Runtime shutting down'): void {
     for (const conn of [...this.conns]) conn.port.close(reason)
   }
@@ -248,7 +253,7 @@ class Connection {
     const client = hello.client
     const clientValid = client
       && typeof client.clientId === 'string' && client.clientId.length > 0 && !client.clientId.includes(':')
-      && typeof client.device?.name === 'string' && typeof client.device?.keyFingerprint === 'string'
+      && typeof client.device?.name === 'string' && typeof client.device?.publicKey === 'string'
     const callerValid = hello.caller && typeof hello.caller.token === 'string'
     if (!Array.isArray(hello.protocol) || (!clientValid && !callerValid)) {
       refuse(new RpcError('rejected', 'Invalid hello'))

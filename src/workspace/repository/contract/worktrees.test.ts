@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createDocument, type PanelRecord, type WorktreeMeta } from '@workspace/document/contract'
 import {
   inheritWorktree,
+  panelCheckout,
   joinWorktrees,
   pickWorktreeColor,
   resolveWorktree,
@@ -54,6 +55,12 @@ describe('checkout of a path or panel', () => {
   it('prefers the explicit binding, then the operative path', () => {
     expect(worktreeForPanel(panel('t', 'terminal', { worktreeId: 'feature' }), worktrees, hooks)?.id).toBe('feature')
     expect(worktreeForPanel(panel('e', 'editor', { fields: { filePath: '/checkouts/feature/a.ts' } }), worktrees, hooks)?.id).toBe('feature')
+  })
+
+  it('puts an untagged bound panel in the main checkout, and nothing else', () => {
+    expect(panelCheckout(panel('t', 'terminal'), worktrees, hooks)?.id).toBe('primary')
+    expect(panelCheckout(panel('t', 'terminal', { worktreeId: 'feature' }), worktrees, hooks)?.id).toBe('feature')
+    expect(panelCheckout(panel('b', 'browser'), worktrees, hooks)).toBeUndefined()
   })
 
   it('falls back to the primary live checkout when a saved selection is stale', () => {

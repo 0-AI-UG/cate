@@ -5,3 +5,13 @@ import { secureChannelDuplex, type SecureChannel } from '../../security/contract
 export function secureFramePort(channel: SecureChannel): FramePort {
   return framePortOver(secureChannelDuplex(channel), 'message')
 }
+
+/** The `data` of the hello refusal an unpaired (never paired or removed)
+ *  device gets, so its client can offer to pair again. */
+export interface UnpairedRefusal {
+  unpaired: true
+}
+
+export function isUnpairedRefusal(data: unknown): boolean {
+  return (data as Partial<UnpairedRefusal> | null | undefined)?.unpaired === true
+}

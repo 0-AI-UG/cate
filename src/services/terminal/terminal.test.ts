@@ -93,7 +93,7 @@ function setup(overrides: Partial<TerminalServiceDeps> = {}) {
   const connect = async () => {
     const client = new RpcClient({
       version: '1.0.0',
-      identity: { client: { clientId: `c${++clients}`, device: { name: 'test', keyFingerprint: 'fp' }, features: [] } },
+      identity: { client: { clientId: `c${++clients}`, device: { name: 'test', publicKey: 'fp' }, features: [] } },
     })
     const [serverPort, clientPort] = createMemoryPortPair()
     server.serve(serverPort)

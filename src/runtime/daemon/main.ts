@@ -1,11 +1,15 @@
 // The daemon program, bundled as `runtime.cjs`:
 //   node runtime.cjs serve <root> [--detach] [--network sameNetwork|cateConnect] [--json]
+//   node runtime.cjs bridge <root>
 // Without `--detach` it serves the workspace in this process. With it, it
 // starts a detached copy of itself (stdio to `<data>/logs/`) and returns once
 // that copy's socket answers, or at once when a runtime already serves root.
 // `--network` is `cate serve`: network access on, the workspace trusted, and
 // a pairing QR code and code printed for the first device (one JSON line
-// with `--json`).
+// with `--json`). `bridge` starts the runtime the same way when nothing
+// answers, then carries its local socket over stdin and stdout: a client that
+// can run a command on this machine (ssh, wsl.exe) reaches the runtime as a
+// local client does (7.5).
 
 import './loadPty'
 import os from 'node:os'
@@ -17,46 +21,70 @@ import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '
 import { ensureDataDir } from '@runtime/data/runtime'
 import { dialLocal, dialLocalRetrying } from '@runtime/transports/node'
 import { pairOverLocal, printPairing } from './compose/pairOverLocal'
-import { installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_RELEASE, RUNTIME_VERSION, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
+import type { ByteDuplex } from '@kernel/rpc/contract'
+import { BRIDGE_READY, installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_RELEASE, RUNTIME_VERSION, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
 import { prepareDaemonProcess, serveWorkspace } from './entry'
 import { pruneRuntimeInstalls, releaseRuntimeInUse, spawnDetachedDaemon } from './node'
 
 const log = createLogger('daemon')
 
-async function detach(args: ServeArgs): Promise<number> {
-  const root = await canonicalRoot(args.root)
+/** Connects to the runtime of `root`, starting a detached one from this
+ *  program when nothing answers. */
+async function connectOrStart(rootArg: string): Promise<{ root: string; endpoint: string; duplex: ByteDuplex }> {
+  const root = await canonicalRoot(rootArg)
   const runtimeId = runtimeIdFromCanonicalRoot(root)
   const paths = await ensureDataDir(workspaceDataDir(runtimeId, os.homedir()))
   const endpoint = await ensureLocalEndpoint(paths.dir, runtimeId)
-  if (await answers(endpoint)) {
-    // Already served: `cate serve` still turns network on and shows a code.
-    if (args.network) await pairOverLocal(endpoint, args.network, root, args.json)
-    return 0
-  }
+  try {
+    return { root, endpoint, duplex: await dialLocal(endpoint, { timeoutMs: 1000 }) }
+  } catch { /* not running */ }
   spawnDetachedDaemon({
     node: process.execPath,
     bundle: process.argv[1],
-    args: { root, ...(args.network ? { network: args.network } : {}) },
+    args: { root },
     logFile: path.join(paths.logs, 'daemon.out.log'),
   })
   try {
-    const duplex = await dialLocalRetrying(endpoint, { budgetMs: START_LOCAL_BUDGET_MS })
+    return { root, endpoint, duplex: await dialLocalRetrying(endpoint, { budgetMs: START_LOCAL_BUDGET_MS }) }
+  } catch (err) {
+    throw new Error(`${(err as Error).message}; see ${paths.logs}`)
+  }
+}
+
+async function detach(args: ServeArgs): Promise<number> {
+  try {
+    const { root, endpoint, duplex } = await connectOrStart(args.root)
     duplex.close()
+    // `cate serve` turns network on and shows a code through the socket, so
+    // only this process prints one.
     if (args.network) await pairOverLocal(endpoint, args.network, root, args.json)
     return 0
   } catch (err) {
-    process.stderr.write(`cate runtime: ${(err as Error).message}; see ${paths.logs}\n`)
+    process.stderr.write(`cate runtime: ${(err as Error).message}\n`)
     return 1
   }
 }
 
-async function answers(endpoint: string): Promise<boolean> {
+/** Carries the runtime's local socket over stdin and stdout until either
+ *  side closes. */
+async function bridge(rootArg: string): Promise<number> {
+  let duplex: ByteDuplex
   try {
-    (await dialLocal(endpoint, { timeoutMs: 1000 })).close()
-    return true
-  } catch {
-    return false
+    duplex = (await connectOrStart(rootArg)).duplex
+  } catch (err) {
+    process.stderr.write(`cate runtime: ${(err as Error).message}\n`)
+    return 1
   }
+  process.stdout.write(BRIDGE_READY)
+  return new Promise((resolve) => {
+    const done = () => resolve(0)
+    duplex.onData((bytes) => { process.stdout.write(bytes) })
+    duplex.onClose(done)
+    process.stdin.on('data', (bytes: Buffer) => duplex.write(new Uint8Array(bytes)))
+    process.stdin.once('end', () => { duplex.close('bridge closed'); done() })
+    process.stdin.once('error', () => { duplex.close('bridge closed'); done() })
+    process.stdout.once('error', () => { duplex.close('bridge closed'); done() })
+  })
 }
 
 async function serve(args: ServeArgs): Promise<number> {
@@ -117,7 +145,9 @@ async function main(): Promise<void> {
     process.stderr.write(`${parsed.message}\n`)
     process.exit(2)
   }
-  const code = parsed.args.detach ? await detach(parsed.args) : await serve(parsed.args)
+  const code = parsed.command === 'bridge'
+    ? await bridge(parsed.root)
+    : parsed.args.detach ? await detach(parsed.args) : await serve(parsed.args)
   process.exit(code)
 }
 

@@ -7,7 +7,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight as CaretRight, ChevronDown as CaretDown, X } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
-import { writeFileRefDrag, type SearchFileResult, type SearchMatchRange } from '@workspace/files/contract'
+import { parentDir, pathDisplayName, writeFileRefDrag, type SearchFileResult, type SearchMatchRange } from '@workspace/files/contract'
 import { getFileIcon } from './FileTreeNode'
 import { trimLeading } from './searchDisplay'
 import { lookupNodeDecoration, type GitTree } from './gitStatusDecoration'
@@ -41,14 +41,8 @@ const Highlighted: React.FC<{ text: string; ranges: SearchMatchRange[] }> = ({ t
   return <>{parts}</>
 }
 
-const baseName = (p: string): string => {
-  const i = p.lastIndexOf('/')
-  return i === -1 ? p : p.slice(i + 1)
-}
-const dirName = (p: string): string => {
-  const i = p.lastIndexOf('/')
-  return i === -1 ? '' : p.slice(0, i)
-}
+const baseName = (p: string): string => pathDisplayName(p) || p
+const dirName = (p: string): string => parentDir(p)
 const extOf = (name: string): string => {
   const i = name.lastIndexOf('.')
   return i === -1 ? '' : name.slice(i + 1)

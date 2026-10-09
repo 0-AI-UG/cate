@@ -536,7 +536,7 @@ function AgentMenu({
   return createPortal(
     <div
       ref={rootRef}
-      className={`fixed z-[1000] w-[200px] ${POPOVER_SURFACE} p-1.5 text-xs`}
+      className={`fixed z-[100003] w-[200px] ${POPOVER_SURFACE} p-1.5 text-xs`}
       style={{ top: anchor.top, left: anchor.left }}
       onMouseDown={(e) => e.stopPropagation()}
     >

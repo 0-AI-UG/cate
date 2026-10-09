@@ -49,7 +49,7 @@ function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean } =
 beforeEach(() => {
   send.mockClear()
   installMockClientUi()
-  installClientIdentity(createClientIdentity({ device: { name: 'test', keyFingerprint: 'f' }, features: ['webview', 'pageDriver'] }))
+  installClientIdentity(createClientIdentity({ device: { name: 'test', publicKey: 'f' }, features: ['webview', 'pageDriver'] }))
   preparing = new Set()
   partitionListeners.clear()
   installBrowserPartitions({

@@ -3,10 +3,16 @@
 // the client's.
 
 import type { ByteDuplex } from '@kernel/rpc/contract'
+import type { Machine } from '@runtime/daemon/contract'
 import type { NetworkEndpoint, NetworkTarget } from '@runtime/transports/contract'
 
+/** How a client reaches a runtime. The transport decides who is admitted,
+ *  never how the runtime serves the client (7.5). */
 export type ConnectionTarget =
   | { kind: 'local'; root: string }
+  /** A machine this client runs commands on (SSH, WSL): its bridge carries
+   *  the runtime's local socket. */
+  | { kind: 'machine'; machine: Machine; root: string }
   | ({ kind: 'network' } & NetworkTarget)
 
 export type ConnectionKind = ConnectionTarget['kind']
@@ -15,6 +21,11 @@ export interface ShellTransports {
   /** Computes the runtimeId of `root`, connects to its local socket and
    *  starts the runtime when nothing answers (7.3). A stream pipe. */
   dialLocal(root: string): Promise<ByteDuplex>
+  /** Runs the bridge to the runtime of `root` on `machine`, installing this
+   *  app's runtime there first when it is missing, and starting the runtime
+   *  when nothing answers. A stream pipe. A shell that cannot run commands
+   *  on other machines leaves it out. */
+  dialMachine?(machine: Machine, root: string): Promise<ByteDuplex>
   /** A message pipe to a paired runtime, already inside the security layer.
    *  Filled in by the network wave; a shell without it reaches local
    *  runtimes only. */

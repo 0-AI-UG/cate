@@ -8,11 +8,11 @@ import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { createMemoryPortPair, fingerprint, generateKeyPair, networkIdOf, type KeyPair, type MemoryPort } from '../security/contract'
+import { createMemoryPortPair, encodePublicKey, fingerprint, generateKeyPair, networkIdOf, type KeyPair, type MemoryPort } from '../security/contract'
 import { connectToRuntime } from '../security/client'
 import { decodePairingUri, parsePairingCode } from '../pairing/contract'
 import { KnownRuntimes, pairWithRuntime, PairingError } from '../pairing/client'
-import { PairingService, type PairingsFile } from '../pairing/runtime'
+import { PairingService, type DevicesFile } from '../pairing/runtime'
 import { secureFramePort } from './contract'
 import { dialSameNetwork, openSecureConnection, SameNetworkUnreachableError } from './client'
 import { nodeWebSocketFactory } from './node'
@@ -31,7 +31,7 @@ const clients: RpcClient[] = []
 
 beforeEach(async () => {
   runtimeKeys = RUNTIME_KEYS
-  let file: PairingsFile = { devices: [] }
+  let file: DevicesFile = { devices: [] }
   pairing = new PairingService({
     runtimePublicKey: runtimeKeys.publicKey,
     store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
@@ -64,10 +64,10 @@ function device(name = 'phone') {
 }
 type Device = ReturnType<typeof device>
 
-function rpcClient(dev: Device, keyFingerprint = fingerprint(dev.keys.publicKey)) {
+function rpcClient(dev: Device, publicKey = encodePublicKey(dev.keys.publicKey)) {
   const client = new RpcClient({
     version: 'test',
-    identity: { client: { clientId: `c-${dev.name}`, device: { name: dev.name, keyFingerprint }, features: [] } },
+    identity: { client: { clientId: `c-${dev.name}`, device: { name: dev.name, publicKey }, features: [] } },
     helloTimeoutMs: 2_000,
   })
   clients.push(client)
@@ -231,10 +231,10 @@ describe('same network', () => {
     expect(pairing.list()).toEqual([])
   })
 
-  it('refuses a hello whose device fingerprint is not the connection key', async () => {
+  it('refuses a hello whose device key is not the connection key', async () => {
     const phone = device()
     const { frames } = await pairByQr(phone)
-    const liar = rpcClient(phone, fingerprint(generateKeyPair().publicKey))
+    const liar = rpcClient(phone, encodePublicKey(generateKeyPair().publicKey))
     await expect(liar.attach(frames)).rejects.toThrow(/device key/)
   })
 

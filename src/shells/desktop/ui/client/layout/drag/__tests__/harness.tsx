@@ -159,7 +159,7 @@ export interface Scene {
 
 export function renderScene(spec: SceneSpec): Scene {
   registerPanelDefinitions(testPanelDefinitions())
-  installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: spec.features ?? [] }))
+  installClientIdentity(createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: spec.features ?? [] }))
   const restoreShell = installDragShell(spec.shell ?? {})
   installElementFromPoint()
   const workspace = attachTestWorkspace(WS, spec.doc)

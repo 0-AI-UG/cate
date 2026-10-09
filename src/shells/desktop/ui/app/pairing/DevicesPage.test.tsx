@@ -5,7 +5,8 @@ import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent, RuntimeProxy } from '@kernel/rpc/contract'
 import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 import { installMockClientUi } from '../../../../../test/clientUi'
-import type { PairedDevice } from '@runtime/pairing/contract'
+import type { WorkspaceDevice } from '@runtime/pairing/contract'
+import { createClientIdentity, installClientIdentity } from '@client/connections'
 import { DevicesPage, formatCountdown } from './DevicesPage'
 
 type Event = ChannelEvent<WorkspaceSettings, Partial<WorkspaceSettings>>
@@ -15,11 +16,12 @@ let root: Root
 let uninstall: () => void
 
 function fakeRuntime() {
-  const watchers = new Set<(list: PairedDevice[]) => void>()
+  const watchers = new Set<(list: WorkspaceDevice[]) => void>()
   let listener: ((e: Event) => void) | null = null
   let rev = 0
-  let devices: PairedDevice[] = [
-    { publicKey: 'aa', fingerprint: 'fp-phone', name: 'Anton phone', pairedAt: 1, lastSeen: 2 },
+  let devices: WorkspaceDevice[] = [
+    { publicKey: 'aa', fingerprint: 'fp-phone', name: 'Anton phone', admittedBy: 'pairing', addedAt: 1, lastSeen: 2 },
+    { publicKey: 'bb', fingerprint: 'fp-laptop', name: 'Laptop', admittedBy: 'machineUser', addedAt: 1, lastSeen: 2 },
   ]
   const calls: string[] = []
   const runtime = {
@@ -45,8 +47,8 @@ function fakeRuntime() {
       }),
       // The runtime sends the list, then again on every change.
       watch: vi.fn(() => ({
-        onEvent: (l: (event: { kind: 'snapshot'; snapshot: PairedDevice[] } | { kind: 'change'; change: PairedDevice[] }) => void) => {
-          const watcher = (list: PairedDevice[]) => l({ kind: 'change', change: list })
+        onEvent: (l: (event: { kind: 'snapshot'; snapshot: WorkspaceDevice[] } | { kind: 'change'; change: WorkspaceDevice[] }) => void) => {
+          const watcher = (list: WorkspaceDevice[]) => l({ kind: 'change', change: list })
           watchers.add(watcher)
           queueMicrotask(() => l({ kind: 'snapshot', snapshot: devices }))
           return () => watchers.delete(watcher)
@@ -70,12 +72,14 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
+  installClientIdentity(createClientIdentity({ device: { name: 'Laptop', publicKey: 'bb' }, features: [] }))
 })
 
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
   uninstall()
+  installClientIdentity(null)
 })
 
 describe('DevicesPage', () => {
@@ -94,18 +98,21 @@ describe('DevicesPage', () => {
     expect(host.querySelector('[data-testid="pairing-qr"] svg')).not.toBeNull()
   })
 
-  it('lists paired devices and revokes after confirmation', async () => {
+  it('lists every device, this one marked, and revokes after confirmation', async () => {
     const { runtime } = fakeRuntime()
     uninstall = setRuntimeResolver(() => runtime)
     const ui = installMockClientUi({ confirm: vi.fn(async () => true) })
     act(() => root.render(<DevicesPage workspaceId="w1" />))
     await flush()
     expect(host.textContent).toContain('Anton phone')
+    expect(host.textContent).toContain('Laptop (this device)')
+    expect(host.textContent).toContain("as this machine's user")
     await act(async () => { (host.querySelector('[aria-label="Remove Anton phone"]') as HTMLButtonElement).click() })
     await flush()
     expect(ui.confirm).toHaveBeenCalled()
     expect(runtime.pairing.revoke).toHaveBeenCalledWith({ deviceKey: 'aa' })
-    expect(host.textContent).toContain('No other device can open this workspace.')
+    expect(host.textContent).not.toContain('Anton phone')
+    expect(host.textContent).toContain('Laptop')
   })
 
   it('formats the countdown', () => {

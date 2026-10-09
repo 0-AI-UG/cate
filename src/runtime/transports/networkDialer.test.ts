@@ -9,8 +9,8 @@ import { defineCapability, framePortOver, method } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { KnownRuntimes } from '@runtime/pairing/client'
-import { PairingService, type PairingsFile } from '@runtime/pairing/runtime'
-import { fingerprint, generateKeyPair, networkIdOf, type KeyPair } from '@runtime/security/contract'
+import { PairingService, type DevicesFile } from '@runtime/pairing/runtime'
+import { encodePublicKey, generateKeyPair, networkIdOf, type KeyPair } from '@runtime/security/contract'
 import { createNetworkDialer, dialSameNetwork, type NetworkDialer } from './client'
 import { nodeWebSocketFactory } from './node'
 import { pairingEndpoints } from './contract'
@@ -28,7 +28,7 @@ const clients: RpcClient[] = []
 
 beforeEach(async () => {
   runtimeKeys = RUNTIME_KEYS
-  let file: PairingsFile = { devices: [] }
+  let file: DevicesFile = { devices: [] }
   pairing = new PairingService({
     runtimePublicKey: runtimeKeys.publicKey,
     store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
@@ -66,7 +66,7 @@ function shell() {
 async function ping(duplex: Awaited<ReturnType<NetworkDialer['dialNetwork']>>, keys: KeyPair) {
   const client = new RpcClient({
     version: 'test',
-    identity: { client: { clientId: 'c1', device: { name: 'laptop', keyFingerprint: fingerprint(keys.publicKey) }, features: [] } },
+    identity: { client: { clientId: 'c1', device: { name: 'laptop', publicKey: encodePublicKey(keys.publicKey) }, features: [] } },
   })
   clients.push(client)
   await client.attach(framePortOver(duplex, 'message'))

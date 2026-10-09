@@ -12,7 +12,7 @@ import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink, type LogRecord } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { fingerprint, generateKeyPair, networkIdOf, type KeyPair, type MessagePortLike } from '../security/contract'
+import { encodePublicKey, generateKeyPair, networkIdOf, type KeyPair, type MessagePortLike } from '../security/contract'
 import { PinMismatchError } from '../security/client'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '../pairing/contract'
 import { encodeBase64, pushCapability } from '../push/contract'
@@ -89,7 +89,7 @@ function registered(registration: ConnectRegistration): Promise<RegistrationStat
 function rpcClient(name: string, keys: KeyPair) {
   const client = new RpcClient({
     version: 'test',
-    identity: { client: { clientId: name, device: { name, keyFingerprint: fingerprint(keys.publicKey) }, features: [] } },
+    identity: { client: { clientId: name, device: { name, publicKey: encodePublicKey(keys.publicKey) }, features: [] } },
     helloTimeoutMs: 3_000,
   })
   clients.push(client)
@@ -98,7 +98,7 @@ function rpcClient(name: string, keys: KeyPair) {
 
 /** A local client asks for a pairing secret, as "Add device" does. */
 async function addDevice(daemon: Daemon) {
-  const desk = new RpcClient({ version: 'test', identity: { client: { clientId: 'desk', device: { name: 'desk', keyFingerprint: '' }, features: [] } } })
+  const desk = new RpcClient({ version: 'test', identity: { client: { clientId: 'desk', device: { name: 'desk', publicKey: '' }, features: [] } } })
   clients.push(desk)
   await desk.attach(framePortOver(await dialLocal(daemon.endpoint), 'stream'))
   const pairing = createCapabilityProxy(desk, pairingCapability)

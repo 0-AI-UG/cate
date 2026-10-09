@@ -17,6 +17,8 @@ export interface MobileChats {
   open(params: PanelViewParams): void
   page(params: Params<'chat.page'>): MobileChatPage | null
   navigation(params: Params<'chat.navigation'>): { allow: boolean }
+  documentStarted(params: Params<'chat.documentStarted'>): null
+  documentReady(params: Params<'chat.documentReady'>): null
   hostMessage(params: Params<'chat.hostMessage'>): Promise<string | null>
   conversations(params: Params<'chat.conversations'>): Promise<T3Conversation[]>
 }
@@ -57,6 +59,7 @@ export function createMobileChats(views: MobileViews): MobileChats {
         theme,
         port: {
           run: (script) => view.emit({ kind: 'script', script }),
+          reveal: (shown) => view.emit({ kind: 'reveal', shown }),
           send: (op) => view.send(op),
         },
       })
@@ -74,6 +77,16 @@ export function createMobileChats(views: MobileViews): MobileChats {
     navigation({ viewId, url, committed }) {
       const found = find(viewId)
       return { allow: found ? found.controller.navigation(url, committed) : false }
+    },
+
+    documentStarted({ viewId }) {
+      find(viewId)?.controller.documentStarted()
+      return null
+    },
+
+    documentReady({ viewId, url }) {
+      find(viewId)?.controller.documentReady(url)
+      return null
     },
 
     async hostMessage({ viewId, message }) {

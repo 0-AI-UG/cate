@@ -218,3 +218,22 @@ export interface ReviewCreateOptions extends PanelCreateOptions {
   repoPath?: string
   request?: ReviewOpenRequest
 }
+
+/** A changed file's absolute path in the reviewed checkout. */
+export function reviewFilePath(repoPath: string, relative: string): string {
+  const separator = repoPath.includes('\\') && !repoPath.includes('/') ? '\\' : '/'
+  return `${repoPath.replace(/[/\\]+$/, '')}${separator}${relative}`
+}
+
+/** The image type of a changed file the review can preview; null for any
+ *  other file. */
+export function reviewImageMime(filePath: string): string | null {
+  const ext = filePath.split('.').pop()?.toLowerCase()
+  if (ext === 'png') return 'image/png'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'svg') return 'image/svg+xml'
+  if (ext === 'bmp') return 'image/bmp'
+  return null
+}

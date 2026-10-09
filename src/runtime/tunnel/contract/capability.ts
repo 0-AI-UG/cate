@@ -14,7 +14,8 @@ export function isLoopbackHost(host: unknown): host is LoopbackHost {
 
 export interface TunnelConnectParams {
   port: number
-  /** Default `127.0.0.1`. Anything but a loopback address is refused. */
+  /** Default: 127.0.0.1, then ::1. Anything but a loopback address is
+   *  refused. */
   host?: LoopbackHost
 }
 

@@ -86,7 +86,7 @@ function setup(opts: { server?: Partial<ConstructorParameters<typeof RpcServer>[
     version: '1.0.0',
     identity: opts.caller
       ? { caller: { token: 'tok' } }
-      : { client: { clientId: 'c1', device: { name: 'mac', keyFingerprint: 'fp' }, features: ['canvas', 'hologram'] } },
+      : { client: { clientId: 'c1', device: { name: 'mac', publicKey: 'fp' }, features: ['canvas', 'hologram'] } },
   })
   const api = createCapabilityProxy(client, testCap)
   const connect = (): { port: FramePort; ready: Promise<unknown> } => {
@@ -293,7 +293,7 @@ describe('rpc server and client', () => {
     await api.bump({ by: 1 })
     await api.bump({ by: 1 })
     // A second client with the same clientId whose counter restarted.
-    const again = new RpcClient({ version: '1.0.0', identity: { client: { clientId: 'c1', device: { name: 'mac', keyFingerprint: 'fp' }, features: [] } } })
+    const again = new RpcClient({ version: '1.0.0', identity: { client: { clientId: 'c1', device: { name: 'mac', publicKey: 'fp' }, features: [] } } })
     const [serverPort, clientPort] = createMemoryPortPair()
     server.serve(serverPort)
     await again.attach(clientPort)

@@ -11,7 +11,7 @@ import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { settingsCapability } from '@kernel/settings/contract'
-import { fingerprint, generateKeyPair } from '@runtime/security/contract'
+import { encodePublicKey, fingerprint, generateKeyPair } from '@runtime/security/contract'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '@runtime/pairing/contract'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { readRuntimeInfo } from '@runtime/data/runtime'
@@ -63,7 +63,7 @@ function client(identity: ConstructorParameters<typeof RpcClient>[0]['identity']
 }
 
 async function local(daemon: Daemon) {
-  const c = client({ client: { clientId: 'desk', device: { name: 'desk', keyFingerprint: '' }, features: [] } })
+  const c = client({ client: { clientId: 'desk', device: { name: 'desk', publicKey: '' }, features: [] } })
   await c.attach(framePortOver(await dialLocal(daemon.endpoint), 'stream'))
   return c
 }
@@ -74,7 +74,7 @@ function device(name: string) {
     keys,
     name,
     pins: new KnownRuntimes(createMemoryDeviceStore()),
-    rpc: () => client({ client: { clientId: name, device: { name, keyFingerprint: fingerprint(keys.publicKey) }, features: [] } }),
+    rpc: () => client({ client: { clientId: name, device: { name, publicKey: encodePublicKey(keys.publicKey) }, features: [] } }),
   }
 }
 
@@ -129,7 +129,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
 
     const dropped = new Promise<void>((resolve) => rpc.onStateChange((s) => { if (s === 'disconnected') resolve() }))
     const [record] = await pairingApi.list()
-    expect(record.lastSeen).toBeGreaterThanOrEqual(record.pairedAt)
+    expect(record.lastSeen).toBeGreaterThanOrEqual(record.addedAt)
     await pairingApi.revoke({ deviceKey: record.publicKey })
     await dropped
 

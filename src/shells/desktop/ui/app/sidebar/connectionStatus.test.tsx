@@ -5,7 +5,7 @@ import type { ConnectionState, WorkspaceConnection } from '@client/connections'
 import { selectWorkspace } from '../navigation'
 import { WorkspaceToggle } from './connectionStatus'
 
-vi.mock('../navigation', () => ({ selectWorkspace: vi.fn(async () => {}) }))
+vi.mock('../navigation', () => ({ selectWorkspace: vi.fn(async () => {}), openLocalFolder: vi.fn(async () => {}) }))
 
 let host: HTMLDivElement
 let root: Root
@@ -13,6 +13,7 @@ let root: Root
 function fakeConnection(state: ConnectionState) {
   return {
     workspaceId: 'ws-1',
+    startsRuntime: false,
     state,
     getState: () => state,
     subscribe: () => () => {},
@@ -50,7 +51,8 @@ describe('WorkspaceToggle', () => {
   it('while not connected, is a status dot that opens the workspace', () => {
     const onToggle = vi.fn()
     const toggle = render(fakeConnection({ kind: 'offline', lastSeen: null, retrying: false, error: 'ECONNREFUSED' }), onToggle)
-    expect(toggle.getAttribute('aria-label')).toBe('Not reachable: ECONNREFUSED')
+    expect(toggle.getAttribute('aria-label')).toBe('Not reachable: The workspace did not answer. Its machine may be off or offline. Cate keeps trying.')
+    expect(toggle.title).toBe(toggle.getAttribute('aria-label'))
     expect(toggle.dataset.connectionStatus).toBe('offline')
     act(() => toggle.click())
     expect(selectWorkspace).toHaveBeenCalledWith('ws-1')

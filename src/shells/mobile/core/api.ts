@@ -1,6 +1,7 @@
 // The core API the app calls (`MobileCoreMethods`).
 
 import { runtimeFor } from '@kernel/rpc/client'
+import { isRpcError } from '@kernel/rpc/contract'
 import { openTrusted, joinErrorMessage, joinWorkspace, trustStore } from '@client/workspaces'
 import { closePanel, createPanel, creatableDefinitions } from '@client/host'
 import { documentStoreFor } from '@client/document'
@@ -9,13 +10,15 @@ import type { AnyPanelDefinition } from '@panels/framework/contract'
 import { isPanelType } from '@workspace/document/contract'
 import type { MobileCoreMethod, MobileCoreMethods, MobilePanelChoice } from '../contract'
 import type { MobileClient } from './boot'
-import { createActionHandlers } from './actions'
+import { createActionHandlers, wordsFor } from './actions'
 import type { MobileAgents } from './agents'
 import type { MobileBrowsers } from './browser'
 import type { MobileBuffers } from './buffers'
 import type { MobileChats } from './chat'
 import type { MobileConversations } from './conversations'
-import { placementOptions } from './placement'
+import { placementOptions, suggestPlacements } from './placement'
+import { createRelationHandlers } from './relations'
+import { createReviewHandlers } from './review'
 import { loopbackPort, type MobileStreams } from './streams'
 import type { MobileTerminals } from './terminals'
 import type { MobileViews } from './views'
@@ -46,8 +49,12 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
   const { terminals, views, browsers, chats, buffers, streams, agents, conversations } = parts
   return {
     ...createActionHandlers(agents, conversations),
+    ...createRelationHandlers(),
+    ...createReviewHandlers(views),
     async 'app.setActive'({ active }) {
       client.setActive(active)
+      // Back in front: a connection may have died while the app was away.
+      if (active) connections.checkAll()
       return null
     },
     async 'workspaces.join'({ input }) {
@@ -128,6 +135,25 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       return isPanelType(type) ? createPanel(workspaceId, type, { ...placementOptions(type, placement) }) : null
     },
     'panel.remove': ({ workspaceId, panelId }) => closePanel(workspaceId, panelId),
+    async 'canvas.moveNode'({ workspaceId, canvasId, nodeId, origin }) {
+      const store = documentStoreFor(workspaceId)
+      const node = store?.getSnapshot().canvases[canvasId]?.nodes[nodeId]
+      if (!store || !node) return false
+      return store.propose({ kind: 'setNodeRects', canvasId, rects: [{ nodeId, rect: { origin, size: node.rect.size } }] }).ok
+    },
+    async 'canvas.suggest'({ workspaceId, canvasPanelId, type, visible }) {
+      const doc = documentStoreFor(workspaceId)?.getSnapshot()
+      return doc ? suggestPlacements(doc, canvasPanelId, type, visible) : []
+    },
+    async 'panel.setWorktree'({ workspaceId, panelId, worktreeId, discard }) {
+      try {
+        await runtimeFor(workspaceId).session.op({ panelId, op: { kind: 'switchWorktree', worktreeId, ...(discard ? { discard } : {}) } })
+        return { ok: true }
+      } catch (error) {
+        if (isRpcError(error, 'dirty')) return { ok: false, message: `${error.message}. Stop it and switch the worktree?`, dirty: true }
+        return { ok: false, message: wordsFor(error) }
+      }
+    },
     async 'surface.choices'({ workspaceId, panelId }) {
       const doc = documentStoreFor(workspaceId)?.getSnapshot()
       return doc ? surfaceChoices(doc, panelId).map(choice) : []
@@ -184,6 +210,8 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
     },
     'chat.page': async (params) => chats.page(params),
     'chat.navigation': async (params) => chats.navigation(params),
+    'chat.documentStarted': async (params) => chats.documentStarted(params),
+    'chat.documentReady': async (params) => chats.documentReady(params),
     'chat.hostMessage': (params) => chats.hostMessage(params),
     'chat.conversations': (params) => chats.conversations(params),
 

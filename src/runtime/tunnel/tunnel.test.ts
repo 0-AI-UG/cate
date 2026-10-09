@@ -50,6 +50,21 @@ it('carries an HTTP exchange to a loopback server', async () => {
   expect(response.endsWith('hello /hi')).toBe(true)
 })
 
+it('finds a server that listens on ::1 only', async () => {
+  const v6 = http.createServer((req, res) => res.end(`v6 ${req.url}`))
+  const listening = await new Promise<boolean>((resolve) => {
+    v6.once('error', () => resolve(false))
+    v6.listen(0, '::1', () => resolve(true))
+  })
+  if (!listening) return // no IPv6 loopback here
+  try {
+    port = (v6.address() as AddressInfo).port
+    expect((await fetchThrough('/six')).endsWith('v6 /six')).toBe(true)
+  } finally {
+    await new Promise<void>((resolve) => v6.close(() => resolve()))
+  }
+})
+
 it('carries a body larger than the credit window', async () => {
   const response = await fetchThrough('/big')
   expect(response.length).toBeGreaterThan(3 * 1024 * 1024)

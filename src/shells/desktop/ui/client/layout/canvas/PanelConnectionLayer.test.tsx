@@ -103,7 +103,7 @@ describe('PanelConnectionLayer', () => {
     expect(path?.classList.contains('cate-panel-connection')).toBe(true)
     expect(path?.classList.contains('cate-panel-connection-active')).toBe(false)
     const selector = container.querySelector('[data-panel-relation-selector]')
-    expect(selector?.classList.contains('z-[100001]')).toBe(true)
+    expect(selector?.classList.contains('z-[500]')).toBe(true)
     expect(container.textContent).toContain('Work in')
     act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.click())
     expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(3)

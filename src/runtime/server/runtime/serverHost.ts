@@ -150,6 +150,7 @@ export function createServerHost(deps: ServerHostDeps): ServerHost {
       const child = spawn(executable, args, {
         cwd: opts.cwd,
         env,
+        windowsHide: true,
         stdio: [opts.bootstrapStdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       })
       if (opts.bootstrapStdin !== undefined) {

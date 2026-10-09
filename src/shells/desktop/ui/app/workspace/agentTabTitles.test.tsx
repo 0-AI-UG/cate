@@ -29,7 +29,7 @@ let stream: ReturnType<typeof fakeStream<ChannelEvent<AgentPanelStates, AgentPan
 const stops: Array<() => void> = []
 
 beforeEach(() => {
-  installClientIdentity(createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] }))
+  installClientIdentity(createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: [] }))
   ws = attachTestWorkspace('w', buildDocument([add('t1', { to: 'stack', dock: main, stackId: 's1' })]))
   stream = fakeStream()
   const runtime = { agents: { panels: () => stream.sub } }

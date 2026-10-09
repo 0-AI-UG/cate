@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { KnownRuntimes } from '@runtime/pairing/client'
-import { decodeKeyPair, fingerprint, generateKeyPair } from '@runtime/security/contract'
+import { decodeKeyPair, encodePublicKey, generateKeyPair } from '@runtime/security/contract'
 import { createDeviceFiles, type DeviceFiles } from './deviceFiles'
 import { deviceStoreOf } from './deviceIpc'
 
@@ -55,7 +55,7 @@ describe('device files', () => {
     if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600)
     const stored = decodeKeyPair(JSON.parse(fs.readFileSync(file, 'utf-8')))
     expect(stored?.publicKey).toEqual(keys.publicKey)
-    expect(files.deviceFingerprint()).toBe(fingerprint(keys.publicKey))
+    expect(files.devicePublicKey()).toBe(encodePublicKey(keys.publicKey))
     files.dispose()
     const again = createDeviceFiles(dir)
     expect(again.deviceKeys().publicKey).toEqual(keys.publicKey)

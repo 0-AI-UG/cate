@@ -23,8 +23,7 @@ struct SurfacePanelView: View {
                 ProgressView()
             }
         }
-        .navigationTitle(panel.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .panelTitle(panel.title)
         .task { choices = await core.panelChoices("surface.choices", ["workspaceId": workspaceId, "panelId": panel.id]) }
     }
 }

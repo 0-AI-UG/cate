@@ -14,7 +14,7 @@ beforeEach(() => {
   peers = createNetworkPeers({
     rpc: new RpcServer({ version: 'test', lifecycle: createLifecycleBus() }),
     runtimeKeys: generateKeyPair(),
-    pairing: { isPaired: async () => false, markSeen: () => {}, onRevoked: () => () => {} } as never,
+    pairing: { isPaired: async () => false, onRevoked: () => () => {} } as never,
     handshakeTimeoutMs: 60_000,
     maxUnproven: 4,
   })

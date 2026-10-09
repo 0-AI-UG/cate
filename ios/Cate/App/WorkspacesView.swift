@@ -82,6 +82,42 @@ private struct DisconnectDialog: ViewModifier {
     }
 }
 
+extension EnvironmentValues {
+    /// Opens the join sheet (pairing again from a refused workspace).
+    @Entry var joinWorkspace: () -> Void = {}
+}
+
+/// The actions the core offers for a connection state, main action first.
+struct ConnectionActions: View {
+    @Environment(CoreHost.self) private var core
+    @Environment(\.joinWorkspace) private var join
+    let workspace: Workspace
+    var compact = false
+
+    var body: some View {
+        ForEach(Array(workspace.connection.actions.enumerated()), id: \.element) { index, action in
+            button(action)
+                .buttonStyle(index == 0 && !compact ? AnyPrimitiveButtonStyle(.glassProminent) : AnyPrimitiveButtonStyle(.glass))
+                .controlSize(compact ? .small : .regular)
+        }
+    }
+
+    @ViewBuilder private func button(_ action: Connection.Action) -> some View {
+        switch action {
+        case .retry: Button(compact ? "Retry" : "Try Again") { Task { await core.retry(workspace.id) } }
+        case .pair: Button("Pair Again", action: join)
+        case .forget: Button("Forget", role: .destructive) { Task { await core.forget(workspace.id) } }
+        }
+    }
+}
+
+/// A type-erased button style, to pick one per button.
+struct AnyPrimitiveButtonStyle: PrimitiveButtonStyle {
+    private let make: (Configuration) -> AnyView
+    init<S: PrimitiveButtonStyle>(_ style: S) { make = { AnyView(style.makeBody(configuration: $0)) } }
+    func makeBody(configuration: Configuration) -> some View { make(configuration) }
+}
+
 struct ConnectionLabel: View {
     let connection: Connection
 

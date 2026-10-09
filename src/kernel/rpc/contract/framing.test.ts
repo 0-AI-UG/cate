@@ -10,7 +10,7 @@ import { framePortOver, type ByteDuplex } from './port'
 import type { Frame } from './messages'
 
 const frames: Frame[] = [
-  { kind: 'msg', msg: { t: 'hello', protocol: [1, 0], version: '2.0.0', client: { clientId: 'c1', device: { name: 'mac', keyFingerprint: 'ab' }, features: ['webview'] } } },
+  { kind: 'msg', msg: { t: 'hello', protocol: [1, 0], version: '2.0.0', client: { clientId: 'c1', device: { name: 'mac', publicKey: 'ab' }, features: ['webview'] } } },
   { kind: 'msg', msg: { t: 'req', id: 7, cap: 'file', method: 'read', params: { path: '/tmp/ü' }, opId: 'c1:3' } },
   { kind: 'msg', msg: { t: 'res', id: 7, error: { code: 'gone', message: 'gone' } } },
   { kind: 'msg', msg: { t: 'ack', stream: 9, bytes: 4096 } },

@@ -16,7 +16,7 @@ export function dataPaths(dataDir: string) {
     buffer: (hash: string) => path.join(dataDir, DATA_FILES.buffers, `${safeName(hash)}.bin`),
     settings: at(DATA_FILES.settings),
     secrets: at(DATA_FILES.secrets),
-    pairings: at(DATA_FILES.pairings),
+    devices: at(DATA_FILES.devices),
     push: at(DATA_FILES.push),
     trust: at(DATA_FILES.trust),
     grants: at(DATA_FILES.grants),

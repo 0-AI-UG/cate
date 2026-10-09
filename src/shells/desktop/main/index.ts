@@ -15,7 +15,7 @@ import { createJsonStateFile } from '@kernel/state/node'
 import { createElectronMainSink } from '@kernel/log/desktop/main'
 import { clientSettingsTable, type ClientSettings } from '../settings'
 import { RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/contract'
-import { createSshProvisioner, startLocalRuntime } from '@runtime/daemon/desktop'
+import { createMachineProvisioner, dialMachine, listWslDistros, NotInstalledError, startLocalRuntime } from '@runtime/daemon/desktop'
 import { isRuntimeInstalled } from '@runtime/daemon/node'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { createBrowserDesktop, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
@@ -38,7 +38,7 @@ import { registerTransportIpc } from './transportIpc'
 import { createShellTransportHost } from './transports'
 import { canSelfUpdate, createAutoUpdater } from './updater/autoUpdater'
 import { installBundledRuntime } from './updater/runtimeInstall'
-import { registerSshIpc } from './sshIpc'
+import { registerMachineIpc } from './machineIpc'
 import { DEFAULT_UPDATE_RECORD, normalizeUpdateRecord } from './updater/updateState'
 import { createWebPartitions } from './webPartitions'
 import { installAppCsp, installWebSecurity } from './webSecurity'
@@ -279,6 +279,7 @@ app.whenReady().then(() => {
   const pins = new KnownRuntimes(deviceStoreOf(device))
   const e2ePath = IS_E2E ? process.env.CATE_E2E_PATH_PREPEND : undefined
   const runtimeEnv = e2ePath ? { ...process.env, PATH: `${e2ePath}${path.delimiter}${process.env.PATH ?? ''}` } : process.env
+  const machines = createMachineProvisioner({ build: RUNTIME_BUILD, version: RUNTIME_VERSION, wslDistros: listWslDistros })
   const host = createShellTransportHost({
     startLocal: async (root) => {
       let installDir = await ensureRuntime()
@@ -295,6 +296,16 @@ app.whenReady().then(() => {
         ...(bundle ? { launch: { node: process.env.CATE_RUNTIME_NODE || 'node', bundle } } : { installDir }),
       })
     },
+    dialMachine: async (machine, root) => {
+      if (!RUNTIME_BUILD) throw new Error('This build of Cate has no build id, so it cannot run its runtime on another machine.')
+      try {
+        return await dialMachine(machine, root, { build: RUNTIME_BUILD })
+      } catch (err) {
+        if (!(err instanceof NotInstalledError)) throw err
+        await machines.ensureRuntime(machine)
+        return dialMachine(machine, root, { build: RUNTIME_BUILD })
+      }
+    },
     deviceKeys: () => device.deviceKeys(),
     deviceName: () => os.hostname().replace(/\.local$/, ''),
     pins,
@@ -307,7 +318,7 @@ app.whenReady().then(() => {
   registerNatives({ registry, settingsFile, backgrounds, focusWindow })
   registerCapture(registry)
   registerTransportIpc({ host, partitions })
-  registerSshIpc(createSshProvisioner({ build: RUNTIME_BUILD, version: RUNTIME_VERSION }))
+  registerMachineIpc(machines)
   const perf = startPerfMonitor(featureFlags.perf())
   appIpc = registerAppIpc({
     registry,
@@ -325,7 +336,7 @@ app.whenReady().then(() => {
       isPackaged: app.isPackaged,
       e2e: IS_E2E,
       features,
-      device: { name: os.hostname().replace(/\.local$/, ''), keyFingerprint: device.deviceFingerprint() },
+      device: { name: os.hostname().replace(/\.local$/, ''), publicKey: device.devicePublicKey() },
     }),
   })
 
@@ -361,7 +372,7 @@ app.whenReady().then(() => {
         const info = await desktop.app.info()
         await desktop.device.set('ui-state', { smoke: true })
         const state = await desktop.device.get('ui-state')
-        return info.features.includes('webview') && info.device.keyFingerprint.length === 20 && state.smoke === true
+        return info.features.includes('webview') && info.device.publicKey.length === 64 && state.smoke === true
       })()`, true).then((ok) => app.exit(ok ? 0 : 1), () => app.exit(1))
     }
   }

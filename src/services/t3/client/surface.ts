@@ -203,6 +203,19 @@ export function isAllowedT3Navigation(
 }
 
 /** Read the durable thread id from T3's /:environmentId/:threadId route. */
+/** The page shows a conversation: a thread of the bound environment or a new
+ * draft, not T3's start page or another route. */
+export function t3ShowsConversation(url: string, harnessUrl: string, environmentId: string | null): boolean {
+  try {
+    const next = new URL(url)
+    if (next.origin !== new URL(harnessUrl).origin) return false
+    const parts = pathParts(next)
+    return parts.length === 2 && (parts[0] === 'draft' || (!!environmentId && parts[0] === environmentId))
+  } catch {
+    return false
+  }
+}
+
 export function t3ThreadIdFromUrl(url: string, environmentId: string | null): string | null {
   if (!environmentId) return null
   try {

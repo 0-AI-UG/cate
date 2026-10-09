@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createLifecycleBus, type ClientConnection } from './contract'
 
-const client: ClientConnection = { connectionId: 1, clientId: 'c', device: { name: 'd', keyFingerprint: 'f' }, features: [] }
+const client: ClientConnection = { connectionId: 1, clientId: 'c', device: { name: 'd', publicKey: 'f' }, features: [] }
 
 describe('lifecycle bus', () => {
   it('delivers events and isolates failing listeners', async () => {

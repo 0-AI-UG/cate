@@ -51,6 +51,7 @@ export function pipeDuplex(pipes: DesktopApi['pipes'], pipe: string): ByteDuplex
 export function createDesktopShellTransports(api: DesktopApi = window.cateDesktop): ShellTransports {
   return {
     dialLocal: async (root) => pipeDuplex(api.pipes, await api.transports.dialLocal(root)),
+    dialMachine: async (machine, root) => pipeDuplex(api.pipes, await api.transports.dialMachine(machine, root)),
     dialNetwork: async (target) => pipeDuplex(api.pipes, await api.transports.dialNetwork(target)),
     dialLoopbackTcp: async (port) => pipeDuplex(api.pipes, await api.transports.dialLoopbackTcp(port)),
     // Main pairs: the device key never enters the renderer.

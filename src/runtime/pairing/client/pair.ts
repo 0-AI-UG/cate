@@ -45,6 +45,22 @@ export class PairingError extends SecureChannelError {
   }
 }
 
+/** A failed pairing in words: why the runtime said no, or that it could not
+ *  be reached. Shells that pair in another process send this text across. */
+export function pairingErrorMessage(err: unknown): string {
+  if (err instanceof PairingError) {
+    switch (err.reason) {
+      case 'fingerprint-mismatch':
+      case 'id-mismatch': return 'The workspace that answered is not the one in the code.'
+      case 'timeout': return 'The workspace did not answer in time.'
+      case 'closed': return 'The workspace closed the connection.'
+      case 'bad-runtime-proof': return 'The workspace could not prove it knows the code.'
+      default: return 'The code was refused. Codes work once and expire after 10 minutes; ask for a new one.'
+    }
+  }
+  return 'Could not reach the workspace. Check that it is served and that this device is on its network or online, then try again.'
+}
+
 /** Pairs and returns the open channel, ready for the protocol `hello`. */
 export async function pairWithRuntime(port: MessagePortLike, options: PairOptions): Promise<SecureChannel> {
   const { target } = options

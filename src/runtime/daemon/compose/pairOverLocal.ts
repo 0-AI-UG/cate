@@ -16,7 +16,7 @@ import { RUNTIME_VERSION } from '../contract'
 export async function pairOverLocal(endpoint: string, mode: PairingMode, root: string, json?: boolean): Promise<void> {
   const client = new RpcClient({
     version: RUNTIME_VERSION,
-    identity: { client: { clientId: `serve-${process.pid}`, device: { name: 'cate serve', keyFingerprint: '' }, features: [] } },
+    identity: { client: { clientId: `serve-${process.pid}`, device: { name: 'cate serve', publicKey: '' }, features: [] } },
   })
   try {
     await client.attach(framePortOver(await dialLocal(endpoint), 'stream'))

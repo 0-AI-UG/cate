@@ -46,6 +46,9 @@ case "$(uname -m)" in
   *) fail "unsupported architecture $(uname -m)" ;;
 esac
 target="$platform-$arch"
+if [ "$platform" = linux ] && ldd --version 2>&1 | grep -qi musl; then
+  fail "this system uses musl (Alpine); the Cate runtime needs glibc"
+fi
 [ "$target" = darwin-x64 ] || [ "$target" = darwin-arm64 ] || [ "$target" = linux-x64 ] || [ "$target" = linux-arm64 ] \
   || fail "no runtime is built for $target"
 

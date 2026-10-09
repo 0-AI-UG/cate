@@ -65,7 +65,9 @@ export async function installRuntimeTarball(opts: {
   const retired = tempPath(cateHome, platform, 'retired')
   await mkdir(staging, { recursive: true })
   try {
-    await execFileP('tar', ['-xzf', tarball, '-C', staging])
+    // Windows' own tar: Git's msys tar, often first on PATH, misreads drive letters.
+    const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+    await execFileP(tar, ['-xzf', tarball, '-C', staging], { windowsHide: true })
     const layout = installLayout(staging, platform)
     for (const required of [layout.node, layout.bundle, layout.build]) {
       if (!fs.existsSync(required)) throw new Error(`runtime tarball ${tarball} has no ${path.relative(staging, required)}`)

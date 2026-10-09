@@ -132,7 +132,7 @@ describe('document service', () => {
 function connectClient(server: RpcServer, clientId: string, features: ClientFeature[] = []) {
   const client = new RpcClient({
     version: '1.0.0',
-    identity: { client: { clientId, device: { name: `${clientId}-mac`, keyFingerprint: `fp-${clientId}` }, features } },
+    identity: { client: { clientId, device: { name: `${clientId}-mac`, publicKey: `fp-${clientId}` }, features } },
   })
   const [serverPort, clientPort] = createMemoryPortPair()
   server.serve(serverPort)
@@ -215,7 +215,7 @@ describe('presence', () => {
     await Promise.all([a.ready, b.ready])
     expect(presence.clients().map((c) => c.clientId).sort()).toEqual(['ca', 'cb'])
     expect(presence.clients().find((c) => c.clientId === 'ca')).toMatchObject({
-      device: { name: 'ca-mac', keyFingerprint: 'fp-ca' },
+      device: { name: 'ca-mac', publicKey: 'fp-ca' },
       features: ['pageDriver', 'webview'],
     })
 
@@ -252,7 +252,7 @@ describe('presence', () => {
   it('picks the client that last showed or used a panel, else the most recently active', () => {
     const lifecycle = createLifecycleBus()
     const presence = createPresence({ lifecycle })
-    const device = { name: 'd', keyFingerprint: 'f' }
+    const device = { name: 'd', publicKey: 'f' }
     lifecycle.emitClientConnected({ connectionId: 1, clientId: 'a', device, features: ['pageDriver'] })
     lifecycle.emitClientConnected({ connectionId: 2, clientId: 'b', device, features: ['pageDriver'] })
     lifecycle.emitClientConnected({ connectionId: 3, clientId: 'c', device, features: [] })

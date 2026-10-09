@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExtern
 import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import { LoadingState, SidebarSectionHeader, SidebarHeaderButton } from '../../kernel/interaction'
-import { hasFileRefDrag, pathDisplayName, readFileRefDrag, type FileEntry as FileTreeNodeType } from '@workspace/files/contract'
+import { hasFileRefDrag, joinPath, parentDir, pathDisplayName, readFileRefDrag, type FileEntry as FileTreeNodeType } from '@workspace/files/contract'
 import { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
 import type { FileTreeModel } from '@workspace/files/client'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
@@ -303,11 +303,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
     const selectedPath = [...selectedPaths][0]
     const row = flatRows[flatIndexByPath.get(selectedPath) ?? -1]
     if (row) {
-      return row.isDirectory ? row.path : row.path.substring(0, row.path.lastIndexOf('/'))
+      return row.isDirectory ? row.path : parentDir(row.path)
     }
     // Selected row isn't currently visible — fall back to its parent dir.
-    const slash = selectedPath.lastIndexOf('/')
-    return slash > 0 ? selectedPath.substring(0, slash) : rootPath
+    return parentDir(selectedPath) || rootPath
   }, [selectedPaths, flatRows, flatIndexByPath, rootPath])
 
   // Paste the file refs on the clipboard (from any workspace) into a folder.
@@ -381,7 +380,7 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
     setRootCreating(null)
     const trimmed = rootCreateValue.trim()
     if (!trimmed || !type) return
-    const newPath = rootPath + '/' + trimmed
+    const newPath = joinPath(rootPath, trimmed)
     try {
       await resource.create(newPath, type)
       loadTree(rootPath)

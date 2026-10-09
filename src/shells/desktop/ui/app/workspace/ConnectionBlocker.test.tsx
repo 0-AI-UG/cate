@@ -13,6 +13,7 @@ function fakeConnection(state: ConnectionState) {
   const listeners = new Set<() => void>()
   const connection = {
     workspaceId: 'ws',
+    startsRuntime: true,
     state,
     getState: () => connection.state,
     subscribe: (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } },
@@ -77,22 +78,32 @@ describe('ConnectionBlocker', () => {
     expect(connection.retryNow).toHaveBeenCalled()
   })
 
-  it('a folder nested in an open workspace offers that workspace, or removing the entry', () => {
-    mount(fakeConnection({ kind: 'refused', message: '/p/app is inside the workspace /p, which is already open in Cate.', nestedIn: '/p' }))
+  it('a folder nested in an open workspace offers that workspace, or trying again', () => {
+    const connection = fakeConnection({ kind: 'refused', message: '/p/app is inside the workspace /p, which is already running.', nestedIn: '/p' })
+    mount(connection)
     expect(cover()?.textContent).toContain('/p/app is inside the workspace /p')
     const labels = [...cover()!.querySelectorAll('button')].map((b) => b.textContent)
-    expect(labels).toEqual(['Open p', 'Remove from list'])
+    expect(labels).toEqual(['Open p', 'Try again', 'Remove from list'])
     act(() => (cover()!.querySelectorAll('button')[1] as HTMLButtonElement).click())
+    expect(connection.retryNow).toHaveBeenCalled()
+  })
+
+  it('a folder that is gone offers to remove it from the list', () => {
+    mount(fakeConnection({ kind: 'offline', lastSeen: null, retrying: true, error: "ENOENT: no such file or directory, realpath '/p/app'" }))
+    act(() => { vi.advanceTimersByTime(400) })
+    expect(cover()?.textContent).toContain('Folder not found')
+    act(() => (cover()!.querySelector('button') as HTMLButtonElement).click())
     expect(removeRecent).toHaveBeenCalledWith('ws')
   })
 
   it('covers a lost connection only after a grace, and uncovers when it is back', () => {
     const connection = fakeConnection({ kind: 'connected' })
     mount(connection)
-    act(() => connection.set({ kind: 'offline', lastSeen: null, retrying: false, error: 'ECONNREFUSED' }))
+    act(() => connection.set({ kind: 'offline', lastSeen: null, retrying: false, error: 'connect ECONNREFUSED' }))
     expect(cover()).toBeNull()
     act(() => { vi.advanceTimersByTime(400) })
-    expect(cover()?.textContent).toContain('Not reachable: ECONNREFUSED')
+    expect(cover()?.textContent).toContain('The workspace runtime did not start.')
+    expect(cover()?.textContent).not.toContain('ECONNREFUSED')
     act(() => (cover()?.querySelector('button') as HTMLButtonElement).click())
     expect(connection.retryNow).toHaveBeenCalled()
     act(() => connection.set({ kind: 'connected' }))

@@ -41,6 +41,8 @@ it('only the ClientUi port makes native user-facing calls', () => {
 it('sessions and runtime code never call clientUi()', () => {
   const files = sourceFiles(SRC).filter((file) => {
     const parts = segments(file)
+    // A shell's `ui/runtime/` holds the views of the runtime module: UI.
+    if (parts[0] === 'shells') return false
     return parts[parts.length - 1] === 'session.ts' || parts.slice(0, -1).includes('runtime')
   })
   expect(files.length).toBeGreaterThan(0)

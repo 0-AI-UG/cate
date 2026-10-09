@@ -8,7 +8,7 @@ import type { DeviceStore } from '@kernel/state/contract'
 import type { ActionId, ContextMenuItem } from '@kernel/interaction/contract'
 import type { MenuModel } from './menu'
 import type { FileRef } from '@workspace/files/contract'
-import type { SshSetup } from '@runtime/daemon/contract'
+import type { Machine, MachineSetup } from '@runtime/daemon/contract'
 import type { PipeMessage } from './pipe'
 
 export type DesktopWindowKind = 'main' | 'detached'
@@ -257,6 +257,7 @@ export interface DesktopApi {
   transports: {
     /** Pipe ids; bytes flow through `pipes`. */
     dialLocal(root: string): Promise<string>
+    dialMachine(machine: Machine, root: string): Promise<string>
     dialNetwork(target: DesktopNetworkTarget): Promise<string>
     dialLoopbackTcp(port: number): Promise<string>
     /** Pairs with a runtime from a `cate://pair` link or a typed code. */
@@ -264,8 +265,9 @@ export interface DesktopApi {
     /** Main's loopback web proxy needs a pipe to a port of a runtime's machine. */
     onLoopbackRequest(listener: (request: LoopbackRequest) => void): () => void
   }
-  /** Setting up a runtime on another machine over SSH (the system `ssh`). */
-  ssh: SshSetup
+  /** Setting up a runtime on a machine this device runs commands on (the
+   *  system `ssh`, `wsl.exe`). */
+  machines: MachineSetup
   pipes: DesktopPipes
   web: {
     /** The workspace's browser partition, routed through its loopback web

@@ -5,7 +5,7 @@ export {
   type ConnectionState,
   type WorkspaceConnectionOptions,
 } from './connection'
-export { WorkspaceConnections, type WorkspaceConnectionsOptions } from './registry'
+export { WorkspaceConnections, watchForWake, type WorkspaceConnectionsOptions } from './registry'
 export { eachConnection } from './eachConnection'
 export {
   createClientIdentity,
@@ -23,9 +23,10 @@ export type {
   PairedRuntime,
 } from './transports'
 export {
-  connectionLabel,
-  connectionTitle,
-  connectionRemedy,
+  connectionStatus,
+  missingFolderOf,
   relativeTime,
   type ConnectionRemedy,
+  type ConnectionStatus,
+  type StatusContext,
 } from './status'

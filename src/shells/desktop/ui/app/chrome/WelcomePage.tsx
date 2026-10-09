@@ -3,9 +3,10 @@
 // shortcuts worth knowing.
 
 import type { ReactNode } from 'react'
-import { Folder, FolderOpen, Link2 } from 'lucide-react'
+import { Folder, FolderOpen, Link2, Server } from 'lucide-react'
 import { useDeclaredActions, useResolvedShortcuts } from '../../kernel/interaction'
 import { canRunAction } from '@client/host'
+import { workspaceLocation } from '@client/workspaces'
 import { useActionsVersion } from '../../client/host/hooks'
 import { displayString } from '@kernel/interaction/contract'
 import { useWorkspaceList } from '../../client/workspaces'
@@ -43,14 +44,21 @@ export function WelcomePage(): JSX.Element {
               {desktop && (
                 <ActionItem
                   icon={<FolderOpen size={16} />}
-                  label="Open Folder..."
+                  label="Open Folder…"
                   shortcut={shortcuts.openFolder?.key ? displayString(shortcuts.openFolder) : undefined}
                   onClick={() => void pickAndOpenFolder()}
                 />
               )}
+              {clientApp().machines && (
+                <ActionItem
+                  icon={<Server size={16} />}
+                  label="Open Folder on Another Machine…"
+                  onClick={() => useUIStore.getState().openSettings('remote-machines')}
+                />
+              )}
               <ActionItem
                 icon={<Link2 size={16} />}
-                label="Join a Workspace..."
+                label="Join a Workspace…"
                 onClick={() => useUIStore.getState().setJoinDialogOpen(true)}
               />
             </div>
@@ -66,11 +74,11 @@ export function WelcomePage(): JSX.Element {
                     className="flex items-center gap-2 px-2 py-1.5 rounded text-left hover:bg-hover transition-colors group"
                     onClick={() => void selectWorkspace(entry.id)}
                   >
-                    {entry.kind === 'local'
-                      ? <Folder size={14} className="text-muted group-hover:text-secondary flex-shrink-0" />
-                      : <Link2 size={14} className="text-muted group-hover:text-secondary flex-shrink-0" />}
+                    {entry.kind === 'paired'
+                      ? <Link2 size={14} className="text-muted group-hover:text-secondary flex-shrink-0" />
+                      : <Folder size={14} className="text-muted group-hover:text-secondary flex-shrink-0" />}
                     <span className="text-sm text-focus-blue truncate">{entry.name}</span>
-                    <span className="text-xs text-muted truncate">{entry.kind === 'local' ? parentOf(entry.root) : 'Paired'}</span>
+                    <span className="text-xs text-muted truncate">{entry.kind === 'local' ? parentOf(entry.root) : workspaceLocation(entry) ?? 'Paired'}</span>
                   </button>
                 ))}
               </div>

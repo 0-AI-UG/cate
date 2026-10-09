@@ -4,7 +4,9 @@
 // client moved the panel to is followed, the bound thread's change summaries
 // are pushed, and the page's `__cateHost` requests run through the T3 host
 // dispatcher. A shell drives it from its page's events and runs the scripts
-// it hands back through the page port.
+// it hands back through the page port. The controller also says when the
+// page is fit to show: once the setup ran and the page is on a conversation,
+// never on T3's start page, which only moves on to a new draft.
 
 import { openUrlFor, pickPanelPlace } from '@client/host'
 import { openAgentChanges } from '@panels/review/client'
@@ -22,6 +24,7 @@ import {
   t3HostBridgeScript,
   t3NavigateScript,
   t3ThemeScript,
+  t3ShowsConversation,
   t3ThreadIdFromUrl,
   type T3HostDispatcher,
 } from '@services/t3/client'
@@ -34,6 +37,8 @@ export interface ChatPagePort {
   run(script: string): void
   /** Sends a session op. */
   send(op: ChatOp): Promise<unknown>
+  /** Shows or hides the page. */
+  reveal(shown: boolean): void
   /** The page asked for provider settings, which the shell may show (the
    *  page itself stays on its thread). */
   openProviderSettings?(): void
@@ -56,13 +61,20 @@ export interface ChatPageController {
   /** A navigation the page wants (`committed` false: may it go?) or made
    *  (`committed` true). Answers whether it is allowed. */
   navigation(url: string, committed: boolean): boolean
-  /** A new top-level document starts loading: the setup runs again. */
+  /** A new top-level document starts loading: the setup runs again, and
+   *  the page is hidden until it is ready. */
   documentStarted(): void
+  /** The document's setup ran; `url` is where the page is. */
+  documentReady(url: string): void
   /** A console message of the page: a host request, whose reply script it
    *  answers with (null: not one). */
   hostMessage(message: string | undefined): Promise<{ reply: string; error: string | null } | null>
   dispose(): void
 }
+
+/** How long a ready page may stay on T3's start page before it is shown
+ *  anyway: it stays there only to show an error. */
+const START_PAGE_REVEAL_MS = 4000
 
 export function createChatPageController(options: {
   workspaceId: string
@@ -82,6 +94,24 @@ export function createChatPageController(options: {
   let committed = false
   let dispatcher: T3HostDispatcher | null = null
   let pushedChanges = ''
+  let ready = false
+  let revealed = false
+  let revealTimer: ReturnType<typeof setTimeout> | null = null
+
+  const setRevealed = (shown: boolean) => {
+    if (revealTimer) clearTimeout(revealTimer)
+    revealTimer = null
+    if (revealed === shown) return
+    revealed = shown
+    port.reveal(shown)
+  }
+
+  /** A ready page is shown on a conversation, or after a while anywhere. */
+  const revealAt = (url: string) => {
+    if (!ready || revealed) return
+    if (t3ShowsConversation(url, harness.origin, harness.environmentId)) setRevealed(true)
+    else revealTimer ??= setTimeout(() => setRevealed(true), START_PAGE_REVEAL_MS)
+  }
 
   const bound = (): string | null => {
     if (adopted && snapshot.threadId !== adopted.from) adopted = null
@@ -146,7 +176,7 @@ export function createChatPageController(options: {
     })
   }
 
-  return {
+  const controller: ChatPageController = {
     setup: {
       url: chatPageUrl(harness, shown),
       script: [t3BrandingScript('thread'), t3HostBridgeScript(token), t3ThemeScript(options.theme)]
@@ -181,12 +211,20 @@ export function createChatPageController(options: {
       }
       shown = next
       sync()
+      revealAt(url)
       return true
     },
     documentStarted() {
       pushedChanges = ''
       committed = false
+      ready = false
+      setRevealed(false)
       resetHost()
+    },
+    documentReady(url) {
+      ready = true
+      controller.navigation(url, true)
+      revealAt(url)
     },
     async hostMessage(message) {
       const request = parseHostMessage(message, token)
@@ -199,6 +237,11 @@ export function createChatPageController(options: {
         return { reply: hostReplyScript(request.id, null, error), error }
       }
     },
-    dispose: resetHost,
+    dispose() {
+      if (revealTimer) clearTimeout(revealTimer)
+      revealTimer = null
+      resetHost()
+    },
   }
+  return controller
 }

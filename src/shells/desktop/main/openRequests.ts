@@ -4,7 +4,19 @@
 // it listens. Requests before that are queued. Register before app ready:
 // macOS sends `open-file` early.
 
+import fs from 'node:fs'
 import type { WebContents } from 'electron'
+
+/** The real path of a folder the person opens, so one folder reached two
+ *  ways (a symlink, `c:` and `C:`) is one workspace; the path as given when
+ *  it cannot be resolved (the runtime then says it is missing). */
+export function realPath(p: string): string {
+  try {
+    return fs.realpathSync.native(p)
+  } catch {
+    return p
+  }
+}
 
 interface OpenRequestTarget {
   contents: WebContents
@@ -45,7 +57,7 @@ export function createOpenRequests(deps: OpenRequestsDeps) {
 
   return {
     openPath(path: string) {
-      pending.push({ kind: 'path', value: path })
+      pending.push({ kind: 'path', value: realPath(path) })
       flush()
     },
     openUrl(url: string) {

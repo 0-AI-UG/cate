@@ -146,7 +146,7 @@ export function runRipgrepSearch(
   }
 
   try {
-    child = spawn(rgPath, args, { cwd: rootPath })
+    child = spawn(rgPath, args, { cwd: rootPath, windowsHide: true })
   } catch (err) {
     finishOnce(err instanceof Error ? err.message : String(err))
     return { cancel: () => { cancelled = true } }

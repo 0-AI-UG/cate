@@ -24,7 +24,7 @@ import { LoadingState, Spinner, POPOVER_SURFACE } from '../../kernel/interaction
 import { clientUi } from '@kernel/interaction'
 import type { AgentId } from '@services/agents/contract'
 import type { GitChangedFile, GitFileDiff } from '@workspace/repository/contract'
-import { notesMarkdown, openFindings, type ReviewNote, type ReviewNoteSeverity, type ReviewSnapshot } from '@panels/review/contract'
+import { notesMarkdown, openFindings, reviewFilePath, reviewImageMime, type ReviewNote, type ReviewNoteSeverity, type ReviewSnapshot } from '@panels/review/contract'
 import { pickReviewTerminal } from './parts/pickTerminal'
 import { ReviewToolbar } from './ReviewToolbar'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
@@ -49,22 +49,6 @@ function statusClass(file: GitChangedFile): string {
   if (file.status === 'deleted') return 'text-diff-del'
   if (file.status === 'unmerged') return 'text-orange-400'
   return 'text-yellow-400'
-}
-
-function imageMime(filePath: string): string | null {
-  const ext = filePath.split('.').pop()?.toLowerCase()
-  if (ext === 'png') return 'image/png'
-  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
-  if (ext === 'gif') return 'image/gif'
-  if (ext === 'webp') return 'image/webp'
-  if (ext === 'svg') return 'image/svg+xml'
-  if (ext === 'bmp') return 'image/bmp'
-  return null
-}
-
-function joinPath(root: string, relative: string): string {
-  const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/'
-  return `${root.replace(/[/\\]+$/, '')}${separator}${relative}`
 }
 
 function SearchableRefInput({ id, value, options, onCommit, className, ariaLabel }: {
@@ -202,7 +186,7 @@ function LazyDiffBody({ diff, error, load, allowLarge, split, wordDiff, wrap, no
 
 /** Before/after images, fetched from the session while shown. */
 function ImageComparisonPreview({ send, file, comparisonKey }: { send: ReviewSend; file: GitChangedFile; comparisonKey: string }) {
-  const mime = imageMime(file.path)
+  const mime = reviewImageMime(file.path)
   const [images, setImages] = useState<{ old: string | null; new: string | null } | null>(null)
   useEffect(() => {
     if (!mime) return
@@ -297,14 +281,14 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
     })
   }
   const openFile = (file: GitChangedFile) => {
-    createPanel(workspaceId, 'editor', { filePath: joinPath(review.repoPath, file.path), title: file.path.split('/').pop(), near: panelId })
+    createPanel(workspaceId, 'editor', { filePath: reviewFilePath(review.repoPath, file.path), title: file.path.split('/').pop(), near: panelId })
   }
   const copyApplyCommand = async () => {
     const command = await sendOrShow(send, { kind: 'applyCommand' }, 'Could not copy patch')
     if (typeof command === 'string') await ui.writeClipboard?.(command)
   }
   const saveNotes = async () => {
-    const target = await ui.pickSavePath({ workspaceId, defaultPath: joinPath(review.repoPath, 'review-notes.md'), rootPath: review.repoPath, title: 'Save Review Notes' })
+    const target = await ui.pickSavePath({ workspaceId, defaultPath: reviewFilePath(review.repoPath, 'review-notes.md'), rootPath: review.repoPath, title: 'Save Review Notes' })
     if (target) await sendOrShow(send, { kind: 'saveNotes', path: target }, 'Could not save review notes')
   }
   const createPullRequest = async () => {
@@ -458,7 +442,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
                 {(stagedMode || (spec.kind === 'uncommitted' && file.staged)) && <ToolbarButton label="Unstage file" disabled={busy} onClick={() => void send({ kind: 'unstage', path: file.path })}><Minus size={13} /></ToolbarButton>}
                 {workingMode && file.working && <ToolbarButton label="Discard working changes" disabled={busy} onClick={() => discardFile(file)}><Trash size={13} /></ToolbarButton>}
               </div>
-              {!isCollapsed && display.advancedPreview && imageMime(file.path)
+              {!isCollapsed && display.advancedPreview && reviewImageMime(file.path)
                 ? <ImageComparisonPreview send={send} file={file} comparisonKey={`${comparisonKey}:${snapshot.diffEpoch}`} />
                 : !isCollapsed && (
                   <div className="max-w-full overflow-x-auto overscroll-x-contain [container-type:inline-size]">

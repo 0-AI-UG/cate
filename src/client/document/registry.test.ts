@@ -50,7 +50,7 @@ describe('attachDocuments', () => {
     })
     const connections = new WorkspaceConnections({
       capabilities: RUNTIME_CAPABILITIES,
-      identity: createClientIdentity({ device: { name: 'd', keyFingerprint: 'FP' }, features: [] }),
+      identity: createClientIdentity({ device: { name: 'd', publicKey: 'FP' }, features: [] }),
       version: 'test',
       transports: {
         dialLocal: async () => {

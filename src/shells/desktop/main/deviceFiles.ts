@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createLogger } from '@kernel/log/contract'
 import { createJsonStateFile, readTextFile, writeJsonAtomicSync, writeTextFile, type JsonStateFile } from '@kernel/state/node'
-import { decodeKeyPair, encodeKeyPair, fingerprint, generateKeyPair, type KeyPair } from '@runtime/security/contract'
+import { decodeKeyPair, encodeKeyPair, encodePublicKey, generateKeyPair, type KeyPair } from '@runtime/security/contract'
 import {
   MAIN_OWNED_BOOT_FIELDS,
   PRIVATE_DEVICE_FILES,
@@ -34,7 +34,8 @@ export interface DeviceFiles {
   updateBoot(patch: Partial<BootSnapshot>): void
   /** This device's static key pair, created (0600) on first launch. */
   deviceKeys(): KeyPair
-  deviceFingerprint(): string
+  /** The device's public key, hex, as a client hello carries it. */
+  devicePublicKey(): string
   installId(): string
   /** Whether a valid install id existed before this launch first read it. */
   installIdPreexisted(): boolean
@@ -123,7 +124,7 @@ export function createDeviceFiles(dir: string): DeviceFiles {
       keys = stored
       return keys
     },
-    deviceFingerprint: () => fingerprint(self.deviceKeys().publicKey),
+    devicePublicKey: () => encodePublicKey(self.deviceKeys().publicKey),
     installId() {
       if (installId) return installId
       const file = path.join(dir, PRIVATE_DEVICE_FILES.installId)

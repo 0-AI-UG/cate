@@ -7,7 +7,7 @@ import path from 'node:path'
 import { answerDialogs, closeApp, launchApp, type LaunchResult } from '../fixtures/electron-app'
 import { TRANSPORTS, call, hasLan, launchSharedPair, seedShared, terminalText, writeTerminal, type SharedPair } from '../fixtures/shared-workspace'
 
-type Presence = { clients: { clientId: string; device: { name: string; keyFingerprint: string } }[] }
+type Presence = { clients: { clientId: string; device: { name: string; publicKey: string } }[] }
 const presence = (page: LaunchResult['mainWindow'], ws?: string) => page.evaluate((ws) => window.__cateE2E!.presence(ws), ws) as Promise<Presence>
 const connectionState = (page: LaunchResult['mainWindow'], ws: string) => page.evaluate((ws) => window.__cateE2E!.connection(ws)?.state ?? null, ws)
 
@@ -48,15 +48,15 @@ test.describe('invite and remove a device [network]', () => {
     await expect.poll(async () => (await presence(p.a.page)).clients.length).toBe(3)
     // A's open device list shows C without reopening the page.
     const cId = await c.mainWindow.evaluate(() => window.__cateE2E!.clientId())
-    const cKey = (await presence(p.a.page)).clients.find((x) => x.clientId === cId)!.device.keyFingerprint
-    await expect(p.a.page.locator('[aria-label="Paired devices"] li', { hasText: cKey })).toHaveCount(1, { timeout: 15_000 })
+    const cKey = (await presence(p.a.page)).clients.find((x) => x.clientId === cId)!.device.publicKey
+    await expect(p.a.page.locator(`[aria-label="Devices"] li[data-device-key="${cKey}"]`)).toHaveCount(1, { timeout: 15_000 })
   })
 
   test('A removes C: C is refused and cut off, B stays', async () => {
     const p = pair!
     const cId = await c!.mainWindow.evaluate(() => window.__cateE2E!.clientId())
-    const cKey = (await presence(p.a.page)).clients.find((x) => x.clientId === cId)!.device.keyFingerprint
-    const row = p.a.page.locator('[aria-label="Paired devices"] li', { hasText: cKey })
+    const cKey = (await presence(p.a.page)).clients.find((x) => x.clientId === cId)!.device.publicKey
+    const row = p.a.page.locator(`[aria-label="Devices"] li[data-device-key="${cKey}"]`)
     await expect(row).toHaveCount(1, { timeout: 15_000 })
     await answerDialogs(p.a.app.electronApp)
     await row.getByRole('button', { name: /^Remove / }).click()
@@ -114,9 +114,11 @@ for (const transport of TRANSPORTS) {
       await p.a.page.locator('[data-connection-blocker]').getByRole('button', { name: 'Start again' }).click()
       await expect.poll(() => connectionState(p.a.page, p.a.workspaceId), { timeout: 30_000 }).toBe('connected')
       await expect(p.a.page.locator('[data-connection-blocker]')).toHaveCount(0)
-      // B is still in the Settings it stopped from.
+      // B is still in the Settings it stopped from. A paired device cannot
+      // start the runtime, so it offers trying again once it runs.
       await p.b.page.keyboard.press('Escape')
-      await p.b.page.locator('[data-connection-blocker]').getByRole('button', { name: 'Start again' }).click()
+      const bStart = transport === 'network' ? 'Try again' : 'Start again'
+      await p.b.page.locator('[data-connection-blocker]').getByRole('button', { name: bStart }).click()
       await expect.poll(() => connectionState(p.b.page, p.b.workspaceId), { timeout: 30_000 }).toBe('connected')
       // The terminal comes back with a new shell for both.
       for (const c of [p.a, p.b]) await expect.poll(() => terminalText(c, panelId), { timeout: 20_000 }).toMatch(/\S/)

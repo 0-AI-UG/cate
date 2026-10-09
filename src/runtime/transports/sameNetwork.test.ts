@@ -8,7 +8,7 @@ import WebSocket from 'ws'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { generateKeyPair, networkIdOf } from '../security/contract'
-import { PairingService, type PairingsFile } from '../pairing/runtime'
+import { PairingService, type DevicesFile } from '../pairing/runtime'
 import { isPrivateAddress, sameNetworkUrl } from './contract'
 import { lanAddresses } from './node'
 import { createNetworkPeers, serveSameNetwork, type SameNetworkListener } from './runtime'
@@ -86,16 +86,16 @@ describe('same-network listener', () => {
     lan = null
   })
 
-  async function serve(isAllowed?: (remoteAddress: string) => boolean) {
+  async function serve(isAllowed?: (remoteAddress: string) => boolean, heartbeatMs?: number) {
     const runtimeKeys = RUNTIME_KEYS
-    let file: PairingsFile = { devices: [] }
+    let file: DevicesFile = { devices: [] }
     const pairing = new PairingService({
       runtimePublicKey: runtimeKeys.publicKey,
       store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
     })
     const rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
     const peers = createNetworkPeers({ rpc, runtimeKeys, pairing, handshakeTimeoutMs: 2_000 })
-    lan = await serveSameNetwork({ runtimeId: RUNTIME_ID, peers, host: '127.0.0.1', port: 0, advertise: false, isAllowed })
+    lan = await serveSameNetwork({ runtimeId: RUNTIME_ID, peers, host: '127.0.0.1', port: 0, advertise: false, isAllowed, heartbeatMs })
     return sameNetworkUrl(`127.0.0.1:${lan.port}`, RUNTIME_ID)!
   }
 
@@ -113,5 +113,16 @@ describe('same-network listener', () => {
 
   it('serves a private address by default', async () => {
     expect(await dial(await serve())).toBe('open')
+  })
+
+  it('drops a peer that stops answering pings, and keeps one that answers', async () => {
+    const url = await serve(undefined, 40)
+    const closedAfter = (autoPong: boolean) => new Promise<boolean>((resolve) => {
+      const socket = new WebSocket(url, { autoPong })
+      socket.on('close', () => resolve(true))
+      setTimeout(() => { socket.terminate(); resolve(false) }, 400)
+    })
+    expect(await closedAfter(false)).toBe(true)
+    expect(await closedAfter(true)).toBe(false)
   })
 })

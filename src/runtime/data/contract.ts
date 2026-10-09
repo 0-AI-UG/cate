@@ -14,9 +14,11 @@ export function isRuntimeId(value: unknown): value is string {
   return typeof value === 'string' && /^[a-z2-7]{16}$/.test(value)
 }
 
-/** The local transport on Windows; elsewhere it is `runtime.sock` in the data dir. */
-export function windowsPipeName(runtimeId: string): string {
-  return `\\\\.\\pipe\\cate-${runtimeId}`
+/** The local transport on Windows; elsewhere it is `runtime.sock` in the data
+ *  dir. `userKey` is a random part only this user can read (Node cannot set a
+ *  pipe's ACL), so another user can neither guess the name nor take it. */
+export function windowsPipeName(runtimeId: string, userKey: string): string {
+  return `\\\\.\\pipe\\cate-${userKey}-${runtimeId}`
 }
 
 export interface RuntimeEndpoints {
@@ -53,7 +55,7 @@ export const DATA_FILES = {
   buffers: 'buffers',
   settings: 'settings.json',
   secrets: 'secrets.json',
-  pairings: 'pairings.json',
+  devices: 'devices.json',
   push: 'push.json',
   trust: 'trust.json',
   grants: 'grants.json',

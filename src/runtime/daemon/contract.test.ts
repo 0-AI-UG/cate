@@ -10,6 +10,9 @@ it('round-trips the serve command line', () => {
   expect(parseDaemonArgv(['serve', '/w', '--network', 'off']).command).toBe('error')
   expect(parseDaemonArgv(['serve', '/w', '--bogus']).command).toBe('error')
   expect(parseDaemonArgv(['--root', '/w']).command).toBe('error')
+  expect(parseDaemonArgv(['bridge', '/w'])).toEqual({ command: 'bridge', root: '/w' })
+  expect(parseDaemonArgv(['bridge']).command).toBe('error')
+  expect(parseDaemonArgv(['bridge', '/w', '/x']).command).toBe('error')
 })
 
 it('lays out an install the same way on every platform', () => {

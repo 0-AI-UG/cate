@@ -3,8 +3,10 @@
 // cookie. The core keeps the binding (`chat.*`): it says where the
 // page may go, adopts a conversation the page starts, follows one another
 // client moved the panel to (in place, with `script` events), and answers
-// the page's `__cateHost` requests. The title menu switches the panel to
-// another conversation of its checkout, starts one, or renames it.
+// the page's `__cateHost` requests. The conversations menu switches the
+// panel to another conversation of its checkout, starts one, or renames it.
+// The page shows when the core reveals it: once its setup ran and it is on a
+// conversation, never on T3's start page.
 
 import SwiftUI
 import WebKit
@@ -36,6 +38,8 @@ struct ChatPanelView: View {
     /// T3's background, behind the page where it does not reach (around
     /// the keyboard).
     @State private var background: Color?
+    /// The core revealed the page (`reveal` events).
+    @State private var revealed = false
     @State private var conversations: [ChatConversation] = []
     @State private var renaming = false
     @State private var newTitle = ""
@@ -60,7 +64,12 @@ struct ChatPanelView: View {
                             // Under the bars, but above the keyboard: the
                             // page shrinks for it instead of scrolling.
                             .ignoresSafeArea(.container)
-                        if snapshot.connected == false {
+                            .opacity(revealed ? 1 : 0)
+                        if !revealed {
+                            ProgressView("Loading conversation")
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                        if revealed, snapshot.connected == false {
                             Label("T3 Code activity disconnected. Reconnecting", systemImage: "wifi.exclamationmark")
                                 .font(.footnote)
                                 .padding(.horizontal, 12)
@@ -77,10 +86,8 @@ struct ChatPanelView: View {
                 ProgressView()
             }
         }
-        .navigationTitle(panel.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .panelTitle(panel.title)
         .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarTitleMenu { conversationMenu }
         .alert("Rename Conversation", isPresented: $renaming) {
             TextField("Name", text: $newTitle)
             Button("Cancel", role: .cancel) {}
@@ -89,6 +96,11 @@ struct ChatPanelView: View {
         }
         .alert(item: $failure) { Alert(title: Text($0.message)) }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu { conversationMenu } label: {
+                    Label("Conversations", systemImage: "bubble.left.and.bubble.right")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Restart T3 Code", systemImage: "arrow.clockwise") { Task { await session.send(["kind": "retry"]) } }
             }
@@ -162,6 +174,8 @@ struct ChatPanelView: View {
         await controller.installCookie()
         controller.start()
         controller.onBackground = { background = Color(uiColor: $0) }
+        controller.onReveal = { revealed = $0 }
+        revealed = false
         page = controller
     }
 }
@@ -172,6 +186,7 @@ final class ChatPageController: WebPageController, WKNavigationDelegate, WKScrip
     private static let hostHandler = "cateChatHost"
     private static let backgroundHandler = "cateChatBackground"
     var onBackground: ((UIColor) -> Void)?
+    var onReveal: ((Bool) -> Void)?
     private let chatPage: ChatPage
     private weak var session: PanelSession<ChatSnapshot>?
     private var observation: NSKeyValueObservation?
@@ -237,7 +252,11 @@ final class ChatPageController: WebPageController, WKNavigationDelegate, WKScrip
             }
         }
         session.onEvent = { [weak self] event in
-            if case .script(let script) = event { self?.webView.evaluateJavaScript(script) }
+            switch event {
+            case .script(let script): self?.webView.evaluateJavaScript(script)
+            case .reveal(let shown): self?.onReveal?(shown)
+            default: break
+            }
         }
     }
 
@@ -330,6 +349,16 @@ final class ChatPageController: WebPageController, WKNavigationDelegate, WKScrip
         guard decision.allow else { return .cancel }
         await route(action.request.url)
         return .allow
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        session?.call("chat.documentStarted", [:])
+    }
+
+    /// The user scripts (the setup) ran at the document's end.
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard let url = webView.url?.absoluteString else { return }
+        session?.call("chat.documentReady", ["url": url])
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

@@ -27,7 +27,7 @@ export function placeTargetFor(
   const onCanvas = (canvasId: string, beside: string | null): PlaceTarget | null => {
     const canvas = doc.canvases[canvasId]
     if (!canvas || !definition.canLiveOnCanvas) return null
-    const size = definition.defaultSize
+    const size = placement.size ?? definition.defaultSize
     const origin = placement.position
       ? nudgeToFree(canvas.nodes, size, placement.position)
       : findFreePosition(canvas.nodes, beside, size)

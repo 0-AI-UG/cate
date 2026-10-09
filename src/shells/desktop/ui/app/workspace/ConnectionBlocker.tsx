@@ -3,8 +3,8 @@
 // cover says what is wrong and offers the action that fixes it. It covers
 // this workspace only: the sidebar and other workspaces stay usable. An
 // incompatible runtime is resolved right here (RuntimeMismatchCard), which
-// stays up through the restart of an update; a folder nested in an open
-// workspace offers that workspace instead.
+// stays up through the restart of an update. Every other state shows the
+// core's status (`connectionStatus`) and its actions.
 //
 // A dip that recovers quickly (a reconnect) is not worth a flash, so
 // connecting and offline cover only after a short grace; incompatible,
@@ -12,11 +12,10 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { BACKDROP, ModalCard, btn, Spinner } from '../../kernel/interaction'
-import { connectionLabel, connectionTitle, type ConnectionState, type WorkspaceConnection } from '@client/connections'
+import type { ConnectionState, WorkspaceConnection } from '@client/connections'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
-import { openLocalFolder } from '../navigation'
-import { connectionAction, connectionDotClass } from '../sidebar/connectionStatus'
+import { connectionActions, connectionDotClass, statusOf } from '../sidebar/connectionStatus'
 import { RuntimeMismatchCard, useRuntimeUpdate } from './RuntimeMismatch'
 
 const GRACE_MS = 400
@@ -61,7 +60,8 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
     else el.removeAttribute('inert')
   }, [blocked])
 
-  const actions = blockerActions(connection, state)
+  const status = statusOf(connection, state)
+  const actions = connectionActions(connection, state)
   return (
     <div className="relative h-full">
       <div ref={content} className="h-full">{children}</div>
@@ -72,13 +72,13 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
               <div role="status" className="flex flex-col gap-2">
                 <span className="flex items-center gap-2 text-[14px] font-semibold text-primary">
                   {state.kind === 'connecting' ? <Spinner size={13} /> : <span className={`w-2 h-2 rounded-full ${connectionDotClass(state)}`} />}
-                  {connectionTitle(state)}
+                  {status?.title}
                 </span>
-                <span className="text-[13px] leading-relaxed text-secondary break-words">{connectionLabel(state)}</span>
+                <span className="text-[13px] leading-relaxed text-secondary break-words">{status?.message}</span>
                 {actions.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {actions.map((action) => (
-                      <button key={action.label} type="button" className={btn.secondary} onClick={action.run}>
+                    {actions.map((action, i) => (
+                      <button key={action.label} type="button" className={i === 0 ? btn.primary : btn.secondary} onClick={action.run}>
                         {action.label}
                       </button>
                     ))}
@@ -91,19 +91,4 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
       )}
     </div>
   )
-}
-
-/** A folder nested in an open workspace: open that one, or drop this entry. */
-function blockerActions(connection: WorkspaceConnection | undefined, state: ConnectionState): { label: string; run: () => void }[] {
-  if (connection && state.kind === 'refused' && state.nestedIn) {
-    const outer = state.nestedIn
-    const workspaces = tryClientApp()?.workspaces
-    const name = outer.split(/[\\/]/).filter(Boolean).pop() ?? outer
-    return [
-      { label: `Open ${name}`, run: () => { void openLocalFolder(outer).then(() => workspaces?.removeRecent(connection.workspaceId)) } },
-      { label: 'Remove from list', run: () => { void workspaces?.removeRecent(connection.workspaceId) } },
-    ]
-  }
-  const action = connectionAction(connection, state)
-  return action ? [action] : []
 }

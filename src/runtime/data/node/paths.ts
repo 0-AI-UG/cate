@@ -2,7 +2,8 @@
 // path helpers, shared by the daemon and the desktop shell (which may not
 // import the runtime side).
 
-import { promises as fs } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { promises as fs, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { DATA_FILES, runtimeIdFromCanonicalRoot, windowsPipeName } from '../contract'
@@ -41,11 +42,27 @@ export function shortSocketDir(uid: number = process.getuid?.() ?? 0): string {
   return `/tmp/cate-${uid}`
 }
 
+/** This user's random part of pipe names, kept in `<cateHome>/pipe-key`
+ *  (made on first use). */
+export function pipeKey(cateHomeDir: string): string {
+  const file = path.join(cateHomeDir, 'pipe-key')
+  const read = () => readFileSync(file, 'utf-8').trim()
+  try {
+    return read()
+  } catch { /* first use */ }
+  mkdirSync(cateHomeDir, { recursive: true, mode: 0o700 })
+  try {
+    writeFileSync(file, randomBytes(8).toString('hex'), { flag: 'wx', mode: 0o600 })
+  } catch { /* another process made it first */ }
+  return read()
+}
+
 /** The local transport: a socket in the data dir, or a named pipe on Windows.
  *  When the data dir path is too long for a socket (a long HOME), the socket
  *  is reached through a short symlinked dir; `ensureLocalEndpoint` makes it. */
 export function localEndpoint(dataDir: string, runtimeId: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === 'win32') return windowsPipeName(runtimeId)
+  // The data dir is <cateHome>/workspaces/<runtimeId>.
+  if (platform === 'win32') return windowsPipeName(runtimeId, pipeKey(path.dirname(path.dirname(dataDir))))
   const direct = path.join(dataDir, DATA_FILES.socket)
   if (Buffer.byteLength(direct) <= socketPathMax(platform)) return direct
   return path.join(shortSocketDir(), runtimeId, DATA_FILES.socket)

@@ -1,18 +1,17 @@
 // Every network connection, whatever carried it, goes through here: the
 // Noise handshake and the pairing policy (runtime/security), then the rpc
-// frames. The `hello` must name the device key the handshake proved, a
-// device is marked seen when it connects, and revoking it drops its
-// connections (architecture 7.6).
+// frames. The `hello` must name the device key the handshake proved, and
+// revoking a device drops its connections, those still in their handshake
+// included (architecture 7.6).
 
 import { RpcError, toWireError, type Frame, type FramePort, type HelloMessage } from '@kernel/rpc/contract'
 import type { RpcServer } from '@kernel/rpc/runtime'
 import type { Logger } from '@kernel/log/contract'
-import { bytesToHex, fingerprint, type KeyPair, type MessagePortLike, type SecureChannel } from '../../security/contract'
+import { bytesToHex, type KeyPair, type MessagePortLike, type SecureChannel } from '../../security/contract'
 import { acceptPeer, type PeerPolicy } from '../../security/runtime'
-import { secureFramePort } from '../contract'
+import { secureFramePort, type UnpairedRefusal } from '../contract'
 
 export interface NetworkPairing extends PeerPolicy {
-  markSeen(publicKey: Uint8Array): void
   /** Called with the hex public key of a removed device. */
   onRevoked(listener: (publicKey: string) => void): () => void
 }
@@ -108,8 +107,7 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
       }
       live.set(channel, { key, transport: from.transport })
       channel.onClose(() => live.delete(channel))
-      options.pairing.markSeen(channel.remoteStatic)
-      options.rpc.serve(checkedHello(secureFramePort(channel), fingerprint(channel.remoteStatic), options.rpc))
+      options.rpc.serve(checkedHello(secureFramePort(channel), key, options.rpc))
     },
     connected: () => [...live.values()].map((entry) => entry.key),
     close(transport) {
@@ -141,7 +139,7 @@ function refuse(channel: SecureChannel, rpc: RpcServer): void {
       t: 'hello',
       protocol: rpc.protocol,
       version: '',
-      error: toWireError(new RpcError('rejected', 'This device is not paired with this workspace')),
+      error: toWireError(new RpcError('rejected', 'This device is not paired with this workspace.', { unpaired: true } satisfies UnpairedRefusal)),
     },
   })
 }
@@ -150,7 +148,7 @@ function refuse(channel: SecureChannel, rpc: RpcServer): void {
  * Refuses a `hello` that is not a client naming the key this connection
  * proved. A caller token has no business on a network connection.
  */
-function checkedHello(port: FramePort, keyFingerprint: string, rpc: RpcServer): FramePort {
+function checkedHello(port: FramePort, publicKey: string, rpc: RpcServer): FramePort {
   let checked = false
   return {
     send: (frame) => port.send(frame),
@@ -160,7 +158,7 @@ function checkedHello(port: FramePort, keyFingerprint: string, rpc: RpcServer): 
       port.onFrame((frame: Frame) => {
         if (!checked && frame.kind === 'msg' && frame.msg.t === 'hello') {
           const hello = frame.msg as HelloMessage
-          if (hello.caller || hello.client?.device?.keyFingerprint !== keyFingerprint) {
+          if (hello.caller || hello.client?.device?.publicKey !== publicKey) {
             port.send({
               kind: 'msg',
               msg: {

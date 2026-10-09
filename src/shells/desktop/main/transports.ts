@@ -4,14 +4,14 @@
 // over Node's WebSocket, mDNS and WebRTC, so the renderer only ever sees a
 // message pipe that is already encrypted. The device key never leaves main.
 
-import net from 'node:net'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
+import type { Machine } from '@runtime/daemon/contract'
 import type { LocalRuntime } from '@runtime/daemon/desktop'
 import type { KnownRuntimes } from '@runtime/pairing/client'
 import type { KeyPair, MessagePortLike } from '@runtime/security/contract'
 import { createNetworkDialer, type SameNetworkDialer } from '@runtime/transports/client'
-import { discoverRuntime, loadNodePeerConnection, nodeWebSocketFactory, socketDuplex } from '@runtime/transports/node'
+import { connectLoopback, discoverRuntime, loadNodePeerConnection, nodeWebSocketFactory, socketDuplex } from '@runtime/transports/node'
 import type { DesktopNetworkTarget, PairResult } from '../contract'
 
 const log = createLogger('transports')
@@ -19,6 +19,8 @@ const log = createLogger('transports')
 export interface ShellTransportDeps {
   /** Connects to a workspace's runtime, starting it when nothing answers. */
   startLocal(root: string): Promise<LocalRuntime>
+  /** The same on a machine this device runs commands on, through its bridge. */
+  dialMachine(machine: Machine, root: string): Promise<ByteDuplex>
   deviceKeys(): KeyPair
   deviceName(): string
   /** known-runtimes.json, through main's device files. */
@@ -31,6 +33,7 @@ export interface ShellTransportDeps {
 
 export interface ShellTransportHost {
   dialLocal(root: string): Promise<ByteDuplex>
+  dialMachine(machine: Machine, root: string): Promise<ByteDuplex>
   /** Starts the workspace's runtime ahead of the first dial (app launch). */
   prestartLocal(root: string): void
   dialLoopbackTcp(port: number): Promise<ByteDuplex>
@@ -38,16 +41,9 @@ export interface ShellTransportHost {
   pair(request: { link: string; deviceName?: string }): Promise<PairResult>
 }
 
-export function dialLoopbackTcp(port: number, host = '127.0.0.1'): Promise<ByteDuplex> {
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) return Promise.reject(new Error(`invalid port ${port}`))
-  return new Promise((resolve, reject) => {
-    const socket = net.connect(port, host)
-    socket.once('connect', () => {
-      socket.removeListener('error', reject)
-      resolve(socketDuplex(socket))
-    })
-    socket.once('error', reject)
-  })
+export async function dialLoopbackTcp(port: number): Promise<ByteDuplex> {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`invalid port ${port}`)
+  return socketDuplex(await connectLoopback(port))
 }
 
 export function createShellTransportHost(deps: ShellTransportDeps): ShellTransportHost {
@@ -92,6 +88,7 @@ export function createShellTransportHost(deps: ShellTransportDeps): ShellTranspo
         (err: Error) => log.warn('could not start the runtime for %s: %s', root, err.message),
       )
     },
+    dialMachine: (machine, root) => deps.dialMachine(machine, root),
     dialLoopbackTcp: (port) => dialLoopbackTcp(port),
     dialNetwork: (target) => network.dialNetwork(target),
     pair: (request) => network.pair(request),

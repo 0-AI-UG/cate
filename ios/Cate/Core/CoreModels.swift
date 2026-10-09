@@ -25,6 +25,12 @@ struct Workspace: Decodable, Equatable, Identifiable, Hashable {
     let connection: Connection
     /// Nil until the document arrives from the runtime.
     let panels: [Panel]?
+    /// Its ready checkouts, the main one first; empty unless two or more.
+    let worktrees: [Worktree]
+    /// Empty while not connected or while relations are off.
+    let relations: [Relation]
+    /// The workspace setting `panelRelationsEnabled`.
+    let relationsEnabled: Bool
     /// Empty while not connected.
     let agents: [Agent]
     /// Keep-awake on the runtime's machine; nil while not connected.
@@ -58,6 +64,9 @@ struct Agent: Decodable, Equatable, Hashable, Identifiable {
     let title: String
     let agentId: String?
     let agentName: String?
+    /// The agent whose logo marks its panel (a CLI standing in for its
+    /// terminal); nil shows the panel's own icon.
+    let logo: String?
     /// `notRunning`, `running`, `waitingForInput` or `finished`.
     let status: String
     let present: Bool
@@ -96,9 +105,15 @@ struct Connection: Decodable, Equatable, Hashable {
     enum Kind: String, Decodable {
         case connecting, connected, offline, incompatible, stopped, refused, closed
     }
+    /// What the app offers for the state, main action first.
+    enum Action: String, Decodable {
+        case retry, pair, forget
+    }
     let kind: Kind
+    /// A short heading; empty when connected or closed.
+    let title: String
     let text: String
-    let retryable: Bool
+    let actions: [Action]
 }
 
 struct Panel: Decodable, Equatable, Identifiable, Hashable {
@@ -112,6 +127,54 @@ struct Panel: Decodable, Equatable, Identifiable, Hashable {
     let onCanvas: String?
     /// Canvas panels: the canvas they show.
     let canvas: CanvasModel?
+    /// It takes prompts (a terminal, a chat): its relations go with them as
+    /// context.
+    let execution: Bool
+    /// `once`, `always` or `off`: when its prompts take its relations'
+    /// context.
+    let contextMode: String
+    /// What it shows, in a few words: a terminal's directory, an editor's
+    /// file, a browser's URL.
+    let detail: String?
+    /// The checkout it belongs to (one of its workspace's `worktrees`).
+    let worktreeId: String?
+    /// It can be moved to another checkout (`panel.setWorktree`).
+    let switchesWorktree: Bool
+}
+
+/// A checkout of the workspace's repository (`MobileWorktree`).
+struct Worktree: Decodable, Equatable, Hashable, Identifiable {
+    let id: String
+    /// Its label, else its folder's name; the main checkout is `main`.
+    let label: String
+    /// A theme palette key: `green`, `brightCyan`, ...
+    let color: String
+    let isPrimary: Bool
+}
+
+/// A relation between two panels (`MobileRelation`).
+struct Relation: Decodable, Equatable, Hashable, Identifiable {
+    let id: String
+    let fromPanelId: String
+    let toPanelId: String
+    /// `use`, `context`, `verify` or `trigger`.
+    let kind: String
+    /// Its flow, which picks its color; nil when no prompt-taking panel
+    /// reaches it.
+    let flow: Int?
+    /// Its words for its pair: "Reference", "Send findings to".
+    let label: String
+    /// The meanings it can take, the recommended one first.
+    let options: [RelationOption]
+}
+
+/// A meaning a new relation can take (`MobileRelationOption`), the
+/// recommended one first.
+struct RelationOption: Decodable, Hashable, Identifiable {
+    let kind: String
+    let label: String
+    let description: String
+    var id: String { kind }
 }
 
 struct CanvasModel: Decodable, Equatable, Hashable {
@@ -147,12 +210,32 @@ struct PanelChoice: Decodable, Identifiable, Hashable {
 struct Placement: Hashable {
     let canvasPanelId: String
     var point: CGPoint?
+    /// A picked spot's size; else the type's default.
+    var size: CGSize?
 
     var params: [String: Any] {
         var params: [String: Any] = ["canvasPanelId": canvasPanelId]
         if let point { params["point"] = ["x": point.x, "y": point.y] }
+        if let size { params["size"] = ["width": size.width, "height": size.height] }
         return params
     }
+}
+
+/// A rect in canvas coordinates (`MobileCanvasRect`).
+struct CanvasRect: Codable, Hashable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+
+    init(_ rect: CGRect) {
+        x = rect.minX
+        y = rect.minY
+        width = rect.width
+        height = rect.height
+    }
+
+    var rect: CGRect { CGRect(x: x, y: y, width: width, height: height) }
 }
 
 /// A file or folder on the runtime's machine (`MobileFileEntry`).
@@ -183,6 +266,8 @@ struct AnyJSON: Decodable, Sendable {
 struct ActionResult: Decodable {
     let ok: Bool
     let message: String?
+    /// `panel.setWorktree`: the panel is busy; switching stops what runs.
+    var dirty: Bool?
 }
 
 /// `agents.start`'s answer.
@@ -277,6 +362,7 @@ enum TerminalEvent {
 enum ViewEvent {
     case load(tabId: String, url: String)
     case script(String)
+    case reveal(Bool)
     case text(String)
     case error(String)
 
@@ -285,6 +371,7 @@ enum ViewEvent {
         let tabId: String?
         let url: String?
         let script: String?
+        let shown: Bool?
         let text: String?
         let message: String?
     }
@@ -295,6 +382,7 @@ enum ViewEvent {
         switch event.kind {
         case "load": return .load(tabId: event.tabId ?? "", url: event.url ?? "")
         case "script": return .script(event.script ?? "")
+        case "reveal": return .reveal(event.shown ?? false)
         case "text": return .text(event.text ?? "")
         case "error": return .error(event.message ?? "")
         default: return nil

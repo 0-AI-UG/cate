@@ -1,2 +1,2 @@
-export * from './pairingsFile'
+export * from './devicesFile'
 export * from './pairingService'

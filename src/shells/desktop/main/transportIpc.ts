@@ -5,6 +5,8 @@
 import { randomUUID } from 'node:crypto'
 import { MessageChannelMain, session, type WebContents } from 'electron'
 import type { ByteDuplex } from '@kernel/rpc/contract'
+import { isMachine } from '@runtime/daemon/contract'
+import { pairingErrorMessage } from '@runtime/pairing/client'
 import { isLoopbackHostname } from '@runtime/tunnel/contract'
 import { DESKTOP_CHANNELS as C, type DesktopNetworkTarget } from '../contract'
 import { handle } from './ipc'
@@ -55,6 +57,12 @@ export function registerTransportIpc(deps: { host: ShellTransportHost; partition
     if (typeof root !== 'string' || !root) throw new Error('no workspace root')
     deliver(event.sender, id, await host.dialLocal(root))
   })
+  handle(C.dialMachine, async (event, pipe: unknown, machine: unknown, root: unknown) => {
+    const id = pipeId(pipe)
+    if (!isMachine(machine)) throw new Error('invalid machine')
+    if (typeof root !== 'string' || !root.startsWith('/') || /[\0\r\n]/.test(root)) throw new Error('invalid workspace root')
+    deliver(event.sender, id, await host.dialMachine(machine, root))
+  })
   handle(C.dialNetwork, async (event, pipe: unknown, target: DesktopNetworkTarget) => {
     const id = pipeId(pipe)
     deliver(event.sender, id, await host.dialNetwork(target))
@@ -63,9 +71,14 @@ export function registerTransportIpc(deps: { host: ShellTransportHost; partition
     const id = pipeId(pipe)
     deliver(event.sender, id, await host.dialLoopbackTcp(Number(port)))
   })
-  handle(C.pair, (_event, request: { link: string; deviceName?: string }) => {
+  handle(C.pair, async (_event, request: { link: string; deviceName?: string }) => {
     if (!request || typeof request.link !== 'string') throw new Error('no pairing link or code')
-    return host.pair(request)
+    // Only the message crosses to the renderer: send the words, not the reason.
+    try {
+      return await host.pair(request)
+    } catch (err) {
+      throw new Error(pairingErrorMessage(err))
+    }
   })
 
   handle(C.webPartition, (event, workspace: { runtimeId: string }) => {

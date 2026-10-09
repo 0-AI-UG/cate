@@ -196,11 +196,13 @@ export function PanelRelationSelector({
     window.addEventListener('pointercancel', finish)
   }
 
+  // The chip sits with the connection lines, under the nodes (1000 + zOrder);
+  // only its menu goes over them, through the overlay portal.
   return (
     <div
       ref={rootRef}
       data-panel-relation-selector={relation.id}
-      className={`pointer-events-auto absolute z-[100001] ${dragging ? 'cursor-grabbing' : ''}`}
+      className={`pointer-events-auto absolute z-[500] ${dragging ? 'cursor-grabbing' : ''}`}
       style={{ left: position.x, top: position.y, transform: 'translate(-50%, -50%) scale(0.96)' }}
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={beginDrag}

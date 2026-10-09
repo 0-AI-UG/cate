@@ -94,14 +94,14 @@ ipcRenderer.on(C.loopbackRequest, (event, request: LoopbackRequest) => {
 })
 
 /** Starts a dial in main and resolves with the pipe id once its port arrived. */
-async function dial(channel: string, arg: unknown): Promise<string> {
+async function dial(channel: string, ...args: unknown[]): Promise<string> {
   const pipe = crypto.randomUUID()
   const arrived = new Promise<void>((resolve) => {
     if (ports.has(pipe)) resolve()
     else waiting.set(pipe, () => resolve())
   })
   try {
-    await invoke(channel, pipe, arg)
+    await invoke(channel, pipe, ...args)
   } catch (error) {
     forget(pipe)
     throw error
@@ -204,6 +204,7 @@ const api: DesktopApi = {
   },
   transports: {
     dialLocal: (root) => dial(C.dialLocal, root),
+    dialMachine: (machine, root) => dial(C.dialMachine, machine, root),
     dialNetwork: (target) => dial(C.dialNetwork, target),
     dialLoopbackTcp: (port) => dial(C.dialLoopbackTcp, port),
     pair: (request) => invoke(C.pair, request),
@@ -212,11 +213,12 @@ const api: DesktopApi = {
       return () => { loopbackListeners.delete(listener) }
     },
   },
-  ssh: {
-    ensureRuntime: (target) => invoke(C.sshEnsureRuntime, target),
-    listDir: (target, path) => invoke(C.sshListDir, target, path),
-    mkdir: (target, path) => invoke(C.sshMkdir, target, path),
-    serve: (target, path) => invoke(C.sshServe, target, path),
+  machines: {
+    ensureRuntime: (machine) => invoke(C.machineEnsureRuntime, machine),
+    listDir: (machine, path) => invoke(C.machineListDir, machine, path),
+    mkdir: (machine, path) => invoke(C.machineMkdir, machine, path),
+    wslDistros: () => invoke(C.machineWslDistros),
+    cancel: (machine) => invoke(C.machineCancel, machine),
   },
   pipes: {
     onMessage(pipe, listener) {

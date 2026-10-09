@@ -1,6 +1,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CapabilityImpl, RpcServer } from '@kernel/rpc/runtime'
 import { buildVersion, isBuildId, type RuntimeStatus, type RuntimeStopReason, type RuntimeUpdateProgress, type runtimeCapability } from '../contract'
+import type { NetworkEndpoint } from '@runtime/transports/contract'
 import type { PerfSampler } from './perf'
 
 export interface RuntimeCapabilityDeps {
@@ -9,6 +10,8 @@ export interface RuntimeCapabilityDeps {
   version: string
   rpc: RpcServer
   perf: PerfSampler
+  /** Where paired devices reach the runtime now. */
+  endpoints: () => NetworkEndpoint[]
   /** Work is running (busy terminals, agents, T3 turns). */
   busy: () => boolean
   /** Stops the runtime after the reply is sent. */
@@ -39,6 +42,7 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
       pid: process.pid,
       clients: deps.rpc.connections().flatMap((c) =>
         c.client ? [{ clientId: c.client.clientId, device: { ...c.client.device }, features: [...c.client.features] }] : []),
+      endpoints: deps.endpoints(),
     }),
     stop: () => later(deps.stop),
     async update({ version, build, ifIdle }, ctx) {

@@ -15,6 +15,7 @@ import { createMobileBuffers } from './buffers'
 import { createMobileStreams } from './streams'
 import { createMobileAgents } from './agents'
 import { createMobileConversations } from './conversations'
+import { createMobileRelations } from './relations'
 import { installClientUi } from '@kernel/interaction'
 import { createMobileClientUi } from './clientUi'
 
@@ -30,6 +31,7 @@ async function start(): Promise<void> {
   const client = await bootMobileClient(bridge)
   const views = createMobileViews(bridge)
   const agents = createMobileAgents(client, bridge)
+  const relations = createMobileRelations(client)
   const api = createCoreApi(client, {
     terminals: createMobileTerminals(client, bridge),
     views,
@@ -47,8 +49,8 @@ async function start(): Promise<void> {
       return JSON.stringify(await handler(JSON.parse(paramsJson)))
     },
   }
-  const push = () => { void bridge('core.state', { json: JSON.stringify(snapshotOf(client, agents)) }) }
-  watchState(client, agents, push)
+  const push = () => { void bridge('core.state', { json: JSON.stringify(snapshotOf(client, agents, relations)) }) }
+  watchState(client, agents, relations, push)
   push()
   await bridge('core.ready', {})
 }

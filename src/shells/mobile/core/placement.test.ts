@@ -15,6 +15,12 @@ describe('placementOptions', () => {
     expect(placementOptions('terminal', { canvasPanelId: 'c1' })).toEqual({ near: 'c1' })
   })
 
+  it('places a picked spot at its own size', () => {
+    expect(
+      placementOptions('terminal', { canvasPanelId: 'c1', point: { x: 1000, y: 500 }, size: { width: 400, height: 300 } }),
+    ).toEqual({ near: 'c1', position: { x: 800, y: 350 }, size: { width: 400, height: 300 } })
+  })
+
   it('centres the panel on the picked point', () => {
     const { width, height } = PANEL_DEFINITIONS.find((definition) => definition.type === 'terminal')!.defaultSize
     expect(placementOptions('terminal', { canvasPanelId: 'c1', point: { x: 1000, y: 500 } })).toEqual({
