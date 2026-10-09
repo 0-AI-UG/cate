@@ -5,9 +5,7 @@
 
 import type { ApiRouter } from '@kernel/api/runtime'
 import type { RpcServer } from '@kernel/rpc/runtime'
-import type { Logger } from '@kernel/log/contract'
 import type { WorkspaceSettingsStore } from '@kernel/settings/runtime'
-import type { DataPaths } from '@runtime/data/runtime'
 import type { DocumentService } from '@workspace/document/runtime'
 import type { FilesRuntime } from '@workspace/files/runtime'
 import type { RepositoryRuntime } from '@workspace/repository/runtime'
@@ -27,14 +25,12 @@ import { surfacePanel } from './surface/runtime'
 import { chatPanel } from './chat/runtime'
 import { canvasPanel } from './canvas/runtime'
 
-/** The runtime services the daemon hands panel types. */
+/** The runtime services the daemon has for panel types; each type's entry
+ *  below names the ones it takes (`PanelRuntime<keys>`). */
 export interface PanelServices {
   /** Canonical workspace root. */
   root: string
-  dataPaths: DataPaths
-  trust: { isTrusted(): boolean; requireTrusted(): void }
-  settings: Pick<WorkspaceSettingsStore, 'get' | 'getAll' | 'subscribe'>
-  log: Logger
+  settings: Pick<WorkspaceSettingsStore, 'get'>
   document: DocumentService
   files: FilesRuntime
   repository: RepositoryRuntime
@@ -46,7 +42,6 @@ export interface PanelServices {
 }
 
 export interface PanelAttachContext {
-  services: PanelServices
   host: SessionHost
   factory: PanelFactory
   router: Pick<ApiRouter, 'registerService'>
@@ -71,9 +66,10 @@ export interface PanelModule {
   attach?(context: PanelAttachContext): PanelPorts | void
 }
 
-export type PanelRuntime = (services: PanelServices) => PanelModule
+/** A panel type's runtime entry over exactly the services it uses. */
+export type PanelRuntime<K extends keyof PanelServices = never> = (services: Pick<PanelServices, K>) => PanelModule
 
-const terminal: PanelRuntime = (services) => {
+const terminal: PanelRuntime<'root' | 'terminal'> = (services) => {
   let factory: PanelFactory | undefined
   const panels = createTerminalPanels({
     terminal: services.terminal,
@@ -92,7 +88,7 @@ const terminal: PanelRuntime = (services) => {
   }
 }
 
-const editor: PanelRuntime = (services) => ({
+const editor: PanelRuntime<'root' | 'files' | 'connectedEditors' | 'document'> = (services) => ({
   ...editorPanel({
     root: services.root,
     buffers: services.files.buffers,
@@ -112,7 +108,7 @@ const editor: PanelRuntime = (services) => ({
   },
 })
 
-const review: PanelRuntime = (services) => {
+const review: PanelRuntime<'root' | 'repository' | 'files' | 'agents'> = (services) => {
   const { git, monitors } = services.repository
   const { agents } = services
   return reviewPanel({
@@ -143,7 +139,7 @@ const review: PanelRuntime = (services) => {
   })
 }
 
-const browser: PanelRuntime = (services) => ({
+const browser: PanelRuntime<'browserData' | 'settings' | 'files' | 'document'> = (services) => ({
   ...browserPanel({
     browserData: services.browserData,
     settings: { get: (key) => services.settings.get(key as never) },
@@ -156,7 +152,7 @@ const browser: PanelRuntime = (services) => ({
   },
 })
 
-const chat: PanelRuntime = (services) => {
+const chat: PanelRuntime<'root' | 't3' | 'agents'> = (services) => {
   let factory: PanelFactory | undefined
   const { agents } = services
   return {
@@ -175,4 +171,4 @@ const canvas: PanelRuntime = () => canvasPanel()
 
 const surface: PanelRuntime = () => surfacePanel()
 
-export const PANEL_RUNTIMES: readonly PanelRuntime[] = [terminal, editor, review, browser, chat, canvas, surface]
+export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, chat, canvas, surface]

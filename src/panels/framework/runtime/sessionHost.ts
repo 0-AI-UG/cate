@@ -111,7 +111,6 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
         if (!feature) return Promise.reject(new RpcError('unsupported', `${record.type} has no page operation ${op}`))
         return deps.surfaces.request(record.id, op, args, { ...options, feature })
       },
-      session: (panelId) => entries.get(panelId)?.session,
     }
     const session = new registered.session(kit, record)
     const started = bringBack(record.id)

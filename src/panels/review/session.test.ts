@@ -53,7 +53,7 @@ function makeSession(record: PanelRecord): ReviewSession {
   const store: SessionStore = { read: () => stored, write: (value) => { stored = value }, flush: async () => {} }
   const kit: SessionKit = {
     panelId: record.id, document, store, log: createLogger('test'),
-    surface: async () => undefined, session: () => undefined,
+    surface: async () => undefined,
   }
   return new ReviewSession(kit, record, deps)
 }

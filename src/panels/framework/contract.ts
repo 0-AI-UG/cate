@@ -4,3 +4,4 @@
 export * from './contract/definition'
 export * from './contract/capability'
 export * from './contract/placement'
+export * from './contract/kit'

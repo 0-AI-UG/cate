@@ -28,16 +28,15 @@ export interface SurfaceCallOptions {
   signal?: AbortSignal
 }
 
-/** What the host hands a session. */
+/** What the host hands a session: the document to read and change, its
+ *  own session file, a log, and its type's page operations. */
 export interface SessionKit {
   readonly panelId: PanelId
-  readonly document: DocumentService
+  readonly document: Pick<DocumentService, 'get' | 'apply'>
   readonly store: SessionStore
   readonly log: Logger
   /** Runs a page operation on the driving client (10.2). */
   surface(op: string, args: unknown, options?: SurfaceCallOptions): Promise<unknown>
-  /** Another panel's session, for cross-panel work. */
-  session(panelId: PanelId): PanelSession | undefined
 }
 
 /** Receives a session's channel; the host adapts it to a stream sink. */

@@ -878,6 +878,13 @@ Change:
 Done when: one definition each of `numberedTitle`, `uniqueTitle` and the
 worktree lookup in `src/`.
 
+Note (as built): the session kit has no `checkoutPath()`: the sessions that
+compute a checkout read it differently on purpose (a chat's own `cwd`
+first, a terminal's worktree first), so one helper would change behaviour.
+`PanelServices` stays as the daemon's list of what it has for panel types,
+and each type's entry takes only its keys (`PanelRuntime<'root' | ...>`),
+since `PANEL_RUNTIMES` is one list the composition root maps over.
+
 ### R12. Lean contracts
 
 Move helpers that only a runtime side uses out of contract barrels:

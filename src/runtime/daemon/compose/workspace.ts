@@ -356,10 +356,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
 
   const services: PanelServices = {
     root,
-    dataPaths: paths,
-    trust,
     settings,
-    log: log.child('panels'),
     document,
     files,
     repository,
@@ -386,7 +383,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   document.guardRemovals((removing, discard) => sessions.checkRemoval(removing, discard))
   const factory = createPanelFactory({ document, registry })
   for (const module of modules) {
-    const provided = module.attach?.({ services, host, factory, router, surfaces: broker, rpc })
+    const provided = module.attach?.({ host, factory, router, surfaces: broker, rpc })
     if (provided?.agentTerminals) ports.agentTerminals = provided.agentTerminals
   }
 

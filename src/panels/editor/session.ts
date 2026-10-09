@@ -21,6 +21,7 @@ import {
 } from '@workspace/files/contract'
 import type { BufferHandle, BufferService } from '@workspace/files/runtime'
 import { ensureCateGitignore } from '@workspace/files/runtime'
+import { worktreeForPath } from '@workspace/repository/contract'
 import { DRAFTS_DIR, editorDraftPath, isEditorDraft } from './contract'
 import type { SharedEditor } from '@workspace/relations/runtime'
 import { PanelSession, type DisposeReason, type OpHandlers, type SessionKit } from '@panels/framework/runtime'
@@ -217,13 +218,9 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
   }
 
   private worktreeIdFor(file: string): string | null {
-    let best: { id: string; length: number } | null = null
-    for (const worktree of Object.values(this.kit.document.get().worktrees)) {
-      const root = worktree.path.replace(/[/\\]+$/, '')
-      if (pathHasPrefix(pathKey(file), pathKey(root)) && (!best || root.length > best.length)) best = { id: worktree.id, length: root.length }
-    }
-    return best?.id ?? null
+    return worktreeForPath(file, Object.values(this.kit.document.get().worktrees))?.id ?? null
   }
+
 
   /** Another open editor (not in `removing`) shows `file`, so its buffer
    *  outlives this panel. */
