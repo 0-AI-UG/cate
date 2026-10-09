@@ -506,7 +506,7 @@ persisted session and document file. It is created with mode `0700`.
   browser/              history.json, bookmarks.json, downloads/
   t3/                   the T3 harness root: instances/<checkout hash>/,
                         provider-profile.json, provider-secrets/
-  agents/               hooks/ (hook bridges), changes/ (change history)
+  agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps)
   servers.json          pids of the runtime's server children, reaped on
                         the next start
   terminal-logs/
@@ -1212,20 +1212,35 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
 
 - **contract**: the `AGENTS` registry. Each `AgentDef` declares its runners:
   `runners: { terminal: {command, hooks, resume, sessionStore},
-  t3?: {providerId, driverId} }`, plus skills targets, process matching and
+  t3?: {providerId} }` (the provider table itself, with driver ids, is t3's),
+  plus skills targets, process matching and
   prompt-context hooks. Every per-agent table is a total
   `Record<AgentId, …>` (an agent without an entry says so with `null`), so a
   new agent is a compile error until every table has it. Also the session,
   runner types, the start launch command, and the `cate.agent.*` API specs.
-- **runtime**: the `agents` capability:
+  `PanelAgentState` carries what views show, computed by the runner that
+  owns the panel (`label`, `takesOverPanel`, `contextPolicy`), so no view
+  reads which runner hosts an agent. Recorded changes reach consumers
+  resolved to the panels that showed their session (`panelIds`); they never
+  see terminals or threads.
+- **runtime**: one entry, `createAgentsRuntime`, the only owner of agent
+  state. It builds the core, both runners and the starter; other modules call
+  only `start`, `send`, `busy`, `changes`, `watchChanges` (a panel's
+  per-turn change summaries), `readiness`, `onSessionEnded`,
+  `relationContext`, notifications, and the T3 harness change capture.
+  Inside:
   - hook bridges and repo hook files (per `agentHookInjection`), hook
     ingestion and normalization, pid presence;
   - the **status** state machine, driven only by hook events and pid presence
     (there is no screen scraping);
   - change history per checkout (from terminal hooks and from T3) in
     `agents/changes/`;
-  - session store readers per agent, conversation reads, resume stamps,
-    Hermes integration;
+  - session store readers per agent, conversation reads, Hermes
+    integration;
+  - resume stamps, persisted in `agents/stamps.json` with the checkout each
+    was taken in: a restored terminal panel spawns with the terminal
+    service's restore launch, which the terminal runner resolves to the
+    stamped session's resume command;
   - live conversations (the `conversation` channel): one watch per panel
     reads the conversation together with the agent's state, so a turn that
     ended goes out with its reply; it looks again on every state change and
@@ -1242,12 +1257,17 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   started it is an agent panel like any other: `cate.agent.*` reads,
   prompts and interrupts it by its panel. `types` lists the agent CLIs and
   whether each can start in a terminal here. The review panel starts its
-  reviewers the same way.
+  reviewers the same way. Each runner launches its own kind
+  (`runners/*/start.ts`).
 - **runners/terminal**: plugs into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).
 - **runners/t3**: plugs into the t3 service (thread state, prompt dispatch and
-  turn interrupt to T3 orchestration, change capture on harness start).
+  turn interrupt to T3 orchestration, change capture on harness start). It
+  reads which thread each chat shows from the chat panel type's view of the
+  document (`createChatThreads`: a chat record's checkout and `threadId`); a
+  fresh chat's first prompt goes to the page composer through the surface
+  broker. The chat session holds harness and page state only.
 - **client**: the agent panel states mirror and an agent chat
   (`watchAgentChat`: the conversation channel, and a prompt sent from the
   client pending until the conversation shows it).
@@ -1391,7 +1411,7 @@ Every panel type meets the same contract.
 | Panel | Session built on | Session state (snapshot) | View | Notes |
 |---|---|---|---|---|
 | terminal | services/terminal, services/agents | pty status, title, cwd, activity, agent session and status; screen as serialized stream | xterm | shows terminal-runner sessions |
-| chat | services/t3, services/agents | thread binding, harness status, activity, agent status | T3 client in a webview | shows t3-runner sessions |
+| chat | services/t3, services/agents | thread binding, harness status, the thread's change summaries | T3 client in a webview | shows t3-runner sessions |
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client |
 | review | workspace/repository, services/agents | source (git diff or agent changes), file list, notes, agent review, status, reveal | diff views | filter, focused file, collapsed and expanded files and context lines are per client |
