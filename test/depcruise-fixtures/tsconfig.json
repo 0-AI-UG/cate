@@ -1,0 +1,4 @@
+{
+  "compilerOptions": { "module": "ESNext", "moduleResolution": "bundler", "strict": true, "noEmit": true },
+  "include": ["src/**/*.ts"]
+}
