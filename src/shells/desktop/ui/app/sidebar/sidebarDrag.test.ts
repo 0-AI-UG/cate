@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { registerPanelDefinitions } from '@client/host'
 import { MAIN_WINDOW } from '@workspace/document/contract'
-import { add, buildDocument } from '../../../../../test/clientWorkspace'
+import { add, buildDocument, testPanelDefinitions } from '../../../../../test/clientWorkspace'
 import { workspacePanelTree } from './panelTree'
-import { headingKey, itemKey, layoutKey, layoutSlots, nearestSlot, panelDropChange, panelSlots } from './sidebarDrag'
+import { headingKey, itemKey, layoutKey, layoutSlots, nearestSlot, panelDropChange, panelSlots as dropSlots, type CanvasSlot, type PanelSlot } from './sidebarDrag'
+
+beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
 const L1 = { windowId: MAIN_WINDOW, layoutId: 'main' }
 const doc = buildDocument([
@@ -19,6 +22,7 @@ const rects: Record<string, { top: number; bottom: number }> = {
   [layoutKey(MAIN_WINDOW, 'main')]: { top: 0, bottom: 94 }, [layoutKey(MAIN_WINDOW, 'empty')]: { top: 100, bottom: 120 },
 }
 const rectOf = (key: string) => rects[key] ?? null
+const panelSlots = (...args: Parameters<typeof dropSlots>) => dropSlots(...args) as PanelSlot[]
 
 describe('sidebar drag slots', () => {
   it('groups a layout\'s panels by stack, in dock order', () => {
@@ -59,5 +63,47 @@ describe('sidebar drag slots', () => {
     expect(panelDropChange(doc, 'c', at('s2', null), id)).toBeNull()
     expect(panelDropChange(doc, 'a', at('s2', 'c'), id)).toEqual({ kind: 'placePanel', id: 'a', at: { to: 'stack', dock: L1, stackId: 's2', after: 'c' } })
     expect(panelDropChange(doc, 'a', { ...at(null, null), layoutId: 'empty' }, id)).toMatchObject({ at: { stackId: 'new', after: null } })
+  })
+
+  describe('canvas treatment', () => {
+    const rect = { origin: { x: 0, y: 0 }, size: { width: 100, height: 100 } }
+    const withCanvas = buildDocument([
+      add('c1', { to: 'stack', dock: L1, stackId: 's1' }, 'canvas', { canvasId: 'cv' }),
+      add('t1', { to: 'canvas', canvasId: 'cv', nodeId: 'n1', stackId: 'ns1', rect }),
+      add('t2', { to: 'canvas', canvasId: 'cv', nodeId: 'n2', stackId: 'ns2', rect: { ...rect, origin: { x: 200, y: 0 } } }),
+      add('x', { to: 'stack', dock: L1, stackId: 's1' }),
+    ])
+    const canvasTree = workspacePanelTree(withCanvas).primary
+    // canvas group (row + children) 0-90, x 94-122.
+    const crects: Record<string, { top: number; bottom: number; left?: number }> = {
+      [itemKey('c1')]: { top: 0, bottom: 90, left: 0 }, [itemKey('t1')]: { top: 30, bottom: 58 }, [itemKey('t2')]: { top: 60, bottom: 88 },
+      [itemKey('x')]: { top: 94, bottom: 122 }, [layoutKey(MAIN_WINDOW, 'main')]: { top: 0, bottom: 122 },
+    }
+    const slots = (lifted: string, canvasOk = true) => dropSlots([canvasTree], lifted, (k) => crects[k] ?? null, canvasOk)
+    const canvasSlots = (lifted: string) => slots(lifted).filter((s): s is CanvasSlot => 'canvasId' in s)
+
+    it('a canvas offers a slot among its children, only to a cursor in their indentation', () => {
+      expect(canvasSlots('x').map((s) => [s.afterChild, s.y])).toEqual([[null, 30], ['t1', 60], ['t2', 90]])
+      const all = slots('x')
+      // At the bottom of the group: right of the children's indent it adds a node, left of it it follows the canvas in its stack.
+      expect(nearestSlot(all, 90, 100)).toMatchObject({ canvasId: 'cv' })
+      expect(nearestSlot(all, 92, 5)).toMatchObject({ stackId: 's1', after: 'c1' })
+    })
+
+    it('no canvas slots for a panel that cannot live on one', () => {
+      expect(slots('x', false).some((s) => 'canvasId' in s)).toBe(false)
+    })
+
+    it('a drop on a canvas adds a node at its default spot; within its own canvas it changes nothing', () => {
+      const into = canvasSlots('x')[0]
+      const change = panelDropChange(withCanvas, 'x', into, () => 'id')
+      expect(change).toMatchObject({ kind: 'placePanel', id: 'x', at: { to: 'canvas', canvasId: 'cv', nodeId: 'id' } })
+      expect(panelDropChange(withCanvas, 't1', into, () => 'id')).toBeNull()
+    })
+
+    it('a child dragged out lands in a stack: the placement leaves its node', () => {
+      const change = panelDropChange(withCanvas, 't1', { windowId: MAIN_WINDOW, layoutId: 'main', stackId: 's1', after: 'x', y: 0 }, () => 'id')
+      expect(change).toEqual({ kind: 'placePanel', id: 't1', at: { to: 'stack', dock: L1, stackId: 's1', after: 'x' } })
+    })
   })
 })

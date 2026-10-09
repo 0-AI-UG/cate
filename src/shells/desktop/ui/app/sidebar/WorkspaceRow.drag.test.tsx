@@ -155,6 +155,75 @@ describe('the workspace tree', () => {
     expect(order()).toEqual(['a', 'b', 'c', 'd'])
   })
 
+  it('canvas rows: a panel dropped among the children becomes a node; a child dragged out leaves its node', () => {
+    act(() => {
+      ws.document.propose(add('cv', { to: 'stack', dock: L1, stackId: 's1' }, 'canvas', { canvasId: 'cvs' }))
+      ws.document.propose(add('t', { to: 'canvas', canvasId: 'cvs', nodeId: 'n1', stackId: 'ns1', rect: { origin: { x: 0, y: 0 }, size: { width: 100, height: 100 } } }))
+    })
+    const layout = () => dockPanels(ws.confirmed().windows[MAIN_WINDOW].layouts[0].dock)
+    const measure = () => {
+      let y = 0
+      const spans = new Map<HTMLElement, [number, number]>()
+      const anchors = [...host.querySelectorAll<HTMLElement>('[data-sb-key]')]
+      for (const el of anchors.filter((a) => !a.querySelector('[data-sb-key]'))) { spans.set(el, [y, y + 28]); y += 30 }
+      for (const el of anchors) {
+        const inner = [...spans].filter(([leaf]) => el === leaf || el.contains(leaf)).map(([, r]) => r)
+        el.getBoundingClientRect = () => rect(0, 200, Math.min(...inner.map((r) => r[0])), Math.max(...inner.map((r) => r[1])))
+      }
+      host.querySelector<HTMLElement>('[role="group"]')!.getBoundingClientRect = () => rect(0, 200, 0, 600)
+    }
+    measure()
+    // Drag 'a' (y≈) to the canvas's children area: just below the child 't', indented.
+    const t = keyOf('t').getBoundingClientRect()
+    fire(rowOf('a'), 'pointerdown', 50, 5)
+    fire(globalThis, 'pointermove', 150, t.bottom)
+    expect(host.querySelector('[data-sidebar-drag-ghost]')).not.toBeNull()
+    fire(globalThis, 'pointerup', 150, t.bottom)
+    expect(Object.keys(ws.confirmed().canvases.cvs.nodes)).toHaveLength(2)
+    expect(layout()).not.toContain('a')
+
+    // A child dragged out to a stack: its node goes with it.
+    act(() => root.render(<WorkspaceRow entry={entry} isOpen isSelected={false} isExpanded onToggleExpand={() => {}} onClick={() => {}} />))
+    measure()
+    const nodes = Object.keys(ws.confirmed().canvases.cvs.nodes).length
+    const c = keyOf('c').getBoundingClientRect()
+    fire(rowOf('t'), 'pointerdown', 50, keyOf('t').getBoundingClientRect().top + 5)
+    fire(globalThis, 'pointermove', 20, c.bottom)
+    fire(globalThis, 'pointerup', 20, c.bottom)
+    expect(Object.keys(ws.confirmed().canvases.cvs.nodes)).toHaveLength(nodes - 1)
+    expect(layout()).toContain('t')
+  })
+
+  it('children of a canvas can be rearranged in the list: the order sticks, the document does not change', () => {
+    const size = { width: 100, height: 100 }
+    act(() => {
+      ws.document.propose(add('cv', { to: 'stack', dock: L1, stackId: 's1' }, 'canvas', { canvasId: 'cvs' }))
+      ws.document.propose(add('t', { to: 'canvas', canvasId: 'cvs', nodeId: 'n1', stackId: 'ns1', rect: { origin: { x: 0, y: 0 }, size } }))
+      ws.document.propose(add('u', { to: 'canvas', canvasId: 'cvs', nodeId: 'n2', stackId: 'ns2', rect: { origin: { x: 200, y: 0 }, size } }))
+    })
+    const measure = () => {
+      let y = 0
+      const spans = new Map<HTMLElement, [number, number]>()
+      const anchors = [...host.querySelectorAll<HTMLElement>('[data-sb-key]')]
+      for (const el of anchors.filter((a) => !a.querySelector('[data-sb-key]'))) { spans.set(el, [y, y + 28]); y += 30 }
+      for (const el of anchors) {
+        const inner = [...spans].filter(([leaf]) => el === leaf || el.contains(leaf)).map(([, r]) => r)
+        el.getBoundingClientRect = () => rect(0, 200, Math.min(...inner.map((r) => r[0])), Math.max(...inner.map((r) => r[1])))
+      }
+      host.querySelector<HTMLElement>('[role="group"]')!.getBoundingClientRect = () => rect(0, 200, 0, 600)
+    }
+    measure()
+    const childOrder = () => order().filter((id) => id === 't' || id === 'u')
+    expect(childOrder()).toEqual(['t', 'u'])
+    const seq = ws.document.getSnapshot()
+    const t = keyOf('t').getBoundingClientRect()
+    fire(rowOf('u'), 'pointerdown', 150, keyOf('u').getBoundingClientRect().top + 5)
+    fire(globalThis, 'pointermove', 150, t.top)
+    fire(globalThis, 'pointerup', 150, t.top)
+    expect(childOrder()).toEqual(['u', 't'])
+    expect(ws.document.getSnapshot()).toBe(seq)
+  })
+
   it('a drop outside the tree changes nothing', () => {
     const seq = ws.document.getSnapshot()
     fire(rowOf('a'), 'pointerdown', 50, 35)

@@ -7,17 +7,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { LayoutId, PanelId, WindowId } from '@workspace/document/contract'
-import { documentStoreFor } from '@client/document'
-import { moveLayout } from '@client/host'
+import { clientStateFor, documentStoreFor } from '@client/document'
+import { canLiveOnCanvas, moveLayout } from '@client/host'
 import { proposeDrop } from '../../client/layout/drag'
-import type { WindowTree } from './panelTree'
+import { CANVAS_ORDER_KEY, type WindowTree } from './panelTree'
 import {
+  canvasOrderAt,
   layoutSlots,
   nearestSlot,
   panelDropChange,
   panelSlots,
+  type CanvasSlot,
+  type DropSlot,
   type LayoutSlot,
-  type PanelSlot,
   type RectOf,
 } from './sidebarDrag'
 
@@ -33,7 +35,7 @@ export interface RowLook {
 }
 
 export type SidebarDrag =
-  | { kind: 'panel'; panelId: PanelId; slot: PanelSlot | null; look: RowLook; float: Float }
+  | { kind: 'panel'; panelId: PanelId; slot: DropSlot | null; look: RowLook; float: Float }
   | { kind: 'layout'; windowId: WindowId; layoutId: LayoutId; slot: LayoutSlot | null; look: RowLook; float: Float }
 
 interface Float { left: number; top: number; width: number }
@@ -52,9 +54,9 @@ export function useSidebarDrag(workspaceId: string, windows: readonly WindowTree
     if (e.button !== 0 || !container) return
     const startY = e.clientY
     const own = e.currentTarget.getBoundingClientRect()
-    let slots: PanelSlot[] | LayoutSlot[] | null = null
+    let slots: DropSlot[] | LayoutSlot[] | null = null
     let bounds: DOMRect | null = null
-    let slot: PanelSlot | LayoutSlot | null = null
+    let slot: DropSlot | LayoutSlot | null = null
     const float = (y: number): Float => ({ left: own.left, top: own.top + y - startY, width: own.width })
 
     const lift = () => {
@@ -63,7 +65,10 @@ export function useSidebarDrag(workspaceId: string, windows: readonly WindowTree
       for (const el of container.querySelectorAll<HTMLElement>('[data-sb-key]')) rects.set(el.dataset.sbKey!, el.getBoundingClientRect())
       const rectOf: RectOf = (key) => rects.get(key) ?? null
       bounds = container.getBoundingClientRect()
-      if (row.kind === 'panel') slots = panelSlots(windowsRef.current, row.panelId, rectOf)
+      if (row.kind === 'panel') {
+        const type = documentStoreFor(workspaceId)?.getSnapshot().panels[row.panelId]?.type
+        slots = panelSlots(windowsRef.current, row.panelId, rectOf, type !== 'canvas' && canLiveOnCanvas(type))
+      }
       else {
         const window = windowsRef.current.find((w) => w.windowId === row.windowId)
         slots = window ? layoutSlots(window, row.layoutId, rectOf) : []
@@ -77,9 +82,9 @@ export function useSidebarDrag(workspaceId: string, windows: readonly WindowTree
         globalThis.getSelection?.()?.removeAllRanges()
       }
       const inside = !!bounds && ev.clientX >= bounds.left && ev.clientX <= bounds.right
-      slot = inside ? nearestSlot(slots as (PanelSlot | LayoutSlot)[], ev.clientY) : null
+      slot = inside ? nearestSlot(slots as (DropSlot | LayoutSlot)[], ev.clientY, ev.clientX) : null
       setDrag(row.kind === 'panel'
-        ? { kind: 'panel', panelId: row.panelId, slot: slot as PanelSlot | null, look, float: float(ev.clientY) }
+        ? { kind: 'panel', panelId: row.panelId, slot: slot as DropSlot | null, look, float: float(ev.clientY) }
         : { kind: 'layout', windowId: row.windowId, layoutId: row.layoutId, slot: slot as LayoutSlot | null, look, float: float(ev.clientY) })
     }
 
@@ -91,8 +96,12 @@ export function useSidebarDrag(workspaceId: string, windows: readonly WindowTree
       globalThis.setTimeout(() => { justDragged.current = false }, 0)
       if (!slot) return
       if (row.kind === 'panel') {
+        // Where it was dropped among a canvas's children is kept in the list, though the canvas ignores it.
+        if ('canvasId' in (slot as DropSlot)) {
+          clientStateFor(workspaceId)?.setPanelView((slot as CanvasSlot).canvasPanelId, CANVAS_ORDER_KEY, canvasOrderAt(windowsRef.current, slot as CanvasSlot, row.panelId))
+        }
         const doc = documentStoreFor(workspaceId)?.getSnapshot()
-        const change = doc && panelDropChange(doc, row.panelId, slot as PanelSlot, () => globalThis.crypto.randomUUID())
+        const change = doc && panelDropChange(doc, row.panelId, slot as DropSlot, () => globalThis.crypto.randomUUID())
         if (change) proposeDrop(workspaceId, [change], row.panelId, true)
       } else {
         const layouts = documentStoreFor(workspaceId)?.getSnapshot().windows[row.windowId]?.layouts

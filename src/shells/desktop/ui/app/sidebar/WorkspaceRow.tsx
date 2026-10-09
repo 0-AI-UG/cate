@@ -25,8 +25,8 @@ import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
 import { showMenu, type MenuItem } from './menu'
 import { DropGhostChip } from '../../client/layout/dock'
-import { workspacePanelTree, type LayoutTree, type StackGroup, type WindowTree } from './panelTree'
-import { headingKey, layoutKey, itemKey } from './sidebarDrag'
+import { CANVAS_ORDER_KEY, workspacePanelTree, type LayoutTree, type StackGroup, type WindowTree } from './panelTree'
+import { LAYOUT_INSET, headingKey, layoutKey, itemKey, type CanvasSlot } from './sidebarDrag'
 import { DragFloat, useSidebarDrag } from './useSidebarDrag'
 
 const isMiddleClick = (e: React.MouseEvent): boolean => e.button === 1
@@ -65,7 +65,11 @@ export function WorkspaceRow({
   const windowId = useWindowId()
   const doc = useDocument(isOpen ? workspaceId : null, (d) => d)
   const rootPath = useWorkspaceRoot(isOpen ? workspaceId : null) || undefined
-  const tree = useMemo(() => workspacePanelTree(doc, { windowId, rootPath }), [doc, windowId, rootPath])
+  const panelViews = useClientState(isOpen ? workspaceId : null, (s) => s.panelViews)
+  const tree = useMemo(
+    () => workspacePanelTree(doc, { windowId, rootPath, canvasOrder: (id) => panelViews[id]?.[CANVAS_ORDER_KEY] as string[] | undefined }),
+    [doc, windowId, rootPath, panelViews],
+  )
   const sidebarDrag = useSidebarDrag(workspaceId, [tree.primary, ...tree.others])
   const statuses = useTerminalStatuses(isOpen ? workspaceId : null)
   const ports = panelsWithPorts(statuses)
@@ -170,7 +174,7 @@ export function WorkspaceRow({
       hasPorts={ports.has(record.id)}
       worktreeKey={Object.keys(doc.worktrees).length >= 2 && record.worktreeId ? doc.worktrees[record.worktreeId]?.color : undefined}
       onClick={(e) => { e.stopPropagation(); if (!sidebarDrag.consumeClick()) void revealPanel(workspaceId, record.id) }}
-      onPointerDown={depth === 0 && rename?.panelId !== record.id ? (e) => sidebarDrag.begin(e, { kind: 'panel', panelId: record.id }, rowLook(record)) : undefined}
+      onPointerDown={rename?.panelId !== record.id ? (e) => sidebarDrag.begin(e, { kind: 'panel', panelId: record.id }, rowLook(record)) : undefined}
       onClose={() => void closePanels(workspaceId, [record.id])}
       onContextMenu={(e) => void handlePanelMenu(e, record)}
       rename={rename?.panelId === record.id ? {
@@ -215,7 +219,7 @@ export function WorkspaceRow({
             {lifted?.slot?.index === shownIndex && layoutGhost}
             <div data-sb-key={layoutKey(w.windowId, layout.layoutId)}>
               {multi && renderHeading(w, layout, w.layouts.indexOf(layout), layout.layoutId === active)}
-              {renderLayout(w, layout, multi ? 16 : 0)}
+              {renderLayout(w, layout, multi ? LAYOUT_INSET : 0)}
             </div>
           </React.Fragment>
         ))}
@@ -245,17 +249,20 @@ export function WorkspaceRow({
   const renderLayout = (w: WindowTree, layout: LayoutTree, inset: number) => {
     const dragged = sidebarDrag.drag?.kind === 'panel' ? sidebarDrag.drag : null
     const slot = dragged?.slot?.windowId === w.windowId && dragged.slot.layoutId === layout.layoutId ? dragged.slot : null
-    const ghost = dragged && slot ? ghostRow(dragged.look, inset + 28) : null
+    const stackSlot = slot && !('canvasId' in slot) ? slot : null
+    const canvasSlot = slot && 'canvasId' in slot ? slot : null
+    const ghost = dragged && stackSlot ? ghostRow(dragged.look, inset + 28) : null
+    const childGhost = dragged && canvasSlot ? ghostRow(dragged.look, inset + 40) : null
     return (
       <>
-        {layout.stacks.map((stack, stackIndex) => renderStack(stack, stackIndex, inset, dragged?.panelId, slot?.stackId === stack.stackId ? slot.after : undefined, ghost))}
-        {layout.stacks.length === 0 && slot && ghost}
+        {layout.stacks.map((stack, stackIndex) => renderStack(stack, stackIndex, inset, dragged?.panelId, stackSlot?.stackId === stack.stackId ? stackSlot.after : undefined, ghost, canvasSlot, childGhost))}
+        {layout.stacks.length === 0 && stackSlot && ghost}
       </>
     )
   }
 
   /** `ghostAfter`: the panel the ghost follows (null: first), undefined: no ghost here. */
-  const renderStack = (stack: StackGroup, stackIndex: number, inset: number, liftedId: string | undefined, ghostAfter: string | null | undefined, ghost: React.ReactNode) => {
+  const renderStack = (stack: StackGroup, stackIndex: number, inset: number, liftedId: string | undefined, ghostAfter: string | null | undefined, ghost: React.ReactNode, canvasSlot: CanvasSlot | null, childGhost: React.ReactNode) => {
     const items = stack.items.filter((item) => item.record.id !== liftedId)
     if (items.length === 0 && ghostAfter === undefined) return null
     return (
@@ -282,7 +289,20 @@ export function WorkspaceRow({
                       onPointerDown={(e) => sidebarDrag.begin(e, { kind: 'panel', panelId: record.id }, rowLook(record))}
                       onContextMenu={(e) => void handlePanelMenu(e, record)}
                     />
-                    {!isCollapsed && children.map((child) => renderPanel(child, 1, inset))}
+                    {canvasSlot?.canvasPanelId === record.id ? (
+                      // The ghost is a node the drop adds; a collapsed canvas shows it right under its row.
+                      <>
+                        {(isCollapsed || canvasSlot.afterChild === null) && childGhost}
+                        {!isCollapsed && children.filter((c) => c.id !== liftedId).map((child) => (
+                          <React.Fragment key={child.id}>
+                            <div data-sb-key={itemKey(child.id)}>{renderPanel(child, 1, inset)}</div>
+                            {canvasSlot.afterChild === child.id && childGhost}
+                          </React.Fragment>
+                        ))}
+                      </>
+                    ) : !isCollapsed && children.filter((c) => c.id !== liftedId).map((child) => (
+                      <div key={child.id} data-sb-key={itemKey(child.id)}>{renderPanel(child, 1, inset)}</div>
+                    ))}
                   </>
                 ) : renderPanel(record, 0, inset)}
               </div>
