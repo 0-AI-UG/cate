@@ -13,6 +13,7 @@ import { PairingService, type PairingsFile } from '@runtime/pairing/runtime'
 import { fingerprint, generateKeyPair, networkIdOf, type KeyPair } from '@runtime/security/contract'
 import { createNetworkDialer, dialSameNetwork, type NetworkDialer } from './client'
 import { nodeWebSocketFactory } from './node'
+import { pairingEndpoints } from './contract'
 import { createNetworkPeers, serveSameNetwork, type NetworkPeers, type SameNetworkListener } from './runtime'
 
 const RUNTIME_KEYS = generateKeyPair()
@@ -76,7 +77,7 @@ describe('network dialer', () => {
     const { host, pins, deviceKeys } = shell()
     const { uri } = pairing.createSecret('sameNetwork')
     const paired = await host.pair({ link: uri })
-    expect(paired).toEqual({ runtimeId: RUNTIME_ID, addresses: lan.addresses(), mode: 'sameNetwork', publicKey: runtimeKeys.publicKey })
+    expect(paired).toEqual({ runtimeId: RUNTIME_ID, endpoints: pairingEndpoints(lan.addresses(), 'sameNetwork'), publicKey: runtimeKeys.publicKey })
     expect(await pins.get(RUNTIME_ID)).toEqual(runtimeKeys.publicKey)
     expect(pairing.list()).toMatchObject([{ name: 'laptop' }])
 
@@ -89,7 +90,7 @@ describe('network dialer', () => {
     const { host, pins } = shell()
     const { code } = pairing.createSecret('sameNetwork')
     const paired = await host.pair({ link: code, deviceName: 'work laptop' })
-    expect(paired.mode).toBe('sameNetwork')
+    expect(paired.endpoints.every((endpoint) => endpoint.kind === 'lan')).toBe(true)
     expect(await pins.get(RUNTIME_ID)).toEqual(runtimeKeys.publicKey)
     expect(pairing.list()).toMatchObject([{ name: 'work laptop' }])
   })

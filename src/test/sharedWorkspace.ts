@@ -235,13 +235,12 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     })
     const secret = await inviter.connection.runtime.pairing.createSecret({ mode: 'sameNetwork' })
     const paired = await host.pair({ link: secret.uri })
-    const [address, port] = paired.addresses[0]!.split(':')
     const workspaceId = `paired:${paired.runtimeId}-${counter++}`
     const link = createLink()
     return makeClient(name, workspaceId, new WorkspaceConnection({
       workspaceId,
       capabilities: RUNTIME_CAPABILITIES,
-      target: { kind: 'network', runtimeId: paired.runtimeId, endpoints: [{ kind: 'lan', address: address!, port: Number(port) }] },
+      target: { kind: 'network', runtimeId: paired.runtimeId, endpoints: paired.endpoints },
       transports: {
         dialLocal: () => Promise.reject(new Error('no local runtime')),
         dialNetwork: link.wrap((target) => host.dialNetwork(target)),

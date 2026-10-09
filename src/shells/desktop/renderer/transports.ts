@@ -3,8 +3,7 @@
 // main's loopback web proxy (each request becomes `connection.dialLoopback`).
 
 import type { ByteDuplex } from '@kernel/rpc/contract'
-import type { NetworkEndpoint, ShellTransports, WorkspaceConnection } from '@client/connections'
-import { parseAddress } from '@runtime/transports/contract'
+import type { ShellTransports, WorkspaceConnection } from '@client/connections'
 import type { DesktopApi } from '../contract'
 import { isPipeControl } from '../contract'
 
@@ -55,15 +54,7 @@ export function createDesktopShellTransports(api: DesktopApi = window.cateDeskto
     dialNetwork: async (target) => pipeDuplex(api.pipes, await api.transports.dialNetwork(target)),
     dialLoopbackTcp: async (port) => pipeDuplex(api.pipes, await api.transports.dialLoopbackTcp(port)),
     // Main pairs: the device key never enters the renderer.
-    async pair(link) {
-      const result = await api.transports.pair({ link })
-      const endpoints: NetworkEndpoint[] = result.addresses.flatMap((address) => {
-        const parsed = parseAddress(address)
-        return parsed ? [{ kind: 'lan' as const, address: parsed.host, port: parsed.port }] : []
-      })
-      if (result.mode === 'cateConnect') endpoints.push({ kind: 'connect' })
-      return { runtimeId: result.runtimeId, endpoints, publicKey: result.publicKey }
-    },
+    pair: (link) => api.transports.pair({ link }),
   }
 }
 

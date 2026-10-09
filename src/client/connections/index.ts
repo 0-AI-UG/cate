@@ -20,8 +20,6 @@ export type {
   ShellTransports,
   ConnectionTarget,
   ConnectionKind,
-  NetworkTarget,
-  NetworkEndpoint,
   PairedRuntime,
 } from './transports'
 export {

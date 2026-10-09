@@ -65,3 +65,26 @@ export function isPrivateAddress(ip: string): boolean {
   const hextet = parseInt(first, 16)
   return (hextet >= 0xfe80 && hextet <= 0xfebf) || (hextet >= 0xfc00 && hextet <= 0xfdff)
 }
+
+/** Where a paired runtime may be reached: a LAN WebSocket address (from the
+ *  pairing payload or mDNS), or through Cate Connect. */
+export type NetworkEndpoint =
+  | { kind: 'lan'; address: string; port: number }
+  | { kind: 'connect' }
+
+/** A paired runtime and where to reach it. */
+export interface NetworkTarget {
+  runtimeId: string
+  endpoints: readonly NetworkEndpoint[]
+}
+
+/** The endpoints a pairing gives: its LAN addresses, and Cate Connect when
+ *  the runtime pairs through it. */
+export function pairingEndpoints(addresses: readonly string[], mode: 'sameNetwork' | 'cateConnect' | undefined): NetworkEndpoint[] {
+  const endpoints: NetworkEndpoint[] = addresses.flatMap((address) => {
+    const parsed = parseAddress(address)
+    return parsed ? [{ kind: 'lan' as const, address: parsed.host, port: parsed.port }] : []
+  })
+  if (mode === 'cateConnect') endpoints.push({ kind: 'connect' })
+  return endpoints
+}

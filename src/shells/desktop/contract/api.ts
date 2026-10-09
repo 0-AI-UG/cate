@@ -116,9 +116,8 @@ export interface DesktopNetworkTarget {
 
 export interface PairResult {
   runtimeId: string
-  /** Where the runtime was reached; store them with the paired workspace. */
-  addresses: string[]
-  mode: 'sameNetwork' | 'cateConnect'
+  /** Where to reach the runtime; stored with the paired workspace. */
+  endpoints: DesktopNetworkTarget['endpoints'][number][]
   /** The runtime's static key, pinned in known-runtimes. */
   publicKey: Uint8Array
 }

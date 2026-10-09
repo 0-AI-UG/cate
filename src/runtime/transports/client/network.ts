@@ -8,24 +8,14 @@ import type { ByteDuplex } from '@kernel/rpc/contract'
 import { decodePairingUri, parsePairingCode, type PairingMode } from '../../pairing/contract'
 import type { KnownRuntimes } from '../../pairing/client'
 import { secureChannelDuplex, type KeyPair, type MessagePortLike } from '../../security/contract'
-import { formatAddress, type WebSocketFactory } from '../contract'
+import { formatAddress, pairingEndpoints, type NetworkEndpoint, type NetworkTarget, type WebSocketFactory } from '../contract'
 import { dialSameNetwork } from './sameNetwork'
 import { openSecureConnection } from './secure'
 
-export type NetworkDialEndpoint =
-  | { kind: 'lan'; address: string; port: number }
-  | { kind: 'connect' }
-
-export interface NetworkDialTarget {
-  runtimeId: string
-  endpoints: readonly NetworkDialEndpoint[]
-}
-
 export interface NetworkPairResult {
   runtimeId: string
-  /** Where the runtime was reached; store them with the paired workspace. */
-  addresses: string[]
-  mode: PairingMode
+  /** Where to reach the runtime; stored with the paired workspace. */
+  endpoints: NetworkEndpoint[]
   /** The runtime's static key, now pinned. */
   publicKey: Uint8Array
 }
@@ -45,7 +35,7 @@ export interface NetworkDialerDeps {
 
 export interface NetworkDialer {
   /** A message pipe to a paired runtime, already inside the security layer. */
-  dialNetwork(target: NetworkDialTarget): Promise<ByteDuplex>
+  dialNetwork(target: NetworkTarget): Promise<ByteDuplex>
   /** Pairs from a `cate://pair` link or a typed code and pins the runtime key. */
   pair(request: { link: string; deviceName?: string }): Promise<NetworkPairResult>
 }
@@ -108,7 +98,7 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
       })
       // Pinned now; the workspace connection dials again by key.
       channel.close()
-      return { runtimeId, addresses, mode: mode ?? via, publicKey: channel.remoteStatic }
+      return { runtimeId, endpoints: pairingEndpoints(addresses, mode ?? via), publicKey: channel.remoteStatic }
     },
   }
 }

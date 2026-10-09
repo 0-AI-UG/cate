@@ -3,17 +3,7 @@
 // the client's.
 
 import type { ByteDuplex } from '@kernel/rpc/contract'
-
-/** Where a paired runtime may be reached: a LAN WebSocket address from the
- *  pairing payload or mDNS, or through Cate Connect. */
-export type NetworkEndpoint =
-  | { kind: 'lan'; address: string; port: number }
-  | { kind: 'connect' }
-
-export interface NetworkTarget {
-  runtimeId: string
-  endpoints: readonly NetworkEndpoint[]
-}
+import type { NetworkEndpoint, NetworkTarget } from '@runtime/transports/contract'
 
 export type ConnectionTarget =
   | { kind: 'local'; root: string }

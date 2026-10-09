@@ -4,7 +4,8 @@
 // Opening a workspace is opening its connection.
 
 import type { DeviceStore } from '@kernel/state/contract'
-import type { WorkspaceConnection, WorkspaceConnections, NetworkEndpoint, ConnectionTarget } from '@client/connections'
+import type { WorkspaceConnection, WorkspaceConnections, ConnectionTarget } from '@client/connections'
+import type { NetworkEndpoint } from '@runtime/transports/contract'
 import { KnownRuntimes } from '@runtime/pairing/client'
 
 export const WORKSPACES_DOCUMENT = 'workspaces'

@@ -2,9 +2,7 @@ export { dialSameNetwork, SameNetworkUnreachableError, type SameNetworkDialOptio
 export { openSecureConnection, type SecureConnection, type SecureOpen } from './secure'
 export {
   createNetworkDialer,
-  type NetworkDialEndpoint,
   type NetworkDialer,
   type NetworkDialerDeps,
-  type NetworkDialTarget,
   type NetworkPairResult,
 } from './network'

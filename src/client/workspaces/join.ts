@@ -9,7 +9,8 @@ import {
   PairingFormatError,
 } from '@runtime/pairing/contract'
 import { PairingError } from '@runtime/pairing/client'
-import type { NetworkEndpoint, ShellTransports } from '@client/connections'
+import type { ShellTransports } from '@client/connections'
+import { pairingEndpoints, type NetworkEndpoint } from '@runtime/transports/contract'
 import type { PairedWorkspace, WorkspaceList } from './workspaceList'
 import { placeholderName } from './naming'
 
@@ -27,14 +28,7 @@ export function parsePairingInput(text: string): PairingTarget {
   const input = text.trim()
   if (input.startsWith('cate://')) {
     const payload = decodePairingUri(input)
-    const endpoints: NetworkEndpoint[] = []
-    for (const address of payload.addresses) {
-      const colon = address.lastIndexOf(':')
-      const port = Number(address.slice(colon + 1))
-      if (colon > 0 && Number.isInteger(port) && port > 0) endpoints.push({ kind: 'lan', address: address.slice(0, colon), port })
-    }
-    if (payload.mode === 'cateConnect') endpoints.push({ kind: 'connect' })
-    return { runtimeId: payload.runtimeId, secret: payload.secret, fingerprint: payload.fingerprint, endpoints }
+    return { runtimeId: payload.runtimeId, secret: payload.secret, fingerprint: payload.fingerprint, endpoints: pairingEndpoints(payload.addresses, payload.mode) }
   }
   const code = parsePairingCode(input)
   return { runtimeId: code.runtimeId, secret: code.secret, endpoints: [] }
