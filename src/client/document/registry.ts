@@ -52,6 +52,7 @@ export function attachDocument(connection: WorkspaceConnection): () => void {
   const onReady = (listener: (info: { reconnect: boolean }) => void) => connection.rpc.onReady(listener)
   const document = createDocumentStore({
     clientId: connection.clientId,
+    nextCounter: connection.identity.nextCounter,
     remote: connection.runtime.document,
     onReady,
   })

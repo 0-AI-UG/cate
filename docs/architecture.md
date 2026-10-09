@@ -731,11 +731,15 @@ connected client or by `cate serve`.
   starts and keeps it across reconnects. Every call that changes something
   carries an `opId = clientId:counter`, and the runtime ignores an `opId` it
   has already applied (it keeps the highest counter per `clientId`), so a
-  resent call is never applied twice.
+  resent call is never applied twice. The counter belongs to the identity,
+  not to a connection or a document mirror: reopening a workspace continues
+  it. A resent op whose outcome the runtime no longer keeps fails with
+  `duplicate`.
 - **Error codes.** `gone` (the panel or thing no longer exists), `conflict`
   (the write's base is stale), `dirty` (unsaved work; retry with an explicit
   choice), `rejected` (invalid op), `untrusted` (section 9.2), `unsupported`,
-  `no-renderer` (section 10.2), `timeout`.
+  `no-renderer` (section 10.2), `timeout`, `duplicate` (an op already
+  handled whose outcome is no longer kept).
 
 ### 7.9 Host capabilities
 

@@ -109,4 +109,17 @@ describe.skipIf(process.platform === 'win32')('shared workspace: document', () =
     await synced(c)
     expect(c.document.getSnapshot()).toEqual(ws.a.document.getSnapshot())
   })
+
+  it('a workspace reopened in the same launch keeps applying its new ops', async () => {
+    const id = ws.a.createPanel('terminal')
+    for (let i = 0; i < 5; i++) ws.a.document.propose({ kind: 'updatePanel', id, patch: { title: `t${i}` } })
+    await synced(ws.a)
+    const a = await ws.reopen(ws.a)
+    const refused: RefusedOp[] = []
+    a.document.onRefused((r) => refused.push(r))
+    a.document.propose({ kind: 'updatePanel', id, patch: { title: 'sixth' } })
+    await synced(a)
+    expect(refused).toEqual([])
+    await until(() => (title(ws.b, id) === 'sixth' ? true : undefined), 5_000, 'sixth title in B')
+  }, 20_000)
 })

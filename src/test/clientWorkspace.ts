@@ -59,6 +59,7 @@ export function attachTestWorkspace(workspaceId: string, doc: WorkspaceDocument 
   const connection = {
     workspaceId,
     clientId: `test-${workspaceId}`,
+    identity: { nextCounter: (() => { let n = 0; return () => ++n })() },
     rpc: { onReady: () => () => {} },
     runtime: {
       document: {

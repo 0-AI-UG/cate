@@ -16,7 +16,7 @@ import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink, nullSink } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import type { ByteDuplex, ChannelState } from '@kernel/rpc/contract'
-import { createClientIdentity, WorkspaceConnection, type ConnectionState, type SessionHandle, type ShellTransports } from '@client/connections'
+import { createClientIdentity, WorkspaceConnection, type ClientIdentity, type ConnectionState, type SessionHandle, type ShellTransports } from '@client/connections'
 import { attachDocument, documentStoreFor, type DocumentStore } from '@client/document'
 import { createPanel, registerPanelDefinitions } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
@@ -75,6 +75,9 @@ export interface SharedWorkspace {
   b: TestClient
   /** Another client: `local` on A's machine, or a newly paired device. */
   join(name: string, transport: 'local' | 'network'): Promise<TestClient>
+  /** Closes a local client and opens a new connection with the same
+   *  identity, as reopening a workspace in the same app launch does. */
+  reopen(client: TestClient): Promise<TestClient>
   /** Stops the daemon and serves the workspace again from its saved state. */
   restartRuntime(): Promise<void>
   /** Stops every client and the daemon, and removes the temp dirs. */
@@ -196,7 +199,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     return client
   }
 
-  const localClient = (name: string): TestClient => {
+  const localClient = (name: string, identity?: ClientIdentity): TestClient => {
     const link = createLink()
     const transports: ShellTransports = {
       dialLocal: link.wrap(() => dialLocal(daemon.endpoint)),
@@ -207,7 +210,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
       workspaceId,
       target: { kind: 'local', root },
       transports,
-      identity: createClientIdentity({ device: { name, keyFingerprint: '' }, features: ['canvas', 'windows'] }),
+      identity: identity ?? createClientIdentity({ device: { name, keyFingerprint: '' }, features: ['canvas', 'windows'] }),
       version: 'test',
       backoff: { initialMs: 20, maxMs: 200 },
     }), link)
@@ -257,6 +260,12 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     b,
     async join(name, transport) {
       const c = transport === 'local' ? localClient(name) : await networkClient(name, a)
+      await c.document.ready
+      return c
+    },
+    async reopen(client) {
+      client.close()
+      const c = localClient(client.name, client.connection.identity)
       await c.document.ready
       return c
     },

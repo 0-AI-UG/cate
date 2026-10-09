@@ -27,6 +27,8 @@ export interface DocumentRemote {
 
 export interface DocumentLink {
   clientId: string
+  /** The next op counter of `clientId`, from its identity (never restarts). */
+  nextCounter(): number
   remote: DocumentRemote
   /** Runs after each successful hello, before queued calls go out. */
   onReady(listener: (info: { reconnect: boolean }) => void): () => void
@@ -85,7 +87,6 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
   let undoStack: DocChange[][] = []
   let redoStack: DocChange[][] = []
   let undoState: UndoState = { canUndo: false, canRedo: false }
-  let counter = 0
   let synced = false
   let disposed = false
   let sub: Subscription<DocumentEvent, void> | null = null
@@ -172,25 +173,30 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
     report({ op, code, message, local: false })
   }
 
+  const forget = (op: DocOp) => {
+    origins.delete(opKey(op.opId))
+    const before = mirror.pending.length
+    mirror.refused(op.opId)
+    if (mirror.pending.length !== before) notify()
+  }
+
   const send = (op: DocOp) => {
     const key = opKey(op.opId)
     inFlight.add(key)
     link.remote.apply({ op }).then(
       (result) => {
         inFlight.delete(key)
+        if (disposed) return
+        if (!result?.status) drop(op, 'rejected', 'The runtime gave no outcome for the op')
         // Handled before: either its op already arrived, or it failed while
         // this client was away. Either way it is no longer pending.
-        if (result.status === 'duplicate' && !disposed) {
-          origins.delete(key)
-          const before = mirror.pending.length
-          mirror.refused(op.opId)
-          if (mirror.pending.length !== before) notify()
-        }
+        else if (result.status === 'duplicate') forget(op)
       },
       (err: unknown) => {
         inFlight.delete(key)
         if (disposed) return
         if (isRpcError(err, 'timeout')) send(op)
+        else if (isRpcError(err, 'duplicate')) forget(op)
         else if (isRpcError(err)) drop(op, err.code, err.message)
         // Otherwise the connection went: it stays pending and goes again on reconnect.
       },
@@ -198,7 +204,7 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
   }
 
   const propose = (change: DocChange | DocBatch, origin: Origin | null): ProposeResult => {
-    const op = { ...change, opId: { clientId: link.clientId, counter: ++counter } } as DocOp
+    const op = { ...change, opId: { clientId: link.clientId, counter: link.nextCounter() } } as DocOp
     const result = mirror.propose(op)
     if (result.error) {
       const refused: RefusedOp = { op, code: result.error.code, message: result.error.message, local: true }

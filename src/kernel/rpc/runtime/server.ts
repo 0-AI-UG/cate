@@ -162,7 +162,8 @@ export class RpcServer {
     let log = this.ops.get(clientId)
     if (!log) this.ops.set(clientId, (log = { highest: 0, recent: new Map() }))
     if (counter <= log.highest) {
-      return log.recent.get(counter) ?? Promise.resolve({ result: undefined })
+      return log.recent.get(counter)
+        ?? Promise.resolve({ error: toWireError(new RpcError('duplicate', `Op ${clientId}:${counter} was already handled`)) })
     }
     log.highest = counter
     const outcome = run()

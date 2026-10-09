@@ -53,7 +53,9 @@ function fakeRuntime(keep = 10_000) {
   server.register(documentCapability, impl)
 
   const client = (clientId: string) => {
-    const rpc = new RpcClient({ version: 'test', identity: { client: { clientId, device: { name: clientId, keyFingerprint: 'FP' }, features: [] } } })
+    let counter = 0
+    const nextCounter = () => ++counter
+    const rpc = new RpcClient({ version: 'test', identity: { client: { clientId, device: { name: clientId, keyFingerprint: 'FP' }, features: [] } }, nextOpCounter: nextCounter })
     const connect = () => {
       const [mine, theirs] = createMemoryPortPair()
       ports.set(clientId, mine)
@@ -62,6 +64,7 @@ function fakeRuntime(keep = 10_000) {
     }
     const link: DocumentLink = {
       clientId,
+      nextCounter,
       remote: createCapabilityProxy(rpc, documentCapability),
       onReady: (listener) => rpc.onReady(listener),
     }
@@ -170,8 +173,10 @@ describe('document store', () => {
     const sent: DocOp[] = []
     let ready: ((info: { reconnect: boolean }) => void) | null = null
     let emit: ((event: DocumentEvent) => void) | null = null
+    let counter = 0
     const store: DocumentStore = createDocumentStore({
       clientId: 'a',
+      nextCounter: () => ++counter,
       onReady: (listener) => { ready = listener; return () => {} },
       remote: {
         apply: async ({ op }): Promise<ApplyResult> => {

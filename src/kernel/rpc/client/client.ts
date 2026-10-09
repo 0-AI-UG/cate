@@ -37,6 +37,10 @@ export interface RpcClientOptions {
   build?: string
   /** Who this side is: a client (keeps `clientId` across reconnects) or a caller. */
   identity: { client: ClientHello } | { caller: CallerHello }
+  /** The next op counter of this `clientId`. It belongs to the identity, not
+   *  the connection: a new client with the same `clientId` continues it.
+   *  Default: a counter of this client alone (a one-shot `clientId`). */
+  nextOpCounter?: () => number
   protocol?: ProtocolVersion
   timeoutMs?: number
   helloTimeoutMs?: number
@@ -71,7 +75,7 @@ export class RpcClient {
   private _remote: HelloMessage | null = null
   private everReady = false
   private nextId = 1
-  private opCounter = 0
+  private readonly nextOpCounter: () => number
   private helloTimer: ReturnType<typeof setTimeout> | null = null
   private attachWaiter: { resolve: (h: HelloMessage) => void; reject: (e: Error) => void } | null = null
   private readonly calls = new Map<number, PendingCall>()
@@ -82,6 +86,8 @@ export class RpcClient {
 
   constructor(private readonly opts: RpcClientOptions) {
     this.protocol = opts.protocol ?? PROTOCOL
+    let counter = 0
+    this.nextOpCounter = opts.nextOpCounter ?? (() => ++counter)
   }
 
   get state(): RpcClientState { return this._state }
@@ -147,7 +153,7 @@ export class RpcClient {
     if (params !== undefined) req.params = params
     if (spec.mutates) {
       const clientId = this.clientId
-      if (clientId) req.opId = `${clientId}:${++this.opCounter}`
+      if (clientId) req.opId = `${clientId}:${this.nextOpCounter()}`
     }
     return new Promise<unknown>((resolve, reject) => {
       const timeoutMs = opts.timeoutMs ?? spec.timeoutMs ?? this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS

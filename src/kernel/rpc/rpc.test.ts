@@ -287,6 +287,21 @@ describe('rpc server and client', () => {
     expect(runs).toBe(2)
   })
 
+  it('answers an op whose outcome is no longer kept with duplicate', async () => {
+    const { api, connect, client, server } = setup({ server: { opResultCache: 1 } })
+    await connect().ready
+    await api.bump({ by: 1 })
+    await api.bump({ by: 1 })
+    // A second client with the same clientId whose counter restarted.
+    const again = new RpcClient({ version: '1.0.0', identity: { client: { clientId: 'c1', device: { name: 'mac', keyFingerprint: 'fp' }, features: [] } } })
+    const [serverPort, clientPort] = createMemoryPortPair()
+    server.serve(serverPort)
+    await again.attach(clientPort)
+    await expect(createCapabilityProxy(again, testCap).bump({ by: 1 })).rejects.toMatchObject({ code: 'duplicate' })
+    again.close()
+    client.close()
+  })
+
   it('resumes streams marked resume and fails the others on disconnect', async () => {
     const { api, connect } = setup()
     const first = connect()

@@ -69,7 +69,7 @@ export class WorkspaceConnection {
   /** Typed proxy over every declared capability. Calls queue while offline. */
   readonly runtime: RuntimeProxy
   private readonly transports: ShellTransports
-  private readonly identity: ClientIdentity
+  readonly identity: ClientIdentity
   private readonly build: string | undefined
   private readonly backoff: Backoff
   private readonly now: () => number
@@ -105,6 +105,7 @@ export class WorkspaceConnection {
           features: [...opts.identity.features],
         },
       },
+      nextOpCounter: opts.identity.nextCounter,
     })
     this.runtime = createRuntimeProxy(this.rpc, opts.capabilities ?? RUNTIME_CAPABILITIES)
     this.rpc.onStateChange((state) => this.onRpcState(state))
