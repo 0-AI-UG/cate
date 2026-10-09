@@ -1,7 +1,7 @@
 // `cate.editor.*`. `openFile` creates (or reuses) an editor panel, so the
 // editor module serves it as a service; `active` asks the target editor session.
 
-import { defineCateApi, num, opt, path } from '@kernel/api/contract'
+import { defineCateApi, defineCliArea, num, opt, path } from '@kernel/api/contract'
 
 const FILE_TARGET = /^(.+?):(\d+)(?::(\d+))?$/
 
@@ -17,6 +17,21 @@ function splitFileTarget(args: Record<string, unknown>): Record<string, unknown>
     ...(match[3] === undefined ? {} : { column: Number(match[3]) }),
   }
 }
+
+/** The CLI permission area of these methods. */
+export const editorCliArea = defineCliArea({
+  label: 'Files',
+  read: {
+    key: 'cliEditorReadEnabled',
+    code: 'editor-read-disabled',
+    detail: 'Read which file the active editor panel is showing.',
+  },
+  control: {
+    key: 'cliEditorControlEnabled',
+    code: 'editor-control-disabled',
+    detail: '`cate editor open <path[:line]>`: open a file in Files, including image, PDF and DOCX previews.',
+  },
+})
 
 export const editorApi = defineCateApi(
   'editor',
@@ -39,5 +54,5 @@ export const editorApi = defineCateApi(
       summary: 'Print which file the target editor shows',
     },
   },
-  { area: 'editor', summary: 'Open files in editor panels' },
+  { area: editorCliArea, summary: 'Open files in editor panels' },
 )

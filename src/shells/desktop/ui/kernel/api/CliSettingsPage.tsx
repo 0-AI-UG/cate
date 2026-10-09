@@ -9,7 +9,9 @@ import { useRuntime } from '../rpc'
 import { SearchableBlock, SecondaryButton, SettingRow, Toggle } from '../interaction'
 import { errorMessage } from '@kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSettings } from '../settings'
-import { CLI_PERMISSION_AREAS, type CliPermissionArea, type CliPermissionCell } from '@kernel/api/contract'
+import { cliAreasOf, type CliPermissionArea, type CliPermissionCell } from '@kernel/api/contract'
+import type { WorkspaceSettingKey } from '@kernel/settings/contract'
+import { CATE_API } from '@panels/api'
 
 function PermissionCheckbox({ checked, onChange, title, disabled }: {
   checked: boolean
@@ -62,12 +64,12 @@ export function CliSettingsPage({ workspaceId }: { workspaceId: string | null })
 
   const cell = (c: CliPermissionCell | undefined, area: string, access: string) =>
     c ? (
-      <PermissionCheckbox checked={settings[c.key]} onChange={(v) => set(c.key, v)} title={`${area} ${access}: ${c.detail}`} disabled={off} />
+      <PermissionCheckbox checked={(settings as Record<string, unknown>)[c.key] === true} onChange={(v) => set(c.key as WorkspaceSettingKey, v as never)} title={`${area} ${access}: ${c.detail}`} disabled={off} />
     ) : (
       <span className="text-muted text-xs">—</span>
     )
 
-  const areas: CliPermissionArea[] = Object.values(CLI_PERMISSION_AREAS)
+  const areas: CliPermissionArea[] = cliAreasOf(CATE_API)
 
   return (
     <div className="flex flex-col gap-1">

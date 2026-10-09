@@ -2,6 +2,7 @@
 // explicit panel or the sticky one; a review is never picked implicitly.
 
 import { defineCateApi, num, oneOf, opt, str } from '@kernel/api/contract'
+import { agentCliArea } from '@services/agents/contract'
 
 export const reviewApi = defineCateApi(
   'review',
@@ -40,5 +41,5 @@ export const reviewApi = defineCateApi(
       args: { noteId: str.nonEmpty().pos('note-id').help('Note id or unique prefix, from cate review inspect') },
     },
   },
-  { area: 'agent', summary: 'Inspect review panels and record findings' },
+  { area: agentCliArea, summary: 'Inspect review panels and record findings' },
 )

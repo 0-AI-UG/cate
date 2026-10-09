@@ -8,6 +8,7 @@ import {
   custom,
   DEFAULT_API_TIMEOUT_MS,
   defineCateApi,
+  defineCliArea,
   indexCateApi,
   num,
   obj,
@@ -19,6 +20,25 @@ import {
   validateCateArgs,
 } from '../contract'
 import { uiApi, versionApi } from './api'
+
+// Areas as modules declare them (the kernel knows none).
+const TEST_AREAS = {
+  terminal: defineCliArea({
+    label: 'Terminal',
+    read: { key: 'cliTerminalReadEnabled', code: 'terminal-read-disabled', detail: 'read' },
+    control: { key: 'cliTerminalInputEnabled', code: 'terminal-input-disabled', detail: 'input' },
+  }),
+  panel: defineCliArea({
+    label: 'Panels',
+    read: { key: 'cliPanelReadEnabled', code: 'panel-read-disabled', detail: 'read' },
+    control: { key: 'cliPanelControlEnabled', code: 'panel-control-disabled', detail: 'control' },
+  }),
+  notify: defineCliArea({
+    label: 'Notifications',
+    control: { key: 'cliNotifyEnabled', code: 'notify-disabled', detail: 'notify' },
+  }),
+}
+
 
 const demo = defineCateApi(
   'demo',
@@ -41,7 +61,7 @@ const demo = defineCateApi(
     'note.add': { access: 'read', handler: 'session', args: { body: str } },
     loose: { access: 'read', handler: 'session', extraArgs: true, args: { tabId: str } },
   },
-  { area: 'terminal' },
+  { area: TEST_AREAS.terminal },
 )
 
 describe('defineCateApi', () => {
@@ -50,7 +70,7 @@ describe('defineCateApi', () => {
     expect(demo.methods['note.add'].method).toBe('cate.demo.note.add')
     expect(demo.methods['note.add'].panelType).toBe('demo')
     expect(demo.methods.run.panelType).toBeUndefined()
-    expect(demo.methods.run.area).toBe('terminal')
+    expect(demo.methods.run.area).toBe(TEST_AREAS.terminal)
     expect(versionApi.methods.version.method).toBe('cate.version')
     expect(uiApi.methods.notify.method).toBe('cate.ui.notify')
   })
@@ -112,20 +132,20 @@ describe('cliAccessDenied', () => {
   const settings = (values: Record<string, unknown>) => (key: string) => values[key]
 
   it('requires the master switch', () => {
-    expect(cliAccessDenied('terminal', 'read', settings({ cliTerminalReadEnabled: true }))).toMatch(/^cli-disabled/)
+    expect(cliAccessDenied(TEST_AREAS.terminal, 'read', settings({ cliTerminalReadEnabled: true }))).toMatch(/^cli-disabled/)
     expect(cliAccessDenied(undefined, 'read', settings({ cliEnabled: true }))).toBeNull()
   })
 
   it('checks the area cell for the access class', () => {
     const on = settings({ cliEnabled: true, cliTerminalReadEnabled: true })
-    expect(cliAccessDenied('terminal', 'read', on)).toBeNull()
-    expect(cliAccessDenied('terminal', 'control', on)).toBe(
+    expect(cliAccessDenied(TEST_AREAS.terminal, 'read', on)).toBeNull()
+    expect(cliAccessDenied(TEST_AREAS.terminal, 'control', on)).toBe(
       'terminal-input-disabled: enable Terminal → Control in Cate Settings → CLI',
     )
   })
 
   it('leaves read methods of an area without a read cell behind the master switch only', () => {
-    expect(cliAccessDenied('notify', 'read', settings({ cliEnabled: true }))).toBeNull()
-    expect(cliAccessDenied('notify', 'control', settings({ cliEnabled: true }))).toMatch(/^notify-disabled/)
+    expect(cliAccessDenied(TEST_AREAS.notify, 'read', settings({ cliEnabled: true }))).toBeNull()
+    expect(cliAccessDenied(TEST_AREAS.notify, 'control', settings({ cliEnabled: true }))).toMatch(/^notify-disabled/)
   })
 })

@@ -7,6 +7,7 @@ import {
   ArgError,
   arr,
   defineCateApi,
+  defineCliArea,
   num,
   obj,
   oneOf,
@@ -36,6 +37,23 @@ function parseWaitTimeoutMs(raw: string): number {
   }
   return ms / 1_000
 }
+
+/** The CLI permission area of these methods. */
+export const agentCliArea = defineCliArea({
+  label: 'Agents & reviews',
+  read: {
+    key: 'cliAgentReadEnabled',
+    code: 'agent-read-disabled',
+    detail:
+      '`cate agent list / wait / read` and `cate review inspect`: observe workers, their conversations and terminal output, and review state.',
+  },
+  control: {
+    key: 'cliAgentControlEnabled',
+    code: 'agent-control-disabled',
+    detail:
+      '`cate agent send` and `cate review note / complete`: steer live terminal or chat agents and record review results.',
+  },
+})
 
 export const agentApi = defineCateApi(
   'agent',
@@ -112,5 +130,5 @@ export const agentApi = defineCateApi(
       args: { targetPanelId: panel().pos('panelId').flag('panel').help('Agent panel id or unique prefix, from cate agent list') },
     },
   },
-  { area: 'agent', summary: 'Start agents, and observe and prompt the agents running in panels' },
+  { area: agentCliArea, summary: 'Start agents, and observe and prompt the agents running in panels' },
 )

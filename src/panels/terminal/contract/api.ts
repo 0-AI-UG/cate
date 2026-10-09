@@ -2,7 +2,24 @@
 // resolve an implicit target beyond the sticky one: a misresolved read is
 // noise, a misresolved keystroke runs in the wrong shell.
 
-import { defineCateApi, num, opt, str } from '@kernel/api/contract'
+import { defineCateApi, defineCliArea, num, opt, str } from '@kernel/api/contract'
+
+/** The CLI permission area of these methods. */
+export const terminalCliArea = defineCliArea({
+  label: 'Terminal',
+  read: {
+    key: 'cliTerminalReadEnabled',
+    code: 'terminal-read-disabled',
+    detail:
+      '`cate terminal read`: read the screen and scrollback of terminal panels, which may contain secrets printed there.',
+  },
+  control: {
+    key: 'cliTerminalInputEnabled',
+    code: 'terminal-input-disabled',
+    detail:
+      '`cate terminal type / press`: send keystrokes to terminal panels; input goes to whatever runs there, including your shell.',
+  },
+})
 
 export const terminalApi = defineCateApi(
   'terminal',
@@ -31,5 +48,5 @@ export const terminalApi = defineCateApi(
       args: { keys: str.nonEmpty().rest('key').help('Key names, pressed in order') },
     },
   },
-  { area: 'terminal', summary: 'Read terminal panels and send them text and keys' },
+  { area: terminalCliArea, summary: 'Read terminal panels and send them text and keys' },
 )

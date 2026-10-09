@@ -3,7 +3,7 @@
 // CLI commands, help and argument parsing (architecture 14).
 
 import { RpcError } from '@kernel/rpc/contract'
-import type { ApiAccess, CliArea } from './permissions'
+import type { ApiAccess, CliPermissionArea } from './permissions'
 import { validateShape, type AnyArgSchema, type ArgShape, type InArgs, type OutArgs } from './schema'
 
 /** How long the router waits for a handler unless the spec says otherwise. */
@@ -57,7 +57,7 @@ export interface CateApiMethodSpec<S extends ArgShape = ArgShape> {
 
 export interface CateApiNamespaceOptions {
   /** The permission area. Without one only the master switch applies. */
-  area?: CliArea
+  area?: CliPermissionArea
   /** Panel type a `session` method targets. Defaults to the namespace. */
   panelType?: string
   /** One line describing the command group in `cate --help`. */
@@ -70,7 +70,7 @@ export interface CateApiMethod<S extends ArgShape = ArgShape> extends CateApiMet
   /** Full wire name (`cate.review.note.add`). */
   method: string
   namespace: string
-  area?: CliArea
+  area?: CliPermissionArea
   /** Target panel type for `session` methods. */
   panelType?: string
   args: S
@@ -80,7 +80,7 @@ export type CateApiMethods = Record<string, CateApiMethodSpec<any>>
 
 export interface CateApiNamespace<M extends CateApiMethods = CateApiMethods> {
   namespace: string
-  area?: CliArea
+  area?: CliPermissionArea
   summary?: string
   methods: { [K in keyof M & string]: CateApiMethod<NonNullable<M[K]['args']>> }
 }

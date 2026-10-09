@@ -1,7 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RpcError } from '@kernel/rpc/contract'
-import { CATE_API_VERSION, defineCateApi, opt, arr, panel, str, uiApi, versionApi, type ApiSessionContext } from '../contract'
+import { CATE_API_VERSION, defineCateApi, defineCliArea, opt, arr, panel, str, uiApi, versionApi, type ApiSessionContext } from '../contract'
 import { ApiRouter, ApiTokenRegistry, registerKernelApi, resolveTarget, type ApiPanelInfo } from './index'
+
+// Areas as modules declare them (the kernel knows none).
+const TEST_AREAS = {
+  terminal: defineCliArea({
+    label: 'Terminal',
+    read: { key: 'cliTerminalReadEnabled', code: 'terminal-read-disabled', detail: 'read' },
+    control: { key: 'cliTerminalInputEnabled', code: 'terminal-input-disabled', detail: 'input' },
+  }),
+  panel: defineCliArea({
+    label: 'Panels',
+    read: { key: 'cliPanelReadEnabled', code: 'panel-read-disabled', detail: 'read' },
+    control: { key: 'cliPanelControlEnabled', code: 'panel-control-disabled', detail: 'control' },
+  }),
+  notify: defineCliArea({
+    label: 'Notifications',
+    control: { key: 'cliNotifyEnabled', code: 'notify-disabled', detail: 'notify' },
+  }),
+}
+
 
 const terminalLike = defineCateApi(
   'terminal',
@@ -10,7 +29,7 @@ const terminalLike = defineCateApi(
     type: { access: 'control', handler: 'session', target: 'sticky', args: { text: str } },
     slow: { access: 'read', handler: 'session', timeoutMs: 20 },
   },
-  { area: 'terminal' },
+  { area: TEST_AREAS.terminal },
 )
 
 const panelLike = defineCateApi(
@@ -20,7 +39,7 @@ const panelLike = defineCateApi(
     'target.set': { access: 'read', handler: 'service', args: { panelId: panel() } },
     watch: { access: 'read', handler: 'service', args: { panelIds: opt(arr(panel('terminal'))) } },
   },
-  { area: 'panel' },
+  { area: TEST_AREAS.panel },
 )
 
 const ALL_ON: Record<string, unknown> = {

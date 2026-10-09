@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineCateApi, sessionApi, str } from '@kernel/api/contract'
+import { defineCateApi, defineCliArea, sessionApi, str } from '@kernel/api/contract'
 import { ApiRouter, ApiTokenRegistry } from '@kernel/api/runtime'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
@@ -48,12 +48,31 @@ import {
   type SessionKit,
 } from './index'
 
+// Areas as modules declare them (the kernel knows none).
+const TEST_AREAS = {
+  terminal: defineCliArea({
+    label: 'Terminal',
+    read: { key: 'cliTerminalReadEnabled', code: 'terminal-read-disabled', detail: 'read' },
+    control: { key: 'cliTerminalInputEnabled', code: 'terminal-input-disabled', detail: 'input' },
+  }),
+  panel: defineCliArea({
+    label: 'Panels',
+    read: { key: 'cliPanelReadEnabled', code: 'panel-read-disabled', detail: 'read' },
+    control: { key: 'cliPanelControlEnabled', code: 'panel-control-disabled', detail: 'control' },
+  }),
+  notify: defineCliArea({
+    label: 'Notifications',
+    control: { key: 'cliNotifyEnabled', code: 'notify-disabled', detail: 'notify' },
+  }),
+}
+
+
 // ---- Fake panel types --------------------------------------------------------
 
 const fakeTerminalApi = defineCateApi(
   'terminal',
   { read: { access: 'read', handler: 'session', args: { prefix: str } } },
-  { area: 'terminal' },
+  { area: TEST_AREAS.terminal },
 )
 
 type CounterSnapshot = { count: number; dirty: boolean }

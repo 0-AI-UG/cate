@@ -9,6 +9,7 @@ import {
   bool,
   custom,
   defineCateApi,
+  defineCliArea,
   num,
   oneOf,
   opt,
@@ -54,6 +55,22 @@ const observe = {
   emit: opt(bool),
   profile: opt(bool),
 }
+
+/** The CLI permission area of these methods. */
+export const browserCliArea = defineCliArea({
+  label: 'Browser',
+  read: {
+    key: 'cliBrowserReadEnabled',
+    code: 'browser-read-disabled',
+    detail:
+      'Accessibility state, element attributes, screenshots, tabs and waits: inspect the page in the built-in browser panel, which shows your live logged-in sessions.',
+  },
+  control: {
+    key: 'cliBrowserControlEnabled',
+    code: 'browser-control-disabled',
+    detail: 'Browser JavaScript sessions and actions: act on the page through the live browser panel.',
+  },
+})
 
 export const browserApi = defineCateApi(
   'browser',
@@ -140,5 +157,5 @@ export const browserApi = defineCateApi(
     resize: page('control', { width: num.min(1), height: num.min(1) }),
     download: page('control', { url: opt(str) }),
   },
-  { area: 'browser', summary: 'Control browser panels with JavaScript' },
+  { area: browserCliArea, summary: 'Control browser panels with JavaScript' },
 )

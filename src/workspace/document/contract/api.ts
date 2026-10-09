@@ -2,7 +2,22 @@
 // workspace/document's runtime side. `cate.panel.focus` is gone: focus is
 // client state.
 
-import { bool, defineCateApi, num, obj, opt, panel, path, str } from '@kernel/api/contract'
+import { bool, defineCateApi, defineCliArea, num, obj, opt, panel, path, str } from '@kernel/api/contract'
+
+/** The CLI permission area of these methods. */
+export const panelCliArea = defineCliArea({
+  label: 'Panels',
+  read: {
+    key: 'cliPanelReadEnabled',
+    code: 'panel-read-disabled',
+    detail: '`cate panel list`: enumerate the open panels, including each browser panel\'s url.',
+  },
+  control: {
+    key: 'cliPanelControlEnabled',
+    code: 'panel-control-disabled',
+    detail: '`cate panel create / close`: add browser, terminal or canvas panels and close panels.',
+  },
+})
 
 export const panelApi = defineCateApi(
   'panel',
@@ -54,7 +69,7 @@ export const panelApi = defineCateApi(
       cli: { command: ['panel', 'clear'] },
     },
   },
-  { area: 'panel', summary: 'List, create, select, rename and close panels' },
+  { area: panelCliArea, summary: 'List, create, select, rename and close panels' },
 )
 
 export const canvasApi = defineCateApi(
@@ -74,5 +89,5 @@ export const canvasApi = defineCateApi(
       cli: { command: ['panel', 'create'] },
     },
   },
-  { area: 'panel' },
+  { area: panelCliArea },
 )
