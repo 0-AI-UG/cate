@@ -35,13 +35,12 @@ import { createPowerService, powerCapabilityImpl } from '@runtime/power/runtime'
 import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
 import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
-import { createServerHost, reapOrphanServers, serverCapabilityImpl, type ServerHost } from '@runtime/server/runtime'
+import { createServerHost, reapOrphanServers, type ServerHost } from '@runtime/server/runtime'
 import type { PeerConnectionFactory, WebSocketFactory } from '@runtime/transports/contract'
 import { loadNodePeerConnection, nodeWebSocketFactory } from '@runtime/transports/node'
 import { createNetworkPeers, serveLocal, type SameNetworkOptions } from '@runtime/transports/runtime'
 import { tunnelCapability } from '@runtime/tunnel/contract'
 import { tunnelCapabilityImpl } from '@runtime/tunnel/runtime'
-import { serverCapability } from '@runtime/server/contract'
 import type { PanelRuntime } from '@panels/runtime'
 import { applyLoginEnv, prependPath } from '@services/terminal/runtime'
 import { withoutInheritedHookIdentity } from '@services/agents/runtime'
@@ -309,7 +308,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   rpc.register(tunnelCapability, tunnelCapabilityImpl())
   rpc.register(powerCapability, powerCapabilityImpl(power))
   rpc.register(pushCapability, pushCapabilityImpl(push))
-  rpc.register(serverCapability, serverCapabilityImpl({ host: servers, trust: ws.trust }))
 
   const clients = () => rpc.connections().filter((c) => c.client !== null).length
   const lifetime = createLifetime({

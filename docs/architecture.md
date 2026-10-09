@@ -87,7 +87,7 @@ No UI is shared between shells.
 | **Transport** | How a client reaches a runtime: `local` (a socket on the same machine) or `network` (same network, or Cate Connect). A transport never changes what the runtime is or does. |
 | **Cate Connect** | A coordination service we host. It passes connection setup messages so a client and a runtime connect directly, and runs a TURN relay for when they cannot. It never sees workspace traffic in the clear and is never trusted with it. |
 | **Pairing** | Connecting a device to a workspace for the first time with a QR code or pairing code. Afterwards both sides know each other's key. |
-| **Capability** | A typed group of runtime methods and streams (`file`, `vcs`, `process`, `server`, `tunnel`, `power`, ...), declared once with `defineCapability`. |
+| **Capability** | A typed group of runtime methods and streams (`file`, `vcs`, `process`, `tunnel`, `power`, ...), declared once with `defineCapability`. |
 | **Document** | The shared structure of a workspace: panel records, windows and their dock trees, canvases, relations, worktree metadata. The runtime holds it and orders every change to it. |
 | **Op** | One change: a document op (section 9.1), sent by a client, a session or a `cate` API handler, or a session op, sent to one panel session (section 11.2). |
 | **Panel session** | A panel's live state and behaviour. Runs in the runtime. |
@@ -759,7 +759,9 @@ connected client or by `cate serve`.
 
 Capabilities not owned by a feature module, in `runtime/`:
 
-- `server`: long-lived HTTP children with a ready probe (T3 runs on it).
+- The server host (`runtime/server`, not a capability): long-lived HTTP
+  children with a ready probe, which runtime modules start (T3 runs on it);
+  no client can start a process through it.
 - `tunnel`: `tunnel.connect {port}` opens a TCP connection to a loopback port
   (`127.0.0.1` or `::1`) of the runtime's machine as a flow-controlled byte
   stream. It backs loopback routing (section 12.3) and is the only way a
