@@ -12,6 +12,7 @@ import { createAgentsCore, type AgentsCore } from './core'
 import type { AgentRunnerImpl } from './registry'
 import type { AgentStarter } from './start'
 
+
 function fakeRunner(kind: AgentRunner) {
   const states = new Map<string, PanelAgentState>()
   const listeners = new Set<(panelId: string) => void>()
@@ -79,6 +80,7 @@ beforeEach(() => {
     },
     resolveCheckout: async (cwd) => cwd ?? '/repo',
     snapshot: async () => ({ nameByPid: new Map(), childrenByPid: new Map() }),
+    notify: () => {},
     watchStatus: () => () => {},
   })
   terminal = fakeRunner('terminal')
@@ -181,14 +183,9 @@ describe('agents capability', () => {
     ;(stop as () => void)()
   })
 
-  it('reports running agents as busy and forwards notifications', () => {
+  it('reports running agents as busy', () => {
     terminal.set('term', { status: 'running' })
     t3.set('chat', {})
     expect(agentsCapabilityImpl(agents, {} as never).busy(undefined as never, {} as never)).toEqual({ panelIds: ['term'] })
-    const seen: unknown[] = []
-    const impl = agentsCapabilityImpl(agents, {} as never)
-    impl.notifications(undefined as never, { emit: (event: unknown) => seen.push(event) } as never, {} as never)
-    agents.notifications.publish({ kind: 'agent.needsInput', panelId: 'term', title: 't', body: 'b' })
-    expect(seen).toEqual([{ kind: 'agent.needsInput', panelId: 'term', title: 't', body: 'b' }])
   })
 })

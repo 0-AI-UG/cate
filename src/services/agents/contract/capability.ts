@@ -1,7 +1,7 @@
-import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
+import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
 import type { AgentConversation, AgentConversationChange } from './conversation'
 import type { AgentHookAgentState } from './hooks'
-import type { AgentNotificationEvent, AgentRunner, PanelAgentState } from './session'
+import type { AgentRunner, PanelAgentState } from './session'
 import type { AgentId } from './registry'
 import type { AgentTypeInfo } from './launch'
 
@@ -56,8 +56,6 @@ export const agentsCapability = defineCapability('agents', {
     /** A panel's agent conversation with its state, live while the agent
      *  works: a snapshot, then changes. */
     conversation: channelStream<{ panelId: string }, AgentConversation, AgentConversationChange>(),
-    /** Agent notification events (architecture 10.5). */
-    notifications: stream<void, AgentNotificationEvent>(),
   },
 })
 

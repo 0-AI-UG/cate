@@ -15,6 +15,7 @@ import { MAIN_WINDOW, documentCapability, type DocOp } from '@workspace/document
 import { sessionCapability } from '@panels/framework/contract'
 import { agentsCapability } from '@services/agents/contract'
 import { serveWorkspace, type Daemon } from './entry'
+import { notificationsCapability } from '@workspace/notifications/contract'
 
 let tmp: string
 let home: string
@@ -124,7 +125,7 @@ describe.skipIf(process.platform === 'win32')('daemon workspace', () => {
 
     // `cate notify` from the terminal reaches clients as a notification.
     const notified: unknown[] = []
-    const notifications = createCapabilityProxy(client, agentsCapability).notifications()
+    const notifications = createCapabilityProxy(client, notificationsCapability).events()
     notifications.onEvent((event) => notified.push(event))
     await new Promise((r) => setTimeout(r, 50))
     await cliApi.call({ method: 'cate.ui.notify', args: { message: 'built' } })

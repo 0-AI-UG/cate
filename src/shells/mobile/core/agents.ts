@@ -1,14 +1,16 @@
 // The agents of every connected workspace, live, for the agents home and the
 // session view: each panel's agent state (the `agents.panels` channel), what
-// it last asked for (the notification events every client consumes, handed
-// on to the app), keep-awake and this device's push registration.
+// it last asked for (the notification events every client consumes; the
+// core's gate decides which reach the app as banners), keep-awake and this
+// device's push registration.
 
 import { mirrorChannel, type ChannelMirror } from '@kernel/rpc/client'
 import { eachConnection, type WorkspaceConnection } from '@client/connections'
 import { documentStoreFor } from '@client/document'
 import type { PowerState } from '@runtime/power/contract'
 import { pushCollapseId, type PushStatus } from '@runtime/push/contract'
-import { acquireAgentPanels, attachAgentNotifications } from '@services/agents/client'
+import { acquireAgentPanels, onAgentsWorking } from '@services/agents/client'
+import { attachNotifications, createNotificationGate } from '@workspace/notifications/client'
 import type { AgentPanelStates, AgentStatus } from '@services/agents/contract'
 import type { MobileAgent, MobileBridge } from '../contract'
 import type { MobileClient } from './boot'
@@ -134,13 +136,17 @@ export function createMobileAgents(client: MobileClient, bridge: MobileBridge): 
 
   eachConnection(client.connections, attach)
 
-  // Notification events, consumed as every client consumes them: each goes
-  // to the app, and what an agent asked for shows on it until it works again.
-  attachAgentNotifications(client.connections, {
+  // Notification events, consumed as every client consumes them: what a
+  // panel asked for shows on its agent until it works again, and the gate
+  // (this device's settings and whether the app is in front) decides which
+  // become banners.
+  const gate = createNotificationGate({
+    settings: () => ({
+      notificationsEnabled: client.settings.get('notificationsEnabled'),
+      notifyOnlyWhenUnfocused: client.settings.get('notifyOnlyWhenUnfocused'),
+    }),
+    isFocused: () => client.isActive(),
     show(workspaceId, event) {
-      const entry = live.get(workspaceId)
-      if (entry && event.panelId && event.kind !== 'cate.ui.notify') entry.attention.set(event.panelId, event.body)
-      changed()
       void bridge('notification.show', {
         id: pushCollapseId(runtimeIdOf(workspaceId), event.panelId, Date.now()),
         workspaceId,
@@ -150,11 +156,18 @@ export function createMobileAgents(client: MobileClient, bridge: MobileBridge): 
         body: event.body,
       }).catch(() => {})
     },
-    cancel(workspaceId, panelId) {
-      if (!live.get(workspaceId)?.attention.delete(panelId)) return
-      changed()
-      void bridge('notification.withdraw', { id: pushCollapseId(runtimeIdOf(workspaceId), panelId, 0) }).catch(() => {})
-    },
+  })
+  attachNotifications(client.connections, (workspaceId, event) => {
+    const entry = live.get(workspaceId)
+    if (entry && event.panelId) entry.attention.set(event.panelId, event.body)
+    changed()
+    gate.show(workspaceId, event)
+  })
+  onAgentsWorking(client.connections, (workspaceId, panelId) => {
+    gate.cancel(workspaceId, panelId)
+    if (!live.get(workspaceId)?.attention.delete(panelId)) return
+    changed()
+    void bridge('notification.withdraw', { id: pushCollapseId(runtimeIdOf(workspaceId), panelId, 0) }).catch(() => {})
   })
 
   return {

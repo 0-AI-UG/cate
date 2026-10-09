@@ -1,12 +1,11 @@
 // The desktop's client settings: the shared slices plus the desktop's own
-// (canvas, sidebar, notifications, remote machines, the window).
+// (canvas, sidebar, remote machines, the window).
 
 import { composeSettings, type ComposedSettings, type SettingsTable } from '@kernel/settings/contract'
 import { SHARED_SETTINGS_SLICES } from '@panels/settings'
 import {
   canvasSettings,
   desktopSettings,
-  notificationSettings,
   remoteMachineSettings,
   sidebarSettings,
 } from './contract/settings'
@@ -15,7 +14,6 @@ const DESKTOP_SETTINGS_SLICES = [
   ...SHARED_SETTINGS_SLICES,
   canvasSettings,
   sidebarSettings,
-  notificationSettings,
   remoteMachineSettings,
   desktopSettings,
 ] as const

@@ -3,7 +3,8 @@ import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent } from '@kernel/rpc/contract'
 import type { PowerState } from '@runtime/power/contract'
 import { fakeStream } from '@services/agents/client/testing'
-import type { AgentConversation, AgentConversationChange, AgentNotificationEvent, AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '@services/agents/contract'
+import type { AgentConversation, AgentConversationChange, AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '@services/agents/contract'
+import type { NotificationEvent } from '@workspace/notifications/contract'
 import type { MobileBridge, MobileNotification, MobileViewEvent } from '../contract'
 import type { MobileClient } from './boot'
 import { registerPanelDefinitions } from '@client/host'
@@ -21,16 +22,16 @@ const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
   present: true, canReceivePrompt: false, session: { agentId: 'claude-code', runner: 'terminal', sessionId: 's', cwd: '/repo/.cate/worktrees/a' }, ...patch,
 })
 
-function setup() {
+function setup(options: { active?: boolean } = {}) {
   const panels = fakeStream<ChannelEvent<AgentPanelStates, AgentPanelStatesChange>>()
-  const notifications = fakeStream<AgentNotificationEvent>()
+  const notifications = fakeStream<NotificationEvent>()
   const power = fakeStream<ChannelEvent<PowerState, Partial<PowerState>>>()
   const runtime = {
     agents: {
       panels: () => panels.sub,
-      notifications: () => notifications.sub,
       start: vi.fn(async () => ({ panelId: 'new', runner: 'terminal', agentId: 'codex' })),
     },
+    notifications: { events: () => notifications.sub },
     power: { subscribe: vi.fn(() => power.sub) },
     push: { register: vi.fn(async () => ({ registered: true, blocked: null })) },
   }
@@ -53,6 +54,8 @@ function setup() {
   const client = {
     connections: { getSnapshot: () => [connection], subscribe: () => () => {} },
     workspaces: { getSnapshot: () => ({ entries: [{ id: 'ws', kind: 'paired', runtimeId: 'rrrrrrrrrrrrrrrr' }] }) },
+    settings: { get: (key: string) => ({ notificationsEnabled: true, notifyOnlyWhenUnfocused: true } as Record<string, boolean>)[key] },
+    isActive: () => options.active ?? false,
   } as unknown as MobileClient
   const shown: MobileNotification[] = []
   const withdrawn: string[] = []
@@ -82,6 +85,7 @@ describe('mobile agents', () => {
     t.panels.emit({ kind: 'change', rev: 1, change: { p1: state({ status: 'waitingForInput' }) } })
     await tick()
     expect(t.agents.agents('ws')[0]).toMatchObject({ status: 'waitingForInput', attention: 'Bash: npm test' })
+    await vi.waitFor(() => expect(t.shown).toHaveLength(1))
     expect(t.shown).toEqual([{
       id: 'rrrrrrrrrrrrrrrr.p1', workspaceId: 'ws', panelId: 'p1', kind: 'agent.needsPermission',
       title: 'Claude Code needs permission', body: 'Bash: npm test',
@@ -91,6 +95,17 @@ describe('mobile agents', () => {
     t.panels.emit({ kind: 'change', rev: 2, change: { p1: state({ status: 'running' }) } })
     expect(t.agents.agents('ws')[0].attention).toBeNull()
     expect(t.withdrawn).toEqual(['rrrrrrrrrrrrrrrr.p1'])
+  })
+
+  it('shows no banner while the app is in front, as notifyOnlyWhenUnfocused asks', async () => {
+    const t = setup({ active: true })
+    cleanup = t.stopResolver
+    t.panels.emit({ kind: 'snapshot', rev: 0, snapshot: { p1: state({ status: 'waitingForInput' }) } })
+    t.notifications.emit({ kind: 'agent.needsInput', panelId: 'p1', title: 'Claude Code needs input', body: 'Waiting.' })
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(t.shown).toEqual([])
+    // What it asked for still shows on the agent.
+    expect(t.agents.agents('ws')[0]).toMatchObject({ attention: 'Waiting.' })
   })
 
   it('reads keep-awake and this device\'s push registration', async () => {

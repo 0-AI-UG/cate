@@ -24,6 +24,7 @@ struct CateApp: App {
 struct RootView: View {
     @Environment(CoreHost.self) private var core
     @Environment(Notifier.self) private var notifier
+    @Environment(\.scenePhase) private var scenePhase
     @State private var path = NavigationPath()
     @State private var joining: JoinRequest?
 
@@ -57,6 +58,11 @@ struct RootView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(notifier.failure ?? "")
+        }
+        // The core's notification gate shows no banner while the app is in
+        // front and `notifyOnlyWhenUnfocused` is on.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            Task { await core.call("app.setActive", ["active": phase == .active]) }
         }
         .onOpenURL { url in
             guard QRScanner.isPairingLink(url.absoluteString) else { return }

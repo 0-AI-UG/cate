@@ -4,10 +4,5 @@ export {
   openAgentOf,
   type AgentPanelsHandle,
 } from './panelStates'
-export {
-  attachAgentNotifications,
-  type NotificationConnection,
-  type NotificationConnections,
-  type NotificationDisplay,
-} from './notifications'
+export { onAgentsWorking, type AgentConnections } from './working'
 export { watchAgentChat, type AgentChat, type AgentChatHandle } from './conversation'

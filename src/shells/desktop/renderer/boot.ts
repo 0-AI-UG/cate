@@ -27,7 +27,8 @@ import {
 } from '../ui/client/layout/canvas'
 import { canDetach, domDropEnvironment, installDragShell, installGestureLockWatchdog, setupCrossWindowDrops } from '../ui/client/layout/drag'
 import { installWindowReveal, installWindowsPort, syncDetachedWindows } from '../ui/client/layout/windows'
-import { attachAgentNotifications } from '@services/agents/client'
+import { onAgentsWorking } from '@services/agents/client'
+import { attachNotifications } from '@workspace/notifications/client'
 import {
   createNotificationDisplay,
   createUiStateStore,
@@ -174,7 +175,11 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
       notifyOnlyWhenUnfocused: settings.get('notifyOnlyWhenUnfocused'),
     }),
   })
-  stops.push(attachAgentNotifications(connections, display), () => display.dispose())
+  stops.push(
+    attachNotifications(connections, display.show),
+    onAgentsWorking(connections, display.cancel),
+    () => display.dispose(),
+  )
   stops.push(api.os.onNotificationAction((action) => {
     if (action && typeof action === 'object') runNotificationAction(action as NotificationAction)
   }))

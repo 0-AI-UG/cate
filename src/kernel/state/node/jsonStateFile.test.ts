@@ -9,6 +9,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-jsonstate-test-'))
 vi.mock('chokidar', () => ({ watch: () => ({ on: vi.fn(), close: vi.fn() }) }))
 
 const { createJsonStateFile } = await import('./jsonStateFile')
+const { onQuarantine, quarantinedFiles } = await import('./quarantine')
 
 interface Shape { items: string[] }
 const defaults: Shape = { items: [] }
@@ -50,11 +51,17 @@ describe('jsonStateFile', () => {
 
   test('corrupt file is quarantined and falls back to defaults', () => {
     fs.writeFileSync(at('d.json'), '{ not valid json,,,')
+    const heard: string[] = []
+    const off = onQuarantine(({ file }) => heard.push(file))
     const store = createJsonStateFile({ file: at('d.json'), defaults, normalize })
     expect(store.get()).toEqual({ items: [] })
+    off()
     const backups = fs.readdirSync(dir).filter((f) => f.startsWith('d.json.corrupt-'))
     expect(backups.length).toBe(1)
     expect(fs.readFileSync(path.join(dir, backups[0]), 'utf-8')).toContain('not valid json')
+    // The process's owner hears of it, to warn the person.
+    expect(heard).toEqual([at('d.json')])
+    expect(quarantinedFiles().at(-1)).toEqual({ file: at('d.json'), backup: path.join(dir, backups[0]) })
   })
 
   test('update applies a functional change', () => {

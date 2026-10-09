@@ -41,14 +41,6 @@ export const sidebarSettings = defineSettings({
   },
 })
 
-export const notificationSettings = defineSettings({
-  scope: 'client',
-  keys: {
-    notificationsEnabled: setting(true),
-    notifyOnlyWhenUnfocused: setting(true),
-  },
-})
-
 /** Machines this device sets workspaces up on over SSH ("Remote machines"). */
 export const remoteMachineSettings = defineSettings({
   scope: 'client',

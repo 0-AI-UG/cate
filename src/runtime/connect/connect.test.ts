@@ -152,7 +152,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     expect(await push.register({ target: `apns:sandbox:${'ab'.repeat(32)}`, key: encodeBase64(key) }))
       .toEqual({ registered: true, blocked: null })
 
-    daemon.workspace.agents.publishNotification({ kind: 'cate.ui.notify', title: 'Build done', body: 'All green' })
+    daemon.workspace.notifications.publish({ kind: 'cate.ui.notify', title: 'Build done', body: 'All green' })
     await expect.poll(() => service.pushes.length).toBe(1)
     expect(service.pushes[0]).toMatchObject({ runtimeId: daemon.networkId, push: { target: `apns:sandbox:${'ab'.repeat(32)}` } })
     expect(openPushMessage(key, service.pushes[0].push.sealed)).toMatchObject({ runtimeId: daemon.networkId, title: 'Build done', body: 'All green' })

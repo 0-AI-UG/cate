@@ -2,6 +2,7 @@
 // service knows runners exist; everything else talks about sessions.
 
 import { AGENT_DEFS, matchAgentDef, type AgentDef, type AgentId } from './registry'
+import type { NotificationEvent } from '@workspace/notifications/contract'
 
 /** How an agent session executes and how Cate observes it. */
 export type AgentRunner = 'terminal' | 't3'
@@ -73,23 +74,6 @@ export interface TerminalResumeStamp {
   profile?: string
 }
 
-/** A notification event (architecture 10.5). Each client decides whether to
- *  show it from its settings and focus. The stream also carries
- *  `cate.ui.notify` from the `cate` API, which may name no panel. */
-export type AgentNotificationEvent =
-  | {
-      kind: 'agent.needsInput' | 'agent.needsPermission'
-      panelId: string
-      title: string
-      body: string
-    }
-  | {
-      kind: 'cate.ui.notify'
-      panelId?: string
-      title: string
-      body: string
-      level?: 'info' | 'warning' | 'error'
-    }
 
 /** The one "agent needs you" notification for every runner. `permission`
  *  switches to the needs-permission variant and carries what is blocked. */
@@ -97,7 +81,7 @@ export function agentAttentionNotification(options: {
   panelId: string
   agentName: string | null
   permission?: string
-}): AgentNotificationEvent {
+}): NotificationEvent {
   const name = options.agentName ?? 'Agent'
   return options.permission
     ? { kind: 'agent.needsPermission', panelId: options.panelId, title: `${name} needs permission`, body: options.permission }

@@ -7,11 +7,13 @@ import { createTerminalService, type ActivityScan, type EnvContributor, type Lau
 import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentNotificationEvent } from '../../../contract'
+import { AGENT_DEFS, AGENT_LAUNCH, type AgentId } from '../../../contract'
 import { createAgentsCore, type AgentsCore } from '../../core'
 import type { AgentsDocument, RelationContextMode } from '../../promptContext'
 import { AGENT_SESSION_STORES } from '../../sessions'
 import { createTerminalRunner, type RunnerTerminalService, type TerminalRunner } from './terminalRunner'
+import type { NotificationEvent } from '@workspace/notifications/contract'
+
 
 function fakeTerminal() {
   const contributors = new Set<EnvContributor>()
@@ -95,7 +97,7 @@ let terminal: ReturnType<typeof fakeTerminal>
 let doc: ReturnType<typeof fakeDocument>
 let agents: AgentsCore
 let runner: TerminalRunner
-let notifications: AgentNotificationEvent[]
+let notifications: NotificationEvent[]
 let root: string
 let stampsFile: string
 let hookConfig: Partial<Record<AgentId, 'auto' | 'on' | 'off'>>
@@ -110,6 +112,7 @@ async function post(env: Record<string, string>, agentId: string, payload: Recor
 }
 
 beforeEach(() => {
+  notifications = []
   procTree = { nameByPid: new Map(), childrenByPid: new Map() }
   hookConfig = {}
   root = tmp('root')
@@ -128,6 +131,7 @@ beforeEach(() => {
     document: doc.document,
     resolveCheckout: async (cwd) => cwd ?? root,
     snapshot: async () => procTree,
+    notify: (event) => { notifications.push(event) },
     watchStatus: () => () => {},
     homeDir: tmp('home'),
     hookOptions: {
@@ -135,8 +139,6 @@ beforeEach(() => {
       sessionStores: { ...AGENT_SESSION_STORES, 'claude-code': { title: async () => 'Fix login bug', conversation: async () => [{ role: 'user', text: 'hi' }] } },
     },
   })
-  notifications = []
-  agents.notifications.subscribe((event) => notifications.push(event))
   runner = createTerminalRunner(agents, terminal.service, { stampsFile })
   agents.registry.register(runner)
 })

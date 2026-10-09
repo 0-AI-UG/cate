@@ -29,8 +29,5 @@ export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter):
         else sink.emit({ kind: 'snapshot', rev: rev = 0, snapshot: conversation })
       })
     },
-    notifications(_params, sink) {
-      return agents.notifications.subscribe((event) => sink.emit(event))
-    },
   }
 }

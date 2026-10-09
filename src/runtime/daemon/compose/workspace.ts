@@ -53,6 +53,8 @@ import { t3Capability } from '@services/t3/contract'
 import { createT3Runtime, t3CapabilityImpl, type T3PtyHost } from '@services/t3/runtime'
 import { AGENTS, agentsCapability } from '@services/agents/contract'
 import { agentApi } from '@services/agents/contract/api'
+import { notificationsCapability } from '@workspace/notifications/contract'
+import { createNotifications, notificationsCapabilityImpl } from '@workspace/notifications/runtime'
 import { CATE_API } from '@panels/api'
 import {
   createAgentsRuntime,
@@ -75,6 +77,7 @@ import { PANEL_RUNTIMES, type PanelPorts, type PanelRuntime, type PanelServices 
 import { createChatThreads } from '@panels/chat/runtime'
 import { installLayout } from '../contract'
 import type { BusyRegistry } from '../runtime'
+import { onQuarantine, quarantinedFiles, type Quarantined } from '@kernel/state/node'
 
 export interface WorkspaceDeps {
   root: string
@@ -242,6 +245,20 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     paths: { validate: (p) => files.paths.strict(p) },
   })
 
+  // Notification events: agents and `cate.ui.notify` publish, clients and
+  // push delivery follow.
+  const notifications = createNotifications()
+  // A state file that could not be read was reset; the person hears of it,
+  // with where the old one went, even when no client was there yet.
+  const quarantineWarning = ({ file, backup }: Quarantined): void => notifications.keep({
+    kind: 'cate.ui.notify',
+    title: 'A Cate file could not be read',
+    body: `${file} was reset to its defaults. The unreadable file was kept as ${backup}.`,
+    level: 'warning',
+  })
+  for (const entry of quarantinedFiles()) quarantineWarning(entry)
+  offs.push(onQuarantine(quarantineWarning))
+
   // Which thread each chat panel shows, from the document, for the agents
   // service's t3 runner.
   let broker: ReturnType<typeof createSurfaceBroker> | undefined
@@ -294,6 +311,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     document: agentsDocument(document),
     resolveCheckout,
     snapshot: snapshotProcessTree,
+    notify: (event) => notifications.publish(event),
     watchStatus: (cwd, listener) => repository.monitors.subscribe(cwd, listener),
     flushConnected: (panelId) => connectedEditors.flush(panelId),
     relationRole: (type) => relationRole(type),
@@ -331,7 +349,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   offs.push(deps.busy.contribute(() => t3.busy()))
 
   // `cate.ui.notify` reaches clients on the agents notification stream.
-  offs.push(registerKernelApi(router, { publishNotification: (event) => agentsRuntime.publishNotification(event) }))
+  offs.push(registerKernelApi(router, { publishNotification: (event) => notifications.publish(event) }))
   offs.push(router.registerService(agentApi, agentsRuntime.apiHandlers()))
 
   // ---- Panels -----------------------------------------------------------------
@@ -392,6 +410,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   rpc.register(browserDataCapability, browserDataCapabilityImpl(browserData))
   rpc.register(t3Capability, t3CapabilityImpl(t3))
   rpc.register(agentsCapability, agentsRuntime.capability())
+  rpc.register(notificationsCapability, notificationsCapabilityImpl(notifications))
   rpc.register(sessionCapability, sessionCapabilityImpl({ host, presence }))
   rpc.register(surfaceCapability, broker.capability())
   rpc.register(apiCapability, apiCapabilityImpl(router))
@@ -430,6 +449,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     tokens,
     terminal,
     agents: agentsRuntime,
+    notifications,
     t3,
     host,
     /** Page operations on clients' surfaces (section 10.2). */

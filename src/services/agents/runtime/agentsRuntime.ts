@@ -9,7 +9,6 @@ import type { CateServiceHandlers } from '@kernel/api/contract'
 import type {
   AgentChangesSnapshot,
   AgentId,
-  AgentNotificationEvent,
   AgentRunner,
   AgentSendResult,
   AgentSessionChanges,
@@ -55,10 +54,6 @@ export interface AgentsRuntime {
   /** The relation context to send with the panel's next prompt (armed
    *  context is disarmed); a T3 page asks before it sends. */
   relationContext(panelId: string, agentId: AgentId | null): Promise<string | null>
-  /** Notification events (architecture 10.5): `cate.ui.notify` publishes,
-   *  push delivery subscribes. */
-  publishNotification(event: AgentNotificationEvent): void
-  onNotification(listener: (event: AgentNotificationEvent) => void): () => void
   /** Env for a starting T3 harness so it reports its edits. */
   changeCaptureEnv(harness: { id: string; checkout: string }): Promise<Record<string, string>>
   /** A T3 harness stopped. */
@@ -89,8 +84,6 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     },
     onSessionEnded: (listener) => terminalRunner.onExit((panelId) => listener(panelId)),
     relationContext: (panelId, agentId) => core.promptContext.prepareForSend(panelId, agentId),
-    publishNotification: (event) => core.notifications.publish(event),
-    onNotification: (listener) => core.notifications.subscribe(listener),
     changeCaptureEnv: (harness) => t3Runner.changeCaptureEnv(harness),
     releaseChangeCapture: (id) => t3Runner.releaseChangeCapture(id),
     capability: () => agentsCapabilityImpl(core, starter),

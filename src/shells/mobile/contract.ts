@@ -236,6 +236,9 @@ export type MobileJoinResult = { ok: true; workspaceId: string } | { ok: false; 
 
 export interface MobileCoreMethods {
   /** Pairs from a `cate://pair` link or a typed code and opens the workspace. */
+  /** The app came to the front or went away (its scene phase): a client in
+   *  front shows no notifications when `notifyOnlyWhenUnfocused` is on. */
+  'app.setActive': { params: { active: boolean }; result: null }
   'workspaces.join': { params: { input: string }; result: MobileJoinResult }
   'workspaces.open': { params: { workspaceId: string }; result: null }
   /** The person's answer to `trustPrompt`. */

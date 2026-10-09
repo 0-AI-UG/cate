@@ -1,17 +1,15 @@
 // The desktop's display for the shared notification consumer
-// (`attachAgentNotifications`, architecture 10.5, 12.2 rule 7): each event,
-// gated by the client's notification settings and focus, becomes an OS
-// notification through `clientUi().notify` when the client has
+// (`attachNotifications`, architecture 10.5, 12.2 rule 7): through the core's
+// gate (the client's notification settings and focus), each event becomes an
+// OS notification through `clientUi().notify` when the client has
 // `osNotifications`, else an in-app toast. Clicking one focuses its panel.
 
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { clientUi } from '@kernel/interaction'
 import type { NotificationAction } from '@kernel/interaction/contract'
-import type { NotificationDisplay } from '@services/agents/client'
-import type { AgentNotificationEvent } from '@services/agents/contract'
 import { placementOf } from '@workspace/document/contract'
-import { createNotificationDebouncer } from './debouncer'
-import { shouldShowNotification, type NotificationSettings } from './gating'
+import { createNotificationGate, type NotificationGate } from '@workspace/notifications/client'
+import type { NotificationEvent, NotificationSettings } from '@workspace/notifications/contract'
 import { toasts as defaultToasts, type ToastStore } from './toasts'
 
 const focusListeners = new Set<(workspaceId: string, panelId: string) => void>()
@@ -52,22 +50,12 @@ export interface NotificationDisplayDeps {
   debounceMs?: number
 }
 
-export interface DesktopNotificationDisplay extends NotificationDisplay {
-  dispose(): void
-}
-
-export const NOTIFICATION_DEBOUNCE_MS = 300
-
-const keyOf = (workspaceId: string, event: { panelId?: string; kind: string }) =>
-  `${workspaceId}\0${event.panelId ?? `kind:${event.kind}`}`
-
-export function createNotificationDisplay(deps: NotificationDisplayDeps): DesktopNotificationDisplay {
+export function createNotificationDisplay(deps: NotificationDisplayDeps): NotificationGate {
   const isFocused = deps.isFocused ?? (() => typeof document !== 'undefined' && document.hasFocus())
   const osNotifications = deps.osNotifications ?? (() => !!clientUi().notify)
   const toasts = deps.toasts ?? defaultToasts
 
-  const fire = ({ workspaceId, event }: { workspaceId: string; event: AgentNotificationEvent }) => {
-    if (!shouldShowNotification(deps.settings(), isFocused())) return
+  const show = (workspaceId: string, event: NotificationEvent) => {
     const action: NotificationAction | undefined = event.panelId
       ? { type: 'focusPanel', workspaceId, panelId: event.panelId }
       : undefined
@@ -83,10 +71,5 @@ export function createNotificationDisplay(deps: NotificationDisplayDeps): Deskto
     })
   }
 
-  const debouncer = createNotificationDebouncer(deps.debounceMs ?? NOTIFICATION_DEBOUNCE_MS, fire)
-  return {
-    show: (workspaceId, event) => debouncer.request(keyOf(workspaceId, event), { workspaceId, event }),
-    cancel: (workspaceId, panelId) => debouncer.cancel(keyOf(workspaceId, { panelId, kind: '' })),
-    dispose: () => debouncer.dispose(),
-  }
+  return createNotificationGate({ settings: deps.settings, isFocused, show, ...(deps.debounceMs !== undefined ? { debounceMs: deps.debounceMs } : {}) })
 }

@@ -49,6 +49,10 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
   const { terminals, views, browsers, chats, buffers, streams, agents, conversations } = parts
   return {
     ...createActionHandlers(agents, conversations),
+    async 'app.setActive'({ active }) {
+      client.setActive(active)
+      return null
+    },
     async 'workspaces.join'({ input }) {
       try {
         const entry = await joinWorkspace(input, { pair: client.pair, workspaces })

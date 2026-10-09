@@ -1,5 +1,6 @@
 // The agents service core (architecture 10.4): hook ingestion, pid presence,
-// change history, the runner registry, prompt context and notifications.
+// change history, the runner registry and prompt context. Agents publish
+// their notification events through the workspace's notifications.
 // Runners (runners/terminal, runners/t3) plug into it.
 
 import type { RelationRoleOf } from '@workspace/relations/contract'
@@ -19,7 +20,7 @@ import type { StoredAgentChange } from './changes/store'
 import { createAgentHooks, type AgentHooks, type AgentHooksDeps } from './hooks/agentHooks'
 import { createAgentPresenceTracker, type AgentPresenceTracker, type ProcTree } from './presence'
 import { createRunnerRegistry, type RunnerRegistry } from './registry'
-import { createAgentNotifications, type AgentNotifications } from './notifications'
+import type { NotificationEvent } from '@workspace/notifications/contract'
 import { createAgentConversations, type AgentConversations } from './conversations'
 import { createPromptContext, type AgentsDocument, type PromptContext } from './promptContext'
 
@@ -46,6 +47,8 @@ export interface AgentsCoreDeps {
   /** Canonicalizes a checkout (the root when omitted) and refuses anything but
    *  the root or one of its worktree checkouts. */
   resolveCheckout(cwd: string | undefined): Promise<string>
+  /** Publishes a notification event (the workspace's notifications). */
+  notify(event: NotificationEvent): void
   /** A fresh process-table snapshot (the terminal service's scanner). */
   snapshot(): Promise<ProcTree>
   /** A checkout's git status: now, then on every change (the repository's
@@ -70,7 +73,7 @@ export interface AgentsCore {
   readonly hooks: AgentHooks
   readonly presence: AgentPresenceTracker
   readonly registry: RunnerRegistry
-  readonly notifications: AgentNotifications
+  readonly notifications: { publish(event: NotificationEvent): void }
   readonly conversations: AgentConversations
   readonly promptContext: PromptContext
   resolveCheckout(cwd: string | undefined): Promise<string>
@@ -102,7 +105,7 @@ export function createAgentsCore(deps: AgentsCoreDeps): AgentsCore {
       presence.notePost(terminalId, agentId, pid, sourceStartedAt),
     onChangeError: (error) => deps.log?.warn('could not save a reported agent edit', error),
   })
-  const notifications = createAgentNotifications()
+  const notifications = { publish: (event: NotificationEvent) => deps.notify(event) }
   const promptContext = createPromptContext({
     document: deps.document,
     relationsEnabled: () => deps.settings.panelRelationsEnabled(),

@@ -14,11 +14,18 @@ import type { MobileBridge } from '../contract'
 import { createDeviceStore, loadDeviceKeys } from './device'
 import { createMobileShellTransports } from './transports'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
+import { sharedClientSettingsTable, type SharedClientSettings } from '@panels/settings'
+import { createClientSettingsStore, type ClientSettingsStore } from '@kernel/settings/client'
 
 export interface MobileClient {
   connections: WorkspaceConnections
   workspaces: WorkspaceList
   pair: NonNullable<ShellTransports['pair']>
+  /** This device's client settings (the shared slices). */
+  settings: ClientSettingsStore<SharedClientSettings>
+  /** Whether the app is in front of the person (`app.setActive`). */
+  isActive(): boolean
+  setActive(active: boolean): void
 }
 
 export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClient> {
@@ -44,5 +51,15 @@ export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClie
     panels: PANEL_DEFINITIONS,
     capabilities: RUNTIME_CAPABILITIES,
   })
-  return { connections, workspaces, pair: transports.pair! }
+  const settings = createClientSettingsStore(device, sharedClientSettingsTable)
+  await settings.load()
+  let active = true
+  return {
+    connections,
+    workspaces,
+    pair: transports.pair!,
+    settings,
+    isActive: () => active,
+    setActive: (next) => { active = next },
+  }
 }

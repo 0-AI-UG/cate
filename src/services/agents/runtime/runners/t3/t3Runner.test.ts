@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { panelDefinition } from '@panels/definitions'
 import type { T3ShellEvent, T3Thread } from '@services/t3/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
-import type { AgentNotificationEvent } from '../../../contract'
 import { createAgentsCore, type AgentsCore } from '../../core'
 import type { AgentsDocument, RelationContextMode } from '../../promptContext'
 import { createAgentChangesStore } from '../../changes/store'
 import { createT3Runner, type RunnerT3Service, type T3PanelBindings, type T3Runner } from './t3Runner'
+import type { NotificationEvent } from '@workspace/notifications/contract'
+
 
 const CHECKOUT = '/repo'
 
@@ -37,7 +38,7 @@ let binding: { checkout: string; threadId?: string } | undefined
 let doc: ReturnType<typeof fakeDocument>
 let agents: AgentsCore
 let runner: T3Runner
-let notifications: AgentNotificationEvent[]
+let notifications: NotificationEvent[]
 let statusListener: (status: { isRepo: boolean; files: { path: string }[] }) => void = () => {}
 const dirs: string[] = []
 
@@ -49,6 +50,7 @@ const idle = (title = 'Chat'): T3Thread => ({ id: 'thread-1', title, latestTurn:
 const running = (): T3Thread => ({ ...idle(), latestTurn: { state: 'running' }, session: { status: 'running', activeTurnId: 't', providerName: 'codex' } })
 
 beforeEach(() => {
+  notifications = []
   turns = []
   startTurn = vi.fn<RunnerT3Service['startTurn']>(async (params) => { turns.push(params) })
   binding = { checkout: CHECKOUT, threadId: 'thread-1' }
@@ -81,10 +83,9 @@ beforeEach(() => {
     document: doc.document,
     resolveCheckout: async (cwd) => cwd ?? CHECKOUT,
     snapshot: async () => ({ nameByPid: new Map(), childrenByPid: new Map() }),
+    notify: (event) => { notifications.push(event) },
     watchStatus: (_cwd, listener) => { statusListener = listener; return () => {} },
   })
-  notifications = []
-  agents.notifications.subscribe((event) => notifications.push(event))
   runner = createT3Runner(agents, t3, bindings)
   agents.registry.register(runner)
 })

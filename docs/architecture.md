@@ -254,7 +254,7 @@ The split follows the client test (section 3).
 | Terminal screen state and scrollback (headless terminal per PTY) |
 | Terminal logs, shell env |
 | Agents: hook ingestion, pid presence, change history, session stores, conversation reads, Hermes |
-| Agents: status state machine, resume stamps, notifications, driver selection |
+| Agents: status state machine, resume stamps, driver selection |
 | Starting agents: a new terminal or chat panel on a prompt |
 | T3 harness lifecycle, provider auth, thread shells |
 | T3 state: per-checkout instances, provider profile and secrets |
@@ -268,7 +268,7 @@ The split follows the client test (section 3).
 | Skills: installs, mirror, sources, registry |
 | Trust, granted paths, terminal logs, screenshots |
 | Keep awake while work runs |
-| Agent notifications (deciding that something happened) |
+| Notification events (deciding that something happened) and the warnings kept for later clients |
 | Presence: which clients view and focus which panel |
 | Pairing, the network transports, the security layer, Cate Connect registration |
 | The workspace data directory and the local socket that keeps one runtime per workspace |
@@ -883,7 +883,7 @@ or that changes shared state, is a **workspace** setting.
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta`, `terminalLinkOpenTarget` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
 | Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
-| Notifications (`shells/desktop`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
+| Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
 | Remote machines (`shells/desktop`) | `sshMachines` | |
 | Shortcuts (`kernel/interaction`) | `customShortcuts` | |
 | Desktop (`shells/desktop`) | `warnBeforeQuit`, `betaUpdatesEnabled`, `disableGpuRasterization` (applies after restart) | |
@@ -1281,15 +1281,23 @@ t3 never import agents.
 
 ### 10.5 Notifications
 
-Services publish notification events from the runtime
-(`{kind, panelId, title, body}`: an agent finished or needs attention, a
-command failed, `cate.ui.notify`). Each client decides whether to show one,
-from its notification settings and its own focus, and shows it through
-`ClientUi`. Every client consumes them the same way,
-`attachAgentNotifications` (`services/agents/client`): one subscription per
-open workspace, each event handed to the shell's display, and a pending
-agent notification withdrawn when that agent works again. The same events
-reach devices that are away as pushes (section 7.9, `push`).
+`workspace/notifications` owns notification events
+(`{kind, panelId, title, body}`: an agent needs attention, `cate.ui.notify`,
+a warning). Agents, the terminal and the `cate` API publish through the
+runtime side (`publish`, or `keep` for a warning raised before any client
+was there, such as a state file `kernel/state` quarantined); clients follow
+the `notifications` capability's stream, and the composition root hands
+every event to push delivery for devices that are away (section 7.9).
+
+Every client consumes them the same way, from the client side:
+`attachNotifications` (one subscription per open workspace) feeds a
+`createNotificationGate`, which waits a moment for a newer event or a
+cancel and then shows one only when the client's notification settings
+(`notificationsEnabled`, `notifyOnlyWhenUnfocused`, a shared client slice)
+and its own focus allow; each shell gives the gate its `show` (the desktop:
+an OS notification or a toast; iOS: a banner through the app). When a
+panel's agent works again (`onAgentsWorking`, `services/agents/client`),
+the pending event for it is cancelled.
 
 ## 11. Panels
 
@@ -1809,8 +1817,10 @@ not CLI commands (`cli: {command: false}`); the CLI reaches them through
   agent's own panel, one tap away), and a
   new agent as an empty chat whose box picks what runs it, started with
   `cate.agent.start` in the dock or on a canvas the person picks. The core
-  consumes notification events like every client and hands each to the
-  app (`notification.show`, `notification.withdraw`); the app registers its
+  consumes notification events like every client, through the same gate
+  (the app tells the core when it comes to the front, `app.setActive`), and
+  hands each banner to the app (`notification.show`,
+  `notification.withdraw`); the app registers its
   APNs target for pushes, and a notification service extension opens them
   with the key the app keeps in a Keychain group they share.
 
@@ -1860,13 +1870,14 @@ src/
     repository/             contract runtime/ client/
     skills/                 contract runtime/
     relations/              contract runtime/ client/
+    notifications/          contract runtime/ client/   events, the gate
   services/
     terminal/               contract runtime/ client/
     browser/                contract runtime/ client/ desktop/
     t3/                     contract runtime/ client/
-    agents/                 contract runtime/ client/ runners/{terminal,t3}/
+    agents/                 contract runtime/ (runners/{terminal,t3}/) client/
   client/
-    connections/  workspaces/  document/  host/
+    core/  connections/  workspaces/  document/  host/
   panels/
     framework/              contract runtime/ client/
     terminal/  editor/  browser/  chat/  review/  canvas/  surface/

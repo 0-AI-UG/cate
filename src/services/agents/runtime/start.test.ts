@@ -8,6 +8,7 @@ import type { AgentHookConfig } from '../contract'
 import { createAgentsCore, type AgentsCore } from './core'
 import { createAgentStarter, type AgentStartPorts } from './start'
 
+
 let root: string
 let agents: AgentsCore
 let hookConfig: AgentHookConfig
@@ -45,6 +46,7 @@ beforeEach(() => {
     },
     resolveCheckout: async (cwd) => cwd ?? root,
     snapshot: async () => ({ nameByPid: new Map(), childrenByPid: new Map() }),
+    notify: () => {},
     watchStatus: () => () => {},
   })
   ports = {
