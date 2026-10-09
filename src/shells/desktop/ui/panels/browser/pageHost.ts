@@ -14,10 +14,9 @@
 
 import { RpcError } from '@kernel/rpc/contract'
 import type { BrowserDriverResult, BrowserPageBridge } from '@services/browser/contract'
-import { BROWSER_NEW_TAB_URL } from '@services/browser/contract'
 import type { BrowserOp, BrowserSnapshot, BrowserSurfaceArgs, BrowserSurfaceResult, BrowserTab } from '@panels/browser/contract'
 import { pageLoadErrorFrom } from '@panels/browser/contract'
-import { isBrowserInternalPage } from '@panels/browser/contract'
+import { createBrowserTabFollower, loadableTabUrl } from '@panels/browser/client'
 
 /** The Electron <webview> element methods the view uses. */
 export interface BrowserGuest extends HTMLElement {
@@ -58,10 +57,6 @@ interface BrowserAutofill {
 interface Page {
   webview: BrowserGuest
   ready: boolean
-  /** The last `nav` this page has applied. */
-  seenNav: number
-  /** A load made to follow the session: its navigation is not reported. */
-  following: boolean
   /** A URL to load once the guest is ready. */
   pending: string | null
   detach(): void
@@ -98,12 +93,13 @@ interface PasswordSubmit {
   passwordElement?: string
 }
 
-const isStartPage = (url: string) => url === BROWSER_NEW_TAB_URL
-const loadable = (url: string) => !isStartPage(url) && !isBrowserInternalPage(url)
+const loadable = loadableTabUrl
 const defaultFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
 export class BrowserPageHost {
   private readonly pages = new Map<string, Page>()
+  /** Which tabs follow the session (the core's tab follower). */
+  private readonly follower = createBrowserTabFollower(() => this.deps.clientId)
   private readonly listeners = new Set<() => void>()
   private readonly waiters = new Set<() => void>()
   private snapshot: BrowserSnapshot | null = null
@@ -164,15 +160,16 @@ export class BrowserPageHost {
 
   update(snapshot: BrowserSnapshot): void {
     this.snapshot = snapshot
-    for (const tab of snapshot.tabs) {
-      const page = this.pages.get(tab.id)
-      if (!page || tab.nav <= page.seenNav) continue
-      page.seenNav = tab.nav
-      if (tab.navSource === this.deps.clientId || !loadable(tab.url)) continue
+    for (const { tabId, url } of this.follower.toFollow(snapshot)) {
+      const page = this.pages.get(tabId)
       let current = ''
-      try { current = page.ready ? page.webview.getURL() : '' } catch { /* detached */ }
-      if (current === tab.url) continue
-      this.follow(page, tab.url)
+      try { current = page?.ready ? page.webview.getURL() : '' } catch { /* detached */ }
+      // No page yet (it mounts on the tab's URL), or it is there already.
+      if (!page || current === url) {
+        this.follower.loadEnded(tabId)
+        continue
+      }
+      this.follow(page, url)
     }
     for (const check of [...this.waiters]) check()
   }
@@ -182,7 +179,6 @@ export class BrowserPageHost {
       page.pending = url
       return
     }
-    page.following = true
     try {
       void Promise.resolve(page.webview.loadURL(url)).catch(() => { /* reported by did-fail-load */ })
     } catch { /* detached */ }
@@ -197,8 +193,7 @@ export class BrowserPageHost {
     previous?.detach()
     this.pages.delete(tabId)
     if (webview && !this.disposed) {
-      const tab = this.tab(tabId)
-      const page: Page = { webview, ready: false, seenNav: tab?.nav ?? 0, following: false, pending: null, detach: () => {} }
+      const page: Page = { webview, ready: false, pending: null, detach: () => {} }
       page.detach = this.listen(tabId, page)
       this.pages.set(tabId, page)
     }
@@ -256,7 +251,7 @@ export class BrowserPageHost {
         reportLoad({ loading: true })
       },
       'did-stop-loading': () => {
-        page.following = false
+        this.follower.loadEnded(tabId)
         if (active()) this.setLocal({ isLoading: false })
         reportLoad({ loading: false })
       },
@@ -295,9 +290,7 @@ export class BrowserPageHost {
     }
     // A followed navigation reports no URL (clients' redirects could
     // ping-pong), only its history state.
-    const op: BrowserOp = page.following
-      ? { kind: 'reportLoad', tabId, canGoBack, canGoForward }
-      : { kind: 'reportNavigation', tabId, url, ...(inPage ? { inPage } : title ? { title } : {}), canGoBack, canGoForward }
+    const op: BrowserOp = this.follower.report(tabId, { url, title, inPage, canGoBack, canGoForward })
     void this.deps.send(op).catch(() => { /* the panel went away */ })
   }
 
@@ -425,7 +418,7 @@ export class BrowserPageHost {
     if (!this.pages.has(tabId) && tabId === this.snapshot?.activeTabId) this.deps.reveal?.(tabId)
     const settled = await this.waitFor(() => {
       const page = this.pages.get(tabId)
-      if (!page?.ready || page.seenNav < nav || page.pending) return undefined
+      if (!page?.ready || (this.follower.seenNav(tabId) ?? 0) < nav || page.pending) return undefined
       page.webview.getWebContentsId()
       return page.webview.isLoading() ? undefined : this.info(page)
     }, args.timeoutMs ?? 8_000)
