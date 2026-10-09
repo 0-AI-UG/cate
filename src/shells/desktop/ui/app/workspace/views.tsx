@@ -16,7 +16,7 @@ import {
   type CanvasToolbarAction,
   type CanvasToolbarItemProps,
 } from '../../client/layout/canvas'
-import { AgentChangesOverlay, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
+import { AgentChangesOverlay, AgentHooksOffOverlay, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
 import { t3Conversations } from '@services/t3/client'
 import { T3ConversationMenu, UsageOverview } from '../../services/t3'
 import { SkillsDialog } from '../../workspace/skills'
@@ -165,6 +165,7 @@ export function registerWorkspaceViews(): () => void {
     registerPanelChromeOverlay(WorktreeChip),
     registerPanelChromeOverlay(RelationToggle),
     registerPanelChromeOverlay(AgentChangesOverlay),
+    registerPanelChromeOverlay(AgentHooksOffOverlay),
     registerCanvasToolbarItem({ id: 'worktrees', group: 'tools', order: 10, Component: WorktreeToolbarItem }),
     registerCanvasToolbarItem({ id: 't3-conversations', group: 'create', order: 90, Component: ConversationsToolbarItem }),
   ]

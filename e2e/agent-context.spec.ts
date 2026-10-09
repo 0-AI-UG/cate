@@ -2,8 +2,8 @@
 // stand-in (fixtures/fake-claude.cjs) runs in a real Cate terminal connected
 // to a browser panel and runs whatever hooks Cate installed for it. With the
 // hooks, a typed prompt and `cate agent send` both carry the context once;
-// without them, or under an agent that cannot take context (Cursor), the
-// context chip warns and nothing is sent.
+// without them the panel's Hooks off chip warns, under an agent that cannot
+// take context (Cursor) the context chip warns, and nothing is sent.
 
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
@@ -61,10 +61,10 @@ async function typePrompt(terminal: string, prompt: string): Promise<void> {
   await expect.poll(() => turns().length, { timeout: 20_000 }).toBe(before + 1)
 }
 
-test('an agent without Cate hooks gets a warning on the context chip and no context', async () => {
+test('an agent without Cate hooks gets a Hooks off chip and no context', async () => {
   const terminal = await startConnectedAgent(false)
-  await expect(chip()).toHaveAccessibleName(/not sent: Hooks off/, { timeout: 20_000 })
-  await expect(chip()).toContainText('Hooks off')
+  await expect(page.getByRole('button', { name: 'Hooks off' })).toBeVisible({ timeout: 20_000 })
+  await expect(chip()).not.toContainText('Hooks off')
   await typePrompt(terminal, 'hello')
   expect(turns()).toEqual([{ prompt: 'hello', context: null }])
 })

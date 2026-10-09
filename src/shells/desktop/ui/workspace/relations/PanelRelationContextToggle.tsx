@@ -3,7 +3,7 @@
 // off). Spelled out while context is armed and for a moment after it was
 // sent; an icon otherwise. Hidden when relations are off, nothing is
 // connected, or no agent runs in the panel. A warning while the agent cannot
-// take context (no prompt context hook, or its hooks are not installed).
+// take context (no prompt context hook).
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Waypoints } from 'lucide-react'
@@ -43,11 +43,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
       const count = compiled.relatedPanelIds.length
       const choice = await relationUiPort().showMenu([
         ...(blocked
-          ? [
-              { label: blocked.reason, enabled: false },
-              ...(blocked.fix ? [{ id: 'fix', label: blocked.fix.label }] : []),
-              { type: 'separator' as const },
-            ]
+          ? [{ label: blocked.reason, enabled: false }, { type: 'separator' as const }]
           : []),
         { label: `${count} connected panel${count === 1 ? '' : 's'} attached`, enabled: false },
         { type: 'separator' },
@@ -57,9 +53,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
         { type: 'separator' },
         { id: 'preview', label: 'Preview sent context…' },
       ])
-      if (choice === 'fix') {
-        blocked?.fix?.run()
-      } else if (choice === 'once' || choice === 'always' || choice === 'off') {
+      if (choice === 'once' || choice === 'always' || choice === 'off') {
         setRelationContextMode(workspaceId, panel.id, choice)
       } else if (choice === 'preview') {
         await relationUiPort().openTextPreview({

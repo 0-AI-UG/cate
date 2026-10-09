@@ -23,7 +23,7 @@ describe('PanelRelationContextToggle', () => {
   let detach: () => void
   let supported: boolean
   let sentAt: number | undefined
-  let blocked: { label: string; reason: string; fix?: { label: string; run(): void } } | undefined
+  let blocked: { label: string; reason: string } | undefined
   let settings: ReturnType<typeof testRelationHost>
   const showMenu = vi.fn<(items: RelationMenuItem[]) => Promise<string | null>>(async () => null)
   const openTextPreview = vi.fn(async () => 'preview-panel')
@@ -137,23 +137,7 @@ describe('PanelRelationContextToggle', () => {
     expect(menu.some((item) => 'label' in item && item.label?.includes('must use'))).toBe(false)
   })
 
-  it('warns while the agent cannot take context and offers the fix', async () => {
-    const fix = vi.fn()
-    blocked = { label: 'Hooks off', reason: 'Claude Code runs without Cate hooks.', fix: { label: 'Agent hooks settings…', run: fix } }
-    showMenu.mockResolvedValueOnce('fix')
-    await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
-    const button = host.querySelector('button')!
-    expect(button.querySelector('span')!.textContent).toBe('1 panel · Hooks off')
-    expect(button.title).toBe('Claude Code runs without Cate hooks.')
-    await act(async () => { button.click() })
-    expect(showMenu.mock.calls[0][0].slice(0, 2)).toEqual([
-      { label: 'Claude Code runs without Cate hooks.', enabled: false },
-      { id: 'fix', label: 'Agent hooks settings…' },
-    ])
-    expect(fix).toHaveBeenCalled()
-  })
-
-  it('warns without a fix when the agent cannot take context at all', async () => {
+  it('warns when the agent cannot take context', async () => {
     blocked = { label: 'Not supported', reason: 'Cursor cannot take context from Cate.' }
     await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
     const button = host.querySelector('button')!
@@ -162,6 +146,5 @@ describe('PanelRelationContextToggle', () => {
     await act(async () => { button.click() })
     const menu = showMenu.mock.calls[0][0]
     expect(menu[0]).toEqual({ label: 'Cursor cannot take context from Cate.', enabled: false })
-    expect(menu.some((item) => 'id' in item && item.id === 'fix')).toBe(false)
   })
 })

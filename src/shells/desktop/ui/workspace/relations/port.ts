@@ -13,8 +13,8 @@ export interface RelationContextTransport {
   decorate(text: string): string
   /** When context last went with the panel's prompt (epoch ms). */
   sentAt?: number
-  /** Context cannot reach the agent: a short label, why, and a fix if any. */
-  blocked?: { label: string; reason: string; fix?: { label: string; run(): void } }
+  /** Context cannot reach the agent: a short label and why. */
+  blocked?: { label: string; reason: string }
 }
 
 export interface RelationUiPort {

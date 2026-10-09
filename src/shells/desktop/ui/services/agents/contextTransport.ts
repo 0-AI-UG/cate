@@ -1,12 +1,11 @@
 // How a panel's running agent takes relation context (the relation UI's
 // `useContextTransport`): a T3 harness takes it as is; a terminal agent with a
 // prompt context hook gets its prompt guidance first. Context is blocked, with
-// a warning, for an agent that has no prompt context hook and for one running
-// without Cate's hooks.
+// a warning, for an agent that has no prompt context hook. An agent running
+// without Cate's hooks gets the panel's own Hooks off chip instead.
 
 import type { PanelRecord } from '@workspace/document/contract'
 import type { RelationContextTransport } from '../../workspace/relations'
-import { clientUi } from '@kernel/interaction'
 import { AGENT_DEFS } from '@services/agents/contract'
 import { useAgentPanelState } from './useAgentPanels'
 
@@ -23,12 +22,6 @@ export function useAgentContextTransport(workspaceId: string, panel: PanelRecord
         label: 'Not supported',
         reason: `${def.displayName} can't receive context`,
       }
-    : state.hooksMissing
-      ? {
-          label: 'Hooks off',
-          reason: `${def.displayName} hooks are off`,
-          fix: { label: 'Agent hooks settings…', run: () => clientUi().openSettings('hooks') },
-        }
-      : undefined
+    : undefined
   return { decorate: (text: string) => (guidance ? `${guidance}\n\n${text}` : text), sentAt, ...(blocked ? { blocked } : {}) }
 }
