@@ -51,8 +51,9 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
     }
     // The channel starts with a snapshot, so no separate `get` is needed.
     const mirror = mirrorChannel<PowerState>(() => power.subscribe())
-    const stop = mirror.subscribe(({ snapshot }) => {
-      setState(snapshot)
+    const stop = mirror.subscribe((channel) => {
+      if (!channel) return
+      setState(channel.snapshot)
       setNow(Date.now())
       setPending(false)
     })

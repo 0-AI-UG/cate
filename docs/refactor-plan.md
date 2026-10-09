@@ -416,6 +416,9 @@ only to granting.
   Test (`store.test.ts`): make the first undo entry fail to propose; assert
   one Cmd+Z leaves the older entry in place. Fix: pop only after a
   successful local propose.
+  Not reproduced: an undo entry is proposed only after `applicable` kept
+  its changes, and the mirror's propose applies them with the same reducer,
+  so the propose cannot fail there; no test.
 - A closed channel keeps its last snapshot (`kernel/rpc/client/channel.ts:38,47`).
   Test: end a channel with a `gone` reopen; assert listeners are notified
   with `null`. Fix: notify when `state` becomes null.

@@ -15,7 +15,8 @@ import {
 
 export interface ChannelMirror<S> {
   get(): ChannelState<S> | null
-  subscribe(listener: (state: ChannelState<S>) => void): () => void
+  /** Every new state; null once the channel ended (its snapshot is stale). */
+  subscribe(listener: (state: ChannelState<S> | null) => void): () => void
   /** The live subscription, for its byte stream and writes. Replaced after a gap. */
   readonly subscription: Subscription<ChannelEvent<S, unknown>, unknown>
   dispose(): void
@@ -27,7 +28,10 @@ export function mirrorChannel<S, C = Partial<S>>(
 ): ChannelMirror<S> {
   let state: ChannelState<S> | null = null
   let disposed = false
-  const listeners = new Set<(state: ChannelState<S>) => void>()
+  const listeners = new Set<(state: ChannelState<S> | null) => void>()
+  const notify = (next: ChannelState<S> | null) => {
+    for (const listener of [...listeners]) listener(next)
+  }
   let sub = attach()
 
   function attach(): Subscription<ChannelEvent<S, C>, unknown> {
@@ -36,6 +40,7 @@ export function mirrorChannel<S, C = Partial<S>>(
     const ended = () => {
       if (disposed || sub !== next || !live) return
       state = null
+      notify(null)
       sub = attach()
     }
     next.done.then(ended, ended)
@@ -50,7 +55,7 @@ export function mirrorChannel<S, C = Partial<S>>(
         return
       }
       state = reduced
-      for (const listener of [...listeners]) listener(reduced)
+      notify(reduced)
     })
     return next
   }

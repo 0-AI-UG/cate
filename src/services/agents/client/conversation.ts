@@ -71,7 +71,7 @@ export function watchAgentChat(workspaceId: string, panelId: string): AgentChatH
       () => next.agents.conversation({ panelId }, { resume: true }),
       applyAgentConversationChange,
     )
-    mirror.subscribe((state) => take(state.snapshot))
+    mirror.subscribe((state) => { if (state) take(state.snapshot) })
   }
   const stopRuntimes = subscribeRuntimes(connect)
   connect()

@@ -8,6 +8,7 @@ import { RpcServer } from '@kernel/rpc/runtime'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import {
   MAIN_WINDOW,
+  createDocument,
   documentCapability,
   presenceCapability,
   type DocChange,
@@ -56,6 +57,23 @@ describe('document service', () => {
     await new Promise((r) => setTimeout(r, 20))
     const saved = JSON.parse(await fs.readFile(file, 'utf8')) as { document: { panels: Record<string, unknown> } }
     expect(Object.keys(saved.document.panels)).toEqual(['a', 'b'])
+  })
+
+  it('forgets the op counters of clients not seen for a week', async () => {
+    const day = 24 * 60 * 60_000
+    await fs.writeFile(file, JSON.stringify({
+      version: 1,
+      seq: 0,
+      counters: { gone: 5, recent: 3 },
+      lastSeen: { gone: Date.now() - 8 * day, recent: Date.now() - day },
+      document: createDocument(),
+    }))
+    const doc = createDocumentService({ file, debounceMs: 60_000 })
+    doc.apply(addPanel('a'))
+    await doc.flush()
+    const saved = JSON.parse(await fs.readFile(file, 'utf8')) as { counters: Record<string, number> }
+    expect(Object.keys(saved.counters).sort()).toEqual(['recent', 'runtime'])
+    doc.dispose()
   })
 
   it('throws coded errors for failed runtime ops', () => {

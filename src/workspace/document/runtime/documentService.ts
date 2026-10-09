@@ -70,11 +70,13 @@ export interface DocumentServiceOptions {
   log?: Logger
 }
 
-/** document.json. The seq and counters sit next to the document. */
+/** document.json. The seq and counters sit next to the document, with when
+ *  each client last sent an op: counters of clients gone for a week go. */
 interface DocumentFileData {
   version: typeof DOCUMENT_FILE_VERSION
   seq: number
   counters: Record<string, number>
+  lastSeen: Record<string, number>
   document: WorkspaceDocument
 }
 
@@ -82,10 +84,13 @@ interface Loaded {
   doc: WorkspaceDocument
   seq: number
   counters: [string, number][]
+  lastSeen: Map<string, number>
 }
 
+const CLIENT_FORGET_MS = 7 * 24 * 60 * 60_000
+
 function load(file: string, log: Logger): Loaded {
-  const fresh: Loaded = { doc: createDocument(), seq: 0, counters: [] }
+  const fresh: Loaded = { doc: createDocument(), seq: 0, counters: [], lastSeen: new Map() }
   let text: string
   try {
     text = fs.readFileSync(file, 'utf8')
@@ -100,16 +105,26 @@ function load(file: string, log: Logger): Loaded {
   }
   const raw = JSON.parse(text) as Partial<DocumentFileData>
   const seq = Number.isSafeInteger(raw.seq) && raw.seq! >= 0 ? raw.seq! : 0
+  const now = Date.now()
+  const seen = raw.lastSeen && typeof raw.lastSeen === 'object' ? raw.lastSeen : {}
+  const lastSeen = new Map<string, number>()
   const counters = Object.entries(raw.counters && typeof raw.counters === 'object' ? raw.counters : {})
     .filter((entry): entry is [string, number] => Number.isSafeInteger(entry[1]) && entry[1] > 0)
-  return { doc: parsed.doc, seq, counters }
+    .filter(([clientId]) => {
+      const at = typeof seen[clientId] === 'number' ? seen[clientId] : now
+      if (clientId !== RUNTIME_CLIENT_ID && now - at > CLIENT_FORGET_MS) return false
+      lastSeen.set(clientId, at)
+      return true
+    })
+  return { doc: parsed.doc, seq, counters, lastSeen }
 }
 
 export function createDocumentService(options: DocumentServiceOptions): DocumentService {
   const log = options.log ?? createLogger('document')
   const debounceMs = options.debounceMs ?? 250
   const initial = load(options.file, log)
-  const sequencer = createSequencer({ ...initial, keep: options.keep })
+  const sequencer = createSequencer({ doc: initial.doc, seq: initial.seq, counters: initial.counters, keep: options.keep })
+  const lastSeen = initial.lastSeen
   const listeners = new Set<(event: AppliedEvent) => void>()
   let removalGuard: RemovalGuard | null = null
   let runtimeCounter = sequencer.counters.get(RUNTIME_CLIENT_ID) ?? 0
@@ -126,6 +141,7 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     version: DOCUMENT_FILE_VERSION,
     seq: sequencer.seq,
     counters: Object.fromEntries(sequencer.counters),
+    lastSeen: Object.fromEntries([...sequencer.counters.keys()].map((clientId) => [clientId, lastSeen.get(clientId) ?? Date.now()])),
     document: sequencer.doc,
   })
 
@@ -155,6 +171,7 @@ export function createDocumentService(options: DocumentServiceOptions): Document
   const submit = (op: DocOp): SubmitResult => {
     if (disposed) return { status: 'failed', error: { code: 'rejected', message: 'the runtime is stopping' } }
     const before = sequencer.doc
+    if (op?.opId?.clientId) lastSeen.set(op.opId.clientId, Date.now())
     const result = sequencer.submit(op)
     if (result.status === 'duplicate') return result
     schedule()

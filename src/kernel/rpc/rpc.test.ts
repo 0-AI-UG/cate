@@ -377,3 +377,26 @@ describe('rpc server and client', () => {
     expect(() => server.register(testCap, {} as CapabilityImpl<typeof testCap>)).toThrow(/no handler/)
   })
 })
+
+describe('mirrorChannel', () => {
+  it('tells listeners when a channel ends for good', async () => {
+    let opened = 0
+    let end!: () => void
+    const mirror = mirrorChannel<{ title: string }>(() => {
+      opened++
+      const listeners = new Set<(e: ChannelEvent<{ title: string }, Partial<{ title: string }>>) => void>()
+      const first = opened === 1
+      const done = first ? new Promise<void>((resolve) => { end = resolve }) : Promise.reject(new RpcError('gone'))
+      done.catch(() => {})
+      if (first) queueMicrotask(() => { for (const l of listeners) l({ kind: 'snapshot', rev: 1, snapshot: { title: 'a' } }) })
+      return { onEvent: (l: never) => { listeners.add(l); return () => listeners.delete(l) }, done, cancel: () => {} } as never
+    })
+    const seen: unknown[] = []
+    mirror.subscribe((state) => seen.push(state))
+    await vi.waitFor(() => expect(seen).toEqual([{ rev: 1, snapshot: { title: 'a' } }]))
+    end()
+    await vi.waitFor(() => expect(seen.at(-1)).toBeNull())
+    expect(mirror.get()).toBeNull()
+    mirror.dispose()
+  })
+})

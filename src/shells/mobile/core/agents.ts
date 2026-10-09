@@ -89,7 +89,7 @@ export function createMobileAgents(client: MobileClient, bridge: MobileBridge): 
       power?.dispose()
       power = mirrorChannel(() => runtime.power.subscribe(undefined, { resume: true }))
       power.subscribe((state) => {
-        entry.power = state.snapshot
+        entry.power = state?.snapshot ?? null
         changed()
       })
     }

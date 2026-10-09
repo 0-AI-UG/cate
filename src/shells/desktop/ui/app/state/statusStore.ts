@@ -41,7 +41,7 @@ function entryFor(workspaceId: string): Entry | null {
   const mirror = mirrorChannel<TerminalStatuses, TerminalStatusChange>(() => runtime.process.statuses(), applyStatusChange)
   const entry: Entry = { runtime, mirror, snapshot: EMPTY, listeners: new Set() }
   mirror.subscribe((state) => {
-    entry.snapshot = state.snapshot
+    entry.snapshot = state?.snapshot ?? EMPTY
     for (const l of [...entry.listeners]) l()
   })
   entries.set(workspaceId, entry)

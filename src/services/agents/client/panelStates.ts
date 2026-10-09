@@ -46,7 +46,7 @@ function connect(workspaceId: string, entry: Entry): void {
       applyAgentPanelStatesChange,
     )
     mirror.subscribe((state) => {
-      entry.states = state.snapshot
+      entry.states = state?.snapshot ?? EMPTY
       notify(entry)
     })
     entry.mirror = mirror

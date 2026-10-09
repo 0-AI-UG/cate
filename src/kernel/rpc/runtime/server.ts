@@ -101,6 +101,8 @@ interface Registered {
 }
 
 const DEFAULT_WINDOW = { high: 1024 * 1024, low: 512 * 1024 }
+/** Clients whose op outcomes the server keeps, across all connections. */
+const MAX_CLIENT_LOGS = 1024
 
 export class RpcServer {
   private readonly caps = new Map<string, Registered>()
@@ -159,8 +161,13 @@ export class RpcServer {
 
   /** @internal Runs `run` once per opId; a resend gets the first outcome. */
   dedupe(clientId: string, counter: number, run: () => Promise<Outcome>): Promise<Outcome> {
+    // Most recently used last: past MAX_CLIENT_LOGS, the client unheard of
+    // longest goes.
     let log = this.ops.get(clientId)
-    if (!log) this.ops.set(clientId, (log = { highest: 0, recent: new Map() }))
+    if (log) this.ops.delete(clientId)
+    else log = { highest: 0, recent: new Map() }
+    this.ops.set(clientId, log)
+    if (this.ops.size > MAX_CLIENT_LOGS) this.ops.delete(this.ops.keys().next().value!)
     if (counter <= log.highest) {
       return log.recent.get(counter)
         ?? Promise.resolve({ error: toWireError(new RpcError('duplicate', `Op ${clientId}:${counter} was already handled`)) })
