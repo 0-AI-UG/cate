@@ -104,7 +104,9 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
   override async start(): Promise<void> {
     this.offMoved = this.deps.onMoved?.((from, to) => { void this.followMove(from, to) })
     await this.exclusive(async () => {
-      let file = filePathOf(this.record)
+      // The open file is session state; the record's field asks for the
+      // first one only (a new panel), and mirrors it after.
+      let file = this.persisted<{ filePath: string }>()?.filePath ?? filePathOf(this.record)
       if (!file) {
         // An untitled editor edits a draft; the file is written once shared or saved.
         file = editorDraftPath(this.checkout(), this.deps.newId?.() ?? randomUUID())
@@ -112,6 +114,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
         this.writeRecord(file, { keepTitle: true })
       } else {
         await this.bind(file)
+        this.writeRecord(file, { keepTitle: true })
       }
     })
     this.deps.connected?.reconcile()
@@ -320,10 +323,14 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     this.autosaveTimer = setTimeout(() => { void this.flushShared() }, this.deps.autosaveMs ?? 300)
   }
 
-  /** Points the record at `file`. The session is already bound to it, so the
+  /** Remembers `file` as the panel's open file (its session file) and points
+   *  the record's mirror at it. The session is already bound to it, so the
    *  record change it causes is a no-op here. */
   private writeRecord(file: string, { keepTitle = false } = {}): void {
+    this.persist({ filePath: file })
     const worktreeId = this.worktreeIdFor(file)
+    if (filePathOf(this.record) === file && (keepTitle || this.record.title === pathDisplayName(file))
+      && (keepTitle || worktreeId === (this.record.worktreeId ?? null))) return
     this.kit.document.apply({
       kind: 'updatePanel',
       id: this.panelId,
@@ -385,6 +392,7 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     const draft = editorDraftPath(target.path, this.deps.newId?.() ?? randomUUID())
     await this.bind(draft)
     if (this.handle) replaceText(this.handle, text)
+    this.persist({ filePath: draft })
     this.kit.document.apply({ kind: 'updatePanel', id: this.panelId, patch: { worktreeId: this.worktreeIdFor(draft), fields: { filePath: draft } } })
     return { filePath: draft }
   }
@@ -462,14 +470,18 @@ export class EditorSession extends PanelSession<EditorSnapshot, EditorOp> implem
     })
   }
 
+  /** The record's file is a mirror of the session's: a change made
+   *  elsewhere (an undo, another client) never switches the open file, and
+   *  so never drops unsaved edits; switching is the `openFile` op. */
   protected override recordChanged(): void {
     const file = filePathOf(this.record)
-    if (!file || (this.boundPath && pathKey(file) === pathKey(this.boundPath))) return
-    // Records are state: follow a file changed elsewhere (undo, another client).
+    if (file && this.boundPath && pathKey(file) === pathKey(this.boundPath)) return
     void this.exclusive(async () => {
+      const bound = this.boundPath
+      if (this.disposed || !bound) return
       const latest = filePathOf(this.record)
-      if (this.disposed || !latest || (this.boundPath && pathKey(latest) === pathKey(this.boundPath))) return
-      await this.bind(latest)
+      if (latest && pathKey(latest) === pathKey(bound)) return
+      this.writeRecord(bound, { keepTitle: true })
     })
   }
 

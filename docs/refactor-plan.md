@@ -765,6 +765,12 @@ Doc: sections 5, 9.1, 9.3, 9.7, 11.3.
 Done when: no document/canvas cycle; `workspace/relations` imports only the
 document; `grep "=== 'canvas'" src/workspace` is empty; B27 test passes.
 
+Note (as built): the editor session is the authority for its open file and
+keeps it in its session file; the record's `filePath` stays as a mirror the
+session writes back when anything else changes it, because checkout
+inheritance, relation instructions and `describe` read records on both
+sides. A record change never switches the open file, which removes B27.
+
 ### R9. The agents service is the only owner of agent state
 
 Problem:

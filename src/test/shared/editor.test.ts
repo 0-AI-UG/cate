@@ -46,8 +46,7 @@ async function editors(): Promise<{ panelId: string; a: TestBuffer; b: TestBuffe
 const dirty = (panelId: string) => Promise.all([ws.a, ws.b].map((c) => c.session<EditorSnapshot>(panelId).until(() => true).then((s) => s.dirty)))
 
 describe.skipIf(process.platform === 'win32')('shared workspace: editor', () => {
-  // Fixed by R8 (the open file becomes session state).
-  it.fails('a record change does not switch a dirty editor away from its edits', async () => {
+  it('a record change does not switch a dirty editor away from its edits', async () => {
     const { panelId, a } = await editors()
     await type(a, 'unsaved')
     await until(async () => ((await dirty(panelId)).every(Boolean) ? true : undefined), 10_000, 'dirty')
