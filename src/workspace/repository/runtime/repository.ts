@@ -317,10 +317,34 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
     }).finally(() => monitors.kick()))
   }
 
+  /** Creates and removals run in the write queue, so a record still
+   *  `creating` or `removing` seen from inside it was left by a daemon that
+   *  stopped midway: a checkout git lists becomes ready, a missing one is
+   *  dropped, and a removal is finished (its branch is kept). */
+  async function finishInterrupted(live: { path: string }[]): Promise<void> {
+    const closePanels = deps.settings.get('closeWorktreePanelsOnDelete')
+    for (const meta of worktrees()) {
+      if (meta.status === 'ready') continue
+      const listed = live.some((w) => samePath(w.path, meta.path))
+      try {
+        if (meta.status === 'creating') {
+          await document.apply(listed ? { kind: 'setWorktree', worktree: { ...meta, status: 'ready' } } : { kind: 'removeWorktree', id: meta.id })
+          continue
+        }
+        if (listed) await raw.removeWorktree({ targetPath: meta.path, force: true })
+        else deps.paths.removeCheckout(meta.path)
+        await applyAll(worktreeRemovalChanges(document.get(), meta.id, { closePanels, root }))
+      } catch (err) {
+        deps.log?.warn('finishing the interrupted %s of %s failed: %s', meta.status, meta.path, errorText(err))
+      }
+    }
+  }
+
   async function reconcileWorktrees(): Promise<void> {
     if (!trust.isTrusted()) return
     await write(async () => {
       if (!(await raw.isRepo({}))) return
+      await finishInterrupted(await raw.listWorktrees({}))
       const live = await raw.listWorktrees({})
       const known = worktrees()
       const added: WorktreeMeta[] = []

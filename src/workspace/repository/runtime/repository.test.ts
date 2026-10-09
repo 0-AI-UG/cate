@@ -102,6 +102,21 @@ describe('worktree lifecycle', () => {
     expect(checkouts.has(target)).toBe(true)
   })
 
+  test('a create or remove a crash interrupted is finished at start', async () => {
+    // A remove that got as far as marking the record, and a create that never
+    // made its checkout.
+    const leftover = path.join(root, '.cate', 'worktrees', 'leftover')
+    await simpleGit(root).raw(['worktree', 'add', '-b', 'leftover', leftover])
+    await document.apply({ kind: 'setWorktree', worktree: { id: 'wt-gone', path: leftover, color: 'blue', status: 'removing' } })
+    await document.apply({ kind: 'setWorktree', worktree: { id: 'wt-half', path: path.join(root, '.cate', 'worktrees', 'half'), color: 'red', status: 'creating' } })
+    await repo.reconcileWorktrees()
+    const left = document.get().worktrees
+    expect(left['wt-half']).toBeUndefined()
+    expect(left['wt-gone']).toBeUndefined()
+    expect(Object.values(left).map((w) => w.path)).not.toContain(leftover)
+    await expect(fs.stat(leftover)).rejects.toThrow()
+  })
+
   test('a second identical create joins the running one', async () => {
     const [a, b] = await Promise.all([
       repo.createWorktree({ branch: 'feature' }),
