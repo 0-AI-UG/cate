@@ -33,9 +33,12 @@ export async function acquireRuntimeSocket(
   const endpoint = await ensureLocalEndpoint(dataDir, runtimeId, platform)
   const running = { kind: 'running', endpoint } as const
 
-  if (await socketAnswers(endpoint, options.probeTimeoutMs ?? 1000)) return running
+  const probeMs = options.probeTimeoutMs ?? 1000
+  if (await socketAnswers(endpoint, probeMs)) return running
   if (platform !== 'win32') {
     await awaitPreviousOwner(dataDir, options.ownerExitMs ?? RUNTIME_STOP_DEADLINE_MS + 1000)
+    // Another start may have bound while this one waited.
+    if (await socketAnswers(endpoint, probeMs)) return running
     await removeStaleSocket(endpoint)
   }
 
@@ -44,12 +47,12 @@ export async function acquireRuntimeSocket(
     await listen(server, endpoint)
   } catch (error) {
     server.close()
-    if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') return running
+    if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE' && await socketAnswers(endpoint, probeMs)) return running
     throw error
   }
-  // Two daemons racing over the same stale socket can both get here; the
-  // window is the gap between the other's unlink and bind, and it needs a
-  // crashed daemon plus two simultaneous starts to hit.
+  // Two starts can still both unlink and bind in the gap between the other's
+  // last probe and its bind; it needs a crashed daemon plus two starts within
+  // a few milliseconds.
   if (platform !== 'win32') await fs.chmod(endpoint, 0o600)
   return { kind: 'acquired', server, endpoint }
 }
@@ -76,9 +79,10 @@ export function socketAnswers(endpoint: string, timeoutMs: number): Promise<bool
 async function awaitPreviousOwner(dataDir: string, timeoutMs: number): Promise<void> {
   const pid = (await readRuntimeInfo(dataDir))?.pid
   if (!Number.isInteger(pid) || pid! <= 0 || pid === process.pid) return
+  if (!alive(pid!) || !(await isRuntimeProcess(pid!))) return
   const deadline = Date.now() + timeoutMs
   while (alive(pid!) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
-  if (!alive(pid!) || !(await isRuntimeProcess(pid!))) return
+  if (!alive(pid!)) return
   try { process.kill(pid!, 'SIGKILL') } catch { return }
   const killed = Date.now() + 2000
   while (alive(pid!) && Date.now() < killed) await new Promise((resolve) => setTimeout(resolve, 20))

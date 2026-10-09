@@ -3,7 +3,7 @@
 
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import type { LocalRuntime } from '@runtime/daemon/desktop'
 import { createShellTransportHost, dialLoopbackTcp, type ShellTransportDeps } from './transports'
@@ -45,6 +45,20 @@ describe('shell transports: local runtimes', () => {
     expect(events).toEqual(['start 0'])
     finishFirst()
     await dial
-    expect(events).toEqual(['start 0', 'started 0', 'close 0', 'start 1'])
+    expect(events).toEqual(['start 0', 'started 0', 'start 1', 'close 0'])
+  })
+
+  it('a failed start fails the dials waiting on it; none of them starts again', async () => {
+    let fail!: (error: Error) => void
+    const startLocal = vi.fn((): Promise<LocalRuntime> => (startLocal.mock.calls.length > 1
+      ? Promise.reject(new Error('started again'))
+      : new Promise((_resolve, reject) => { fail = reject })))
+    const host = createShellTransportHost({ startLocal } as unknown as ShellTransportDeps)
+    const dials = [host.dialLocal('/w'), host.dialLocal('/w'), host.dialLocal('/w')]
+    await new Promise((r) => setTimeout(r, 10))
+    fail(new Error('no node'))
+    const results = await Promise.allSettled(dials)
+    expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected', 'rejected'])
+    expect(startLocal).toHaveBeenCalledTimes(1)
   })
 })

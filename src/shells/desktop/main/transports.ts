@@ -71,10 +71,11 @@ export function createShellTransportHost(deps: ShellTransportDeps): ShellTranspo
 
   // One start per root at a time: a dial that finds one in flight waits for
   // it, then connects to the runtime it started instead of spawning another.
+  // A failed start fails its waiters too.
   const starting = new Map<string, Promise<LocalRuntime>>()
   async function startLocal(root: string): Promise<LocalRuntime> {
     const pending = starting.get(root)
-    if (pending) await pending.catch(() => {})
+    if (pending) await pending
     const start = deps.startLocal(root)
     starting.set(root, start)
     try {
