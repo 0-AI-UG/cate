@@ -6,7 +6,7 @@ import { panelDefinition } from '@client/host'
 import { AGENTS, agentDisplayName, type AgentChangedFile, type AgentChangesFilter } from '@services/agents/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { AgentChangesFilterPatch, RecordedFileSummary, ReviewDisplay, ReviewNote, ReviewNoteSeverity, ReviewSnapshot } from '@panels/review/contract'
-import { revealPanel } from '@panels/review/client'
+import { revealPanel } from '@client/host'
 import { pickReviewTerminal } from './parts/pickTerminal'
 import { ReviewToolbar } from './ReviewToolbar'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
@@ -149,7 +149,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
               <span title={agent} className="w-4 h-4 shrink-0 rounded bg-surface-4 flex items-center justify-center text-[9px]">{agent[0]}</span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{file.oldPath ? `${file.oldPath} → ` : ''}{file.path}</span>
             </button>
-            {sourcePanels.map((panel) => <button key={panel.id} aria-label={`Go to ${panel.title}`} title={`Go to ${panel.title}`} onClick={() => revealPanel(workspaceId, panel.id)} className="inline-flex min-w-0 max-w-40 items-center gap-1 rounded-full border border-subtle bg-surface-3 px-2 py-0.5 text-[10px] text-secondary hover:bg-hover hover:text-primary"><span className="truncate">{panel.title}</span></button>)}
+            {sourcePanels.map((panel) => <button key={panel.id} aria-label={`Go to ${panel.title}`} title={`Go to ${panel.title}`} onClick={() => { void revealPanel(workspaceId, panel.id) }} className="inline-flex min-w-0 max-w-40 items-center gap-1 rounded-full border border-subtle bg-surface-3 px-2 py-0.5 text-[10px] text-secondary hover:bg-hover hover:text-primary"><span className="truncate">{panel.title}</span></button>)}
             {sourcePanels.length === 0 && <span className="text-[10px] text-muted" title="The source panel is no longer available">Panel closed</span>}
             <span className="text-[10px] tabular-nums text-diff-add">+{file.additions}</span><span className="text-[10px] tabular-nums text-diff-del">−{file.deletions}</span>
             {file.coverage === 'fragment' && <span title="Reported edit fragment; full-file context and line numbers are unavailable." className="text-muted"><Info size={12} /></span>}

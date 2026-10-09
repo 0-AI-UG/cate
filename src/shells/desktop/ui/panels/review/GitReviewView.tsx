@@ -22,17 +22,15 @@ import {
 } from 'lucide-react'
 import { LoadingState, Spinner, POPOVER_SURFACE } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
-import { documentStoreFor } from '@client/document'
 import type { AgentId } from '@services/agents/contract'
 import type { GitChangedFile, GitFileDiff } from '@workspace/repository/contract'
-import { freshRecord } from '@panels/definitions'
 import { notesMarkdown, openFindings, type ReviewNote, type ReviewNoteSeverity, type ReviewSnapshot } from '@panels/review/contract'
-import { placeNear, revealPanel } from '@panels/review/client'
 import { pickReviewTerminal } from './parts/pickTerminal'
 import { ReviewToolbar } from './ReviewToolbar'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { HunkView, collapsedHunkGaps, type NoteDraft } from './ReviewDiff'
 import { sendOrShow, useAgentPicker, useReviewDiffs, useReviewView, type ReviewSend } from './useReview'
+import { createPanel } from '@client/host'
 
 function statusLabel(file: GitChangedFile): string {
   switch (file.status) {
@@ -299,12 +297,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
     })
   }
   const openFile = (file: GitChangedFile) => {
-    const store = documentStoreFor(workspaceId)
-    if (!store) return
-    const doc = store.getSnapshot()
-    const filePath = joinPath(review.repoPath, file.path)
-    const record = freshRecord(doc, 'editor', { filePath, title: file.path.split('/').pop() })
-    if (record && store.propose({ kind: 'addPanel', record, at: placeNear(doc, panelId) }).ok) revealPanel(workspaceId, record.id)
+    createPanel(workspaceId, 'editor', { filePath: joinPath(review.repoPath, file.path), title: file.path.split('/').pop(), near: panelId })
   }
   const copyApplyCommand = async () => {
     const command = await sendOrShow(send, { kind: 'applyCommand' }, 'Could not copy patch')

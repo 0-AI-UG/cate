@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { MAIN_WINDOW, applyOp, createDocument, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
+import { MAIN_WINDOW, applyOp, createDocument, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
 
 const h = vi.hoisted(() => ({
   doc: null as unknown as WorkspaceDocument,
@@ -68,4 +68,12 @@ it('opens agent changes in a new panel, or moves a chosen review to the agent ch
   expect(h.op).toHaveBeenNthCalledWith(1, { panelId: 'r1', op: { kind: 'switchCheckout', path: '/wt' } })
   expect(h.op).toHaveBeenNthCalledWith(2, { panelId: 'r1', op: { kind: 'retarget', request: expect.objectContaining({ agentChanges: { panelId: 'term' } }) } })
   expect(await openAgentChanges({ workspaceId: 'ws', panelId: 'gone', cwd: '/wt' })).toBeNull()
+})
+
+it('places a new agent changes review where the caller picked', async () => {
+  add('chat', 'terminal')
+  const picked = { to: 'split' as const, dock: { windowId: MAIN_WINDOW }, beside: 's1', side: 'right' as const, stackId: 'picked', splitId: 'split' }
+  const id = await openAgentChanges({ workspaceId: 'ws', panelId: 'chat', cwd: '/wt', sessionId: 'thread', focusedFile: 'a.ts', at: picked })
+  expect(h.doc.panels[id!]).toMatchObject({ fields: { request: { focusedFile: 'a.ts', agentChanges: { panelId: 'chat', sessionId: 'thread' } } } })
+  expect(placementOf(h.doc, id!)?.stackId).toBe('picked')
 })

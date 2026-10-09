@@ -7,6 +7,7 @@
 // it hands back through the page port.
 
 import { pickPanelPlace } from '@client/host'
+import { openAgentChanges } from '@panels/review/client'
 import type { Theme } from '@kernel/interaction/contract'
 import {
   CANCEL_PENDING_SCRIPT,
@@ -127,8 +128,17 @@ export function createChatPageController(options: {
       pick: (kind) => place(kind === 'file' ? 'editor' : 'chat'),
       openDiff: async (filePath, turnId, isActive) => {
         const at = await place('review')
-        if (!at || !isActive()) return false
-        return (await port.send({ kind: 'openChanges', at, filePath, turnId, threadId })) === true
+        if (!at || !isActive() || !threadId) return false
+        // The review every client opens for an agent's changes.
+        return (await openAgentChanges({
+          workspaceId,
+          panelId,
+          cwd: snapshot.checkout,
+          sessionId: threadId,
+          ...(turnId ? { turnId } : {}),
+          ...(filePath ? { focusedFile: filePath } : {}),
+          at,
+        })) !== null
       },
       openFile: (filePath, at) => port.send({ kind: 'openFile', path: filePath, at, threadId }),
       openChat: (other, title, at) => port.send({ kind: 'openChat', at, threadId: other, title }),

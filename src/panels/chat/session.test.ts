@@ -223,14 +223,8 @@ describe('ChatSession ops', () => {
     await expect(op({ kind: 'openFile', path: 'a.ts', at, threadId: 'other' })).rejects.toThrow('Conversation changed')
   })
 
-  it('opens the thread changes in a review and a conversation in a new chat', async () => {
+  it('opens a conversation in a new chat', async () => {
     await addChat({ threadId: 'one' })
-    await op({ kind: 'openChanges', at, filePath: 'a.ts', turnId: 't1', threadId: 'one' })
-    expect(deps.createPanel).toHaveBeenCalledWith('review', expect.objectContaining({
-      at,
-      repoPath: ROOT,
-      request: { spec: { kind: 'uncommitted' }, focusedFile: 'a.ts', agentChanges: { panelId: 'chat', sessionId: 'one', turnId: 't1' } },
-    }))
     await op({ kind: 'openChat', at, threadId: 'two', title: 'Two' })
     expect(deps.createPanel).toHaveBeenLastCalledWith('chat', { near: 'chat', at, threadId: 'two', title: 'Two' })
   })

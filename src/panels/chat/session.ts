@@ -153,21 +153,6 @@ export class ChatSession extends PanelSession<ChatSnapshot, ChatOp> {
       }
       return this.create('editor', { at, filePath: path.join(this.checkout(), relative) }) !== null
     },
-    openChanges: ({ at, filePath, turnId, threadId }) => {
-      this.requireBinding(threadId)
-      const sessionId = chatThreadId(this.record)
-      const id = this.create('review', {
-        at,
-        title: 'Agent changes',
-        repoPath: this.checkout(),
-        request: {
-          spec: { kind: 'uncommitted' },
-          agentChanges: { panelId: this.panelId, ...(sessionId ? { sessionId } : {}), ...(turnId ? { turnId } : {}) },
-          ...(filePath ? { focusedFile: filePath } : {}),
-        },
-      })
-      return id !== null
-    },
     openChat: ({ at, threadId, title }) => this.create('chat', {
       at,
       threadId,

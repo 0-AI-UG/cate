@@ -64,13 +64,11 @@ export type ChatOp =
   | { kind: 'renameConversation'; title: string }
   /** The view failed to load the page of `loadId`. */
   | { kind: 'loadFailed'; loadId: number; message: string }
-  /** Submits a prompt as the user would. */
   /** Relation context for a turn the page composer sends. */
   | { kind: 'relationContext'; provider: string | null }
   /** Guest bridge actions after the user picked a place. `threadId` is the
    *  binding the request came from; a stale one is refused. */
   | { kind: 'openFile'; path: string; at: PlaceTarget; threadId?: string }
-  | { kind: 'openChanges'; at: PlaceTarget; filePath?: string; turnId?: string; threadId?: string }
   | { kind: 'openChat'; at: PlaceTarget; threadId: string; title?: string }
 
 /** A chat panel at `cwd` (else its worktree or the root), on `threadId` when

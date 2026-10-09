@@ -2,17 +2,17 @@
 // recorded edits, with notes. Pure.
 
 import { channel } from '@kernel/rpc/contract'
-import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
+import { definePanel } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
 import { reviewApi } from './contract/api'
-import { reviewRepoPath, type ReviewFields, type ReviewOp, type ReviewOpenRequest, type ReviewSnapshot } from './contract/types'
-
-/** A review of `repoPath`'s checkout (default: the bound worktree, else the
- *  workspace root), starting from `request`. */
-interface ReviewCreateOptions extends PanelCreateOptions {
-  repoPath?: string
-  request?: ReviewOpenRequest
-}
+import {
+  reviewRepoPath,
+  type ReviewCreateOptions,
+  type ReviewFields,
+  type ReviewOp,
+  type ReviewOpenRequest,
+  type ReviewSnapshot,
+} from './contract/types'
 
 function fields(repoPath: string, request: ReviewOpenRequest | undefined): JsonObject {
   const value: ReviewFields = request ? { repoPath, request } : { repoPath }

@@ -7,6 +7,7 @@
 import type { AgentChangedFile, AgentChangesFilter, AgentId } from '@services/agents/contract'
 import type { PlaceTarget } from '@workspace/document/contract'
 import type { GitComparisonResult, GitComparisonSpec } from '@workspace/repository/contract'
+import type { PanelCreateOptions } from '@panels/framework/contract'
 
 export interface ReviewNote {
   id: string
@@ -209,4 +210,11 @@ export function defaultReviewState(repoPath: string, request?: Partial<ReviewOpe
 /** The record's `repoPath`; empty means the workspace root. */
 export function reviewRepoPath(fields: { [key: string]: unknown }): string {
   return typeof fields.repoPath === 'string' ? fields.repoPath : ''
+}
+
+/** A review of `repoPath`'s checkout (default: the bound worktree, else the
+ *  workspace root), starting from `request`. */
+export interface ReviewCreateOptions extends PanelCreateOptions {
+  repoPath?: string
+  request?: ReviewOpenRequest
 }

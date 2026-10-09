@@ -3,42 +3,12 @@
 // op), or add one next to the panel the request came from.
 
 import { clientStateFor, documentStoreFor } from '@client/document'
-import { createPanel } from '@client/host'
+import { createPanel, revealPanel } from '@client/host'
 import { runtimeFor } from '@kernel/rpc/client'
 import type { AgentChangesFilter } from '@services/agents/contract'
-import {
-  MAIN_WINDOW,
-  placementOf,
-  stacksIn,
-  type PanelId,
-  type PanelRecord,
-  type PlaceTarget,
-  type WorkspaceDocument,
-} from '@workspace/document/contract'
+import type { PanelId, PanelRecord, PlaceTarget, WorkspaceDocument } from '@workspace/document/contract'
 import { samePath, type GitComparisonSpec } from '@workspace/repository/contract'
-import { reviewRepoPath, type ReviewOp, type ReviewOpenRequest, type ReviewSourceAgent } from '../contract'
-
-const newId = () => globalThis.crypto.randomUUID()
-
-/** A tab next to `near` (in its stack, or its canvas node's stack), else the
- *  main window's first stack. */
-export function placeNear(doc: WorkspaceDocument, near: PanelId | null | undefined): PlaceTarget {
-  const placement = near ? placementOf(doc, near) : null
-  if (placement) return { to: 'stack', dock: placement.dock, stackId: placement.stackId, after: near }
-  const main = { windowId: MAIN_WINDOW }
-  const first = stacksIn(doc, main)[0]
-  return { to: 'stack', dock: main, stackId: first?.id ?? newId() }
-}
-
-/** Shows a panel on this client: its tab becomes active and it takes focus. */
-export function revealPanel(workspaceId: string, panelId: PanelId): void {
-  const state = clientStateFor(workspaceId)
-  const doc = documentStoreFor(workspaceId)?.getSnapshot()
-  const placement = doc ? placementOf(doc, panelId) : null
-  if (!state) return
-  if (placement) state.setActiveTab(placement.stackId, panelId)
-  state.focus(panelId)
-}
+import { reviewRepoPath, type ReviewCreateOptions, type ReviewOp, type ReviewOpenRequest, type ReviewSourceAgent } from '../contract'
 
 function sendReviewOp(workspaceId: string, panelId: PanelId, op: ReviewOp): Promise<unknown> {
   return runtimeFor(workspaceId).session.op({ panelId, op })
@@ -48,13 +18,8 @@ function reviewsOf(doc: WorkspaceDocument, repoPath: string): PanelRecord[] {
   return Object.values(doc.panels).filter((panel) => panel.type === 'review' && samePath(reviewRepoPath(panel.fields), repoPath))
 }
 
-function addReview(workspaceId: string, options: { repoPath: string; request: ReviewOpenRequest; near?: PanelId | null; title?: string }): PanelId | null {
-  return createPanel(workspaceId, 'review', {
-    repoPath: options.repoPath,
-    request: options.request,
-    ...(options.near ? { near: options.near } : {}),
-    ...(options.title ? { title: options.title } : {}),
-  })
+function addReview(workspaceId: string, options: ReviewCreateOptions & { repoPath: string; request: ReviewOpenRequest }): PanelId | null {
+  return createPanel(workspaceId, 'review', { ...options })
 }
 
 export interface OpenReviewOptions {
@@ -83,10 +48,11 @@ export async function openReviewPanel(options: OpenReviewOptions): Promise<Panel
   const existing = options.openNew ? undefined : matching.find((panel) => panel.id === focused) ?? matching.at(-1)
   if (existing) {
     await sendReviewOp(workspaceId, existing.id, { kind: 'retarget', request })
-    revealPanel(workspaceId, existing.id)
+    void revealPanel(workspaceId, existing.id)
     return existing.id
   }
-  return addReview(workspaceId, { repoPath: options.repoPath, request, near: options.sourceAgent?.panelId ?? focused })
+  const near = options.sourceAgent?.panelId ?? focused
+  return addReview(workspaceId, { repoPath: options.repoPath, request, ...(near ? { near } : {}) })
 }
 
 export interface OpenAgentChangesOptions {
@@ -99,6 +65,8 @@ export interface OpenAgentChangesOptions {
   focusedFile?: string
   /** A review panel to reuse instead of adding one. */
   reviewPanelId?: PanelId
+  /** Where a new review goes; default: next to the agent's panel. */
+  at?: PlaceTarget
 }
 
 /** Shows an agent's recorded edits: in `reviewPanelId` (moved to the agent's
@@ -119,8 +87,8 @@ export async function openAgentChanges(options: OpenAgentChangesOptions): Promis
     if (target?.type !== 'review') return null
     if (!(await sendReviewOp(workspaceId, target.id, { kind: 'switchCheckout', path: cwd }))) return null
     await sendReviewOp(workspaceId, target.id, { kind: 'retarget', request })
-    revealPanel(workspaceId, target.id)
+    void revealPanel(workspaceId, target.id)
     return target.id
   }
-  return addReview(workspaceId, { repoPath: cwd, request, near: panelId, title: 'Agent changes' })
+  return addReview(workspaceId, { repoPath: cwd, request, title: 'Agent changes', ...(options.at ? { at: options.at } : { near: panelId }) })
 }
