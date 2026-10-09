@@ -9,7 +9,7 @@ import { createMobileChats } from './chat'
 import { createMobileViews, type MobileViews } from './views'
 
 let detach = () => {}
-let created: MobileViews[] = []
+const created: MobileViews[] = []
 // Views follow the attached sessions; a test's views close with it.
 afterEach(() => {
   for (const views of created.splice(0)) views.get('v')?.close()

@@ -11,7 +11,7 @@
 
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
-import type { AgentConversationMessage, AgentId, AgentRunner, AgentStatus, AgentTypeInfo } from '@services/agents/contract'
+import type { AgentConversationMessage, AgentId, AgentStatus, AgentTypeInfo } from '@services/agents/contract'
 import type { T3Conversation, T3ProviderModels } from '@services/t3/contract'
 
 export interface MobileAppInfo {
