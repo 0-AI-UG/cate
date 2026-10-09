@@ -725,6 +725,17 @@ connected client or by `cate serve`.
 
 ### 7.8 Protocol
 
+**One way to talk to the runtime.**
+
+1. Clients call typed capabilities and session ops, never `api.call`.
+2. The `cate` API serves CLI and harness callers; its handlers call the same
+   service functions and session ops clients use, never a second
+   implementation.
+3. State a client watches across reconnects is a resumable `channelStream`
+   (a snapshot, then changes).
+4. One input path per resource (a terminal: its `process.attach` stream).
+5. Session channels carry JSON only.
+
 - **Frames.** Every transport carries frames: a JSON message, or a binary
   chunk `{streamId: u32, bytes}`. Over the local socket they are
   length-prefixed; over WebSocket and WebRTC one frame is one message (inside
