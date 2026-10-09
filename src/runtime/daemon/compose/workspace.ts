@@ -63,8 +63,7 @@ import {
   type AgentsDocument,
   type RelationContextMode,
 } from '@services/agents/runtime'
-import { createTerminalRunner } from '@services/agents/runners/terminal'
-import { createT3Runner } from '@services/agents/runners/t3'
+import { createT3Runner, createTerminalRunner } from '@services/agents/runtime'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract'
 import {
   createPanelFactory,

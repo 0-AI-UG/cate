@@ -29,3 +29,5 @@ export {
   type AgentStartPorts,
   type AgentTerminalLaunch,
 } from './start'
+export { createTerminalRunner, type TerminalRunner, type RunnerTerminalService } from './runners/terminal'
+export { createT3Runner, type T3Runner, type RunnerT3Service, type T3PanelBindings } from './runners/t3'

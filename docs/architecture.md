@@ -176,8 +176,13 @@ Code is organised along two axes: the **layer** (above) and the **side**
   (`src/runtime/daemon/entry.ts`, `main.ts` and `compose/`) builds every
   module's runtime side and wires them together, so it is exempt from the
   layer, side and entry rules. Nothing else is.
+- **Every file is on a side.** A panel's `definition.ts` is a contract; its
+  `session.ts` and `runtime.ts` are its runtime side; its `parts/` are split
+  into side folders. The `cate` CLI (`src/cli`) imports only contracts,
+  `kernel/rpc/client` and the panel index files.
 - dependency-cruiser enforces these rules in CI (`.dependency-cruiser.cjs` at
-  the root, run by `npm run lint:deps`).
+  the root, run by `npm run lint:deps`); `src/test/depcruise.test.ts` proves
+  each rule rejects a fixture that breaks it (`test/depcruise-fixtures/`).
 
 **The client test.** If it is not rendering, input, or a native OS primitive,
 it runs in the runtime. A phone has no Electron main and no Node, so anything

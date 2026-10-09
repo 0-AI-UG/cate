@@ -1,8 +1,8 @@
-// Prompts the review session hands to agents. Pure.
+// Prompts the review session hands to agents.
 
 import type { AgentChangeRecord } from '@services/agents/contract'
 import type { GitComparisonSpec } from '@workspace/repository/contract'
-import type { ReviewNote } from '../contract'
+import type { ReviewNote } from '../../contract'
 
 export function reviewAgentPrompt(panelId: string, repoPath: string, spec: GitComparisonSpec): string {
   return `Review the changes shown in Cate's Review Panel ${panelId}.

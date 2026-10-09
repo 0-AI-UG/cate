@@ -23,8 +23,7 @@ import {
   type AgentStartPorts,
   type AgentsRuntime,
 } from '@services/agents/runtime'
-import type { TerminalRunner } from '@services/agents/runners/terminal'
-import type { T3Runner } from '@services/agents/runners/t3'
+import type { T3Runner, TerminalRunner } from '@services/agents/runtime'
 import type { AnyPanelDefinition } from './framework/contract'
 import type { PanelFactory, PanelSessionClass, SessionHost, SurfaceBroker } from './framework/runtime'
 import { createTerminalPanels } from './terminal/runtime'

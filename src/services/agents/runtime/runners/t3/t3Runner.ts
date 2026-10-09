@@ -20,9 +20,9 @@ import {
   type AgentSession,
   type AgentStatus,
   type PanelAgentState,
-} from '../../contract'
-import type { AgentsRuntime } from '../../runtime/agentsRuntime'
-import type { AgentRunnerImpl } from '../../runtime/registry'
+} from '../../../contract'
+import type { AgentsRuntime } from '../../agentsRuntime'
+import type { AgentRunnerImpl } from '../../registry'
 
 /** The part of the t3 service the runner uses. */
 export interface RunnerT3Service {

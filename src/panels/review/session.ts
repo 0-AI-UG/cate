@@ -55,7 +55,7 @@ import {
   type ReviewSnapshot,
   type ReviewState,
 } from './contract'
-import { changesAgentPrompt, recordedReviewPrompt, reviewAgentPrompt } from './parts/prompts'
+import { changesAgentPrompt, recordedReviewPrompt, reviewAgentPrompt } from './parts/runtime/prompts'
 
 /** The git work a review needs (the repository runtime's git host and status
  *  monitors). `cwd` is an absolute checkout path. */

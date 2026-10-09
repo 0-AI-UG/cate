@@ -28,19 +28,19 @@ describe('dependency rules', () => {
   it('a runtime side importing a client side', () => {
     expect(rejected).toContain('src/workspace/files/runtime/bad.ts')
   })
-  it.fails('a panel session importing the client core', () => {
+  it('a panel session importing the client core', () => {
     expect(rejected).toContain('src/panels/fake/session.ts')
   })
-  it.fails('a panel definition importing a Node built-in', () => {
+  it('a panel definition importing a Node built-in', () => {
     expect(rejected).toContain('src/panels/fake/definition.ts')
   })
-  it.fails('a runtime/push file importing the client core', () => {
+  it('a runtime/push file importing the client core', () => {
     expect(rejected).toContain('src/runtime/push/runtime/bad.ts')
   })
-  it.fails("a CLI file importing another module's internals", () => {
+  it("a CLI file importing another module's internals", () => {
     expect(rejected).toContain('src/cli/bad.ts')
   })
-  it.fails('an agents runner importing a client side', () => {
-    expect(rejected).toContain('src/services/agents/runners/terminal/bad.ts')
+  it('an agents runner importing a client side', () => {
+    expect(rejected).toContain('src/services/agents/runtime/runners/terminal/bad.ts')
   })
 })

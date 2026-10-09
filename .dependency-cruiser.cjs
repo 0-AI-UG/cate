@@ -1,4 +1,4 @@
-const RUNTIME_MODULES = ['daemon', 'data', 'transports', 'security', 'pairing', 'connect', 'server', 'tunnel', 'power']
+const RUNTIME_MODULES = ['daemon', 'data', 'transports', 'security', 'pairing', 'connect', 'server', 'tunnel', 'power', 'push']
 
 const any = (parts) => `(?:${parts.join('|')})`
 
@@ -16,7 +16,10 @@ const layerName = (layer) => layer.split('/')[0]
 
 const ROOT = `^src/${any(LAYERS)}`
 const NEW = `${ROOT}/`
-const CONTRACT = `${ROOT}.*/contract(?:\\.ts$|/)`
+// A panel's definition.ts is a contract (pure); its session.ts and
+// runtime.ts are its runtime side.
+const PANEL_DEFINITION = '^src/panels/[^/]+/definition\\.ts$'
+const CONTRACT = `(?:${ROOT}.*/contract(?:\\.ts$|/)|${PANEL_DEFINITION})`
 const SLICE = `${ROOT}.*/contract/settings\\.ts$`
 // Sides are folders of the shared modules; a shell is one zone of its own.
 const SHARED = `^src/${any(LAYERS.filter((layer) => layer !== 'shells'))}`
@@ -25,7 +28,7 @@ const side = (names) => `${SHARED}.*/${any(names)}/`
 const DESKTOP_SHELL = '^src/shells/desktop/'
 const MOBILE_SHELL = '^src/shells/mobile/'
 
-const RUNTIME = [side(['runtime']), '^src/runtime/daemon/(?!node/|desktop/|client/)']
+const RUNTIME = [side(['runtime']), '^src/runtime/daemon/(?!node/|desktop/|client/)', '^src/panels/[^/]+/(?:session|runtime)\\.ts$']
 // The daemon's composition root wires every module's runtime side.
 const COMPOSITION_ROOT = '^src/runtime/daemon/(?:entry\\.ts$|main\\.ts$|compose/)'
 const NODE = [side(['node'])]
@@ -125,6 +128,14 @@ const contractRules = [
     { path: NEW, pathNot: CONTRACT }),
 ]
 
+// The `cate` CLI: contracts, the rpc client and the panel index files.
+const CLI = '^src/cli/'
+const cliRules = [
+  forbid('cli-zone', 'the cate CLI imports only contracts, kernel/rpc/client and the panel index files',
+    { path: CLI },
+    { path: '^src/', pathNot: [CLI, CONTRACT, '^src/kernel/rpc/client/index\\.ts$', '^src/panels/(definitions|api)\\.ts$'] }),
+]
+
 const higher = (index) => `^src/${any(LAYERS.slice(index + 1))}/`
 
 const layerRules = LAYERS.slice(0, -1).flatMap((layer, index) => [
@@ -149,7 +160,7 @@ const serviceRules = [
 ]
 
 module.exports = {
-  forbidden: [...contractRules, ...sideRules, ...layerRules, publicEntries, ...serviceRules],
+  forbidden: [...contractRules, ...sideRules, ...layerRules, publicEntries, ...serviceRules, ...cliRules],
   options: {
     doNotFollow: { path: ['node_modules'] },
     exclude: { path: ['\\.test\\.tsx?$', '^src/test/'] },

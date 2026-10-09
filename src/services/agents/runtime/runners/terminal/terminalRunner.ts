@@ -20,11 +20,11 @@ import {
   type AgentSession,
   type PanelAgentState,
   type TerminalResumeStamp,
-} from '../../contract'
-import type { AgentsRuntime } from '../../runtime/agentsRuntime'
-import type { AgentRunnerImpl } from '../../runtime/registry'
-import { createAgentStatusMachine, type AgentStatusMachine } from '../../runtime/status'
-import { createResumeStamps, type ResumeStamps } from '../../runtime/stamps'
+} from '../../../contract'
+import type { AgentsRuntime } from '../../agentsRuntime'
+import type { AgentRunnerImpl } from '../../registry'
+import { createAgentStatusMachine, type AgentStatusMachine } from '../../status'
+import { createResumeStamps, type ResumeStamps } from '../../stamps'
 
 /** The part of the terminal service the runner uses. */
 export type RunnerTerminalService = Pick<TerminalService,

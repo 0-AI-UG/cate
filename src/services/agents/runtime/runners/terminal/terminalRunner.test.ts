@@ -6,8 +6,8 @@ import { panelDefinition } from '@panels/definitions'
 import { createTerminalService, type ActivityScan, type EnvContributor, type LaunchResolver, type PtyProcess, type PtySpawner, type SpawnInfo } from '@services/terminal/runtime'
 import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentNotificationEvent, type TerminalResumeStamp } from '../../contract'
-import { AGENT_SESSION_STORES, createAgentsRuntime, type AgentsDocument, type AgentsRuntime, type RelationContextMode } from '../../runtime'
+import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentNotificationEvent, type TerminalResumeStamp } from '../../../contract'
+import { AGENT_SESSION_STORES, createAgentsRuntime, type AgentsDocument, type AgentsRuntime, type RelationContextMode } from '../..'
 import { createTerminalRunner, type RunnerTerminalService, type TerminalRunner } from './terminalRunner'
 
 function fakeTerminal() {
@@ -357,7 +357,7 @@ describe('terminal runner input and hook ordering', () => {
   }
 
   it('covers every CLI agent', async () => {
-    const { AGENTS } = await import('../../contract')
+    const { AGENTS } = await import('../../../contract')
     expect(fixtures.map((f) => f.agentId).sort()).toEqual(AGENTS.map((a) => a.id).sort())
   })
 
