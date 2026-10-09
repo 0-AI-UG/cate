@@ -46,6 +46,21 @@ async function editors(): Promise<{ panelId: string; a: TestBuffer; b: TestBuffe
 const dirty = (panelId: string) => Promise.all([ws.a, ws.b].map((c) => c.session<EditorSnapshot>(panelId).until(() => true).then((s) => s.dirty)))
 
 describe.skipIf(process.platform === 'win32')('shared workspace: editor', () => {
+  // Fixed by R8 (the open file becomes session state).
+  it.fails('a record change does not switch a dirty editor away from its edits', async () => {
+    const { panelId, a } = await editors()
+    await type(a, 'unsaved')
+    await until(async () => ((await dirty(panelId)).every(Boolean) ? true : undefined), 10_000, 'dirty')
+    const other = path.join(ws.root, 'other.md')
+    fs.writeFileSync(other, 'other\n')
+    // Another client (or an undo) points the record at another file.
+    ws.b.document.propose({ kind: 'updatePanel', id: panelId, patch: { fields: { filePath: other } } })
+    await new Promise((r) => setTimeout(r, 1_000))
+    const s = await ws.a.session<EditorSnapshot>(panelId).until(() => true)
+    expect(s.filePath).toBe(file)
+    expect(s.dirty).toBe(true)
+  })
+
   it('closing both editors of a dirty file in one removal is refused as dirty', async () => {
     const { panelId, a } = await editors()
     const second = ws.a.createPanel('editor', { filePath: file })
