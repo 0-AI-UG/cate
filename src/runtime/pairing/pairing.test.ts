@@ -168,16 +168,21 @@ describe('pairing flow', () => {
     expect(seen.at(-1)).toEqual([])
   })
 
-  it('a wrong proof burns the secret', async () => {
+  it('a wrong proof is refused, and the live secrets burn only after five', async () => {
     const ctx = setup()
     const created = ctx.service.createSecret('sameNetwork')
     const wrong = await attempt(ctx, new Uint8Array(10).fill(7))
     expect((wrong.client as PromiseRejectedResult).reason.reason).toBe('invalid-proof')
     expect((wrong.runtime as PromiseRejectedResult).reason).toBeInstanceOf(UnpairedPeerError)
-
+    // One stray guess does not cost the person their pairing code.
     const right = await attempt(ctx, secretOf(created.uri))
-    expect(right.client.status).toBe('rejected')
-    expect(ctx.service.list()).toEqual([])
+    expect(right.client.status).toBe('fulfilled')
+
+    const next = ctx.service.createSecret('sameNetwork')
+    for (let i = 0; i < 5; i++) await attempt(ctx, new Uint8Array(10).fill(i + 1))
+    const late = await attempt(ctx, secretOf(next.uri))
+    expect((late.client as PromiseRejectedResult).reason.reason).toBe('no-secret')
+    expect(ctx.service.list()).toHaveLength(1)
   })
 
   it('an expired secret is refused', async () => {

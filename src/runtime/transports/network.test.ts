@@ -187,7 +187,7 @@ describe('same network', () => {
     }
   })
 
-  it('gives an unknown key one attempt: a wrong proof is refused, closes, and burns the secret', async () => {
+  it('gives an unknown key one attempt: a wrong proof is refused and closes, and the fifth burns the secret', async () => {
     const { uri } = pairing.createSecret('sameNetwork')
     const payload = decodePairingUri(uri)
     const guesser = device('guesser')
@@ -200,8 +200,13 @@ describe('same network', () => {
     })).rejects.toMatchObject({ reason: 'invalid-proof' })
     await new Promise((r) => setTimeout(r, 50))
     expect(portClosed).toBe(true)
+    for (let i = 0; i < 4; i++) {
+      await expect(pairWithRuntime(await dial(), {
+        deviceKeys: guesser.keys, deviceName: 'guesser', target: wrong, pins: guesser.pins,
+      })).rejects.toMatchObject({ reason: 'invalid-proof' })
+    }
 
-    // The real secret was burned by the wrong attempt.
+    // The real secret was burned by the wrong attempts.
     const phone = device()
     await expect(openSecureConnection(await dial(), {
       kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name,

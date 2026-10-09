@@ -42,8 +42,13 @@ interface LiveSecret {
   expiresAt: number
 }
 
+/** Wrong pairing proofs that burn every live secret. */
+const MAX_WRONG_PROOFS = 5
+
 export class PairingService implements PeerPolicy {
   private secrets: LiveSecret[] = []
+  /** Wrong proofs against the live secrets since they last burned. */
+  private wrongProofs = 0
   private readonly revokeListeners = new Set<(publicKey: string) => void>()
   private readonly listListeners = new Set<(devices: PairedDevice[]) => void>()
   private readonly now: () => number
@@ -126,9 +131,10 @@ export class PairingService implements PeerPolicy {
 
   /**
    * The one attempt an unknown key gets: read `pair`, check the proof against
-   * the live secrets, answer, store the device and burn the secret. A wrong
-   * proof burns every live secret, since the request does not say which one
-   * it was for.
+   * the live secrets, answer, store the device and burn the secret. Wrong
+   * proofs are counted, and the fifth burns every live secret (a request
+   * does not say which one it was for), so guessing ends while one stray
+   * attempt does not cost the person their code.
    */
   async pairUnknown(channel: SecureChannel): Promise<boolean> {
     const frame = await firstFrame(channel, this.options.pairTimeoutMs ?? 10_000)
@@ -144,7 +150,11 @@ export class PairingService implements PeerPolicy {
     const proof = proofFromWire(request.proof)
     const match = live.find((entry) => verifyClientProof(entry.secret, channel.handshakeHash, proof))
     if (!match) {
-      this.secrets = []
+      this.wrongProofs++
+      if (this.wrongProofs >= MAX_WRONG_PROOFS) {
+        this.secrets = []
+        this.wrongProofs = 0
+      }
       return this.answer(channel, { type: 'pair-rejected', reason: 'invalid-proof' })
     }
 
