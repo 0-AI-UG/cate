@@ -5,4 +5,5 @@ export {
   type NetworkDialer,
   type NetworkDialerDeps,
   type NetworkPairResult,
+  type SameNetworkDialer,
 } from './network'

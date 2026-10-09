@@ -12,7 +12,7 @@ import { decodePairingUri, parsePairingCode, type PairingMode } from '../../pair
 import type { KnownRuntimes } from '../../pairing/client'
 import { secureChannelDuplex, type KeyPair, type MessagePortLike } from '../../security/contract'
 import { formatAddress, pairingEndpoints, type NetworkEndpoint, type NetworkTarget, type PeerConnectionFactory, type WebSocketFactory } from '../contract'
-import { dialSameNetwork } from './sameNetwork'
+import { dialSameNetwork, type SameNetworkDialOptions } from './sameNetwork'
 import { openSecureConnection } from './secure'
 
 export interface NetworkPairResult {
@@ -35,9 +35,12 @@ export interface NetworkDialerDeps {
   /** Defaults to the public Cate Connect service. */
   connectUrl?: string
   /** Seams for tests. */
-  sameNetwork?: typeof dialSameNetwork
+  sameNetwork?: SameNetworkDialer
   cateConnect?(runtimeId: string): Promise<MessagePortLike>
 }
+
+/** `dialSameNetwork` with a check of each opened port. */
+export type SameNetworkDialer = <T>(options: SameNetworkDialOptions<T> & { verify: NonNullable<SameNetworkDialOptions<T>['verify']> }) => Promise<T>
 
 export interface NetworkDialer {
   /** A message pipe to a paired runtime, already inside the security layer. */
@@ -47,7 +50,9 @@ export interface NetworkDialer {
 }
 
 export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
-  const sameNetwork = deps.sameNetwork ?? dialSameNetwork
+  const sameNetwork: SameNetworkDialer = deps.sameNetwork ?? ((options) => dialSameNetwork(options))
+  /** An opened port as it is: what pairing dials before its own handshake. */
+  const asOpened = { check: async (port: MessagePortLike) => port, release: (port: MessagePortLike) => port.close() }
   const cateConnect = deps.cateConnect ?? (async (runtimeId: string) => dialCateConnect({
     url: deps.connectUrl ?? DEFAULT_CATE_CONNECT_URL,
     runtimeId,
@@ -59,7 +64,7 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
   const reach = async (runtimeId: string, addresses: string[], viaConnect: boolean): Promise<{ port: MessagePortLike; via: PairingMode }> => {
     const errors: string[] = []
     try {
-      const port = await sameNetwork({ runtimeId, addresses, discover: deps.discover, webSocket: deps.webSocket })
+      const port = await sameNetwork({ runtimeId, addresses, discover: deps.discover, webSocket: deps.webSocket, verify: asOpened })
       return { port, via: 'sameNetwork' }
     } catch (error) {
       errors.push((error as Error).message)
@@ -75,17 +80,41 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
   }
 
   return {
+    // Each way in is checked by the handshake before it counts: an address
+    // where another machine (another key) answers is passed over for the
+    // remaining ones, then Cate Connect.
     async dialNetwork(target) {
       const addresses = target.endpoints.flatMap((e) => (e.kind === 'lan' ? [formatAddress(e.address, e.port)] : []))
       const viaConnect = target.endpoints.some((e) => e.kind === 'connect')
-      const { port } = await reach(target.runtimeId, addresses, viaConnect)
-      const { channel } = await openSecureConnection(port, {
+      const secure = async (port: MessagePortLike) => (await openSecureConnection(port, {
         kind: 'connect',
         deviceKeys: deps.deviceKeys(),
         runtimeId: target.runtimeId,
         pins: deps.pins,
-      })
-      return secureChannelDuplex(channel)
+      })).channel
+      const errors: string[] = []
+      try {
+        const channel = await sameNetwork({
+          runtimeId: target.runtimeId,
+          addresses,
+          discover: deps.discover,
+          webSocket: deps.webSocket,
+          verify: { check: secure, release: (channel) => channel.close() },
+        })
+        return secureChannelDuplex(channel)
+      } catch (error) {
+        errors.push((error as Error).message)
+      }
+      if (viaConnect) {
+        try {
+          const port = await cateConnect(target.runtimeId)
+          const channel = await secure(port).catch((error: unknown) => { port.close(); throw error })
+          return secureChannelDuplex(channel)
+        } catch (error) {
+          errors.push((error as Error).message)
+        }
+      }
+      throw new Error(errors.join('; '))
     },
     async pair(request) {
       const link = request.link.trim()

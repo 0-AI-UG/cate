@@ -101,3 +101,36 @@ describe('network dialer', () => {
     await expect(host.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: [] })).rejects.toThrow()
   })
 })
+
+describe('network dialer and a stranger on a known address', () => {
+  it('tries the other endpoints when one answers with another key', async () => {
+    // Another machine now answers at the address the device remembers.
+    const strangerRpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
+    const strangerKeys = generateKeyPair()
+    const strangerPeers = createNetworkPeers({ rpc: strangerRpc, runtimeKeys: strangerKeys, pairing, handshakeTimeoutMs: 2_000 })
+    const stranger = await serveSameNetwork({ runtimeId: RUNTIME_ID, peers: strangerPeers, host: '127.0.0.1', port: 0, advertise: false, addresses: (port) => [`127.0.0.1:${port}`] })
+    try {
+      const { host, deviceKeys, pins } = shell()
+      await host.pair({ link: pairing.createSecret('sameNetwork').uri })
+      const dialer = createNetworkDialer({
+        deviceKeys: () => deviceKeys,
+        deviceName: () => 'laptop',
+        pins,
+        webSocket: nodeWebSocketFactory,
+        // The runtime itself is found a moment later, by discovery.
+        sameNetwork: (options) => dialSameNetwork({
+          ...options,
+          discover: async () => { await new Promise((r) => setTimeout(r, 200)); return lan.addresses() },
+        }),
+        createPeer: () => { throw new Error('Cate Connect is not part of this test') },
+        cateConnect: () => Promise.reject(new Error('Cate Connect is not part of this test')),
+      })
+      const [address, port] = stranger.addresses()[0].split(':')
+      const duplex = await dialer.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: [{ kind: 'lan', address, port: Number(port) }] })
+      expect(await ping(duplex, deviceKeys)).toBe('pong')
+    } finally {
+      strangerPeers.dispose()
+      await stranger.close()
+    }
+  })
+})

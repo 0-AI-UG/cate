@@ -10,7 +10,7 @@ import { createLogger } from '@kernel/log/contract'
 import type { LocalRuntime } from '@runtime/daemon/desktop'
 import type { KnownRuntimes } from '@runtime/pairing/client'
 import type { KeyPair, MessagePortLike } from '@runtime/security/contract'
-import { createNetworkDialer, type dialSameNetwork } from '@runtime/transports/client'
+import { createNetworkDialer, type SameNetworkDialer } from '@runtime/transports/client'
 import { discoverRuntime, loadNodePeerConnection, nodeWebSocketFactory, socketDuplex } from '@runtime/transports/node'
 import type { DesktopNetworkTarget, PairResult } from '../contract'
 
@@ -25,7 +25,7 @@ export interface ShellTransportDeps {
   pins: KnownRuntimes
   connectUrl?: string
   /** Seams for tests. */
-  sameNetwork?: typeof dialSameNetwork
+  sameNetwork?: SameNetworkDialer
   cateConnect?: (runtimeId: string) => Promise<MessagePortLike>
 }
 
