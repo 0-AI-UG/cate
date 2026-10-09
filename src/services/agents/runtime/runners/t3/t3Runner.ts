@@ -21,7 +21,7 @@ import {
   type AgentStatus,
   type PanelAgentState,
 } from '../../../contract'
-import type { AgentsRuntime } from '../../agentsRuntime'
+import type { AgentsCore } from '../../core'
 import type { AgentRunnerImpl } from '../../registry'
 
 /** The part of the t3 service the runner uses. */
@@ -61,7 +61,7 @@ function attention(thread: T3Thread | undefined, status: AgentStatus | undefined
   return status === 'running' ? 'running' : 'idle'
 }
 
-export function createT3Runner(agents: AgentsRuntime, t3: RunnerT3Service, bindings: T3PanelBindings): T3Runner {
+export function createT3Runner(agents: AgentsCore, t3: RunnerT3Service, bindings: T3PanelBindings): T3Runner {
   const { hooks, document, notifications, promptContext } = agents
   /** Latest shell snapshot per checkout. */
   const shells = new Map<string, T3ShellSnapshot>()

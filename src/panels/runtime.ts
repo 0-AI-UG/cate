@@ -15,14 +15,7 @@ import type { ConnectedEditors } from '@workspace/relations/runtime'
 import type { TerminalService } from '@services/terminal/runtime'
 import type { BrowserDataRuntime } from '@services/browser/runtime'
 import type { T3Runtime } from '@services/t3/runtime'
-import {
-  evaluateAgentCliHooks,
-  inspectAgentCliHooks,
-  type AgentStarter,
-  type AgentStartPorts,
-  type AgentsRuntime,
-} from '@services/agents/runtime'
-import type { T3Runner, TerminalRunner } from '@services/agents/runtime'
+import type { AgentStartPorts, AgentsRuntime } from '@services/agents/runtime'
 import type { AnyPanelDefinition } from './framework/contract'
 import type { PanelFactory, PanelSessionClass, SessionHost, SurfaceBroker } from './framework/runtime'
 import { createTerminalPanels } from './terminal/runtime'
@@ -31,7 +24,7 @@ import { reviewPanel } from './review/runtime'
 import { BrowserCodeCells, browserCodeCapabilityImpl, browserPanel, browserServiceHandlers } from './browser/runtime'
 import { browserApi, browserCodeCapability } from './browser/contract'
 import { surfacePanel } from './surface/runtime'
-import { chatPanel, type ChatThreads } from './chat/runtime'
+import { chatPanel } from './chat/runtime'
 import { canvasPanel } from './canvas/runtime'
 
 /** The runtime services the daemon hands panel types. */
@@ -50,11 +43,6 @@ export interface PanelServices {
   browserData: BrowserDataRuntime
   t3: T3Runtime
   agents: AgentsRuntime
-  terminalRunner: TerminalRunner
-  t3Runner: T3Runner
-  agentStarter: AgentStarter
-  /** Which thread each chat panel shows (what the t3 runner reads). */
-  chatThreads: ChatThreads
 }
 
 export interface PanelAttachContext {
@@ -141,20 +129,16 @@ const review: PanelRuntime = (services) => {
     },
     agents: {
       readChanges: (cwd, knownRevision) => agents.changes(cwd, knownRevision),
-      async readiness(cwd) {
-        const states = await inspectAgentCliHooks((dir) => agents.hooks.inspectWorkspace(dir), cwd)
-        const config = agents.settings.agentHookInjection()
-        return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
-      },
+      readiness: (cwd) => agents.readiness(cwd),
       async start(ownerPanelId, { at, ...args }) {
-        const { panelId } = await services.agentStarter.start(ownerPanelId, { ...args, ...(at ? { placement: { at } } : {}) })
+        const { panelId } = await agents.start(ownerPanelId, { ...args, ...(at ? { placement: { at } } : {}) })
         return { panelId }
       },
       async send(panelId, prompt) {
         const result = await agents.send(panelId, prompt)
         if (!result.ok) throw new Error(result.error)
       },
-      onExit: (listener) => services.terminalRunner.onExit((panelId) => listener(panelId)),
+      onExit: (listener) => agents.onSessionEnded(listener),
     },
   })
 }
@@ -179,7 +163,7 @@ const chat: PanelRuntime = (services) => {
     ...chatPanel({
       root: services.root,
       t3: services.t3,
-      relationContext: (panelId, agentId) => agents.promptContext.prepareForSend(panelId, agentId),
+      relationContext: (panelId, agentId) => agents.relationContext(panelId, agentId),
       changes: { watch: (panelId, listener) => agents.watchChanges(panelId, listener) },
       createPanel: (type, options) => factory?.createPanel(type, options) ?? null,
     }),

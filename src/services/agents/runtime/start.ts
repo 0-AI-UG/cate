@@ -1,16 +1,18 @@
-// Starting an agent (`cate.agent.start`): its CLI in a new terminal panel, or
-// a T3 Code thread in a new chat panel, in the caller's checkout or a
-// worktree, next to the caller unless told where. Once started it is an agent
-// like any other: `cate.agent.*` talks to it by its panel. Panels, worktrees
-// and T3 come through injected ports, since they live in other modules.
+// Starting an agent (`cate.agent.start`): in the caller's checkout or a
+// worktree, next to the caller unless told where; each runner launches its
+// own kind (runners/*/start.ts). Once started it is an agent like any other:
+// `cate.agent.*` talks to it by its panel. Panels, worktrees and T3 come
+// through injected ports, since they live in other modules.
 
 import { RpcError } from '@kernel/rpc/contract'
 import type { Point } from '@workspace/canvas/contract'
 import type { PlaceTarget } from '@workspace/document/contract'
 import type { T3ProviderModels, T3StartThreadParams } from '@services/t3/contract'
-import { AGENT_LAUNCH, AGENTS, AGENT_DEFS, isAgentId, type AgentId, type AgentRunner, type AgentTypeInfo } from '../contract'
-import type { AgentsRuntime } from './agentsRuntime'
-import { evaluateAgentCliHooks, inspectAgentCliHooks, resolveDriverAgent } from './hooks/readiness'
+import { AGENTS, isAgentId, type AgentId, type AgentRunner, type AgentTypeInfo } from '../contract'
+import type { AgentsCore } from './core'
+import { evaluateAgentCliHooks, inspectAgentCliHooks } from './hooks/readiness'
+import { createT3Start } from './runners/t3/start'
+import { createTerminalStart } from './runners/terminal/start'
 
 /** Where a new panel goes: an explicit target, or near a panel (on its
  *  canvas when it is a canvas panel or sits on one), at a canvas point. */
@@ -79,114 +81,63 @@ function fail(code: string): never {
   throw new RpcError('rejected', code)
 }
 
-export function createAgentStarter(agents: AgentsRuntime, ports: AgentStartPorts): AgentStarter {
-  const inspect = (dir: string) => agents.hooks.inspectWorkspace(dir)
+/** How one runner starts an agent: checks the request, picks what runs
+ *  (before any worktree exists, so a refused start leaves none), then
+ *  launches it in the checkout. */
+export interface RunnerStart<Choice> {
+  check(args: StartRequest, callerPanelId: string | undefined): void
+  choose(args: StartRequest, cwd: string): Promise<Choice>
+  launch(choice: Choice, context: {
+    args: StartRequest
+    prompt: string
+    checkout: { cwd: string; worktreeId?: string }
+    placement: AgentPlacement
+  }): Promise<{ panelId: string; agentId: AgentId | null }>
+}
+
+/** Start arguments once validated. */
+export type StartRequest = Omit<AgentStartArgs, 'agentId'> & { agentId?: AgentId }
+
+export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): AgentStarter {
+  const runners: { [R in AgentRunner]: RunnerStart<unknown> } = {
+    terminal: createTerminalStart(agents, ports.terminals) as RunnerStart<unknown>,
+    t3: createT3Start(agents, ports) as RunnerStart<unknown>,
+  }
 
   /** The checkout to run in: the asked worktree, else the caller's own. */
   const checkoutFor = (callerPanelId: string | undefined, worktreeId: string | undefined): { cwd: string; worktreeId?: string } => {
     if (worktreeId) {
       const cwd = agents.document.worktreePath(worktreeId)
       if (!cwd) fail('worktree-not-registered')
-      return { cwd, worktreeId }
+      return { cwd: cwd!, worktreeId }
     }
     const inherited = callerPanelId ? agents.document.panel(callerPanelId)?.worktreeId : undefined
     const cwd = inherited ? agents.document.worktreePath(inherited) : undefined
     return inherited && cwd && cwd !== agents.root ? { cwd, worktreeId: inherited } : { cwd: agents.root }
   }
 
-  /** The hook-ready agent a terminal start runs (strict for a preference). */
-  const terminalAgent = async (cwd: string, preferred: AgentId | undefined): Promise<AgentId> => {
-    try {
-      const agent = await resolveDriverAgent(inspect, cwd, preferred ?? '', {
-        fallbackCwd: agents.root,
-        hookConfig: agents.settings.agentHookInjection(),
-      })
-      return agent.id
-    } catch (error) {
-      return fail(error instanceof Error ? `agent-hooks-not-ready: ${error.message}` : 'agent-hooks-not-ready')
-    }
-  }
-
-  /** The T3 instance and model a chat start runs on: the asked ones, else a
-   *  ready instance of the agent's provider (any, without an agent) and its
-   *  default model. */
-  const t3Choice = async (agentId: AgentId | undefined, instanceId: string | undefined, model: string | undefined) => {
-    const providerId = agentId ? AGENT_DEFS[agentId].runners.t3?.providerId : undefined
-    if (agentId && !providerId) fail('agent-not-in-t3')
-    const instances = await ports.t3.providerModels()
-    const instance = instances.find((candidate) => candidate.ready
-      && (instanceId ? candidate.instanceId === instanceId : !providerId || candidate.providerId === providerId))
-    if (!instance) return fail('t3-provider-not-ready')
-    const slug = model ?? (instance.models.find((candidate) => candidate.isDefault) ?? instance.models[0])?.slug
-    if (!slug) return fail('t3-model-not-found')
-    const agent = AGENTS.find((candidate) => candidate.runners.t3?.providerId === instance.providerId)
-    return { instanceId: instance.instanceId, model: slug, agentId: agent?.id ?? null }
-  }
-
-  const idleTerminal = (panelId: string, callerPanelId: string | undefined): void => {
-    if (panelId === callerPanelId) fail('agent-cannot-replace-caller-terminal')
-    const terminal = ports.terminals.state(panelId)
-    if (!terminal) fail('terminal-not-found')
-    if (terminal.alive && (agents.registry.sessionFor(panelId)?.present || terminal.busy)) fail('terminal-busy')
-  }
-
   return {
-    async start(callerPanelId, args) {
+    async start(callerPanelId, input) {
       agents.trust.requireTrusted()
-      const prompt = args.prompt.trim()
+      const prompt = input.prompt.trim()
       if (!prompt) fail('prompt-required')
       if (prompt.includes('\0')) fail('invalid-prompt')
-      if (args.agentId !== undefined && !isAgentId(args.agentId)) fail('unsupported-agent')
-      if (args.worktreeId && args.newWorktree) fail('choose-worktreeId-or-newWorktree')
+      if (input.agentId !== undefined && !isAgentId(input.agentId)) fail('unsupported-agent')
+      if (input.worktreeId && input.newWorktree) fail('choose-worktreeId-or-newWorktree')
+      const args = input as StartRequest
       const runner = args.runner ?? 'terminal'
-      if (args.terminalPanelId) {
-        if (runner !== 'terminal') fail('terminal-requires-terminal-runner')
-        idleTerminal(args.terminalPanelId, callerPanelId)
-      }
-      const preferred = args.agentId as AgentId | undefined
+      const start = runners[runner]
+      start.check(args, callerPanelId)
       const placement = args.placement ?? (callerPanelId ? { near: callerPanelId } : {})
 
-      // Chosen before any worktree exists, so a refused start leaves none.
       const existing = args.newWorktree ? null : checkoutFor(callerPanelId, args.worktreeId)
-      const terminalId = runner === 'terminal' ? await terminalAgent(existing?.cwd ?? agents.root, preferred) : null
-      const t3 = runner === 't3' ? await t3Choice(preferred, args.instanceId, args.model) : null
+      const choice = await start.choose(args, existing?.cwd ?? agents.root)
 
       const created = args.newWorktree ? await ports.worktrees.create(args.newWorktree) : null
       const checkout = created ? { cwd: created.path, worktreeId: created.id } : existing!
       try {
-        if (terminalId) {
-          const launch = { kind: AGENT_LAUNCH.start, params: { agentId: terminalId, prompt } }
-          if (args.terminalPanelId) {
-            // Reuse the panel, not its shell process: restarting the PTY
-            // launches the canonical executable and argv directly.
-            await ports.terminals.relaunch(args.terminalPanelId, { ...checkout, launch })
-            return { panelId: args.terminalPanelId, runner, agentId: terminalId }
-          }
-          const title = args.title?.trim() || prompt.replace(/\s+/g, ' ').slice(0, 54)
-          const panelId = await ports.terminals.create({ ...checkout, title, launch, placement })
-          return { panelId, runner, agentId: terminalId }
-        }
-        const inWorktree = checkout.cwd !== agents.root
-        const { threadId } = await ports.t3.startThread({
-          ...(inWorktree ? { checkout: checkout.cwd } : {}),
-          instanceId: t3!.instanceId,
-          model: t3!.model,
-          text: prompt,
-        })
-        try {
-          const panelId = ports.createChat({
-            threadId,
-            ...(inWorktree ? checkout : {}),
-            ...(args.title?.trim() ? { title: args.title.trim() } : {}),
-            placement,
-          })
-          if (!panelId) fail('panel-creation-failed')
-          return { panelId, runner, agentId: t3!.agentId }
-        } catch (error) {
-          // No chat shows the thread: end it before its worktree goes.
-          await ports.t3.stopThread({ ...(inWorktree ? { checkout: checkout.cwd } : {}), threadId }).catch(() => {})
-          throw error
-        }
+        const { panelId, agentId } = await start.launch(choice, { args, prompt, checkout, placement })
+        return { panelId, runner, agentId }
       } catch (error) {
         if (created) await ports.worktrees.remove(created.id).catch(() => {})
         throw error
@@ -195,7 +146,7 @@ export function createAgentStarter(agents: AgentsRuntime, ports: AgentStartPorts
 
     async types() {
       agents.trust.requireTrusted()
-      const states = await inspectAgentCliHooks(inspect, agents.root)
+      const states = await inspectAgentCliHooks((dir) => agents.hooks.inspectWorkspace(dir), agents.root)
       const config = agents.settings.agentHookInjection()
       const ready = new Set(states.filter((state) => evaluateAgentCliHooks(state, config).ready).map((state) => state.agent.id))
       return AGENTS.map((agent) => ({

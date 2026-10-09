@@ -55,16 +55,13 @@ import { AGENTS, agentsCapability } from '@services/agents/contract'
 import { agentApi } from '@services/agents/contract/api'
 import { CATE_API } from '@panels/api'
 import {
-  agentsCapabilityImpl,
-  createAgentApiHandlers,
-  createAgentStarter,
   createAgentsRuntime,
   withoutInheritedHookIdentity,
   type AgentStartPorts,
   type AgentsDocument,
+  type AgentsRuntime,
   type RelationContextMode,
 } from '@services/agents/runtime'
-import { createT3Runner, createTerminalRunner } from '@services/agents/runtime'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract'
 import {
   createPanelFactory,
@@ -245,26 +242,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     paths: { validate: (p) => files.paths.strict(p) },
   })
 
-  const agents = createAgentsRuntime({
-    root,
-    agentsDir: paths.agents,
-    trust,
-    settings: {
-      agentHookInjection: () => settings.get('agentHookInjection'),
-      panelRelationsEnabled: () => settings.get('panelRelationsEnabled'),
-    },
-    document: agentsDocument(document),
-    resolveCheckout,
-    snapshot: snapshotProcessTree,
-    watchStatus: (cwd, listener) => repository.monitors.subscribe(cwd, listener),
-    flushConnected: (panelId) => connectedEditors.flush(panelId),
-    relationRole: (type) => relationRole(type),
-    log: log.child('agents'),
-  })
-  const terminalRunner = createTerminalRunner(agents, terminal, { stampsFile: path.join(paths.agents, 'stamps.json') })
-  offs.push(agents.registry.register(terminalRunner))
-
-  // Which thread each chat panel shows, from the document, for the t3 runner.
+  // Which thread each chat panel shows, from the document, for the agents
+  // service's t3 runner.
   let broker: ReturnType<typeof createSurfaceBroker> | undefined
   const chatThreads = createChatThreads({ root, document, surfaces: () => broker })
   offs.push(chatThreads.dispose)
@@ -272,7 +251,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   const ports: PanelPorts = {}
   const agentTerminals = lateAgentTerminals(() => ports.agentTerminals)
 
-  let t3Runner: ReturnType<typeof createT3Runner> | undefined
+  // The t3 harness reports its edits to the agents service, created next.
+  let agents: AgentsRuntime | undefined
   const harnessTokens = new Map<string, string>()
   const ptyHost: T3PtyHost = {
     async spawn({ file, args, cwd, env, cols, rows }, onData, onExit) {
@@ -298,43 +278,61 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       harnessTokens.set(checkout, token)
       return token
     },
-    harnessEnv: (harness) => t3Runner?.changeCaptureEnv(harness) ?? Promise.resolve({}),
-    harnessStopped: (id) => t3Runner?.releaseChangeCapture(id),
+    harnessEnv: (harness) => agents?.changeCaptureEnv(harness) ?? Promise.resolve({}),
+    harnessStopped: (id) => agents?.releaseChangeCapture(id),
     log: log.child('t3'),
   })
-  t3Runner = createT3Runner(agents, t3, chatThreads)
-  offs.push(agents.registry.register(t3Runner))
 
-  const agentStarter = createAgentStarter(agents, {
-    terminals: agentTerminals,
-    // The panel factory exists once panel types are attached, before any call.
-    createChat: ({ placement, ...options }) => factory.createPanel('chat', { ...options, ...placement }),
-    worktrees: {
-      async create(name) {
-        const meta = await repository.createWorktree({ branch: name })
-        return { id: meta.id, path: meta.path }
-      },
-      async remove(worktreeId) {
-        await repository.removeWorktree({ worktreeId, force: true, deleteBranch: true })
-      },
+  agents = createAgentsRuntime({
+    root,
+    agentsDir: paths.agents,
+    trust,
+    settings: {
+      agentHookInjection: () => settings.get('agentHookInjection'),
+      panelRelationsEnabled: () => settings.get('panelRelationsEnabled'),
     },
-    t3: {
-      providerModels: () => t3.providerModels(),
-      startThread: (params) => t3.startThread(params),
-      async stopThread(params) {
-        await t3.interruptTurn(params).catch(() => {})
-        await t3.deleteConversation(params)
+    document: agentsDocument(document),
+    resolveCheckout,
+    snapshot: snapshotProcessTree,
+    watchStatus: (cwd, listener) => repository.monitors.subscribe(cwd, listener),
+    flushConnected: (panelId) => connectedEditors.flush(panelId),
+    relationRole: (type) => relationRole(type),
+    log: log.child('agents'),
+    terminal,
+    t3,
+    chatThreads,
+    start: {
+      terminals: agentTerminals,
+      // The panel factory exists once panel types are attached, before any call.
+      createChat: ({ placement, ...options }) => factory.createPanel('chat', { ...options, ...placement }),
+      worktrees: {
+        async create(name) {
+          const meta = await repository.createWorktree({ branch: name })
+          return { id: meta.id, path: meta.path }
+        },
+        async remove(worktreeId) {
+          await repository.removeWorktree({ worktreeId, force: true, deleteBranch: true })
+        },
+      },
+      t3: {
+        providerModels: () => t3.providerModels(),
+        startThread: (params) => t3.startThread(params),
+        async stopThread(params) {
+          await t3.interruptTurn(params).catch(() => {})
+          await t3.deleteConversation(params)
+        },
       },
     },
   })
+  const agentsRuntime = agents
 
   offs.push(deps.busy.contribute(() => terminal.busy()))
-  offs.push(deps.busy.contribute(() => agents.busy().length > 0))
+  offs.push(deps.busy.contribute(() => agentsRuntime.busy().length > 0))
   offs.push(deps.busy.contribute(() => t3.busy()))
 
   // `cate.ui.notify` reaches clients on the agents notification stream.
-  offs.push(registerKernelApi(router, { publishNotification: (event) => agents.notifications.publish(event) }))
-  offs.push(router.registerService(agentApi, createAgentApiHandlers(agents, agentStarter)))
+  offs.push(registerKernelApi(router, { publishNotification: (event) => agentsRuntime.publishNotification(event) }))
+  offs.push(router.registerService(agentApi, agentsRuntime.apiHandlers()))
 
   // ---- Panels -----------------------------------------------------------------
 
@@ -351,11 +349,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     terminal,
     browserData,
     t3,
-    agents,
-    terminalRunner,
-    t3Runner,
-    agentStarter,
-    chatThreads,
+    agents: agentsRuntime,
   }
   const modules = (deps.panels ?? PANEL_RUNTIMES).map((panel) => panel(services))
   const registry = createPanelRegistry(modules.map(({ definition, session }) => ({ definition, session })))
@@ -397,7 +391,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   rpc.register(processCapability, processCapabilityImpl(terminal))
   rpc.register(browserDataCapability, browserDataCapabilityImpl(browserData))
   rpc.register(t3Capability, t3CapabilityImpl(t3))
-  rpc.register(agentsCapability, agentsCapabilityImpl(agents, agentStarter))
+  rpc.register(agentsCapability, agentsRuntime.capability())
   rpc.register(sessionCapability, sessionCapabilityImpl({ host, presence }))
   rpc.register(surfaceCapability, broker.capability())
   rpc.register(apiCapability, apiCapabilityImpl(router))
@@ -435,7 +429,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     router,
     tokens,
     terminal,
-    agents,
+    agents: agentsRuntime,
     t3,
     host,
     /** Page operations on clients' surfaces (section 10.2). */
@@ -460,10 +454,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       sessions.dispose()
       broker.dispose()
       connectedEditors.dispose()
-      t3Runner?.dispose()
-      terminalRunner.dispose()
+      agentsRuntime.dispose()
       await t3.dispose()
-      agents.dispose()
       await terminal.shutdown()
       repository.dispose()
       presence.dispose()

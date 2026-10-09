@@ -1,212 +1,105 @@
-// The agents service core (architecture 10.4): hook ingestion, pid presence,
-// change history, the runner registry, prompt context and notifications.
-// Runners (runners/terminal, runners/t3) plug into it.
+// The agents service as the rest of the runtime sees it (architecture 10.4):
+// the only owner of agent state. It builds its core, both runners and the
+// starter, and answers the few calls other modules make; runners, hooks and
+// the registry stay private to this module.
 
-import type { RelationRoleOf } from '@workspace/relations/contract'
 import path from 'node:path'
-import type { Logger } from '@kernel/log/contract'
-import {
-  activeAgentChanges,
-  summarizeAgentChanges,
-  type AgentChangesSnapshot,
-  type AgentHookAgentState,
-  type AgentHookConfig,
-  type AgentSendResult,
-  type AgentSessionChanges,
-  type PanelAgentState,
+import type { CapabilityImpl } from '@kernel/rpc/runtime'
+import type { CateServiceHandlers } from '@kernel/api/contract'
+import type {
+  AgentChangesSnapshot,
+  AgentId,
+  AgentNotificationEvent,
+  AgentRunner,
+  AgentSendResult,
+  AgentSessionChanges,
+  agentsCapability,
 } from '../contract'
-import type { StoredAgentChange } from './changes/store'
-import { createAgentHooks, type AgentHooks, type AgentHooksDeps } from './hooks/agentHooks'
-import { createAgentPresenceTracker, type AgentPresenceTracker, type ProcTree } from './presence'
-import { createRunnerRegistry, type RunnerRegistry } from './registry'
-import { createAgentNotifications, type AgentNotifications } from './notifications'
-import { createAgentConversations, type AgentConversations } from './conversations'
-import { createPromptContext, type AgentsDocument, type PromptContext } from './promptContext'
+import type { agentApi } from '../contract/api'
+import { createAgentApiHandlers } from './api'
+import { agentsCapabilityImpl } from './capability'
+import { createAgentsCore, type AgentsCoreDeps } from './core'
+import { evaluateAgentCliHooks, inspectAgentCliHooks } from './hooks/readiness'
+import { createT3Runner, type RunnerT3Service, type T3PanelBindings } from './runners/t3'
+import { createTerminalRunner, type RunnerTerminalService } from './runners/terminal'
+import { createAgentStarter, type AgentStartArgs, type AgentStartPorts } from './start'
 
-export interface TrustGate {
-  isTrusted(): boolean
-  /** Throws `RpcError('untrusted')`. */
-  requireTrusted(): void
-}
-
-/** The workspace settings the agents service reads. */
-export interface AgentsSettingsReader {
-  agentHookInjection(): AgentHookConfig
-  panelRelationsEnabled(): boolean
-}
-
-export interface AgentsRuntimeDeps {
-  /** Canonical workspace root. */
-  root: string
-  /** `dataPaths(dataDir).agents`: holds `hooks/` and `changes/`. */
-  agentsDir: string
-  trust: TrustGate
-  settings: AgentsSettingsReader
-  document: AgentsDocument
-  /** Canonicalizes a checkout (the root when omitted) and refuses anything but
-   *  the root or one of its worktree checkouts. */
-  resolveCheckout(cwd: string | undefined): Promise<string>
-  /** A fresh process-table snapshot (the terminal service's scanner). */
-  snapshot(): Promise<ProcTree>
-  /** A checkout's git status: now, then on every change (the repository's
-   *  monitors), so recorded changes still in the checkout can be told. */
-  watchStatus(cwd: string, listener: (status: { isRepo: boolean; files: readonly { path: string }[] }) => void): () => void
-  /** Flushes editors connected to a panel before its prompt is sent. */
-  flushConnected?(panelId: string): Promise<void>
-  /** Each panel type's relation role, for prompt context. */
-  relationRole: RelationRoleOf
-  log?: Logger
-  /** Tests: the host home dir and hook internals. */
-  homeDir?: string
-  hookOptions?: Partial<Pick<AgentHooksDeps, 'nodePath' | 'interruptPollMs' | 'sessionStores' | 'titleRetryDelaysMs' | 'externalPlugins'>>
-  isAlive?: (pid: number) => boolean
+export interface AgentsRuntimeDeps extends AgentsCoreDeps {
+  /** The terminal service: the terminal runner plugs into its extension points. */
+  terminal: RunnerTerminalService
+  /** The t3 service the t3 runner follows. */
+  t3: RunnerT3Service
+  /** Which thread each chat panel shows (the chat panel type's view of the
+   *  document). */
+  chatThreads: T3PanelBindings
+  /** What starting an agent needs from panels, worktrees and T3. */
+  start: AgentStartPorts
 }
 
 export interface AgentsRuntime {
-  readonly root: string
-  readonly trust: TrustGate
-  readonly settings: AgentsSettingsReader
-  readonly document: AgentsDocument
-  readonly hooks: AgentHooks
-  readonly presence: AgentPresenceTracker
-  readonly registry: RunnerRegistry
-  readonly notifications: AgentNotifications
-  readonly conversations: AgentConversations
-  readonly promptContext: PromptContext
-  resolveCheckout(cwd: string | undefined): Promise<string>
-  inspectHooks(cwd?: string): Promise<AgentHookAgentState[]>
-  panel(panelId: string): PanelAgentState | null
+  /** Starts an agent for `callerPanelId` (undefined for a client). */
+  start(callerPanelId: string | undefined, args: AgentStartArgs): Promise<{ panelId: string; runner: AgentRunner; agentId: AgentId | null }>
   send(panelId: string, prompt: string): Promise<AgentSendResult>
-  /** Stops the turn of the panel's agent. */
-  interrupt(panelId: string): Promise<AgentSendResult>
   /** Panels whose agent is running a turn. */
   busy(): string[]
   /** Recorded agent edits in a checkout, each with the panels that showed
    *  its session; an unchanged revision omits records. */
   changes(cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot>
   /** Per-turn summaries of the panel's current session's edits still changed
-   *  in its checkout: now, then whenever they may have changed. Null while
-   *  the panel has no session. */
+   *  in its checkout: now, then whenever they may have changed. */
   watchChanges(panelId: string, listener: (changes: AgentSessionChanges | null) => void): () => void
+  /** Which agent CLIs can run a hook-backed turn in `cwd`. */
+  readiness(cwd: string): Promise<{ agentId: AgentId; ready: boolean }[]>
+  /** A panel's agent session ended with its process. */
+  onSessionEnded(listener: (panelId: string) => void): () => void
+  /** The relation context to send with the panel's next prompt (armed
+   *  context is disarmed); a T3 page asks before it sends. */
+  relationContext(panelId: string, agentId: AgentId | null): Promise<string | null>
+  /** Notification events (architecture 10.5): `cate.ui.notify` publishes,
+   *  push delivery subscribes. */
+  publishNotification(event: AgentNotificationEvent): void
+  onNotification(listener: (event: AgentNotificationEvent) => void): () => void
+  /** Env for a starting T3 harness so it reports its edits. */
+  changeCaptureEnv(harness: { id: string; checkout: string }): Promise<Record<string, string>>
+  /** A T3 harness stopped. */
+  releaseChangeCapture(id: string): void
+  /** The `agents` capability and the `cate.agent.*` handlers. */
+  capability(): CapabilityImpl<typeof agentsCapability>
+  apiHandlers(): CateServiceHandlers<typeof agentApi>
   dispose(): void
 }
 
 export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
-  const presence = createAgentPresenceTracker({ snapshot: deps.snapshot, isAlive: deps.isAlive })
-  const hooks = createAgentHooks({
-    hooksDir: path.join(deps.agentsDir, 'hooks'),
-    changesDir: path.join(deps.agentsDir, 'changes'),
-    homeDir: deps.homeDir,
-    ...deps.hookOptions,
-    onPost: ({ terminalId, agentId, pid, sourceStartedAt }) =>
-      presence.notePost(terminalId, agentId, pid, sourceStartedAt),
-    onChangeError: (error) => deps.log?.warn('could not save a reported agent edit', error),
-  })
-  const notifications = createAgentNotifications()
-  const promptContext = createPromptContext({
-    document: deps.document,
-    relationsEnabled: () => deps.settings.panelRelationsEnabled(),
-    relationRole: deps.relationRole,
-    flushConnected: deps.flushConnected,
-  })
-  const registry = createRunnerRegistry({ contextSentAt: (panelId) => promptContext.sentAt(panelId) })
-  promptContext.onSent((panelId) => registry.refresh(panelId))
-  const conversations = createAgentConversations({ registry })
-
-  const resolve = (record: StoredAgentChange) => {
-    const { source: _source, sourceId: _sourceId, panelId: _panelId, panelIds: _panelIds, ...rest } = record
-    return { ...rest, panelIds: registry.changePanels(record) }
-  }
-  const changes = async (cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot> => {
-    const snapshot = await hooks.readChanges(await deps.resolveCheckout(cwd), knownRevision)
-    return snapshot.records ? { revision: snapshot.revision, records: snapshot.records.map(resolve) } : { revision: snapshot.revision }
-  }
-
-  const watchChanges = (panelId: string, listener: (changes: AgentSessionChanges | null) => void): (() => void) => {
-    let stopped = false
-    let session: { sessionId: string; cwd: string } | null = null
-    let stopStatus: (() => void) | undefined
-    let revision: string | undefined
-    let records: StoredAgentChange[] = []
-    let pending = Promise.resolve()
-    const read = (status: { isRepo: boolean; files: readonly { path: string }[] }, current: { sessionId: string; cwd: string }) => {
-      pending = pending.then(async () => {
-        try {
-          const snapshot = await hooks.readChanges(await deps.resolveCheckout(current.cwd), revision)
-          if (snapshot.records) records = snapshot.records
-          revision = snapshot.revision
-        } catch {
-          return
-        }
-        if (stopped || session !== current) return
-        const mine = activeAgentChanges(records, { isRepo: status.isRepo, statusFiles: status.files })
-          .filter((record) => (record.sessionId === current.sessionId || record.parentSessionId === current.sessionId)
-            && registry.changePanels(record).includes(panelId))
-        const turns = [...new Set(mine.map((record) => record.turnId))]
-        listener({
-          sessionId: current.sessionId,
-          turns: Object.fromEntries(turns.map((turnId) => [turnId, summarizeAgentChanges(mine.filter((record) => record.turnId === turnId))])),
-        })
-      })
-    }
-    // Follows the panel's session; a new one starts from a fresh read.
-    const follow = () => {
-      const next = registry.sessionFor(panelId)?.session ?? null
-      if (next?.sessionId === session?.sessionId && next?.cwd === session?.cwd) return
-      stopStatus?.()
-      stopStatus = undefined
-      revision = undefined
-      records = []
-      session = next ? { sessionId: next.sessionId, cwd: next.cwd } : null
-      listener(null)
-      const current = session
-      if (current) stopStatus = deps.watchStatus(current.cwd, (status) => read(status, current))
-    }
-    const offRegistry = registry.subscribe((change) => { if (panelId in change) follow() })
-    follow()
-    return () => {
-      stopped = true
-      offRegistry()
-      stopStatus?.()
-    }
-  }
+  const core = createAgentsCore(deps)
+  const terminalRunner = createTerminalRunner(core, deps.terminal, { stampsFile: path.join(deps.agentsDir, 'stamps.json') })
+  const t3Runner = createT3Runner(core, deps.t3, deps.chatThreads)
+  const offs = [core.registry.register(terminalRunner), core.registry.register(t3Runner)]
+  const starter = createAgentStarter(core, deps.start)
 
   return {
-    root: deps.root,
-    trust: deps.trust,
-    settings: deps.settings,
-    document: deps.document,
-    hooks,
-    presence,
-    registry,
-    notifications,
-    conversations,
-    promptContext,
-    resolveCheckout: (cwd) => deps.resolveCheckout(cwd),
-    async inspectHooks(cwd) {
-      // Inspection runs the Hermes CLI for its plugin state.
-      deps.trust.requireTrusted()
-      return hooks.inspectWorkspace(await deps.resolveCheckout(cwd), { approvals: true })
+    start: (callerPanelId, args) => starter.start(callerPanelId, args),
+    send: (panelId, prompt) => core.send(panelId, prompt),
+    busy: () => core.busy(),
+    changes: (cwd, knownRevision) => core.changes(cwd, knownRevision),
+    watchChanges: (panelId, listener) => core.watchChanges(panelId, listener),
+    async readiness(cwd) {
+      const states = await inspectAgentCliHooks((dir) => core.hooks.inspectWorkspace(dir), cwd)
+      const config = core.settings.agentHookInjection()
+      return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
     },
-    panel: (panelId) => registry.sessionFor(panelId),
-    async send(panelId, prompt) {
-      deps.trust.requireTrusted()
-      const runner = registry.runnerFor(panelId)
-      if (!runner) return { ok: false, error: 'agent-panel-not-found' }
-      return runner.send(panelId, prompt)
-    },
-    async interrupt(panelId) {
-      deps.trust.requireTrusted()
-      const runner = registry.runnerFor(panelId)
-      if (!runner) return { ok: false, error: 'agent-panel-not-found' }
-      return runner.interrupt(panelId)
-    },
-    busy: () => Object.values(registry.all()).filter((state) => state.status === 'running').map((state) => state.panelId),
-    changes,
-    watchChanges,
+    onSessionEnded: (listener) => terminalRunner.onExit((panelId) => listener(panelId)),
+    relationContext: (panelId, agentId) => core.promptContext.prepareForSend(panelId, agentId),
+    publishNotification: (event) => core.notifications.publish(event),
+    onNotification: (listener) => core.notifications.subscribe(listener),
+    changeCaptureEnv: (harness) => t3Runner.changeCaptureEnv(harness),
+    releaseChangeCapture: (id) => t3Runner.releaseChangeCapture(id),
+    capability: () => agentsCapabilityImpl(core, starter),
+    apiHandlers: () => createAgentApiHandlers(core, starter),
     dispose() {
-      conversations.dispose()
-      hooks.dispose()
+      for (const off of offs.splice(0)) off()
+      t3Runner.dispose()
+      terminalRunner.dispose()
+      core.dispose()
     },
   }
 }

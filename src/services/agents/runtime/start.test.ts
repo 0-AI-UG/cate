@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isRpcError } from '@kernel/rpc/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { AgentHookConfig } from '../contract'
-import { createAgentsRuntime, type AgentsRuntime } from './agentsRuntime'
+import { createAgentsCore, type AgentsCore } from './core'
 import { createAgentStarter, type AgentStartPorts } from './start'
 
 let root: string
-let agents: AgentsRuntime
+let agents: AgentsCore
 let hookConfig: AgentHookConfig
 let ports: {
   terminals: { create: ReturnType<typeof vi.fn>; relaunch: ReturnType<typeof vi.fn>; state: ReturnType<typeof vi.fn> }
@@ -27,7 +27,7 @@ const worktrees: Record<string, string> = { 'wt-lead': '/repo/.cate/worktrees/le
 beforeEach(() => {
   root = mkdtempSync(path.join(os.tmpdir(), 'cate-agent-start-'))
   hookConfig = { codex: 'on' }
-  agents = createAgentsRuntime({
+  agents = createAgentsCore({
     root,
     agentsDir: path.join(root, '.agents-data'),
     trust: { isTrusted: () => true, requireTrusted: () => {} },

@@ -238,7 +238,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     sender: () => network.registration(),
     log: log.child('push'),
   })
-  const offPushEvents = ws.agents.notifications.subscribe((event) => {
+  const offPushEvents = ws.agents.onNotification((event) => {
     push.notify(event).catch((err: Error) => log.warn('push failed: %s', err.message))
   })
   const offPushRevoked = pairing.onRevoked((publicKey) => push.forgetDevice(fingerprint(hexToBytes(publicKey))))

@@ -8,7 +8,9 @@ import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
 import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentNotificationEvent } from '../../../contract'
-import { AGENT_SESSION_STORES, createAgentsRuntime, type AgentsDocument, type AgentsRuntime, type RelationContextMode } from '../..'
+import { createAgentsCore, type AgentsCore } from '../../core'
+import type { AgentsDocument, RelationContextMode } from '../../promptContext'
+import { AGENT_SESSION_STORES } from '../../sessions'
 import { createTerminalRunner, type RunnerTerminalService, type TerminalRunner } from './terminalRunner'
 
 function fakeTerminal() {
@@ -91,7 +93,7 @@ const tmp = (name: string) => {
 
 let terminal: ReturnType<typeof fakeTerminal>
 let doc: ReturnType<typeof fakeDocument>
-let agents: AgentsRuntime
+let agents: AgentsCore
 let runner: TerminalRunner
 let notifications: AgentNotificationEvent[]
 let root: string
@@ -117,7 +119,7 @@ beforeEach(() => {
     { id: 'term', type: 'terminal', title: 'Terminal', fields: {} },
     { id: 'browser', type: 'browser', title: 'Browser', fields: {} },
   ], [{ id: 'r', fromPanelId: 'term', toPanelId: 'browser', kind: 'use' }])
-  agents = createAgentsRuntime({
+  agents = createAgentsCore({
     root,
     agentsDir: tmp('agents'),
     trust: { isTrusted: () => true, requireTrusted: () => {} },

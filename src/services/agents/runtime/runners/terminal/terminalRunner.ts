@@ -26,7 +26,7 @@ import {
   type PanelAgentState,
   type TerminalResumeStamp,
 } from '../../../contract'
-import type { AgentsRuntime } from '../../agentsRuntime'
+import type { AgentsCore } from '../../core'
 import type { AgentRunnerImpl } from '../../registry'
 import { createAgentStatusMachine, type AgentStatusMachine } from '../../status'
 import { createResumeStamps, type ResumeStamps } from '../../stamps'
@@ -96,7 +96,7 @@ const ENTER_DELAY_MS = 0
 /** Between two interrupt keys (opencode's second Esc confirms the first). */
 const INTERRUPT_KEY_GAP_MS = 500
 
-export function createTerminalRunner(agents: AgentsRuntime, terminal: RunnerTerminalService, options: TerminalRunnerOptions): TerminalRunner {
+export function createTerminalRunner(agents: AgentsCore, terminal: RunnerTerminalService, options: TerminalRunnerOptions): TerminalRunner {
   const { hooks, presence, promptContext, document, notifications } = agents
   const terminals = new Map<string, TerminalInfo>()
   const panelTerminal = new Map<string, string>()

@@ -5,12 +5,12 @@ import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { agentApi } from '../contract/api'
 import type { AgentStartRequest, PanelAgentState } from '../contract'
-import type { AgentsRuntime } from './agentsRuntime'
+import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
 
-const runnerOf = (agents: AgentsRuntime, panelId: string) => agents.registry.runnerFor(panelId)?.kind ?? 'terminal'
+const runnerOf = (agents: AgentsCore, panelId: string) => agents.registry.runnerFor(panelId)?.kind ?? 'terminal'
 
-function summary(agents: AgentsRuntime, state: PanelAgentState) {
+function summary(agents: AgentsCore, state: PanelAgentState) {
   return {
     panelId: state.panelId,
     runner: runnerOf(agents, state.panelId),
@@ -25,12 +25,12 @@ function summary(agents: AgentsRuntime, state: PanelAgentState) {
 /** Agent panels list, send and wait agree on: a terminal whose CLI agent is
  *  observable, or a chat whose harness is live (including a fresh chat its
  *  first prompt will start). */
-function liveAgents(agents: AgentsRuntime): PanelAgentState[] {
+function liveAgents(agents: AgentsCore): PanelAgentState[] {
   return Object.values(agents.registry.all())
     .filter((state) => runnerOf(agents, state.panelId) === 't3' || state.status !== 'notRunning')
 }
 
-function live(agents: AgentsRuntime, panelId: string): PanelAgentState {
+function live(agents: AgentsCore, panelId: string): PanelAgentState {
   const state = agents.registry.sessionFor(panelId)
   if (!state || (runnerOf(agents, panelId) !== 't3' && state.status === 'notRunning')) throw new RpcError('gone', 'agent-panel-not-found')
   return state
@@ -45,7 +45,7 @@ export function startAgent(starter: AgentStarter, callerPanelId: string | undefi
 }
 
 /** A prompt to a live agent panel: `cate agent send` and the capability. */
-export async function sendToAgent(agents: AgentsRuntime, panelId: string, prompt: string): Promise<{ ok: true }> {
+export async function sendToAgent(agents: AgentsCore, panelId: string, prompt: string): Promise<{ ok: true }> {
   live(agents, panelId)
   const result = await agents.send(panelId, prompt)
   if (!result.ok) throw new RpcError('rejected', result.error)
@@ -53,14 +53,14 @@ export async function sendToAgent(agents: AgentsRuntime, panelId: string, prompt
 }
 
 /** Stops a live agent panel's turn: `cate agent interrupt` and the capability. */
-export async function interruptAgent(agents: AgentsRuntime, panelId: string): Promise<{ ok: true }> {
+export async function interruptAgent(agents: AgentsCore, panelId: string): Promise<{ ok: true }> {
   live(agents, panelId)
   const result = await agents.interrupt(panelId)
   if (!result.ok) throw new RpcError('rejected', result.error)
   return { ok: true }
 }
 
-export function createAgentApiHandlers(agents: AgentsRuntime, starter: AgentStarter): CateServiceHandlers<typeof agentApi> {
+export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter): CateServiceHandlers<typeof agentApi> {
   return {
     start: (args, ctx) => startAgent(starter, ctx.caller.panelId, args as AgentStartRequest),
 
@@ -90,7 +90,7 @@ export function createAgentApiHandlers(agents: AgentsRuntime, starter: AgentStar
   }
 }
 
-function waitForAgents(agents: AgentsRuntime, panelIds: string[], timeoutSeconds: number, signal: AbortSignal) {
+function waitForAgents(agents: AgentsCore, panelIds: string[], timeoutSeconds: number, signal: AbortSignal) {
   type Result = { agents: ReturnType<typeof summary>[]; timedOut: boolean }
   return new Promise<Result>((resolve, reject) => {
     let settled = false

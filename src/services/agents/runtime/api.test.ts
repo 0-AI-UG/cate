@@ -8,7 +8,7 @@ import type { PanelRecord } from '@workspace/document/contract'
 import type { AgentRunner, PanelAgentState } from '../contract'
 import { createAgentApiHandlers } from './api'
 import { agentsCapabilityImpl } from './capability'
-import { createAgentsRuntime, type AgentsRuntime } from './agentsRuntime'
+import { createAgentsCore, type AgentsCore } from './core'
 import type { AgentRunnerImpl } from './registry'
 import type { AgentStarter } from './start'
 
@@ -53,7 +53,7 @@ const panels: PanelRecord[] = [
 ]
 
 let dir: string
-let agents: AgentsRuntime
+let agents: AgentsCore
 let terminal: ReturnType<typeof fakeRunner>
 let t3: ReturnType<typeof fakeRunner>
 let handlers: ReturnType<typeof createAgentApiHandlers>
@@ -61,7 +61,7 @@ let starter: AgentStarter
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'cate-agents-api-'))
-  agents = createAgentsRuntime({
+  agents = createAgentsCore({
     root: '/repo',
     agentsDir: dir,
     trust: { isTrusted: () => true, requireTrusted: () => {} },

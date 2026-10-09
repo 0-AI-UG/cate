@@ -6,7 +6,8 @@ import { panelDefinition } from '@panels/definitions'
 import type { T3ShellEvent, T3Thread } from '@services/t3/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import type { AgentNotificationEvent } from '../../../contract'
-import { createAgentsRuntime, type AgentsDocument, type AgentsRuntime, type RelationContextMode } from '../..'
+import { createAgentsCore, type AgentsCore } from '../../core'
+import type { AgentsDocument, RelationContextMode } from '../../promptContext'
 import { createAgentChangesStore } from '../../changes/store'
 import { createT3Runner, type RunnerT3Service, type T3PanelBindings, type T3Runner } from './t3Runner'
 
@@ -34,7 +35,7 @@ let turns: Array<{ checkout?: string; threadId: string; text: string }>
 let startTurn: ReturnType<typeof vi.fn<RunnerT3Service['startTurn']>>
 let binding: { checkout: string; threadId?: string } | undefined
 let doc: ReturnType<typeof fakeDocument>
-let agents: AgentsRuntime
+let agents: AgentsCore
 let runner: T3Runner
 let notifications: AgentNotificationEvent[]
 let statusListener: (status: { isRepo: boolean; files: { path: string }[] }) => void = () => {}
@@ -71,7 +72,7 @@ beforeEach(() => {
   ], [{ id: 'r', fromPanelId: 'chat', toPanelId: 'browser', kind: 'use' }])
   const dir = mkdtempSync(path.join(os.tmpdir(), 'cate-t3-runner-'))
   dirs.push(dir)
-  agents = createAgentsRuntime({
+  agents = createAgentsCore({
     root: CHECKOUT,
     agentsDir: dir,
     trust: { isTrusted: () => true, requireTrusted: () => {} },
