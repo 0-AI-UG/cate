@@ -55,10 +55,8 @@ export {
   closePanels,
   renamePanel,
   detachPanel,
-  installTrustCheck,
   openUrl,
   installNavigationHooks,
-  type TrustCheck,
 } from './navigation'
 export { runWindowAction, windowActionContext } from './actions/run'
 export { useShortcuts, registerKeyHandler, shouldRunShortcut, keyContext, isTextSurfaceFocused, type KeyHandler, type KeyContext } from './actions/useShortcuts'

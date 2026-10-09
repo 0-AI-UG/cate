@@ -35,7 +35,6 @@ import {
   installDesktopPort,
   installBuiltinWallpapers,
   installE2eHarness,
-  installTrustCheck,
   installUiState,
   openLocalFolder,
   openUrl,
@@ -46,7 +45,6 @@ import {
   useUIStore,
 } from '../ui/app'
 import type { WorkspaceList } from '@client/workspaces'
-import { trustStore } from '../ui/workspace/lifecycle'
 import { installEditorSettings, startFilesTreeOnOpen } from '../ui/panels/editor'
 import { installTerminalViewSettings } from '../ui/panels/terminal'
 import { RUNTIME_BUILD } from '@runtime/daemon/contract'
@@ -166,7 +164,6 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     if (!uiState.getSnapshot().onboardingCompleted) uiState.set('onboardingCompleted', true)
   }
   installUiState(uiState)
-  installTrustCheck((workspaceId, label) => trustStore.ensureTrusted(workspaceId, label))
   installClientUi(createDesktopClientUi(api, info.features))
   stops.push(startClientUi())
 

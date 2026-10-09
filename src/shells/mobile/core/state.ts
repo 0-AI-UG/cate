@@ -4,7 +4,7 @@
 
 import { clientIdentity, connectionLabel, connectionRemedy, type ConnectionState } from '@client/connections'
 import { documentStoreFor, otherClientsOf, subscribeDocumentStores } from '@client/document'
-import type { PairedWorkspace } from '@client/workspaces'
+import { trustStore, type PairedWorkspace } from '@client/workspaces'
 import { panelDefinition } from '@panels/definitions'
 import { canvasOf, dockPanels, type WorkspaceDocument } from '@workspace/document/contract'
 import type { MobileCanvas, MobileConnection, MobileCoreState, MobilePanel, MobileWorkspace } from '../contract'
@@ -61,7 +61,7 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents): MobileCo
         others: connection ? otherClientsOf(entry.id).map((client) => ({ clientId: client.clientId, name: client.device.name, attentive: client.attentive })) : [],
       }
     })
-  return { clientId: clientIdentity().clientId, workspaces }
+  return { clientId: clientIdentity().clientId, workspaces, trustPrompt: trustStore.current() }
 }
 
 /** Calls `onChange` (coalesced) whenever the snapshot may have changed. */
@@ -99,6 +99,7 @@ export function watchState(client: MobileClient, agents: MobileAgents, onChange:
 
   const stops = [
     client.workspaces.subscribe(schedule),
+    trustStore.subscribe(schedule),
     client.connections.subscribe(schedule),
     subscribeDocumentStores(schedule),
     agents.subscribe(schedule),

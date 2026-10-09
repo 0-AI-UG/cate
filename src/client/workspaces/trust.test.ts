@@ -2,7 +2,7 @@
 // untrusted one always asks, and the answer is what the caller gets back.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createTrustStore, type TrustApi, type TrustStore } from './trustStore'
+import { createTrustStore, type TrustApi, type TrustStore } from './trust'
 
 let trusted: Set<string>
 let getTrust: ReturnType<typeof vi.fn<(id: string) => Promise<{ trusted: boolean; decidedAt: string | null }>>>

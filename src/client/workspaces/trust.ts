@@ -10,6 +10,8 @@ import { tryRuntimeFor } from '@kernel/rpc/client'
 import type { CapabilityProxy } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
 import type { workspaceCapability } from '@workspace/lifecycle/contract'
+import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
+import type { WorkspaceList } from './workspaceList'
 
 const log = createLogger('trust')
 
@@ -91,5 +93,37 @@ export function createTrustStore(api: (workspaceId: string) => TrustApi | null):
   }
 }
 
-/** The client's trust store over the runtime slot. */
+/** The client's trust store over the runtime slot: every shell asks
+ *  through it and shows its head question. */
 export const trustStore: TrustStore = createTrustStore((workspaceId) => tryRuntimeFor(workspaceId)?.workspace ?? null)
+
+/** Resolves true once the connection is connected, false when it closes.
+ *  Trust is asked only of a runtime that answers: an incompatible one
+ *  answers nothing but its update, so the mismatch is resolved first. */
+function whenConnected(connection: WorkspaceConnection | undefined): Promise<boolean> {
+  if (!connection) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const check = () => {
+      const { kind } = connection.state
+      if (kind !== 'connected' && kind !== 'closed') return
+      off()
+      resolve(kind === 'connected')
+    }
+    const off = connection.subscribe(check)
+    check()
+  })
+}
+
+/** After a workspace was opened: waits for its runtime and makes sure the
+ *  workspace is trusted, asking through `store` when it is not. `declined`:
+ *  the person said no, and the caller closes the workspace; `closed`: the
+ *  connection closed first. */
+export async function ensureOpenedTrusted(
+  deps: { workspaces: Pick<WorkspaceList, 'get'>; connections: Pick<WorkspaceConnections, 'get'>; store?: TrustStore },
+  workspaceId: string,
+): Promise<'trusted' | 'declined' | 'closed'> {
+  const entry = deps.workspaces.get(workspaceId)
+  if (!entry || !(await whenConnected(deps.connections.get(workspaceId)))) return 'closed'
+  const label = entry.kind === 'local' ? entry.root : entry.name
+  return (await (deps.store ?? trustStore).ensureTrusted(workspaceId, label)) ? 'trusted' : 'declined'
+}

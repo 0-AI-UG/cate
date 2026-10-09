@@ -13,15 +13,15 @@ import { RepositoryUiProvider, type RepositoryUiHost } from './context'
 
 type Fn = ReturnType<typeof vi.fn>
 
-/** A fake `vcs` whose `status` stream emits `statusFor(cwd)` on subscribe. */
+/** A fake `vcs` whose `status` channel sends `statusFor(cwd)` as its snapshot. */
 export function fakeVcs(statusFor: (cwd: string) => Partial<RepoStatus> | null = () => null) {
   const status = vi.fn(({ cwd }: { cwd?: string }) => {
-    const listeners = new Set<(s: RepoStatus) => void>()
+    const listeners = new Set<(event: { kind: 'snapshot'; rev: number; snapshot: RepoStatus }) => void>()
     const snapshot = statusFor(cwd ?? '')
     return {
-      onEvent(l: (s: RepoStatus) => void) {
+      onEvent(l: (event: { kind: 'snapshot'; rev: number; snapshot: RepoStatus }) => void) {
         listeners.add(l)
-        if (snapshot) queueMicrotask(() => l({ ...EMPTY_REPO_STATUS, isRepo: true, ...snapshot }))
+        if (snapshot) queueMicrotask(() => l({ kind: 'snapshot', rev: 0, snapshot: { ...EMPTY_REPO_STATUS, isRepo: true, ...snapshot } }))
         return () => listeners.delete(l)
       },
       done: new Promise(() => {}),

@@ -18,7 +18,7 @@ import { useState, useSyncExternalStore } from 'react'
 import { ShieldAlert as ShieldWarning } from 'lucide-react'
 import { Modal, btn, Spinner } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
-import { trustStore as defaultStore, type TrustStore } from './trustStore'
+import { trustStore as defaultStore, type TrustStore } from '@client/workspaces'
 
 export function WorkspaceTrustDialog({ store = defaultStore }: { store?: TrustStore }): JSX.Element | null {
   const prompt = useSyncExternalStore(store.subscribe, store.current)

@@ -1,7 +1,7 @@
 // The core API the app calls (`MobileCoreMethods`).
 
 import { runtimeFor } from '@kernel/rpc/client'
-import { joinErrorMessage, joinWorkspace } from '@client/workspaces'
+import { ensureOpenedTrusted, joinErrorMessage, joinWorkspace, trustStore } from '@client/workspaces'
 import { closePanel, createPanel, creatableDefinitions } from '@client/host'
 import { documentStoreFor } from '@client/document'
 import { surfaceChoices, surfaceReplacement } from '@panels/definitions'
@@ -42,6 +42,10 @@ const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
 
 export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers {
   const { workspaces, connections } = client
+  /** Asks for trust once the runtime answers; a declined workspace closes. */
+  const keepIfTrusted = async (workspaceId: string) => {
+    if ((await ensureOpenedTrusted({ workspaces, connections }, workspaceId)) === 'declined') workspaces.close(workspaceId)
+  }
   const { terminals, views, browsers, chats, buffers, streams, agents, conversations } = parts
   return {
     ...createActionHandlers(agents, conversations),
@@ -49,14 +53,25 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       try {
         const entry = await joinWorkspace(input, { pair: client.pair, workspaces })
         await workspaces.open(entry.id)
+        void keepIfTrusted(entry.id)
         return { ok: true, workspaceId: entry.id }
       } catch (error) {
         return { ok: false, message: joinErrorMessage(error) }
       }
     },
     async 'workspaces.open'({ workspaceId }) {
+      const wasOpen = workspaces.getSnapshot().open.includes(workspaceId)
       await workspaces.open(workspaceId)
+      if (!wasOpen) void keepIfTrusted(workspaceId)
       return null
+    },
+    async 'workspaces.answerTrust'({ trusted }) {
+      try {
+        await trustStore.answer(trusted)
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'Could not trust the workspace.' }
+      }
     },
     async 'workspaces.close'({ workspaceId }) {
       workspaces.close(workspaceId)

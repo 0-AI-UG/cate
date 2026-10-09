@@ -6,6 +6,16 @@ struct CoreState: Decodable, Equatable {
     /// This client's id, as browser sessions name it.
     var clientId = ""
     var workspaces: [Workspace] = []
+    /// A workspace that must be trusted before it runs anything; nil when
+    /// nothing asks.
+    var trustPrompt: TrustPrompt?
+}
+
+/// A trust question (`trustPrompt`).
+struct TrustPrompt: Decodable, Equatable {
+    let workspaceId: String
+    /// What the question names: the workspace's folder or name.
+    let label: String
 }
 
 struct Workspace: Decodable, Equatable, Identifiable, Hashable {

@@ -207,6 +207,9 @@ export interface MobileCoreState {
    *  navigations and tab selections. */
   clientId: string
   workspaces: MobileWorkspace[]
+  /** A workspace that must be trusted before it runs anything (9.2); the app
+   *  asks and answers `workspaces.answerTrust`. Null when nothing asks. */
+  trustPrompt: { workspaceId: string; label: string } | null
 }
 
 /** The answer to an agent or git action: ok, or what went wrong in words. */
@@ -236,6 +239,8 @@ export interface MobileCoreMethods {
   /** Pairs from a `cate://pair` link or a typed code and opens the workspace. */
   'workspaces.join': { params: { input: string }; result: MobileJoinResult }
   'workspaces.open': { params: { workspaceId: string }; result: null }
+  /** The person's answer to `trustPrompt`. */
+  'workspaces.answerTrust': { params: { trusted: boolean }; result: { ok: boolean; message?: string } }
   'workspaces.close': { params: { workspaceId: string }; result: null }
   /** Stops the workspace's runtime for everyone (`runtime.stop`), then closes it. */
   'workspaces.stop': { params: { workspaceId: string }; result: null }

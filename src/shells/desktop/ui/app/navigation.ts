@@ -3,7 +3,7 @@
 // panels are client/host's; this module plugs workspace selection and window
 // raising into its reveal hooks.
 
-import { type WorkspaceConnection } from '@client/connections'
+import { ensureOpenedTrusted } from '@client/workspaces'
 import { documentStoreFor } from '@client/document'
 import { createPanel, installRevealHooks, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
 import { MAIN_WINDOW, type PanelId } from '@workspace/document/contract'
@@ -14,32 +14,6 @@ import { clientApp } from './app'
 import { desktopPort } from './desktop'
 import { useUIStore } from './state/uiStore'
 import { openFile } from './workspace/fileActions'
-
-/** A workspace whose trust question the person declined stays closed. */
-export type TrustCheck = (workspaceId: string, label: string) => Promise<boolean>
-let trustCheck: TrustCheck | null = null
-
-/** Installed by the shell with `trustStore.ensureTrusted` from workspace/lifecycle. */
-export function installTrustCheck(check: TrustCheck | null): void {
-  trustCheck = check
-}
-
-/** Resolves true once the connection is connected, false when it closes.
- *  Trust is asked only of a runtime that answers: an incompatible one
- *  answers nothing but its update, so the mismatch is resolved first. */
-function whenConnected(connection: WorkspaceConnection | undefined): Promise<boolean> {
-  if (!connection) return Promise.resolve(false)
-  return new Promise((resolve) => {
-    const check = () => {
-      const { kind } = connection.state
-      if (kind !== 'connected' && kind !== 'closed') return
-      off()
-      resolve(kind === 'connected')
-    }
-    const off = connection.subscribe(check)
-    check()
-  })
-}
 
 /** Opens (when needed) and shows a workspace in this window. */
 export async function selectWorkspace(workspaceId: string): Promise<boolean> {
@@ -54,15 +28,10 @@ export async function selectWorkspace(workspaceId: string): Promise<boolean> {
     return false
   }
   useUIStore.getState().setSelectedWorkspace(workspaceId)
-  if (!wasOpen && trustCheck) {
-    const label = entry.kind === 'local' ? entry.root : entry.name
-    if (!(await whenConnected(clientApp().connections.get(workspaceId)))) return false
-    if (!(await trustCheck(workspaceId, label))) {
-      closeWorkspace(workspaceId)
-      return false
-    }
-  }
-  return true
+  if (wasOpen) return true
+  const trust = await ensureOpenedTrusted({ workspaces, connections: clientApp().connections }, workspaceId)
+  if (trust === 'declined') closeWorkspace(workspaceId)
+  return trust === 'trusted'
 }
 
 /** Adds a folder on this device to the list and opens it. */
