@@ -1,5 +1,5 @@
 // Client side of the same-network transport. Portable: the WebSocket comes
-// from the shell (the browser's own, or `ws` on desktop) and so does mDNS.
+// from the shell (a web view's own, or `ws` under Node) and so does mDNS.
 
 import type { MessagePortLike } from '../../security/contract'
 import { openWebSocket, sameNetworkUrl, type WebSocketFactory } from '../contract'

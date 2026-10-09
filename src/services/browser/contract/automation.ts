@@ -1,5 +1,5 @@
 // Cate's browser page protocol: what the page driver observes and returns.
-// The runtime session, the client view and the desktop driver share it.
+// The runtime session, a client's view and its page driver share it.
 export type BrowserPoint = [number, number]
 
 export interface BrowserBinding {

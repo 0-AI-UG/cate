@@ -1,7 +1,7 @@
 // client/host public entry: the panel side of the client core: definitions,
 // session handles, creating, closing, focusing and revealing panels, panel
-// targeting, creation menus and the action registry. No UI: the desktop's
-// panel hosting is shells/desktop/ui/client/host.
+// targeting, creation menus and the action registry. No UI: each shell hosts
+// panels in its own UI.
 
 export {
   registerPanelDefinitions,

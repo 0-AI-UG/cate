@@ -1,6 +1,6 @@
 // Noise_XX_25519_ChaChaPoly_BLAKE2b, following the Noise spec revision 34
-// (CipherState, SymmetricState, HandshakeState). Pure JS so the mobile client
-// runs the same code. Rekey and PSK modifiers are not implemented.
+// (CipherState, SymmetricState, HandshakeState). Pure JS so every client runs
+// the same code. Rekey and PSK modifiers are not implemented.
 
 import { x25519 } from '@noble/curves/ed25519.js'
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js'

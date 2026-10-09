@@ -40,7 +40,7 @@ export interface BrowserCredentialSaveResult {
 
 export type BrowserCredentialSaveDisposition = 'create' | 'update' | 'unchanged'
 
-/** A password to import (Chrome import runs on the desktop and hands the rows over). */
+/** A password to import (a client that can read Chrome's store hands the rows over). */
 export interface BrowserCredentialImport {
   origin: string
   signonRealm?: string

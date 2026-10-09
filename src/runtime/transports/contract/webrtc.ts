@@ -1,6 +1,6 @@
 // A WebRTC data channel as a message port, and the offer/answer exchange that
-// opens one. The peer connection comes from a factory: `node-datachannel` in
-// the runtime and on desktop, the platform's own on mobile or in a browser.
+// opens one. The peer connection comes from a factory: `node-datachannel`
+// under Node, the platform's own in a web view or a browser.
 // Signaling goes through whatever carries it (Cate Connect). ICE picks the
 // path: direct when it can, through a TURN relay among the ICE servers when
 // it cannot. Pure.

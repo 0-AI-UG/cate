@@ -1,6 +1,6 @@
 // The harness page as the chat view drives it, and the scripts it runs there.
 
-/** The harness page's native surface (a `<webview>` on desktop). */
+/** The harness page's native surface (the shell's web view). */
 export interface T3Guest {
   getURL(): string
   insertCSS(css: string): Promise<string>

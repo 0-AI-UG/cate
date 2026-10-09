@@ -51,7 +51,7 @@ export function encodePairingUri(payload: PairingPayload): string {
   return `cate://pair?${params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')}`
 }
 
-// Parsed by hand: URL and URLSearchParams are not reliable on every mobile JS engine.
+// Parsed by hand: URL and URLSearchParams are not reliable on every JS engine a client runs on.
 export function decodePairingUri(uri: string): PairingPayload {
   const prefix = 'cate://pair?'
   if (!uri.startsWith(prefix)) throw new PairingFormatError('not a cate pairing link')
