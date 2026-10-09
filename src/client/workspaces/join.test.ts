@@ -13,7 +13,7 @@ const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 
 function memoryStore(): PairingsStore {
   let value: PairingsFile = { devices: [] }
-  return { get: () => value, update: (fn) => { value = fn(value) } }
+  return { get: () => value, update: (fn) => { value = fn(value) }, subscribe: () => () => {} }
 }
 
 function setup() {

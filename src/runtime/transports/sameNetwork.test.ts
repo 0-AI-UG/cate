@@ -91,7 +91,7 @@ describe('same-network listener', () => {
     let file: PairingsFile = { devices: [] }
     const pairing = new PairingService({
       runtimePublicKey: runtimeKeys.publicKey,
-      store: { get: () => file, update: (fn) => { file = fn(file) } },
+      store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
     })
     const rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
     const peers = createNetworkPeers({ rpc, runtimeKeys, pairing, handshakeTimeoutMs: 2_000 })

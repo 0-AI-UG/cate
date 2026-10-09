@@ -34,7 +34,7 @@ beforeEach(async () => {
   let file: PairingsFile = { devices: [] }
   pairing = new PairingService({
     runtimePublicKey: runtimeKeys.publicKey,
-    store: { get: () => file, update: (fn) => { file = fn(file) } },
+    store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
     addresses: () => lan.addresses(),
     pairTimeoutMs: 2_000,
   })

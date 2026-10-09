@@ -34,22 +34,30 @@ import { openPairingsFile, PairingService, type PairingsFile, type PairingsStore
 const RUNTIME_KEYS = generateKeyPair()
 const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
 
-function memoryStore(): PairingsStore {
+/** The pairings file in memory; `edit` changes it as a hand edit does. */
+function memoryStore(): PairingsStore & { edit(next: PairingsFile): void } {
   let value: PairingsFile = { devices: [] }
-  return { get: () => value, update: (fn) => { value = fn(value) } }
+  const listeners = new Set<(next: PairingsFile, origin: 'local' | 'external') => void>()
+  return {
+    get: () => value,
+    update: (fn) => { value = fn(value); for (const l of [...listeners]) l(value, 'local') },
+    subscribe: (l) => { listeners.add(l); return () => listeners.delete(l) },
+    edit: (next) => { value = next; for (const l of [...listeners]) l(value, 'external') },
+  }
 }
 
 function setup(options: { now?: () => number } = {}) {
   const runtimeKeys = RUNTIME_KEYS
+  const store = memoryStore()
   const service = new PairingService({
     runtimePublicKey: runtimeKeys.publicKey,
-    store: memoryStore(),
+    store,
     addresses: () => ['192.168.1.4:4100'],
     now: options.now,
   })
   const deviceStore = createMemoryDeviceStore()
   const pins = new KnownRuntimes(deviceStore)
-  return { runtimeKeys, service, deviceStore, pins }
+  return { runtimeKeys, service, deviceStore, pins, store }
 }
 
 async function attempt(
@@ -152,6 +160,17 @@ describe('pairing flow', () => {
       acceptPeer(b, { runtimeKeys: ctx.runtimeKeys, policy: ctx.service }),
     ])
     expect(client.closed || runtime.closed).toBe(false)
+  })
+
+  it('revokes a device removed by editing pairings.json, as removing it in the app does', async () => {
+    const ctx = setup()
+    const revoked: string[] = []
+    ctx.service.onRevoked((key) => revoked.push(key))
+    const { deviceKeys } = await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri))
+    const kept = ctx.store.get().devices[0]!
+    ctx.store.edit({ devices: [] })
+    expect(revoked).toEqual([kept.publicKey])
+    expect(ctx.service.isPaired(deviceKeys.publicKey)).toBe(false)
   })
 
   it('tells watchers about every change of the device list', async () => {

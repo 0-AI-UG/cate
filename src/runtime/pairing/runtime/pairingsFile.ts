@@ -19,6 +19,8 @@ export interface PairingsFile {
 export interface PairingsStore {
   get(): PairingsFile
   update(fn: (current: PairingsFile) => PairingsFile): void
+  /** Every change; `external` for an edit of the file itself. */
+  subscribe(listener: (next: PairingsFile, origin: 'local' | 'external') => void): () => void
 }
 
 function normalize(parsed: unknown): PairingsFile {

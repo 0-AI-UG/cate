@@ -57,6 +57,18 @@ export class PairingService implements PeerPolicy {
   constructor(private readonly options: PairingServiceOptions) {
     this.now = options.now ?? Date.now
     this.random = options.randomBytes ?? nobleRandomBytes
+    // A device removed by editing pairings.json is revoked like one removed
+    // in the app: its live connections drop.
+    let known = new Set(options.store.get().devices.map((device) => device.publicKey))
+    options.store.subscribe((next, origin) => {
+      const now = new Set(next.devices.map((device) => device.publicKey))
+      const removed = [...known].filter((key) => !now.has(key))
+      known = now
+      if (origin !== 'external') return
+      for (const key of removed) for (const listener of this.revokeListeners) listener(key)
+      const devices = this.list()
+      for (const listener of this.listListeners) listener(devices)
+    })
   }
 
   createSecret(mode: PairingMode): CreatedSecret {
