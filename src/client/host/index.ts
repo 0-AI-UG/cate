@@ -27,6 +27,7 @@ export {
   type ConnectionLookup,
 } from './sessions'
 export { demandSurface, isSurfaceDemanded, demandedSurfaces, subscribeDemandedSurfaces } from './surfaceDemand'
+export { registerSurface, runSurfaceRequest, serveSurfaces, type SurfaceHandler } from './surfaces'
 export { keepMountedPanelIds, setEqual } from './keepMounted'
 export { createPanel, clientPanelKit, newId } from './createPanel'
 export { openUrlFor, openUrlInPanel } from './openUrl'

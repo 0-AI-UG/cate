@@ -244,7 +244,7 @@ describe('browser session', () => {
     const abort = new AbortController()
     await w.host.handleApi(id, 'click', { tabId, target: 3 }, { panelId: id, signal: abort.signal } as ApiSessionContext)
     // The broker's own 30 s timer is off; the API's signal ends the request.
-    expect(seen).toEqual([{ timeoutMs: 0, signal: abort.signal }])
+    expect(seen).toEqual([{ timeoutMs: 0, signal: abort.signal, feature: 'pageDriver' }])
   })
 
   it('runs page methods on the driving client and shows the agent cursor', async () => {
@@ -292,12 +292,12 @@ describe('browser session', () => {
 describe('browser service handlers', () => {
   it('runs a cell on the driving client and passes its calls back as the caller', async () => {
     const cells = new BrowserCodeCells()
-    const requests: Array<[string, string, any]> = []
+    const requests: Array<[string | null, string, any]> = []
     let cellId = ''
     const invoke = vi.fn(async () => ({ ok: true }))
     const handlers = browserServiceHandlers({
       surfaces: {
-        request: async (panelId, op, args: any) => {
+        request: async (panelId: string | null, op: string, args: any) => {
           requests.push([panelId, op, args])
           cellId = args.cellId
           await expect(cells.call(cellId, 'click', { panelId: 'p1', tabId: 't', target: 1 })).resolves.toEqual({ ok: true })

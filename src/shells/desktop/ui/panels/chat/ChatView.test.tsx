@@ -9,7 +9,7 @@ import { installMockClientUi } from '@kernel/interaction/testing'
 import { HOST_MESSAGE_PREFIX, installT3WebviewHost } from '@services/t3/client'
 import { MAIN_WINDOW, type PanelRecord } from '@workspace/document/contract'
 import type { ChatOp, ChatSnapshot } from '@panels/chat/contract'
-import { runChatSurfaceOp } from './parts/surfaces'
+import { runSurfaceRequest } from '@client/host'
 import ChatView from './ChatView'
 
 const pickPanelPlace = vi.hoisted(() => vi.fn())
@@ -219,7 +219,7 @@ describe('ChatView page', () => {
     await render(ready())
     const { guest } = await readyGuest()
     guest.executeJavaScript.mockResolvedValue(true)
-    expect(await runChatSurfaceOp('ws', { requestId: 1, panelId: 'chat', op: 'chat.sendText', args: { text: 'hi' } })).toBe(true)
+    expect(await runSurfaceRequest('ws', { requestId: 1, panelId: 'chat', op: 'chat.sendText', args: { text: 'hi' } })).toBe(true)
     expect(String(guest.executeJavaScript.mock.lastCall![0])).toContain('sendText?.("hi")')
   })
 })

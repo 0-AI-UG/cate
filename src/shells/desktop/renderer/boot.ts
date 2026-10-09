@@ -59,7 +59,7 @@ import { quitBlockers } from './quitBlockers'
 import { registerDesktopRenderer } from './registrations'
 import { createScreenshotPort } from './screenshots'
 import { createDesktopShellTransports, serveLoopbackRequests } from './transports'
-import { installWebviewHosts, prepareWebviewPartitions, serveSurfaces, type WebviewPartitions } from './webviews'
+import { installWebviewHosts, prepareWebviewPartitions, serveSurfacesOf, type WebviewPartitions } from './webviews'
 import { attachDetachedWindow, createWindowsPort } from './windows'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
@@ -216,7 +216,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   // Webviews: partitions before any guest mounts, then page operations.
   const bridge = options.pageBridge
   stops.push(installWebviewHosts(api, partitions, bridge))
-  if (bridge && identity.features.has('pageDriver')) stops.push(serveSurfaces(connections, bridge))
+  stops.push(serveSurfacesOf(connections, bridge && identity.features.has('pageDriver') ? bridge : null))
 
   quitBlockers.install((labels) => api.app.setQuitBlockers(labels))
   if (info.e2e) stops.push(installE2eHarness({ canvas: createCanvasE2E() }))

@@ -6,8 +6,8 @@ import { RpcError, isRpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { BrowserCodeResult } from '@services/browser/contract'
 import type { PanelId, WorkspaceDocument } from '@workspace/document/contract'
-import type { PanelSession, SurfaceCallOptions } from '@panels/framework/runtime'
-import { BROWSER_CODE_TIMEOUT_MS, type BrowserSnapshot, type BrowserSurfaceArgs, type BrowserSurfaceOp, type browserApi } from './contract'
+import type { PanelSession, SurfaceBroker, SurfaceCallOptions } from '@panels/framework/runtime'
+import { BROWSER_CODE_TIMEOUT_MS, BROWSER_SURFACE_FEATURES, type BrowserSnapshot, type BrowserSurfaceArgs, type BrowserSurfaceOp, type browserApi } from './contract'
 import definition from './definition'
 import { BrowserCodeCells, browserCodeCapabilityImpl } from './parts/runtime/codeCells'
 import { BrowserSession, createBrowserSessionClass, type BrowserSessionDeps } from './session'
@@ -25,7 +25,7 @@ export function browserPanel(deps: BrowserSessionDeps) {
 
 export interface BrowserServiceDeps {
   /** The surface broker: page operations on the driving client. */
-  surfaces: { request(panelId: PanelId, op: string, args: unknown, options?: SurfaceCallOptions): Promise<unknown> }
+  surfaces: Pick<SurfaceBroker, 'request'>
   sessions: { session(panelId: PanelId): PanelSession | undefined }
   document: { get(): WorkspaceDocument }
   cells: BrowserCodeCells
@@ -41,16 +41,17 @@ const text = (message: string): BrowserCodeResult => ({ content: [{ type: 'text'
 export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHandlers<typeof browserApi> {
   const newId = deps.newId ?? (() => globalThis.crypto.randomUUID())
   const now = deps.now ?? Date.now
-  const request = <Op extends BrowserSurfaceOp>(panelId: string, op: Op, args: BrowserSurfaceArgs<Op>, options?: SurfaceCallOptions) =>
-    deps.surfaces.request(panelId, op, args, options)
+  const request = <Op extends BrowserSurfaceOp>(panelId: string | null, op: Op, args: BrowserSurfaceArgs<Op>, options?: SurfaceCallOptions) =>
+    deps.surfaces.request(panelId, op, args, { ...options, feature: BROWSER_SURFACE_FEATURES[op] })
 
   const browserPanels = (): PanelId[] =>
     Object.values(deps.document.get().panels).filter((record) => record.type === 'browser').map((record) => record.id)
 
   return {
     run: async ({ code, panelId }, ctx) => {
-      // Any browser's driving client can run the cell: the cell binds tabs itself.
-      const target = panelId ?? ctx.defaultTarget('browser') ?? browserPanels()[0] ?? ''
+      // Any client with a page driver can run the cell (the cell binds tabs
+      // itself); the caller's browser panel's driver is preferred.
+      const target = panelId ?? ctx.defaultTarget('browser') ?? null
       const cellId = newId()
       deps.cells.begin(cellId, { deadline: now() + BROWSER_CELL_DEADLINE_MS, invoke: ctx.invoke })
       try {
@@ -60,14 +61,14 @@ export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHan
         })
       } catch (err) {
         if (isRpcError(err, 'timeout')) void request(target, 'code.reset', { key: ctx.caller.id }).catch(() => {})
-        if (isRpcError(err, 'no-renderer')) return text('No connected client can run browser code; open Cate on a desktop')
+        if (isRpcError(err, 'no-renderer')) return text('No connected client can run browser code')
         return text(err instanceof Error ? err.message : String(err))
       } finally {
         deps.cells.end(cellId)
       }
     },
     reset: async (_args, ctx) => {
-      const target = ctx.defaultTarget('browser') ?? browserPanels()[0] ?? ''
+      const target = ctx.defaultTarget('browser') ?? null
       try {
         await request(target, 'code.reset', { key: ctx.caller.id })
       } catch (err) {

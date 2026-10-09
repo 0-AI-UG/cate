@@ -1,18 +1,33 @@
 // The driving client (architecture 10.2): the runtime cannot call a client,
-// so clients with `pageDriver` subscribe to `surface.requests` and answer
-// each request with `surface.reply`. A page operation runs on the driving
-// client that most recently showed or used the panel, else the most recently
-// active one; with none connected it fails with `no-renderer`.
+// so clients with a surface feature (`webview`, `pageDriver`) subscribe to
+// `surface.requests` and answer each request with `surface.reply`. A page
+// operation needs one feature (the panel definition says which); it runs on
+// the client with that feature that most recently showed or used the panel,
+// else the most recently active one; with none connected it fails with
+// `no-renderer`.
 
 import { RpcError, fromWireError, type WireError } from '@kernel/rpc/contract'
 import type { CapabilityImpl, ConnectionInfo, StreamSink } from '@kernel/rpc/runtime'
+import type { ClientFeature } from '@kernel/rpc/contract'
 import type { PanelId, PresenceClient } from '@workspace/document/contract'
 import type { SurfaceRequest, surfaceCapability } from '../contract'
 
+export interface SurfaceRequestOptions {
+  /** The client feature the op needs. */
+  feature: ClientFeature
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
+/** The features a client may run surfaces with. */
+const SURFACE_FEATURES: readonly ClientFeature[] = ['webview', 'pageDriver']
+
 export interface SurfaceBroker {
-  request(panelId: PanelId, op: string, args: unknown, options?: { timeoutMs?: number; signal?: AbortSignal }): Promise<unknown>
-  /** The client that would run a page operation on `panelId` now. */
-  driverFor(panelId: PanelId): PresenceClient | null
+  /** `panelId` null: an op of no panel, which any client with the feature
+   *  may run (a browser code cell). */
+  request(panelId: PanelId | null, op: string, args: unknown, options: SurfaceRequestOptions): Promise<unknown>
+  /** The client that would run an op needing `feature` on `panelId` now. */
+  driverFor(panelId: PanelId | null, feature: ClientFeature): PresenceClient | null
   dispose(): void
 }
 
@@ -35,7 +50,8 @@ export function createSurfaceBroker(deps: SurfaceBrokerDeps): SurfaceBroker & {
   const pending = new Map<number, Pending>()
   let nextId = 1
 
-  const driverFor = (panelId: PanelId) => deps.presence.pick((client) => drivers.has(client.connectionId), panelId)
+  const driverFor = (panelId: PanelId | null, feature: ClientFeature) =>
+    deps.presence.pick((client) => drivers.has(client.connectionId) && client.features.includes(feature), panelId ?? undefined)
 
   const settle = (requestId: number, outcome: { result?: unknown; error?: Error }) => {
     const entry = pending.get(requestId)
@@ -47,8 +63,8 @@ export function createSurfaceBroker(deps: SurfaceBrokerDeps): SurfaceBroker & {
   }
 
   const attach = (connection: ConnectionInfo, sink: StreamSink<SurfaceRequest>) => {
-    if (!connection.client || !connection.has('pageDriver')) {
-      sink.fail(new RpcError('rejected', 'only clients with pageDriver run page operations'))
+    if (!connection.client || !SURFACE_FEATURES.some((feature) => connection.has(feature))) {
+      sink.fail(new RpcError('rejected', 'only clients with webview or pageDriver run page operations'))
       return undefined
     }
     drivers.set(connection.id, sink)
@@ -62,8 +78,8 @@ export function createSurfaceBroker(deps: SurfaceBrokerDeps): SurfaceBroker & {
 
   return {
     driverFor,
-    request(panelId, op, args, options = {}) {
-      const client = driverFor(panelId)
+    request(panelId, op, args, options) {
+      const client = driverFor(panelId, options.feature)
       const sink = client ? drivers.get(client.connectionId) : undefined
       if (!client || !sink) return Promise.reject(new RpcError('no-renderer', 'no connected client can run page operations'))
       const requestId = nextId++

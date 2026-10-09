@@ -72,6 +72,7 @@ import {
   createSessionHost,
   createSurfaceBroker,
   sessionCapabilityImpl,
+  type SurfaceBroker,
 } from '@panels/framework/runtime'
 import { PANEL_RUNTIMES, type PanelPorts, type PanelRuntime, type PanelServices } from '@panels/runtime'
 import { createChatBindings } from '@panels/chat/runtime'
@@ -434,6 +435,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     agents,
     t3,
     host,
+    /** Page operations on clients' surfaces (section 10.2). */
+    surfaces: broker as SurfaceBroker,
     /** For `RpcServerOptions.acceptHello`: refuses unknown caller tokens. */
     acceptHello(hello: HelloMessage): void {
       acceptCallerHello(router, hello)

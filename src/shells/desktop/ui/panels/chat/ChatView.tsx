@@ -10,7 +10,7 @@ import { RotateCw as ArrowClockwise, MessageCircleMore as ChatsCircle } from 'lu
 import { useRuntime } from '../../kernel/rpc'
 import { LoadingState, Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { openUrlFor, pickPanelPlace } from '@client/host'
+import { openUrlFor, pickPanelPlace, registerSurface } from '@client/host'
 import { type PanelViewProps } from '../../client/host/views'
 import {
   CANCEL_PENDING_SCRIPT,
@@ -39,7 +39,7 @@ import type { PlaceTarget } from '@workspace/document/contract'
 import { chatPageUrl, type ChatOp, type ChatSnapshot } from '@panels/chat/contract'
 import { readFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { droppedImages, droppedRefImages, useFileDragActive } from './parts/fileDrop'
-import { registerChatSurface } from './parts/surfaces'
+import { chatSurfaceHandler } from './parts/surfaces'
 
 type Send = (op: ChatOp) => Promise<unknown>
 type Guest = HTMLElement & T3Guest
@@ -261,7 +261,7 @@ function ChatPage({ workspaceId, panelId, snapshot, send: sendProp, focused }: {
   useEffect(() => {
     if (!guest || !guestReady) return
     const stopTheme = subscribeTheme((theme) => { void guest.executeJavaScript(t3ThemeScript(theme)).catch(() => undefined) })
-    const stopSurface = registerChatSurface(workspaceId, panelId, guest)
+    const stopSurface = registerSurface(workspaceId, panelId, chatSurfaceHandler(guest))
     return () => { stopTheme(); stopSurface() }
   }, [guest, guestReady, panelId, workspaceId])
 

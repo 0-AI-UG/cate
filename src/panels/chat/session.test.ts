@@ -237,7 +237,7 @@ describe('ChatSession ops', () => {
   it('starts a fresh chat through the page', async () => {
     await addChat()
     expect(await bindings.sendFresh('chat', 'first prompt')).toBe(true)
-    expect(surfaces.request).toHaveBeenCalledWith('chat', 'chat.sendText', { text: 'first prompt' }, undefined)
+    expect(surfaces.request).toHaveBeenCalledWith('chat', 'chat.sendText', { text: 'first prompt' }, { feature: 'webview' })
     expect(await op({ kind: 'relationContext', provider: 'claudeAgent' })).toBe('context')
     expect(deps.relationContext).toHaveBeenCalledWith('chat', 'claude-code')
   })

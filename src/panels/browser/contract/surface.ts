@@ -1,6 +1,6 @@
 // Page operations the browser session asks its driving client to run
 // (`withSurface`, architecture 10.2). The client's view routes each one to
-// the webview of `tabId` and the desktop page driver.
+// the webview of `tabId` and its page driver.
 
 import type { BrowserCodeResult, BrowserDriverResult } from '@services/browser/contract'
 
@@ -21,5 +21,15 @@ export type BrowserSurfaceRequests = {
 }
 
 export type BrowserSurfaceOp = keyof BrowserSurfaceRequests
+
+/** The client feature each page operation needs. */
+export const BROWSER_SURFACE_FEATURES = {
+  'page.ready': 'pageDriver',
+  'page.history': 'pageDriver',
+  'page.execute': 'pageDriver',
+  'page.download': 'pageDriver',
+  'code.run': 'pageDriver',
+  'code.reset': 'pageDriver',
+} as const satisfies Record<BrowserSurfaceOp, 'pageDriver'>
 export type BrowserSurfaceArgs<Op extends BrowserSurfaceOp> = BrowserSurfaceRequests[Op]['args']
 export type BrowserSurfaceResult<Op extends BrowserSurfaceOp> = BrowserSurfaceRequests[Op]['result']

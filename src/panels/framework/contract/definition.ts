@@ -128,8 +128,10 @@ export interface PanelDefinition<
   /** A picker that becomes the type the user chooses (`replacePanel`): what
    *  "Split Right" creates. At most one type sets it. */
   placeholder?: boolean
-  /** The view hosts a native surface the client keeps mounted. */
-  surface?: { retention: 'workspace' | 'recent' }
+  /** The view hosts a native surface the client keeps mounted, and the page
+   *  operations it runs there, each with the client feature it needs (the
+   *  runtime sends an op only to a client that has it, section 10.2). */
+  surface?: { retention: 'workspace' | 'recent'; ops: Readonly<Record<string, ClientFeature>> }
   /** False when the panel works without a project folder (a browser). */
   requiresFolder?: boolean
   // --- Record, schemas, API --------------------------------------------------

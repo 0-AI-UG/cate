@@ -32,7 +32,8 @@ import {
   type DocumentService,
   type PresenceService,
 } from '@workspace/document/runtime'
-import { serveSurfaceRequests } from '../client'
+import { toWireError, type CapabilityProxy } from '@kernel/rpc/contract'
+import type { SurfaceRequest } from '../contract'
 import { SessionSubscriptions } from '@client/connections/session'
 import { definePanel, definitionProblems, sessionCapability, surfaceCapability, type AnyPanelDefinition } from '../contract'
 import {
@@ -139,6 +140,7 @@ const browserDef = definePanel({
   minimumSize: size,
   canLiveOnCanvas: true,
   defaultTitle: 'Browser',
+  surface: { retention: 'workspace', ops: { screenshot: 'pageDriver' } },
   channel: channel<JsonObject, Partial<JsonObject>, { kind: 'shot' }>(),
   fields: (options: { url?: string }) => ({ url: options.url ?? 'about:blank' }),
 })
@@ -377,6 +379,16 @@ describe('session channel over rpc', () => {
     w.dispose()
   })
 })
+
+/** A client answering page operations with `run`. */
+function serveSurfaceRequests(surface: CapabilityProxy<typeof surfaceCapability>, run: (request: SurfaceRequest) => unknown): void {
+  surface.requests().onEvent((request) => {
+    void Promise.resolve().then(() => run(request)).then(
+      (result) => surface.reply({ requestId: request.requestId, result }),
+      (err) => surface.reply({ requestId: request.requestId, error: toWireError(err) }),
+    )
+  })
+}
 
 describe('driving client', () => {
   it('runs page ops on the client that last showed or used the panel, else the most recently active', async () => {

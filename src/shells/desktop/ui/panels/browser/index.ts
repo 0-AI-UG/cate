@@ -6,4 +6,4 @@ import { registerPanelView } from '../../client/host/views'
 
 registerPanelView('browser', () => import('./BrowserView'))
 
-export { serveBrowserSurfaces, onSurfaceDemand, runBrowserSurfaceRequest, type BrowserSurfaceDeps } from './surfaces'
+export { serveBrowserCode } from './surfaces'

@@ -21,7 +21,8 @@ export const sessionCapability = defineCapability('session', {
  *  native surface. */
 export interface SurfaceRequest {
   requestId: number
-  panelId: PanelId
+  /** Null for an op of no panel (a browser code cell). */
+  panelId: PanelId | null
   op: string
   args?: unknown
 }
@@ -31,7 +32,8 @@ export const surfaceCapability = defineCapability('surface', {
     reply: method<{ requestId: number; result?: unknown; error?: WireError }, void>(),
   },
   streams: {
-    /** Clients with `pageDriver` subscribe and answer each request with `reply`. */
+    /** Clients with `webview` or `pageDriver` subscribe and answer each
+     *  request with `reply`; each gets only ops it has the feature for. */
     requests: stream<void, SurfaceRequest>(),
   },
 })

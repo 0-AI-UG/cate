@@ -6,13 +6,11 @@
 
 import { useSyncExternalStore } from 'react'
 import { eachConnection, type WorkspaceConnection, type WorkspaceConnections } from '@client/connections'
-import { serveSurfaceRequests } from '@panels/framework/client'
-import { demandSurface } from '@client/host'
+import { serveSurfaces } from '@client/host'
 import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/client'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import { installT3WebviewHost } from '@services/t3/client'
-import { onSurfaceDemand, runBrowserSurfaceRequest } from '../ui/panels/browser'
-import { runChatSurfaceOp } from '../ui/panels/chat'
+import { serveBrowserCode } from '../ui/panels/browser'
 import { createLogger } from '@kernel/log/contract'
 import type { DesktopApi } from '../contract'
 
@@ -114,30 +112,17 @@ export function installWebviewHosts(api: DesktopApi, partitions: WebviewPartitio
   }
 }
 
-/** Answers the runtime's page operations on this client's pages: chat ops go
- *  to the chat view, the rest to the browser view. */
-export function serveSurfaces(connections: WorkspaceConnections, bridge: BrowserPageBridge): () => void {
-  // A page operation on an unmounted browser panel mounts its surface here
-  // until the operation settles.
-  const releases = new Map<string, (() => void)[]>()
-  const stopDemands = onSurfaceDemand(({ workspaceId, panelId, active }) => {
-    const key = `${workspaceId}:${panelId}`
-    const held = releases.get(key) ?? []
-    if (active) held.push(demandSurface(workspaceId, panelId))
-    else held.pop()?.()
-    if (held.length) releases.set(key, held)
-    else releases.delete(key)
-  })
-  const stopServing = eachConnection(connections, (connection: WorkspaceConnection) => {
-    const { workspaceId } = connection
-    return serveSurfaceRequests(connection.runtime.surface, (request) => request.op.startsWith('chat.')
-      ? runChatSurfaceOp(workspaceId, request)
-      : runBrowserSurfaceRequest({ workspaceId, browserCode: connection.runtime.browserCode, bridge }, request))
-  })
+/** Answers the runtime's page operations on this client's surfaces: the
+ *  views register their panels' (client host), and each workspace's browser
+ *  code cells run on the page bridge. */
+export function serveSurfacesOf(connections: WorkspaceConnections, bridge: BrowserPageBridge | null): () => void {
+  const stopServing = serveSurfaces(connections)
+  const stopCode = bridge
+    ? eachConnection(connections, (connection: WorkspaceConnection) =>
+      serveBrowserCode(connection.workspaceId, { browserCode: connection.runtime.browserCode, bridge }))
+    : () => {}
   return () => {
+    stopCode()
     stopServing()
-    stopDemands()
-    for (const held of releases.values()) for (const release of held) release()
-    releases.clear()
   }
 }

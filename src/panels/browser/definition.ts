@@ -4,7 +4,7 @@ import { channel } from '@kernel/rpc/contract'
 import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
-import { browserApi, type BrowserOp, type BrowserSnapshot } from './contract'
+import { BROWSER_SURFACE_FEATURES, browserApi, type BrowserOp, type BrowserSnapshot } from './contract'
 
 /** A browser on `url`; the start page when omitted. */
 interface BrowserCreateOptions extends PanelCreateOptions {
@@ -23,7 +23,8 @@ export default definePanel({
   creation: { order: 2, key: storedShortcut('b', { command: true, shift: true }), toolbar: true },
   // The webview is the page: keep it mounted while its canvas card is culled or
   // its dock tab is hidden, so page state stays the same for user and agent.
-  surface: { retention: 'workspace' },
+  // Page operations run on a client with a page driver (`code.*` cells too).
+  surface: { retention: 'workspace', ops: BROWSER_SURFACE_FEATURES },
   requiresFolder: false,
   opens: ['url'],
   defaultTitle: 'Browser',

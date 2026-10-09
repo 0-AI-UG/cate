@@ -39,7 +39,7 @@ export class BrowserCodeCells {
     if (!cell || cell.deadline <= this.now()) throw new RpcError('rejected', 'browser-code-cell-cancelled')
     if (typeof method !== 'string' || !BROWSER_METHODS.has(method)) throw new RpcError('rejected', 'Unsupported browser method')
     // The runtime decides which calls carry the cell id; the caller's copy
-    // (the desktop code session tags every call) is dropped.
+    // (the client's code session tags every call) is dropped.
     const { panelId, _codeCellId: _ignored, ...rest } = args
     const callArgs: Record<string, unknown> = PAGE_METHODS.has(method) ? { ...rest, _codeCellId: cellId } : rest
     if (typeof panelId === 'string') callArgs.panelId = panelId

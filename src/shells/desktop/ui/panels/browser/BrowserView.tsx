@@ -30,7 +30,8 @@ import { BrowserPasswordManagerPage, useBrowserData } from '../../services/brows
 import type { BrowserOp, BrowserSnapshot, BrowserViewport } from '@panels/browser/contract'
 import { BROWSER_HISTORY_URL, BROWSER_PASSWORD_MANAGER_URL, isBrowserInternalPage, stepBrowserZoom } from '@panels/browser/contract'
 import { BrowserPageHost, type BrowserGuest } from './pageHost'
-import { registerPageHost } from './surfaces'
+import { registerSurface } from '@client/host'
+import { runPageOp } from './surfaces'
 import { actOnLocalDownload, isLocalDownload, localDownloadsVersion, ownGuest, relayDownloads, subscribeLocalDownloads } from './localDownloads'
 import { AgentCursorOverlay } from './parts/AgentCursorOverlay'
 import { BrowserDownloadsPopover, type BrowserPanelDownload } from './parts/BrowserDownloadsPopover'
@@ -199,8 +200,8 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   useEffect(() => () => host.dispose(), [host])
   useEffect(() => {
     if (!bridge) return
-    return registerPageHost(workspaceId, host)
-  }, [workspaceId, host, bridge])
+    return registerSurface(workspaceId, panelId, (request) => runPageOp(host, request))
+  }, [workspaceId, panelId, host, bridge])
   useSyncExternalStore(host.subscribe, host.getVersion)
 
   useLayoutEffect(() => { host.update(snapshot) }, [host, snapshot])

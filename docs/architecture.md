@@ -1167,11 +1167,16 @@ in the runtime.
   driving client shows the active tab while a page operation runs.
 - **Shared passwords, own sessions.** The runtime remembers passwords, so any
   client can autofill them; each client keeps its own logged-in session.
-- **The driving client.** Page operations (`cate.browser.*`, code cells) run
-  on the connected client with the `pageDriver` feature that most recently
-  showed or used the panel, or else the most recently active client with
-  `pageDriver`. That client mounts the surface while an operation runs. With
-  no such client connected, page operations fail with `no-renderer`.
+- **The driving client.** Each panel definition lists its page operations
+  and the client feature each needs (`surface.ops`: browser `page.*` and
+  `code.*` need `pageDriver`, chat's `chat.sendText` needs `webview`). An op
+  runs on the connected client with that feature that most recently showed
+  or used the panel, or else the most recently active client with it; an op
+  of no panel (a code cell) goes to any such client. The runtime never asks
+  what kind of client it is, only which features it declared. On the client,
+  one registry in `client/host` (`registerSurface`) holds every view's
+  handler and mounts a panel on demand while an operation waits. With no
+  such client connected, page operations fail with `no-renderer`.
 - **Consumers**: the browser panel, `cate.browser.*`.
 
 ### 10.3 T3

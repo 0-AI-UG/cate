@@ -113,7 +113,7 @@ export function testPanelDefinitions(): AnyPanelDefinition[] {
   return [
     base('terminal', { creation: { order: 1 }, opens: ['directory'], chrome: { worktreeChip: true } }),
     base('editor', { icon: 'folders', creation: { order: 2 }, opens: ['file'], chrome: { flushTabBar: true } }),
-    base('browser', { icon: 'globe', opens: ['url'], surface: { retention: 'workspace' } }),
+    base('browser', { icon: 'globe', opens: ['url'], surface: { retention: 'workspace', ops: {} } }),
     base('canvas', { icon: 'grid', canLiveOnCanvas: false, chrome: { floatingTabBar: true } }),
     base('surface', { icon: 'plus', placeholder: true }),
   ]

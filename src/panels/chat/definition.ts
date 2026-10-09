@@ -5,7 +5,7 @@ import { channel } from '@kernel/rpc/contract'
 import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
-import { CHAT_DEFAULT_TITLE, type ChatCreateOptions, type ChatOp, type ChatSnapshot } from './contract'
+import { CHAT_DEFAULT_TITLE, CHAT_SURFACE_SEND_TEXT, type ChatCreateOptions, type ChatOp, type ChatSnapshot } from './contract'
 
 const chatFields = (options: ChatCreateOptions): JsonObject => ({
   ...(options.threadId ? { threadId: options.threadId } : {}),
@@ -26,7 +26,8 @@ export const chatDefinition = definePanel({
   // Fixed, like the browser: moving a <webview> to another parent (even with
   // moveBefore) reloads its page, so an inline surface cannot survive a tab or
   // workspace switch.
-  surface: { retention: 'recent' },
+  // Sending text runs in the T3 page's webview.
+  surface: { retention: 'recent', ops: { [CHAT_SURFACE_SEND_TEXT]: 'webview' } },
   opens: ['conversation'],
   defaultTitle: CHAT_DEFAULT_TITLE,
   fields: chatFields,

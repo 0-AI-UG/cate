@@ -16,7 +16,7 @@ export interface DeviceInfo {
   keyFingerprint: string
 }
 
-/** Hello payload of a client (desktop app, phone). Fixed for the connection. */
+/** Hello payload of a client. Fixed for the connection. */
 export interface ClientHello {
   clientId: string
   device: DeviceInfo

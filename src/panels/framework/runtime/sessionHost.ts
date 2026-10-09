@@ -15,7 +15,8 @@ import { RpcError } from '@kernel/rpc/contract'
 import { KeyedLock } from '@kernel/state/contract'
 import { opChanges, type PanelId, type PanelRecord } from '@workspace/document/contract'
 import type { AppliedEvent, DocumentService } from '@workspace/document/runtime'
-import type { OpContext, PanelSession, SessionKit, SessionSubscriber, SurfaceCallOptions } from './PanelSession'
+import type { OpContext, PanelSession, SessionKit, SessionSubscriber } from './PanelSession'
+import type { SurfaceBroker } from './surfaces'
 import type { PanelRegistry } from './registry'
 import { createSessionFileStore, type SessionFileStore } from './sessionStore'
 
@@ -23,7 +24,7 @@ export interface SessionHostDeps {
   document: DocumentService
   registry: PanelRegistry
   /** Page operations on the driving client (the surface broker). */
-  surfaces: { request(panelId: PanelId, op: string, args: unknown, options?: SurfaceCallOptions): Promise<unknown> }
+  surfaces: Pick<SurfaceBroker, 'request'>
   /** `dataPaths(dir).session`. */
   sessionFile(panelId: PanelId): string
   log?: Logger
@@ -105,7 +106,11 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
       document: deps.document,
       store,
       log,
-      surface: (op, args, options) => deps.surfaces.request(record.id, op, args, options),
+      surface: (op, args, options) => {
+        const feature = registered.definition.surface?.ops[op]
+        if (!feature) return Promise.reject(new RpcError('unsupported', `${record.type} has no page operation ${op}`))
+        return deps.surfaces.request(record.id, op, args, { ...options, feature })
+      },
       session: (panelId) => entries.get(panelId)?.session,
     }
     const session = new registered.session(kit, record)

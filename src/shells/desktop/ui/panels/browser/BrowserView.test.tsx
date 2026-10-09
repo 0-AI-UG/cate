@@ -18,7 +18,7 @@ vi.mock('../../client/document', async (importOriginal) => {
     usePanelView: (_ws: string, _panel: string, _key: string, fallback: unknown) => useState(fallback),
   }
 })
-import { pageHostFor } from './surfaces'
+import { runSurfaceRequest } from '@client/host'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -165,11 +165,16 @@ describe('BrowserView', () => {
     expect(host.querySelector('[data-browser-webview-slot]')).toBeNull()
   })
 
-  it('registers its pages for page operations when this client drives pages', () => {
+  it('registers its pages for page operations when this client drives pages', async () => {
+    vi.useFakeTimers()
     render(snapshotOf([tab()]))
-    expect(pageHostFor('ws', 'p1')).toBeDefined()
+    const request = { requestId: 1, panelId: 'p1', op: 'page.nope' }
+    await expect(runSurfaceRequest('ws', request)).rejects.toMatchObject({ code: 'unsupported' })
     act(() => root.unmount())
-    expect(pageHostFor('ws', 'p1')).toBeUndefined()
+    const gone = expect(runSurfaceRequest('ws', request)).rejects.toMatchObject({ code: 'no-renderer' })
+    await vi.advanceTimersByTimeAsync(5_000)
+    await gone
+    vi.useRealTimers()
     root = createRoot(host)
   })
 

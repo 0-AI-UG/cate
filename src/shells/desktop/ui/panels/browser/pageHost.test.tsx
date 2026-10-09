@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
 import { BrowserPageHost, type BrowserGuest } from './pageHost'
-import { onSurfaceDemand, registerPageHost, runBrowserSurfaceRequest } from './surfaces'
+import { registerSurface, runSurfaceRequest, subscribeDemandedSurfaces, demandedSurfaces } from '@client/host'
+import { runCodeOp, runPageOp } from './surfaces'
 
 function guest(id = 7): BrowserGuest & { url: string; loading: boolean; fire(type: string, detail?: object): void } {
   const element = document.createElement('div') as unknown as BrowserGuest & { url: string; loading: boolean; fire(type: string, detail?: object): void }
@@ -179,21 +180,19 @@ describe('browser surface requests', () => {
     const webview = guest()
     host.attachGuest('t1', webview)
     webview.fire('dom-ready')
-    const demands: unknown[] = []
-    const stopDemand = onSurfaceDemand((demand) => demands.push(demand))
-    const deps = { workspaceId: 'ws', bridge: {} as BrowserPageBridge, browserCode: {} as never }
-    const pending = runBrowserSurfaceRequest(deps, { requestId: 1, panelId: 'p1', op: 'page.execute', args: { tabId: 't1', method: 'getAXState', args: {} } })
-    const unregister = registerPageHost('ws', host)
+    const demands: number[] = []
+    const stopDemand = subscribeDemandedSurfaces(() => demands.push(demandedSurfaces().size))
+    const pending = runSurfaceRequest('ws', { requestId: 1, panelId: 'p1', op: 'page.execute', args: { tabId: 't1', method: 'getAXState', args: {} } })
+    const unregister = registerSurface('ws', 'p1', (request) => runPageOp(host, request))
     await expect(pending).resolves.toEqual({ result: 1 })
-    expect(demands).toEqual([{ workspaceId: 'ws', panelId: 'p1', active: true }, { workspaceId: 'ws', panelId: 'p1', active: false }])
+    expect(demands).toEqual([1, 0])
     unregister()
     stopDemand()
   })
 
   it('fail with no-renderer when the panel never mounts', async () => {
     vi.useFakeTimers()
-    const deps = { workspaceId: 'ws', bridge: {} as BrowserPageBridge, browserCode: {} as never }
-    const pending = runBrowserSurfaceRequest(deps, { requestId: 2, panelId: 'missing', op: 'page.ready', args: { tabId: 't', nav: 0 } })
+    const pending = runSurfaceRequest('ws', { requestId: 2, panelId: 'missing', op: 'page.ready', args: { tabId: 't', nav: 0 } })
     const settled = expect(pending).rejects.toMatchObject({ code: 'no-renderer' })
     await vi.advanceTimersByTimeAsync(5_000)
     await settled
@@ -206,9 +205,9 @@ describe('browser surface requests', () => {
       onCodeCall: (next: typeof handler) => { handler = next; return () => {} },
       runCode: vi.fn(async ({ cellId }: { cellId: string }) => ({ content: [{ type: 'text', text: String(await handler!({ cellId, method: 'listTabs', args: {} })) }] })),
     }
-    const result = await runBrowserSurfaceRequest(
-      { workspaceId: 'ws', bridge: bridge as never, browserCode: { call } as never },
-      { requestId: 3, panelId: '', op: 'code.run', args: { key: 'k', cellId: 'c1', code: '1', deadlineMs: 1000 } },
+    const result = await runCodeOp(
+      { bridge: bridge as never, browserCode: { call } as never },
+      { requestId: 3, panelId: null, op: 'code.run', args: { key: 'k', cellId: 'c1', code: '1', deadlineMs: 1000 } },
     )
     expect(result).toEqual({ content: [{ type: 'text', text: 'answer' }] })
     expect(call).toHaveBeenCalledWith({ cellId: 'c1', method: 'listTabs', args: {} })
