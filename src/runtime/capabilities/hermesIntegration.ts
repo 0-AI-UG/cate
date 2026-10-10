@@ -146,6 +146,22 @@ async function runHermes(profile: string | undefined, args: string[]): Promise<s
   return stdout
 }
 
+// Hermes refuses a plugin-set change that races its own background venv
+// sync ("plugin configuration changed while preparing publication; retry"),
+// e.g. right after a profile is created. The message asks for a retry.
+async function enableHermesPlugin(profile: string | undefined): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await runHermes(profile, ['plugins', 'enable', HERMES_PLUGIN_ID, '--no-allow-tool-override'])
+      return
+    } catch (error) {
+      const stderr = String((error as { stderr?: unknown }).stderr ?? '')
+      if (attempt >= 5 || !stderr.includes('changed while preparing publication')) throw error
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt))
+    }
+  }
+}
+
 async function targetFor(profile?: string): Promise<string> {
   const config = (await runHermes(profile, ['config', 'path'])).trim()
   if (!path.isAbsolute(config)) throw new Error('Hermes returned an invalid profile config path')
@@ -193,7 +209,7 @@ export async function ensureHermesIntegration(profile?: string): Promise<void> {
       backedUp = true
     }
     await rename(staging, target)
-    await runHermes(profile, ['plugins', 'enable', HERMES_PLUGIN_ID, '--no-allow-tool-override'])
+    await enableHermesPlugin(profile)
     if (!(await inspectHermesIntegration(profile))) throw new Error('Hermes did not enable the Cate plugin')
     if (backedUp) await rm(backup, { recursive: true, force: true })
   } catch (error) {
@@ -204,7 +220,7 @@ export async function ensureHermesIntegration(profile?: string): Promise<void> {
     // failed first install must not leave a dangling enabled entry; replacing
     // an existing working install restores its prior enabled state.
     if (backedUp && wasEnabled) {
-      await runHermes(profile, ['plugins', 'enable', HERMES_PLUGIN_ID, '--no-allow-tool-override']).catch(() => {})
+      await enableHermesPlugin(profile).catch(() => {})
     } else if (!backedUp) {
       await runHermes(profile, ['plugins', 'disable', HERMES_PLUGIN_ID]).catch(() => {})
     }
