@@ -41,7 +41,7 @@ const text = (message: string): BrowserCodeResult => ({ content: [{ type: 'text'
 export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHandlers<typeof browserApi> {
   const newId = deps.newId ?? (() => globalThis.crypto.randomUUID())
   const now = deps.now ?? Date.now
-  const request = <Op extends BrowserSurfaceOp>(panelId: string | null, op: Op, args: BrowserSurfaceArgs<Op>, options?: SurfaceCallOptions) =>
+  const request = <Op extends BrowserSurfaceOp>(panelId: string | null, op: Op, args: BrowserSurfaceArgs<Op>, options?: SurfaceCallOptions & { near?: PanelId }) =>
     deps.surfaces.request(panelId, op, args, { ...options, feature: BROWSER_SURFACE_FEATURES[op] })
 
   const browserPanels = (): PanelId[] =>
@@ -55,12 +55,13 @@ export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHan
       const cellId = newId()
       deps.cells.begin(cellId, { deadline: now() + BROWSER_CELL_DEADLINE_MS, invoke: ctx.invoke })
       try {
-        return await request(target, 'code.run', { key: ctx.caller.id, cellId, code, deadlineMs: BROWSER_CELL_DEADLINE_MS }, {
+        return await request(null, 'code.run', { key: ctx.caller.id, cellId, code, deadlineMs: BROWSER_CELL_DEADLINE_MS }, {
           timeoutMs: BROWSER_CODE_TIMEOUT_MS - 2_000,
           signal: ctx.signal,
+          near: target ?? undefined,
         })
       } catch (err) {
-        if (isRpcError(err, 'timeout')) void request(target, 'code.reset', { key: ctx.caller.id }).catch(() => {})
+        if (isRpcError(err, 'timeout')) void request(null, 'code.reset', { key: ctx.caller.id }, { near: target ?? undefined }).catch(() => {})
         if (isRpcError(err, 'no-renderer')) return text('No connected client can run browser code')
         return text(err instanceof Error ? err.message : String(err))
       } finally {
@@ -70,7 +71,7 @@ export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHan
     reset: async (_args, ctx) => {
       const target = ctx.defaultTarget('browser') ?? null
       try {
-        await request(target, 'code.reset', { key: ctx.caller.id })
+        await request(null, 'code.reset', { key: ctx.caller.id }, { near: target ?? undefined })
       } catch (err) {
         if (!isRpcError(err, 'no-renderer')) throw err
       }

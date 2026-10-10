@@ -292,13 +292,13 @@ describe('browser session', () => {
 describe('browser service handlers', () => {
   it('runs a cell on the driving client and passes its calls back as the caller', async () => {
     const cells = new BrowserCodeCells()
-    const requests: Array<[string | null, string, any]> = []
+    const requests: Array<[string | null, string, any, any]> = []
     let cellId = ''
     const invoke = vi.fn(async () => ({ ok: true }))
     const handlers = browserServiceHandlers({
       surfaces: {
-        request: async (panelId: string | null, op: string, args: any) => {
-          requests.push([panelId, op, args])
+        request: async (panelId: string | null, op: string, args: any, options: any) => {
+          requests.push([panelId, op, args, options])
           cellId = args.cellId
           await expect(cells.call(cellId, 'click', { panelId: 'p1', tabId: 't', target: 1 })).resolves.toEqual({ ok: true })
           // The desktop code session tags every call; a service or session
@@ -314,7 +314,8 @@ describe('browser service handlers', () => {
     })
     const ctx = { caller: { kind: 'cli', id: 'caller-1' }, defaultTarget: () => 'p1', invoke, signal: new AbortController().signal } as never
     await expect(handlers.run({ code: '1', panelId: undefined }, ctx)).resolves.toEqual({ content: [{ type: 'text', text: 'done' }] })
-    expect(requests[0]).toEqual(['p1', 'code.run', { key: 'caller-1', cellId: 'cell-1', code: '1', deadlineMs: 30_000 }])
+    // A cell is panel-less (the client's code session), run by the client driving the caller's browser.
+    expect(requests[0]).toEqual([null, 'code.run', { key: 'caller-1', cellId: 'cell-1', code: '1', deadlineMs: 30_000 }, expect.objectContaining({ near: 'p1' })])
     expect(invoke).toHaveBeenNthCalledWith(1, 'cate.browser.click', { tabId: 't', target: 1, _codeCellId: 'cell-1', panelId: 'p1' })
     expect(invoke).toHaveBeenNthCalledWith(2, 'cate.browser.getTab', { panelId: 'p1' })
     await expect(cells.call(cellId, 'click', {})).rejects.toBeInstanceOf(RpcError)

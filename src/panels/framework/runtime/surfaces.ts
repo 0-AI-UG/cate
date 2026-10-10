@@ -15,6 +15,8 @@ import type { SurfaceRequest, surfaceCapability } from '../contract'
 export interface SurfaceRequestOptions {
   /** The client feature the op needs. */
   feature: ClientFeature
+  /** For an op of no panel: prefer the client driving this panel. */
+  near?: PanelId
   timeoutMs?: number
   signal?: AbortSignal
 }
@@ -79,7 +81,7 @@ export function createSurfaceBroker(deps: SurfaceBrokerDeps): SurfaceBroker & {
   return {
     driverFor,
     request(panelId, op, args, options) {
-      const client = driverFor(panelId, options.feature)
+      const client = driverFor(panelId ?? options.near ?? null, options.feature)
       const sink = client ? drivers.get(client.connectionId) : undefined
       if (!client || !sink) return Promise.reject(new RpcError('no-renderer', 'no connected client can run page operations'))
       const requestId = nextId++
