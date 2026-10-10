@@ -56,7 +56,6 @@ export const BUILTIN_ACTIONS = defineActions({
   skills: { title: 'Skills…', key: key('s', { command: true, option: true }) },
   openRepository: { title: 'Repository / Source Control Changes', key: key('g', { command: true, shift: true }) },
   openPullRequests: { title: 'Pull Requests', key: key('g', { command: true, option: true }) },
-  openUsage: { title: 'Usage', key: key('u', { command: true, option: true }) },
   reconnectWorkspace: { title: 'Reconnect Workspace' },
   forgetWorkspace: { title: 'Forget Workspace…' },
 })
@@ -162,7 +161,6 @@ export function registerBuiltinActions(): () => void {
       skills: overlay('skills'),
       openRepository: overlay('pullRequests'),
       openPullRequests: overlay('pullRequests', 'pullRequests'),
-      openUsage: overlay('usage'),
       reconnectWorkspace: {
         // Reconnects: the document and sessions load again from the runtime.
         async run({ workspaceId }) {

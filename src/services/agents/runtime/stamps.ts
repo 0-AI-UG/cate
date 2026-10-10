@@ -117,7 +117,7 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
         ...(event.sourcePid ? { sourcePid: event.sourcePid } : {}),
         ...(event.sourceStartedAt ? { sourceStartedAt: event.sourceStartedAt } : {}),
       }
-      if (event.kind === 'session-start' && !agent?.runners.terminal.resume.fromSessionStart) {
+      if (event.kind === 'session-start' && !agent?.resume.fromSessionStart) {
         const previous = st.latest
         st.latest = identity
         // A new session replaced the stamped one without ending it first

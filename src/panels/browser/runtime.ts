@@ -36,8 +36,8 @@ export interface BrowserServiceDeps {
 const text = (message: string): BrowserCodeResult => ({ content: [{ type: 'text', text: message }], isError: true })
 
 /** The service half of `cate.browser.*`. A cell runs on the driving client of
- *  its default panel (or of any browser, with none); its `cua.*` calls come
- *  back through `browserCode.call` as the same caller. */
+ *  its one browser panel; its `cua.*` calls come back through
+ *  `browserCode.call` as the same caller. */
 export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHandlers<typeof browserApi> {
   const newId = deps.newId ?? (() => globalThis.crypto.randomUUID())
   const now = deps.now ?? Date.now
@@ -49,19 +49,20 @@ export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHan
 
   return {
     run: async ({ code, panelId }, ctx) => {
-      // Any client with a page driver can run the cell (the cell binds tabs
-      // itself); the caller's browser panel's driver is preferred.
-      const target = panelId ?? ctx.defaultTarget('browser') ?? null
+      // A cell drives one browser panel: the named one, or the one a command
+      // without --panel would target. It runs on that panel's driving client.
+      const target = panelId ?? ctx.defaultTarget('browser')
+      if (!target) return text('No browser panel to run in. Create one with `cate panel create browser [url]`, or pass --panel <id>.')
       const cellId = newId()
-      deps.cells.begin(cellId, { deadline: now() + BROWSER_CELL_DEADLINE_MS, invoke: ctx.invoke })
+      deps.cells.begin(cellId, { deadline: now() + BROWSER_CELL_DEADLINE_MS, panelId: target, invoke: ctx.invoke })
       try {
         return await request(null, 'code.run', { key: ctx.caller.id, cellId, code, deadlineMs: BROWSER_CELL_DEADLINE_MS }, {
           timeoutMs: BROWSER_CODE_TIMEOUT_MS - 2_000,
           signal: ctx.signal,
-          near: target ?? undefined,
+          near: target,
         })
       } catch (err) {
-        if (isRpcError(err, 'timeout')) void request(null, 'code.reset', { key: ctx.caller.id }, { near: target ?? undefined }).catch(() => {})
+        if (isRpcError(err, 'timeout')) void request(null, 'code.reset', { key: ctx.caller.id }, { near: target }).catch(() => {})
         if (isRpcError(err, 'no-renderer')) return text('No connected client can run browser code')
         return text(err instanceof Error ? err.message : String(err))
       } finally {

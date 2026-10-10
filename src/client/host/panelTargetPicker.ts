@@ -102,9 +102,7 @@ export async function requestPanelTarget(request: PanelTargetRequest): Promise<P
       return placement && !isCanvasDock(placement.dock)
     })
     if (docked.length === 0) return request.availability === 'both' ? { kind: 'new', placement: dockPlacement } : null
-    const ui = clientUi()
-    if (!ui.showContextMenu) return request.availability === 'both' ? { kind: 'new', placement: dockPlacement } : null
-    const id = await ui.showContextMenu([
+    const id = await clientUi().showContextMenu([
       ...(request.availability === 'both' ? [{ id: '__new', label: `New ${panelLabel(request.panelType)}` }] : []),
       ...docked.map((panel) => ({ id: panel.panelId, label: panel.title })),
     ])

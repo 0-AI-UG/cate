@@ -4,7 +4,7 @@
 
 export interface AgentChangesRequest {
   workspaceId: string
-  /** The terminal or chat panel whose changes to show. */
+  /** The terminal panel whose changes to show. */
   panelId: string
 }
 

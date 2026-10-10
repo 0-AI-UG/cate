@@ -41,7 +41,7 @@ export {
   type UiStateSnapshot,
   type ScreenCorner,
 } from './state/uiState'
-export { useTerminalStatuses, terminalStatuses, panelsWithPorts, terminalCwd } from './state/statusStore'
+export { useTerminalStatuses } from './state/statusStore'
 export { WindowIdContext, useWindowId } from './state/windowContext'
 
 // Navigation and actions.

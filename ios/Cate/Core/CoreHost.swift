@@ -225,8 +225,8 @@ final class CoreHost {
 extension CoreHost {
     // MARK: Panel views
 
-    /// Opens a view of a panel with `method` (`panel.open`, `browser.open`,
-    /// `chat.open`): `events` gets its snapshots and events as JSON until
+    /// Opens a view of a panel with `method` (`panel.open`, `browser.open`):
+    /// `events` gets its snapshots and events as JSON until
     /// `closeView`.
     func openView(_ method: String, viewId: String, workspaceId: String, panelId: String, events: @escaping (Data) -> Void) {
         views[viewId] = events
@@ -314,7 +314,7 @@ extension CoreHost {
 
     // MARK: Loopback routing
 
-    /// The web data store of a workspace's browser, chat and preview pages:
+    /// The web data store of a workspace's browser and preview pages:
     /// its own, persistent, like the desktop's partition per workspace.
     func webDataStore(_ workspaceId: String) -> WKWebsiteDataStore {
         if let store = dataStores[workspaceId] { return store }

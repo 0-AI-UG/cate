@@ -25,7 +25,7 @@ afterEach(() => { m.unmount(); rt.uninstall(); document.body.innerHTML = '' })
 it('lists worktrees with open panel counts and launches a terminal on this canvas', async () => {
   const host = fakeHost({
     worktrees: [{ id: 'a', path: '/repo/.cate/worktrees/a', color: 'cyan', label: 'Feature A', status: 'ready' }],
-    panels: [{ id: 'c', type: 'chat', title: 'C', worktreeId: 'a', fields: {} }],
+    panels: [{ id: 'c', type: 'terminal', title: 'C', worktreeId: 'a', fields: {} }],
   })
   await m.render(<WorktreeToolbarMenu canvasPanelId="canvas" renderTrigger={trigger} />, host)
   await act(async () => m.button('Parallel worktrees').click())

@@ -28,7 +28,9 @@ describe('commands from specs', () => {
       'terminal read', 'terminal type', 'terminal press', 'browser run', 'browser reset',
       'review note add', 'review note resolve', 'agent wait', 'agent start',
     ]))
-    expect(words).not.toContain('browser click')
+    // Common page operations are commands; the rest stay with code cells.
+    expect(words).toEqual(expect.arrayContaining(['browser snapshot', 'browser click', 'browser fill', 'browser press', 'browser goto']))
+    expect(words).not.toContain('browser drag')
     expect(words).not.toContain('panel focus')
   })
 })
@@ -44,7 +46,19 @@ describe('parseCommandLine', () => {
     expect(call(['terminal', 'read', '--lines', '20']).args).toEqual({ lines: 20 })
   })
 
-  it('parses flags anywhere, --flag=value, booleans and --no-', () => {
+  it('parses browser page commands on the active tab', () => {
+    expect(call(['browser', 'click', '12'])).toEqual({ method: 'cate.browser.click', args: { target: 12 }, json: false })
+    expect(call(['browser', 'click', '[40,80]', '--count', '2']).args).toEqual({ target: [40, 80], clickCount: 2 })
+    expect(call(['browser', 'fill', '17', '42']).args).toEqual({ target: 17, value: '42' })
+    expect(call(['browser', 'type', 'hello', 'world']).args).toEqual({ text: 'hello world' })
+    expect(call(['browser', 'select', '34', 'de']).args).toEqual({ target: 34, values: 'de' })
+    expect(call(['browser', 'select', '34', '["a","b"]']).args).toEqual({ target: 34, values: ['a', 'b'] })
+    expect(call(['browser', 'check', '5', '--no-checked']).args).toEqual({ target: 5, checked: false })
+    expect(call(['browser', 'wait', '--text', 'Saved', '--timeout', '3000']).args).toEqual({ text: 'Saved', timeoutMs: 3000 })
+    expect(call(['browser', 'scroll', 'down', '--panel', 'b1']).args).toEqual({ direction: 'down', pages: 1, panelId: 'b1' })
+  })
+
+    it('parses flags anywhere, --flag=value, booleans and --no-', () => {
     expect(call(['--json', 'panel', 'close', '--discard', 'ab12'])).toEqual({
       method: 'cate.panel.close',
       args: { panelId: 'ab12', discard: true },
@@ -52,7 +66,7 @@ describe('parseCommandLine', () => {
     })
     expect(call(['panel', 'close', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
     expect(call(['panel', 'close', '--no-discard', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
-    expect(call(['agent', 'start', '--runner=t3', 'fix', 'it']).args).toMatchObject({ runner: 't3', prompt: 'fix it' })
+    expect(call(['agent', 'start', '--agent=codex', 'fix', 'it']).args).toMatchObject({ agentId: 'codex', prompt: 'fix it' })
     expect(call(['review', 'note', 'add', '--file=src/a.ts', '--line', '4', '--body', 'x', '--severity', 'error']).args).toEqual({
       file: 'src/a.ts', line: 4, body: 'x', side: 'new', severity: 'error',
     })
@@ -152,7 +166,7 @@ describe('help', () => {
     expect(note).toMatch(/--panel <id> +Target review panel \(id or unique prefix\)/)
     expect(commandHelp(find('agent wait'))).toContain('(default 30000)')
     expect(commandHelp(find('agent send'), { width: 120, color: false })).toContain('from cate agent list (or --panel <panelId>)')
-    expect(commandHelp(find('agent start'), { width: 120, color: false })).toMatch(/--runner terminal\|t3 +Run the agent CLI in a terminal, or in a T3 Code chat \(default terminal\)/)
+    expect(commandHelp(find('agent start'), { width: 120, color: false })).toMatch(/--agent <id> +Agent CLI: claude-code, codex/)
   })
 
   it('gives every command a summary and every visible argument help', () => {
@@ -232,7 +246,27 @@ describe('runCli', () => {
     expect(out[0]).toContain('state\nScreenshot: /tmp/shot.png')
   })
 
-  it('exits 1 on API errors and isError results', async () => {
+  it('prints a page command result as text, its screenshot as a file and a long tree mostly in a file', async () => {
+    const observation = { kind: 'ax', observationId: 'o2', url: 'https://example.test/', title: 'Example', viewport: {}, state: '- button "Save" [id=1]', elements: [], diff: false }
+    const clicked = deps({ call: async () => ({ action: { method: 'click', status: 'dispatched' }, observation }) })
+    expect(await runCli(['browser', 'click', '1'], CATE_API, clicked.d)).toBe(0)
+    expect(clicked.out).toEqual(['click: dispatched\nPage: Example (https://example.test/)\n- button "Save" [id=1]'])
+
+    const writeImage = vi.fn(async () => '/tmp/shot.png')
+    const shot = deps({ call: async () => ({ ...observation, kind: 'image', state: '', screenshot: { mimeType: 'image/png', data: 'AAAA', width: 1, height: 1 } }) }, { writeImage })
+    await runCli(['browser', 'screenshot'], CATE_API, shot.d)
+    expect(shot.out[0]).toContain('Screenshot: /tmp/shot.png')
+
+    const tree = Array.from({ length: 2000 }, (_, i) => `- link "Article ${i}" [id=${i}]`).join('\n')
+    const writeText = vi.fn(async () => '/tmp/page.txt')
+    const long = deps({ call: async () => ({ ...observation, state: tree }) }, { writeText })
+    await runCli(['browser', 'snapshot'], CATE_API, long.d)
+    expect(writeText).toHaveBeenCalledWith(tree)
+    expect(long.out[0].length).toBeLessThan(7_000)
+    expect(long.out[0]).toMatch(/more lines\. The full text is in \/tmp\/page\.txt/)
+  })
+
+    it('exits 1 on API errors and isError results', async () => {
     const failing = deps({ call: async () => { throw new RpcError('rejected', 'terminal-read-disabled: nope') } })
     expect(await runCli(['terminal', 'read'], CATE_API, failing.d)).toBe(1)
     expect(failing.err).toEqual(['cate: cate.terminal.read: terminal-read-disabled: nope'])
@@ -259,7 +293,7 @@ describe('runCli', () => {
   })
 
   it('starts an agent and prints its panel', async () => {
-    const call = vi.fn(async () => ({ panelId: 'panel-0123456789', runner: 'terminal', agentId: 'codex' }))
+    const call = vi.fn(async () => ({ panelId: 'panel-0123456789', agentId: 'codex' }))
     const { d, out } = deps({ call })
     await runCli(['agent', 'start', '--agent', 'codex', '--new-worktree', 'fix-login', 'Fix', 'the', 'login'], CATE_API, d)
     expect(call).toHaveBeenCalledWith('cate.agent.start', expect.objectContaining({

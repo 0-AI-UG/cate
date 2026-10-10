@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import fs from 'node:fs/promises'
-import { mkdtemp, mkdir, rm, readFile, writeFile, readdir } from 'node:fs/promises'
+import { afterEach, beforeEach, expect, it } from 'vitest'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import { build } from 'esbuild'
 import os from 'node:os'
@@ -9,29 +8,24 @@ import { createAgentChangesStore } from './store'
 import { filesFromPatch, filesFromTool } from './edits'
 import { AGENT_HOOK_SPECS, normalizeAgentHookPayload } from '../../contract'
 
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return { ...actual, readFile: vi.fn(actual.readFile) }
-})
-
 let directory: string
 beforeEach(async () => { directory = await mkdtemp(path.join(os.tmpdir(), 'cate-review-changes-')) })
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
-const event = (threadId: string) => ({ provider: 'claude', type: 'item.completed', threadId, turnId: 'turn', itemId: 'edit', payload: {
-  status: 'completed', data: { toolName: 'Edit', input: { file_path: `${threadId}.ts`, old_string: 'a', new_string: 'b' } },
-} })
+/** A reported Edit by session `sessionId`, as a terminal's hook posts it. */
+const edit = (sessionId: string) => ({ sessionId, turnId: 'turn', name: 'Edit', callId: 'edit', output: null,
+  input: { file_path: `${sessionId}.ts`, old_string: 'a', new_string: 'b' } })
 
-it('preserves concurrent writes and bindings from independent store instances', async () => {
-  const stores = Array.from({ length: 8 }, () => createAgentChangesStore(directory))
-  stores.forEach((store) => store.registerSource('source', { cwd: '/repo', kind: 't3' }))
-  await Promise.all(stores.map(async (store, index) => {
-    await store.ingestT3('source', event(`chat-${index}`))
-    await store.bind('/repo', `chat-${index}`, `panel-${index}`)
-  }))
+it('preserves concurrent writes from independent store instances', async () => {
+  const stores = Array.from({ length: 8 }, (_, index) => {
+    const store = createAgentChangesStore(directory)
+    store.registerTerminal('source', { cwd: '/repo', panelId: `panel-${index}` })
+    return store
+  })
+  await Promise.all(stores.map((store, index) => store.ingestHook('source', 'claude-code', null, edit(`chat-${index}`))))
   const records = await createAgentChangesStore(directory).list('/repo')
   expect(records).toHaveLength(8)
-  expect(records.every((record) => record.panelIds?.[0] === record.sourceId.replace('chat', 'panel'))).toBe(true)
+  expect(records.every((record) => record.panelId === record.sessionId.replace('chat', 'panel'))).toBe(true)
 })
 
 it('preserves concurrently published records across independent Node processes', async () => {
@@ -43,11 +37,10 @@ it('preserves concurrently published records across independent Node processes',
   const children = Array.from({ length: 4 }, (_, index) => {
     const script = `
       const store = require(${JSON.stringify(bundleFile)}).createAgentChangesStore(${JSON.stringify(directory)});
-      store.registerSource('source', {cwd:'/repo', kind:'t3'});
+      store.registerTerminal('source', {cwd:'/repo', panelId:'panel-${index}'});
       process.stdin.once('data', async () => {
         try {
-          await store.ingestT3('source', ${JSON.stringify(event(`process-${index}`))});
-          await store.bind('/repo', 'process-${index}', 'panel-${index}');
+          await store.ingestHook('source', 'claude-code', null, ${JSON.stringify(edit(`process-${index}`))});
           process.exit(0);
         } catch(error) { console.error(error); process.exit(1); }
       });
@@ -71,7 +64,7 @@ it('preserves concurrently published records across independent Node processes',
     await Promise.all(children.map((child) => child.done))
     const records = await createAgentChangesStore(directory).list('/repo')
     expect(records).toHaveLength(4)
-    expect(records.every((record) => record.panelIds?.length === 1)).toBe(true)
+    expect(records.every((record) => record.panelId === record.sessionId.replace('process', 'panel'))).toBe(true)
   } finally {
     children.forEach(({ child }) => child.kill())
     await rm(bundleDir, { recursive: true, force: true })
@@ -81,60 +74,15 @@ it('preserves concurrently published records across independent Node processes',
 it('returns only a revision for unchanged history and observes other writers', async () => {
   const reader = createAgentChangesStore(directory)
   const writer = createAgentChangesStore(directory)
-  writer.registerSource('source', { cwd: '/repo', kind: 't3' })
+  writer.registerTerminal('source', { cwd: '/repo' })
   const empty = await reader.readChanges('/repo')
   expect(empty.records).toEqual([])
   expect(await reader.readChanges('/repo', empty.revision)).toEqual({ revision: empty.revision })
-  await writer.ingestT3('source', event('new-chat'))
+  await writer.ingestHook('source', 'claude-code', null, edit('new-chat'))
   const changed = await reader.readChanges('/repo', empty.revision)
   expect(changed.revision).not.toBe(empty.revision)
   expect(changed.records).toHaveLength(1)
   expect(await reader.readChanges('/repo', changed.revision)).toEqual({ revision: changed.revision })
-})
-
-it('compacts only older immutable snapshots and deduplicates operation retries', async () => {
-  const stores = [createAgentChangesStore(directory), createAgentChangesStore(directory)]
-  stores.forEach((store) => store.registerSource('source', { cwd: '/repo', kind: 't3' }))
-  const snapshot = (createdAt: string, name: string) => ({ provider: 'codex', type: 'turn.diff.updated', threadId: 'snapshot-chat', turnId: 'turn', createdAt,
-    payload: { unifiedDiff: `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -1 +1 @@\n-a\n+b\n` } })
-  await Promise.all([
-    stores[0].ingestT3('source', snapshot('2026-01-01T00:00:02Z', 'new.ts')),
-    stores[1].ingestT3('source', snapshot('2026-01-01T00:00:01Z', 'old.ts')),
-    ...stores.map((store) => store.ingestT3('source', event('operation'))),
-  ])
-  await Promise.all(stores.map((store) => store.list('/repo')))
-  const records = await createAgentChangesStore(directory).list('/repo')
-  expect(records).toHaveLength(2)
-  expect(records.find((record) => record.mode === 'snapshot')?.files[0].path).toBe('new.ts')
-  await stores[0].ingestT3('source', snapshot('2026-01-01T00:00:02Z', 'same-timestamp-later.ts'))
-  expect((await stores[1].list('/repo')).find((record) => record.mode === 'snapshot')?.files[0].path).toBe('same-timestamp-later.ts')
-  const folder = (await readdir(directory)).find((name) => name.endsWith('.d'))!
-  expect((await readdir(path.join(directory, folder))).filter((name) => name.endsWith('.json'))).toHaveLength(2)
-})
-
-it('retries a read when another reader compacts its listed snapshot before it opens the file', async () => {
-  const writer = createAgentChangesStore(directory)
-  const reader = createAgentChangesStore(directory)
-  const compactor = createAgentChangesStore(directory)
-  writer.registerSource('source', { cwd: '/repo', kind: 't3' })
-  const snapshot = (createdAt: string, name: string) => ({ provider: 'codex', type: 'turn.diff.updated', threadId: 'chat', turnId: 'turn', createdAt,
-    payload: { unifiedDiff: `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -1 +1 @@\n-a\n+b\n` } })
-  await writer.ingestT3('source', snapshot('2026-01-01T00:00:01Z', 'old.ts'))
-  const folder = path.join(directory, (await readdir(directory)).find((name) => name.endsWith('.d'))!)
-  const oldFile = path.join(folder, (await readdir(folder))[0])
-  const originalRead = fs.readFile.bind(fs)
-  const spy = vi.mocked(readFile).mockImplementationOnce(async (file) => {
-    expect(file).toBe(oldFile)
-    await writer.ingestT3('source', snapshot('2026-01-01T00:00:02Z', 'new.ts'))
-    await compactor.list('/repo')
-    // The real read now fails with ENOENT: compaction removed the file after
-    // the first reader enumerated it, without adding the new name to its list.
-    return originalRead(file, 'utf8')
-  })
-  try {
-    expect((await reader.list('/repo')).map((record) => record.files[0].path)).toEqual(['new.ts'])
-    expect(spy).toHaveBeenCalled()
-  } finally { spy.mockRestore() }
 })
 
 it('resolves reported relative paths from the agent cwd within the source workspace', async () => {
@@ -142,7 +90,7 @@ it('resolves reported relative paths from the agent cwd within the source worksp
   const agentCwd = path.join(cwd, 'packages', 'app')
   await mkdir(agentCwd, { recursive: true })
   const store = createAgentChangesStore(path.join(directory, 'history'))
-  store.registerSource('pty', { cwd, kind: 'terminal' })
+  store.registerTerminal('pty', { cwd })
   const payload = { hook_event_name: 'PostToolUse', session_id: 'session', tool_use_id: 'edit', cwd: agentCwd,
     tool_name: 'Edit', tool_input: { file_path: 'src/a.ts', old_string: 'a', new_string: 'b' } }
   await store.ingestHook('pty', 'claude-code', normalizeAgentHookPayload('claude-code', 'pty', payload), AGENT_HOOK_SPECS['claude-code'].toolCall(payload))
@@ -165,7 +113,7 @@ it('captures apply_patch rename destinations and original paths', () => {
 
 it('captures the command-wrapped apply_patch input emitted by real Codex CLI 0.153.4', async () => {
   const store = createAgentChangesStore(directory)
-  store.registerSource('pty', { cwd: '/repo', panelId: 'panel', kind: 'terminal' })
+  store.registerTerminal('pty', { cwd: '/repo', panelId: 'panel' })
   // Observed through the shipped bridge during agentChanges.claudeCodex.itest.
   // Only session/turn/cwd are anonymized. Codex wraps native patch text in
   // `command`, even though this is an apply_patch call rather than Bash.

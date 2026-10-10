@@ -1,6 +1,6 @@
 // The core API for agents in a workspace: their conversations (followed live,
-// conversations.ts), prompts and interrupts, starting one in a terminal or in
-// T3 (`cate.agent.start`) and its changes in a review panel; keep-awake and
+// conversations.ts), prompts and interrupts, starting one in a terminal
+// (`cate.agent.start`) and its changes in a review panel; keep-awake and
 // pushes. Failures come back as words.
 
 import { runtimeFor } from '@kernel/rpc/client'
@@ -17,7 +17,7 @@ type Handlers<M extends keyof MobileCoreMethods> = {
 
 export type ActionMethod =
   | 'agents.watch' | 'agents.unwatch' | 'agents.send' | 'agents.interrupt'
-  | 'agents.choices' | 'agents.t3Models' | 'agents.start' | 'agents.review'
+  | 'agents.choices' | 'agents.start' | 'agents.review'
   | 'power.set' | 'push.device' | 'push.useCateConnect'
 
 /** The runtime's error codes in the words the app shows. */
@@ -27,8 +27,6 @@ const WORDS: Record<string, string> = {
   'agent-panel-not-found': 'The agent\'s panel was closed.',
   'agent-panel-unavailable': 'The agent\'s panel is not available.',
   'prompt-required': 'Say what to work on first.',
-  't3-provider-not-ready': 'That T3 Code provider is not ready on your computer.',
-  't3-project-not-found': 'T3 Code is still opening this checkout. Try again in a moment.',
   untrusted: 'Trust this workspace on your computer first.',
 }
 
@@ -78,17 +76,12 @@ export function createActionHandlers(agents: MobileAgents, conversations: Mobile
     async 'agents.choices'({ workspaceId }) {
       return runtimeFor(workspaceId).agents.types().catch(() => [])
     },
-    async 'agents.t3Models'({ workspaceId }) {
-      return runtimeFor(workspaceId).t3.providerModels().catch(() => [])
-    },
-    async 'agents.start'({ workspaceId, prompt, launch, worktree, placement }) {
-      const { near, position } = placementOptions(launch.runner === 'terminal' ? 'terminal' : 'chat', placement)
+    async 'agents.start'({ workspaceId, prompt, agentId, worktree, placement }) {
+      const { near, position } = placementOptions('terminal', placement)
       try {
         const started = await runtimeFor(workspaceId).agents.start({
           prompt,
-          ...(launch.runner === 'terminal'
-            ? { runner: 'terminal' as const, agentId: launch.agentId }
-            : { runner: 't3' as const, instanceId: launch.instanceId, model: launch.model }),
+          agentId,
           ...(worktree ? { newWorktree: agentWorktreeName(prompt) } : {}),
           ...(near ? { canvasPanelId: near } : {}),
           ...(position ? { position } : {}),

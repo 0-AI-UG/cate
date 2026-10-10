@@ -11,6 +11,12 @@ written for an agent that implements it without the review conversation.
 - **Part 3**: reworks R1..R13 that get there.
 - **Part 4**: order.
 
+Note (as built): the T3 integration has been removed: the chat panel,
+`services/t3`, the t3 runner, the `harness` caller, the server host
+(`runtime/server`, `servers.json`) and the T3 patches. B3 and B21 are
+dropped. What other items say about T3, chat or harnesses no longer
+applies.
+
 ---
 
 ## Part 0: How to work
@@ -121,7 +127,8 @@ socket is there.
   unit test in that folder with a failing `startLocal` stub and three
   concurrent callers; assert one call to `startLocal`.
 
-**B3. The server reaper can SIGKILL unrelated processes.**
+**B3. The server reaper can SIGKILL unrelated processes.** Dropped: the
+server host was removed with T3.
 `runtime/server/runtime/serverHost.ts:71-82` kills every recorded pid whose
 owner daemon is gone, without checking it is still that server
 (`startedAt` is recorded and unused). `servers.json` is written with a
@@ -338,6 +345,7 @@ top.
   `rescan` event.
 
 **B21. Restarting T3 can run two harnesses on one state directory.**
+Dropped: T3 was removed.
 `services/t3/runtime/t3Runtime.ts:236,368`, `runtime/server/runtime/serverHost.ts:211`.
 - Test (unit, `t3Runtime.test.ts` with a fake server that exits slowly):
   restart, then request the panel URL at once; assert the second start

@@ -4,27 +4,8 @@ beforePack: scripts/passkey-packaging.cjs
 afterSign: scripts/verify-passkey-signing.cjs
 directories:
   output: release
-# T3 is carried once inside runtime-host*.tgz. Exclude its npm copy and the
-# large T3-only dependency families from app.asar to avoid duplicating several
-# hundred megabytes in every installer.
-files:
-  - "!node_modules/t3/**/*"
-  - "!node_modules/@anthropic-ai/**/*"
-  - "!node_modules/@effect/**/*"
-  - "!node_modules/@ff-labs/**/*"
-  - "!node_modules/@msgpackr-extract/**/*"
-  - "!node_modules/@opencode-ai/**/*"
-  - "!node_modules/@pierre/**/*"
-  - "!node_modules/@yuuang/**/*"
-  - "!node_modules/effect/**/*"
-  - "!node_modules/ffi-rs/**/*"
-  - "!node_modules/msgpackr-extract/**/*"
 # The runtime daemon ships as one self-contained tarball per target, built in
 # CI and uploaded to the GitHub release `v<version>` (.github/workflows/release.yml).
-#
-# The T3 server and web client are staged inside each target-specific Cate
-# runtime tarball below. They run under that runtime's bundled Node, outside
-# app.asar, so no T3 package files need to be unpacked here.
 asarUnpack:
   # Native + WASM modules only: these can't be dlopen'd / instantiated from inside
   # app.asar. The pure-JS deps that used to be listed here (the AWS/Google/Mistral/

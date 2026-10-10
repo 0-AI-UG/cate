@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createLifecycleBus, type LifecycleBus } from '@kernel/lifecycle/contract'
-import { createMemoryPortPair, isRpcError, type ClientFeature } from '@kernel/rpc/contract'
+import { RpcError, createMemoryPortPair, isRpcError, type ClientFeature } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import {
@@ -84,6 +84,29 @@ describe('document service', () => {
     } catch (err) {
       expect(isRpcError(err, 'gone')).toBe(true)
     }
+    doc.dispose()
+  })
+
+  it('asks the removal guard before a removal or a replacement drops a session', () => {
+    const doc = createDocumentService({ file })
+    doc.apply(addPanel('a'))
+    doc.apply(addPanel('b'))
+    const asked: Array<{ removing: string[]; discard: string[] }> = []
+    doc.guardRemovals((removing, discard) => {
+      asked.push({ removing: [...removing], discard: [...discard] })
+      if (removing.has('a') && !discard.has('a')) throw new RpcError('dirty', 'a is busy')
+    })
+    const replace: DocChange = { kind: 'replacePanel', record: record('a', 'surface') }
+    expect(doc.submit(op('c1', 1, replace))).toMatchObject({ status: 'failed', error: { code: 'dirty' } })
+    expect(doc.get().panels.a.type).toBe('terminal')
+    expect(doc.submit(op('c1', 2, { ...replace, discard: true }))).toEqual({ status: 'applied', seq: 3 })
+    expect(doc.get().panels.a.type).toBe('surface')
+    expect(doc.submit(op('c1', 3, { kind: 'removePanels', ids: ['b'] }))).toMatchObject({ status: 'applied' })
+    expect(asked).toEqual([
+      { removing: ['a'], discard: [] },
+      { removing: ['a'], discard: ['a'] },
+      { removing: ['b'], discard: [] },
+    ])
     doc.dispose()
   })
 

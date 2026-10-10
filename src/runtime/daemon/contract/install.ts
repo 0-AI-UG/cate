@@ -1,8 +1,8 @@
 // The install layout (architecture 7.1): `~/.cate/runtime/<build>/` holds the
-// daemon bundle, its Node, the `cate` CLI, the patched T3 harness, bundled
-// skills and native addons, exactly as the release tarball unpacks. One dir
-// per build, never replaced, so two builds of one version (a checkout and the
-// packaged app) install side by side. Pure: the caller passes the platform and
+// daemon bundle, its Node, the `cate` CLI, bundled skills and native addons,
+// exactly as the release tarball unpacks. One dir per build, never replaced,
+// so two builds of one version (a checkout and the packaged app) install side
+// by side. Pure: the caller passes the platform and
 // the `~/.cate` directory.
 
 export const GH_OWNER = '0-AI-UG'
@@ -87,7 +87,6 @@ export function installLayout(installDir: string, platform: string) {
     bundle: at('runtime.cjs'),
     node: at('runtime', 'bin', `node${exe}`),
     ripgrep: at('runtime', 'bin', `rg${exe}`),
-    t3: at('t3', 'dist', 'bin.mjs'),
     cateCli: at('cate', 'dist', 'cli.cjs'),
     cateBin: at('cate', 'bin'),
     skills: at('skills'),

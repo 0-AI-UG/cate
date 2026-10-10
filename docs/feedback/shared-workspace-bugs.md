@@ -8,7 +8,7 @@ Source: WhatsApp conversation with Paul Horn about testing Cate Connect shared w
 
 3. **Remote Save As file browser looks poor.** The file browser dialog used by remote Save As needs a visual and usability pass.
 
-4. **T3 panel is laggy.** The T3 panel becomes noticeably slow in the shared workspace flow.
+4. **T3 panel is laggy.** The T3 panel becomes noticeably slow in the shared workspace flow. Dropped: the T3 panel was removed.
 
 5. **Diff Review fails with a fatal Git error.** Opening Diff Review shows `fatal: not a git repository (or any of the parent directories): .git`.
    - Evidence: [WhatsApp screenshot, 2026-10-02 10:18](./shared-workspace/images/2026-10-02-1018-paul.jpeg)

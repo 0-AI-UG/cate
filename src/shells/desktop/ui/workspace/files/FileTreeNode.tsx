@@ -229,7 +229,6 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
     e.preventDefault()
     e.stopPropagation()
     const ui = clientUi()
-    if (!ui.showContextMenu) return
 
     const selectedFiles = [...selectedPaths]
     const pathsToOpen = selectedPaths.has(node.path) && selectedFiles.length > 0
@@ -264,8 +263,8 @@ export const FileTreeNode: React.FC<FileTreeNodeProps> = ({
           ] as ContextMenuItem[])
         : []),
       { id: 'rename', label: 'Rename…', accelerator: 'Return' },
-      { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
-      { id: 'copy-rel-path', label: 'Copy Relative Path', accelerator: 'Alt+Shift+Cmd+C' },
+      { id: 'copy-path', label: 'Copy Path' },
+      { id: 'copy-rel-path', label: 'Copy Relative Path' },
       { id: 'copy-name', label: 'Copy Name' },
       { type: 'separator' },
       { id: 'delete', label: pathsToOpen.length > 1 ? `Delete ${pathsToOpen.length} Items` : 'Delete', accelerator: 'Cmd+Backspace' },

@@ -208,7 +208,7 @@ struct AgentsView: View {
                 ContentUnavailableView {
                     Label("No agents running", systemImage: "sparkles")
                 } description: {
-                    Text("Start one here, or run an agent in a terminal or T3 Code on your computer.")
+                    Text("Start one here, or run an agent in a terminal on your computer.")
                 }
             }
             ForEach(AgentState.sorted(workspace?.agents ?? [])) { agent in

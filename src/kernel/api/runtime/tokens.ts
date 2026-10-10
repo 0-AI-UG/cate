@@ -1,13 +1,12 @@
 // Caller tokens. A CLI token is minted per PTY and names the terminal it runs
-// in; a harness token is minted per T3 harness and names its chat panel. The
-// token comes in the caller's `hello` and identifies the caller for the life
+// in. The token comes in the caller's `hello` and identifies the caller for the life
 // of the connection.
 
 import { randomBytes } from 'node:crypto'
 import type { ApiCaller } from '../contract'
 
 export interface TokenCallerInit {
-  kind: 'cli' | 'harness'
+  kind: 'cli'
   panelId?: string
   /** Defaults to the panel id, so panels a caller creates land next to it. */
   placementGroupId?: string
@@ -52,7 +51,7 @@ export class ApiTokenRegistry {
     for (const listener of this.revokeListeners) listener(caller)
   }
 
-  /** Revokes every token naming `panelId` (its PTY or harness went away). */
+  /** Revokes every token naming `panelId` (its PTY went away). */
   revokePanel(panelId: string): void {
     for (const [token, caller] of [...this.byToken]) {
       if (caller.panelId === panelId) this.revoke(token)

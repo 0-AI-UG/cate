@@ -3,7 +3,6 @@
 
 import type { JsonObject, PanelRecord, PanelRelation, RelationKind } from '@workspace/document/contract'
 
-export type { PanelRelation } from '@workspace/document/contract'
 export type PanelRelationKind = RelationKind
 
 /** An intent offered for a relation, optionally with a pair-specific label. */

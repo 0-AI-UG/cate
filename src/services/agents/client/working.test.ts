@@ -6,7 +6,7 @@ import { onAgentsWorking } from './working'
 import { fakeStream } from './testing'
 
 const panel = (status: PanelAgentState['status']): PanelAgentState => ({
-  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: true, contextPolicy: null, status,
+  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', contextPolicy: null, status,
   present: true, canReceivePrompt: status !== 'running', session: null,
 })
 

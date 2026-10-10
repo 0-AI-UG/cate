@@ -20,7 +20,7 @@ export type ClientId = string
 export const MAIN_WINDOW: WindowId = 'main'
 
 /** Every panel type's name. The panel index holds one definition per name. */
-export const PANEL_TYPES = ['terminal', 'editor', 'browser', 'chat', 'review', 'canvas', 'surface'] as const
+export const PANEL_TYPES = ['terminal', 'editor', 'browser', 'review', 'canvas', 'surface'] as const
 export type PanelType = (typeof PANEL_TYPES)[number]
 
 export function isPanelType(value: unknown): value is PanelType {

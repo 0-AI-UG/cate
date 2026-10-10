@@ -21,7 +21,8 @@ it('requires grounded IDs and rejects CSS targets', async () => {
   const { observe, execute } = await setupGuest()
   const observation = await observe()
   for (const target of ['#save', 999]) expect(await execute('click', { target, observationId: observation.observationId })).toMatchObject({ error: 'browser-element-not-in-observation' })
-  expect(await execute('click', { target: observation.elements[0].id })).toMatchObject({ error: 'browser-observation-required' })
+  // Without an observation (a CLI call) the latest one grounds the id.
+  expect(await execute('click', { target: observation.elements[0].id })).toMatchObject({ result: { action: { method: 'click' } } })
 })
 
 it('reads attributes from grounded AX elements', async () => {
@@ -124,4 +125,24 @@ it('keeps a successful edit when the field no longer has cursor geometry', async
   const observation = await observe()
   expect(await execute('setValue', { observationId: observation.observationId, target: observation.elements[0].id, value: 'text' }))
     .toMatchObject({ result: { action: { status: 'verified' } } })
+})
+
+it('types the US-layout shifted character for Shift with a digit or symbol', async () => {
+  const { observe, execute, contents } = await setupGuest()
+  const observation = await observe()
+  const keyDown = (key: string) => contents.debugger.sendCommand.mock.calls
+    .filter(([method, params]) => method === 'Input.dispatchKeyEvent' && (params as any).type === 'keyDown')
+    .map(([, params]) => params as any).find((params) => params.unmodifiedText === key)
+  await execute('pressKey', { key: 'Shift+1', observationId: observation.observationId })
+  expect(keyDown('1')).toMatchObject({ key: '!', text: '!', code: 'Digit1', windowsVirtualKeyCode: 49, modifiers: 8 })
+  await execute('pressKey', { key: 'Shift+-', observationId: observation.observationId })
+  expect(keyDown('-')).toMatchObject({ key: '_', text: '_', code: 'Minus', windowsVirtualKeyCode: 189, modifiers: 8 })
+})
+
+it('lets a call without ids or points follow the page past a stale observation', async () => {
+  const { observe, execute, events } = await setupGuest()
+  const before = await observe()
+  events.emit('message', {}, 'Page.frameNavigated', { frame: { id: 'new' } })
+  expect(await execute('pressKey', { key: 'Escape', observationId: before.observationId })).toMatchObject({ result: { action: { method: 'pressKey' } } })
+  expect(await execute('click', { target: before.elements[0].id, observationId: before.observationId })).toMatchObject({ error: 'stale-browser-observation' })
 })

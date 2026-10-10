@@ -11,7 +11,6 @@
 //                                          — WebRTC for Cate Connect)
 //     runtime/bin/node[.exe]              (bundled Node runtime for the target)
 //     runtime/bin/rg[.exe]                 (bundled ripgrep for content search)
-//     t3/dist/bin.mjs                      (T3 server + web client)
 //     cate/dist/cli.cjs                    (bundled `cate` in-terminal CLI)
 //     cate/bin/cate[.cmd]                  (launcher shims → bundled node)
 //     skills/<name>/SKILL.md               (bundled agent skills)
@@ -42,7 +41,7 @@
 // the same flag also supports local Linux cross-builds from a Mac.
 // =============================================================================
 
-import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync, readdirSync, openSync, readSync, closeSync } from 'node:fs'
+import { existsSync, mkdirSync, cpSync, rmSync, chmodSync, readFileSync, renameSync, readdirSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -53,10 +52,8 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { runtimeBuildOptions, syncRuntimeVersion } from './build-runtime.mjs'
 import { buildLinuxNodePty } from './linux-node-pty.mjs'
-import { patchT3 } from './patch-t3.mjs'
 
-// Bundled runtime version. MUST satisfy T3's `engines.node` requirement
-// (^22.16 || ^23.11 || >=24.10). Keep on a 22.x LTS line.
+// Bundled runtime version. Keep on a 22.x LTS line.
 const NODE_VERSION = '22.22.2'
 const NODE_PTY_VERSION = '1.1.0' // must match package.json
 // ripgrep for the daemon's content search. Prebuilt static binaries from the
@@ -116,7 +113,7 @@ mkdirSync(stageDir, { recursive: true })
 // Delete the previous tarball UP FRONT (before staging), not just before the
 // tar below. A staging step that throws partway (e.g. a ripgrep download
 // failure) used to exit here leaving the OLD .tgz in place — a misleading
-// "valid but incomplete" artifact (it shipped with no rg/T3, so the dev
+// "valid but incomplete" artifact (it shipped with no rg, so the dev
 // isInstalled probe failed forever → reinstall on every connect). Now an
 // aborted build leaves no tarball at all.
 const exe = targetPlatform === 'win32' ? '.exe' : ''
@@ -132,7 +129,6 @@ await stageParcelWatcher(stageDir)
 await stageNodeDatachannel(stageDir)
 await stageNodeRuntime(targetPlatform, targetArch, path.join(stageDir, 'runtime', 'bin', `node${exe}`))
 await stageRipgrep(targetArg, path.join(stageDir, 'runtime', 'bin', `rg${exe}`))
-await stageT3(path.join(stageDir, 't3'))
 await stageCateCli(path.join(stageDir, 'cate'))
 cpSync(path.join(repoRoot, 'skills'), path.join(stageDir, 'skills'), { recursive: true })
 await writeFile(path.join(stageDir, 'BUILD'), `${buildId}\n`)
@@ -145,7 +141,6 @@ const required = [
   `runtime.cjs`,
   path.join('runtime', 'bin', `node${exe}`),
   path.join('runtime', 'bin', `rg${exe}`),
-  path.join('t3', 'dist', 'bin.mjs'),
   path.join('cate', 'dist', 'cli.cjs'),
   path.join('node_modules', 'node-datachannel', 'package.json'),
   path.join('node_modules', '@node-datachannel', datachannelBinaryDir(targetPlatform, targetArch), 'node_datachannel.node'),
@@ -586,115 +581,6 @@ async function stageRipgrep(target, outBin) {
   console.log(`[runtime] staged ripgrep ${RIPGREP_VERSION} for ${target}`)
 }
 
-/** Stage the published T3 server and web client into a target runtime.
- *
- * T3 bundles almost all JavaScript into dist/, but leaves its file finder,
- * msgpack accelerator and PTY adapter external. node-pty already lives at the
- * runtime root with the correct target binary, so this nested tree contains
- * only the other runtime dependencies and their target-specific N-API/FFI
- * packages. Source maps and non-target resource monitors are omitted.
- */
-async function stageT3(outRoot) {
-  const src = path.join(repoRoot, 'node_modules', 't3')
-  if (!existsSync(src)) throw new Error('t3 not found in node_modules; run `npm install` first')
-  const t3Package = JSON.parse(readFileSync(path.join(src, 'package.json'), 'utf-8'))
-
-  rmSync(outRoot, { recursive: true, force: true })
-  cpSync(src, outRoot, {
-    recursive: true,
-    dereference: true,
-    filter: (candidate) => {
-      if (candidate.endsWith('.map')) return false
-      const rel = path.relative(src, candidate).split(path.sep).join('/')
-      const monitorPrefix = 'dist/resource-monitor/'
-      if (!rel.startsWith(monitorPrefix)) return true
-      const monitorTarget = rel.slice(monitorPrefix.length).split('/')[0]
-      return !monitorTarget || monitorTarget === targetArg
-    },
-  })
-
-  patchT3(path.join(outRoot, 'dist', 'bin.mjs'))
-
-  const nestedModules = path.join(outRoot, 'node_modules')
-  const runtimePackages = [
-    '@ff-labs/fff-node',
-    'ffi-rs',
-    'msgpackr-extract',
-    'node-gyp-build-optional-packages',
-    'detect-libc',
-  ]
-  for (const name of runtimePackages) copyInstalledPackage(name, nestedModules)
-
-  const nativePackages = targetT3NativePackages(targetArg)
-  for (const { owner, name } of nativePackages) {
-    const ownerDir = path.join(nestedModules, ...owner.split('/'))
-    const ownerPackage = JSON.parse(readFileSync(path.join(ownerDir, 'package.json'), 'utf-8'))
-    const version = ownerPackage.optionalDependencies?.[name]
-    if (!version) throw new Error(`${owner} does not declare target package ${name}`)
-    const dest = path.join(nestedModules, ...name.split('/'))
-    const installed = path.join(repoRoot, 'node_modules', ...name.split('/'))
-    if (existsSync(path.join(installed, 'package.json'))) {
-      cpSync(installed, dest, { recursive: true, dereference: true })
-    } else {
-      await npmPackInto(`${name}@${version}`, dest)
-    }
-  }
-
-  if (!existsSync(path.join(outRoot, 'dist', 'bin.mjs'))) throw new Error('staged T3 is missing dist/bin.mjs')
-  console.log(`[runtime] staged T3 ${t3Package.version} for ${targetArg}`)
-}
-
-function copyInstalledPackage(name, outModules) {
-  let entry
-  try {
-    entry = fileURLToPath(import.meta.resolve(name))
-  } catch {
-    throw new Error(`T3 runtime dependency "${name}" is not installed; run \`npm install\` first`)
-  }
-  let src = path.dirname(entry)
-  while (!existsSync(path.join(src, 'package.json'))) {
-    const parent = path.dirname(src)
-    if (parent === src) throw new Error(`cannot find package root for T3 runtime dependency "${name}"`)
-    src = parent
-  }
-  const dest = path.join(outModules, ...name.split('/'))
-  mkdirSync(path.dirname(dest), { recursive: true })
-  cpSync(src, dest, { recursive: true, dereference: true })
-}
-
-function targetT3NativePackages(target) {
-  const packages = {
-    'darwin-arm64': [
-      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-darwin-arm64' },
-      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-darwin-arm64' },
-      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-darwin-arm64' },
-    ],
-    'darwin-x64': [
-      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-darwin-x64' },
-      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-darwin-x64' },
-      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-darwin-x64' },
-    ],
-    'linux-arm64': [
-      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-linux-arm64-gnu' },
-      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-linux-arm64-gnu' },
-      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-linux-arm64' },
-    ],
-    'linux-x64': [
-      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-linux-x64-gnu' },
-      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-linux-x64-gnu' },
-      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-linux-x64' },
-    ],
-    'win32-x64': [
-      { owner: '@ff-labs/fff-node', name: '@ff-labs/fff-bin-win32-x64' },
-      { owner: 'ffi-rs', name: '@yuuang/ffi-rs-win32-x64-msvc' },
-      { owner: 'msgpackr-extract', name: '@msgpackr-extract/msgpackr-extract-win32-x64' },
-    ],
-  }
-  const selected = packages[target]
-  if (!selected) throw new Error(`no T3 native dependency mapping for target "${target}"`)
-  return selected
-}
-
 /** Stage the `cate` in-terminal CLI into <outRoot> (cate/dist/cli.cjs + the two
  *  launcher shims under cate/bin/). It ships with the daemon; the terminal
  *  service prepends cate/bin to a shell's PATH. Bundled to a single self-contained CJS file. */
@@ -726,8 +612,6 @@ async function stageCateCli(outRoot) {
  * pty.node/spawn-helper and @parcel/watcher's watcher.node must be signed like
  * the app. node also gets the runtime entitlements (JIT + disable-library-
  * validation) so it still runs and can load the native addons once hardened.
- * The bundled T3 tree also ships target-specific native addons and a resource
- * monitor executable, so those are discovered and signed too.
  * No-op unless we're building a darwin tarball on a darwin host with
  * CATE_MAC_SIGN_IDENTITY set (see ci-mac-signing-keychain.sh); when absent the
  * binaries stay unsigned and notarization fails loudly.
@@ -744,7 +628,6 @@ function signMacNatives(stageDir) {
     path.join(pbDir, 'spawn-helper'),
     path.join('node_modules', '@parcel', parcelBinaryDir(targetPlatform, targetArch), 'watcher.node'),
     path.join('node_modules', '@node-datachannel', datachannelBinaryDir(targetPlatform, targetArch), 'node_datachannel.node'),
-    ...findMachOBinaries(path.join(stageDir, 't3')).map((abs) => path.relative(stageDir, abs)),
   ]
   // The identity is found via the keychain search list (ci-mac-signing-keychain.sh
   // adds the signing keychain to it); codesign --keychain alone is unreliable.
@@ -760,42 +643,6 @@ function signMacNatives(stageDir) {
     execFileSync('codesign', ['--verify', '--strict', file], { stdio: 'inherit' })
   }
   console.log(`[runtime] signed darwin natives for ${targetArg} (Developer ID ${identity})`)
-}
-
-/** Recursively collect Mach-O executables and libraries under `root`.
- *  T3 ships `.node`, `.dylib`, and resource-monitor binaries. Reading the magic
- *  keeps source files and non-darwin prebuilts out of codesign. */
-function findMachOBinaries(root) {
-  const out = []
-  const walk = (dir) => {
-    let entries
-    try {
-      entries = readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const e of entries) {
-      const p = path.join(dir, e.name)
-      if (e.isDirectory()) walk(p)
-      else if (e.isFile() && isMachO(p)) out.push(p)
-    }
-  }
-  walk(root)
-  return out
-}
-
-/** True if `file` starts with a Mach-O magic (thin 32/64-bit or fat/universal,
- *  either byte order). Non-Mach-O binaries (PE `MZ…`, ELF `\x7fELF`) return false. */
-function isMachO(file) {
-  const MACH_O_MAGICS = new Set([0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca])
-  const fd = openSync(file, 'r')
-  try {
-    const buf = Buffer.alloc(4)
-    if (readSync(fd, buf, 0, 4, 0) < 4) return false
-    return MACH_O_MAGICS.has(buf.readUInt32BE(0))
-  } finally {
-    closeSync(fd)
-  }
 }
 
 function plat(p) {

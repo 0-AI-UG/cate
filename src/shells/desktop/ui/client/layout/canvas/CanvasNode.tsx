@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Lock, LockOpen, X } from 'lucide-react'
-import { Tooltip, getActiveTheme, subscribeTheme } from '../../../kernel/interaction'
+import { Tooltip, actionAccelerator, getActiveTheme, subscribeTheme } from '../../../kernel/interaction'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { useClientState, useDocument } from '../../document'
 import { dockPanels, placementOf, stackOfPanel, findStack, type NodeId, type PanelId } from '@workspace/document/contract'
@@ -347,7 +347,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
       { id: 'front', label: 'Move to Front' },
       { id: 'back', label: 'Move to Back' },
       { type: 'separator' },
-      { id: 'close', label: 'Close', accelerator: 'Cmd+W' },
+      { id: 'close', label: 'Close', accelerator: actionAccelerator('closePanel') },
     ])
     switch (id) {
       case 'dock': {

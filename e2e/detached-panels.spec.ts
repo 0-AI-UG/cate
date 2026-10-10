@@ -46,7 +46,7 @@ async function detach(panelId: string): Promise<{ page: Page; windowId: string }
   return { page, windowId: windowId! }
 }
 
-for (const type of ['terminal', 'browser', 'editor', 'canvas', 'chat', 'review', 'surface'] as const) {
+for (const type of ['terminal', 'browser', 'editor', 'canvas', 'review', 'surface'] as const) {
   test(`${type}: detaches into its own window and moves back`, async () => {
     const id = await main.evaluate((type) => window.__cateE2E!.createPanel(type), type)
     expect(id).toBeTruthy()

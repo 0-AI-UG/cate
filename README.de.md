@@ -59,7 +59,6 @@ brew install --cask cate
 
 ## Was drinsteckt
 
-- **Integrierte Agenten-Chats:** T3 Code führt Codex, Claude Code, Cursor, Grok, OpenCode und Antigravity in einem vollständigen Chat-Panel mit Streaming-Ausgabe, Tool-Aufrufen und Freigaben aus.
 - **Agenten-bewusste Terminals:** Unterstützte Agenten-CLIs melden Turn-Beginn, Turn-Ende und Berechtigungsabfragen. Das steuert den Panel-Zustand (läuft, wartet, fertig) und die Benachrichtigung, wenn einer eine Antwort braucht. Ein Agent, der keine Hooks sendet, zeigt keinen Status.
 - **Agenten-Sitzungen überstehen Neustarts:** Der Hook-Strom trägt die Sitzungs-ID jeder CLI. Öffnen Sie das Projekt erneut, kommen die Terminals mit ihrem Verlauf zurück und der Agent wird mit seinem eigenen Resume-Befehl wieder angehängt. Eine veraltete ID fällt auf eine einfache Shell zurück, statt die falsche Unterhaltung fortzusetzen.
 - **Worktrees für parallele Branches:** Beschreiben Sie, woran Sie arbeiten, und Cate legt Worktree und Branch an, ausgehend von einem lokalen oder entfernten Branch oder einer offenen PR. Jeder bekommt eine Farbe, die ihn durch Seitenleiste und Dock-Tabs begleitet, samt Territorium hinter seinen Panels auf der Arbeitsfläche.
@@ -142,7 +141,7 @@ src/
 
 Cate leitet sämtliches IPC über eine kontextisolierte Preload-Brücke. Der Dateisystemzugriff ist auf registrierte Arbeitsbereichs-Wurzeln beschränkt, Browser-Panels deaktivieren die Node-Integration, und Terminals können nicht außerhalb genehmigter Verzeichnisse starten.
 
-**Stack:** Electron 41, React 18, Zustand 5, Monaco 0.52, xterm.js 5.5 + node-pty 1.1, Tailwind 3.4, electron-vite, electron-builder, electron-updater, Sentry. PDFs und DOCX über pdf.js und mammoth, Git über simple-git, Dateiüberwachung über `@parcel/watcher` und chokidar. T3 Code stellt die Agenten-Harness, Provider-Prozesse und Chat-Oberfläche bereit und wird mit der Cate-Runtime ausgeliefert.
+**Stack:** Electron 41, React 18, Zustand 5, Monaco 0.52, xterm.js 5.5 + node-pty 1.1, Tailwind 3.4, electron-vite, electron-builder, electron-updater, Sentry. PDFs und DOCX über pdf.js und mammoth, Git über simple-git, Dateiüberwachung über `@parcel/watcher` und chokidar.
 
 ## Mitwirken
 

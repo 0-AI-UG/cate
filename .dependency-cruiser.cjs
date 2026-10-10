@@ -38,10 +38,11 @@ const SIDE_NAMES = ['runtime', 'client', 'desktop', 'node']
 const PUBLIC_ENTRY = [
   `${ROOT}.*/contract(?:\\.ts$|/.*\\.ts$)`,
   `${ROOT}.*/${any(SIDE_NAMES)}/index\\.tsx?$`,
-  `${ROOT}.*/${any(SIDE_NAMES)}/[^/]+/index\\.tsx?$`,
-  `${NEW}index\\.tsx?$`,
-  `${NEW}[^/]+/index\\.tsx?$`,
-  `${NEW}[^/]+/[^/]+/index\\.tsx?$`,
+  // A desktop side splits by Electron process: desktop/{main,preload,renderer}/index.ts.
+  `${ROOT}.*/desktop/[^/]+/index\\.tsx?$`,
+  // The client layer's modules and kernel/interaction are client core as a
+  // whole, with no side folders: their module index is their client side's.
+  '^src/(?:client/[^/]+|kernel/interaction)/index\\.ts$',
   // The panel index: every panel's definition, and the daemon's panel runtimes.
   '^src/panels/(definitions|runtime|api|settings|capabilities)\\.ts$',
 ]
@@ -61,6 +62,9 @@ const IMPURE = `^(?:node_modules/)?(?:@types/)?${any([
   'simple-git',
   'bonjour-service',
   'node-datachannel',
+  '@parcel/watcher',
+  'electron-updater',
+  'lucide-react',
   '@phosphor-icons',
 ])}(?:/|$)`
 const ELECTRON = `^(?:node_modules/)?(?:electron|electron-log)(?:/|$)`
@@ -155,9 +159,6 @@ const publicEntries = forbid('public-entries', "across modules, import a module'
 const serviceRules = [
   forbid('terminal-no-agents', 'the terminal service never imports agents; agents plugs into its extension points',
     { path: ['^src/services/terminal/', '^src/shells/desktop/ui/services/terminal/'] },
-    { path: ['^src/services/agents/', '^src/shells/desktop/ui/services/agents/'] }),
-  forbid('t3-no-agents', 'the t3 service never imports agents; agents maps its agents onto t3 providers',
-    { path: ['^src/services/t3/', '^src/shells/desktop/ui/services/t3/'] },
     { path: ['^src/services/agents/', '^src/shells/desktop/ui/services/agents/'] }),
 ]
 

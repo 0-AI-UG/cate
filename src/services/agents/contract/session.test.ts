@@ -6,8 +6,8 @@ describe('openTerminalAgent', () => {
   // The same rule for every CLI: open as soon as its command runs in the
   // terminal, whether or not its hooks speak before the first prompt.
   for (const agent of AGENTS) {
-    it(`${agent.displayName}: \`${agent.runners.terminal.command}\` is open before any hook`, () => {
-      expect(openTerminalAgent({ type: 'running', processName: agent.runners.terminal.command }, null, false)).toBe(agent)
+    it(`${agent.displayName}: \`${agent.command}\` is open before any hook`, () => {
+      expect(openTerminalAgent({ type: 'running', processName: agent.command }, null, false)).toBe(agent)
     })
 
     it(`${agent.displayName}: a hook-reported agent is open whatever runs in the foreground`, () => {

@@ -5,14 +5,14 @@ import {
   type AgentConversation,
   type AgentConversationChange,
   type AgentConversationMessage,
-  type AgentRunner,
   type AgentStatus,
   type PanelAgentState,
 } from '../contract'
 import { createAgentConversations } from './conversations'
-import { createRunnerRegistry, type AgentRunnerImpl } from './registry'
+import type { AgentTerminals } from './core'
+import { createAgentPanels } from './panels'
 
-const session = { agentId: 'claude-code' as const, runner: 'terminal' as const, sessionId: 's1', cwd: '/repo' }
+const session = { agentId: 'claude-code' as const, sessionId: 's1', cwd: '/repo' }
 
 function setup() {
   const states = new Map<string, PanelAgentState>()
@@ -20,9 +20,7 @@ function setup() {
   let messages: AgentConversationMessage[] = []
   let stamp = 'a'
   const conversation = vi.fn(async () => ({ session, messages: [...messages] }))
-  const runner: AgentRunnerImpl = {
-    kind: 'terminal' as AgentRunner,
-    changePanels: () => null,
+  const terminals: AgentTerminals = {
     state: (panelId) => states.get(panelId) ?? null,
     panelIds: () => states.keys(),
     send: async () => ({ ok: true }),
@@ -30,12 +28,12 @@ function setup() {
     conversation,
     conversationStamp: async () => stamp,
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    dispose: () => {},
   }
-  const registry = createRunnerRegistry()
-  registry.register(runner)
+  const panels = createAgentPanels(terminals)
   const setStatus = (status: AgentStatus) => {
     states.set('p1', {
-      panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status,
+      panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', contextPolicy: null, status,
       present: true, canReceivePrompt: status === 'waitingForInput', session,
     })
     for (const listener of listeners) listener('p1')
@@ -44,7 +42,7 @@ function setup() {
     messages = next
     stamp += 'a'
   }
-  return { registry, conversation, setStatus, write }
+  return { panels, terminals, conversation, setStatus, write }
 }
 
 describe('agent conversations', () => {
@@ -52,10 +50,10 @@ describe('agent conversations', () => {
   afterEach(() => { vi.useRealTimers() })
 
   it('sends the conversation once read, then each change while the agent works', async () => {
-    const { registry, setStatus, write } = setup()
+    const { panels, terminals, setStatus, write } = setup()
     setStatus('running')
     write([{ role: 'user', text: 'fix it' }])
-    const conversations = createAgentConversations({ registry, workingMs: 100, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [] })
     const seen: Array<{ conversation: AgentConversation; change: AgentConversationChange | null }> = []
     conversations.watch('p1', (conversation, change) => { seen.push({ conversation, change }) })
     await vi.advanceTimersByTimeAsync(0)
@@ -72,9 +70,9 @@ describe('agent conversations', () => {
   })
 
   it('sends a turn that ended with its reply', async () => {
-    const { registry, setStatus, write } = setup()
+    const { panels, terminals, setStatus, write } = setup()
     setStatus('running')
-    const conversations = createAgentConversations({ registry, workingMs: 10_000, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
     const changes: AgentConversationChange[] = []
     conversations.watch('p1', (_conversation, change) => { if (change) changes.push(change) })
     await vi.advanceTimersByTimeAsync(0)
@@ -86,9 +84,9 @@ describe('agent conversations', () => {
   })
 
   it('reads the store only when its stamp moved', async () => {
-    const { registry, conversation, setStatus } = setup()
+    const { panels, terminals, conversation, setStatus } = setup()
     setStatus('running')
-    const conversations = createAgentConversations({ registry, workingMs: 100, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [] })
     const stop = conversations.watch('p1', () => {})
     await vi.advanceTimersByTimeAsync(500)
     expect(conversation).toHaveBeenCalledTimes(1)

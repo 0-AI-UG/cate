@@ -8,6 +8,7 @@
 
 import { create } from 'zustand'
 import type { SearchFileResult, SearchStats } from '@workspace/files/contract'
+import { mergeSearchResults } from '@workspace/files/client'
 import { errorMessage } from '@kernel/interaction'
 
 export type SearchStatus = 'idle' | 'searching' | 'done'
@@ -59,27 +60,6 @@ export type SearchOptionFields = Pick<
 /** Key for an individual dismissed match line. */
 export const lineKey = (path: string, line: number): string => `${path}:${line}`
 
-/**
- * Merge a streamed batch into the existing file list. ripgrep emits each file
- * once per search, so this is normally an append; we dedupe by path defensively
- * (first occurrence wins).
- */
-export function mergeFiles(
-  existing: SearchFileResult[],
-  incoming: SearchFileResult[],
-): SearchFileResult[] {
-  if (incoming.length === 0) return existing
-  const seen = new Set(existing.map((f) => f.path))
-  const merged = existing.slice()
-  for (const f of incoming) {
-    if (!seen.has(f.path)) {
-      seen.add(f.path)
-      merged.push(f)
-    }
-  }
-  return merged
-}
-
 export const createSearchStore = () =>
   create<SearchState>((set, get) => ({
     query: '',
@@ -123,7 +103,7 @@ export const createSearchStore = () =>
 
     addBatch: (searchId, files) => {
       if (searchId !== get().currentSearchId) return // stale
-      set((s) => ({ files: mergeFiles(s.files, files) }))
+      set((s) => ({ files: mergeSearchResults(s.files, files) }))
     },
 
     finishSearch: (searchId, stats, error) => {

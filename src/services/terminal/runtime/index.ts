@@ -23,7 +23,7 @@ export type {
   OutputObserver,
   SpawnInfo,
 } from './extensions'
-export { cateCliEnvContributor, cateBinDir, prependPath, type CateCliEnvOptions } from './cateCli'
+export { cateCliEnvContributor, cateBinDir, type CateCliEnvOptions } from './cateCli'
 export { applyLoginEnv, captureLoginEnv, sanitizeEnv, LOGIN_ENV_MARKER } from './loginEnv'
 export { resolveShell, isExecutable, type ResolvedShell as HostShell } from './shellResolver'
 export { snapshotProcessTree, activityForPid, systemScanner, type ProcTree, type ProcessScanner } from './procScan'

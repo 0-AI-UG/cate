@@ -59,7 +59,6 @@ brew install --cask cate
 
 ## 包含什么
 
-- **集成智能体聊天：** T3 Code 可在完整的聊天面板中运行 Codex、Claude Code、Cursor、Grok、OpenCode 和 Antigravity，并显示流式输出、工具调用和授权请求。
 - **感知智能体的终端：** 支持的智能体 CLI 会上报一轮对话的开始、结束以及权限询问。面板的运行中／等待／已完成状态，以及智能体需要你回应时的通知，都由此驱动。不发送钩子的智能体不会显示任何状态。
 - **智能体会话在重启后延续：** 钩子流会带上每个 CLI 的会话 ID。重新打开项目，终端会带着回滚缓冲回来，并用智能体自己的恢复命令重新接上会话。ID 已失效时会退回普通 shell，而不是恢复错误的会话。
 - **为并行分支准备的 worktree：** 描述你要做什么，Cate 就会基于本地分支、远程分支或一个开放的 PR 创建 worktree 和分支。每个 worktree 都有专属颜色，贯穿侧边栏、停靠标签，以及画布上绘制在其面板背后的领地。
@@ -142,7 +141,7 @@ src/
 
 Cate 的所有 IPC 都经过上下文隔离的 preload 桥。文件系统访问限定在已注册的工作区根目录，浏览器面板禁用 Node 集成，终端无法在批准目录之外启动。
 
-**技术栈：** Electron 41、React 18、Zustand 5、Monaco 0.52、xterm.js 5.5 + node-pty 1.1、Tailwind 3.4、electron-vite、electron-builder、electron-updater、Sentry。PDF 和 DOCX 用 pdf.js 与 mammoth，git 用 simple-git，文件监听用 `@parcel/watcher` 与 chokidar。T3 Code 提供智能体执行框架、模型提供商进程和聊天界面，并随 Cate 运行时一起分发。
+**技术栈：** Electron 41、React 18、Zustand 5、Monaco 0.52、xterm.js 5.5 + node-pty 1.1、Tailwind 3.4、electron-vite、electron-builder、electron-updater、Sentry。PDF 和 DOCX 用 pdf.js 与 mammoth，git 用 simple-git，文件监听用 `@parcel/watcher` 与 chokidar。
 
 ## 贡献
 

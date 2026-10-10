@@ -1,5 +1,5 @@
 // How a panel's running agent takes relation context (the relation UI's
-// `useContextTransport`), from the policy its runner computed: it takes it,
+// `useContextTransport`), from the policy the runtime computed: it takes it,
 // or it is blocked with a warning (no prompt context hook). An agent running
 // without Cate's hooks gets the panel's own Hooks off chip instead. What
 // would go is the runtime's preview (`agentContextPreview`).

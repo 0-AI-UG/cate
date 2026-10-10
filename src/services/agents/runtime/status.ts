@@ -1,4 +1,4 @@
-// The terminal runner's status state machine, driven only by hook events and
+// The terminal agents' status state machine, driven only by hook events and
 // pid presence. There is no screen scraping.
 //
 // Hook events move a terminal between running and waiting: turn-start runs,

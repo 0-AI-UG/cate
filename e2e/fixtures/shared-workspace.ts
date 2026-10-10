@@ -7,7 +7,7 @@
 //   the Noise layer.
 //
 // Every spec runs over both. A is the machine that holds the workspace; the
-// runtime runs from `fullRuntimeInstall` (fake T3, ripgrep, the `cate` CLI).
+// runtime runs from `fullRuntimeInstall` (ripgrep, the `cate` CLI).
 
 import { expect, test } from '@playwright/test'
 import type { Page } from 'playwright'

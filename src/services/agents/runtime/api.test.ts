@@ -5,20 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isRpcError } from '@kernel/rpc/contract'
 import type { ApiHandlerContext } from '@kernel/api/contract'
 import type { PanelRecord } from '@workspace/document/contract'
-import type { AgentRunner, PanelAgentState } from '../contract'
+import type { PanelAgentState } from '../contract'
 import { createAgentApiHandlers } from './api'
 import { agentsCapabilityImpl } from './capability'
-import { createAgentsCore, type AgentsCore } from './core'
-import type { AgentRunnerImpl } from './registry'
+import { createAgentsCore, type AgentsCore, type AgentTerminals } from './core'
 import type { AgentStarter } from './start'
 
 
-function fakeRunner(kind: AgentRunner) {
+function fakeTerminals() {
   const states = new Map<string, PanelAgentState>()
   const listeners = new Set<(panelId: string) => void>()
-  const runner: AgentRunnerImpl = {
-    kind,
-    changePanels: () => null,
+  const terminals: AgentTerminals = {
     state: (panelId) => states.get(panelId) ?? null,
     panelIds: () => states.keys(),
     send: vi.fn(async () => ({ ok: true as const })),
@@ -27,16 +24,18 @@ function fakeRunner(kind: AgentRunner) {
       const session = states.get(panelId)?.session
       return session ? { session, messages: [{ role: 'user' as const, text: 'hello' }] } : null
     }),
+    conversationStamp: async () => null,
+    dispose: () => {},
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
   const set = (panelId: string, state: Partial<PanelAgentState>) => {
     states.set(panelId, {
-      panelId, agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: kind === 'terminal', contextPolicy: null, status: 'waitingForInput',
+      panelId, agentId: 'codex', agentName: 'Codex', label: 'Codex', contextPolicy: null, status: 'waitingForInput',
       present: true, canReceivePrompt: true, session: null, ...state,
     })
     for (const listener of listeners) listener(panelId)
   }
-  return { runner, set }
+  return { terminals, set }
 }
 
 const ctx = (overrides: Partial<ApiHandlerContext['caller']> = {}, signal = new AbortController().signal): ApiHandlerContext => ({
@@ -50,18 +49,18 @@ const ctx = (overrides: Partial<ApiHandlerContext['caller']> = {}, signal = new 
 
 const panels: PanelRecord[] = [
   { id: 'term', type: 'terminal', title: 'Backend', fields: {} },
-  { id: 'chat', type: 'chat', title: 'Frontend', fields: {} },
+  { id: 'term-2', type: 'terminal', title: 'Frontend', fields: {} },
 ]
 
 let dir: string
 let agents: AgentsCore
-let terminal: ReturnType<typeof fakeRunner>
-let t3: ReturnType<typeof fakeRunner>
+let terminal: ReturnType<typeof fakeTerminals>
 let handlers: ReturnType<typeof createAgentApiHandlers>
 let starter: AgentStarter
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(os.tmpdir(), 'cate-agents-api-'))
+  terminal = fakeTerminals()
   agents = createAgentsCore({
     root: '/repo',
     agentsDir: dir,
@@ -80,14 +79,9 @@ beforeEach(() => {
     resolveCheckout: async (cwd) => cwd ?? '/repo',
     snapshot: async () => ({ nameByPid: new Map(), childrenByPid: new Map() }),
     notify: () => {},
-    watchStatus: () => () => {},
-  })
-  terminal = fakeRunner('terminal')
-  t3 = fakeRunner('t3')
-  agents.registry.register(terminal.runner)
-  agents.registry.register(t3.runner)
+  }, () => terminal.terminals)
   starter = {
-    start: vi.fn(async () => ({ panelId: 'new', runner: 'terminal' as const, agentId: 'codex' as const })),
+    start: vi.fn(async () => ({ panelId: 'new', agentId: 'codex' as const })),
     types: vi.fn(async () => []),
   }
   handlers = createAgentApiHandlers(agents, starter)
@@ -107,31 +101,29 @@ async function rpcError(promise: unknown): Promise<string> {
 }
 
 describe('cate.agent.*', () => {
-  it('lists live agents of both runners, never an idle terminal', async () => {
+  it('lists live agents, never an idle terminal', async () => {
     terminal.set('term', { status: 'running', canReceivePrompt: false })
-    t3.set('chat', { status: 'notRunning', agentId: null, agentName: 'T3 Code' })
     terminal.set('idle-shell', { status: 'notRunning', present: true })
     expect(await handlers.list({}, ctx())).toEqual([
-      { panelId: 'term', runner: 'terminal', title: 'Backend', agentId: 'codex', agentName: 'Codex', state: 'running', canReceivePrompt: false },
-      { panelId: 'chat', runner: 't3', title: 'Frontend', agentId: null, agentName: 'T3 Code', state: 'notRunning', canReceivePrompt: true },
+      { panelId: 'term', title: 'Backend', agentId: 'codex', agentName: 'Codex', state: 'running', canReceivePrompt: false },
     ])
   })
 
-  it('reads a conversation through the panel\'s runner', async () => {
-    terminal.set('term', { session: { agentId: 'codex', runner: 'terminal', sessionId: 's', cwd: '/repo' } })
+  it('reads the panel\'s conversation', async () => {
+    terminal.set('term', { session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
     await expect(handlers.read({ panelId: 'term' }, ctx())).resolves.toMatchObject({
       panelId: 'term', session: { sessionId: 's' }, messages: [{ role: 'user', text: 'hello' }],
     })
-    t3.set('chat', {})
-    await expect(rpcError(handlers.read({ panelId: 'chat' }, ctx()))).resolves.toBe('no-agent-session')
+    terminal.set('term-2', { status: 'running' })
+    await expect(rpcError(handlers.read({ panelId: 'term-2' }, ctx()))).resolves.toBe('no-agent-session')
     await expect(rpcError(handlers.read({ panelId: 'none' }, ctx()))).resolves.toBe('agent-panel-not-found')
   })
 
-  it('sends through the runner and turns a refusal into an error', async () => {
+  it('sends to the terminal and turns a refusal into an error', async () => {
     terminal.set('term', {})
     await expect(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx())).resolves.toEqual({ ok: true })
-    expect(terminal.runner.send).toHaveBeenCalledWith('term', 'go')
-    vi.mocked(terminal.runner.send).mockResolvedValueOnce({ ok: false, error: 'agent-busy' })
+    expect(terminal.terminals.send).toHaveBeenCalledWith('term', 'go')
+    vi.mocked(terminal.terminals.send).mockResolvedValueOnce({ ok: false, error: 'agent-busy' })
     await expect(rpcError(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx()))).resolves.toBe('agent-busy')
   })
 
@@ -158,13 +150,13 @@ describe('cate.agent.*', () => {
 
 describe('cate.agent.start', () => {
   it('starts for the calling panel, on the canvas it names', async () => {
-    await handlers.start({ prompt: 'Fix it', runner: 'terminal', canvasPanelId: 'canvas', position: { x: 10, y: 20 } }, ctx())
-    expect(starter.start).toHaveBeenCalledWith('supervisor', { prompt: 'Fix it', runner: 'terminal', placement: { near: 'canvas', position: { x: 10, y: 20 } } })
+    await handlers.start({ prompt: 'Fix it', canvasPanelId: 'canvas', position: { x: 10, y: 20 } }, ctx())
+    expect(starter.start).toHaveBeenCalledWith('supervisor', { prompt: 'Fix it', placement: { near: 'canvas', position: { x: 10, y: 20 } } })
   })
 
   it('leaves the place to the starter without a canvas, and starts for a client without a panel', async () => {
-    await handlers.start({ prompt: 'Fix it', runner: 't3', model: 'gpt' }, ctx({ kind: 'client', panelId: undefined }))
-    expect(starter.start).toHaveBeenCalledWith(undefined, { prompt: 'Fix it', runner: 't3', model: 'gpt' })
+    await handlers.start({ prompt: 'Fix it', agentId: 'codex' }, ctx({ kind: 'client', panelId: undefined }))
+    expect(starter.start).toHaveBeenCalledWith(undefined, { prompt: 'Fix it', agentId: 'codex' })
   })
 })
 
@@ -174,17 +166,17 @@ describe('agents capability', () => {
     const events: unknown[] = []
     const impl = agentsCapabilityImpl(agents, {} as never)
     const stop = impl.panels(undefined as never, { emit: (event: unknown) => events.push(event) } as never, {} as never)
-    t3.set('chat', { status: 'running' })
+    terminal.set('term-2', { status: 'running' })
     expect(events).toEqual([
       { kind: 'snapshot', rev: 0, snapshot: { term: expect.objectContaining({ panelId: 'term' }) } },
-      { kind: 'change', rev: 1, change: { chat: expect.objectContaining({ status: 'running' }) } },
+      { kind: 'change', rev: 1, change: { 'term-2': expect.objectContaining({ status: 'running' }) } },
     ])
     ;(stop as () => void)()
   })
 
   it('reports running agents as busy', () => {
     terminal.set('term', { status: 'running' })
-    t3.set('chat', {})
+    terminal.set('term-2', {})
     expect(agentsCapabilityImpl(agents, {} as never).busy(undefined as never, {} as never)).toEqual({ panelIds: ['term'] })
   })
 })

@@ -18,7 +18,7 @@ import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
 import { IconButton, InlineNotice, LoadingState, Spinner, POPOVER_SURFACE, PaletteTextInput, Tooltip } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import type { InstalledSkill, SkillEntry, SkillTarget, SkillTargetId } from '@workspace/skills/contract'
+import { groupSkillsByRepository, skillRows, skillSearchTerms, type InstalledSkill, type SkillEntry, type SkillTarget, type SkillTargetId } from '@workspace/skills/contract'
 
 const log = createLogger('skills')
 
@@ -26,12 +26,6 @@ const log = createLogger('skills')
 // anyone can PR a missing skill's source repo in (the CI crawler turns this into
 // skills-index.json).
 const SKILL_SOURCES_URL = 'https://github.com/0-AI-UG/cate/blob/main/registry/sources.json'
-
-function matches(entry: SkillEntry, terms: string[]): boolean {
-  if (terms.length === 0) return true
-  const hay = `${entry.name} ${entry.description} ${entry.source.repo}`.toLowerCase()
-  return terms.every((t) => hay.includes(t))
-}
 
 // GitHub URL for a skill's source folder, or null for stubs with no source
 // (e.g. a locally installed skill we know nothing else about).
@@ -42,19 +36,6 @@ function sourceUrl(entry: SkillEntry): string | null {
   return path
     ? `https://github.com/${repo}/tree/${branch}/${path}`
     : `https://github.com/${repo}/tree/${branch}`
-}
-
-function stubEntry(m: InstalledSkill): SkillEntry {
-  return {
-    id: m.skillId,
-    name: m.name,
-    description: '',
-    tags: [],
-    format: 'skill-md',
-    source: { repo: '', ref: '', path: '' },
-    provenance: 'user',
-    sourceId: '',
-  }
 }
 
 export interface SkillsDialogProps {
@@ -131,60 +112,16 @@ export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: 
     return () => document.removeEventListener('keydown', handler, { capture: true })
   }, [onClose])
 
-  const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query])
+  const terms = useMemo(() => skillSearchTerms(query), [query])
   const installedKeys = useMemo(
     () => new Set(installed.map((m) => `${m.skillId}:${m.targetId}`)),
     [installed],
   )
-  const installedIds = useMemo(() => new Set(installed.map((m) => m.skillId)), [installed])
-
-  // One metadata source per skill: the catalog, else a manifest stub for
-  // anything installed we know nothing else about.
-  const byId = useMemo(() => {
-    const m = new Map<string, SkillEntry>()
-    for (const e of index) if (!m.has(e.id)) m.set(e.id, e)
-    for (const inst of installed) if (!m.has(inst.skillId)) m.set(inst.skillId, stubEntry(inst))
-    return m
-  }, [index, installed])
-
-  const installedRows = useMemo(
-    () =>
-      [...installedIds]
-        .map((id) => byId.get(id))
-        .filter((e): e is SkillEntry => !!e && matches(e, terms))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [installedIds, byId, terms],
+  const { cate: cateRows, installed: installedRows, browse: browseRows } = useMemo(
+    () => skillRows(index, installed, terms),
+    [index, installed, terms],
   )
-  // Catalog entries not already installed, matching the query, split into
-  // Cate's own (pinned to the top) and the rest (Browse), so each shows once.
-  const available = useCallback(
-    (e: SkillEntry) => !installedIds.has(e.id) && matches(e, terms),
-    [installedIds, terms],
-  )
-  const cateRows = useMemo(
-    () =>
-      index
-        .filter((e) => e.firstParty && available(e))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [index, available],
-  )
-  const browseRows = useMemo(
-    () =>
-      index
-        .filter((e) => !e.firstParty && available(e))
-        .sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0) || a.name.localeCompare(b.name)),
-    [index, available],
-  )
-  const repositories = useMemo(() => {
-    const groups = new Map<string, { repo: string; entries: SkillEntry[] }>()
-    for (const entry of browseRows) {
-      const key = entry.source.repo.toLowerCase()
-      const group = groups.get(key)
-      if (group) group.entries.push(entry)
-      else groups.set(key, { repo: entry.source.repo, entries: [entry] })
-    }
-    return [...groups.values()]
-  }, [browseRows])
+  const repositories = useMemo(() => groupSkillsByRepository(browseRows), [browseRows])
   const visibleBrowseRows = browseMode === 'repositories' && selectedRepo !== null
     ? browseRows.filter((entry) => entry.source.repo.toLowerCase() === selectedRepo.toLowerCase())
     : browseRows

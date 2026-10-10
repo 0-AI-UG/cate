@@ -1,6 +1,6 @@
 // The settings pages ui/app registers at start: its own slices, the pages
 // of the modules below it (kernel/api, runtime/daemon, workspace/repository,
-// workspace/skills, services/agents with services/t3's providers) and the pages it hosts for slice owners
+// workspace/skills, services/agents) and the pages it hosts for slice owners
 // without a page of their own yet (kernel/interaction, ui/client/layout,
 // services/terminal, services/browser, panels/editor). The desktop shell
 // registers General and Updates itself.
@@ -10,13 +10,8 @@ import { workspaceSettingsFor } from '../../kernel/settings'
 import { RuntimeSettingsPage } from '../../runtime/daemon'
 import { GitHubSettings, WorktreeSettings } from '../../workspace/repository'
 import { SkillsSettings } from '../../workspace/skills'
-import { useRuntime } from '../../kernel/rpc'
-import { T3_AGENTS } from '@services/agents/contract'
-import { AgentHooksSettings, AgentSettings, agentLogo } from '../../services/agents'
-import type { T3ProviderId } from '@services/t3/contract'
-import { T3Providers } from '../../services/t3'
+import { AgentHooksSettings } from '../../services/agents'
 import { documentStoreFor } from '@client/document'
-import { openUrlInPanel } from '@client/host'
 import { useUIStore } from '../state/uiStore'
 import { tryClientApp } from '../app'
 import { DevicesPage } from '../pairing/DevicesPage'
@@ -55,14 +50,6 @@ function SkillsPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
   return workspaceId ? <SkillsSettings workspaceId={workspaceId} /> : null
 }
 
-const t3ProviderLogo = (providerId: T3ProviderId): string | undefined =>
-  agentLogo(T3_AGENTS.find((agent) => agent.runners.t3.providerId === providerId)?.id) ?? undefined
-
-function AgentsPage({ workspaceId }: SettingsPageProps): JSX.Element {
-  const runtime = useRuntime(workspaceId)
-  return <AgentSettings providers={<T3Providers t3={runtime?.t3 ?? null} providerLogo={t3ProviderLogo} openInWorkspace={(url) => openUrlInPanel(workspaceId, url)} />} />
-}
-
 function HooksPage({ workspaceId }: SettingsPageProps): JSX.Element {
   return <AgentHooksSettings workspaceId={workspaceId} />
 }
@@ -82,7 +69,6 @@ export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'cli', title: 'CLI', group: 'tools', scope: 'workspace', order: 40, component: CliSettingsPage },
   { id: 'github', title: 'GitHub', group: 'tools', scope: 'workspace', order: 50, component: GitHubPage },
   { id: 'shortcuts', title: 'Shortcuts', group: 'tools', scope: 'client', order: 90, component: ShortcutsPage },
-  { id: 't3-code', title: 'T3 Code', group: 'agents', scope: 'workspace', order: 10, component: AgentsPage },
   { id: 'hooks', title: 'Hooks', group: 'agents', scope: 'workspace', order: 20, component: HooksPage },
   { id: 'skills', title: 'Skills', group: 'agents', scope: 'workspace', order: 30, component: SkillsPage },
 ]

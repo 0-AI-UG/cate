@@ -46,6 +46,8 @@ export interface BrowserObservation extends BrowserBinding {
   elements: BrowserElement[]
   diff: boolean
   screenshot?: BrowserImage
+  /** Why an observation that asked for a screenshot has none. */
+  screenshotError?: string
   performance?: BrowserObservationPerformance
 }
 
@@ -68,6 +70,10 @@ export interface BrowserCodeResult {
   content: BrowserContent[]
   isError?: boolean
 }
+
+/** The longest a page operation may wait (`waitFor`, click's wait for an
+ *  actionable element). The settle and fresh observation after it come on top. */
+export const BROWSER_WAIT_MAX_MS = 30_000
 
 export const BROWSER_OBSERVATION_METHODS = new Set(['getAXState', 'getScreenshot', 'getAXStateAndScreenshot'])
 export const BROWSER_ELEMENT_READ_METHODS = new Set(['getAttribute'])

@@ -19,7 +19,6 @@ import { skillsCapability } from '@workspace/skills/contract/capability'
 import { notificationsCapability } from '@workspace/notifications/contract/capability'
 import { agentsCapability } from '@services/agents/contract/capability'
 import { browserDataCapability } from '@services/browser/contract/capability'
-import { t3Capability } from '@services/t3/contract/capability'
 import { processCapability } from '@services/terminal/contract/capability'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract/capability'
 import { browserCodeCapability } from '@panels/browser/contract/capability'
@@ -42,7 +41,6 @@ export const RUNTIME_CAPABILITIES = [
   notificationsCapability,
   agentsCapability,
   browserDataCapability,
-  t3Capability,
   processCapability,
   sessionCapability,
   surfaceCapability,

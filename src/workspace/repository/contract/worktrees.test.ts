@@ -24,7 +24,7 @@ const panel = (id: string, type: PanelRecord['type'], extra: Partial<PanelRecord
 
 const hooks: PanelCheckoutHooks = {
   checkoutPath: (r) => typeof r.fields.filePath === 'string' ? r.fields.filePath : undefined,
-  bound: (type) => type === 'terminal' || type === 'chat',
+  bound: (type) => type === 'terminal',
   workingDir: (r) => typeof r.fields.cwd === 'string' ? r.fields.cwd : undefined,
 }
 
@@ -77,7 +77,7 @@ describe('inheritWorktree', () => {
   it('passes on a bound panel\'s own directory and binding', () => {
     expect(inheritWorktree(panel('t', 'terminal', { worktreeId: 'wt-a', fields: { cwd: '/repo/wt' } }), worktrees, hooks))
       .toEqual({ cwd: '/repo/wt', worktreeId: 'wt-a' })
-    expect(inheritWorktree(panel('c', 'chat', { worktreeId: 'feature' }), worktrees, hooks))
+    expect(inheritWorktree(panel('c', 'terminal', { worktreeId: 'feature' }), worktrees, hooks))
       .toEqual({ cwd: '/checkouts/feature', worktreeId: 'feature' })
   })
 
@@ -108,7 +108,7 @@ describe('worktreeRemovalChanges', () => {
     ...createDocument(),
     panels: {
       t1: panel('t1', 'terminal', { worktreeId: 'wt-f' }),
-      c1: panel('c1', 'chat', { worktreeId: 'wt-f' }),
+      c1: panel('c1', 'terminal', { worktreeId: 'wt-f' }),
       t2: panel('t2', 'terminal', { worktreeId: 'wt-main' }),
     },
     worktrees: { 'wt-main': meta('wt-main', '/repo'), 'wt-f': meta('wt-f', '/repo/.cate/worktrees/f') },

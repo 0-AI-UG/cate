@@ -17,8 +17,6 @@ function repo() {
   write('package-lock.json', '{"lockfileVersion":3}')
   write('src/kernel/a.ts', 'export const a = 1\n')
   write('skills/cate-cli/SKILL.md', '# cate\n')
-  write('scripts/patch-t3.mjs', '// patch\n')
-  write('scripts/patch-t3-client.mjs', '// patch client\n')
   return write
 }
 
@@ -28,8 +26,6 @@ it('changes with every input of the install', () => {
   for (const [file, text] of [
     ['src/kernel/a.ts', 'export const a = 2\n'],
     ['skills/cate-cli/SKILL.md', '# cate, changed\n'],
-    ['scripts/patch-t3.mjs', '// patch 2\n'],
-    ['scripts/patch-t3-client.mjs', '// patch client 2\n'],
     ['package-lock.json', '{"lockfileVersion":3,"x":1}'],
   ]) {
     write(file, text)

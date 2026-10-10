@@ -18,8 +18,8 @@ import { MAIN_WINDOW } from '@workspace/document/contract'
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
-  panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status: 'running',
-  present: true, canReceivePrompt: false, session: { agentId: 'claude-code', runner: 'terminal', sessionId: 's', cwd: '/repo/.cate/worktrees/a' }, ...patch,
+  panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', contextPolicy: null, status: 'running',
+  present: true, canReceivePrompt: false, session: { agentId: 'claude-code', sessionId: 's', cwd: '/repo/.cate/worktrees/a' }, ...patch,
 })
 
 function setup(options: { active?: boolean } = {}) {
@@ -29,7 +29,7 @@ function setup(options: { active?: boolean } = {}) {
   const runtime = {
     agents: {
       panels: () => panels.sub,
-      start: vi.fn(async () => ({ panelId: 'new', runner: 'terminal', agentId: 'codex' })),
+      start: vi.fn(async () => ({ panelId: 'new', agentId: 'codex' })),
     },
     notifications: { events: () => notifications.sub },
     power: { subscribe: vi.fn(() => power.sub) },
@@ -180,15 +180,15 @@ describe('mobile actions', () => {
     const actions = createActionHandlers(t.agents, createMobileConversations((async () => null) as MobileBridge))
     const { width, height } = PANEL_DEFINITIONS.find((definition) => definition.type === 'terminal')!.defaultSize
     await expect(actions['agents.start']({
-      workspaceId: 'ws', prompt: 'Fix it', launch: { runner: 'terminal', agentId: 'codex' }, worktree: false,
+      workspaceId: 'ws', prompt: 'Fix it', agentId: 'codex', worktree: false,
       placement: { canvasPanelId: 'canvas', point: { x: 1000, y: 500 } },
     })).resolves.toEqual({ ok: true, panelId: 'new' })
     expect(t.runtime.agents.start).toHaveBeenLastCalledWith({
-      prompt: 'Fix it', runner: 'terminal', agentId: 'codex', canvasPanelId: 'canvas', position: { x: 1000 - width / 2, y: 500 - height / 2 },
+      prompt: 'Fix it', agentId: 'codex', canvasPanelId: 'canvas', position: { x: 1000 - width / 2, y: 500 - height / 2 },
     })
-    await actions['agents.start']({ workspaceId: 'ws', prompt: 'Fix it', launch: { runner: 't3', instanceId: 'codex-1', model: 'gpt' }, worktree: true })
+    await actions['agents.start']({ workspaceId: 'ws', prompt: 'Fix it', agentId: 'codex', worktree: true })
     expect(t.runtime.agents.start).toHaveBeenLastCalledWith({
-      prompt: 'Fix it', runner: 't3', instanceId: 'codex-1', model: 'gpt', newWorktree: expect.stringMatching(/^agent-fix-it-/),
+      prompt: 'Fix it', agentId: 'codex', newWorktree: expect.stringMatching(/^agent-fix-it-/),
     })
   })
 
@@ -198,7 +198,6 @@ describe('mobile actions', () => {
   })
 
   it('puts runtime error codes in words', () => {
-    expect(wordsFor(new Error('t3-provider-not-ready'))).toBe('That T3 Code provider is not ready on your computer.')
     expect(wordsFor('agent-busy')).toBe('The agent is in the middle of a turn.')
     expect(wordsFor(new Error('Something else'))).toBe('Something else')
   })

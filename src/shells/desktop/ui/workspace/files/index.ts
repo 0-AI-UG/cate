@@ -51,7 +51,6 @@ export { SearchResultsTree } from './SearchResultsTree'
 export { trimLeading } from './searchDisplay'
 export {
   createSearchStore,
-  mergeFiles,
   lineKey,
   type SearchStore,
   type SearchState,

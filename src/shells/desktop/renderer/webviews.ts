@@ -1,14 +1,13 @@
 // Webview wiring (the `webview` and `pageDriver` features): each connected
 // workspace's partition is prepared in main (routed through its loopback web
-// proxy) before any of its webviews mounts; the browser and chat views and
-// T3's cookie use that partition; and page operations the runtime sends to
-// this client run on its mounted pages.
+// proxy) before any of its webviews mounts; the browser views use that
+// partition; and page operations the runtime sends to this client run on its
+// mounted pages.
 
 import { useSyncExternalStore } from 'react'
 import { eachConnection, type WorkspaceConnection, type WorkspaceConnections } from '@client/connections'
 import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/desktop/renderer'
 import type { BrowserPageBridge } from '@services/browser/contract'
-import { installT3WebviewHost } from '@services/t3/desktop'
 import { serveBrowserCode } from '../ui/panels/browser'
 import { createLogger } from '@kernel/log/contract'
 import type { DesktopApi } from '../contract'
@@ -88,24 +87,13 @@ export function useWebviewReadyWorkspaces(partitions: WebviewPartitions): readon
   return useSyncExternalStore(partitions.subscribe, partitions.ready)
 }
 
-/** Browser partitions, the page bridge and T3's cookie host. */
-export function installWebviewHosts(api: DesktopApi, partitions: WebviewPartitions, bridge: BrowserPageBridge | undefined): () => void {
-  // Only prepared partitions are allowed to host guests; views mount after.
-  const partitionOf = (workspaceId: string) => {
-    const partition = partitions.partition(workspaceId)
-    if (!partition) throw new Error(`The browser partition of ${workspaceId} is not ready`)
-    return partition
-  }
+/** Browser partitions and the page bridge. */
+export function installWebviewHosts(partitions: WebviewPartitions, bridge: BrowserPageBridge | undefined): () => void {
   // Browser views wait for their partition (a reconnect or a re-run boot
   // can briefly leave a mounted view without one).
   installBrowserPartitions({ partition: (workspaceId) => partitions.partition(workspaceId), subscribe: partitions.subscribe })
   installBrowserPageBridge(bridge ?? null)
-  const stopT3 = installT3WebviewHost({
-    partition: partitionOf,
-    setCookie: (partition, url, cookie) => api.web.setCookie(partition, url, cookie),
-  })
   return () => {
-    stopT3()
     installBrowserPartitions(null)
     installBrowserPageBridge(null)
   }

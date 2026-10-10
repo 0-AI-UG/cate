@@ -51,7 +51,6 @@ const PersistentPanelSurface = memo(function PersistentPanelSurface({
 function surfaceRecords(
   doc: WorkspaceDocument,
   windowId: string | null,
-  retained: boolean,
   demanded: (panelId: string) => boolean,
 ): PanelRecord[] {
   return Object.values(doc.panels).filter((record) => {
@@ -60,8 +59,7 @@ function surfaceRecords(
     // A page operation waiting on this client mounts the surface wherever
     // the panel lives (architecture 10.2).
     if (demanded(record.id)) return true
-    if (windowId !== null && windowOf(doc, record.id) !== windowId) return false
-    return policy.retention === 'workspace' || retained
+    return windowId === null || windowOf(doc, record.id) === windowId
   })
 }
 
@@ -70,17 +68,16 @@ const sameRecords = (a: PanelRecord[], b: PanelRecord[]) => a.length === b.lengt
 /** The contexts a workspace's views read, around its surfaces. */
 export type SurfaceScope = ComponentType<{ workspaceId: string; children: ReactNode }>
 
-function WorkspaceSurfaces({ workspaceId, windowId, retained, backgroundRoot, Scope }: {
+function WorkspaceSurfaces({ workspaceId, windowId, backgroundRoot, Scope }: {
   workspaceId: string
   windowId: string | null
-  retained: boolean
   backgroundRoot: HTMLDivElement | null
   Scope: SurfaceScope
 }) {
   const demanded = useDemandedSurfaces()
   const selector = useMemo(
-    () => (doc: WorkspaceDocument) => surfaceRecords(doc, windowId, retained, (id) => isSurfaceDemanded(demanded, workspaceId, id)),
-    [windowId, retained, demanded, workspaceId],
+    () => (doc: WorkspaceDocument) => surfaceRecords(doc, windowId, (id) => isSurfaceDemanded(demanded, workspaceId, id)),
+    [windowId, demanded, workspaceId],
   )
   const records = useDocument(workspaceId, selector, sameRecords)
   return <Scope workspaceId={workspaceId}>{records.map((record) => (
@@ -88,13 +85,9 @@ function WorkspaceSurfaces({ workspaceId, windowId, retained, backgroundRoot, Sc
   ))}</Scope>
 }
 
-/** How many workspaces keep their `recent` surfaces (T3 UIs) mounted. */
-const RECENT_WORKSPACES = 2
-
-export function PersistentPanelHost({ workspaceIds, activeWorkspaceId, windowId, hidden = false, Scope }: {
+export function PersistentPanelHost({ workspaceIds, windowId, hidden = false, Scope }: {
   /** The open workspaces. */
   workspaceIds: readonly string[]
-  activeWorkspaceId: string | null
   /** Only surfaces of panels shown in this window; null for every window (a
    *  client that shows all windows in one). */
   windowId: string | null
@@ -102,11 +95,6 @@ export function PersistentPanelHost({ workspaceIds, activeWorkspaceId, windowId,
   hidden?: boolean
   Scope: SurfaceScope
 }) {
-  // No workspace shown (the welcome page) keeps the recent ones.
-  const [recent, setRecent] = useState<string[]>(activeWorkspaceId ? [activeWorkspaceId] : [])
-  if (activeWorkspaceId && recent[0] !== activeWorkspaceId) {
-    setRecent([activeWorkspaceId, ...recent.filter((id) => id !== activeWorkspaceId)].slice(0, RECENT_WORKSPACES))
-  }
   const [backgroundRoot, setBackgroundRoot] = useState<HTMLDivElement | null>(null)
   if (workspaceIds.length === 0) return null
   return (
@@ -121,7 +109,6 @@ export function PersistentPanelHost({ workspaceIds, activeWorkspaceId, windowId,
           key={workspaceId}
           workspaceId={workspaceId}
           windowId={windowId}
-          retained={recent.includes(workspaceId)}
           backgroundRoot={backgroundRoot}
           Scope={Scope}
         />

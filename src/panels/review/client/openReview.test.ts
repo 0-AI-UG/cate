@@ -74,10 +74,10 @@ it('opens agent changes in a new panel, or moves a chosen review to the agent ch
 })
 
 it('places a new agent changes review where the caller picked', async () => {
-  add('chat', 'terminal')
+  add('agent', 'terminal')
   const picked = { to: 'split' as const, dock: { windowId: MAIN_WINDOW }, beside: 's1', side: 'right' as const, stackId: 'picked', splitId: 'split' }
-  const id = await openAgentChanges({ workspaceId: 'ws', panelId: 'chat', cwd: '/wt', sessionId: 'thread', focusedFile: 'a.ts', at: picked })
-  expect(h.doc.panels[id!]).toMatchObject({ fields: { request: { focusedFile: 'a.ts', agentChanges: { panelId: 'chat', sessionId: 'thread' } } } })
+  const id = await openAgentChanges({ workspaceId: 'ws', panelId: 'agent', cwd: '/wt', sessionId: 'session', focusedFile: 'a.ts', at: picked })
+  expect(h.doc.panels[id!]).toMatchObject({ fields: { request: { focusedFile: 'a.ts', agentChanges: { panelId: 'agent', sessionId: 'session' } } } })
   expect(placementOf(h.doc, id!)?.stackId).toBe('picked')
 })
 

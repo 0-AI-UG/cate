@@ -7,7 +7,7 @@
 //
 // Each scenario brackets a load action with measure() and reports:
 //   - renderer FPS and long tasks (>50ms main-thread blocks = visible jank)
-//   - renders/sec for the hot components (CanvasNode, ChatThread, ...)
+//   - renders/sec for the hot components (CanvasNode, ...)
 //   - main-process per-process CPU/mem + terminal throughput + subprocess spawns
 //
 // The thresholds asserted here are deliberately GENEROUS — they only catch

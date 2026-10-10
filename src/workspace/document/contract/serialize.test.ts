@@ -15,7 +15,7 @@ function sample(): WorkspaceDocument {
     { kind: 'addPanel', record: { id: 'x', type: 'editor', title: 'x', fields: {} }, at: { to: 'canvas', canvasId: 'c1', nodeId: 'n1', stackId: 'sn1', rect: R } },
     { kind: 'addPanel', record: { id: 'w', type: 'browser', title: 'w', fields: {} }, at: { to: 'window', windowId: 'w1', stackId: 'sw' } },
     { kind: 'addPanel', record: { id: 'cv2', type: 'canvas', title: 'cv2', canvasId: 'c2', fields: {} }, at: { to: 'stack', dock: { windowId: 'w1' }, stackId: 'sw' } },
-    { kind: 'addPanel', record: { id: 'y', type: 'chat', title: 'y', fields: {} }, at: { to: 'canvas', canvasId: 'c2', nodeId: 'n2', stackId: 'sn2', rect: R } },
+    { kind: 'addPanel', record: { id: 'y', type: 'review', title: 'y', fields: {} }, at: { to: 'canvas', canvasId: 'c2', nodeId: 'n2', stackId: 'sn2', rect: R } },
     { kind: 'addRelation', relation: { id: 'r1', fromPanelId: 'a', toPanelId: 'x', kind: 'use' } },
     { kind: 'setWorktree', worktree: { id: 'wt', path: '/r', color: '#fff', status: 'ready' } },
   ]

@@ -12,7 +12,7 @@ export interface RuntimeCapabilityDeps {
   perf: PerfSampler
   /** Where paired devices reach the runtime now. */
   endpoints: () => NetworkEndpoint[]
-  /** Work is running (busy terminals, agents, T3 turns). */
+  /** Work is running (busy terminals, agents). */
   busy: () => boolean
   /** Stops the runtime after the reply is sent. */
   stop: () => void

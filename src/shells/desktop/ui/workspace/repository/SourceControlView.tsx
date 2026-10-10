@@ -7,8 +7,9 @@ import { GitBranch, Plus, Minus, ArrowUp, ArrowDown, Download, Trash, Archive, X
 import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, Undo2 as ArrowUUpLeft, SquareArrowOutUpRight as BoxArrowUp, History as ClockCounterClockwise } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import { Button, Spinner, Tooltip } from '../../kernel/interaction'
-import { clientUi, errorMessage } from '@kernel/interaction'
+import { errorMessage } from '@kernel/interaction'
 import { pathDisplayName } from '@workspace/files/contract'
+import { deleteMergedBranches } from '@workspace/repository/client'
 import { selectedWorktree, type GitBranchListResult, type GitComparisonSpec, type GitLogEntry, type GitStatusFile, type GitStatusResult } from '@workspace/repository/contract'
 import { useRepositoryUi } from './context'
 import { useGitStatus } from './gitStatus'
@@ -275,22 +276,14 @@ const BranchPicker: React.FC<{
   const remoteBranches = branches.filter(b => b.isRemote)
 
   const handleCleanup = useCallback(async () => {
-    const candidates = localBranches.filter((branch) => branch.name !== currentBranch)
-    if (cleaning || candidates.length === 0 || !runtime) return
-    if (!await clientUi().confirm(`Delete local branches already merged into ${currentBranch || 'the current checkout'}? Unmerged or in-use branches will be kept.`)) return
+    if (cleaning || !runtime) return
     setCleaning(true)
-    setError(null)
-    let skipped = 0
     try {
-      for (const branch of candidates) {
-        try {
-          await runtime.vcs.branchDelete({ cwd: repositoryRoot, name: branch.name })
-        } catch {
-          skipped++
-        }
-      }
+      const kept = await deleteMergedBranches(runtime, repositoryRoot, currentBranch ?? '', localBranches.map((branch) => branch.name))
+      if (kept === null) return
+      setError(null)
       await loadBranches()
-      if (skipped > 0) setError(`Kept ${skipped} unmerged or in-use ${skipped === 1 ? 'branch' : 'branches'}.`)
+      if (kept > 0) setError(`Kept ${kept} unmerged or in-use ${kept === 1 ? 'branch' : 'branches'}.`)
     } finally {
       setCleaning(false)
     }

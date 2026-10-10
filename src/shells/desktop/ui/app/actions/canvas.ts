@@ -51,7 +51,6 @@ export const CANVAS_ACTIONS = defineActions({
   selectTool: { title: 'Select Tool', key: key('1', { command: true, option: true }) },
   handTool: { title: 'Hand Tool', key: key('2', { command: true, option: true }) },
   openWorktreeMenu: { title: 'Parallel Worktrees', key: key('w', { command: true, option: true }), keys: { noRepeat: true } },
-  openConversationMenu: { title: 'T3 Code Conversations', key: key('a', { command: true, option: true }), keys: { noRepeat: true } },
   toggleCanvasToolbar: { title: 'Expand / Collapse Canvas Toolbar', key: key('b', { command: true, option: true }), keys: { noRepeat: true } },
   toggleKeepAwake: { title: 'Toggle Keep Awake', key: key('k', { command: true, option: true }), keys: { noRepeat: true } },
 })
@@ -152,7 +151,6 @@ export function canvasActionBindings(): { [K in keyof typeof CANVAS_ACTIONS]: Ac
     selectTool: { run: setTool('select') },
     handTool: { run: setTool('hand') },
     openWorktreeMenu: toolbar('openWorktreeMenu'),
-    openConversationMenu: toolbar('openConversationMenu'),
     toggleCanvasToolbar: toolbar('toggleCanvasToolbar'),
     toggleKeepAwake: {
       run: ({ workspaceId }) => toggleKeepAwake(workspaceId),

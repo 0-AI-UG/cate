@@ -67,8 +67,9 @@ export interface RelationPatch {
 export type DocChange =
   | { kind: 'addPanel'; record: PanelRecord; at: PlaceTarget }
   /** Same id and placement, new type and fields (a surface becoming the
-   *  picked type). */
-  | { kind: 'replacePanel'; record: PanelRecord }
+   *  picked type). The old session is dropped, so like a removal it is
+   *  refused `dirty` when that would lose work, unless `discard` is set. */
+  | { kind: 'replacePanel'; record: PanelRecord; discard?: boolean }
   | { kind: 'updatePanel'; id: PanelId; patch: PanelPatch }
   /** `discard`: panels whose unsaved work the user chose to drop (11.2 rule
    *  6). Without it, a removal that would lose work is refused `dirty`. */

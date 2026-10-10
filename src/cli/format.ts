@@ -1,6 +1,8 @@
 // Human-readable output for `cate` results, chosen by the spec's `format` id.
 // `--json` bypasses all of this.
 
+import { describeBrowserObservation, type BrowserObservation } from '@services/browser/contract'
+
 const SHORT_ID = 8
 
 function shortId(id: string): string {
@@ -66,7 +68,7 @@ function conversation(value: unknown): string {
   const messages = object.messages.map((item) => {
     const message = asObject(item)
     if (!message) return String(item)
-    const meta = [message.role ?? '?', message.createdAt, message.streaming ? 'streaming' : undefined].filter(Boolean).join(' · ')
+    const meta = [message.role ?? '?', message.createdAt].filter(Boolean).join(' · ')
     return `[${meta}]\n${message.text ?? ''}`
   })
   return [header, ...(messages.length > 0 ? messages : ['(no messages)'])].join('\n\n')
@@ -79,10 +81,34 @@ function browserContent(value: unknown): string {
     const block = asObject(item)
     if (block?.type === 'text') return String(block.text ?? '')
     if (typeof block?.path === 'string') {
-      return `Screenshot: ${block.path}\nOpen this file with your image-viewing tool to inspect the page visually.`
+      return `Screenshot: ${block.path}\n${SCREENSHOT_NOTE}`
     }
     return '[Browser image: use --json for image data]'
   }).join('\n')
+}
+
+const SCREENSHOT_NOTE = 'Open this file with your image-viewing tool to inspect the page visually.'
+
+/** A page operation's result: an observation, an action with the observation
+ *  after it, or a plain value (an attribute). */
+function browserObservation(value: unknown): string {
+  const object = asObject(value)
+  const observation = asObject(object?.observation) ?? (typeof object?.observationId === 'string' ? object : null)
+  if (!observation) return value === null ? '(none)' : generic(value)
+  const action = asObject(object?.action) as { method: string; status: string } | null
+  const text = describeBrowserObservation(observation as unknown as BrowserObservation, action ?? undefined)
+  const shot = asObject(observation.screenshot)
+  return typeof shot?.path === 'string' ? `${text}\nScreenshot: ${shot.path}\n${SCREENSHOT_NOTE}` : text
+}
+
+function browserTabs(value: unknown): string {
+  const tabs = asObject(value)?.tabs
+  if (!Array.isArray(tabs)) return generic(value)
+  if (tabs.length === 0) return '(no tabs)'
+  return table(['', 'PANEL', 'TAB', 'URL', 'TITLE'], tabs.map((item) => {
+    const tab = asObject(item) ?? {}
+    return [tab.active ? '*' : '', shortId(text(tab.panelId)), text(tab.tabId), text(tab.url), text(tab.title)]
+  }))
 }
 
 const FORMATTERS: Record<string, (value: unknown) => string> = {
@@ -95,6 +121,8 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
   },
   conversation,
   browserContent,
+  browserObservation,
+  browserTabs,
   prettyJson: (value) => JSON.stringify(value, null, 2),
   terminalText: (value) => {
     const text = asObject(value)?.text
@@ -115,17 +143,45 @@ export function formatOutput(format: string | undefined, value: unknown): string
   return formatter ? formatter(value) : generic(value)
 }
 
-/** Saves browser images to files so the human output can print their paths. */
-export async function prepareOutput(
-  format: string | undefined,
-  value: unknown,
-  writeImage: ((base64: string) => Promise<string>) | undefined,
-): Promise<void> {
-  if (format !== 'browserContent' || !writeImage) return
+/** Where human output puts what is too big or binary to print. */
+export interface OutputFiles {
+  /** Saves a base64 PNG and returns its path. */
+  image?: (base64: string) => Promise<string>
+  /** Saves text and returns its path. */
+  text?: (text: string) => Promise<string>
+}
+
+/** Text longer than this goes to a file; the output keeps its head. */
+const SPILL_CHARS = 12_000
+const SPILL_HEAD_CHARS = 6_000
+
+async function spill(text: string, files: OutputFiles): Promise<string> {
+  if (text.length <= SPILL_CHARS || !files.text) return text
+  const path = await files.text(text)
+  const cut = text.lastIndexOf('\n', SPILL_HEAD_CHARS)
+  const head = text.slice(0, cut > 0 ? cut : SPILL_HEAD_CHARS)
+  const more = text.split('\n').length - head.split('\n').length
+  return `${head}\n... ${more} more lines. The full text is in ${path}; search it (rg, grep) for what you need instead of printing it all.`
+}
+
+/** Saves browser images and long browser text to files, so the human output
+ *  prints their paths. */
+export async function prepareOutput(format: string | undefined, value: unknown, files: OutputFiles): Promise<void> {
+  if (format === 'browserObservation') {
+    const object = asObject(value)
+    const observation = asObject(object?.observation) ?? (typeof object?.observationId === 'string' ? object : null)
+    if (!observation) return
+    const shot = asObject(observation.screenshot)
+    if (shot && typeof shot.data === 'string' && files.image) shot.path = await files.image(shot.data)
+    if (typeof observation.state === 'string') observation.state = await spill(observation.state, files)
+    return
+  }
+  if (format !== 'browserContent') return
   const content = asObject(value)?.content
   if (!Array.isArray(content)) return
   for (const item of content) {
     const block = asObject(item)
-    if (block?.type === 'image' && typeof block.data === 'string') block.path = await writeImage(block.data)
+    if (block?.type === 'image' && typeof block.data === 'string' && files.image) block.path = await files.image(block.data)
+    if (block?.type === 'text' && typeof block.text === 'string') block.text = await spill(block.text, files)
   }
 }

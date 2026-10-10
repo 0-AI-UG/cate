@@ -9,12 +9,12 @@ Read and follow the **karpathy-guidelines** skill (`.claude/skills/karpathy-guid
 ## Project Overview
 
 Cate is a desktop application that provides an infinite zoomable canvas where
-terminal, editor, browser, chat and review panels float spatially (similar to
+terminal, editor, browser and review panels float spatially (similar to
 Figma/Miro, but for coding), next to classic docked layouts. Built with
 Electron + React + TypeScript, styled with Tailwind CSS.
 
 Each open workspace is served by its own **runtime daemon**, which holds the
-workspace's state and does all its work (files, git, terminals, agents, T3,
+workspace's state and does all its work (files, git, terminals, agents,
 the `cate` API). The desktop app and the iOS app are clients of those
 runtimes; other devices connect to the same runtime after pairing, and every
 client sees one live workspace.
@@ -30,12 +30,12 @@ The Electron app lives at the project root. It uses **electron-vite** for the
 desktop shell and **esbuild** for the daemon and the CLI.
 
 ```bash
-npm install              # install dependencies (patches T3)
+npm install              # install dependencies
 npm run dev              # bundle the daemon, then start the app with hot reload
 npm run build            # production build of the desktop shell
 npm run build:runtime    # bundle the daemon to dist-runtime/runtime.cjs
 npm run build:mobile     # bundle the iOS app's client core to ios/Cate/Core/Web/core.js
-npm run runtime:tarball  # build the runtime tarball (daemon, Node, cate CLI, T3, skills)
+npm run runtime:tarball  # build the runtime tarball (daemon, Node, cate CLI, skills)
 npm run runtime:dev      # install this checkout's runtime into ~/.cate/runtime/<build>/ (no tarball; run by predev)
 npm run typecheck        # tsc --noEmit
 npm run lint             # eslint
@@ -57,7 +57,7 @@ with `CATE_RUNTIME_BUNDLE=dist-runtime/runtime.cjs` (it then starts the daemon
 from that bundle with your `node`), rebuild with `npm run build:runtime`, and
 stop the running workspace runtime so the next open starts the new build.
 Without `CATE_RUNTIME_BUNDLE`, the app needs a runtime of its build (a hash of
-`src/`, `skills/`, the T3 patches and the lockfile): `npm run dev` installs one with `runtime:dev` (instant when the build
+`src/`, `skills/` and the lockfile): `npm run dev` installs one with `runtime:dev` (instant when the build
 is already installed, a few seconds otherwise), so no tarball is needed.
 
 ## Dependencies
@@ -115,13 +115,13 @@ session channels for panels. There is no per-feature IPC.
 `src/` is organised by **layer**, lowest first:
 
 - `kernel/`: rpc, api, settings, lifecycle, state, log, interaction (generic machinery)
-- `runtime/`: daemon, data, transports, security, pairing, connect, server, tunnel, power
-- `workspace/`: document, lifecycle (trust), canvas, files, repository, skills, relations
-- `services/`: terminal, browser, t3, agents
-- `client/`: connections, workspaces, document mirror, host
-- `panels/`: framework + terminal, editor, browser, chat, review, canvas, surface
+- `runtime/`: daemon, data, transports, security, pairing, connect, tunnel, power, push
+- `workspace/`: document, lifecycle (trust), canvas, files, repository, skills, relations, notifications
+- `services/`: terminal, browser, agents
+- `client/`: core (the client core's entry), connections, workspaces, document mirror, host
+- `panels/`: framework + terminal, editor, browser, review, canvas, surface
 - `shells/`: desktop (including all desktop UI), mobile (the iOS app's core)
-- plus `cli/`, `shared/` (generic pure utilities) and `test/` (test support)
+- plus `cli/` and `test/` (test support)
 
 and by **side** inside each module:
 
@@ -149,7 +149,7 @@ Rules (enforced by `npm run lint:deps`, `.dependency-cruiser.cjs`):
   filled by `client/connections`; `registerPanelCloseGuard` in `client/host`
   filled by a shell's panel views).
 - Across modules, import a contract or a side's `index.ts`, never internals.
-  `src/panels/{definitions,runtime,api}.ts` are public entries too.
+  `src/panels/{definitions,runtime,api,capabilities,settings}.ts` are public entries too.
 - The daemon's composition root (`src/runtime/daemon/entry.ts`, `main.ts`,
   `compose/`) builds and wires every module's runtime side and is the only
   code exempt from these rules. Runtime sides export factories taking an
@@ -221,9 +221,9 @@ Every piece of state is in exactly one class (`docs/architecture.md` section 5):
   (`client/document`: `documentStoreFor(workspaceId)`; the desktop UI's
   `useDocument`).
 - **Session** (runtime, per panel): terminal screen, editor buffer, browser
-  tabs, chat binding, review state.
+  tabs, review state.
 - **Workspace data** (runtime): workspace settings, secrets, trust, grants,
-  pairings, T3 state, browser data, skill sources.
+  pairings, browser data, skill sources.
 - **Device** (one client device): client settings, workspace list, known
   runtimes, device key, main window bounds, through the `DeviceStore` port.
 - **Client** (in memory): viewport, zoom, active tab, focus, selection, undo
@@ -237,10 +237,10 @@ Persisted state is hand-editable JSON written through `kernel/state`
 (in-memory authority, debounced atomic write, external-edit watcher,
 corrupt-file quarantine); every file has one writer process.
 - Workspace data: `~/.cate/workspaces/<runtimeId>/` on the runtime's machine
-  (`document.json`, `sessions/`, `buffers/`, `settings.json`, `secrets.json`,
-  `pairings.json`, `push.json`, `trust.json`, `grants.json`, `skills/`, `browser/`, `t3/`,
+  (`runtime.json`, `document.json`, `sessions/`, `buffers/`, `settings.json`, `secrets.json`,
+  `devices.json`, `push.json`, `trust.json`, `grants.json`, `skills/`, `browser/`,
   `agents/`, `terminal-logs/`, `screenshots/`, `logs/`).
-- Project `<root>/.cate/`: only `skills.json`, `drafts/`, `worktrees/` and its
+- Project `<root>/.cate/`: only `skills.json`, `tmp/`, `worktrees/` and its
   `.gitignore`.
 - Device (Electron `userData`): `settings.json`, `ui-state.json`, `boot.json`,
   `workspaces.json`, `known-runtimes.json`, `device-key.json`, ...
@@ -258,9 +258,8 @@ Everything outside the UI that drives Cate goes through one router
 commands, help and argument parsing from those specs.
 
 Terminals get `CATE_SOCKET` (the workspace's local socket) and a per-PTY
-`CATE_TOKEN` that names the calling panel; T3 harnesses get the same with a
-per-harness token. CLI and harness calls are gated by the workspace settings
-`cliEnabled` and `cli*Enabled` (per area, read or control). Session methods
+`CATE_TOKEN` that names the calling panel. CLI calls are gated by the
+workspace settings `cliEnabled` and `cli*Enabled` (per area, read or control). Session methods
 target a panel through the reserved `panelId` argument (`--panel` on the CLI),
 or the caller's sticky target (`cate panel set`).
 

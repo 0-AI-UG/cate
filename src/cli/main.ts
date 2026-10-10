@@ -14,6 +14,12 @@ async function writeImage(base64: string): Promise<string> {
   return path
 }
 
+async function writeText(text: string): Promise<string> {
+  const path = join(await mkdtemp(join(tmpdir(), 'cate-browser-')), 'page.txt')
+  await writeFile(path, text, { mode: 0o600 })
+  return path
+}
+
 const stdout = (text: string) => { process.stdout.write(`${text}\n`) }
 const stderr = (text: string) => { process.stderr.write(`${text}\n`) }
 
@@ -43,6 +49,7 @@ export function main(argv: string[], extraCommands: CliDeps['extraCommands'] = E
     stderr,
     connect: (socketPath, token) => connectSocket(socketPath, token, CLI_VERSION),
     writeImage,
+    writeText,
     extraCommands,
     style: helpStyle(),
   })

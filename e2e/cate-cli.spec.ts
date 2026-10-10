@@ -111,7 +111,7 @@ test('cate browser run drives a real browser panel webview', async () => {
   const runCate = (...args: string[]) => runCateIn(page, control, ...args)
   const runBrowser = (code: string) => runCate('browser', 'run', code)
   const browserId = await runCate('panel', 'create', 'browser')
-  const created = JSON.parse(await runCate('browser', 'run', `var tab = await cua.createBrowserTab(${JSON.stringify(baseUrl)}, {panelId:${JSON.stringify(browserId)}}); await nodeRepl.write({testBinding:{panelId:tab.panelId,tabId:tab.tabId}});`, '--json')) as { content: { type: string; text?: string }[] }
+  const created = JSON.parse(await runCate('browser', 'run', `await cua.createBrowserTab(${JSON.stringify(baseUrl)}); await nodeRepl.write({testBinding:{tabId:tab.tabId}});`, '--panel', browserId, '--json')) as { content: { type: string; text?: string }[] }
   expect(created.content.some((item) => item.text?.includes('testBinding'))).toBe(true)
   const oracle = (expression: string) => guestEvaluate(app, baseUrl, expression)
 
@@ -139,6 +139,8 @@ test('cate browser run drives a real browser panel webview', async () => {
   // Arbitrary page evaluation is not offered, and rejection keeps the session usable.
   const noDom = await runInTerminal(page, control, cate('browser', 'run', 'await nodeRepl.write({pageEvaluation:typeof tab.evaluate,node:typeof require});'))
   expect(noDom.output).toContain('undefined')
+  // A reset drops the cell variables; every cell still starts with `tab`.
+  await runBrowser('var kept = 1;')
   await runCate('browser', 'reset')
-  expect(await runBrowser('await nodeRepl.write(typeof tab);')).toContain('undefined')
+  expect(await runBrowser('await nodeRepl.write([typeof kept, typeof tab].join(" "));')).toContain('undefined object')
 })

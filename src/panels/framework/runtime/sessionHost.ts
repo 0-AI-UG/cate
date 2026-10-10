@@ -133,14 +133,17 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
     const replaced = new Set<PanelId>()
     const discarded = new Set<PanelId>()
     for (const change of opChanges(op)) {
-      if (change.kind === 'replacePanel') replaced.add(change.record.id)
+      if (change.kind === 'replacePanel') {
+        replaced.add(change.record.id)
+        if (change.discard) discarded.add(change.record.id)
+      }
       if (change.kind === 'removePanels' || change.kind === 'closeWindow') for (const id of change.discard ?? []) discarded.add(id)
     }
     for (const id of Object.keys(before.panels)) if (!doc.panels[id]) drop(id, 'removed', discarded.has(id))
     for (const record of Object.values(doc.panels)) {
       const entry = entries.get(record.id)
       if (entry && (replaced.has(record.id) || entry.session.record.type !== record.type)) {
-        drop(record.id, 'replaced')
+        drop(record.id, 'replaced', discarded.has(record.id))
         create(record)
       } else if (!entry) {
         create(record)

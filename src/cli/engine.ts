@@ -548,6 +548,8 @@ export interface CliDeps {
   connect: (socketPath: string, token: string) => ApiCallPort
   /** Saves a base64 PNG and returns its path, for human browser output. */
   writeImage?: (base64: string) => Promise<string>
+  /** Saves long text and returns its path, for human browser output. */
+  writeText?: (text: string) => Promise<string>
   /** Commands that are not API methods, by first word (`serve`). */
   extraCommands?: Record<string, ExtraCommand>
   /** Help layout. Defaults to 80 columns without bold. */
@@ -618,7 +620,7 @@ export async function runCli(
     if (parsed.json) {
       deps.stdout(JSON.stringify(value ?? null))
     } else {
-      await prepareOutput(method.format, value, deps.writeImage)
+      await prepareOutput(method.format, value, { image: deps.writeImage, text: deps.writeText })
       deps.stdout(formatOutput(method.format, value))
     }
     const isError = !!value && typeof value === 'object' && (value as { isError?: unknown }).isError === true

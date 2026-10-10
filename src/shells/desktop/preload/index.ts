@@ -251,7 +251,6 @@ const api: DesktopApi = {
   web: {
     partitionFor: (workspace) => invoke(C.webPartition, workspace),
     release: (workspace) => invoke(C.webRelease, workspace),
-    setCookie: (partition, url, cookie) => invoke(C.webSetCookie, partition, url, cookie),
   },
   webgl: {
     request: (panelId) => invoke(C.webglRequest, panelId),

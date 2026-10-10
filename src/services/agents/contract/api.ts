@@ -1,7 +1,6 @@
-// `cate.agent.*`: start an agent in a new terminal or chat panel, and
-// observe and prompt the agents running in panels (terminal runners and chat
-// panels). Served by services/agents, which resolves each panel to its agent
-// session and runner.
+// `cate.agent.*`: start an agent in a new terminal panel, and observe and
+// prompt the agents running in panels. Served by services/agents, which
+// resolves each panel to its agent session.
 
 import {
   ArgError,
@@ -10,7 +9,6 @@ import {
   defineCliArea,
   num,
   obj,
-  oneOf,
   opt,
   panel,
   str,
@@ -51,7 +49,7 @@ export const agentCliArea = defineCliArea({
     key: 'cliAgentControlEnabled',
     code: 'agent-control-disabled',
     detail:
-      '`cate agent send` and `cate review note / complete`: steer live terminal or chat agents and record review results.',
+      '`cate agent send` and `cate review note / complete`: steer live terminal agents and record review results.',
   },
 })
 
@@ -61,15 +59,11 @@ export const agentApi = defineCateApi(
     start: {
       access: 'control',
       handler: 'service',
-      summary: 'Start an agent on a prompt in a new terminal or T3 Code chat panel',
+      summary: 'Start an agent on a prompt in a new terminal panel',
       args: {
         prompt: str.nonEmpty().maxLength(50_000).rest('prompt').help('The first prompt'),
         agentId: opt(str).flag('agent', 'id')
-          .help('Agent CLI: claude-code, codex, cursor, grok, hermes, kiro or opencode (default: one set up in this workspace; with T3, its provider)'),
-        runner: opt(oneOf('terminal', 't3'), 'terminal').flag('runner', 'terminal|t3')
-          .help('Run the agent CLI in a terminal, or in a T3 Code chat'),
-        instanceId: opt(str).flag('instance', 'id').help('T3: the provider instance (default: a ready one of the agent\'s provider)'),
-        model: opt(str).flag('model', 'slug').help('T3: the model (default: the instance\'s default)'),
+          .help('Agent CLI: claude-code, codex, cursor, grok, hermes, kiro or opencode (default: one set up in this workspace)'),
         title: opt(str.maxLength(80)).help('Panel title, at most 80 characters'),
         worktreeId: opt(str).flag('worktree', 'id').help('Run in this existing worktree (default: the calling panel\'s checkout)'),
         newWorktree: opt(str).flag('new-worktree', 'name').help('Create a worktree with this name and run in it'),
@@ -83,7 +77,7 @@ export const agentApi = defineCateApi(
     types: {
       access: 'read',
       handler: 'service',
-      summary: 'List the agent CLIs: whether each can start in a terminal here (its Cate hooks are on) and its T3 provider',
+      summary: 'List the agent CLIs: whether each can start in a terminal here (its Cate hooks are on)',
       format: 'prettyJson',
     },
     list: {

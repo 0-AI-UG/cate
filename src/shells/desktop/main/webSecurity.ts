@@ -1,5 +1,5 @@
 // Web security hardening for every webContents: app windows may only show the
-// app, guests (browser and chat panels) get the restricted guest preload, a
+// app, guests (browser panels) get the restricted guest preload, a
 // sandbox, a workspace partition routed through its loopback proxy, and no
 // popups (a popup becomes a tab of the owning browser panel).
 

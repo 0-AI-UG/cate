@@ -37,7 +37,7 @@ async function cell(code: string, key = 'test') {
 }
 
 test('real sandbox supports persistent bindings and emits native images', async () => {
-  const first = await cell('var tab = await cua.getTab({panelId:"p1"}); var answer = 41;')
+  const first = await cell('await cua.getTab(); var answer = 41;')
   expect(first.isError, JSON.stringify(first)).toBeUndefined()
   expect(first.content[0].text).toContain('Save')
   const second = await cell('await nodeRepl.write(answer + 1); await tab.getAXStateAndScreenshot();')

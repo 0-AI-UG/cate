@@ -3,6 +3,7 @@
 // client state.
 
 import { bool, defineCateApi, defineCliArea, num, obj, opt, panel, path, str } from '@kernel/api/contract'
+import { PANEL_TYPES } from './schema'
 
 /** The CLI permission area of these methods. */
 export const panelCliArea = defineCliArea({
@@ -15,7 +16,7 @@ export const panelCliArea = defineCliArea({
   control: {
     key: 'cliPanelControlEnabled',
     code: 'panel-control-disabled',
-    detail: '`cate panel create / close`: add browser, terminal or canvas panels and close panels.',
+    detail: '`cate panel create / close`: add panels and close panels.',
   },
 })
 
@@ -80,7 +81,7 @@ export const canvasApi = defineCateApi(
       handler: 'service',
       summary: 'Create a panel next to the calling panel',
       args: {
-        type: str.nonEmpty().pos('browser|terminal|canvas').help('The panel type'),
+        type: str.nonEmpty().pos('type').help(`The panel type: ${PANEL_TYPES.join(', ')}`),
         url: opt(str).pos('url').help('Browser panels: the page to open'),
         filePath: opt(path).flag('file', 'path').help('Editor panels: the file to open'),
         position: opt(obj({ x: num, y: num })).hidden(),

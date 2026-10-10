@@ -274,9 +274,6 @@ export interface DesktopApi {
      *  proxy. This window then serves the proxy's loopback requests. */
     partitionFor(workspace: { runtimeId: string }): Promise<string>
     release(workspace: { runtimeId: string }): Promise<void>
-    /** Sets a cookie for a loopback `url` in a prepared workspace partition
-     *  (T3's session cookie before its page loads). */
-    setCookie(partition: string, url: string, cookie: { name: string; value: string }): Promise<void>
   }
   webgl: {
     request(panelId: string): Promise<boolean>

@@ -1,5 +1,5 @@
 // Toolbar entries other modules add to every canvas toolbar (the worktree
-// menu, the T3 conversation menu), so the canvas never imports them.
+// menu), so the canvas never imports them.
 
 import type React from 'react'
 

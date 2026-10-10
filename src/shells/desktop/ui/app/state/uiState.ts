@@ -20,12 +20,15 @@ export interface UiStateValues {
   telemetryNoticeAcknowledgedVersion: number
   /** The first-run tour was finished or skipped. */
   onboardingCompleted: boolean
+  /** Collapsed rows of the sidebar workspace tree (keys from treeCollapse). */
+  sidebarTreeCollapsed: string[]
 }
 
 export const DEFAULT_UI_STATE: UiStateValues = {
   minimapButtonCorner: 'bottom-right',
   telemetryNoticeAcknowledgedVersion: 0,
   onboardingCompleted: false,
+  sidebarTreeCollapsed: [],
 }
 
 export function normalizeUiState(raw: unknown): UiStateValues {
@@ -39,6 +42,9 @@ export function normalizeUiState(raw: unknown): UiStateValues {
       ? version
       : DEFAULT_UI_STATE.telemetryNoticeAcknowledgedVersion,
     onboardingCompleted: typeof o.onboardingCompleted === 'boolean' ? o.onboardingCompleted : DEFAULT_UI_STATE.onboardingCompleted,
+    sidebarTreeCollapsed: Array.isArray(o.sidebarTreeCollapsed)
+      ? o.sidebarTreeCollapsed.filter((k): k is string => typeof k === 'string')
+      : DEFAULT_UI_STATE.sidebarTreeCollapsed,
   }
 }
 
@@ -105,7 +111,9 @@ export function uiState(): UiStateStore | null {
   return installed
 }
 
-function subscribe(listener: () => void): () => void {
+/** Calls `listener` on every change of the installed store, and when a store
+ *  is installed or replaced. */
+export function subscribeUiState(listener: () => void): () => void {
   let off = installed?.subscribe(listener) ?? (() => {})
   const onInstall = () => {
     off()
@@ -120,7 +128,7 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function useUiState(): UiStateSnapshot {
-  return useSyncExternalStore(subscribe, () => installed?.getSnapshot() ?? UNLOADED)
+  return useSyncExternalStore(subscribeUiState, () => installed?.getSnapshot() ?? UNLOADED)
 }
 
 export function setUiState<K extends keyof UiStateValues>(key: K, value: UiStateValues[K]): void {

@@ -5,10 +5,9 @@
 // Partial.
 //
 // Declared on each AgentDef:
-//   - runners.terminal: the CLI in a PTY. Its command, hook spec (hooks.ts),
-//     resume argv, where its session store lives and how a started agent is
-//     launched.
-//   - runners.t3: the T3 provider of the same agent, for the agents T3 has one.
+//   - the CLI in a PTY: its command, resume argv, where its session store
+//     lives and how a started agent is launched. Its hook spec is
+//     AGENT_HOOK_SPECS (hooks.ts).
 //   - matchProcess / hookProcess: identity verification of a hook post's pid.
 //   - promptContextHook / promptGuidance: how relation context reaches a turn.
 //   - skills: where the agent reads project skills.
@@ -16,8 +15,7 @@
 // The one table that cannot live here is the logo map (ui, it imports assets).
 
 import type { SkillTargetId } from '@workspace/skills/contract'
-import { AGENT_HOOK_SPECS, type AgentHookSpec } from './hooks'
-import { t3ProviderNamed, type T3ProviderId } from '@services/t3/contract'
+import { AGENT_HOOK_SPECS } from './hooks'
 
 export type AgentId =
   | 'claude-code'
@@ -57,11 +55,12 @@ export type AgentInterruptKey = 'escape' | 'ctrl-c'
 /** What each interrupt key types into the PTY. */
 export const AGENT_INTERRUPT_INPUT: Record<AgentInterruptKey, string> = { escape: '\x1b', 'ctrl-c': '\x03' }
 
-export interface TerminalRunnerDef {
+export interface AgentDef {
+  id: AgentId
+  /** Label shown in panel titles and tooltips. */
+  displayName: string
   /** The CLI command that launches this agent, usually its process name. */
   command: string
-  /** Hook injection, payload normalization and interrupt handling. */
-  hooks: AgentHookSpec
   resume: {
     /** Argv (after `command`) that re-attaches to `sessionId` on a terminal
      *  restore, or null when this CLI cannot resume by id. */
@@ -79,20 +78,6 @@ export interface TerminalRunnerDef {
   /** The keys, pressed in order, that stop the CLI's turn and keep it at its
    *  prompt (verified by the live interrupt scenario). */
   interruptKeys: readonly AgentInterruptKey[]
-}
-
-export interface T3RunnerDef {
-  providerId: T3ProviderId
-}
-
-export interface AgentDef {
-  id: AgentId
-  /** Label shown in panel titles and tooltips. */
-  displayName: string
-  runners: {
-    terminal: TerminalRunnerDef
-    t3?: T3RunnerDef
-  }
   /** True when a process with this (lowercased) name is this agent. */
   matchProcess: (procName: string) => boolean
   /** In-process hooks prove identity from the authenticated posting pid even
@@ -127,18 +112,12 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
   'claude-code': {
     id: 'claude-code',
     displayName: 'Claude Code',
-    runners: {
-      terminal: {
-        command: 'claude',
-        hooks: AGENT_HOOK_SPECS['claude-code'],
-        // Claude announces an id before its transcript exists.
-        resume: { args: (sid) => ['--resume', sid], fromSessionStart: false },
-        sessionStore: '.claude/projects',
-        promptArgs: (prompt) => [prompt],
-        interruptKeys: ['escape'],
-      },
-      t3: { providerId: 'claude' },
-    },
+    command: 'claude',
+    // Claude announces an id before its transcript exists.
+    resume: { args: (sid) => ['--resume', sid], fromSessionStart: false },
+    sessionStore: '.claude/projects',
+    promptArgs: (prompt) => [prompt],
+    interruptKeys: ['escape'],
     matchProcess: (n) => n === 'claude' || n === 'claude-code',
     promptContextHook: 'additional-context',
     promptGuidance: null,
@@ -148,17 +127,11 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
   codex: {
     id: 'codex',
     displayName: 'Codex',
-    runners: {
-      terminal: {
-        command: 'codex',
-        hooks: AGENT_HOOK_SPECS.codex,
-        resume: { args: (sid) => ['resume', sid], fromSessionStart: true },
-        sessionStore: '.codex/sessions',
-        promptArgs: (prompt) => [prompt],
-        interruptKeys: ['ctrl-c'],
-      },
-      t3: { providerId: 'codex' },
-    },
+    command: 'codex',
+    resume: { args: (sid) => ['resume', sid], fromSessionStart: true },
+    sessionStore: '.codex/sessions',
+    promptArgs: (prompt) => [prompt],
+    interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'codex',
     promptContextHook: 'additional-context',
     promptGuidance: [
@@ -173,19 +146,13 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
   cursor: {
     id: 'cursor',
     displayName: 'Cursor',
-    runners: {
-      terminal: {
-        command: 'cursor-agent',
-        hooks: AGENT_HOOK_SPECS.cursor,
-        // --resume adopts an unknown id (fresh chat under that id), so a stale
-        // stamp degrades to a fresh session, never a wrong one.
-        resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
-        sessionStore: '.cursor/chats',
-        promptArgs: (prompt) => [prompt],
-        interruptKeys: ['escape'],
-      },
-      t3: { providerId: 'cursor' },
-    },
+    command: 'cursor-agent',
+    // --resume adopts an unknown id (fresh chat under that id), so a stale
+    // stamp degrades to a fresh session, never a wrong one.
+    resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
+    sessionStore: '.cursor/chats',
+    promptArgs: (prompt) => [prompt],
+    interruptKeys: ['escape'],
     matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
     promptContextHook: null,
     promptGuidance: null,
@@ -197,20 +164,14 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
   grok: {
     id: 'grok',
     displayName: 'Grok',
-    runners: {
-      terminal: {
-        command: 'grok',
-        hooks: AGENT_HOOK_SPECS.grok,
-        // --resume errors on an unknown id, so a stale stamp falls back to a
-        // plain shell. SessionStart is deferred to the first prompt, so the
-        // session is on disk when its id arrives.
-        resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
-        sessionStore: '.grok/sessions',
-        promptArgs: (prompt) => [prompt],
-        interruptKeys: ['ctrl-c'],
-      },
-      t3: { providerId: 'grok' },
-    },
+    command: 'grok',
+    // --resume errors on an unknown id, so a stale stamp falls back to a
+    // plain shell. SessionStart is deferred to the first prompt, so the
+    // session is on disk when its id arrives.
+    resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
+    sessionStore: '.grok/sessions',
+    promptArgs: (prompt) => [prompt],
+    interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'grok' || /^grok-\d/.test(n),
     promptContextHook: null,
     promptGuidance: null,
@@ -220,19 +181,13 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
   opencode: {
     id: 'opencode',
     displayName: 'OpenCode',
-    runners: {
-      terminal: {
-        command: 'opencode',
-        hooks: AGENT_HOOK_SPECS.opencode,
-        resume: { args: (sid) => ['--session', sid], fromSessionStart: true },
-        sessionStore: '.local/share/opencode/opencode.db',
-        // Seed the persistent TUI instead of the one-shot `run` command so the
-        // agent can take follow-up prompts on the same PTY.
-        promptArgs: (prompt) => ['--prompt', prompt],
-        interruptKeys: ['escape', 'escape'],
-      },
-      t3: { providerId: 'opencode' },
-    },
+    command: 'opencode',
+    resume: { args: (sid) => ['--session', sid], fromSessionStart: true },
+    sessionStore: '.local/share/opencode/opencode.db',
+    // Seed the persistent TUI instead of the one-shot `run` command so the
+    // agent can take follow-up prompts on the same PTY.
+    promptArgs: (prompt) => ['--prompt', prompt],
+    interruptKeys: ['escape', 'escape'],
     matchProcess: (n) => n === 'opencode',
     promptContextHook: 'endpoint',
     promptGuidance: null,
@@ -241,25 +196,20 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
   hermes: {
     id: 'hermes',
     displayName: 'Hermes',
-    runners: {
-      terminal: {
-        command: 'hermes',
-        hooks: AGENT_HOOK_SPECS.hermes,
-        // Profiles have independent session stores, so an exact resume carries
-        // the profile. `custom` names a HERMES_HOME Cate cannot reproduce.
-        // Hermes creates the record before its first persisted user turn.
-        resume: {
-          args: (sid, context) => context?.profile && context.profile !== 'custom'
-            ? ['--profile', context.profile, 'chat', '--resume', sid]
-            : null,
-          fromSessionStart: false,
-        },
-        sessionStore: '.hermes/state.db',
-        // Hermes >=0.21 keeps `chat -q` interactive when attached to a PTY.
-        promptArgs: (prompt) => ['chat', '-q', prompt],
-        interruptKeys: ['ctrl-c'],
-      },
+    command: 'hermes',
+    // Profiles have independent session stores, so an exact resume carries
+    // the profile. `custom` names a HERMES_HOME Cate cannot reproduce.
+    // Hermes creates the record before its first persisted user turn.
+    resume: {
+      args: (sid, context) => context?.profile && context.profile !== 'custom'
+        ? ['--profile', context.profile, 'chat', '--resume', sid]
+        : null,
+      fromSessionStart: false,
     },
+    sessionStore: '.hermes/state.db',
+    // Hermes >=0.21 keeps `chat -q` interactive when attached to a PTY.
+    promptArgs: (prompt) => ['chat', '-q', prompt],
+    interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
     hookProcess: 'self',
     promptContextHook: 'plain-text',
@@ -271,17 +221,12 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
   kiro: {
     id: 'kiro',
     displayName: 'Kiro',
-    runners: {
-      terminal: {
-        command: 'kiro-cli',
-        hooks: AGENT_HOOK_SPECS.kiro,
-        // Sessions are saved on each turn; agentSpawn precedes the first one.
-        resume: { args: (sid) => ['chat', '--v3', '--resume-id', sid], fromSessionStart: false },
-        sessionStore: '.kiro/sessions',
-        promptArgs: (prompt) => ['chat', '--v3', prompt],
-        interruptKeys: ['ctrl-c'],
-      },
-    },
+    command: 'kiro-cli',
+    // Sessions are saved on each turn; agentSpawn precedes the first one.
+    resume: { args: (sid) => ['chat', '--v3', '--resume-id', sid], fromSessionStart: false },
+    sessionStore: '.kiro/sessions',
+    promptArgs: (prompt) => ['chat', '--v3', prompt],
+    interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'kiro-cli',
     promptContextHook: 'plain-text',
     promptGuidance: null,
@@ -290,10 +235,6 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
 }
 
 export const AGENTS: readonly AgentDef[] = Object.values(AGENT_DEFS)
-
-/** Agents with a T3 provider. */
-export const T3_AGENTS = AGENTS.filter((agent): agent is AgentDef & { runners: { t3: T3RunnerDef } } =>
-  !!agent.runners.t3)
 
 export function isAgentId(value: unknown): value is AgentId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(AGENT_DEFS, value)
@@ -326,19 +267,13 @@ export function agentForLaunchCommand(commandLine: string): AgentDef | null {
     (first.startsWith("'") && first.endsWith("'"))
   const unquoted = quoted ? first.slice(1, -1) : first
   const command = unquoted.replace(/\\/g, '/').split('/').pop() ?? ''
-  return AGENTS.find((agent) => agent.runners.terminal.command === command) ?? null
+  return AGENTS.find((agent) => agent.command === command) ?? null
 }
 
 /** The agent whose process name matches (case-insensitive), or null. */
 export function matchAgentDef(procName: string): AgentDef | null {
   const lower = procName.toLowerCase()
   return AGENTS.find((a) => a.matchProcess(lower)) ?? null
-}
-
-/** The agent behind a provider T3 names (its provider or driver id). */
-export function agentIdForT3Provider(provider: string): AgentId | null {
-  const providerId = t3ProviderNamed(provider)?.providerId
-  return providerId ? AGENTS.find((agent) => agent.runners.t3?.providerId === providerId)?.id ?? null : null
 }
 
 // A resume command is typed into a restored shell, so the session id is
@@ -355,9 +290,9 @@ export function resumeCommandForAgent(
   context?: { profile?: string },
 ): string | null {
   const def = agentDef(agentId)
-  const args = def?.runners.terminal.resume.args
+  const args = def?.resume.args
   if (!def || !args || !SAFE_SESSION_ID.test(sessionId)) return null
   if (context?.profile !== undefined && !SAFE_PROFILE_NAME.test(context.profile)) return null
   const argv = args(sessionId, context)
-  return argv ? [def.runners.terminal.command, ...argv].join(' ') : null
+  return argv ? [def.command, ...argv].join(' ') : null
 }

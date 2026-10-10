@@ -195,7 +195,7 @@ struct Panel: Decodable, Equatable, Identifiable, Hashable {
     let onCanvas: String?
     /// Canvas panels: the canvas they show.
     let canvas: CanvasModel?
-    /// It takes prompts (a terminal, a chat): its relations go with them as
+    /// It takes prompts (a terminal): its relations go with them as
     /// context.
     let execution: Bool
     /// `once`, `always` or `off`: when its prompts take its relations'
@@ -350,8 +350,6 @@ struct ConversationMessage: Decodable, Hashable {
     let role: String
     let text: String
     let createdAt: String?
-    /// The text is still coming in.
-    let streaming: Bool?
 }
 
 /// What changed in a followed agent chat (`agents.watch`'s `conversation`
@@ -373,27 +371,7 @@ struct AgentChoice: Decodable, Hashable, Identifiable {
     let displayName: String
     /// Its Cate hooks are on in the workspace.
     let ready: Bool
-    /// The T3 provider it runs as; nil when T3 cannot run it.
-    let t3Provider: String?
     var id: String { agentId }
-}
-
-/// A T3 provider instance a new chat can run on (`T3ProviderModels`).
-struct T3Provider: Decodable, Hashable, Identifiable {
-    struct Model: Decodable, Hashable, Identifiable {
-        let slug: String
-        let name: String
-        let isDefault: Bool
-        var id: String { slug }
-    }
-    let providerId: String
-    let instanceId: String
-    let label: String
-    /// Installed, enabled and signed in.
-    let ready: Bool
-    let message: String?
-    let models: [Model]
-    var id: String { instanceId }
 }
 
 /// A notification from a connected workspace (`MobileNotification`).
@@ -429,8 +407,6 @@ enum TerminalEvent {
 /// (`MobileViewEvent`).
 enum ViewEvent {
     case load(tabId: String, url: String)
-    case script(String)
-    case reveal(Bool)
     case text(String, version: Int)
     case change(from: Int, to: Int, delta: [TextDelta])
     case error(String)
@@ -439,8 +415,6 @@ enum ViewEvent {
         let kind: String
         let tabId: String?
         let url: String?
-        let script: String?
-        let shown: Bool?
         let text: String?
         let version: Int?
         let from: Int?
@@ -454,8 +428,6 @@ enum ViewEvent {
         guard let event = try? JSONDecoder().decode(Envelope.self, from: data) else { return nil }
         switch event.kind {
         case "load": return .load(tabId: event.tabId ?? "", url: event.url ?? "")
-        case "script": return .script(event.script ?? "")
-        case "reveal": return .reveal(event.shown ?? false)
         case "text": return .text(event.text ?? "", version: event.version ?? 0)
         case "change":
             guard let from = event.from, let to = event.to, let delta = event.delta else { return nil }
@@ -535,20 +507,3 @@ struct SnapshotEvent<Snapshot: Decodable>: Decodable {
     let snapshot: Snapshot
 }
 
-/// The page of one chat load (`MobileChatPage`).
-struct ChatPage: Decodable {
-    struct Cookie: Decodable {
-        let name: String
-        let value: String
-    }
-    let loadId: Int
-    let url: String
-    let origin: String
-    let cookie: Cookie
-    let script: String
-    let css: String
-}
-
-struct NavigationDecision: Decodable {
-    let allow: Bool
-}

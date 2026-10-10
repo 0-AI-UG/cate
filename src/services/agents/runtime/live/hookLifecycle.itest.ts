@@ -30,7 +30,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const terminalId = `lifecycle-${agentId}-${randomUUID()}`
         const context = `CATE_PANEL_CONTEXT_${randomUUID()}`
         if (scenario === 'edit') hooks.setPromptContext(terminalId, context)
-        // Changes that reach the user (a notification), as the terminal runner publishes them.
+        // Changes that reach the user (a notification), as the terminal agents publish them.
         let notifications = 0
         const status = createAgentStatusMachine((change) => { if (change.attention) notifications++ })
         status.notePresence(terminalId, true, false, agentId)
@@ -119,7 +119,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             await writeFile(configPath, JSON.stringify(config))
           }
           await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
-          hooks.registerChangeSource(terminalId, { cwd, panelId: terminalId, kind: 'terminal' })
+          hooks.registerChangeTerminal(terminalId, { cwd, panelId: terminalId })
           const terminalEnv = await hooks.envForPty(terminalId, env, { [agentId]: 'on' }, cwd, undefined, agentId)
           terminalEnv.CATE_HOOK_ENDPOINT = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`
           let sessionCommandAt = 0, sessionCommandSent = false, sessionReadyAt = 0
@@ -133,7 +133,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           let interruptKeysSent = 0
           let recoverySubmitted = false
           let recoveryTypedAt = 0
-          await runLiveTui(AGENT_DEFS[agentId].runners.terminal.command, launch.args, {
+          await runLiveTui(AGENT_DEFS[agentId].command, launch.args, {
             cwd, env: terminalEnv, renderScreen: true, timeout: 60_000,
             respond: (screen) => {
               if (scenario === 'automatic-denial' && !billingNoticeAcknowledged && screen.includes('Enter to continue') && screen.includes('classifier requests')) {
@@ -152,8 +152,8 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
               }
               if (scenario === 'interrupt') {
                 if (!streamingAt && provider.modelInputs.some(({ input, protocol }) => JSON.stringify(input).includes('CATE_LIFECYCLE') || protocol.endsWith('/RunSSE'))) streamingAt = Date.now()
-                // The keys the terminal runner's interrupt types, 500ms apart.
-                const keys = AGENT_DEFS[agentId].runners.terminal.interruptKeys
+                // The keys the terminal agents' interrupt types, 500ms apart.
+                const keys = AGENT_DEFS[agentId].interruptKeys
                 if (streamingAt && interruptKeysSent < keys.length && Date.now() - streamingAt > 1500 && Date.now() - interruptedAt > 500) {
                   interruptedAt = Date.now()
                   const key = AGENT_INTERRUPT_INPUT[keys[interruptKeysSent++]]
@@ -228,7 +228,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           if (scenario === 'resume') {
             const session = events.find((event) => event.sessionId)?.sessionId
             expect(session).toBeTruthy()
-            const resumeArgs = AGENT_DEFS[agentId].runners.terminal.resume.args!(session!, { profile: events.find((event) => event.profile)?.profile })!
+            const resumeArgs = AGENT_DEFS[agentId].resume.args!(session!, { profile: events.find((event) => event.profile)?.profile })!
             const commonArgs = launch.args.slice(0, -1)
             let args: string[]
             if (agentId === 'codex' || agentId === 'kiro') args = [...resumeArgs, 'CATE_RESUMED']
@@ -238,7 +238,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             const boundary = events.length
             followupAnswer = provider.answer + '-resumed'
             let resumedTypedAt = 0, resumedSubmitted = false
-            await runLiveTui(AGENT_DEFS[agentId].runners.terminal.command, args, {
+            await runLiveTui(AGENT_DEFS[agentId].command, args, {
               cwd, env: terminalEnv, renderScreen: true, timeout: 60_000,
               respond: agentId === 'opencode' ? (screen) => {
                 if (!resumedTypedAt && screen.includes('ctrl+p')) { resumedTypedAt = Date.now(); return 'CATE_RESUMED' }
@@ -265,7 +265,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             }
             const changes = await hooks.listChanges(cwd)
             expect(changes, 'native edit stored exactly once').toHaveLength(1)
-            expect(changes[0]).toMatchObject({ agentId, sourceId: terminalId, panelId: terminalId })
+            expect(changes[0]).toMatchObject({ agentId, terminalId, panelId: terminalId })
             expect(changes[0].files.map((file) => file.path)).toEqual(['created.txt'])
             expect(await createAgentChangesStore(path.join(directory, 'changes')).list(cwd), 'edits survive a fresh store').toEqual(changes)
           }

@@ -14,7 +14,6 @@ import { ApiRouter, ApiTokenRegistry, acceptCallerHello, apiCapabilityImpl, regi
 import type { WorkspaceSettingsStore } from '@kernel/settings/runtime'
 import type { WorkspaceSettings } from '@panels/settings'
 import type { DataPaths, openSecretsFile } from '@runtime/data/runtime'
-import type { ServerHost } from '@runtime/server/runtime'
 import { workspaceCapability } from '@workspace/lifecycle/contract'
 import { createTrustGate, workspaceCapabilityImpl, workspaceInfo } from '@workspace/lifecycle/runtime'
 import { documentCapability, presenceCapability, type PanelRecord } from '@workspace/document/contract'
@@ -44,14 +43,11 @@ import { processCapability } from '@services/terminal/contract'
 import {
   cateCliEnvContributor,
   createTerminalService,
-  nodePtySpawn,
   processCapabilityImpl,
   snapshotProcessTree,
 } from '@services/terminal/runtime'
 import { browserDataCapability } from '@services/browser/contract'
 import { browserDataCapabilityImpl, createBrowserDataRuntime } from '@services/browser/runtime'
-import { t3Capability } from '@services/t3/contract'
-import { createT3Runtime, t3CapabilityImpl, type T3PtyHost } from '@services/t3/runtime'
 import { AGENTS, agentsCapability } from '@services/agents/contract'
 import { agentApi } from '@services/agents/contract/api'
 import { notificationsCapability } from '@workspace/notifications/contract'
@@ -62,7 +58,6 @@ import {
   withoutInheritedHookIdentity,
   type AgentStartPorts,
   type AgentsDocument,
-  type AgentsRuntime,
 } from '@services/agents/runtime'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract'
 import {
@@ -71,10 +66,8 @@ import {
   createSessionHost,
   createSurfaceBroker,
   sessionCapabilityImpl,
-  type SurfaceBroker,
 } from '@panels/framework/runtime'
 import { PANEL_RUNTIMES, type PanelPorts, type PanelRuntime, type PanelServices } from '@panels/runtime'
-import { createChatThreads } from '@panels/chat/runtime'
 import { installLayout } from '../contract'
 import type { BusyRegistry } from '../runtime'
 import { onQuarantine, quarantinedFiles, type Quarantined } from '@kernel/state/node'
@@ -83,14 +76,13 @@ export interface WorkspaceDeps {
   root: string
   runtimeId: string
   paths: DataPaths
-  /** The local socket: `CATE_SOCKET` for terminals and harnesses. */
+  /** The local socket: `CATE_SOCKET` for terminals. */
   endpoint: string
   installDir: string
   rpc: RpcServer
   lifecycle: LifecycleBus
   settings: WorkspaceSettingsStore<WorkspaceSettings>
   secrets: ReturnType<typeof openSecretsFile>
-  servers: ServerHost
   busy: BusyRegistry
   log: Logger
   /** `cate serve` trusts the workspace it serves. */
@@ -259,48 +251,11 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   for (const entry of quarantinedFiles()) quarantineWarning(entry)
   offs.push(onQuarantine(quarantineWarning))
 
-  // Which thread each chat panel shows, from the document, for the agents
-  // service's t3 runner.
-  let broker: ReturnType<typeof createSurfaceBroker> | undefined
-  const chatThreads = createChatThreads({ root, document, surfaces: () => broker })
-  offs.push(chatThreads.dispose)
   // Terminal panels provide these once the session host exists.
   const ports: PanelPorts = {}
   const agentTerminals = lateAgentTerminals(() => ports.agentTerminals)
 
-  // The t3 harness reports its edits to the agents service, created next.
-  let agents: AgentsRuntime | undefined
-  const harnessTokens = new Map<string, string>()
-  const ptyHost: T3PtyHost = {
-    async spawn({ file, args, cwd, env, cols, rows }, onData, onExit) {
-      const pty = await nodePtySpawn(file, args, { name: 'xterm-256color', cols, rows, cwd, env: { ...baseEnv(), ...env } })
-      pty.onData(onData)
-      pty.onExit(({ exitCode }) => onExit(exitCode))
-      return { write: (data) => pty.write(data), kill: () => pty.kill() }
-    },
-  }
-  const t3 = createT3Runtime({
-    root,
-    t3Root: paths.t3,
-    trust,
-    resolveCheckout,
-    server: deps.servers,
-    pty: ptyHost,
-    harness: { node: layout.node, entry: layout.t3 },
-    cateSocket: deps.endpoint,
-    mintHarnessToken(checkout) {
-      const previous = harnessTokens.get(checkout)
-      if (previous) tokens.revoke(previous)
-      const { token } = tokens.issue({ kind: 'harness' })
-      harnessTokens.set(checkout, token)
-      return token
-    },
-    harnessEnv: (harness) => agents?.changeCaptureEnv(harness) ?? Promise.resolve({}),
-    harnessStopped: (id) => agents?.releaseChangeCapture(id),
-    log: log.child('t3'),
-  })
-
-  agents = createAgentsRuntime({
+  const agentsRuntime = createAgentsRuntime({
     root,
     agentsDir: paths.agents,
     trust,
@@ -312,17 +267,12 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     resolveCheckout,
     snapshot: snapshotProcessTree,
     notify: (event) => notifications.publish(event),
-    watchStatus: (cwd, listener) => repository.monitors.subscribe(cwd, listener),
     flushConnected: (panelId) => connectedEditors.flush(panelId),
     relationRole: (type) => relationRole(type),
     log: log.child('agents'),
     terminal,
-    t3,
-    chatThreads,
     start: {
       terminals: agentTerminals,
-      // The panel factory exists once panel types are attached, before any call.
-      createChat: ({ placement, ...options }) => factory.createPanel('chat', { ...options, ...placement }),
       worktrees: {
         async create(name) {
           const meta = await repository.createWorktree({ branch: name })
@@ -332,21 +282,11 @@ export function composeWorkspace(deps: WorkspaceDeps) {
           await repository.removeWorktree({ worktreeId, force: true, deleteBranch: true })
         },
       },
-      t3: {
-        providerModels: () => t3.providerModels(),
-        startThread: (params) => t3.startThread(params),
-        async stopThread(params) {
-          await t3.interruptTurn(params).catch(() => {})
-          await t3.deleteConversation(params)
-        },
-      },
     },
   })
-  const agentsRuntime = agents
 
   offs.push(deps.busy.contribute(() => terminal.busy()))
   offs.push(deps.busy.contribute(() => agentsRuntime.busy().length > 0))
-  offs.push(deps.busy.contribute(() => t3.busy()))
 
   // `cate.ui.notify` reaches clients on the agents notification stream.
   offs.push(registerKernelApi(router, { publishNotification: (event) => notifications.publish(event) }))
@@ -363,13 +303,12 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     connectedEditors,
     terminal,
     browserData,
-    t3,
     agents: agentsRuntime,
   }
   const modules = (deps.panels ?? PANEL_RUNTIMES).map((panel) => panel(services))
   const registry = createPanelRegistry(modules.map(({ definition, session }) => ({ definition, session })))
   relationRole = (type) => registry.get(type)?.definition.relation
-  broker = createSurfaceBroker({ presence })
+  const broker = createSurfaceBroker({ presence })
   host = createSessionHost({
     document,
     registry,
@@ -405,7 +344,6 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   rpc.register(skillsCapability, skillsCapabilityImpl(skills))
   rpc.register(processCapability, processCapabilityImpl(terminal))
   rpc.register(browserDataCapability, browserDataCapabilityImpl(browserData))
-  rpc.register(t3Capability, t3CapabilityImpl(t3))
   rpc.register(agentsCapability, agentsRuntime.capability())
   rpc.register(notificationsCapability, notificationsCapabilityImpl(notifications))
   rpc.register(sessionCapability, sessionCapabilityImpl({ host, presence }))
@@ -426,7 +364,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     await skills.seedBundled().catch((err: Error) => log.warn('seeding bundled skills failed: %s', err.message))
   }
   // Granting runs the trusted work; revoking ends every process the
-  // workspace runs (terminals, T3 harnesses) and stops the git monitors.
+  // workspace runs (terminals) and stops the git monitors.
   offs.push(trust.onChange((state) => {
     repository.trustChanged()
     if (state.trusted) {
@@ -434,7 +372,6 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       return
     }
     for (const term of terminal.list()) if (term.alive) terminal.kill(term.id)
-    void t3.stopAll().catch((err: Error) => log.warn('stopping T3 on revoke failed: %s', err.message))
   }))
 
   return {
@@ -447,10 +384,9 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     terminal,
     agents: agentsRuntime,
     notifications,
-    t3,
     host,
     /** Page operations on clients' surfaces (section 10.2). */
-    surfaces: broker as SurfaceBroker,
+    surfaces: broker,
     /** For `RpcServerOptions.acceptHello`: refuses unknown caller tokens. */
     acceptHello(hello: HelloMessage): void {
       acceptCallerHello(router, hello)
@@ -472,7 +408,6 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       broker.dispose()
       connectedEditors.dispose()
       agentsRuntime.dispose()
-      await t3.dispose()
       await terminal.shutdown()
       repository.dispose()
       presence.dispose()

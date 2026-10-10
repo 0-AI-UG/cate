@@ -4,23 +4,12 @@
 // runs it like the key.
 
 import { app, Menu, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
-import { MENU_BAR, type ContextMenuItem, type StoredShortcut } from '@kernel/interaction/contract'
-import { DESKTOP_CHANNELS as C, MENU_SKELETON, type MenuModel, type MenuModelItem, type NativeAction } from '../contract'
+import { MENU_BAR, type ContextMenuItem } from '@kernel/interaction/contract'
+import { DESKTOP_CHANNELS as C, MENU_SKELETON, shortcutAccelerator, type MenuModel, type MenuModelItem, type NativeAction } from '../contract'
 import type { WindowRegistry } from './windowRegistry'
 
 const DOCUMENTATION_URL = 'https://github.com/0-AI-UG/cate'
 const ISSUES_URL = 'https://github.com/0-AI-UG/cate/issues'
-
-export function shortcutAccelerator(shortcut: StoredShortcut | undefined): string | undefined {
-  if (!shortcut?.key) return undefined
-  const parts: string[] = []
-  if (shortcut.command) parts.push('CmdOrCtrl')
-  if (shortcut.control) parts.push('Ctrl')
-  if (shortcut.option) parts.push('Alt')
-  if (shortcut.shift) parts.push('Shift')
-  const names: Record<string, string> = { '\t': 'Tab', '\r': 'Enter', ' ': 'Space', '↑': 'Up', '↓': 'Down', '←': 'Left', '→': 'Right' }
-  return [...parts, names[shortcut.key] ?? shortcut.key].join('+')
-}
 
 /** The bar before any window sent its model: the skeleton's roles only. */
 const BARE_MODEL: MenuModel = {

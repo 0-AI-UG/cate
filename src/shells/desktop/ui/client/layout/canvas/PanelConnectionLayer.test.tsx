@@ -37,7 +37,7 @@ function docWith(panels: PanelRecord[], nodes: WorkspaceDocument['canvases'][str
 function standardDocument(): WorkspaceDocument {
   return docWith(
     [
-      panel('agent', 'chat'),
+      panel('agent', 'terminal'),
       panel('worker', 'terminal'),
       panel('browser', 'browser'),
     ],
@@ -156,9 +156,9 @@ describe('PanelConnectionLayer', () => {
     expect(container.querySelector('[data-panel-connection="active"]')).not.toBeNull()
   })
 
-  it('starts a different-colored flow at every terminal or T3 panel', () => {
+  it('starts a different-colored flow at every terminal panel', () => {
     const ids = ['a', 'b', 'c', 'd', 'e']
-    const types = { a: 'terminal', b: 'browser', c: 'chat', d: 'terminal', e: 'editor' } as const
+    const types = { a: 'terminal', b: 'browser', c: 'terminal', d: 'terminal', e: 'editor' } as const
     const doc = docWith(
       ids.map((id) => panel(id, types[id as keyof typeof types])),
       Object.fromEntries(ids.map((id, index) => [id, {

@@ -220,7 +220,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
 
   // Webviews: partitions before any guest mounts, then page operations.
   const bridge = options.pageBridge
-  stops.push(installWebviewHosts(api, partitions, bridge))
+  stops.push(installWebviewHosts(partitions, bridge))
   if (bridge && identity.features.has('pageDriver')) stops.push(serveBrowserCodeCells(connections, bridge))
 
   quitBlockers.install((labels) => api.app.setQuitBlockers(labels))

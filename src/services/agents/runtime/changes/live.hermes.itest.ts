@@ -27,7 +27,7 @@ describe.skipIf(!LIVE_AGENT_CHANGES)('real Hermes integration', () => {
       await expect.poll(async () => (await fixture.records()).length, { timeout: 5000 }).toBe(1)
       const [record] = await fixture.records()
       expect(record).toMatchObject({
-        agentId: 'hermes', source: 'terminal', sourceId: fixture.terminalId,
+        agentId: 'hermes', terminalId: fixture.terminalId,
         panelId: fixture.panelId, cwd: fixture.cwd,
       })
       expect(record.sessionId).toBeTruthy()

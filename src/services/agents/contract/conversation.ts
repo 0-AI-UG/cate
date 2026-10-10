@@ -8,8 +8,6 @@ export interface AgentConversationMessage {
   text: string
   /** ISO timestamp, when the session store records one. */
   createdAt?: string
-  /** The text is still coming in (a T3 reply mid-turn). */
-  streaming?: true
 }
 
 /** A panel's agent conversation as the `agents.conversation` channel carries
@@ -32,7 +30,7 @@ export interface AgentConversationChange {
 }
 
 const sameMessage = (a: AgentConversationMessage, b: AgentConversationMessage): boolean =>
-  a.role === b.role && a.text === b.text && a.createdAt === b.createdAt && a.streaming === b.streaming
+  a.role === b.role && a.text === b.text && a.createdAt === b.createdAt
 
 /** The change from `before` to `after`, or null when nothing changed. */
 export function diffAgentConversation(before: AgentConversation, after: AgentConversation): AgentConversationChange | null {

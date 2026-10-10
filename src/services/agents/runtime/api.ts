@@ -1,5 +1,5 @@
 // `cate.agent.*` service handlers (architecture 14). The router validates
-// arguments; handlers resolve each panel to its runner.
+// arguments; handlers resolve each panel to its agent.
 
 import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
@@ -8,12 +8,9 @@ import type { AgentStartRequest, PanelAgentState } from '../contract'
 import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
 
-const runnerOf = (agents: AgentsCore, panelId: string) => agents.registry.runnerFor(panelId)?.kind ?? 'terminal'
-
 function summary(agents: AgentsCore, state: PanelAgentState) {
   return {
     panelId: state.panelId,
-    runner: runnerOf(agents, state.panelId),
     title: agents.document.panel(state.panelId)?.title ?? '',
     agentId: state.agentId,
     agentName: state.agentName,
@@ -23,16 +20,14 @@ function summary(agents: AgentsCore, state: PanelAgentState) {
 }
 
 /** Agent panels list, send and wait agree on: a terminal whose CLI agent is
- *  observable, or a chat whose harness is live (including a fresh chat its
- *  first prompt will start). */
+ *  observable. */
 function liveAgents(agents: AgentsCore): PanelAgentState[] {
-  return Object.values(agents.registry.all())
-    .filter((state) => runnerOf(agents, state.panelId) === 't3' || state.status !== 'notRunning')
+  return Object.values(agents.panels.all()).filter((state) => state.status !== 'notRunning')
 }
 
 function live(agents: AgentsCore, panelId: string): PanelAgentState {
-  const state = agents.registry.sessionFor(panelId)
-  if (!state || (runnerOf(agents, panelId) !== 't3' && state.status === 'notRunning')) throw new RpcError('gone', 'agent-panel-not-found')
+  const state = agents.panels.state(panelId)
+  if (!state || state.status === 'notRunning') throw new RpcError('gone', 'agent-panel-not-found')
   return state
 }
 
@@ -71,10 +66,9 @@ export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter
     async read({ panelId }) {
       const state = live(agents, panelId)
       if (!state.session) throw new RpcError('rejected', 'no-agent-session')
-      const runner = agents.registry.runnerFor(panelId)
-      let conversation: Awaited<ReturnType<NonNullable<typeof runner>['conversation']>>
+      let conversation: Awaited<ReturnType<typeof agents.terminals.conversation>>
       try {
-        conversation = await runner!.conversation(panelId)
+        conversation = await agents.terminals.conversation(panelId)
       } catch {
         throw new RpcError('rejected', 'agent-conversation-unavailable')
       }
@@ -117,7 +111,7 @@ function waitForAgents(agents: AgentsCore, panelIds: string[], timeoutSeconds: n
       }
     }
     const onAbort = (): void => finish(new RpcError('timeout', 'wait cancelled'))
-    const off = agents.registry.subscribe(check)
+    const off = agents.panels.subscribe(check)
     const timer = setTimeout(() => {
       const available = liveAgents(agents)
       const states = panelIds.length > 0 ? available.filter((state) => panelIds.includes(state.panelId)) : available

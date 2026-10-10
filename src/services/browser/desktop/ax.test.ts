@@ -117,3 +117,48 @@ it('inspects native password type, rendered boxes, and viewport in the same func
   expect(result.elements[0].value).toBe('••••••••')
   expect(result.elements[1].offscreen).toBe(true)
 })
+
+it('leaves out unnamed containers, whitespace and text that repeats its owner, and prints only telling states', async () => {
+  const named = (id: number, role: string, name: string, extra: Record<string, unknown> = {}) => ({ nodeId: String(id), backendDOMNodeId: id, role: { value: role }, name: { value: name }, ...extra })
+  const result = await readBrowserAX({ frames: [{}], send: async () => ({ nodes: [
+    named(1, 'generic', '', { childIds: ['2', '4', '5', '6'] }),
+    named(2, 'link', 'Docs', { parentId: '1', childIds: ['3'] }),
+    named(3, 'StaticText', 'Docs', { parentId: '2' }),
+    named(4, 'StaticText', ' ', { parentId: '1' }),
+    named(5, 'StaticText', 'Some prose', { parentId: '1' }),
+    named(6, 'checkbox', 'Remember me', { parentId: '1', properties: [
+      { name: 'checked', value: { value: 'false' } }, { name: 'required', value: { value: false } },
+      { name: 'readonly', value: { value: false } }, { name: 'focused', value: { value: true } },
+    ] }),
+    named(7, 'button', 'Menu', { properties: [{ name: 'expanded', value: { value: false } }, { name: 'level', value: { value: 2 } }] }),
+  ] }), register: target => target.backendNodeId, callOn: async () => visible })
+  expect(result.state).toBe([
+    '- link "Docs" [id=2]',
+    '- StaticText "Some prose" [id=5]',
+    '- checkbox "Remember me" [focused] [id=6]',
+    '- button "Menu" [collapsed] [level=2] [id=7]',
+  ].join('\n'))
+  // Structured states stay complete for code.
+  expect(result.elements.find(element => element.id === 6)?.states).toEqual({ checked: 'false', required: false, readonly: false, focused: true })
+})
+
+it('keeps a styled checkbox whose native input is hidden behind a visible label', async () => {
+  class Element {
+    constructor(private readonly shown: boolean) {}
+    checkVisibility() { return this.shown }
+    getClientRects() { return this.shown ? [{ width: 100, height: 20, top: 0, left: 0, bottom: 20, right: 100 }] : [{ width: 1, height: 1, top: 0, left: 0, bottom: 1, right: 1 }] }
+  }
+  class HTMLInputElement extends Element {
+    type = 'checkbox'
+    labels: Element[] = []
+  }
+  const styled = new HTMLInputElement(false)
+  styled.labels = [new Element(true)]
+  const orphan = new HTMLInputElement(false)
+  const targets = [styled, orphan]
+  const result = await readBrowserAX({ frames: [{}], send: async () => ({ nodes: [node(1, 'checkbox'), node(2, 'checkbox')] }),
+    register: target => target.backendNodeId,
+    callOn: async (target, declaration) => ({ value: new Function('Element', 'HTMLInputElement', 'innerHeight', 'innerWidth', `return (${declaration})`).call(null, Element, HTMLInputElement, 600, 800).call(targets[target.backendNodeId - 1]) }),
+  })
+  expect(result.elements.map(element => element.id)).toEqual([1])
+})

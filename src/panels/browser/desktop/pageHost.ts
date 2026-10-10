@@ -443,11 +443,19 @@ export class BrowserPageHost {
     const ready = await this.waitFor(() => (page.ready ? true : undefined), 8_000)
     if (!ready) throw new Error('webview-not-ready')
     this.requireActive(args.tabId)
-    let methodArgs = args.args
+    // A parked guest (its panel off screen) paints nothing to capture.
+    let methodArgs = this.visible ? args.args : { ...args.args, _hidden: true }
     if (args.method === 'upload' && typeof methodArgs.filePath === 'string') {
       if (!this.deps.fetchUpload) throw new Error('browser-upload-unavailable')
       const file = await this.deps.fetchUpload(methodArgs.filePath)
       methodArgs = { ...methodArgs, filePath: await bridge.stageUpload(file.name, file.bytes) }
+    }
+    // Keys reach a guest only while it has the window's focus (a click gives
+    // it too); text and fills work without.
+    if (args.method === 'pressKey') {
+      page.webview.focus()
+      const frame = this.deps.nextFrame ?? defaultFrame
+      await frame()
     }
     const guest = this.guestRef(args.tabId, page)
     await bridge.attach(guest)

@@ -20,7 +20,7 @@ let fakeBin = ''
 let launchLog = ''
 let control = ''
 
-interface Started { panelId: string; runner: string; agentId: string | null }
+interface Started { panelId: string; agentId: string }
 
 function installFakeCodex(): void {
   fakeBin = path.join(home, 'bin')
@@ -93,7 +93,7 @@ const launches = () => (existsSync(launchLog) ? readFileSync(launchLog, 'utf8').
 test('starts a CLI agent with its prompt as argv, next to the calling terminal', async () => {
   test.setTimeout(120_000)
   const started = await start('--literal task; no shell')
-  expect(started).toMatchObject({ runner: 'terminal', agentId: 'codex' })
+  expect(started).toMatchObject({ agentId: 'codex' })
   await expectTerminalText(page, started.panelId, 'FAKE_CODEX_STARTED', { timeout: 30_000 })
 
   const launched = JSON.parse(launches()[0]!)

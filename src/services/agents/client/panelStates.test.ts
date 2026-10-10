@@ -8,7 +8,7 @@ import { fakeStream } from './testing'
 type PanelsEvent = ChannelEvent<AgentPanelStates, AgentPanelStatesChange>
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
-  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: true, contextPolicy: null, status: 'running',
+  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', contextPolicy: null, status: 'running',
   present: true, canReceivePrompt: false, session: null, ...patch,
 })
 
@@ -41,7 +41,7 @@ describe('agent panel states', () => {
     const seen = vi.fn()
     b.subscribe(seen)
     streams[0].emit({ kind: 'snapshot', rev: 1, snapshot: { p1: state() } })
-    streams[0].emit({ kind: 'change', rev: 2, change: { p2: state({ panelId: 'p2', takesOverPanel: false }), p1: null } })
+    streams[0].emit({ kind: 'change', rev: 2, change: { p2: state({ panelId: 'p2' }), p1: null } })
     expect(Object.keys(a.getSnapshot())).toEqual(['p2'])
     expect(peekAgentPanels('ws')).toBe(a.getSnapshot())
     expect(seen).toHaveBeenCalledTimes(2)

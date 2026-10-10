@@ -1,4 +1,4 @@
-// services/agents contract: the agent registry, hook specs, sessions, runners,
+// services/agents contract: the agent registry, hook specs, sessions,
 // status, starting an agent, change records and the `agents` capability. Pure.
 
 export * from './contract/registry'

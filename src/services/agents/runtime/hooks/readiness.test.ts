@@ -50,7 +50,7 @@ describe('agent CLI hook readiness', () => {
     ])
     await expect(resolveDriverAgent(inspect, '/repo', '')).resolves.toMatchObject({
       id: 'claude-code',
-      runners: { terminal: { command: 'claude' } },
+      command: 'claude',
     })
   })
 
@@ -77,7 +77,7 @@ describe('agent CLI hook readiness', () => {
     inspect.mockResolvedValue([])
     await expect(resolveDriverAgent(inspect, '/repo/worktree', 'codex', {
       hookConfig: { codex: 'on' },
-    })).resolves.toMatchObject({ id: 'codex', runners: { terminal: { command: 'codex' } } })
+    })).resolves.toMatchObject({ id: 'codex', command: 'codex' })
   })
 
   it('uses the base checkout as the Auto signal for a fresh worktree', async () => {
@@ -88,6 +88,6 @@ describe('agent CLI hook readiness', () => {
     )
     await expect(resolveDriverAgent(inspect, '/repo/worktree', '', {
       fallbackCwd: '/repo',
-    })).resolves.toMatchObject({ id: 'codex', runners: { terminal: { command: 'codex' } } })
+    })).resolves.toMatchObject({ id: 'codex', command: 'codex' })
   })
 })

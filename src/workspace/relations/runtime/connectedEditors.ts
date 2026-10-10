@@ -1,5 +1,5 @@
 // Connected editors (9.7, docs/connected-editors.md): an editor reachable
-// through a terminal or chat panel's outgoing relations shares a working file
+// through a terminal panel's outgoing relations shares a working file
 // with the agent. This service decides which editors are shared, tells their
 // sessions, and flushes them before a prompt is submitted. Editor sessions
 // live in a higher layer; the composition root passes the lookup.

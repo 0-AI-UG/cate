@@ -4,7 +4,7 @@
 // bottom. Window controls (macOS traffic lights) inset its header.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, GitPullRequest, ChartNoAxesCombined, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, GitPullRequest, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, type LucideIcon } from 'lucide-react'
 import { Tooltip, useShortcutLabel } from '../../kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import type { ActionId } from '@kernel/interaction/contract'
@@ -34,7 +34,6 @@ export interface SidebarOverlayButton {
 const DEFAULT_OVERLAY_BUTTONS: readonly SidebarOverlayButton[] = [
   { view: 'skills', label: 'Skills', action: 'skills', icon: PuzzlePiece },
   { view: 'pullRequests', label: 'Repository', action: 'openRepository', icon: GitPullRequest },
-  { view: 'usage', label: 'Usage', action: 'openUsage', icon: ChartNoAxesCombined },
 ]
 
 export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, overlayButtons = DEFAULT_OVERLAY_BUTTONS }: SidebarProps): JSX.Element {

@@ -13,7 +13,7 @@ let stop = () => {}
 afterEach(() => stop())
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
-  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', takesOverPanel: true, contextPolicy: null, status: 'running',
+  panelId: 'p1', agentId: 'codex', agentName: 'Codex', label: 'Codex', contextPolicy: null, status: 'running',
   present: true, canReceivePrompt: false, session: null, ...patch,
 })
 

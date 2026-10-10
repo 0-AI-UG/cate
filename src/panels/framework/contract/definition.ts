@@ -91,7 +91,7 @@ export interface PanelCreation {
 }
 
 /** A generic "open" action a panel type serves (`opens`). */
-export type PanelOpenKind = 'file' | 'directory' | 'url' | 'conversation'
+export type PanelOpenKind = 'file' | 'directory' | 'url'
 
 export interface PanelDefinition<
   Type extends PanelType = PanelType,
@@ -133,9 +133,7 @@ export interface PanelDefinition<
   /** The view hosts a native surface the client keeps mounted, and the page
    *  operations it runs there, each with the client feature it needs (the
    *  runtime sends an op only to a client that has it, section 10.2). */
-  surface?: { retention: 'workspace' | 'recent'; ops: Readonly<Record<string, ClientFeature>> }
-  /** False when the panel works without a project folder (a browser). */
-  requiresFolder?: boolean
+  surface?: { ops: Readonly<Record<string, ClientFeature>> }
   // --- Record, schemas, API --------------------------------------------------
   /** Title of a fresh record when the creator gives none. */
   defaultTitle: string

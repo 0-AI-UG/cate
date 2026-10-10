@@ -40,7 +40,7 @@ describe('dependency rules', () => {
   it("a CLI file importing another module's internals", () => {
     expect(rejected).toContain('src/cli/bad.ts')
   })
-  it('an agents runner importing a client side', () => {
-    expect(rejected).toContain('src/services/agents/runtime/runners/terminal/bad.ts')
+  it('the agents runtime importing a client side', () => {
+    expect(rejected).toContain('src/services/agents/runtime/bad.ts')
   })
 })

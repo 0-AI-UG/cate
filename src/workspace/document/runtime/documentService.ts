@@ -38,8 +38,9 @@ export interface DocumentService {
   readonly seq: number
   /** New at every start (the sequencer's epoch). */
   readonly epoch: string
-  /** A client's op, deduped on its opId. A removal the removal guard refuses
-   *  fails with its code (`dirty`). */
+  /** A client's op, deduped on its opId. A removal (or a replacePanel, which
+   *  drops the old session) the removal guard refuses fails with its code
+   *  (`dirty`). */
   submit(op: DocOp): SubmitResult
   /** Who decides whether removing panels loses work (the session host): it
    *  gets the whole removal set and the panels whose work may go, and throws
@@ -175,10 +176,21 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     submit(op) {
       if (removalGuard) {
         for (const change of opChanges(op)) {
-          if (change.kind !== 'removePanels' && change.kind !== 'closeWindow') continue
-          const ids = change.kind === 'removePanels' ? change.ids : panelsInWindow(sequencer.doc, change.windowId)
+          let removing: Set<PanelId>
+          let discard: Set<PanelId>
+          if (change.kind === 'replacePanel') {
+            // The replaced panel's session is dropped: a removal for the guard.
+            removing = new Set([change.record.id])
+            discard = change.discard ? removing : new Set()
+          } else if (change.kind === 'removePanels' || change.kind === 'closeWindow') {
+            const ids = change.kind === 'removePanels' ? change.ids : panelsInWindow(sequencer.doc, change.windowId)
+            removing = removalSet(sequencer.doc, ids)
+            discard = new Set(change.discard ?? [])
+          } else {
+            continue
+          }
           try {
-            removalGuard(removalSet(sequencer.doc, ids), new Set(change.discard ?? []))
+            removalGuard(removing, discard)
           } catch (err) {
             if (!isRpcError(err)) throw err
             const code = err.code === 'dirty' || err.code === 'gone' ? err.code : 'rejected'

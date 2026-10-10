@@ -51,7 +51,7 @@ describe.skipIf(!LIVE_AGENT_CHANGES)('real CLI recorded changes', () => {
       await expect(stat(path.join(fixture.cwd, 'rename-before.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
       const records = await fixture.records()
       expect(records.length).toBeGreaterThan(0)
-      expect(records.every((record) => record.agentId === 'codex' && record.panelId === fixture.panelId && record.sourceId === fixture.terminalId && record.cwd === fixture.cwd)).toBe(true)
+      expect(records.every((record) => record.agentId === 'codex' && record.panelId === fixture.panelId && record.terminalId === fixture.terminalId && record.cwd === fixture.cwd)).toBe(true)
       expect(new Set(records.map((record) => record.sessionId)).size).toBe(1)
       expect(new Set(records.map((record) => record.turnId)).size).toBe(1)
       const files = records.flatMap((record) => record.files)

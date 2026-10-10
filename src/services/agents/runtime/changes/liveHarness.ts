@@ -166,7 +166,7 @@ export async function createLiveChangeFixture(agentId: AgentId, baseEnv: Record<
     await mkdir(path.join(directory, 'empty-git-hooks'))
     await runLiveCli('git', ['-c', 'user.name=Cate Live Test', '-c', 'user.email=cate-live@example.invalid', '-c', 'commit.gpgsign=false',
       '-c', `core.hooksPath=${path.join(directory, 'empty-git-hooks')}`, 'commit', '-qm', 'Fixture'], { cwd, env: baseEnv })
-    hooks.registerChangeSource(terminalId, { cwd, panelId, kind: 'terminal' })
+    hooks.registerChangeTerminal(terminalId, { cwd, panelId })
     await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
     const env = await hooks.envForPty(terminalId, baseEnv, { [agentId]: 'on' }, cwd, undefined, agentId)
     await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
@@ -209,7 +209,7 @@ export async function assertCapturedEdit(fixture: LiveChangeFixture, agentId: Ag
   expect(record, 'real CLI edit reached authenticated shipped hook ingestion').toBeDefined()
   expect(records, 'one native edit was captured exactly once').toHaveLength(1)
   expect(record!.files.map((file) => file.path), 'capture includes only the requested file').toEqual(['target.txt'])
-  expect(record).toMatchObject({ agentId, source: 'terminal', sourceId: fixture.terminalId, panelId: fixture.panelId, cwd: fixture.cwd })
+  expect(record).toMatchObject({ agentId, terminalId: fixture.terminalId, panelId: fixture.panelId, cwd: fixture.cwd })
   expect(record!.sessionId).toBeTruthy()
   expect(record!.turnId).toBeTruthy()
   const file = record!.files.find((entry) => entry.path === 'target.txt')!

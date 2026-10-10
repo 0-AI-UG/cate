@@ -50,7 +50,7 @@ approval events.
 
 Regression coverage (`src/services/agents/`): `runtime/status.integration.test.ts`
 covers all registered CLIs and notification behavior;
-`runners/terminal/terminalRunner.test.ts` exercises ordered hook/PTY delivery;
+`runtime/terminal.test.ts` exercises ordered hook/PTY delivery;
 `runtime/hooks/hermes.test.ts` executes the generated Python bridge when Python
 is installed; the fake-provider lifecycle suite
 (`runtime/live/hookLifecycle.itest.ts`) verifies the human permission

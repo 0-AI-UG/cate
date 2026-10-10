@@ -66,14 +66,14 @@ test.fixme('@public-network controls public sites from a real Cate terminal', as
     { timeout: 60_000 },
   ).not.toBeNull()
 
-  const run = (code: string) => runCate(terminalNodeId, 'browser', 'run', code)
+  const run = (code: string) => runCate(terminalNodeId, 'browser', 'run', code, '--panel', createdPanel)
   const shortPanelId = await runCate(terminalNodeId, 'panel', 'create', 'browser', 'https://httpbin.org/forms/post')
   const createdPanel = await expect.poll(() => page.evaluate(
     (prefix) => window.__cateE2E!.panels().find((panel) => panel.id.startsWith(prefix))?.id ?? '', shortPanelId,
   ), { timeout: 15_000 }).not.toBe('').then(() => page.evaluate(
     (prefix) => window.__cateE2E!.panels().find((panel) => panel.id.startsWith(prefix))!.id, shortPanelId,
   ))
-  await run(`var tab = await cua.getTab({panelId:${JSON.stringify(createdPanel)}});`)
+  await run('await tab.getAXState();')
   await expect.poll(() => page.evaluate(
     (panelId) => window.__cateE2E!.panels().some((panel) => panel.id === panelId), createdPanel,
   ), { timeout: 15_000 }).toBe(true)
@@ -97,20 +97,20 @@ test.fixme('@public-network controls public sites from a real Cate terminal', as
   const responseBody = await run('await tab.getAXState({disableDiffing:true});')
   for (const text of ['Cate Terminal Test', 'terminal-test@example.com', 'Leave at reception', 'large', 'cheese']) expect(responseBody).toContain(text)
 
-  await run('tab = await cua.createBrowserTab("https://example.com", {panelId:tab.panelId}); await tab.waitFor({text:"Example Domain"},{timeoutMs:30000});')
+  await run('tab = await cua.createBrowserTab("https://example.com"); await tab.waitFor({text:"Example Domain"},{timeoutMs:30000});')
   const heading = await run('await tab.getAXState({disableDiffing:true});')
   expect(heading).toContain('https://example.com/')
   expect(heading).toContain('Example Domain')
 
   // Production document: CSP, client hints, deep AX tree, sticky chrome.
-  await run('tab = await cua.createBrowserTab("https://en.wikipedia.org/wiki/Electron_(software_framework)", {panelId:tab.panelId}); await tab.waitFor({text:"Electron"},{timeoutMs:30000});')
+  await run('tab = await cua.createBrowserTab("https://en.wikipedia.org/wiki/Electron_(software_framework)"); await tab.waitFor({text:"Electron"},{timeoutMs:30000});')
   const wikipediaState = await run('await tab.getAXState({disableDiffing:true});')
   expect(wikipediaState).toContain('Electron')
   expect(wikipediaState).toContain('link')
   expect(wikipediaState.length).toBeGreaterThan(5_000)
 
   // Reactive application: hydration, keyboard submission, stateful controls.
-  await run('tab = await cua.createBrowserTab("https://demo.playwright.dev/todomvc/", {panelId:tab.panelId});')
+  await run('tab = await cua.createBrowserTab("https://demo.playwright.dev/todomvc/");')
   await run(`var state=await tab.getAXState({emit:false,disableDiffing:true});
     var input=state.elements.filter(e=>e.role==="textbox");
     if(input.length!==1)throw Error("Expected one todo input");

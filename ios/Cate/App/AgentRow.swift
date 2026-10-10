@@ -38,7 +38,7 @@ struct AgentRow: View {
         .contextMenu {
             Button("Review Changes", systemImage: "arrow.left.arrow.right") { review() }
             NavigationLink(value: PanelRoute(workspaceId: workspaceId, panelId: agent.panelId)) {
-                Label(agent.panelType == "chat" ? "Open Chat" : "Open Terminal", systemImage: agent.panelSymbol)
+                Label("Open Terminal", systemImage: "terminal")
             }
         }
         .navigationDestination(item: $reviewing) { PanelView(route: $0) }
@@ -111,11 +111,8 @@ enum AgentState {
 extension Agent {
     /// The agent and what it runs in: "Codex · Terminal".
     var `where`: String {
-        let host = panelType == "chat" ? "T3 Code" : "Terminal"
-        return name == host ? host : "\(name) · \(host)"
+        name == "Terminal" ? name : "\(name) · Terminal"
     }
-
-    var panelSymbol: String { panelType == "chat" ? "bubble.left.and.text.bubble.right" : "terminal" }
 }
 
 extension CoreHost {

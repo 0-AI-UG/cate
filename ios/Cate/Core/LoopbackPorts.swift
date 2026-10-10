@@ -1,6 +1,6 @@
 // Loopback routing for the workspace web views (architecture 12.3). In the
-// browser and chat panels `localhost` is the runtime's machine, but WebKit
-// connects to loopback hosts directly and never through a proxy. So before a
+// browser panel `localhost` is the runtime's machine, but WebKit connects to
+// loopback hosts directly and never through a proxy. So before a
 // page loads a loopback URL, this phone's loopback listens at the same port
 // (IPv4 and IPv6) and each connection becomes a stream to that port on the
 // runtime's machine, through the workspace connection (`stream.*`). URLs are

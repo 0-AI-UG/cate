@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PanelType } from '@workspace/document/contract'
+import type { PanelRelation, PanelType } from '@workspace/document/contract'
 import { panelDefinition } from '@panels/definitions'
 import {
   compileRelationContext,
@@ -7,7 +7,6 @@ import {
   panelRelationOptions,
   relationPanelOf,
   wouldCreatePanelRelationCycle,
-  type PanelRelation,
   type RelationPanel,
 } from './graph'
 
@@ -20,12 +19,12 @@ describe('panel relation prompt context', () => {
     const panels = {
       backend: panel('backend', 'terminal', 'Backend Agent'),
       browser: panel('browser', 'browser', 'App Browser'),
-      frontend: panel('frontend', 'chat', 'Frontend Agent'),
+      frontend: panel('frontend', 'terminal', 'Frontend Agent'),
       editor: panel('editor', 'editor', 'Frontend', { filePath: '/repo/src/App.tsx' }),
     }
     const relations: PanelRelation[] = [
       { id: 'one', fromPanelId: 'backend', toPanelId: 'browser', kind: 'use' },
-      // A terminal/T3 destination is the boundary; `trigger` is not required.
+      // A terminal destination is the boundary; `trigger` is not required.
       { id: 'two', fromPanelId: 'browser', toPanelId: 'frontend', kind: 'context' },
       { id: 'three', fromPanelId: 'frontend', toPanelId: 'editor', kind: 'context' },
     ]
@@ -50,7 +49,7 @@ describe('panel relation prompt context', () => {
     const panels = {
       [sourceId]: panel(sourceId, 'terminal'),
       [browserId]: panel(browserId, 'browser'),
-      [agentId]: panel(agentId, 'chat'),
+      [agentId]: panel(agentId, 'terminal'),
     }
     const context = compileRelationContext(sourceId, panels, [
       { id: 'browser-link', fromPanelId: sourceId, toPanelId: browserId, kind: 'use' },
@@ -75,11 +74,11 @@ describe('panel relation prompt context', () => {
 
   it('includes custom connection wording in agent context', () => {
     const panels = {
-      chat: panel('chat', 'chat', 'Agent'),
+      agent: panel('agent', 'terminal', 'Agent'),
       browser: panel('browser', 'browser', 'Browser'),
     }
-    const context = compileRelationContext('chat', panels, [
-      { id: 'custom', fromPanelId: 'chat', toPanelId: 'browser', kind: 'use', label: 'summarizes findings from' },
+    const context = compileRelationContext('agent', panels, [
+      { id: 'custom', fromPanelId: 'agent', toPanelId: 'browser', kind: 'use', label: 'summarizes findings from' },
     ])!
 
     expect(context.text).toContain('Browser browser — summarizes findings from. Use it through Cate browser automation')
@@ -117,7 +116,7 @@ describe('panel relation prompt context', () => {
   })
 
   it('offers exactly three pair-aware intents with one recommendation', () => {
-    const types: string[] = ['terminal', 'browser', 'editor', 'canvas', 'chat', 'review', 'surface']
+    const types: string[] = ['terminal', 'browser', 'editor', 'canvas', 'review', 'surface']
     for (const sourceType of types) {
       for (const targetType of types) {
         const source = panel(`source-${sourceType}`, sourceType)
@@ -131,7 +130,7 @@ describe('panel relation prompt context', () => {
   })
 
   it('uses the source and target together for recommendations', () => {
-    expect(panelRelationOptions(panel('chat', 'chat'), panel('terminal', 'terminal'))[0])
+    expect(panelRelationOptions(panel('agent', 'terminal'), panel('terminal', 'terminal'))[0])
       .toMatchObject({ kind: 'trigger', label: 'Hand off' })
     expect(panelRelationOptions(panel('browser', 'browser'), panel('terminal', 'terminal'))[0])
       .toMatchObject({ kind: 'context', label: 'Send findings to' })
@@ -145,12 +144,12 @@ describe('panel relation prompt context', () => {
 
   it('turns resource-to-execution context into a context send, not a handoff', () => {
     const panels = {
-      chat: panel('chat', 'chat'),
+      agent: panel('agent', 'terminal'),
       browser: panel('browser', 'browser'),
       terminal: panel('terminal', 'terminal'),
     }
-    const context = compileRelationContext('chat', panels, [
-      { id: 'browse', fromPanelId: 'chat', toPanelId: 'browser', kind: 'use' },
+    const context = compileRelationContext('agent', panels, [
+      { id: 'browse', fromPanelId: 'agent', toPanelId: 'browser', kind: 'use' },
       { id: 'report', fromPanelId: 'browser', toPanelId: 'terminal', kind: 'context' },
     ])!
 

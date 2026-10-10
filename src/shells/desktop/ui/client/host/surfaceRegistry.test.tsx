@@ -158,7 +158,7 @@ describe('browser surface layout tracking', () => {
     expect(frames.size).toBe(0)
   })
 
-  it('does not poll layout for decorative T3 activity pulses', async () => {
+  it('does not poll layout for decorative activity pulses', async () => {
     await frame()
     const ancestor = host.querySelector('main')!
     const getAnimations = vi.fn(() => [{ playState: 'running', effect: { getKeyframes: () => [{ offset: 0, computedOffset: 0, easing: 'linear', outlineColor: 'red' }] } }])

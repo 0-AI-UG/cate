@@ -1,7 +1,6 @@
 // Shared workspace, the client that only watches: while A works in a panel,
-// B's view of it follows along without being torn down or reloaded (the
-// T3 watcher bug, for the other panel types). A view is marked on the DOM
-// before A starts; a remount loses the mark.
+// B's view of it follows along without being torn down or reloaded. A view
+// is marked on the DOM before A starts; a remount loses the mark.
 
 import { test, expect } from '@playwright/test'
 import http from 'node:http'

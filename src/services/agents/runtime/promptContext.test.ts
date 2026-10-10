@@ -32,7 +32,7 @@ let context: PromptContext
 beforeEach(() => {
   enabled = true
   const fake = fakeDocument([
-    { id: 'source', type: 'chat', title: 'Agent', fields: {} },
+    { id: 'source', type: 'terminal', title: 'Agent', fields: {} },
     { id: 'browser', type: 'browser', title: 'Browser', fields: {} },
   ], [{ id: 'relation', fromPanelId: 'source', toPanelId: 'browser', kind: 'use' }])
   modes = fake.modes
@@ -86,20 +86,5 @@ describe('one-shot panel relation context', () => {
     enabled = false
     expect(context.consume('source', null)).toBeNull()
     expect(modes.get('source')).toBeUndefined()
-  })
-
-  it('flushes connected editors before a send consumes the context', async () => {
-    const order: string[] = []
-    const fake = fakeDocument([
-      { id: 'source', type: 'terminal', title: 'T', fields: {} },
-      { id: 'editor', type: 'editor', title: 'Notes', fields: { filePath: '/repo/.cate/tmp/a.md' } },
-    ], [{ id: 'r', fromPanelId: 'source', toPanelId: 'editor', kind: 'context' }])
-    const flushConnected = vi.fn(async () => { order.push('flush') })
-    const withFlush = createPromptContext({ document: fake.document, relationsEnabled: () => true, relationRole, flushConnected })
-    const text = await withFlush.prepareForSend('source', null)
-    order.push('consumed')
-    expect(text).toContain('"/repo/.cate/tmp/a.md"')
-    expect(order).toEqual(['flush', 'consumed'])
-    expect(flushConnected).toHaveBeenCalledWith('source')
   })
 })

@@ -69,7 +69,6 @@ struct PanelView: View {
         case "terminal": TerminalPanelView(workspaceId: workspaceId, panel: panel)
         case "editor": EditorPanelView(workspaceId: workspaceId, panel: panel)
         case "browser": BrowserPanelView(workspaceId: workspaceId, panel: panel)
-        case "chat": ChatPanelView(workspaceId: workspaceId, panel: panel)
         case "review": ReviewPanelView(workspaceId: workspaceId, panel: panel)
         case "canvas": CanvasPanelView(workspaceId: workspaceId, panel: panel)
         case "surface": SurfacePanelView(workspaceId: workspaceId, panel: panel)
@@ -92,7 +91,7 @@ extension EnvironmentValues {
 }
 
 /// A panel's title as the desktop's tabs show it: a panel that takes prompts
-/// (a terminal, a chat) carries its icon, or its agent's logo while one
+/// (a terminal) carries its icon, or its agent's logo while one
 /// stands in for it, and the agent's status mark.
 struct PanelMark: Equatable {
     let panel: Panel
@@ -140,7 +139,7 @@ private struct PanelTitle: ViewModifier {
 }
 
 /// A panel's icon, or its agent's logo while one stands in for it; the
-/// desktop's logos, T3's for a chat, else the icon's symbol.
+/// desktop's logos, else the icon's symbol.
 struct PanelGlyph: View {
     let icon: String
     let logo: String?
@@ -148,8 +147,6 @@ struct PanelGlyph: View {
     var body: some View {
         if let logo {
             Image("agent-\(logo)").resizable().scaledToFit()
-        } else if icon == "t3" {
-            Image("t3-logo").resizable().scaledToFit()
         } else {
             Image(systemName: PanelIcon.symbol(icon)).resizable().scaledToFit()
         }
@@ -163,7 +160,6 @@ enum PanelIcon {
         case "terminal": "terminal"
         case "folders": "folder"
         case "globe": "globe"
-        case "t3": "bubble.left.and.text.bubble.right"
         case "git-compare": "arrow.left.arrow.right"
         case "grid": "square.grid.3x3"
         case "plus": "plus.square.dashed"
@@ -172,8 +168,8 @@ enum PanelIcon {
     }
 }
 
-/// A view's handle on a panel's session (`panel.open`, `browser.open`,
-/// `chat.open`): the snapshot, events, and ops. Open while `run` runs.
+/// A view's handle on a panel's session (`panel.open`, `browser.open`): the
+/// snapshot, events, and ops. Open while `run` runs.
 @MainActor
 @Observable
 final class PanelSession<Snapshot: Decodable & Equatable> {
@@ -212,7 +208,7 @@ final class PanelSession<Snapshot: Decodable & Equatable> {
         return await core.panelOp(viewId, op, as: type)
     }
 
-    /// The core API, for calls about this view (`browser.*`, `chat.*`).
+    /// The core API, for calls about this view (`browser.*`).
     func call<Result: Decodable>(_ method: String, _ params: [String: Any], as type: Result.Type) async throws -> Result {
         guard let core else { throw CoreError.badReply(method) }
         var params = params

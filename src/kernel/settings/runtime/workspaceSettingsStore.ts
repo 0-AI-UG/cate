@@ -4,9 +4,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { RpcError, type ChannelEvent } from '@kernel/rpc/contract'
+import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import { jsonEqual } from '@kernel/state/contract'
 import { createJsonStateFile } from '@kernel/state/node'
-import { type SetSettingParams, type SettingsTable, type SettingsValues } from '../contract'
+import { type SetSettingParams, type SettingsTable, type SettingsValues, type settingsCapability } from '../contract'
 
 export const WORKSPACE_SETTINGS_FILE = 'settings.json'
 
@@ -109,5 +110,14 @@ export function createSettingsHandlers<S extends object>(store: WorkspaceSetting
       emit({ kind: 'snapshot', rev, snapshot: store.getAll() as SettingsValues })
       return store.subscribe((_values, patch) => emit({ kind: 'change', rev: ++rev, change: patch as Partial<SettingsValues> }))
     },
+  }
+}
+
+/** The `settings` capability, served from `handlers`. */
+export function settingsCapabilityImpl(handlers: SettingsHandlers): CapabilityImpl<typeof settingsCapability> {
+  return {
+    getAll: () => handlers.getAll(),
+    set: (params) => handlers.set(params),
+    subscribe: (_params, sink) => handlers.subscribe((event) => sink.emit(event)),
   }
 }

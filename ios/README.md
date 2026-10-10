@@ -28,12 +28,12 @@ SwiftUI; the client core runs headless in a hidden `WKWebView`
   to the desktop's recommended spots (`canvas.suggest`) and a tap on one puts
   it there. A new agent goes where you are looking. Agents (`AgentsView`, each a chat:
   `AgentChatView`, a new agent starts from an empty chat whose box picks a
-  terminal agent or a T3 Code model and a worktree), the workspace's own
+  terminal agent and a worktree), the workspace's own
   screen (who else is here, keep-awake and alerts, disconnecting);
   notifications (`Notifier`: banners, push registration, Reply); and one view
   per panel type: terminal (SwiftTerm), files (the shared buffer as text,
-  previews, a file browser), browser and chat (`WKWebView`s in the
-  workspace's data store), diff review, canvas (its map) and surface (the
+  previews, a file browser), browser (a `WKWebView` in the workspace's
+  data store), diff review, canvas (its map) and surface (the
   type picker).
 
 - `Notifications/`: the notification service extension, which opens each

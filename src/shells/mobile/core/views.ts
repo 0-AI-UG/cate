@@ -1,8 +1,8 @@
 // Panel views in the app (`panel.*` in the core API). Each follows its
 // panel's session (the host's `acquireSession`, across reconnects) and
 // pushes the snapshot whole to the app as `snapshot` events; the app sends
-// the panel type's ops back. Browser and chat views add what their pages
-// need on top (browser.ts, chat.ts).
+// the panel type's ops back. Browser views add what their pages need on top
+// (browser.ts).
 
 import type { SessionHandle } from '@client/connections'
 import { acquireSession, sessionOwner, subscribeSessions } from '@client/host'

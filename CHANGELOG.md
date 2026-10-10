@@ -6,10 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Removed
+
+- **T3 Code**: the T3 Code chat panel, its provider settings, usage overview and conversation menu are gone, and the runtime no longer bundles the T3 harness. Agents run as CLIs in terminals: `cate agent start` lost `--runner`, `--instance` and `--model`, and `cate agent` JSON output no longer has a `runner` field.
+
 ### Changed
 
 - **Menus from the panel types**: the canvas menu, the new-tab menus, the empty window, the canvas toolbar, the command palette, the menu bar and the shortcuts settings are now built from the panel types and actions, so they always agree.
-- **Worktrees for more panels**: Files and Diff Review panels can now be created in a worktree from every creation menu, like terminals and T3 Code, and the command palette offers "New <panel> in <worktree>".
+- **Worktrees for more panels**: Files and Diff Review panels can now be created in a worktree from every creation menu, like terminals, and the command palette offers "New <panel> in <worktree>".
 - **New Files Panel** is now ⌘N (it replaces the separate New File command). Browser commands moved to the new Panel menu. Custom shortcuts for creating panels are reset.
 
 ## [2.0.5] - 2026-09-30

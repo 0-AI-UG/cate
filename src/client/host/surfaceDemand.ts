@@ -1,5 +1,5 @@
 /** Panels whose surface a session operation is waiting for. The persistent
- * host mounts these regardless of its retention policy. */
+ * host mounts these wherever the panel lives. */
 let demanded = new Map<string, number>()
 const listeners = new Set<() => void>()
 const keyFor = (workspaceId: string, panelId: string) => `${workspaceId}:${panelId}`

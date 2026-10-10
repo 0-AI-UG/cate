@@ -12,7 +12,6 @@ import type { RepositoryRuntime } from '@workspace/repository/runtime'
 import type { ConnectedEditors } from '@workspace/relations/runtime'
 import type { TerminalService } from '@services/terminal/runtime'
 import type { BrowserDataRuntime } from '@services/browser/runtime'
-import type { T3Runtime } from '@services/t3/runtime'
 import type { AgentStartPorts, AgentsRuntime } from '@services/agents/runtime'
 import type { AnyPanelDefinition } from './framework/contract'
 import type { PanelFactory, PanelSessionClass, SessionHost, SurfaceBroker } from './framework/runtime'
@@ -22,7 +21,6 @@ import { reviewPanel } from './review/runtime'
 import { BrowserCodeCells, browserCodeCapabilityImpl, browserPanel, browserServiceHandlers } from './browser/runtime'
 import { browserApi, browserCodeCapability } from './browser/contract'
 import { surfacePanel } from './surface/runtime'
-import { chatPanel } from './chat/runtime'
 import { canvasPanel } from './canvas/runtime'
 
 /** The runtime services the daemon has for panel types; each type's entry
@@ -37,7 +35,6 @@ export interface PanelServices {
   connectedEditors: ConnectedEditors
   terminal: TerminalService
   browserData: BrowserDataRuntime
-  t3: T3Runtime
   agents: AgentsRuntime
 }
 
@@ -152,23 +149,8 @@ const browser: PanelRuntime<'browserData' | 'settings' | 'files' | 'document'> =
   },
 })
 
-const chat: PanelRuntime<'root' | 't3' | 'agents'> = (services) => {
-  let factory: PanelFactory | undefined
-  const { agents } = services
-  return {
-    ...chatPanel({
-      root: services.root,
-      t3: services.t3,
-      relationContext: (panelId, agentId) => agents.relationContext(panelId, agentId),
-      changes: { watch: (panelId, listener) => agents.watchChanges(panelId, listener) },
-      createPanel: (type, options) => factory?.createPanel(type, options) ?? null,
-    }),
-    attach: ({ factory: panelFactory }) => { factory = panelFactory },
-  }
-}
-
 const canvas: PanelRuntime = () => canvasPanel()
 
 const surface: PanelRuntime = () => surfacePanel()
 
-export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, chat, canvas, surface]
+export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface]

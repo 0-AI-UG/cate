@@ -9,12 +9,12 @@ Read and follow the **karpathy-guidelines** skill (`.Codex/skills/karpathy-guide
 ## Project Overview
 
 Cate is a desktop application that provides an infinite zoomable canvas where
-terminal, editor, browser, chat and review panels float spatially (similar to
+terminal, editor, browser and review panels float spatially (similar to
 Figma/Miro, but for coding), next to classic docked layouts. Built with
 Electron + React + TypeScript, styled with Tailwind CSS.
 
 Each open workspace is served by its own **runtime daemon**, which holds the
-workspace's state and does all its work (files, git, terminals, agents, T3,
+workspace's state and does all its work (files, git, terminals, agents,
 the `cate` API). The desktop app is a client of those runtimes; other devices
 (and later a phone) connect to the same runtime after pairing, and every
 client sees one live workspace.
@@ -30,11 +30,11 @@ The Electron app lives at the project root. It uses **electron-vite** for the
 desktop shell and **esbuild** for the daemon and the CLI.
 
 ```bash
-npm install              # install dependencies (patches T3)
+npm install              # install dependencies
 npm run dev              # bundle the daemon, then start the app with hot reload
 npm run build            # production build of the desktop shell
 npm run build:runtime    # bundle the daemon to dist-runtime/runtime.cjs
-npm run runtime:tarball  # build the runtime tarball (daemon, Node, cate CLI, T3, skills)
+npm run runtime:tarball  # build the runtime tarball (daemon, Node, cate CLI, skills)
 npm run typecheck        # tsc --noEmit
 npm run lint             # eslint
 npm run lint:deps        # dependency-cruiser: layer, side and entry rules
@@ -110,11 +110,11 @@ session channels for panels. There is no per-feature IPC.
 `src/` is organised by **layer**, lowest first:
 
 - `kernel/`: rpc, api, settings, lifecycle, state, log, ui (generic machinery)
-- `runtime/`: daemon, data, transports, security, pairing, connect, server, tunnel, power
+- `runtime/`: daemon, data, transports, security, pairing, connect, tunnel, power
 - `workspace/`: document, lifecycle (trust), canvas, files, repository, skills, relations
-- `services/`: terminal, browser, t3, agents
+- `services/`: terminal, browser, agents
 - `client/`: connections, workspaces, document mirror, host, layout (dock, canvas, drag, windows), ui
-- `panels/`: framework + terminal, editor, browser, chat, review, canvas, surface
+- `panels/`: framework + terminal, editor, browser, review, canvas, surface
 - `shells/`: desktop
 - plus `cli/`, `shared/` (generic pure utilities) and `test/` (test support)
 
@@ -197,9 +197,9 @@ Every piece of state is in exactly one class (`docs/architecture.md` section 5):
   ops (`workspace/document/contract`); clients hold an optimistic mirror
   (`client/document`: `documentStoreFor(workspaceId)`, `useDocument`).
 - **Session** (runtime, per panel): terminal screen, editor buffer, browser
-  tabs, chat binding, review state.
+  tabs, review state.
 - **Workspace data** (runtime): workspace settings, secrets, trust, grants,
-  pairings, T3 state, browser data, skill sources.
+  pairings, browser data, skill sources.
 - **Device** (one client device): client settings, workspace list, known
   runtimes, device key, main window bounds, through the `DeviceStore` port.
 - **Client** (in memory): viewport, zoom, active tab, focus, selection, undo
@@ -214,7 +214,7 @@ Persisted state is hand-editable JSON written through `kernel/state`
 corrupt-file quarantine); every file has one writer process.
 - Workspace data: `~/.cate/workspaces/<runtimeId>/` on the runtime's machine
   (`document.json`, `sessions/`, `buffers/`, `settings.json`, `secrets.json`,
-  `pairings.json`, `trust.json`, `grants.json`, `skills/`, `browser/`, `t3/`,
+  `pairings.json`, `trust.json`, `grants.json`, `skills/`, `browser/`,
   `agents/`, `terminal-logs/`, `screenshots/`, `logs/`).
 - Project `<root>/.cate/`: only `skills.json`, `drafts/`, `worktrees/` and its
   `.gitignore`.
@@ -234,9 +234,8 @@ Everything outside the UI that drives Cate goes through one router
 commands, help and argument parsing from those specs.
 
 Terminals get `CATE_SOCKET` (the workspace's local socket) and a per-PTY
-`CATE_TOKEN` that names the calling panel; T3 harnesses get the same with a
-per-harness token. CLI and harness calls are gated by the workspace settings
-`cliEnabled` and `cli*Enabled` (per area, read or control). Session methods
+`CATE_TOKEN` that names the calling panel. CLI calls are gated by the
+workspace settings `cliEnabled` and `cli*Enabled` (per area, read or control). Session methods
 target a panel through the reserved `panelId` argument (`--panel` on the CLI),
 or the caller's sticky target (`cate panel set`).
 

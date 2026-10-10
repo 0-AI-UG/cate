@@ -1,5 +1,6 @@
 // The repository flows every client runs: opening a pull request in Cate,
-// discarding a worktree, and switching a panel to another checkout.
+// publishing, updating, merging, discarding and pruning worktrees, cleaning
+// up merged branches, and switching a panel to another checkout.
 
 import { isRpcError, type RuntimeProxy } from '@kernel/rpc/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
@@ -130,6 +131,161 @@ export async function discardWorktree(
   } finally {
     setBusy?.(null)
   }
+}
+
+/** What the worktree flows report through: failures go to `setError` (null
+ *  clears it); `setBusy` brackets a slow runtime call. */
+interface WorktreeFlowDeps {
+  runtime: Pick<RuntimeProxy, 'vcs'>
+  setError(message: string | null): void
+  setBusy?(worktreeId: string | null): void
+}
+
+/** Pushes the worktree's branch to origin. */
+export async function publishWorktree(wt: JoinedWorktree, deps: WorktreeFlowDeps): Promise<void> {
+  const { runtime, setError, setBusy } = deps
+  if (!wt.branch) return
+  setError(null)
+  setBusy?.(wt.id)
+  try {
+    await runtime.vcs.push({ cwd: wt.path, remote: 'origin', branch: wt.branch })
+  } catch (err: unknown) {
+    setError(`Publish failed: ${errorMessage(err, 'Couldn’t publish this branch.')}`)
+  } finally {
+    setBusy?.(null)
+  }
+}
+
+/** Creates a pull request for the worktree's branch and opens it. A worktree
+ *  that already belongs to a PR is refused. */
+export async function createWorktreePr(wt: JoinedWorktree, deps: WorktreeFlowDeps & { onPrCreated?(): void }): Promise<void> {
+  const { runtime, setError, setBusy, onPrCreated } = deps
+  if (!wt.branch) return
+  if (wt.prNumber) {
+    setError(`This worktree already belongs to PR #${wt.prNumber}. Open that pull request instead.`)
+    return
+  }
+  setError(null)
+  setBusy?.(wt.id)
+  try {
+    const res = await runtime.vcs.createPr({ path: wt.path, branch: wt.branch })
+    if (res.ok) {
+      clientUi().openExternal(res.url)
+      onPrCreated?.()
+    } else {
+      setError(errorMessage(res.message, 'Couldn’t create the pull request.'))
+    }
+  } catch (err: unknown) {
+    setError(`Couldn’t create pull request: ${errorMessage(err, 'The operation failed.')}`)
+  } finally {
+    setBusy?.(null)
+  }
+}
+
+/** Brings branch `base` into the worktree; conflicts are left for the person
+ *  to resolve there. */
+export async function updateWorktreeFromBase(wt: JoinedWorktree, base: string, deps: WorktreeFlowDeps): Promise<void> {
+  const { runtime, setError, setBusy } = deps
+  if (wt.isPrimary || !wt.branch) return
+  if (!base) {
+    setError('Could not resolve the base branch. Open Source Control once to refresh.')
+    return
+  }
+  setBusy?.(wt.id)
+  try {
+    const result = await runtime.vcs.worktreeUpdateFrom({ path: wt.path, from: base })
+    if (!result.ok) {
+      setError(result.conflict
+        ? `Conflicts updating from ${base} — open a terminal here to resolve them.`
+        : `Update from ${base}: ${errorMessage(result.message, 'The update failed.')}`)
+    } else {
+      setError(null)
+    }
+  } catch (err: unknown) {
+    setError(`Update failed: ${errorMessage(err, 'The operation failed.')}`)
+  } finally {
+    setBusy?.(null)
+  }
+}
+
+/** Merges the worktree's branch into branch `base` after asking. */
+export async function mergeWorktree(
+  wt: JoinedWorktree,
+  base: string,
+  deps: WorktreeFlowDeps & { host: Pick<RepositoryHost, 'root'> },
+): Promise<void> {
+  const { host, runtime, setError, setBusy } = deps
+  if (!host.root || wt.isPrimary) return
+  if (!wt.branch || !base) {
+    setError('Could not resolve the base branch — open Source Control once to refresh.')
+    return
+  }
+  if (!(await clientUi().confirm(`Merge ${wt.branch} into ${base}?`))) return
+  setBusy?.(wt.id)
+  try {
+    const result = await runtime.vcs.worktreeMergeTo({ cwd: host.root, from: wt.branch, to: base })
+    if (!result.ok) setError(`Merge ${wt.branch} → ${base}: ${errorMessage(result.message, 'The merge failed.')}`)
+    else setError(null)
+  } catch (err: unknown) {
+    setError(`Merge failed: ${errorMessage(err, 'The operation failed.')}`)
+  } finally {
+    setBusy?.(null)
+  }
+}
+
+/** Drops the metadata of worktrees whose checkout is gone, with their bound
+ *  panels. Asks about every orphan's panels first; one refusal keeps them
+ *  all. */
+export async function pruneWorktrees(
+  orphans: JoinedWorktree[],
+  deps: Omit<WorktreeFlowDeps, 'setBusy'> & { host: Pick<RepositoryHost, 'prepareWorktreeClose'> },
+): Promise<void> {
+  const { host, runtime, setError } = deps
+  try {
+    for (const orphan of orphans) {
+      if (!(await host.prepareWorktreeClose(orphan.id))) return
+    }
+    await runtime.vcs.worktreePrune()
+  } catch (err: unknown) {
+    setError(`Cleanup failed: ${errorMessage(err, 'No saved entries were removed.')}`)
+  }
+}
+
+/** Drops one orphan's metadata and bound panels. */
+export async function removeOrphanWorktree(
+  worktreeId: string,
+  deps: Omit<WorktreeFlowDeps, 'setBusy'> & { host: Pick<RepositoryHost, 'prepareWorktreeClose'> },
+): Promise<void> {
+  const { host, runtime, setError } = deps
+  if (!(await host.prepareWorktreeClose(worktreeId))) return
+  try {
+    await runtime.vcs.worktreeRemove({ worktreeId, force: true })
+  } catch (err: unknown) {
+    setError(`Couldn’t remove this entry: ${errorMessage(err, 'The operation failed.')}`)
+  }
+}
+
+/** Deletes the local branches other than `current` after asking; git refuses
+ *  unmerged or in-use ones, which are kept. Resolves how many were kept, or
+ *  null when the person cancelled. */
+export async function deleteMergedBranches(
+  runtime: Pick<RuntimeProxy, 'vcs'>,
+  root: string,
+  current: string,
+  branches: readonly string[],
+): Promise<number | null> {
+  const candidates = branches.filter((name) => name !== current)
+  if (candidates.length === 0) return 0
+  if (!await clientUi().confirm(`Delete local branches already merged into ${current || 'the current checkout'}? Unmerged or in-use branches will be kept.`)) return null
+  let kept = 0
+  for (const name of candidates) {
+    try {
+      await runtime.vcs.branchDelete({ cwd: root, name })
+    } catch {
+      kept++
+    }
+  }
+  return kept
 }
 
 /** Moves a panel to the checkout at `picked`. A type that switches live

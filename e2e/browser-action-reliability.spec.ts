@@ -232,7 +232,9 @@ for (const method of ['setValue', 'typeText']) {
     await expect.poll(async () => {
       const pointer = await cursor.boundingBox()
       const scale = guest!.width / field.width
-      return Math.max(Math.abs(pointer!.x - (guest!.x + field.x * scale)), Math.abs(pointer!.y - (guest!.y + field.y * scale)))
+      // The pointer's tip (its hotspot) sits 12.5% into its box, past the translate(-12.5%).
+      const tip = { x: pointer!.x + pointer!.width * 0.125, y: pointer!.y + pointer!.height * 0.125 }
+      return Math.max(Math.abs(tip.x - (guest!.x + field.x * scale)), Math.abs(tip.y - (guest!.y + field.y * scale)))
     }).toBeLessThan(2)
     await page.screenshot({ path: test.info().outputPath(`${method}-cursor.png`) })
   })

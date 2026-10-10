@@ -16,9 +16,9 @@ export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter):
     busy: () => ({ panelIds: agents.busy() }),
     panels(_params, sink) {
       let rev = 0
-      let states = agents.registry.all()
+      let states = agents.panels.all()
       sink.emit({ kind: 'snapshot', rev, snapshot: states })
-      return agents.registry.subscribe((change) => {
+      return agents.panels.subscribe((change) => {
         states = applyAgentPanelStatesChange(states, change)
         sink.emit({ kind: 'change', rev: ++rev, change })
       })

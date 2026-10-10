@@ -304,7 +304,7 @@ it('lists recorded agent edits still changed in git, and serves their hunks on d
   const hunk = diff.hunks[0]
   records = [{
     id: 'rec', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo',
-    createdAt: '1', mode: 'operation',
+    createdAt: '1',
     files: [
       { path: 'src/a.ts', hunks: [hunk], additions: 1, deletions: 0, coverage: 'patch' },
       { path: 'src/gone.ts', hunks: [hunk], additions: 1, deletions: 0, coverage: 'patch' },

@@ -67,10 +67,10 @@ jobs:
         run: npm run test
 
       # E2E and Electron smoke tests run locally only. Keep the npm scripts
-      # available for browser, T3, and full-app validation.
+      # available for browser and full-app validation.
 
   # The release builds a runtime tarball per target; build the Linux one here
-  # so a broken staging step (CLI, T3, natives, BUILD, checksum) fails the PR
+  # so a broken staging step (CLI, natives, BUILD, checksum) fails the PR
   # instead of the release.
   runtime-tarball:
     runs-on: ubuntu-latest

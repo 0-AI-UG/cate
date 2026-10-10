@@ -114,7 +114,7 @@ describe('PanelHost', () => {
     const Scope = ({ workspaceId, children }: { workspaceId: string; children: React.ReactNode }) => (
       <ScopeContext.Provider value={`scope of ${workspaceId}`}>{children}</ScopeContext.Provider>
     )
-    await render(<PersistentPanelHost workspaceIds={['w']} activeWorkspaceId="w" windowId={MAIN_WINDOW} Scope={Scope} />)
+    await render(<PersistentPanelHost workspaceIds={['w']} windowId={MAIN_WINDOW} Scope={Scope} />)
     expect(document.querySelector('[data-testid="browser"]')?.textContent).toBe('scope of w')
   })
 })

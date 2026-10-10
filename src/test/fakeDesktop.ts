@@ -165,7 +165,6 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
     web: {
       partitionFor: async ({ runtimeId }) => `persist:ws-${runtimeId}`,
       release: async () => {},
-      setCookie: async () => {},
     },
     webgl: { request: async () => false, release: () => {} },
   }

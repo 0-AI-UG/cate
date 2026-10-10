@@ -130,6 +130,10 @@ describe('BrowserPageHost', () => {
     const webview = guest(42)
     host.attachGuest('t1', webview)
     webview.fire('dom-ready')
+    // A parked (off-screen) guest is flagged, so a screenshot fails at once.
+    await host.execute({ tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } })
+    expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'getScreenshot', { tabId: 't1', _hidden: true })
+    host.visible = true
     await expect(host.execute({ tabId: 't1', method: 'getAXState', args: { tabId: 't1' } })).resolves.toEqual({ result: 'ok' })
     expect(bridge.execute).toHaveBeenCalledWith({ webContentsId: 42, panelId: 'p1', tabId: 't1' }, 'getAXState', { tabId: 't1' })
     await host.execute({ tabId: 't1', method: 'upload', args: { target: 3, filePath: '/remote/file.txt' } })
@@ -144,6 +148,7 @@ describe('BrowserPageHost', () => {
       panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
       reveal: (tabId) => { revealed.push(tabId); host.show(tabId) },
     })
+    host.visible = true
     host.update({ ...snapshot([tab(), tab({ id: 't2', url: 'https://b.test/' })]), activeTabId: 't2' })
     host.show('t1')
     for (const [id, webContentsId] of [['t1', 1], ['t2', 2]] as const) {

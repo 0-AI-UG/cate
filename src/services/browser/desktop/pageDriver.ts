@@ -9,6 +9,9 @@ import {
   BROWSER_ACTION_METHODS,
   BROWSER_ELEMENT_READ_METHODS,
   BROWSER_OBSERVATION_METHODS,
+  BROWSER_WAIT_MAX_MS,
+  browserRecovery,
+  diffBrowserState,
   type BrowserDriverResult,
   type BrowserElement,
   type BrowserImage,
@@ -68,6 +71,45 @@ const KEY_DATA: Record<string, { key: string; code: string; windowsVirtualKeyCod
   End: { key: 'End', code: 'End', windowsVirtualKeyCode: 35, nativeVirtualKeyCode: 35 },
 }
 
+// US-layout punctuation keys: physical code and virtual key code.
+const SYMBOL_KEYS: Record<string, { code: string; vk: number }> = {
+  '-': { code: 'Minus', vk: 189 }, '=': { code: 'Equal', vk: 187 }, '[': { code: 'BracketLeft', vk: 219 },
+  ']': { code: 'BracketRight', vk: 221 }, '\\': { code: 'Backslash', vk: 220 }, ';': { code: 'Semicolon', vk: 186 },
+  "'": { code: 'Quote', vk: 222 }, ',': { code: 'Comma', vk: 188 }, '.': { code: 'Period', vk: 190 },
+  '/': { code: 'Slash', vk: 191 }, '`': { code: 'Backquote', vk: 192 },
+}
+// What Shift types on a US-layout digit or punctuation key.
+const US_SHIFTED: Record<string, string> = {
+  '1': '!', '2': '@', '3': '#', '4': '$', '5': '%', '6': '^', '7': '&', '8': '*', '9': '(', '0': ')',
+  '-': '_', '=': '+', '[': '{', ']': '}', '\\': '|', ';': ':', "'": '"', ',': '<', '.': '>', '/': '?', '`': '~',
+}
+
+// macOS routes editing shortcuts through editing commands, not key events.
+const MAC_EDITING_COMMANDS: Record<string, string> = {
+  'Meta+a': 'selectAll', 'Meta+c': 'copy', 'Meta+x': 'cut', 'Meta+v': 'paste',
+  'Meta+z': 'undo', 'Meta+Shift+z': 'redo', 'Meta+Backspace': 'deleteToBeginningOfLine',
+  'Alt+Backspace': 'deleteWordBackward', 'Meta+ArrowLeft': 'moveToBeginningOfLine', 'Meta+ArrowRight': 'moveToEndOfLine',
+}
+
+/** How long an action waits for its element to become actionable. */
+const ACTIONABLE_TIMEOUT_MS = 5_000
+/** Errors an element can grow out of while the page settles. */
+const TRANSIENT_ELEMENT_ERRORS = ['element-not-stable', 'element-obscured', 'element-not-visible', 'element-disabled', 'element-has-no-actionable-box']
+/** Requests an action may have started that its result should wait for. */
+const SETTLE_REQUEST_TYPES = new Set(['Document', 'XHR', 'Fetch'])
+/** Requests older than this no longer count for settling (it looks back 2.5 s)
+ *  and are forgotten, so a long-lived page's unfinished streams do not pile up. */
+const REQUEST_MEMORY_MS = 10_000
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+/** `promise`, or `code` once `ms` pass. The promise itself keeps running. */
+function within<T>(promise: Promise<T>, ms: number, code: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([promise, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new Error(code)), ms) })])
+    .finally(() => clearTimeout(timer))
+}
+
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
@@ -91,6 +133,12 @@ export class PageDriver {
   private agentInputDepth = 0
   private queue: Promise<unknown> = Promise.resolve()
   private activeGuard?: () => void
+  /** The latest AX observation, the baseline of a call that names none (CLI). */
+  private latestAx?: string
+  /** Set once a call has sent input or changed the page, for its recovery hint. */
+  private inputSent = false
+  /** In-flight document and data requests, by request id, with their start time. */
+  private requests = new Map<string, number>()
   private frameParents = new Map<string, string | undefined>()
   private frameSessions = new Map<string, string>()
   private sessionFrames = new Map<string, string>()
@@ -135,6 +183,10 @@ export class PageDriver {
         this.send('DOM.enable'),
         this.send('Runtime.enable'),
         this.send('Accessibility.enable'),
+        this.send('Network.enable'),
+        // The guest is rarely the OS-focused view; without this Chromium drops
+        // the default action of trusted keys (Enter submitting a form).
+        this.send('Emulation.setFocusEmulationEnabled', { enabled: true }),
       ])
     } catch (error) {
       this.attached = false
@@ -144,6 +196,7 @@ export class PageDriver {
   }
 
   dispose(): void {
+    this.requests.clear()
     this.refs.clear()
     this.stableIds.clear()
     this.observations.clear()
@@ -160,7 +213,14 @@ export class PageDriver {
   }
 
   execute(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
-    return this.enqueue(() => this.executeBound(method, args), args._codeCellId, args._userInputEpoch).catch((error) => ({ error: error instanceof Error ? error.message : 'browser-command-failed', recovery: 'Observe the bound tab again before retrying; input may already have been dispatched.' }))
+    return this.enqueue(() => {
+      this.inputSent = false
+      return this.executeBound(method, args)
+    }, args._codeCellId, args._userInputEpoch).catch((error) => {
+      const message = error instanceof Error ? error.message : 'browser-command-failed'
+      const recovery = browserRecovery(message, this.inputSent)
+      return { error: message, ...(recovery ? { recovery } : {}) }
+    })
   }
 
   private enqueue<T>(operation: () => Promise<T>, codeCellId?: unknown, expectedEpoch?: unknown): Promise<T> {
@@ -237,6 +297,18 @@ export class PageDriver {
       if (sessionId) this.dropFrameSession(sessionId)
       return
     }
+    if (event.method === 'Network.requestWillBeSent') {
+      if (!event.sessionId && typeof event.params.requestId === 'string' && SETTLE_REQUEST_TYPES.has(String(event.params.type))) {
+        const now = Date.now()
+        for (const [id, at] of this.requests) if (now - at > REQUEST_MEMORY_MS) this.requests.delete(id)
+        this.requests.set(event.params.requestId, now)
+      }
+      return
+    }
+    if (event.method === 'Network.loadingFinished' || event.method === 'Network.loadingFailed') {
+      if (!event.sessionId && typeof event.params.requestId === 'string') this.requests.delete(event.params.requestId)
+      return
+    }
     if (event.method === 'Page.frameAttached') {
       const frameId = typeof event.params.frameId === 'string' ? event.params.frameId : undefined
       const parentFrameId = typeof event.params.parentFrameId === 'string' ? event.params.parentFrameId : undefined
@@ -254,6 +326,7 @@ export class PageDriver {
       const parentId = typeof frame.parentId === 'string' ? frame.parentId : this.frameParents.get(frameId ?? '')
       if (!event.sessionId && !parentId) {
         this.documentEpoch += 1
+        this.requests.clear()
         this.refs.clear()
         this.stableIds.clear()
         this.frameParents.clear()
@@ -272,6 +345,7 @@ export class PageDriver {
         this.send('DOM.enable', {}, sessionId),
         this.send('Runtime.enable', {}, sessionId),
         this.send('Accessibility.enable', {}, sessionId),
+        this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId),
       ])
     } catch {
       this.dropFrameSession(sessionId)
@@ -309,7 +383,8 @@ export class PageDriver {
     // Session setup also runs from debugger events, independently of commands.
     const releasingInput = (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased')
       || (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp')
-    if (!releasingInput && !method.endsWith('.enable') && method !== 'Target.setAutoAttach') this.activeGuard?.()
+    const setup = method.endsWith('.enable') || method === 'Target.setAutoAttach' || method === 'Emulation.setFocusEmulationEnabled'
+    if (!releasingInput && !setup) this.activeGuard?.()
     try {
       return objectValue(await this.contents.debugger.sendCommand(method, params, sessionId))
     } catch (error) {
@@ -322,6 +397,7 @@ export class PageDriver {
    * events as agent-originated for the tiny guest preload. Without the marker,
    * the user-preemption listener would cancel the action on its own click. */
   private async dispatchInput(params: Record<string, unknown>): Promise<void> {
+    this.inputSent = true
     this.agentInputDepth += 1
     this.contents.send('cate-browser-automation-input', true)
     try {
@@ -386,6 +462,7 @@ export class PageDriver {
   }
 
   private async dispatchKey(params: Record<string, unknown>): Promise<void> {
+    this.inputSent = true
     this.agentInputDepth += 1
     this.contents.send('cate-browser-automation-input', true)
     try {
@@ -436,9 +513,31 @@ export class PageDriver {
       returnByValue,
       awaitPromise: true,
     }, target.sessionId)
-    const exception = response.exceptionDetails
-    if (exception) throw new Error('page-evaluation-failed')
+    const exception = objectValue(response.exceptionDetails)
+    if (response.exceptionDetails) {
+      const detail = String(objectValue(exception.exception).description ?? exception.text ?? '').split('\n')[0]
+      throw new Error(detail ? `page-evaluation-failed: ${detail}` : 'page-evaluation-failed')
+    }
     return objectValue(response.result)
+  }
+
+  /** The element a pointer action lands on: a text node's element, or the
+   *  visible label of a checkbox or radio that styling hides. */
+  private async pointerTarget(target: ElementTarget): Promise<ElementTarget> {
+    const result = await this.callOn(target, `function () {
+      const element = this.nodeType === Node.ELEMENT_NODE ? this : this.parentElement;
+      if (!element) return null;
+      const shown = node => node.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && Array.from(node.getClientRects()).some(rect => rect.width > 0 && rect.height > 0);
+      if (element instanceof HTMLInputElement && (element.type === 'checkbox' || element.type === 'radio') && !shown(element)) {
+        return Array.from(element.labels || []).find(shown) || element;
+      }
+      return element;
+    }`, false)
+    if (typeof result.objectId !== 'string') throw new Error('element-not-found')
+    const described = objectValue((await this.send('DOM.describeNode', { objectId: result.objectId }, target.sessionId)).node)
+    if (typeof described.backendNodeId !== 'number') throw new Error('element-not-found')
+    if (described.backendNodeId === target.backendNodeId) return target
+    return { objectId: result.objectId, backendNodeId: described.backendNodeId, frameId: target.frameId, sessionId: target.sessionId }
   }
 
   private async box(target: ElementTarget, scroll = true): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -488,28 +587,55 @@ export class PageDriver {
     }
   }
 
-  private async clickElement(target: ElementTarget, count = 1, button = 'left', guard: () => void): Promise<ReturnType<PageDriver['cursor']>> {
-    const box = await this.box(target)
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    guard()
-    const settled = await this.box(target, false)
-    if (Object.keys(box).some((key) => Math.abs(box[key as keyof typeof box] - settled[key as keyof typeof settled]) > 0.5)) {
-      throw new Error('element-not-stable')
-    }
-    const actionable = await this.callOn(target, `function () {
-      if (!this.isConnected || !this.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return 'element-not-visible';
-      if (this.matches(':disabled') || this.closest('[aria-disabled="true"],[inert]')) return 'element-disabled';
-      const rect=this.getBoundingClientRect(), x=rect.x+rect.width/2, y=rect.y+rect.height/2;
-      if (rect.width<=0 || rect.height<=0) return 'element-has-no-actionable-box';
-      for(let target=this;target;) {
-        const root=target.getRootNode(), hit=root.elementFromPoint(x,y);
-        if(!hit || (hit!==target && !target.contains(hit))) return 'element-obscured';
-        target=root.host;
+  /** Waits up to `timeoutMs` for `target` to be stable, visible, enabled and
+   *  uncovered, and returns its box. */
+  private async actionableBox(target: ElementTarget, guard: () => void, timeoutMs = ACTIONABLE_TIMEOUT_MS): Promise<{ x: number; y: number; width: number; height: number }> {
+    const deadline = Date.now() + timeoutMs
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const box = await this.box(target)
+        await sleep(50)
+        guard()
+        const settled = await this.box(target, false)
+        if (Object.keys(box).some((key) => Math.abs(box[key as keyof typeof box] - settled[key as keyof typeof settled]) > 0.5)) {
+          throw new Error('element-not-stable')
+        }
+        const actionable = await this.callOn(target, `function () {
+          if (!this.isConnected || !this.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return 'element-not-visible';
+          if (this.matches(':disabled') || this.closest('[aria-disabled="true"],[inert]')) return 'element-disabled';
+          const rect=this.getBoundingClientRect(), x=rect.x+rect.width/2, y=rect.y+rect.height/2;
+          if (rect.width<=0 || rect.height<=0) return 'element-has-no-actionable-box';
+          const describe=(node)=>{
+            const role=node.getAttribute('role'), label=node.getAttribute('aria-label')||node.innerText||node.textContent||'';
+            const text=label.replace(/\\s+/g,' ').trim().slice(0,60);
+            return '<'+node.localName+(node.id?'#'+node.id:'')+(role?' role='+role:'')+'>'+(text?' "'+text+'"':'');
+          };
+          for(let target=this;target;) {
+            const root=target.getRootNode(), hit=root.elementFromPoint(x,y);
+            if(!hit) return 'element-obscured';
+            if(hit!==target && !target.contains(hit)) {
+              const cover=hit.closest('dialog,[role=dialog],[role=alertdialog],[aria-modal=true]')||hit;
+              return 'element-obscured: covered by '+describe(cover);
+            }
+            target=root.host;
+          }
+          return true;
+        }`)
+        if (actionable.value !== true) throw new Error(typeof actionable.value === 'string' ? actionable.value : 'element-not-actionable')
+        guard()
+        return settled
+      } catch (error) {
+        guard()
+        const code = error instanceof Error ? error.message.split(':')[0] : ''
+        if (!TRANSIENT_ELEMENT_ERRORS.includes(code) || Date.now() >= deadline) throw error
+        await sleep(Math.min(100 * 2 ** attempt, 500))
       }
-      return true;
-    }`)
-    if (actionable.value !== true) throw new Error(typeof actionable.value === 'string' ? actionable.value : 'element-not-actionable')
-    guard()
+    }
+  }
+
+  private async clickElement(target: ElementTarget, count = 1, button = 'left', guard: () => void, timeoutMs?: number): Promise<ReturnType<PageDriver['cursor']>> {
+    target = await this.pointerTarget(target)
+    const settled = await this.actionableBox(target, guard, timeoutMs)
     const x = settled.x + settled.width / 2
     const y = settled.y + settled.height / 2
     await this.dispatchInput({ type: 'mouseMoved', x, y })
@@ -533,6 +659,19 @@ export class PageDriver {
     if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'element-not-editable')
   }
 
+  /** Inserts text at the selection of the focused field, like typing, without
+   *  focusing the guest in the host window (the terminal keeps its focus): an
+   *  editor that handles `beforeinput` itself (Lexical, Slate) takes it there,
+   *  anything else gets the browser's own insertion. */
+  private async insertText(target: ElementTarget, text: string): Promise<void> {
+    this.inputSent = true
+    await this.callOn(target, `function () {
+      const text=${JSON.stringify(text)};
+      const event=new InputEvent('beforeinput',{inputType:'insertText',data:text,bubbles:true,cancelable:true,composed:true});
+      if (this.dispatchEvent(event)) this.ownerDocument.execCommand('insertText',false,text);
+    }`)
+  }
+
   private async focusElement(target: ElementTarget): Promise<void> {
     await this.send('DOM.focus', { backendNodeId: target.backendNodeId }, target.sessionId)
   }
@@ -544,23 +683,34 @@ export class PageDriver {
     // Electron window, so xterm/Monaco focus in the host remains untouched.
     await this.focusElement(target)
     guard()
-    await this.callOn(target, `function () {
+    this.inputSent = true
+    const editable = await this.callOn(target, `function () {
       const text=${JSON.stringify(text)};
       if (this.isContentEditable) {
-        this.textContent=text;
-        const range=this.ownerDocument.createRange();range.selectNodeContents(this);range.collapse(false);
+        // Rich editors keep their own model: select everything and replace it
+        // through trusted input below, never by rewriting the DOM.
+        const range=this.ownerDocument.createRange();range.selectNodeContents(this);
         const selection=this.ownerDocument.getSelection();selection.removeAllRanges();selection.addRange(range);
+        return true;
       }
-      else {
-        const proto=this instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
-        if (setter) setter.call(this,text); else this.value=text;
-      }
+      const proto=this instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter=Object.getOwnPropertyDescriptor(proto,'value')?.set;
+      if (setter) setter.call(this,text); else this.value=text;
       this.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));
       this.dispatchEvent(new Event('change',{bubbles:true}));
+      return false;
     }`)
     guard()
-    const observed = await this.callOn(target, 'function () { return "value" in this ? this.value : this.textContent; }')
+    if (editable.value === true) {
+      if (text) await this.insertText(target, text)
+      else await this.callOn(target, 'function () { this.ownerDocument.execCommand("delete"); }')
+      guard()
+      const observed = await this.callOn(target, 'function () { return this.innerText; }')
+      const normalize = (value: string) => value.replace(/\s+/g, ' ').trim()
+      if (typeof observed.value === 'string' && normalize(observed.value) !== normalize(text)) throw new Error('browser-fill-postcondition-failed')
+      return
+    }
+    const observed = await this.callOn(target, 'function () { return this.value; }')
     if (typeof observed.value === 'string' && observed.value !== text) throw new Error('browser-fill-postcondition-failed')
   }
 
@@ -568,14 +718,14 @@ export class PageDriver {
     if (!target) throw new Error('type-target-required')
     await this.assertEditable(target)
     guard()
-    // Chromium's editing command respects the document selection and undo stack
-    // even when this guest is not the OS-focused widget.
-    const inserted = await this.callOn(target, `function () {
-      if (!this.matches(':focus')) return false;
-      return this.ownerDocument.execCommand('insertText', false, ${JSON.stringify(text)});
-    }`)
-    if (inserted.value !== true && text !== '') throw new Error('browser-type-failed')
+    const content = 'function () { return this.isContentEditable ? this.innerText : this.value; }'
+    const before = await this.callOn(target, `function () { return this.matches(':focus') ? (${content}).call(this) : null; }`)
+    if (typeof before.value !== 'string') throw new Error('browser-type-target-not-focused')
+    if (!text) return
+    await this.insertText(target, text)
     guard()
+    const after = await this.callOn(target, content)
+    if (after.value === before.value) throw new Error('browser-type-failed')
   }
 
   private async uploadFile(target: ElementTarget, filePath: string, guard: () => void): Promise<string> {
@@ -586,6 +736,7 @@ export class PageDriver {
     if (state.file !== true) throw new Error('browser-upload-target-must-be-file-input')
     if (state.enabled !== true) throw new Error('element-disabled')
     guard()
+    this.inputSent = true
     await this.send('DOM.setFileInputFiles', { files: [filePath], backendNodeId: target.backendNodeId }, target.sessionId)
     guard()
     const observed = await this.callOn(target, `function () {
@@ -597,56 +748,51 @@ export class PageDriver {
   }
 
   private async pressKey(keySpec: string, guard: () => void): Promise<void> {
-    const parts = keySpec.replace(/^cmd\+/i, 'Meta+').replace(/^Return$/, 'Enter').split('+')
-    const keyName = parts.pop() || ''
+    const parts = keySpec.replace(/^cmd\+/i, 'Meta+').split(/\+(?=.)/)
+    const aliases: Record<string, string> = { Return: 'Enter', Esc: 'Escape', ' ': 'Space', Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight' }
+    const named = parts.pop() || ''
+    const keyName = aliases[named] ?? named
+    const modifierNames = parts.map(part => ({ Ctrl: 'Control', Cmd: 'Meta', Command: 'Meta', Option: 'Alt' })[part] ?? part)
+    const unknown = modifierNames.find(part => !['Alt', 'Control', 'Meta', 'Shift'].includes(part))
+    if (unknown) throw new Error(`unsupported-key-modifier:${unknown}`)
+    const shift = modifierNames.includes('Shift')
+    const shifted = shift ? US_SHIFTED[keyName] ?? keyName.toUpperCase() : keyName
+    const symbol = SYMBOL_KEYS[keyName]
+    const virtualKey = symbol?.vk ?? keyName.toUpperCase().charCodeAt(0)
     const data = KEY_DATA[keyName] ?? (keyName.length === 1
       ? {
-          key: keyName,
-          code: `Key${keyName.toUpperCase()}`,
-          windowsVirtualKeyCode: keyName.toUpperCase().charCodeAt(0),
-          nativeVirtualKeyCode: keyName.toUpperCase().charCodeAt(0),
-          text: keyName,
+          key: shifted,
+          code: /[a-z]/i.test(keyName) ? `Key${keyName.toUpperCase()}` : /[0-9]/.test(keyName) ? `Digit${keyName}` : symbol?.code ?? '',
+          windowsVirtualKeyCode: virtualKey,
+          nativeVirtualKeyCode: virtualKey,
+          text: shifted,
           unmodifiedText: keyName,
         }
       : undefined)
     if (!data) throw new Error(`unsupported-key:${keyName}`)
-    // Enter's default form behavior is scoped to the active element in this
-    // target. Chromium suppresses that default when its native widget is not
-    // the OS-focused view, so perform the equivalent inside the guest instead
-    // of allowing the key to fall through to xterm/Monaco.
-    if (keyName === 'Enter' && parts.length === 0) {
-      guard()
-      await this.evaluate(`(() => {
-        const target=document.activeElement;
-        if (!(target instanceof HTMLElement)) return false;
-        const allowed=target.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,bubbles:true,cancelable:true}));
-        if (allowed) {
-          if (!target.matches(':disabled') && !target.closest('[inert],[aria-disabled="true"]')) {
-            if (target instanceof HTMLTextAreaElement && !target.readOnly) document.execCommand('insertText',false,'\\n');
-            else if (target.isContentEditable) document.execCommand('insertParagraph');
-            else if (target instanceof HTMLButtonElement) target.click();
-            else if (!(target instanceof HTMLTextAreaElement) && target.form) target.form.requestSubmit();
-          }
-        }
-        target.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,bubbles:true}));
-        return true;
-      })()`)
-      return
-    }
     if ((keyName === 'PageDown' || keyName === 'PageUp') && parts.length === 0) {
       guard()
       await this.evaluate(`scrollBy(0, ${keyName === 'PageDown' ? 'innerHeight' : '-innerHeight'}); true`)
       return
     }
     let modifiers = 0
-    if (parts.includes('Alt')) modifiers |= 1
-    if (parts.includes('Control') || parts.includes('Ctrl')) modifiers |= 2
-    if (parts.includes('Meta')) modifiers |= 4
-    if (parts.includes('Shift')) modifiers |= 8
+    if (modifierNames.includes('Alt')) modifiers |= 1
+    if (modifierNames.includes('Control')) modifiers |= 2
+    if (modifierNames.includes('Meta')) modifiers |= 4
+    if (shift) modifiers |= 8
+    // A key with text types it (keyDown sends the char event); a shortcut does not.
+    const typing = data.text !== undefined && (modifiers & ~8) === 0
+    const command = process.platform === 'darwin' ? MAC_EDITING_COMMANDS[[...modifierNames, keyName].join('+')] : undefined
+    const event = {
+      ...data,
+      ...(typing ? {} : { text: undefined, unmodifiedText: undefined }),
+      modifiers,
+      ...(command ? { commands: [command] } : {}),
+    }
     try {
-      await this.dispatchKey({ type: 'rawKeyDown', ...data, modifiers })
+      await this.dispatchKey({ ...event, type: typing ? 'keyDown' : 'rawKeyDown' })
     } finally {
-      await this.dispatchKey({ type: 'keyUp', ...data, modifiers })
+      await this.dispatchKey({ ...event, type: 'keyUp', commands: undefined })
     }
     guard()
   }
@@ -719,35 +865,27 @@ export class PageDriver {
     return Object.keys(a).every(key => a[key as keyof BrowserViewportState] === b[key as keyof BrowserViewportState])
   }
 
-  private async captureViewport(viewport: BrowserViewportState, profile?: BrowserObservationPerformance): Promise<BrowserImage> {
+  private async captureViewport(viewport: BrowserViewportState, profile?: BrowserObservationPerformance, hidden = false): Promise<BrowserImage> {
+    // A hidden guest (its panel parked off screen, or behind another tab or
+    // window) paints no frames, and capturing it can wait forever.
+    if (hidden || await this.evaluate('document.visibilityState') === 'hidden') throw new Error('browser-page-hidden')
     // Layout/zoom values can update before Chromium submits their pixels.
     // One rAF runs before paint; the next gives that frame a chance to submit
     // before Electron immediately copies the current compositor surface.
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         let started = performance.now()
-        let frameTimer: ReturnType<typeof setTimeout> | undefined
-        let frameReady: unknown
-        try {
-          frameReady = await Promise.race([
-            this.evaluate(`new Promise(resolve => {
-              let settled = false;
-              const finish = value => { if (!settled) { settled = true; resolve(value); } };
-              requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
-              setTimeout(() => finish(false), 5000);
-            })`),
-            new Promise<never>((_resolve, reject) => {
-              frameTimer = setTimeout(() => reject(new Error('browser-render-frame-timeout')), 5000)
-            }),
-          ])
-        } finally {
-          clearTimeout(frameTimer)
-        }
+        const frameReady = await within(this.evaluate(`new Promise(resolve => {
+          let settled = false;
+          const finish = value => { if (!settled) { settled = true; resolve(value); } };
+          requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
+          setTimeout(() => finish(false), 3000);
+        })`), 3000, 'browser-render-frame-timeout')
         if (frameReady !== true) throw new Error('browser-render-frame-timeout')
         if (profile) profile.frameWaitMs += performance.now() - started
         this.activeGuard?.()
         started = performance.now()
-        const capture = await this.contents.capturePage(undefined, { stayHidden: true, stayAwake: true })
+        const capture = await within(this.contents.capturePage(undefined, { stayHidden: true, stayAwake: true }), 5000, 'browser-screenshot-timeout')
         if (profile) profile.captureMs += performance.now() - started
         started = performance.now()
         const resized = capture.resize({ width: Math.round(viewport.width), height: Math.round(viewport.height) })
@@ -763,11 +901,37 @@ export class PageDriver {
         if (attempt === 1) throw error
         // Navigation can leave the old execution context or compositor frame
         // unavailable for one turn. Let it settle and make one fresh attempt.
-        if (!(error instanceof Error) || !/browser-render-frame-timeout|Execution context was destroyed|capturePage/i.test(error.message)) throw error
-        await new Promise(resolve => setTimeout(resolve, 50))
+        if (!(error instanceof Error) || !/browser-render-frame-timeout|Execution context was destroyed/i.test(error.message)) throw error
+        await sleep(50)
       }
     }
     throw new Error('browser-screenshot-failed')
+  }
+
+  /** After an action: waits for the navigation or requests it started and
+   *  for the DOM to go quiet, so the returned state shows its effect. */
+  private async settle(epoch: number, startedAt: number, url: string): Promise<void> {
+    await sleep(50)
+    const deadline = Date.now() + 5000
+    const busy = () => this.contents.isLoading()
+      || [...this.requests.values()].some(at => at >= startedAt - 50 && Date.now() - at < 2500)
+    while (!this.contents.isDestroyed() && busy() && Date.now() < deadline) {
+      this.activeGuard?.()
+      await sleep(50)
+    }
+    this.activeGuard?.()
+    if (this.contents.isDestroyed() || (epoch !== this.documentEpoch && this.contents.isLoading())) return
+    // A client-side route change (same document, new URL) often renders a
+    // moment later: wait for its first change before waiting for quiet.
+    const routed = epoch === this.documentEpoch && this.contents.getURL() !== url
+    await within(this.evaluate(`new Promise(resolve => {
+      let quiet;
+      const done = () => { observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); resolve(true); };
+      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 100); });
+      observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+      if (!${routed}) quiet = setTimeout(done, 100);
+      const cap = setTimeout(done, 1000);
+    })`), 1500, 'settle-timeout').catch(() => { /* a busy or navigating page still gets observed */ })
   }
 
   private async observe(args: BrowserArgs = {}, screenshot = false, imageOnly = false): Promise<BrowserObservation> {
@@ -783,26 +947,29 @@ export class PageDriver {
       const axStarted = performance.now()
       const ax = imageOnly ? { state: '', elements: [] } : await this.readAXState()
       if (profile && !imageOnly) profile.axMs += performance.now() - axStarted
-      const image = screenshot ? await this.captureViewport(before, profile) : undefined
+      let image: BrowserImage | undefined
+      let screenshotError: string | undefined
+      try {
+        image = screenshot ? await this.captureViewport(before, profile, args._hidden === true) : undefined
+      } catch (error) {
+        // The tree is still worth returning when only the pixels are missing.
+        if (imageOnly || !(error instanceof Error) || !/^browser-(page-hidden|render-frame-timeout|screenshot-timeout)/.test(error.message)) throw error
+        screenshotError = error.message
+      }
       const after = await this.viewport()
       if (documentId !== this.documentId || !this.sameViewport(before, after)) continue
       let state = ax.state
       const diff = !imageOnly && args.disableDiffing !== true && baseline?.kind === 'ax' && baseline.documentId === documentId
-      if (diff) {
-        const old = new Set(baseline.state.split('\n'))
-        const current = new Set(state.split('\n'))
-        const removed = [...old].filter(line => !current.has(line)).map(line => `- ${line}`)
-        const added = [...current].filter(line => !old.has(line)).map(line => `+ ${line}`)
-        state = [...removed, ...added].join('\n') || 'No changes.'
-      }
+      if (diff) state = diffBrowserState(baseline.state, state)
       const observation: BrowserObservation = {
         userInputEpoch: this.userInputEpoch,
         kind: imageOnly ? 'image' : 'ax',
         panelId: this.identity.panelId, tabId: this.identity.tabId, observationId: `${documentId}:o${++this.observationCounter}`,
         documentId, url: this.contents.getURL(), title: this.contents.getTitle(), viewport: after,
-        state, elements: ax.elements, diff: Boolean(diff), ...(image ? { screenshot: image } : {}), ...(profile ? { performance: profile } : {}),
+        state, elements: ax.elements, diff: Boolean(diff), ...(image ? { screenshot: image } : {}), ...(screenshotError ? { screenshotError } : {}), ...(profile ? { performance: profile } : {}),
       }
       this.observations.set(observation, ax.state)
+      if (!imageOnly) this.latestAx = observation.observationId
       if (profile) {
         profile.cacheEntries = this.observations.size
         profile.cacheEstimatedBytes = this.observations.estimatedBytes
@@ -818,6 +985,20 @@ export class PageDriver {
     if (!observation) throw new Error('browser-observation-required')
     if (observation.documentId !== this.documentId) throw new Error('stale-browser-observation')
     return observation
+  }
+
+  /** The call's observation; without one (a CLI call), the latest AX
+   *  observation of this document, taken now if there is none. */
+  private async baseline(args: BrowserArgs): Promise<CachedBrowserObservation> {
+    // Ids and points belong to their observation's document; a call without
+    // them (a key, text, a text wait) may follow the page wherever it went.
+    const targeted = args.target !== undefined || args.from !== undefined || args.element !== undefined
+      || objectValue(args.condition).element !== undefined
+    const named = typeof args.observationId === 'string' ? this.observations.get(args.observationId) : undefined
+    if (args.observationId !== undefined && (targeted || named?.documentId === this.documentId)) return this.requireObservation(args)
+    const latest = this.latestAx ? this.observations.get(this.latestAx) : undefined
+    if (latest && latest.documentId === this.documentId) return latest
+    return this.requireObservation({ observationId: (await this.observe()).observationId })
   }
 
   private element(id: unknown, observation: CachedBrowserObservation): ElementTarget {
@@ -854,11 +1035,14 @@ export class PageDriver {
   }
 
   private async waitCondition(args: BrowserArgs, observation: CachedBrowserObservation): Promise<void> {
-    const condition = objectValue(args.condition)
+    // `{condition:{text}}` from code, or flat `text`/`url`/`element`/`state` from the CLI.
+    const condition = args.condition !== undefined
+      ? objectValue(args.condition)
+      : { text: args.text, url: args.url, element: args.element, state: args.state }
     const keys = ['text', 'url', 'element'].filter(key => condition[key] !== undefined)
     if (keys.length !== 1) throw new Error('browser-wait-requires-one-condition')
     const timeout = args.timeoutMs === undefined ? 5000 : Number(args.timeoutMs)
-    if (!Number.isFinite(timeout) || timeout <= 0 || timeout > 30000) throw new Error('invalid-browser-timeout')
+    if (!Number.isFinite(timeout) || timeout <= 0 || timeout > BROWSER_WAIT_MAX_MS) throw new Error('invalid-browser-timeout')
     const deadline = Date.now() + timeout
     for (;;) {
       this.activeGuard?.()
@@ -891,8 +1075,11 @@ export class PageDriver {
   private async executeBound(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
     if (BROWSER_OBSERVATION_METHODS.has(method)) return { result: await this.observe(args, method !== 'getAXState', method === 'getScreenshot') }
     if (!BROWSER_ELEMENT_READ_METHODS.has(method) && !BROWSER_ACTION_METHODS.has(method) && method !== 'waitFor') throw new Error('unsupported-browser-method')
-    const observation = this.requireObservation(args)
+    const observation = await this.baseline(args)
     const guard = this.activeGuard!
+    const epoch = this.documentEpoch
+    const startedAt = Date.now()
+    const url = this.contents.getURL()
     if (method === 'getAttribute') {
       if (typeof args.name !== 'string' || !args.name) throw new Error('browser-attribute-name-required')
       const result = objectValue((await this.callOn(this.element(args.target, observation), `function () {
@@ -917,11 +1104,17 @@ export class PageDriver {
         try { await this.dispatchInput({ type: 'mousePressed', x, y, button, clickCount: count }) }
         finally { await this.dispatchInput({ type: 'mouseReleased', x, y, button, clickCount: count }) }
         cursor = { x, y, label: 'click', kind: 'click' }
-      } else cursor = await this.clickElement(this.element(args.target, observation), Number(count), String(button), guard)
+      } else {
+        const timeout = args.timeoutMs === undefined ? undefined : Number(args.timeoutMs)
+        if (timeout !== undefined && (!Number.isFinite(timeout) || timeout < 0 || timeout > BROWSER_WAIT_MAX_MS)) throw new Error('invalid-browser-timeout')
+        cursor = await this.clickElement(this.element(args.target, observation), Number(count), String(button), guard, timeout)
+      }
     } else if (method === 'setValue' || method === 'typeText') {
       const text = method === 'setValue' ? args.value : args.text
       if (typeof text !== 'string') throw new Error('browser-text-required')
-      const target = args.target === undefined && method === 'typeText' ? await this.activeElement(observation) : this.element(args.target, observation)
+      const focused = args.target === undefined && method === 'typeText'
+      const target = focused ? await this.activeElement(observation) : this.element(args.target, observation)
+      if (focused) await this.assertEditable(target).catch((error) => { throw error instanceof Error && error.message === 'element-not-editable' ? new Error('browser-type-target-not-focused') : error })
       if (method === 'setValue') { await this.fillElement(target, text, guard); verified = true }
       else await this.typeElement(target, text, guard)
       // Measure after editing so focus/scroll/layout changes are reflected.
@@ -941,18 +1134,21 @@ export class PageDriver {
       if ((await this.callOn(target, 'function () { return Boolean(this.checked); }')).value !== args.checked) throw new Error('browser-check-postcondition-failed')
       verified = true
     } else if (method === 'selectOption') {
-      if (!Array.isArray(args.values) || !args.values.every(value => typeof value === 'string')) throw new Error('browser-option-values-required')
+      const values = typeof args.values === 'string' ? [args.values] : args.values
+      if (!Array.isArray(values) || !values.every(value => typeof value === 'string')) throw new Error('browser-option-values-required')
       const target = this.element(args.target, observation)
       const result = await this.callOn(target, `function () {
         if(!(this instanceof HTMLSelectElement)) return 'browser-select-required';
         if(this.matches(':disabled')) return 'element-disabled';
-        const values=${JSON.stringify(args.values)};
+        const values=${JSON.stringify(values)};
         if(!this.multiple && values.length!==1) return 'browser-single-select-requires-one-value';
         if(values.some(value=>!Array.from(this.options).some(option=>option.value===value && !option.disabled))) return 'browser-option-not-found';
         for(const option of this.options) option.selected=values.includes(option.value);
         this.dispatchEvent(new Event('input',{bubbles:true}));this.dispatchEvent(new Event('change',{bubbles:true}));
         return Array.from(this.selectedOptions).map(option=>option.value).sort().join('\\0')===values.slice().sort().join('\\0');
       }`)
+      // A string is a check that failed before any option changed.
+      this.inputSent = typeof result.value !== 'string'
       if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'browser-select-postcondition-failed')
       verified = true
     } else if (method === 'upload') {
@@ -966,6 +1162,7 @@ export class PageDriver {
       const viewport = await this.viewport()
       let x: number, y: number
       if (Array.isArray(args.target)) [x, y] = await this.point(args.target, observation)
+      else if (args.target === undefined) [x, y] = [viewport.width / 2, viewport.height / 2]
       else { const box = await this.box(this.element(args.target, observation)); x = box.x + box.width / 2; y = box.y + box.height / 2 }
       const vertical = direction === 'up' || direction === 'down'
       const amount = (vertical ? viewport.height : viewport.width) * pages * (direction === 'up' || direction === 'left' ? -1 : 1)
@@ -1015,6 +1212,7 @@ export class PageDriver {
       verified = true
     }
     guard()
+    if (method !== 'waitFor') await this.settle(epoch, startedAt, url)
     const fresh = await this.observe({ observationId: observation.observationId })
     return { result: { action: { method, status: verified ? 'verified' : 'dispatched' }, observation: fresh }, ...(cursor ? { cursor } : {}) }
   }

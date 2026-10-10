@@ -165,7 +165,6 @@ struct PanelTile<Menu: View>: View {
         case "terminal": Color(white: 0.25)
         case "editor": .blue
         case "browser": .teal
-        case "chat": .purple
         case "review": .orange
         case "canvas": .indigo
         default: .gray

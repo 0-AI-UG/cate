@@ -1,7 +1,7 @@
 // The build id baked into the daemon bundle and the desktop app as
 // `__CATE_BUILD__`: the package version plus a hash of everything the runtime
-// install is made from: the source tree, the bundled skills, the T3 patches
-// and the lockfile. Both sides compute it from the same files, so a client
+// install is made from: the source tree, the bundled skills and the
+// lockfile. Both sides compute it from the same files, so a client
 // refuses a runtime built from other inputs (a stale daemon) even when the
 // versions are equal. Shell code (src/shells, apart from settings slices) is
 // not in the runtime and is left out.
@@ -27,9 +27,6 @@ function sourceFiles(dir) {
     })
 }
 
-/** The T3 patch scripts the install applies. */
-const T3_PATCH = /^patch-t3[^/\\]*\.mjs$/
-
 export function computeBuildId(repoRoot) {
   const { version } = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf-8'))
   const hash = createHash('sha256')
@@ -48,10 +45,6 @@ export function computeBuildId(repoRoot) {
   }
   const skills = path.join(repoRoot, 'skills')
   if (existsSync(skills)) for (const file of sourceFiles(skills)) add(file)
-  const scripts = path.join(repoRoot, 'scripts')
-  if (existsSync(scripts)) {
-    for (const file of sourceFiles(scripts)) if (T3_PATCH.test(path.basename(file)) && !/\.test\.mjs$/.test(file)) add(file)
-  }
   const lock = path.join(repoRoot, 'package-lock.json')
   if (existsSync(lock)) add(lock)
   return `${version}+${hash.digest('hex').slice(0, 12)}`

@@ -4,13 +4,15 @@
 // when the panel's agent state changes (and twice shortly after, for a CLI
 // that writes its store just after its hook), every half second while the
 // agent works and every few seconds while it is there; a look reads the
-// session store only when the runner's stamp moved.
+// session store only when its stamp moved.
 
 import { diffAgentConversation, type AgentConversation, type AgentConversationChange } from '../contract'
-import type { RunnerRegistry } from './registry'
+import type { AgentTerminals } from './core'
+import type { AgentPanels } from './panels'
 
 export interface AgentConversationsDeps {
-  registry: RunnerRegistry
+  panels: Pick<AgentPanels, 'state' | 'subscribe'>
+  terminals: Pick<AgentTerminals, 'conversation' | 'conversationStamp'>
   /** Tests: the look cadence while working and otherwise, and the looks after a state change. */
   workingMs?: number
   presentMs?: number
@@ -44,7 +46,7 @@ const PRESENT_MS = 3_000
 const SETTLE_MS = [400, 1_500] as const
 
 export function createAgentConversations(deps: AgentConversationsDeps): AgentConversations {
-  const { registry } = deps
+  const { panels, terminals } = deps
   const workingMs = deps.workingMs ?? WORKING_MS
   const presentMs = deps.presentMs ?? PRESENT_MS
   const settleMs = deps.settleMs ?? SETTLE_MS
@@ -67,7 +69,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
   const schedule = (panelId: string, watch: Watch): void => {
     if (watch.tick) clearTimeout(watch.tick)
     watch.tick = null
-    const state = registry.sessionFor(panelId)
+    const state = panels.state(panelId)
     const delay = state?.status === 'running' ? workingMs : state?.present ? presentMs : null
     if (delay === null || watches.get(panelId) !== watch) return
     watch.tick = setTimeout(() => { void look(panelId, watch, false) }, delay)
@@ -75,13 +77,12 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
   }
 
   const read = async (panelId: string, watch: Watch, forced: boolean): Promise<AgentConversation> => {
-    const state = registry.sessionFor(panelId)
-    const runner = registry.runnerFor(panelId)
+    const state = panels.state(panelId)
     let messages = watch.current.messages
-    if (state?.session && runner) {
-      const stamp = await runner.conversationStamp?.(panelId).catch(() => null) ?? null
+    if (state?.session) {
+      const stamp = await terminals.conversationStamp(panelId).catch(() => null)
       if (forced || stamp === null || stamp !== watch.stamp) {
-        const conversation = await runner.conversation(panelId).catch(() => null)
+        const conversation = await terminals.conversation(panelId).catch(() => null)
         if (conversation) {
           messages = conversation.messages
           watch.stamp = stamp
@@ -114,7 +115,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
     schedule(panelId, watch)
   }
 
-  const offRegistry = registry.subscribe((change) => {
+  const offPanels = panels.subscribe((change) => {
     for (const panelId of Object.keys(change)) {
       const watch = watches.get(panelId)
       if (!watch) continue
@@ -162,7 +163,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
       }
     },
     dispose() {
-      offRegistry()
+      offPanels()
       for (const [panelId, watch] of [...watches]) stop(panelId, watch)
     },
   }

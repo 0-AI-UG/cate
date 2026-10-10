@@ -40,7 +40,7 @@ export interface ProcTree {
 export interface AgentPresence {
   agentId: AgentId | null
   agentPresent: boolean
-  /** Identity of the registration that just fell. The terminal runner passes
+  /** Identity of the registration that just fell. The terminal agents pass
    *  this through when clearing a resume stamp so a delayed scan cannot
    *  erase a newer Hermes process's session. */
   endedAgentPid?: number

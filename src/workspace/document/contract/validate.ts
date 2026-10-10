@@ -163,7 +163,8 @@ export function checkChange(v: unknown): Problem {
   const c = v as DocChange
   switch (c.kind) {
     case 'addPanel': return checkRecord(c.record) ?? checkTarget(c.at)
-    case 'replacePanel': return checkRecord(c.record)
+    case 'replacePanel':
+      return checkRecord(c.record) ?? (c.discard === undefined || typeof c.discard === 'boolean' ? null : 'bad discard')
     case 'updatePanel': return isId(c.id) ? checkPanelPatch(c.patch) : 'no panel id'
     case 'removePanels':
       if (!Array.isArray(c.ids) || c.ids.length === 0 || !c.ids.every(isId)) return 'no panel ids'

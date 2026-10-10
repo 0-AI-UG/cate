@@ -294,16 +294,19 @@ describe('browser service handlers', () => {
     const cells = new BrowserCodeCells()
     const requests: Array<[string | null, string, any, any]> = []
     let cellId = ''
-    const invoke = vi.fn(async () => ({ ok: true }))
+    const invoke = vi.fn(async () => ({ ok: true, panelId: 'p1', observation: { panelId: 'p1', tabId: 't' } }))
     const handlers = browserServiceHandlers({
       surfaces: {
         request: async (panelId: string | null, op: string, args: any, options: any) => {
           requests.push([panelId, op, args, options])
           cellId = args.cellId
-          await expect(cells.call(cellId, 'click', { panelId: 'p1', tabId: 't', target: 1 })).resolves.toEqual({ ok: true })
+          // A cell knows tabs, not panels: the runtime adds its panel and
+          // takes the panel id off what comes back.
+          await expect(cells.call(cellId, 'click', { tabId: 't', target: 1 })).resolves.toEqual({ ok: true, observation: { tabId: 't' } })
           // The desktop code session tags every call; a service or session
           // method that takes no cell id must not see it.
-          await cells.call(cellId, 'getTab', { panelId: 'p1', _codeCellId: cellId })
+          await cells.call(cellId, 'getTab', { _codeCellId: cellId })
+          await expect(cells.call(cellId, 'getTab', { panelId: 'p2' })).rejects.toThrow(/browser-code-panel/)
           return { content: [{ type: 'text', text: 'done' }] }
         },
       },
@@ -318,6 +321,7 @@ describe('browser service handlers', () => {
     expect(requests[0]).toEqual([null, 'code.run', { key: 'caller-1', cellId: 'cell-1', code: '1', deadlineMs: 30_000 }, expect.objectContaining({ near: 'p1' })])
     expect(invoke).toHaveBeenNthCalledWith(1, 'cate.browser.click', { tabId: 't', target: 1, _codeCellId: 'cell-1', panelId: 'p1' })
     expect(invoke).toHaveBeenNthCalledWith(2, 'cate.browser.getTab', { panelId: 'p1' })
+    expect(invoke).toHaveBeenCalledTimes(2)
     await expect(cells.call(cellId, 'click', {})).rejects.toBeInstanceOf(RpcError)
   })
 
@@ -330,7 +334,8 @@ describe('browser service handlers', () => {
       cells: new BrowserCodeCells(),
     })
     const ctx = { caller: { kind: 'cli', id: 'c' }, defaultTarget: () => undefined, invoke: vi.fn(), signal: new AbortController().signal } as never
-    await expect(handlers.run({ code: '1', panelId: undefined }, ctx)).resolves.toMatchObject({ isError: true })
+    await expect(handlers.run({ code: '1', panelId: undefined }, ctx)).resolves.toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/^No browser panel/) }] })
+    await expect(handlers.run({ code: '1', panelId: 'p1' }, ctx)).resolves.toMatchObject({ isError: true, content: [{ text: 'No connected client can run browser code' }] })
     expect(handlers.listTabs({ panelId: undefined }, ctx)).toEqual({
       tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, panelId: 'p1', tabId: 't1', active: true }],
     })

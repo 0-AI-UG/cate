@@ -4,17 +4,16 @@ import path from 'node:path'
 import os from 'node:os'
 import { createAgentChangesStore } from './store'
 import { filesFromPatch, filesFromTool } from './edits'
-import { filterAgentChanges, summarizeAgentChanges } from '../../contract'
+import { filterAgentChanges } from '../../contract'
 import { AGENT_HOOK_SPECS, normalizeAgentHookPayload } from '../../contract'
 import type { AgentId } from '../../contract'
 import { createAgentHooks } from '../hooks/agentHooks'
 
 import type { StoredAgentChange } from './store'
-/** Stored records as the runners resolve them: a terminal's panel, or the
- *  panels a thread was shown in. */
+/** Stored records as the agents core resolves them: their panel. */
 const shown = (records: StoredAgentChange[]) => records.map((record) => ({
   ...record,
-  panelIds: record.source === 'terminal' ? (record.panelId ? [record.panelId] : []) : record.panelIds ?? [],
+  panelIds: record.panelId ? [record.panelId] : [],
 }))
 
 
@@ -26,7 +25,7 @@ afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 describe('reported agent changes', () => {
   it.each([false, true])('captures Cursor afterFileEdit once alongside its Write completion (reverse=%s)', async (reverse) => {
     const store = createAgentChangesStore(directory)
-    store.registerSource('pty', { cwd: '/repo', panelId: 'panel', kind: 'terminal' })
+    store.registerTerminal('pty', { cwd: '/repo', panelId: 'panel' })
     const base = { session_id: 'cursor-session', workspace_roots: ['/repo'] }
     const payloads = [
       { ...base, hook_event_name: 'afterFileEdit', file_path: '/repo/target.txt', edits: [{ old_string: 'before', new_string: 'after' }] },
@@ -40,7 +39,7 @@ describe('reported agent changes', () => {
   })
   it('preserves repeated Cursor edits to the same path without unsafe path-based deduplication', async () => {
     const store = createAgentChangesStore(directory)
-    store.registerSource('pty', { cwd: '/repo', kind: 'terminal' })
+    store.registerTerminal('pty', { cwd: '/repo' })
     for (const [before, after] of [['before', 'middle'], ['middle', 'after'], ['before', 'middle']]) {
       const raw = { session_id: 'cursor-session', hook_event_name: 'afterFileEdit', file_path: '/repo/target.txt', edits: [{ old_string: before, new_string: after }] }
       await store.ingestHook('pty', 'cursor', normalizeAgentHookPayload('cursor', 'pty', raw), AGENT_HOOK_SPECS['cursor'].toolCall(raw))
@@ -49,7 +48,7 @@ describe('reported agent changes', () => {
   })
   it('uses the dedicated Cursor edit hook instead of generic Write, while retaining other tools', async () => {
     const store = createAgentChangesStore(directory)
-    store.registerSource('pty', { cwd: '/repo', kind: 'terminal' })
+    store.registerTerminal('pty', { cwd: '/repo' })
     await store.ingestHook('pty', 'cursor', null, AGENT_HOOK_SPECS.cursor.toolCall({ session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'Write', tool_input: { file_path: 'target.txt', content: 'after' } }))
     expect(await store.list('/repo')).toEqual([])
     await store.ingestHook('pty', 'cursor', null, AGENT_HOOK_SPECS.cursor.toolCall({ session_id: 'session', hook_event_name: 'postToolUse', tool_name: 'apply_patch', tool_input: { patch: patch('target.txt') } }))
@@ -61,26 +60,23 @@ describe('reported agent changes', () => {
     await mkdir(cwd)
     await symlink(cwd, alias, 'dir')
     const store = createAgentChangesStore(path.join(directory, 'history'))
-    store.registerSource('harness', { cwd, kind: 't3' })
-    await store.ingestT3('harness', { provider: 'codex', type: 'turn.diff.updated', threadId: 'chat', turnId: 'turn', payload: { unifiedDiff: patch('a.ts') } })
-    await store.bind(alias, 'chat', 'panel')
+    store.registerTerminal('pty', { cwd, panelId: 'panel' })
+    await store.ingestHook('pty', 'codex', null, { sessionId: 'session', name: 'apply_patch', input: { patch: patch('a.ts') }, output: null, callId: 'call' })
     expect(filterAgentChanges(shown(await store.list(alias)), { panelId: 'panel' })).toHaveLength(1)
   })
-  it('ingests real HTTP hook/provider posts with source-bound authorization', async () => {
+  it('ingests real HTTP hook posts with source-bound authorization', async () => {
     const hooks = createAgentHooks({ hooksDir: directory, changesDir: path.join(directory, 'history') })
-    hooks.registerChangeSource('pty', { cwd: '/repo', panelId: 'terminal-panel', kind: 'terminal' })
-    hooks.registerChangeSource('t3', { cwd: '/repo', kind: 't3' })
+    hooks.registerChangeTerminal('pty', { cwd: '/repo', panelId: 'terminal-panel' })
     const endpoint = await hooks.endpoint()
     const post = (route: string, source: string, payload: unknown, tokenSource = source) => fetch(endpoint.url + route, {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${endpoint.tokenFor(tokenSource)}` },
       body: JSON.stringify({ terminalId: source, agentId: 'claude-code', payload }),
     })
     try {
-      expect((await post('/hook', 'pty', { hook_event_name: 'PostToolUse', session_id: 'cli-session', tool_name: 'Edit', tool_input: { file_path: 'cli.ts', old_string: 'a', new_string: 'b' } })).status).toBe(204)
-      const event = { type: 'turn.diff.updated', provider: 'codex', threadId: 'chat', turnId: 'turn', payload: { unifiedDiff: patch('chat.ts') } }
-      expect((await post('/t3-changes', 't3', event, 'pty')).status).toBe(401)
-      expect((await post('/t3-changes', 't3', event)).status).toBe(200)
-      expect((await hooks.listChanges('/repo')).flatMap((r) => r.files.map((f) => f.path)).sort()).toEqual(['chat.ts', 'cli.ts'])
+      const edit = { hook_event_name: 'PostToolUse', session_id: 'cli-session', tool_name: 'Edit', tool_input: { file_path: 'cli.ts', old_string: 'a', new_string: 'b' } }
+      expect((await post('/hook', 'pty', edit, 'other')).status).toBe(401)
+      expect((await post('/hook', 'pty', edit)).status).toBe(204)
+      expect((await hooks.listChanges('/repo')).flatMap((r) => r.files.map((f) => f.path))).toEqual(['cli.ts'])
     } finally { hooks.dispose() }
   })
   it('parses multi-file patches, deletes, quoted paths and rejects traversal', () => {
@@ -106,7 +102,7 @@ describe('reported agent changes', () => {
 
   it.each<AgentId>(['claude-code', 'codex', 'cursor', 'grok', 'kiro', 'opencode'])('records successful %s hooks using session ownership and panel association', async (agentId) => {
     const store = createAgentChangesStore(directory)
-    store.registerSource('pty', { cwd: '/repo', panelId: 'panel', kind: 'terminal' })
+    store.registerTerminal('pty', { cwd: '/repo', panelId: 'panel' })
     const input = { file_path: 'a.ts', old_string: 'before', new_string: 'after' }
     const raw = agentId === 'opencode'
       ? { type: 'message.part.updated', sessionID: 'session', part: { type: 'tool', tool: 'edit', callID: 'edit', state: { status: 'completed', input } } }
@@ -118,37 +114,5 @@ describe('reported agent changes', () => {
     const records = await store.list('/repo')
     expect(records).toHaveLength(1)
     expect(records[0]).toMatchObject({ agentId, sessionId: 'session', panelId: 'panel', files: [{ path: 'a.ts' }] })
-  })
-
-  it('keeps concurrent chats separate, replaces cumulative snapshots, and survives restart', async () => {
-    const store = createAgentChangesStore(directory)
-    store.registerSource('harness', { cwd: '/repo', kind: 't3' })
-    const event = (threadId: string, diff: string, createdAt = '2026-09-06T00:00:00Z') => ({ provider: 'codex', type: 'turn.diff.updated', threadId, turnId: 'turn', createdAt, payload: { unifiedDiff: diff } })
-    await Promise.all([
-      store.ingestT3('harness', event('chat-a', patch('a.ts'))),
-      store.ingestT3('harness', event('chat-b', patch('b.ts'))),
-      store.bind('/repo', 'chat-a', 'panel-a'),
-    ])
-    await store.ingestT3('harness', event('chat-a', patch('a.ts', 'old', 'newer'), '2026-09-06T00:00:01Z'))
-    await store.ingestT3('harness', event('chat-a', patch('stale.ts')))
-    const records = await createAgentChangesStore(directory).list('/repo')
-    expect(records).toHaveLength(2)
-    expect(summarizeAgentChanges(filterAgentChanges(shown(records), { panelId: 'panel-a' })).map((file) => file.path)).toEqual(['a.ts'])
-    expect((await store.summary('harness', 'chat-b', 'turn')).map((file) => file.path)).toEqual(['b.ts'])
-    expect(await store.list('/another')).toEqual([])
-    await store.ingestT3('harness', event('chat-a', '', '2026-09-06T00:00:02Z'))
-    expect(await store.summary('harness', 'chat-a', 'turn')).toEqual([])
-  })
-
-  it('excludes failed tools and keeps subagent identity linked to the parent chat', async () => {
-    const store = createAgentChangesStore(directory)
-    store.registerSource('harness', { cwd: '/repo', kind: 't3' })
-    const event = { provider: 'claude', type: 'item.completed', threadId: 'chat', turnId: 'turn', itemId: 'edit', payload: {
-      status: 'failed', agentId: 'child', data: { toolName: 'Edit', input: { file_path: 'a.ts', old_string: 'a', new_string: 'b' } },
-    } }
-    await store.ingestT3('harness', event)
-    expect(await store.list('/repo')).toEqual([])
-    await store.ingestT3('harness', { ...event, payload: { ...event.payload, status: 'completed' } })
-    expect(filterAgentChanges(shown(await store.list('/repo')), { sessionId: 'chat' })[0]).toMatchObject({ sessionId: 'chat:child', parentSessionId: 'chat', sourceId: 'chat' })
   })
 })

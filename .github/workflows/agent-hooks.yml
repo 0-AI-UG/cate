@@ -48,7 +48,7 @@ jobs:
           src/services/agents/runtime/hooks
           src/services/agents/runtime/status.test.ts
           src/services/agents/runtime/status.integration.test.ts
-          src/services/agents/runners/terminal/terminalRunner.test.ts
+          src/services/agents/runtime/terminal.test.ts
           src/shells/desktop/ui/services/agents/AgentHooksSettings.test.tsx
       - name: Install current agent CLI
         run: bash scripts/install-agent-cli.sh "${{ matrix.agent }}"

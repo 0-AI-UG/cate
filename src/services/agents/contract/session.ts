@@ -1,22 +1,16 @@
-// Agent sessions, runners and status (architecture 2, 10.4). Only the agents
-// service knows runners exist; everything else talks about sessions.
+// Agent sessions and status (architecture 2, 10.4).
 
 import { AGENT_DEFS, matchAgentDef, type AgentDef, type AgentId } from './registry'
 import type { NotificationEvent } from '@workspace/notifications/contract'
 
-/** How an agent session executes and how Cate observes it. */
-export type AgentRunner = 'terminal' | 't3'
-
 /** Status of the agent a panel hosts, driven only by hook events and pid
- *  presence (terminal) or T3 orchestration (t3). */
+ *  presence. */
 export type AgentStatus = 'notRunning' | 'running' | 'waitingForInput' | 'finished'
 
-/** One conversation. A terminal session is an agent CLI in a PTY identified
- *  by that CLI's own session id; a t3 session is a T3 thread (the thread id is
- *  its session id), attributed to its provider once the thread has one. */
+/** One conversation: an agent CLI in a PTY, identified by that CLI's own
+ *  session id. */
 export interface AgentSession {
   agentId: AgentId | null
-  runner: AgentRunner
   sessionId: string
   /** Absolute path of the checkout the session runs in. */
   cwd: string
@@ -29,9 +23,8 @@ export interface AgentSession {
  *  (`agents.previewContext`). */
 export type AgentContextPolicy = 'supported' | 'unsupported'
 
-/** What one panel hosts: its agent and status, computed by the runner that
- *  owns it. A panel hosting an agent has one even before a session exists (a
- *  CLI before its first hook, a fresh chat before its first prompt). */
+/** What one terminal panel hosts: its agent and status. A panel hosting an
+ *  agent has one even before a session exists (a CLI before its first hook). */
 export interface PanelAgentState {
   panelId: string
   agentId: AgentId | null
@@ -40,10 +33,6 @@ export interface PanelAgentState {
   /** What sidebar rows and tabs show for the agent, or null while none
    *  runs (a terminal whose CLI exited). */
   label: string | null
-  /** The agent stands in for its panel while it runs (a CLI in a terminal:
-   *  its name titles the panel and its logo marks the tab), rather than the
-   *  panel being the agent's own (a chat). */
-  takesOverPanel: boolean
   /** How relation context reaches the agent; null while the agent is unknown. */
   contextPolicy: AgentContextPolicy | null
   status: AgentStatus
@@ -73,7 +62,7 @@ export interface TerminalResumeStamp {
 }
 
 
-/** The one "agent needs you" notification for every runner. `permission`
+/** The one "agent needs you" notification. `permission`
  *  switches to the needs-permission variant and carries what is blocked. */
 export function agentAttentionNotification(options: {
   panelId: string

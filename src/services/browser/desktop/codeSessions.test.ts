@@ -32,7 +32,7 @@ vi.mock('electron', () => ({
 }))
 
 import { BrowserCodeSessions } from './codeSessions'
-const observation = (id = 'o1', image = false) => ({ panelId: 'p1', tabId: 't1', observationId: id, documentId: 'd1', url: 'https://example.test', title: 'Example', viewport: {}, state: 'button Save', elements: [], diff: false, ...(image ? { screenshot: { mimeType: 'image/png', data: 'aGVsbG8=', width: 1, height: 1 } } : {}) })
+const observation = (id = 'o1', image = false) => ({ tabId: 't1', observationId: id, documentId: 'd1', url: 'https://example.test', title: 'Example', viewport: {}, state: 'button Save', elements: [], diff: false, ...(image ? { screenshot: { mimeType: 'image/png', data: 'aGVsbG8=', width: 1, height: 1 } } : {}) })
 
 beforeEach(() => { mocks.windows.length = 0 })
 describe('browser code session', () => {
@@ -43,15 +43,12 @@ describe('browser code session', () => {
       if (method.endsWith('getScreenshot')) return { ...observation('image1', true), kind: 'image', elements: [], state: '' }
       return { action: 'click', observation: { ...observation('ax2'), kind: 'ax' } }
     })
-    expect((await sessions.run('a', 'globalThis.tab = await cua.getTab({panelId:"p1"}); await tab.getScreenshot(); await tab.click(42)', invoke)).isError).toBeUndefined()
-    expect(invoke.mock.calls[2][1]).toMatchObject({ target: 42, observationId: 'ax1' })
-    invoke.mockClear()
-    await sessions.run('a', 'await tab.getScreenshot(); await tab.click([40,40])', invoke)
-    expect(invoke.mock.calls[0][1]).toMatchObject({ observationId: 'ax2' })
-    expect(invoke.mock.calls[1][1]).toMatchObject({ target: [40, 40], observationId: 'image1' })
-    invoke.mockClear()
-    await sessions.run('a', 'await tab.getScreenshot(); await tab.getAXState()', invoke)
-    expect(invoke.mock.calls[1][1]).toMatchObject({ observationId: 'ax2' })
+    expect((await sessions.run('a', 'await cua.getTab(); await tab.getScreenshot(); await tab.click(42); await tab.getScreenshot(); await tab.click([40,40]); await tab.getScreenshot(); await tab.getAXState()', invoke)).isError).toBeUndefined()
+    const args = invoke.mock.calls.map(call => call[1])
+    expect(args[2]).toMatchObject({ target: 42, observationId: 'ax1' })
+    expect(args[3]).toMatchObject({ observationId: 'ax2' })
+    expect(args[4]).toMatchObject({ target: [40, 40], observationId: 'image1' })
+    expect(args[6]).toMatchObject({ observationId: 'ax2' })
     sessions.dispose()
   })
 
@@ -59,10 +56,10 @@ describe('browser code session', () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string, _args?: Record<string, unknown>) => method.endsWith('getTab') ? observation('ax1')
       : { ...observation('image2', true), kind: 'image', documentId: 'new-document', elements: [], state: '' })
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.getScreenshot(); await tab.click(42)', invoke)
-    expect(result.isError).toBe(true)
-    expect(JSON.stringify(result)).toContain('AX observation')
-    expect(invoke).toHaveBeenCalledTimes(2)
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); await tab.getScreenshot(); await tab.click(42)', invoke)
+    // Numeric ids go with the image's new document, which the driver rejects for ids.
+    expect(result.isError).toBeUndefined()
+    expect(invoke.mock.calls[2][1]).toMatchObject({ target: 42, observationId: 'image2' })
     sessions.dispose()
   })
 
@@ -71,7 +68,7 @@ describe('browser code session', () => {
     const invoke = vi.fn(async (method: string, _args?: Record<string, unknown>) => method.endsWith('getScreenshot')
       ? { ...observation('image1', true), kind: 'image', elements: [], state: '' }
       : { ...observation(method.endsWith('getTab') ? 'ax1' : 'ax2'), kind: 'ax' })
-    await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.getScreenshot(); await tab.typeText("hello")', invoke)
+    await sessions.run('a', 'var tab = await cua.getTab(); await tab.getScreenshot(); await tab.typeText("hello")', invoke)
     expect(invoke.mock.calls.map(call => call[0])).toEqual(['cate.browser.getTab', 'cate.browser.getScreenshot', 'cate.browser.getAXState', 'cate.browser.typeText'])
     expect(invoke.mock.calls[3][1]).toMatchObject({ observationId: 'ax2' })
     sessions.dispose()
@@ -79,27 +76,29 @@ describe('browser code session', () => {
 
   it('pins resolved tabs and carries fresh observation IDs across actions', async () => {
     const sessions = new BrowserCodeSessions()
-    const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation() : { action: 'click', observation: observation('o2') })
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.click(42); await tab.setValue(17,"hello")', invoke)
+    const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation() : { action: { method: 'click', status: 'dispatched' }, observation: observation('o2') })
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); await tab.click(42); await tab.setValue(17,"hello")', invoke)
     expect(result.isError).toBeUndefined()
-    expect(invoke.mock.calls[1]).toEqual(['cate.browser.click', { panelId: 'p1', tabId: 't1', observationId: 'o1', target: 42, _codeCellId: expect.any(String) }])
-    expect(invoke.mock.calls[2]).toEqual(['cate.browser.setValue', { panelId: 'p1', tabId: 't1', observationId: 'o2', target: 17, value: 'hello', _codeCellId: expect.any(String) }])
+    expect(invoke.mock.calls[1]).toEqual(['cate.browser.click', { tabId: 't1', observationId: 'o1', target: 42, _codeCellId: expect.any(String) }])
+    expect(invoke.mock.calls[2]).toEqual(['cate.browser.setValue', { tabId: 't1', observationId: 'o2', target: 17, value: 'hello', _codeCellId: expect.any(String) }])
     expect(result.content).toHaveLength(3)
-    expect(JSON.parse((result.content[1] as { text: string }).text)).toMatchObject({ action: 'click', observationId: 'o2' })
-    expect(JSON.parse((result.content[1] as { text: string }).text)).not.toHaveProperty('elements')
+    // Plain text for the agent: the outcome, the page and its tree, no ids or element objects.
+    const text = (result.content[1] as { text: string }).text
+    expect(text.startsWith('click: dispatched\nPage: ')).toBe(true)
+    expect(text).not.toContain('observationId')
     sessions.dispose()
   })
 
   it('exposes downloads for the current tab or a known asset URL', async () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation() : { ok: true })
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.download(); await tab.download("https://example.test/image.png")', invoke)
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); await tab.download(); await tab.download("https://example.test/image.png")', invoke)
     expect(result.isError).toBeUndefined()
     expect(invoke.mock.calls[1]).toEqual(['cate.browser.download', {
-      panelId: 'p1', tabId: 't1', observationId: 'o1', _codeCellId: expect.any(String),
+      tabId: 't1', observationId: 'o1', _codeCellId: expect.any(String),
     }])
     expect(invoke.mock.calls[2]).toEqual(['cate.browser.download', {
-      panelId: 'p1', tabId: 't1', observationId: 'o1', url: 'https://example.test/image.png', _codeCellId: expect.any(String),
+      tabId: 't1', observationId: 'o1', url: 'https://example.test/image.png', _codeCellId: expect.any(String),
     }])
     sessions.dispose()
   })
@@ -107,10 +106,10 @@ describe('browser code session', () => {
   it('reads an attribute from a grounded AX element', async () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation() : '/image.png')
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await nodeRepl.write(await tab.getAttribute(42,"src"))', invoke)
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); await nodeRepl.write(await tab.getAttribute(42,"src"))', invoke)
     expect(result.isError).toBeUndefined()
     expect(invoke.mock.calls[1]).toEqual(['cate.browser.getAttribute', {
-      panelId: 'p1', tabId: 't1', observationId: 'o1', target: 42, name: 'src', _codeCellId: expect.any(String),
+      tabId: 't1', observationId: 'o1', target: 42, name: 'src', _codeCellId: expect.any(String),
     }])
     expect(result.content.at(-1)).toEqual({ type: 'text', text: '/image.png' })
     sessions.dispose()
@@ -118,10 +117,28 @@ describe('browser code session', () => {
 
   it('observes a newly resolved binding before exposing it', async () => {
     const sessions = new BrowserCodeSessions()
-    const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? { panelId: 'p1', tabId: 't1' } : observation())
-    const result = await sessions.run('a', 'await cua.getTab({panelId:"p1"})', invoke)
-    expect(invoke.mock.calls).toEqual([['cate.browser.getTab', { panelId: 'p1', _codeCellId: expect.any(String) }], ['cate.browser.getAXState', { panelId: 'p1', tabId: 't1', _codeCellId: expect.any(String) }]])
+    const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? { tabId: 't1' } : observation())
+    const result = await sessions.run('a', 'await cua.getTab()', invoke)
+    expect(invoke.mock.calls).toEqual([['cate.browser.getTab', { _codeCellId: expect.any(String) }], ['cate.browser.getAXState', { tabId: 't1', _codeCellId: expect.any(String) }]])
     expect(result.content).toHaveLength(1)
+    sessions.dispose()
+  })
+
+  it('starts every cell with the active tab, bound on first use and pinned for the cell', async () => {
+    const sessions = new BrowserCodeSessions()
+    const invoke = vi.fn(async (method: string, _args?: Record<string, unknown>) => method.endsWith('getTab') ? { tabId: 't1', url: 'https://example.test', title: 'Example' } : observation('o2'))
+    expect((await sessions.run('a', 'await nodeRepl.write(String(tab.tabId))', invoke)).content).toEqual([{ type: 'text', text: 'undefined' }])
+    expect(invoke).not.toHaveBeenCalled()
+    await sessions.run('a', 'await tab.click(12, {emit:false}); await tab.pressKey("Enter", {emit:false})', invoke)
+    expect(invoke.mock.calls.map(call => call[0])).toEqual(['cate.browser.getTab', 'cate.browser.click', 'cate.browser.pressKey'])
+    // The first action has no observation of its own: the driver uses its latest.
+    expect(invoke.mock.calls[1][1]).toEqual({ tabId: 't1', target: 12, _codeCellId: expect.any(String) })
+    expect(invoke.mock.calls[2][1]).toMatchObject({ tabId: 't1', observationId: 'o2' })
+    invoke.mockClear()
+    // A later cell binds afresh, even after a reset dropped every variable.
+    sessions.reset('a')
+    await sessions.run('a', 'await tab.getAXState({emit:false})', invoke)
+    expect(invoke.mock.calls.map(call => call[0])).toEqual(['cate.browser.getTab', 'cate.browser.getAXState'])
     sessions.dispose()
   })
 
@@ -140,7 +157,7 @@ describe('browser code session', () => {
     let count = 0
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation()
       : { ...observation(`image${++count}`, true), kind: 'image', screenshot: { mimeType: 'image/png', data: 'a'.repeat(8_100_000), width: 1, height: 1 } })
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.getScreenshot({emit:false}); await tab.getScreenshot({emit:false})', invoke)
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); await tab.getScreenshot({emit:false}); await tab.getScreenshot({emit:false})', invoke)
     expect(result.isError).toBe(true)
     expect(JSON.stringify(result)).toContain('Browser code retained observation limit exceeded')
     expect(result.content.every(item => item.type === 'text')).toBe(true)
@@ -151,7 +168,7 @@ describe('browser code session', () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation()
       : { ...observation('same-image', true), kind: 'image', screenshot: { mimeType: 'image/png', data: 'a'.repeat(8_100_000), width: 1, height: 1 } })
-    const first = await sessions.run('a', 'globalThis.tab = await cua.getTab({panelId:"p1"}); await tab.getScreenshot({emit:false}); await tab.getScreenshot({emit:false})', invoke)
+    const first = await sessions.run('a', 'globalThis.tab = await cua.getTab(); await tab.getScreenshot({emit:false}); await tab.getScreenshot({emit:false})', invoke)
     expect(first.isError).toBeUndefined()
     const next = await sessions.run('a', 'await tab.getScreenshot({emit:false})', invoke)
     expect(next.isError).toBeUndefined()
@@ -162,7 +179,7 @@ describe('browser code session', () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string) => method.endsWith('getTab') ? observation()
       : { ...observation('image', true), kind: 'image', screenshot: { mimeType: 'image/png', data: 'a'.repeat(8_100_000), width: 1, height: 1 } })
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); var result = await tab.getScreenshot({emit:false}); await nodeRepl.emitImage(result.screenshot)', invoke)
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); var result = await tab.getScreenshot({emit:false}); await nodeRepl.emitImage(result.screenshot)', invoke)
     expect(result.isError).toBeUndefined()
     expect(result.content.filter(item => item.type === 'image')).toHaveLength(1)
     sessions.dispose()
@@ -171,7 +188,7 @@ describe('browser code session', () => {
   it('delivers actual image content and honors emit:false', async () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async (method: string) => observation(method.endsWith('getTab') ? 'o1' : 'o2', !method.endsWith('getTab')))
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.getScreenshot({emit:false}); await tab.getAXStateAndScreenshot()', invoke)
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); await tab.getScreenshot({emit:false}); await tab.getAXStateAndScreenshot()', invoke)
     expect(result.content.map(item => item.type)).toEqual(['text', 'text', 'image'])
     expect(result.content[2]).toEqual({ type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' })
     sessions.dispose()
@@ -180,7 +197,7 @@ describe('browser code session', () => {
   it('surfaces permission errors without dispatching further actions', async () => {
     const sessions = new BrowserCodeSessions()
     const invoke = vi.fn(async () => ({ error: 'Browser write permission required', recovery: 'Enable Browser Control' }))
-    const result = await sessions.run('a', 'var tab = await cua.getTab({panelId:"p1"}); await tab.click(1)', invoke)
+    const result = await sessions.run('a', 'var tab = await cua.getTab(); await tab.click(1)', invoke)
     expect(result.isError).toBe(true)
     expect(JSON.stringify(result)).toContain('Browser write permission required')
     expect(JSON.stringify(result)).toContain('Enable Browser Control')
@@ -255,7 +272,7 @@ it.each(['timeout', 'reset'])('cancels browser actions already queued when the c
       if (method.endsWith('setChecked')) queued()
       return operation
     }
-    const running = sessions.run('cancel', 'var tab=await cua.getTab({panelId:"browser"}); await Promise.all([tab.waitFor({text:"never"},{timeoutMs:150}),tab.setChecked(1,true)])', invoke)
+    const running = sessions.run('cancel', 'var tab=await cua.getTab(); await Promise.all([tab.waitFor({text:"never"},{timeoutMs:150}),tab.setChecked(1,true)])', invoke)
     await submitted
     if (reason === 'reset') sessions.reset('cancel')
     await vi.advanceTimersByTimeAsync(250)

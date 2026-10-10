@@ -12,9 +12,9 @@ import path from 'node:path'
 import { createLogger, type Logger } from '@kernel/log/contract'
 import { createLifecycleBus, type LifecycleBus } from '@kernel/lifecycle/runtime'
 import { RpcError } from '@kernel/rpc/contract'
-import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
+import { RpcServer } from '@kernel/rpc/runtime'
 import { settingsCapability } from '@kernel/settings/contract'
-import { createSettingsHandlers, createWorkspaceSettingsStore } from '@kernel/settings/runtime'
+import { createSettingsHandlers, createWorkspaceSettingsStore, settingsCapabilityImpl } from '@kernel/settings/runtime'
 import { workspaceSettingsTable } from '@panels/settings'
 import { RUNTIME_STOP_DEADLINE_MS, runtimeIdFromCanonicalRoot, type RuntimeEndpoints } from '@runtime/data/contract'
 import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '@runtime/data/node'
@@ -35,16 +35,14 @@ import { createPowerService, powerCapabilityImpl } from '@runtime/power/runtime'
 import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
 import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
-import { createServerHost, reapOrphanServers, type ServerHost } from '@runtime/server/runtime'
 import { pairingEndpoints, type PeerConnectionFactory, type WebSocketFactory } from '@runtime/transports/contract'
 import { loadNodePeerConnection, nodeWebSocketFactory } from '@runtime/transports/node'
 import { createNetworkPeers, serveLocal, type SameNetworkOptions } from '@runtime/transports/runtime'
 import { tunnelCapability } from '@runtime/tunnel/contract'
 import { tunnelCapabilityImpl } from '@runtime/tunnel/runtime'
 import type { PanelRuntime } from '@panels/runtime'
-import { applyLoginEnv, prependPath } from '@services/terminal/runtime'
-import { withoutInheritedHookIdentity } from '@services/agents/runtime'
-import { installDirFromExecPath, installLayout, RUNTIME_BUILD, RUNTIME_VERSION, runtimeCapability, type NestedRefusal, type ServeArgs } from './contract'
+import { applyLoginEnv } from '@services/terminal/runtime'
+import { installDirFromExecPath, RUNTIME_BUILD, RUNTIME_VERSION, runtimeCapability, type NestedRefusal, type ServeArgs } from './contract'
 import { composeWorkspace, type Workspace } from './compose/workspace'
 import { ensureRuntimeInstalled } from './node'
 import {
@@ -97,7 +95,6 @@ export interface Daemon {
   readonly endpoint: string
   readonly rpc: RpcServer
   readonly busy: BusyRegistry
-  readonly servers: ServerHost
   readonly pairing: PairingService
   readonly network: NetworkAccess
   readonly workspace: Workspace
@@ -118,8 +115,8 @@ export type ServeResult =
 /** How long a nested runtime stays up to tell clients why it refuses them. */
 const NESTED_REFUSAL_MS = 10_000
 
-/** Once per daemon process, before serving: PTYs and servers inherit the
- *  login shell's environment. */
+/** Once per daemon process, before serving: PTYs inherit the login shell's
+ *  environment. */
 export async function prepareDaemonProcess(): Promise<void> {
   await applyLoginEnv()
 }
@@ -189,16 +186,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   const busy = createBusyRegistry()
   const perf = createPerfSampler()
 
-  const serversPidFile = path.join(paths.dir, 'servers.json')
-  reapOrphanServers(serversPidFile)
-  const cateBin = installLayout(installDir, process.platform).cateBin
-  const servers = createServerHost({
-    pidFile: serversPidFile,
-    installDir,
-    baseEnv: () => withoutInheritedHookIdentity(process.env),
-    withCateCli: (env) => ({ ...env, ...prependPath(env, cateBin) }),
-  })
-
   const devicesFile = openDevicesFile(paths.dir)
   const pairing = new PairingService({
     runtimePublicKey: keys.publicKey,
@@ -222,7 +209,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     lifecycle,
     settings,
     secrets,
-    servers,
     busy,
     log,
     // `cate serve` (network on from the command line) trusts what it serves.
@@ -277,7 +263,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
       await listener.close()
       await lifecycle.emitShutdown(reason.kind)
       await ws.shutdown()
-      servers.killAll()
       power.dispose()
       offPushEvents()
       offPushRevoked()
@@ -367,15 +352,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
 
   return {
     kind: 'serving',
-    daemon: { runtimeId, networkId, root, paths, endpoint, rpc, busy, servers, pairing, network, workspace: ws, stop, stopped },
-  }
-}
-
-function settingsCapabilityImpl(handlers: ReturnType<typeof createSettingsHandlers>): CapabilityImpl<typeof settingsCapability> {
-  return {
-    getAll: () => handlers.getAll(),
-    set: (params) => handlers.set(params),
-    subscribe: (_params, sink) => handlers.subscribe((event) => sink.emit(event)),
+    daemon: { runtimeId, networkId, root, paths, endpoint, rpc, busy, pairing, network, workspace: ws, stop, stopped },
   }
 }
 

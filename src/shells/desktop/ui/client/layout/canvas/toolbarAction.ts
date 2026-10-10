@@ -3,7 +3,7 @@
 
 import { useEffect, useRef } from 'react'
 
-export type CanvasToolbarAction = 'openWorktreeMenu' | 'openConversationMenu' | 'toggleCanvasToolbar'
+export type CanvasToolbarAction = 'openWorktreeMenu' | 'toggleCanvasToolbar'
 const EVENT = 'canvas-toolbar-action'
 interface ToolbarRequest { action: CanvasToolbarAction; canvasPanelId: string }
 

@@ -20,7 +20,7 @@ const selected = selectHookSmokeAgents(process.env.CATE_HOOK_SMOKE_AGENTS)
 describe.skipIf(!live)('installed agent hook smoke', () => {
   for (const agentId of selected) {
     test(`${agentId}: two terminal launches deliver their own session and complete turn`, { timeout: 360_000 }, async () => {
-      const command = AGENT_DEFS[agentId].runners.terminal.command
+      const command = AGENT_DEFS[agentId].command
       const version = execFileSync(command, ['--version'], { encoding: 'utf8', timeout: 30_000 }).trim()
       console.info(`[hook smoke] ${agentId}: ${version}`)
       // macOS's default TMPDIR alone can exhaust a daemon's Unix socket path

@@ -12,7 +12,6 @@
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
 import type { AgentConversationMessage, AgentId, AgentStatus, AgentTypeInfo } from '@services/agents/contract'
-import type { T3Conversation, T3ProviderModels } from '@services/t3/contract'
 import type { RelationKind } from '@workspace/document/contract'
 import type { RelationContextMode } from '@workspace/relations/contract'
 
@@ -82,11 +81,6 @@ export type MobileViewEvent =
   /** `browser.*`: load `url` in the tab's page: the session moved it
    *  elsewhere (another client, an agent, the address bar). */
   | { kind: 'load'; tabId: string; url: string }
-  /** `chat.*`: run `script` in the page. */
-  | { kind: 'script'; script: string }
-  /** `chat.*`: show or hide the page (hidden while it loads and while it is
-   *  on T3's start page). */
-  | { kind: 'reveal'; shown: boolean }
   /** `buffer.open`: the buffer's whole text once synced, at `version` (one
    *  more for every change of the buffer, wherever it was made). */
   | { kind: 'text'; text: string; version: number }
@@ -96,7 +90,7 @@ export type MobileViewEvent =
   /** `buffer.open`: the buffer could not be opened or its stream ended. */
   | { kind: 'error'; message: string }
   /** `agents.watch`: the agent's state (null while the panel hosts none),
-   *  the prompt sent from this chat that the conversation does not show yet,
+   *  the prompt sent from this view that the conversation does not show yet,
    *  and the messages from index `from` on, which replace the app's. */
   | {
     kind: 'conversation'
@@ -159,7 +153,7 @@ export interface MobilePanel {
   onCanvas: string | null
   /** Canvas panels: the canvas they show. */
   canvas: MobileCanvas | null
-  /** It takes prompts (a terminal, a chat): its relations go with them as
+  /** It takes prompts (a terminal): its relations go with them as
    *  context. */
   execution: boolean
   /** When its prompts take its relations' context (9.7). */
@@ -241,7 +235,7 @@ export interface MobileAgent {
   agentName: string | null
   /** The agent whose logo marks its panel, as on the desktop's tabs: a CLI
    *  standing in for its terminal while it runs; null shows the panel's
-   *  own icon (a chat's is T3's). */
+   *  own icon. */
   logo: AgentId | null
   status: AgentStatus
   present: boolean
@@ -308,12 +302,6 @@ export type MobileSwitchResult = MobileActionResult | { ok: false; message: stri
 /** An agent CLI a new agent can run, as the composer offers it
  *  (`cate.agent.types`). */
 export type MobileAgentChoice = AgentTypeInfo
-
-/** Where a new agent runs: a terminal running its CLI, or a T3 chat on a
- *  provider instance and model. */
-export type MobileAgentLaunch =
-  | { runner: 'terminal'; agentId: AgentId }
-  | { runner: 't3'; instanceId: string; model: string }
 
 /** Where a new panel goes: on the canvas a canvas panel shows, centred on
  *  `point` (canvas coordinates) or, without one, where there is room; at
@@ -416,43 +404,22 @@ export interface MobileCoreMethods {
   'browser.loading': { params: { viewId: string; tabId: string; loading: boolean; loadError: string | null }; result: null }
   'browser.title': { params: { viewId: string; tabId: string; title: string }; result: null }
 
-  /** A chat panel's view: `panel.open`, and the page's binding (`script`
-   *  and `reveal` events). */
-  'chat.open': { params: { viewId: string; workspaceId: string; panelId: string }; result: null }
-  /** The page of the snapshot's `loadId`; null until the harness is ready. */
-  'chat.page': { params: { viewId: string; dark: boolean }; result: MobileChatPage | null }
-  /** Whether the page may go to `url` (`committed`: it already did, in page;
-   *  a refused one is moved back with a `script` event). */
-  'chat.navigation': { params: { viewId: string; url: string; committed: boolean }; result: { allow: boolean } }
-  /** A new top-level document of the page starts loading. */
-  'chat.documentStarted': { params: { viewId: string }; result: null }
-  /** The document's setup ran; `url` is where the page is. */
-  'chat.documentReady': { params: { viewId: string; url: string }; result: null }
-  /** A bridge request the page logged; answers with the script that replies. */
-  'chat.hostMessage': { params: { viewId: string; message: string }; result: string | null }
-  /** The conversations of the panel's checkout, latest first. Selecting one
-   *  is the `selectThread` op, renaming the current one `renameConversation`. */
-  'chat.conversations': { params: { viewId: string }; result: T3Conversation[] }
-
   /** Follows a panel's agent conversation as `conversation` events for
    *  `viewId` until `agents.unwatch`; `pending` is a first prompt on its way. */
   'agents.watch': { params: { viewId: string; workspaceId: string; panelId: string; pending?: string }; result: null }
   'agents.unwatch': { params: { viewId: string }; result: null }
-  /** Sends a prompt from the chat `viewId` follows: pending there until the
+  /** Sends a prompt from the view `viewId` follows: pending there until the
    *  conversation has it. */
   'agents.send': { params: { viewId: string; workspaceId: string; panelId: string; prompt: string }; result: MobileActionResult }
-  /** Stops the agent's turn (Esc, Ctrl-C, T3's stop); the agent stays. */
+  /** Stops the agent's turn (Esc, Ctrl-C); the agent stays. */
   'agents.interrupt': { params: { workspaceId: string; panelId: string }; result: MobileActionResult }
   /** Every agent CLI, in registry order. */
   'agents.choices': { params: { workspaceId: string }; result: MobileAgentChoice[] }
-  /** The T3 provider instances a new chat can run on, with their models,
-   *  from T3's last provider probe. Starts no T3 harness. */
-  'agents.t3Models': { params: { workspaceId: string }; result: T3ProviderModels[] }
-  /** Starts an agent on `prompt`; `worktree` runs it in a new worktree named
-   *  after the prompt, `placement` puts its panel on a canvas. Answers with
-   *  the panel that hosts it. */
+  /** Starts agent CLI `agentId` on `prompt` in a new terminal; `worktree`
+   *  runs it in a new worktree named after the prompt, `placement` puts its
+   *  panel on a canvas. Answers with the panel that hosts it. */
   'agents.start': {
-    params: { workspaceId: string; prompt: string; launch: MobileAgentLaunch; worktree: boolean; placement?: MobilePlacement }
+    params: { workspaceId: string; prompt: string; agentId: AgentId; worktree: boolean; placement?: MobilePlacement }
     result: { ok: true; panelId: string } | { ok: false; message: string }
   }
   /** Shows the changes of the agent a panel hosts in a review panel filtered
@@ -536,18 +503,6 @@ export interface MobileFileEntry {
   name: string
   path: string
   isDirectory: boolean
-}
-
-/** The chat page of one load: where to load it, the cookie to install first,
- *  and what to run in it. */
-export interface MobileChatPage {
-  loadId: number
-  url: string
-  origin: string
-  cookie: { name: string; value: string }
-  /** Run at document end of every page load. */
-  script: string
-  css: string
 }
 
 export type MobileCoreMethod = keyof MobileCoreMethods

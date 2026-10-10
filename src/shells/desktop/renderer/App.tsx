@@ -23,11 +23,11 @@ function useWindowTitle(client: DesktopClient, workspaceId: string | null): void
 }
 
 /** Surfaces mount only for workspaces whose partition is prepared. */
-function Surfaces({ client, windowId, activeWorkspaceId, hidden }: { client: DesktopClient; windowId: string | null; activeWorkspaceId: string | null; hidden: boolean }) {
+function Surfaces({ client, windowId, hidden }: { client: DesktopClient; windowId: string | null; hidden: boolean }) {
   const ready = useWebviewReadyWorkspaces(client.partitions)
   const { open } = useWorkspaceList(client.workspaces)
   const workspaceIds = useMemo(() => open.filter((id) => ready.includes(id)), [open, ready])
-  return <PersistentPanelHost workspaceIds={workspaceIds} activeWorkspaceId={activeWorkspaceId} windowId={windowId} hidden={hidden} Scope={WorkspaceScope} />
+  return <PersistentPanelHost workspaceIds={workspaceIds} windowId={windowId} hidden={hidden} Scope={WorkspaceScope} />
 }
 
 function MainApp({ client }: { client: DesktopClient }) {
@@ -83,7 +83,6 @@ function MainApp({ client }: { client: DesktopClient }) {
         <Surfaces
           client={client}
           windowId={MAIN_WINDOW}
-          activeWorkspaceId={workspaceId}
           hidden={!!overlay || blocked}
         />
       </FileViewsHost>
@@ -109,7 +108,7 @@ function DetachedApp({ client, workspaceId, windowId }: { client: DesktopClient;
             <FileDropOverlay />
             <ClientOverlays firstRun={false} />
           </div>
-          <Surfaces client={client} windowId={windowId} activeWorkspaceId={workspaceId} hidden={blocked} />
+          <Surfaces client={client} windowId={windowId} hidden={blocked} />
         </div>
       </WorkspaceScope>
     </WindowIdContext.Provider>

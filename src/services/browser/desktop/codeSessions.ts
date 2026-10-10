@@ -7,9 +7,11 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import { CodeCellRegistry } from './codeCells'
-import { BROWSER_METHODS, type BrowserCodeResult, type BrowserContent, type BrowserImage } from '../contract'
+import { BROWSER_METHODS, describeBrowserObservation, type BrowserCodeResult, type BrowserContent, type BrowserImage } from '../contract'
 
 const BROWSER_CODE_DATA_LIMIT = 16_000_000
+/** Reset keys remembered for the next cell's hint; the oldest are forgotten. */
+const LOST_KEYS_LIMIT = 256
 
 // Authorization needs a fingerprint, not another retained copy of PNG data.
 const imageFingerprint = (image: BrowserImage): string => createHash('sha256')
@@ -33,68 +35,101 @@ function installBrowserCodeSdk(): void {
     if (enabled && observation) await rpc('__observation', { observationId: observation.observationId })
     return result
   }
-  const bind = async (method: string, args: Record<string, unknown>): Promise<any> => {
-    const result = await rpc(method, args)
-    const observation = result?.observation ?? result
-    if (!observation?.panelId || !observation?.tabId) throw new Error('Browser binding did not resolve a panel and tab')
-    const binding = { panelId: observation.panelId, tabId: observation.tabId }
-    const initial = observation.observationId ? observation : await rpc('getAXState', binding)
-    let observationId = initial.observationId
-    let axObservationId = initial.kind === 'image' ? undefined : initial.observationId
-    let documentId = initial.documentId
-    let imageOnly = initial.kind === 'image'
-    await emit(initial)
+  // A tab of the cell's browser panel (the command line chose it; code never
+  // names panels). `resolve` binds it on its first call and the
+  // binding stays pinned for the cell: a user's tab switch fails the calls
+  // after it instead of moving them to another tab. Without an observation
+  // yet, a call acts on the driver's latest one (as a CLI command does).
+  const tabOf = (resolve: () => Promise<any>): any => {
+    let binding: { tabId: string } | undefined
+    let observationId: string | undefined
+    let axObservationId: string | undefined
+    let documentId: string | undefined
+    let imageOnly = false
+    const track = (result: any): void => {
+      const state = result?.observation ?? result
+      if (!state?.observationId) return
+      if (documentId !== undefined && state.documentId !== documentId) axObservationId = undefined
+      documentId = state.documentId
+      observationId = state.observationId
+      imageOnly = state.kind === 'image'
+      if (!imageOnly) axObservationId = state.observationId
+    }
+    const bound = async (): Promise<{ tabId: string }> => {
+      if (binding) return binding
+      const page = await resolve()
+      const state = page?.observation ?? page
+      if (!state?.tabId) throw new Error('Browser binding did not resolve a tab')
+      binding = { tabId: state.tabId }
+      track(state)
+      return binding
+    }
     const call = async (name: string, params: Record<string, unknown> = {}, enabled = true): Promise<any> => {
+      const target = await bound()
       // Focus can change without navigation. Image-only reads must not make an
       // old focused AX node look fresh, especially in child frames/shadow roots.
       if (name === 'typeText' && imageOnly) await call('getAXState', {}, false)
       const numericTarget = typeof params.target === 'number'
         || (name === 'waitFor' && typeof (params.condition as any)?.element === 'number')
-      if (numericTarget && !axObservationId) throw new Error('Get a fresh AX observation before using numeric element IDs')
       const useAX = numericTarget || name === 'typeText'
         || name === 'getAXState' || name === 'getAXStateAndScreenshot' || name === 'getScreenshot'
-      const next = await rpc(name, { ...params, ...binding, observationId: useAX ? axObservationId ?? observationId : observationId })
-      const state = next?.observation ?? next
-      if (state?.observationId) {
-        if (state.documentId !== documentId) axObservationId = undefined
-        documentId = state.documentId
-        observationId = state.observationId
-        imageOnly = state.kind === 'image'
-        if (!imageOnly) axObservationId = state.observationId
-      }
+      const baseline = useAX ? axObservationId ?? observationId : observationId
+      const next = await rpc(name, { ...params, ...target, ...(baseline ? { observationId: baseline } : {}) })
+      track(next)
       return emit(next, enabled)
     }
+    // Every method takes a trailing options object; `{emit:false}` keeps its
+    // observation out of the cell's output.
+    const with_ = (name: string, params: Record<string, unknown>, { emit, ...options }: any = {}) =>
+      call(name, { ...options, ...params }, emit !== false)
     return Object.freeze({
-      ...binding,
-      getAXState: (options: any = {}) => call('getAXState', options, options.emit !== false),
-      getScreenshot: (options: any = {}) => call('getScreenshot', options, options.emit !== false),
-      getAXStateAndScreenshot: (options: any = {}) => call('getAXStateAndScreenshot', options, options.emit !== false),
+      get tabId() { return binding?.tabId },
+      getAXState: (options: any = {}) => with_('getAXState', {}, options),
+      getScreenshot: (options: any = {}) => with_('getScreenshot', {}, options),
+      getAXStateAndScreenshot: (options: any = {}) => with_('getAXStateAndScreenshot', {}, options),
       getAttribute: (target: unknown, name: string) => call('getAttribute', { target, name }),
-      click: (target: unknown, options: Record<string, unknown> = {}) => call('click', { ...options, target }),
-      setValue: (target: unknown, value: unknown) => call('setValue', { target, value }),
-      typeText: (text: string) => call('typeText', { text }),
-      pressKey: (key: string) => call('pressKey', { key }),
-      scroll: (target: unknown, direction: string, pages = 1) => call('scroll', { target, direction, pages }),
-      drag: (from: unknown, to: unknown) => call('drag', { from, to }),
-      selectText: (target: unknown, text: string, options: Record<string, unknown> = {}) => call('selectText', { ...options, target, text }),
-      setChecked: (target: unknown, checked: boolean) => call('setChecked', { target, checked }),
-      selectOption: (target: unknown, values: unknown) => call('selectOption', { target, values }),
-      upload: (target: unknown, filePath: string) => call('upload', { target, filePath }),
-      waitFor: (condition: unknown, options: Record<string, unknown> = {}) => call('waitFor', { ...options, condition }),
-      goto: (url: string) => call('goto', { url }),
-      back: () => call('back'), forward: () => call('forward'), reload: () => call('reload'), close: () => call('close'),
+      click: (target: unknown, options: any = {}) => with_('click', { target }, options),
+      setValue: (target: unknown, value: unknown, options: any = {}) => with_('setValue', { target, value }, options),
+      typeText: (text: string, options: any = {}) => with_('typeText', { text }, options),
+      pressKey: (key: string, options: any = {}) => with_('pressKey', { key }, options),
+      scroll: (target: unknown, direction: string, pages = 1, options: any = {}) => with_('scroll', { target, direction, pages }, options),
+      drag: (from: unknown, to: unknown, options: any = {}) => with_('drag', { from, to }, options),
+      selectText: (target: unknown, text: string, options: any = {}) => with_('selectText', { target, text }, options),
+      setChecked: (target: unknown, checked: boolean, options: any = {}) => with_('setChecked', { target, checked }, options),
+      selectOption: (target: unknown, values: unknown, options: any = {}) => with_('selectOption', { target, values }, options),
+      upload: (target: unknown, filePath: string, options: any = {}) => with_('upload', { target, filePath }, options),
+      waitFor: (condition: unknown, options: any = {}) => with_('waitFor', { condition }, options),
+      goto: (url: string, options: any = {}) => with_('goto', { url }, options),
+      back: (options: any = {}) => with_('back', {}, options),
+      forward: (options: any = {}) => with_('forward', {}, options),
+      reload: (options: any = {}) => with_('reload', {}, options),
+      close: () => call('close'),
       setViewport: (size: Record<string, unknown>) => call('setViewport', size),
       resize: (size: Record<string, unknown>) => call('resize', size),
       download: (url?: string) => call('download', url === undefined ? {} : { url }),
       downloads: () => call('downloads'),
     })
   }
+  // `cua.getTab` and `cua.createBrowserTab` make the tab they bind the cell's
+  // `tab`, and show its page.
+  const bind = async (method: string, args: Record<string, unknown>, options: any = {}): Promise<any> => {
+    const result = await rpc(method, args)
+    const tab = tabOf(async () => result)
+    root.tab = tab
+    const page = result?.observation ?? result
+    await emit(page?.observationId ? page : await tab.getAXState({ emit: false }), options?.emit !== false)
+    return tab
+  }
   Object.defineProperties(root, {
-    __cateBeginCell: { value: (id: string) => { cell = id } },
+    // Each cell starts with `tab`: the active tab of the cell's browser panel.
+    __cateBeginCell: { value: (id: string) => {
+      cell = id
+      root.tab = tabOf(() => rpc('getTab'))
+    } },
     cua: { value: Object.freeze({
       listTabs: async () => { const result = await rpc('listTabs'); await rpc('__write', { value: result }); return result },
-      getTab: (binding: Record<string, unknown>) => bind('getTab', binding),
-      createBrowserTab: (url: string, options: Record<string, unknown> = {}) => bind('createTab', { ...options, url }),
+      getTab: (binding: Record<string, unknown> = {}, options: any = {}) => bind('getTab', binding, options),
+      createBrowserTab: (url: string, { emit, ...options }: any = {}) => bind('createTab', { ...options, url }, { emit }),
     }) },
     nodeRepl: { value: Object.freeze({
       write: (value: unknown) => rpc('__write', { value }),
@@ -139,6 +174,8 @@ export class BrowserCodeSessions {
   private queues = new Map<string, Promise<unknown>>()
   private registered = false
   private generations = new Map<string, number>()
+  /** Keys whose session was reset since their last cell: bindings are gone. */
+  private lost = new Set<string>()
   readonly cells: CodeCellRegistry
   private readonly deadlineMs: number
 
@@ -166,6 +203,9 @@ export class BrowserCodeSessions {
     if (session.cell) this.cells.end(session.cell.id)
     session.cell = undefined
     this.sessions.delete(key)
+    this.lost.delete(key)
+    this.lost.add(key)
+    if (this.lost.size > LOST_KEYS_LIMIT) this.lost.delete(this.lost.values().next().value!)
     if (!session.window.isDestroyed()) session.window.destroy()
   }
 
@@ -211,8 +251,8 @@ export class BrowserCodeSessions {
     if (method === '__observation') {
       const recorded = cell.observations.get(args.observationId)
       if (!recorded) throw new Error('Unknown browser observation')
-      const { screenshot, elements: _elements, ...state } = recorded.observation
-      this.append(cell, { type: 'text', text: JSON.stringify({ ...(recorded.action ? { action: recorded.action } : {}), ...state }) })
+      const { screenshot } = recorded.observation
+      this.append(cell, { type: 'text', text: describeBrowserObservation(recorded.observation, recorded.action) })
       if (screenshot) this.append(cell, { type: 'image', mimeType: 'image/png', data: screenshot.data })
       return null
     }
@@ -222,7 +262,7 @@ export class BrowserCodeSessions {
     try {
       const result = await cell.invoke(`cate.browser.${method}`, { ...args, _codeCellId: cell.id })
       if (session.cell !== cell) throw new Error('Browser code cell is no longer active')
-      if (result && typeof result === 'object' && 'error' in result) throw new Error([String(result.error), 'recovery' in result ? String(result.recovery) : ''].filter(Boolean).join(' — '))
+      if (result && typeof result === 'object' && 'error' in result) throw new Error([String(result.error), 'recovery' in result ? String(result.recovery) : ''].filter(Boolean).join(': '))
       const value = result as any
       const observation = value?.observation ?? (value?.observationId ? value : undefined)
       if (observation) {
@@ -266,6 +306,7 @@ export class BrowserCodeSessions {
   private async execute(key: string, code: string, invoke: BrowserCodeInvoke, options: RunCodeOptions): Promise<BrowserCodeResult> {
     if (typeof code !== 'string' || code.length > 100_000) return { content: [{ type: 'text', text: 'Browser code must be at most 100000 characters' }], isError: true }
     const deadlineMs = Math.min(options.deadlineMs ?? this.deadlineMs, this.deadlineMs)
+    const lost = this.lost.delete(key)
     const deadline = Date.now() + deadlineMs
     let timer: ReturnType<typeof setTimeout> | undefined
     let session: CodeSession | undefined
@@ -282,14 +323,22 @@ export class BrowserCodeSessions {
         if (cell.pending) throw new Error('Await every browser call; unawaited work reset this session')
         session.cell = undefined
         if (result.exceptionDetails) {
-          const text = result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'Browser code failed'
+          const description: string = result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'Browser code failed'
+          // Stack frames point into the SDK and the REPL, never at the agent's code.
+          let text = description.split('\n').filter(line => !/^\s+at /.test(line)).join('\n')
+          if (lost && /^ReferenceError/.test(text)) {
+            text += '\nThe previous browser code session was reset (a timeout, an error or `cate browser reset`), so variables from earlier cells are gone. Every cell still starts with `tab`.'
+          }
           this.append(cell, { type: 'text', text })
           return { content: cell.content, isError: true }
         }
         return { content: cell.content }
       }
       return await Promise.race([execute(), new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => { this.reset(key); reject(new Error('Browser code timed out; session reset')) }, deadlineMs)
+        timer = setTimeout(() => {
+          this.reset(key)
+          reject(new Error(`Browser code timed out after ${Math.round(deadlineMs / 1000)}s and the session was reset: variables from earlier cells are gone. The next cell starts with \`tab\` again.`))
+        }, deadlineMs)
       })])
     } catch (error) {
       const content = activeCell?.content ?? []

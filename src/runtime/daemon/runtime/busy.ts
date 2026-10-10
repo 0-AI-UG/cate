@@ -1,5 +1,5 @@
 // "Is work running?" Modules contribute a predicate (busy terminals, running
-// agents, T3 turns); lifetime and power ask the combined answer.
+// agents); lifetime and power ask the combined answer.
 
 export interface BusyRegistry {
   /** Adds a source; returns its removal. */

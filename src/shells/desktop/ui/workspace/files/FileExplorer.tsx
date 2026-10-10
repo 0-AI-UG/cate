@@ -395,7 +395,6 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
     if (e.target !== e.currentTarget) return
     e.preventDefault()
     const ui = clientUi()
-    if (!ui.showContextMenu) return
     const clipboard = canCopyFiles()
     const pasteable = clipboard && (await clipboardFileRefs()).length > 0
     const items: ContextMenuItem[] = [
@@ -407,10 +406,10 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
       ...(clipboard
         ? ([{ id: 'paste', label: 'Paste', accelerator: 'Cmd+V', enabled: pasteable }, { type: 'separator' }] as ContextMenuItem[])
         : []),
-      { id: 'find-in-folder', label: 'Find in Folder…', accelerator: 'Alt+Shift+F' },
+      { id: 'find-in-folder', label: 'Find in Folder…' },
       { type: 'separator' },
-      { id: 'copy-path', label: 'Copy Path', accelerator: 'Alt+Cmd+C' },
-      { id: 'copy-rel-path', label: 'Copy Relative Path', accelerator: 'Alt+Shift+Cmd+C' },
+      { id: 'copy-path', label: 'Copy Path' },
+      { id: 'copy-rel-path', label: 'Copy Relative Path' },
     ]
     const id = await ui.showContextMenu(items)
     switch (id) {
@@ -421,7 +420,8 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
       case 'paste': void pasteInto(rootPath); break
       case 'find-in-folder': openSearch(); break
       case 'copy-path': void ui.writeClipboard?.(rootPath); break
-      case 'copy-rel-path': void ui.writeClipboard?.(folderName); break
+      // The root relative to itself.
+      case 'copy-rel-path': void ui.writeClipboard?.('.'); break
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rootPath, startRootCreate, selectedWorkspaceId, panelId, openSearch, host, pasteInto])

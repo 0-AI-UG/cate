@@ -1,5 +1,5 @@
 // The `api` capability: how callers reach the router over the runtime
-// protocol. The CLI and T3 harnesses connect with their token; clients call it
+// protocol. The CLI connects with its token; clients call it
 // from their own connection. The router enforces each method's timeout, so the
 // capability declares none; callers pass one per call.
 

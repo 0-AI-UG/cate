@@ -2,7 +2,7 @@
 // runs it in the box, send. Your message shows at once and the reply line
 // shimmers while the agent starts and works; the same screen then follows
 // the agent. A permission or question is answered in the panel it runs in
-// (the live terminal or the T3 Code chat), one tap away in the toolbar.
+// (the live terminal), one tap away in the toolbar.
 // Review opens the workspace's review panel filtered to this agent's panel.
 // The runtime pushes the conversation as it changes (AgentConversation);
 // while the agent works the send button stops its turn.
@@ -32,8 +32,8 @@ struct AgentChatView: View {
     /// When this chat started its agent: until it shows up, it is starting.
     @State private var startedAt: Date?
     @State private var startFailure: String?
-    @State private var options = AgentLaunchOptions()
-    @AppStorage("agents.launch") private var remembered = ""
+    @State private var options = AgentChoiceOptions()
+    @AppStorage("agents.agent") private var remembered = ""
     @AppStorage("agents.worktree") private var worktree = true
     @State private var failure: OpFailure?
     @State private var reviewing: PanelRoute?
@@ -74,7 +74,7 @@ struct AgentChatView: View {
             .alert(item: $failure) { Alert(title: Text($0.message)) }
             .task { _ = await core.connected(workspaceId) }
             .task(id: connected && panelId == nil) { await loadOptions(connected) }
-            .onChange(of: options.selected) { _, launch in remember(launch) }
+            .onChange(of: options.selected) { _, agentId in if let agentId { remembered = agentId } }
             .task(id: panelId) { await follow(panelId) }
             .task(id: startedAt) { await expireStart() }
             .onChange(of: panelId, initial: true) { _, id in watch(id) }
@@ -84,10 +84,6 @@ struct AgentChatView: View {
     private func loadOptions(_ connected: Bool) async {
         guard connected, panelId == nil else { return }
         await options.load(core, workspaceId: workspaceId, remembered: remembered)
-    }
-
-    private func remember(_ launch: AgentLaunch?) {
-        if let launch { remembered = launch.key }
     }
 
     private func expireStart() async {
@@ -206,7 +202,7 @@ struct AgentChatView: View {
             AgentComposer(
                 text: $draft,
                 placeholder: "What should the agent do?",
-                canSend: connected && options.launch != nil,
+                canSend: connected && options.ready != nil,
                 sending: sending,
                 options: options,
                 worktree: $worktree,
@@ -243,9 +239,8 @@ struct AgentChatView: View {
             }
             ToolbarSpacer(.fixed, placement: .topBarTrailing)
             ToolbarItem(placement: .topBarTrailing) {
-                let chat = (agent?.panelType ?? panel?.type) == "chat"
                 NavigationLink(value: PanelRoute(workspaceId: workspaceId, panelId: panelId)) {
-                    Label(chat ? "Open Chat" : "Open Terminal", systemImage: chat ? "bubble.left.and.text.bubble.right" : "terminal")
+                    Label("Open Terminal", systemImage: "terminal")
                 }
             }
         }
@@ -255,7 +250,7 @@ struct AgentChatView: View {
 
     /// Starts the agent; its panel goes where the chat was asked from.
     private func start() {
-        guard let launch = options.launch else { return }
+        guard let agentId = options.ready?.agentId else { return }
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
         starting = prompt
@@ -266,7 +261,7 @@ struct AgentChatView: View {
             var params: [String: Any] = [
                 "workspaceId": workspaceId,
                 "prompt": prompt,
-                "launch": launch.params,
+                "agentId": agentId,
                 "worktree": worktree,
             ]
             if let placement { params["placement"] = placement.params }
@@ -386,7 +381,7 @@ private struct AttentionCard: View {
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(.orange)
             NavigationLink(value: open) {
-                Label(agent.panelType == "chat" ? "Answer in the Chat" : "Answer in the Terminal", systemImage: agent.panelSymbol)
+                Label("Answer in the Terminal", systemImage: "terminal")
             }
             .buttonStyle(.glassProminent)
             .tint(.orange)

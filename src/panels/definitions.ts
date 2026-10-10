@@ -8,11 +8,10 @@ import terminal from './terminal/definition'
 import editor from './editor/definition'
 import review from './review/definition'
 import browser from './browser/definition'
-import chat from './chat/definition'
 import canvas from './canvas/definition'
 import surface from './surface/definition'
 
-export const PANEL_DEFINITIONS: readonly AnyPanelDefinition[] = [terminal, editor, review, browser, chat, canvas, surface]
+export const PANEL_DEFINITIONS: readonly AnyPanelDefinition[] = [terminal, editor, review, browser, canvas, surface]
 
 const byType = new Map<string, AnyPanelDefinition>(PANEL_DEFINITIONS.map((definition) => [definition.type, definition]))
 

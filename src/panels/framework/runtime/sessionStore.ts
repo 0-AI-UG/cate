@@ -1,11 +1,14 @@
-// A session's own state file, `<data>/sessions/<panelId>.json`: read once,
-// written debounced and atomic, set aside when the panel is removed (so undo
-// brings it back) and deleted when the panel is replaced.
+// A session's own state file, `<data>/sessions/<panelId>.json`, written
+// through kernel/state (read once, debounced atomic writes, corrupt-file
+// quarantine). Set aside when the panel is removed (so undo brings it back)
+// and deleted when the panel is replaced. Nobody subscribes, so the file is
+// not watched: the session holds its state in memory and has no way to take a
+// hand edit while it runs, and one watcher per panel would be costly.
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Logger } from '@kernel/log/contract'
-import { readJsonFile, writeJsonAtomic, writeJsonAtomicSync } from '@kernel/state/node'
+import { createJsonStateFile } from '@kernel/state/node'
 import type { Json } from '@workspace/document/contract'
 import type { SessionStore } from './PanelSession'
 
@@ -18,75 +21,43 @@ export interface SessionFileStore extends SessionStore {
   retire(to: string | null): Promise<void>
 }
 
-const MISSING = Symbol('missing')
-
 export function createSessionFileStore(file: string, log: Logger, debounceMs = 250): SessionFileStore {
-  let value: Json | undefined
-  let loaded = false
-  let dirty = false
+  // `null` stands for "no state yet" (a missing file).
+  const state = createJsonStateFile<Json>({
+    file,
+    defaults: null,
+    normalize: (parsed) => parsed as Json,
+    debounceMs,
+  })
   let removed = false
-  let timer: ReturnType<typeof setTimeout> | null = null
-  let writing: Promise<void> | null = null
-
-  const load = () => {
-    if (loaded) return
-    loaded = true
-    const read = readJsonFile<Json | typeof MISSING>(file, MISSING)
-    value = read === MISSING ? undefined : read
-  }
-
-  const writeLoop = async () => {
-    while (dirty && !removed) {
-      dirty = false
-      await writeJsonAtomic(file, value ?? null)
-    }
-  }
-
-  const flush = (): Promise<void> => {
-    if (timer) { clearTimeout(timer); timer = null }
-    writing ??= writeLoop()
-      .catch((err) => { dirty = true; log.warn('writing %s failed: %s', file, (err as Error).message) })
-      .finally(() => { writing = null })
-    return writing
-  }
 
   return {
     read() {
-      load()
-      return value
+      return state.get() ?? undefined
     },
     write(next) {
-      if (removed) return
-      loaded = true
-      value = next
-      dirty = true
-      timer ??= setTimeout(() => { timer = null; void flush() }, debounceMs)
+      if (!removed) state.set(next)
     },
-    flush,
+    flush: () => state.flush(),
     flushSync() {
-      if (timer) { clearTimeout(timer); timer = null }
-      if (!dirty || removed) return
-      dirty = false
-      try { writeJsonAtomicSync(file, value ?? null) } catch (err) { log.warn('writing %s failed: %s', file, (err as Error).message) }
+      if (!removed) state.flushSync()
     },
     async retire(to) {
       if (removed) return
       removed = true
-      if (timer) { clearTimeout(timer); timer = null }
-      await writing
+      // Lands the pending value at `file`; dispose retries it synchronously
+      // when that write failed.
+      await state.flush()
+      state.dispose()
       try {
         if (to === null) {
           await fs.rm(file, { force: true })
           return
         }
         await fs.mkdir(path.dirname(to), { recursive: true })
-        if (dirty) await writeJsonAtomic(to, value ?? null)
-        else await fs.rename(file, to)
-        await fs.rm(file, { force: true })
+        await fs.rename(file, to)
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('retiring %s failed: %s', file, (err as Error).message)
-      } finally {
-        dirty = false
       }
     },
   }

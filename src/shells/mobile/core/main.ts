@@ -10,7 +10,6 @@ import { snapshotOf, watchState } from './state'
 import { createMobileTerminals } from './terminals'
 import { createMobileViews } from './views'
 import { createMobileBrowsers } from './browser'
-import { createMobileChats } from './chat'
 import { createMobileBuffers } from './buffers'
 import { createMobileStreams } from './streams'
 import { createMobileAgents } from './agents'
@@ -36,7 +35,6 @@ async function start(): Promise<void> {
     terminals: createMobileTerminals(client, bridge),
     views,
     browsers: createMobileBrowsers(views),
-    chats: createMobileChats(views),
     buffers: createMobileBuffers(bridge),
     streams: createMobileStreams(client, bridge),
     agents,

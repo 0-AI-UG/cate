@@ -229,21 +229,17 @@ TUIs. Never send keys until the panel id and current screen are verified.
 ## Agent orchestration
 
 Use `cate agent` to start agents and to observe and steer the live agent
-panels of the current workspace: terminal CLI agents and chat (T3 Code)
-panels.
+panels of the current workspace: terminal CLI agents.
 
 `start` runs an agent on a prompt in a new panel, next to yours, and prints
-its panel id. It runs the agent CLI in a terminal by default (`--agent <id>`
-picks one whose Cate hooks are on; `cate agent types` lists them), or in a T3
-Code chat with `--runner t3` (`--instance <id>` and `--model <slug>`, default:
-a ready instance of the agent's provider and its default model). It works in
+its panel id. It runs the agent CLI in a terminal (`--agent <id>` picks one
+whose Cate hooks are on; `cate agent types` lists them). It works in
 your checkout, an existing worktree (`--worktree <id>`) or a new one
 (`--new-worktree <name>`), not both. `--canvas <id>` places it on that canvas
 panel's canvas instead. From then on it is an agent panel like any other:
 
 ```bash
 cate agent start --agent codex --new-worktree fix-login "Fix the flaky login test"
-cate agent start --runner t3 --agent claude-code "Explain the build"
 cate agent types
 ```
 
@@ -267,11 +263,10 @@ Panel ids may be the unique short ids printed by `cate agent list`. `wait`
 accepts 5000 to 60000 milliseconds and may be called with no ids to monitor every
 live agent panel. A successful send delivers the prompt exactly once; the target
 must be at its normal prompt rather than busy or waiting on structured input.
-`read` prints the conversation's user and assistant messages the same way for
-every agent panel: terminal CLI agents are read from that CLI's own session
-store, chat panels from their T3 thread. `--json` gives `{ panelId, runner,
-title, agentId, agentName, state, canReceivePrompt, session, messages: [{ role,
-text, createdAt }] }` (`runner` is `terminal` or `t3`). A
+`read` prints the conversation's user and assistant messages, read from the
+agent CLI's own session store. `--json` gives `{ panelId, title, agentId,
+agentName, state, canReceivePrompt, session, messages: [{ role, text,
+createdAt }] }`. A
 terminal whose agent has not reported a session yet fails with `no-agent-session`;
 use `cate terminal read` to see its screen instead.
 

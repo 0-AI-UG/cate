@@ -9,10 +9,8 @@ export interface AgentPanelInfo {
   status: AgentStatus
   /** The agent's label, or null once a terminal's agent exited. */
   name: string | null
-  /** Logo URL for the agent, or null (a chat then shows the T3 logo). */
+  /** Logo URL for the agent, or null. */
   logo: string | null
-  /** The agent stands in for its panel (see `PanelAgentState`). */
-  takesOverPanel: boolean
 }
 
 export function agentPanelInfo(state: PanelAgentState): AgentPanelInfo {
@@ -23,7 +21,6 @@ export function agentPanelInfo(state: PanelAgentState): AgentPanelInfo {
     status: state.status,
     name: state.label,
     logo: state.label ? agentLogo(state.agentId) : null,
-    takesOverPanel: state.takesOverPanel,
   }
 }
 
@@ -35,7 +32,7 @@ export function agentInfoByPanel(states: AgentPanelStates): Record<string, Agent
 
 export function agentInfoEqual(a: AgentPanelInfo | undefined, b: AgentPanelInfo | undefined): boolean {
   if (!a || !b) return a === b
-  return a.status === b.status && a.takesOverPanel === b.takesOverPanel && a.name === b.name && a.logo === b.logo
+  return a.status === b.status && a.name === b.name && a.logo === b.logo
 }
 
 export function recordEqual<T>(a: Record<string, T>, b: Record<string, T>, eq: (x: T, y: T) => boolean = Object.is): boolean {
@@ -44,7 +41,7 @@ export function recordEqual<T>(a: Record<string, T>, b: Record<string, T>, eq: (
 }
 
 /** `agentPanelTitle` over the info a tab or sidebar row already holds: an
- *  agent that stands in for its panel names it only while it runs. */
+ *  agent names its panel only while it runs. */
 export function agentInfoTitle(title: string, info: AgentPanelInfo | undefined): string {
-  return info?.takesOverPanel && info.name && isAgentFallbackTitle(title) ? info.name : title
+  return info?.name && isAgentFallbackTitle(title) ? info.name : title
 }

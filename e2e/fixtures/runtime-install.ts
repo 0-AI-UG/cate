@@ -1,12 +1,11 @@
-// A fuller fake runtime install than `fakeRuntimeInstall`: besides this
-// test's Node (so the daemon finds its install from `process.execPath`) and
-// the fake T3 harness, it holds ripgrep beside Node (content search) and the
-// `cate` CLI under `cate/bin` (terminals get it on PATH), the layout of
-// `installLayout` in src/runtime/daemon/contract.
+// A fake runtime install: besides this test's Node (so the daemon finds its
+// install from `process.execPath`), it holds ripgrep beside Node (content
+// search) and the `cate` CLI under `cate/bin` (terminals get it on PATH), the
+// layout of `installLayout` in src/runtime/daemon/contract.
 
 import { buildSync } from 'esbuild'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, realpathSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
 import { launchApp, REPO_ROOT, type LaunchOptions, type LaunchResult } from './electron-app'
 
@@ -52,11 +51,6 @@ export function fullRuntimeInstall(home: string): string {
 
   const rg = which('rg') ?? path.join(REPO_ROOT, 'node_modules', '@vscode', 'ripgrep', 'bin', 'rg')
   if (existsSync(rg)) symlinkSync(realpathSync(rg), path.join(bin, 'rg'))
-
-  const t3 = path.join(dir, 't3', 'dist', 'bin.mjs')
-  mkdirSync(path.dirname(t3), { recursive: true })
-  const fake = path.join(__dirname, 'fake-t3.cjs')
-  writeFileSync(t3, `import { createRequire } from 'node:module'\ncreateRequire(import.meta.url)(${JSON.stringify(fake)})\n`)
 
   const cliDist = path.join(dir, 'cate', 'dist')
   mkdirSync(cliDist, { recursive: true })

@@ -24,8 +24,7 @@ export default definePanel({
   // The webview is the page: keep it mounted while its canvas card is culled or
   // its dock tab is hidden, so page state stays the same for user and agent.
   // Page operations run on a client with a page driver (`code.*` cells too).
-  surface: { retention: 'workspace', ops: BROWSER_SURFACE_FEATURES },
-  requiresFolder: false,
+  surface: { ops: BROWSER_SURFACE_FEATURES },
   opens: ['url'],
   defaultTitle: 'Browser',
   fields: (options: BrowserCreateOptions): JsonObject => (options.url ? { url: options.url } : {}),

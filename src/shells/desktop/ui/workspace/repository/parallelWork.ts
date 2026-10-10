@@ -4,7 +4,17 @@
 // worktree surface bind their buttons to these.
 
 import { useCallback } from 'react'
-import { checkoutPullRequest, createWorktree as createWorktreeIn, discardWorktree } from '@workspace/repository/client'
+import {
+  checkoutPullRequest,
+  createWorktree as createWorktreeIn,
+  createWorktreePr,
+  discardWorktree,
+  mergeWorktree,
+  publishWorktree,
+  pruneWorktrees,
+  removeOrphanWorktree,
+  updateWorktreeFromBase,
+} from '@workspace/repository/client'
 import { useRuntime } from '../../kernel/rpc'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import type { WorktreeMeta } from '@workspace/document/contract'
@@ -104,7 +114,6 @@ export function useParallelWork(
   const host = useRepositoryUi()
   const runtime = useRuntime(host.workspaceId)
   const { setError, onPrCreated, setBusy } = opts
-  const { root } = host
 
   const createWorktree = useCallback(async (rawName: string, baseRef?: string) => {
     if (!runtime) return null
@@ -123,111 +132,31 @@ export function useParallelWork(
   )
 
   const handlePublish = useCallback(async (wt: JoinedWorktree) => {
-    if (!wt.branch || !runtime) return
-    setError(null)
-    setBusy?.(wt.id)
-    try {
-      await runtime.vcs.push({ cwd: wt.path, remote: 'origin', branch: wt.branch })
-    } catch (err: unknown) {
-      setError(`Publish failed: ${errorMessage(err, 'Couldn’t publish this branch.')}`)
-    } finally {
-      setBusy?.(null)
-    }
+    if (runtime) await publishWorktree(wt, { runtime, setError, setBusy })
   }, [runtime, setBusy, setError])
 
   const handleCreatePR = useCallback(async (wt: JoinedWorktree) => {
-    if (!wt.branch || !runtime) return
-    if (wt.prNumber) {
-      setError(`This worktree already belongs to PR #${wt.prNumber}. Open that pull request instead.`)
-      return
-    }
-    setError(null)
-    setBusy?.(wt.id)
-    try {
-      const res = await runtime.vcs.createPr({ path: wt.path, branch: wt.branch })
-      if (res.ok) {
-        clientUi().openExternal(res.url)
-        onPrCreated?.()
-      } else {
-        setError(errorMessage(res.message, 'Couldn’t create the pull request.'))
-      }
-    } catch (err: unknown) {
-      setError(`Couldn’t create pull request: ${errorMessage(err, 'The operation failed.')}`)
-    } finally {
-      setBusy?.(null)
-    }
+    if (runtime) await createWorktreePr(wt, { runtime, setError, setBusy, onPrCreated })
   }, [runtime, onPrCreated, setBusy, setError])
 
   const handleUpdateFromMain = useCallback(async (wt: JoinedWorktree) => {
-    if (wt.isPrimary || !wt.branch || !runtime) return
-    const target = primaryLabel
-    if (!target) {
-      setError('Could not resolve the base branch. Open Source Control once to refresh.')
-      return
-    }
-    setBusy?.(wt.id)
-    try {
-      const result = await runtime.vcs.worktreeUpdateFrom({ path: wt.path, from: target })
-      if (!result.ok) {
-        setError(result.conflict
-          ? `Conflicts updating from ${target} — open a terminal here to resolve them.`
-          : `Update from ${target}: ${errorMessage(result.message, 'The update failed.')}`)
-      } else {
-        setError(null)
-      }
-    } catch (err: unknown) {
-      setError(`Update failed: ${errorMessage(err, 'The operation failed.')}`)
-    } finally {
-      setBusy?.(null)
-    }
+    if (runtime) await updateWorktreeFromBase(wt, primaryLabel, { runtime, setError, setBusy })
   }, [runtime, primaryLabel, setBusy, setError])
 
   const handleMerge = useCallback(async (wt: JoinedWorktree) => {
-    if (!root || wt.isPrimary || !runtime) return
-    const target = primaryLabel
-    if (!wt.branch || !target) {
-      setError('Could not resolve the base branch — open Source Control once to refresh.')
-      return
-    }
-    if (!(await clientUi().confirm(`Merge ${wt.branch} into ${target}?`))) return
-    setBusy?.(wt.id)
-    try {
-      const result = await runtime.vcs.worktreeMergeTo({ cwd: root, from: wt.branch, to: target })
-      if (!result.ok) setError(`Merge ${wt.branch} → ${target}: ${errorMessage(result.message, 'The merge failed.')}`)
-      else setError(null)
-    } catch (err: unknown) {
-      setError(`Merge failed: ${errorMessage(err, 'The operation failed.')}`)
-    } finally {
-      setBusy?.(null)
-    }
-  }, [runtime, root, primaryLabel, setBusy, setError])
+    if (runtime) await mergeWorktree(wt, primaryLabel, { host, runtime, setError, setBusy })
+  }, [host, runtime, primaryLabel, setBusy, setError])
 
   const handleDelete = useCallback(async (wt: JoinedWorktree) => {
     if (runtime) await discardWorktree(wt, { host, runtime, setError, setBusy })
   }, [host, runtime, setBusy, setError])
 
   const handlePrune = useCallback(async (orphans: JoinedWorktree[]) => {
-    if (!runtime) return
-    try {
-      // Prune drops every orphan with its bound panels, so ask about all of
-      // them first; one refusal keeps them all.
-      for (const orphan of orphans) {
-        if (!(await host.prepareWorktreeClose(orphan.id))) return
-      }
-      await runtime.vcs.worktreePrune()
-    } catch (err: unknown) {
-      setError(`Cleanup failed: ${errorMessage(err, 'No saved entries were removed.')}`)
-    }
+    if (runtime) await pruneWorktrees(orphans, { host, runtime, setError })
   }, [host, runtime, setError])
 
   const removeOrphan = useCallback(async (worktreeId: string) => {
-    if (!runtime) return
-    if (!(await host.prepareWorktreeClose(worktreeId))) return
-    try {
-      await runtime.vcs.worktreeRemove({ worktreeId, force: true })
-    } catch (err: unknown) {
-      setError(`Couldn’t remove this entry: ${errorMessage(err, 'The operation failed.')}`)
-    }
+    if (runtime) await removeOrphanWorktree(worktreeId, { host, runtime, setError })
   }, [host, runtime, setError])
 
   const updateMeta = useCallback((wt: JoinedWorktree, patch: { color?: string; label?: string }) => {

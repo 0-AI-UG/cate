@@ -14,7 +14,6 @@ import { createActionHandlers, wordsFor } from './actions'
 import type { MobileAgents } from './agents'
 import type { MobileBrowsers } from './browser'
 import type { MobileBuffers } from './buffers'
-import type { MobileChats } from './chat'
 import type { MobileConversations } from './conversations'
 import { placementOptions, suggestPlacements } from './placement'
 import { createRelationHandlers } from './relations'
@@ -32,7 +31,6 @@ export interface CoreParts {
   terminals: MobileTerminals
   views: MobileViews
   browsers: MobileBrowsers
-  chats: MobileChats
   buffers: MobileBuffers
   streams: MobileStreams
   agents: MobileAgents
@@ -49,7 +47,7 @@ const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
 export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers {
   const { workspaces, connections } = client
   const open = (workspaceId: string) => openTrusted({ workspaces, connections, close: (id) => workspaces.close(id) }, workspaceId)
-  const { terminals, views, browsers, chats, buffers, streams, agents, conversations } = parts
+  const { terminals, views, browsers, buffers, streams, agents, conversations } = parts
   return {
     ...createActionHandlers(agents, conversations),
     ...createRelationHandlers(),
@@ -219,17 +217,6 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       browsers.title(params)
       return null
     },
-
-    async 'chat.open'(params) {
-      chats.open(params)
-      return null
-    },
-    'chat.page': async (params) => chats.page(params),
-    'chat.navigation': async (params) => chats.navigation(params),
-    'chat.documentStarted': async (params) => chats.documentStarted(params),
-    'chat.documentReady': async (params) => chats.documentReady(params),
-    'chat.hostMessage': (params) => chats.hostMessage(params),
-    'chat.conversations': (params) => chats.conversations(params),
 
     async 'loopback.port'({ url }) {
       return loopbackPort(url)

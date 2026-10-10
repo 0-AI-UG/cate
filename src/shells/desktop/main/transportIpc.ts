@@ -3,11 +3,10 @@
 // loopback web proxy asks a renderer for a loopback pipe the same way.
 
 import { randomUUID } from 'node:crypto'
-import { MessageChannelMain, session, type WebContents } from 'electron'
+import { MessageChannelMain, type WebContents } from 'electron'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { isMachine } from '@runtime/daemon/contract'
 import { pairingErrorMessage } from '@runtime/pairing/client'
-import { isLoopbackHostname } from '@runtime/tunnel/contract'
 import { DESKTOP_CHANNELS as C, type DesktopNetworkTarget } from '../contract'
 import { handle } from './ipc'
 import { awaitPortPipe, bridgePipe } from './pipes'
@@ -92,12 +91,5 @@ export function registerTransportIpc(deps: { host: ShellTransportHost; partition
   })
   handle(C.webRelease, (event, workspace: { runtimeId: string }) => {
     partitions.release(String(workspace?.runtimeId ?? ''), event.sender.id)
-  })
-  handle(C.webSetCookie, async (_event, partition: unknown, url: unknown, cookie: { name: string; value: string }) => {
-    if (typeof partition !== 'string' || !partitions.isPrepared(partition)) throw new Error('not a workspace partition')
-    const parsed = new URL(String(url))
-    if (!/^https?:$/.test(parsed.protocol) || !isLoopbackHostname(parsed.hostname)) throw new Error('cookies are set only for loopback pages')
-    if (typeof cookie?.name !== 'string' || typeof cookie.value !== 'string') throw new Error('invalid cookie')
-    await session.fromPartition(partition).cookies.set({ url: parsed.origin, name: cookie.name, value: cookie.value })
   })
 }

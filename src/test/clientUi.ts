@@ -11,6 +11,7 @@ export function installMockClientUi<T extends Partial<ClientUi>>(overrides: T = 
     openSettings: vi.fn(),
     confirm: vi.fn(async () => false),
     showError: vi.fn(),
+    showContextMenu: vi.fn(async (): Promise<string | null> => null),
     confirmUnsavedChanges: vi.fn(async () => 'cancel' as const),
     writeClipboard: vi.fn(async () => {}),
     readClipboard: vi.fn(async () => ''),

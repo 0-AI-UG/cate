@@ -1,6 +1,6 @@
 // Permission areas of the `cate` API (architecture 8 and 14). Each area maps
 // the `read` and `control` access classes to a workspace setting; `cliEnabled`
-// is the master switch. They apply to CLI and harness callers only. The
+// is the master switch. They apply to CLI callers only. The
 // kernel knows no area: each module declares its own with its API.
 
 export const CLI_MASTER_KEY = 'cliEnabled'

@@ -1,6 +1,6 @@
 // defineCapability: a capability is declared once, with typed named
 // parameters, and both sides are derived from the declaration. The daemon
-// serves it generically (runtime/server) and clients get a typed proxy
+// serves it generically (kernel/rpc/runtime) and clients get a typed proxy
 // (client/proxy). `__types` is a phantom: it never exists at run time.
 
 export interface MethodOptions {

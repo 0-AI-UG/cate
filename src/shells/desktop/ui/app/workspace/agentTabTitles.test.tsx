@@ -56,7 +56,6 @@ const agentState = (agent: (typeof AGENTS)[number], patch: Partial<PanelAgentSta
   agentId: agent.id,
   agentName: agent.displayName,
   label: agent.displayName,
-  takesOverPanel: true,
   contextPolicy: null,
   status: 'waitingForInput',
   present: true,

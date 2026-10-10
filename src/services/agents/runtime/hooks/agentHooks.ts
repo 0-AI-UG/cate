@@ -29,7 +29,7 @@ import http from 'http'
 import os from 'os'
 import path from 'path'
 import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promises'
-import { createAgentChangesStore, type AgentChangeSource, type StoredAgentChange, type StoredChangesSnapshot } from '../changes/store'
+import { createAgentChangesStore, type AgentChangeTerminal, type StoredAgentChange, type StoredChangesSnapshot } from '../changes/store'
 import { AGENT_SESSION_STORES, createAgentTitleTracker } from '../sessions'
 import type { AgentSessionStores } from '../sessions/types'
 import { HERMES_PLUGIN_ID, ensureHermesIntegration, inspectHermesIntegration } from './hermes'
@@ -69,11 +69,10 @@ const EXTERNAL_PLUGINS: Record<string, ExternalPluginInstaller> = {
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 export interface AgentHooks {
-  registerChangeSource(id: string, source: AgentChangeSource): void
-  unregisterChangeSource(id: string): void
+  registerChangeTerminal(terminalId: string, terminal: AgentChangeTerminal): void
+  unregisterChangeTerminal(terminalId: string): void
   listChanges(cwd: string): Promise<StoredAgentChange[]>
   readChanges(cwd: string, knownRevision?: string): Promise<StoredChangesSnapshot>
-  bindChanges(cwd: string, threadId: string, panelId: string): Promise<void>
   /** Replace the graph context returned by this terminal's next and later
    * native prompt-submit hooks. Null clears it. */
   setPromptContext(terminalId: string, context: string | null): void
@@ -230,12 +229,9 @@ async function hooksEnabled(
 
 // A daemon launched from inside a Cate terminal inherits that terminal's
 // agent-hook identity. It is never valid for the daemon's own children: a
-// hooked PTY gets a fresh one from envForPty, and anything else (T3 servers
-// and the agent CLIs they run, hook-less shells) must not report as it.
-const INHERITED_HOOK_IDENTITY = new Set([
-  CATE_HOOK_ENDPOINT_ENV, CATE_HOOK_TOKEN_ENV, CATE_TERMINAL_ID_ENV,
-  'CATE_CHANGES_ENDPOINT', 'CATE_CHANGES_TOKEN', 'CATE_CHANGES_SOURCE',
-])
+// hooked PTY gets a fresh one from envForPty, and anything else (hook-less
+// shells) must not report as it.
+const INHERITED_HOOK_IDENTITY = new Set([CATE_HOOK_ENDPOINT_ENV, CATE_HOOK_TOKEN_ENV, CATE_TERMINAL_ID_ENV])
 /** Every key=value a spec's ptyEnv plants, hooks on or off. Matched by value so
  *  a user's own setting of the same key (a real CODEX_EXEC_SERVER_URL) survives. */
 const PLANTED_PTY_ENV = new Set(Object.values(AGENT_HOOK_SPECS).flatMap((spec) =>
@@ -528,8 +524,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
             pid?: unknown
             processStartedAt?: unknown
             payload?: unknown
-            threadId?: string
-            turnId?: string
           }
           if (req.url === '/prompt-context') {
             const hook = AGENTS.find((agent) => agent.id === body.agentId)?.promptContextHook
@@ -541,17 +535,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
             res.statusCode = 200
             res.setHeader('content-type', 'text/plain; charset=utf-8')
             res.end(context)
-            return
-          }
-          if (req.url === '/t3-changes' || req.url === '/t3-changes/summary') {
-            if (typeof body.terminalId !== 'string' || !tokenMatches(req.headers.authorization, secret, body.terminalId)) {
-              res.statusCode = 401; res.end(); return
-            }
-            if (req.url === '/t3-changes') await changes.ingestT3(body.terminalId, body.payload)
-            const files = req.url.endsWith('/summary')
-              ? await changes.summary(body.terminalId, String(body.threadId ?? ''), String(body.turnId ?? '')) : []
-            res.setHeader('content-type', 'application/json')
-            res.end(JSON.stringify(files))
             return
           }
           if (
@@ -753,11 +736,10 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       if (context) promptContexts.set(terminalId, context)
       else promptContexts.delete(terminalId)
     },
-    registerChangeSource: (id, source) => changes.registerSource(id, source),
-    unregisterChangeSource: (id) => changes.unregisterSource(id),
+    registerChangeTerminal: (terminalId, terminal) => changes.registerTerminal(terminalId, terminal),
+    unregisterChangeTerminal: (terminalId) => changes.unregisterTerminal(terminalId),
     listChanges: (cwd) => changes.list(cwd),
     readChanges: (cwd, knownRevision) => changes.readChanges(cwd, knownRevision),
-    bindChanges: (cwd, threadId, panelId) => changes.bind(cwd, threadId, panelId),
     async envForPty(ptyId, env, config, cwd, baseCwd, launchedAgentId) {
       if (disposed) return env
       approvalEnvs.set(ptyId, Object.fromEntries(

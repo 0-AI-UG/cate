@@ -29,7 +29,6 @@ const SOURCES: { type: string; options?: Record<string, unknown> }[] = [
   { type: 'editor', options: { filePath: 'README.md' } },
   { type: 'browser', options: { url: 'about:blank' } },
   { type: 'review' },
-  { type: 'chat' },
 ]
 
 describeShared('relations', (pair) => {

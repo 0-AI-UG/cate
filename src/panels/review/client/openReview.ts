@@ -69,7 +69,7 @@ export async function agentCheckout(workspaceId: string, panelId: PanelId): Prom
 
 export interface OpenAgentChangesOptions {
   workspaceId: string
-  /** The terminal or chat panel whose changes to show. */
+  /** The terminal panel whose changes to show. */
   panelId: PanelId
   /** The checkout to show; default: the agent's (`agentCheckout`). */
   cwd?: string

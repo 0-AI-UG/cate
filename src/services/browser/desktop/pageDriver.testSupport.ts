@@ -17,7 +17,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
   const png = Buffer.alloc(24); png.writeUInt32BE(800, 16); png.writeUInt32BE(600, 20)
   const nativeImage = { toPNG: () => png, resize: vi.fn() }; nativeImage.resize.mockReturnValue(nativeImage)
   const contents = {
-    id: 80, once: vi.fn(), isDestroyed: () => false, getURL: () => 'https://example.test/', getTitle: () => 'Example', getZoomFactor: () => 1,
+    id: 80, once: vi.fn(), isDestroyed: () => false, isLoading: () => false, getURL: () => 'https://example.test/', getTitle: () => 'Example', getZoomFactor: () => 1,
     send: vi.fn(), capturePage: vi.fn(async () => nativeImage),
     debugger: { isAttached: () => true, on: events.on.bind(events), removeListener: events.removeListener.bind(events),
       sendCommand: vi.fn(async (method: string, params: Record<string, unknown> = {}, sessionId?: string) => {
@@ -34,16 +34,20 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
         }
         if (method === 'Accessibility.getFullAXTree') return { nodes: state.nodes }
         if (method === 'DOM.resolveNode') return { object: { objectId: String(params.backendNodeId) } }
-        if (method === 'DOM.describeNode') return { node: { backendNodeId: 7, attributes: [] } }
+        if (method === 'DOM.describeNode') return { node: { backendNodeId: /^\d+$/.test(String(params.objectId)) ? Number(params.objectId) : 7, attributes: [] } }
         if (method === 'DOM.getBoxModel') return { model: { content: [20, 20, 120, 20, 120, 60, 20, 60] } }
         if (method === 'Runtime.callFunctionOn') {
           const fn = String(params.functionDeclaration)
+          if (fn.includes('this.isContentEditable ? this.innerText : this.value')) return { result: { value: state.value } }
+          if (fn.includes("new InputEvent('beforeinput'")) { state.value += JSON.parse(fn.match(/const text=(".*?");/)![1]); return { result: {} } }
+          if (fn.includes('element.labels')) return { result: { objectId: String(params.objectId) } }
           if (fn.includes('password: this instanceof HTMLInputElement')) return { result: { value: { visible: true, offscreen: false, password: false } } }
           if (fn.includes('typeof this.checked') || fn.includes('Boolean(this.checked);')) return { result: { value: state.checked } }
           if (fn.includes('return { visible:this.isConnected')) return { result: { value: { visible: true, enabled: true, checked: state.checked } } }
           return { result: { value: true } }
         }
         if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') state.checked = !state.checked
+
         return {}
       }),
     },

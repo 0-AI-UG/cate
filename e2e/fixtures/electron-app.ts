@@ -20,7 +20,7 @@ import { expect } from '@playwright/test'
 import type {} from '../../src/shells/desktop/ui/app/e2e/e2eHarness'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 
 export interface LaunchResult {
@@ -59,28 +59,6 @@ export function makeProject(home: string, opts: { name?: string; git?: boolean; 
   return realpathSync(dir)
 }
 
-/**
- * A runtime install layout (`<dir>/runtime/bin/node`, `<dir>/t3/dist/bin.mjs`)
- * whose T3 harness is the deterministic fake in `fake-t3.cjs`. The daemon
- * finds its install from its Node's path, so this Node is a hard link (or a
- * copy) of the test's own. Returns the Node to pass as `CATE_RUNTIME_NODE`.
- */
-export function fakeRuntimeInstall(home: string): string {
-  const dir = path.join(home, 'rt')
-  const node = path.join(dir, 'runtime', 'bin', 'node')
-  if (existsSync(node)) return node
-  mkdirSync(path.dirname(node), { recursive: true })
-  try { linkSync(process.execPath, node) } catch { copyFileSync(process.execPath, node) }
-  // A Node that loads libnode from `../lib` (Homebrew) needs it next to the link.
-  const lib = path.join(path.dirname(process.execPath), '..', 'lib')
-  if (existsSync(lib)) symlinkSync(realpathSync(lib), path.join(dir, 'runtime', 'lib'))
-  const t3 = path.join(dir, 't3', 'dist', 'bin.mjs')
-  mkdirSync(path.dirname(t3), { recursive: true })
-  const fake = path.join(__dirname, 'fake-t3.cjs')
-  writeFileSync(t3, `import { createRequire } from 'node:module'\ncreateRequire(import.meta.url)(${JSON.stringify(fake)})\n`)
-  return node
-}
-
 export interface LaunchOptions {
   /** Defaults to a new temp HOME. */
   home?: string
@@ -95,8 +73,6 @@ export interface LaunchOptions {
   perf?: boolean
   /** Terminals render with xterm's DOM renderer, so their text is in the DOM. */
   domTerminals?: boolean
-  /** Run the runtime from `fakeRuntimeInstall(home)`, so T3 is the fake harness. */
-  fakeT3?: boolean
   env?: Record<string, string>
 }
 
@@ -118,7 +94,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
     NODE_ENV: 'production',
     CATE_E2E_USER_DATA: userDataDir,
     CATE_RUNTIME_BUNDLE: RUNTIME_BUNDLE,
-    CATE_RUNTIME_NODE: opts.fakeT3 ? fakeRuntimeInstall(home) : process.execPath,
+    CATE_RUNTIME_NODE: process.execPath,
     ...(opts.perf ? { CATE_PERF: '1' } : {}),
     ...opts.env,
   }

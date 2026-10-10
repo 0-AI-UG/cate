@@ -140,7 +140,7 @@ const browserDef = definePanel({
   minimumSize: size,
   canLiveOnCanvas: true,
   defaultTitle: 'Browser',
-  surface: { retention: 'workspace', ops: { screenshot: 'pageDriver' } },
+  surface: { ops: { screenshot: 'pageDriver' } },
   channel: channel<JsonObject, Partial<JsonObject>, { kind: 'shot' }>(),
   fields: (options: { url?: string }) => ({ url: options.url ?? 'about:blank' }),
 })
@@ -281,6 +281,22 @@ describe('session host lifecycle', () => {
     expect(log).toContain('dispose t1 removed')
     const err = await w.host.op('t1', { kind: 'bump', by: 1 }, { clientId: null, connectionId: null }).catch((e) => e)
     expect(isRpcError(err, 'gone')).toBe(true)
+    w.dispose()
+  })
+
+  it('refuses to replace a panel whose work would be lost unless the op discards it (undo of a surface pick)', async () => {
+    const w = world()
+    w.document.guardRemovals((removing, discard) => w.host.checkRemoval(removing, discard))
+    w.document.apply(addTo('p1', 'surface'))
+    w.document.apply({ kind: 'replacePanel', record: record('p1', 'terminal') })
+    await w.host.started('p1')
+    await w.host.op('p1', { kind: 'setDirty', dirty: true }, { clientId: null, connectionId: null })
+    const back = { kind: 'replacePanel', record: record('p1', 'surface') } as const
+    expect(w.document.submit({ ...back, opId: { clientId: 'c1', counter: 1 } })).toMatchObject({ status: 'failed', error: { code: 'dirty' } })
+    expect(w.host.session('p1')).toBeInstanceOf(CounterSession)
+    expect(w.document.submit({ ...back, discard: true, opId: { clientId: 'c1', counter: 2 } })).toMatchObject({ status: 'applied' })
+    expect(log).toContain('dispose p1 replaced')
+    expect(w.host.session('p1')).not.toBeInstanceOf(CounterSession)
     w.dispose()
   })
 

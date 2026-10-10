@@ -85,7 +85,6 @@ export const DESKTOP_CHANNELS = {
 
   webPartition: 'cate-desktop:web:partition',
   webRelease: 'cate-desktop:web:release',
-  webSetCookie: 'cate-desktop:web:set-cookie',
 
   webglRequest: 'cate-desktop:webgl:request',
   webglRelease: 'cate-desktop:webgl:release',

@@ -1,18 +1,29 @@
 // Live `cate.browser.run` cells in the runtime. The client running a cell
 // sends its `cua.*` calls back through `browserCode.call`; each runs as the
-// cell's caller (`ctx.invoke`), so the same gates apply, and only while the
-// cell is live.
+// cell's caller (`ctx.invoke`), so the same gates apply, only while the cell
+// is live, and only on the cell's one browser panel.
 
 import { RpcError } from '@kernel/rpc/contract'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import { BROWSER_METHODS } from '@services/browser/contract'
 import type { browserCodeCapability } from '../../contract'
 
+/** A cell knows tabs, not panels: results lose the panel id. */
+function withoutPanel(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
+  const { panelId: _panel, ...rest } = value as Record<string, unknown>
+  if (rest.observation) rest.observation = withoutPanel(rest.observation)
+  if (Array.isArray(rest.tabs)) rest.tabs = rest.tabs.map(withoutPanel)
+  return rest
+}
+
 /** Methods that act on a bound tab; they carry the cell id to the driver. */
 const PAGE_METHODS = new Set([...BROWSER_METHODS].filter((name) => !['listTabs', 'getTab', 'createTab'].includes(name)))
 
 interface Cell {
   deadline: number
+  /** The browser panel the cell drives; it reaches no other. */
+  panelId: string
   invoke(method: string, args?: Record<string, unknown>): Promise<unknown>
 }
 
@@ -41,9 +52,11 @@ export class BrowserCodeCells {
     // The runtime decides which calls carry the cell id; the caller's copy
     // (the client's code session tags every call) is dropped.
     const { panelId, _codeCellId: _ignored, ...rest } = args
+    if (panelId !== undefined) {
+      throw new RpcError('rejected', 'browser-code-panel: code works on the tabs of one browser panel, chosen on the command line (cate browser run --panel <id>).')
+    }
     const callArgs: Record<string, unknown> = PAGE_METHODS.has(method) ? { ...rest, _codeCellId: cellId } : rest
-    if (typeof panelId === 'string') callArgs.panelId = panelId
-    return cell.invoke(`cate.browser.${method}`, callArgs)
+    return withoutPanel(await cell.invoke(`cate.browser.${method}`, { ...callArgs, panelId: cell.panelId }))
   }
 }
 

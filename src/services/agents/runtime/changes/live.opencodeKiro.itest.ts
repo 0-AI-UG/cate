@@ -40,7 +40,7 @@ describe.skipIf(!LIVE_AGENT_CHANGES)('real CLI recorded changes', () => {
       const records = await createAgentChangesStore(fixture.historyDir).list(fixture.cwd)
       const matching = records.filter((record) => record.files.some((file) => file.path === filePath))
       expect(matching).toHaveLength(1)
-      expect(matching[0]).toMatchObject({ agentId: 'opencode', source: 'terminal', sourceId: fixture.terminalId, panelId: fixture.panelId })
+      expect(matching[0]).toMatchObject({ agentId: 'opencode', terminalId: fixture.terminalId, panelId: fixture.panelId })
       const file = matching[0].files.find((entry) => entry.path === filePath)!
       expect(file.coverage).not.toBe('unavailable')
       let reconstructed = before

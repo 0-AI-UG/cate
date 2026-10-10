@@ -1,7 +1,7 @@
 // The `cate` API router (architecture 14). Runs in the runtime next to the
-// document. Every caller (the CLI, a T3 harness, a browser code cell, a
+// document. Every caller (the CLI, a browser code cell, a
 // client through the `api` capability) comes through `call`: the method is
-// looked up in the specs, gated for CLI and harness callers, its arguments
+// looked up in the specs, gated for CLI callers, its arguments
 // validated, its target resolved, and it runs on the owning service or the
 // target panel's session within the spec's timeout.
 

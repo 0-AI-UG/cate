@@ -3,12 +3,7 @@
 // (`pairing.createSecret`), and connects over the LAN WebSocket with the
 // Noise layer. B then sees the document and a terminal session, opens a dev
 // server on the runtime machine's localhost (with its hot-reload WebSocket)
-// through loopback routing and the tunnel, and opens the chat panel's T3 UI.
-//
-// The runtime's T3 harness is the deterministic fake (`fake-t3.cjs`, see
-// `fakeRuntimeInstall`): the real harness ships only in the runtime tarball.
-// What is under test is that B's chat view reaches the harness URL on the
-// runtime's loopback.
+// through loopback routing and the tunnel.
 //
 // Reaching a workspace through a deployed Cate Connect service is not tested
 // here: the service lives in another repository.
@@ -22,7 +17,6 @@ import {
   closeApp,
   expectTerminalText,
   guestEvaluate,
-  guestUrls,
   launchApp,
   makeHome,
   makeProject,
@@ -55,7 +49,7 @@ test.beforeAll(async () => {
   test.setTimeout(120_000)
   homeA = makeHome()
   homeB = makeHome()
-  a = await launchApp({ home: homeA, workspace: makeProject(homeA, { git: true }), fakeT3: true })
+  a = await launchApp({ home: homeA, workspace: makeProject(homeA, { git: true }) })
   b = await launchApp({ home: homeB, workspace: false, domTerminals: true })
 
   // "Add device" on A: network access on, then a one-time pairing link.
@@ -111,17 +105,4 @@ test('B opens a dev server on the runtime machine\'s localhost, hot-reload WebSo
     const out = execFileSync('lsof', ['-a', '-n', '-P', '-p', String(runtimePid(homeA)), `-iTCP:${devServer.port}`], { encoding: 'utf8' })
     expect(out).toContain('ESTABLISHED')
   }
-})
-
-test('B opens the chat panel\'s T3 UI through loopback routing', async () => {
-  await seedOnCanvas(b!.mainWindow, 'chat', { x: 100, y: 700 })
-  let harnessUrl = ''
-  await expect.poll(async () => {
-    harnessUrl = (await guestUrls(b!.electronApp)).find((u) => /^http:\/\/127\.0\.0\.1:\d+/.test(u)) ?? ''
-    return harnessUrl
-  }, { timeout: 45_000, message: 'the chat view loads the harness URL' }).not.toBe('')
-  await expect.poll(
-    () => guestEvaluate(b!.electronApp, harnessUrl, '!!document.querySelector(\'[data-testid="chat-surface"]\')').catch(() => false),
-    { timeout: 20_000, message: 'the fake harness page rendered in B' },
-  ).toBe(true)
 })

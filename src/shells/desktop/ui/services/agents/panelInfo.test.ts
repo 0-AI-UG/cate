@@ -4,20 +4,20 @@ import { agentPanelTitle, isAgentFallbackTitle } from '@services/agents/client'
 import { agentPanelInfo } from './panelInfo'
 
 const state = (patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
-  panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', takesOverPanel: true, contextPolicy: null, status: 'waitingForInput',
+  panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', contextPolicy: null, status: 'waitingForInput',
   present: true, canReceivePrompt: true, session: null, ...patch,
 })
 
 describe('agentPanelInfo', () => {
   it('names a present terminal agent with its logo', () => {
     const info = agentPanelInfo(state())
-    expect(info).toMatchObject({ status: 'waitingForInput', takesOverPanel: true, name: 'Claude Code' })
+    expect(info).toMatchObject({ status: 'waitingForInput', name: 'Claude Code' })
     expect(info.logo).toEqual(expect.any(String))
   })
 
   it('drops name and logo with the label but keeps the status', () => {
     expect(agentPanelInfo(state({ present: false, label: null, status: 'finished' }))).toEqual({
-      status: 'finished', takesOverPanel: true, name: null, logo: null,
+      status: 'finished', name: null, logo: null,
     })
   })
 })

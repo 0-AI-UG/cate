@@ -6,15 +6,14 @@ import os from 'node:os'
 import { createAgentHooks } from '../hooks/agentHooks'
 import { createAgentChangesStore } from './store'
 import { filesFromTool } from './edits'
-import { filterAgentChanges, summarizeAgentChanges } from '../../contract'
+import { filterAgentChanges } from '../../contract'
 import type { AgentId } from '../../contract'
 
 import type { StoredAgentChange } from './store'
-/** Stored records as the runners resolve them: a terminal's panel, or the
- *  panels a thread was shown in. */
+/** Stored records as the agents core resolves them: their panel. */
 const shown = (records: StoredAgentChange[]) => records.map((record) => ({
   ...record,
-  panelIds: record.source === 'terminal' ? (record.panelId ? [record.panelId] : []) : record.panelIds ?? [],
+  panelIds: record.panelId ? [record.panelId] : [],
 }))
 
 
@@ -33,8 +32,8 @@ let hooks: ReturnType<typeof createAgentHooks>
 beforeEach(async () => {
   directory = await mkdtemp(path.join(os.tmpdir(), 'cate-capture-regression-'))
   hooks = createAgentHooks({ hooksDir: path.join(directory, 'hooks'), changesDir: path.join(directory, 'history') })
-  hooks.registerChangeSource('one', { cwd: '/repo', panelId: 'panel-one', kind: 'terminal' })
-  hooks.registerChangeSource('two', { cwd: '/repo', panelId: 'panel-two', kind: 'terminal' })
+  hooks.registerChangeTerminal('one', { cwd: '/repo', panelId: 'panel-one' })
+  hooks.registerChangeTerminal('two', { cwd: '/repo', panelId: 'panel-two' })
 })
 afterEach(async () => { hooks.dispose(); await rm(directory, { recursive: true, force: true }) })
 async function post(agentId: AgentId, payload: unknown, terminalId = 'one') {
@@ -112,22 +111,7 @@ describe.each(adapters)('$id capture contract', (adapter) => {
       const child = execFile(path.join(endpoint.dir, `cate-hook-bridge-${adapter.id}`), [], { env, timeout: 10000 }, (error) => error ? reject(error) : resolve())
       child.stdin!.end(JSON.stringify(adapter.wrap({ file_path: 'bridge.ts', old_string: 'a', new_string: 'b' }, {}, 'bridge-session', 'bridge-call')))
     })
-    expect(summarizeAgentChanges(await hooks.listChanges('/repo'))).toMatchObject([{ path: 'bridge.ts', additions: 1, deletions: 1 }])
-  })
-})
-
-describe.each(['claude', 'codex', 'cursor', 'grok', 'opencode'])('%s canonical T3 changes', (provider) => {
-  it('captures only completed edits and keeps concurrent conversations isolated', async () => {
-    const store = createAgentChangesStore(path.join(directory, 't3'))
-    store.registerSource('harness', { cwd: '/repo', kind: 't3' })
-    const event = (threadId: string, status: string) => ({ provider, type: 'item.completed', threadId, turnId: 'turn', itemId: 'same-item-id', payload: { status, data: { toolName: 'Edit', input: { file_path: `${threadId}.ts`, old_string: 'old', new_string: 'new' } } } })
-    await store.ingestT3('harness', event('failed', 'failed'))
-    await store.ingestT3('harness', { ...event('running', 'completed'), type: 'item.started' })
-    await Promise.all([store.ingestT3('harness', event('one', 'completed')), store.ingestT3('harness', event('two', 'completed')), store.bind('/repo', 'one', 'panel-one')])
-    await store.ingestT3('harness', event('one', 'completed'))
-    expect(await store.list('/repo')).toHaveLength(2)
-    expect(filterAgentChanges(shown(await store.list('/repo')), { panelId: 'panel-one' })).toMatchObject([{ sourceId: 'one', files: [{ path: 'one.ts', additions: 1, deletions: 1 }] }])
-    expect(await store.summary('harness', 'two', 'turn')).toMatchObject([{ path: 'two.ts' }])
+    expect((await hooks.listChanges('/repo')).flatMap((record) => record.files)).toMatchObject([{ path: 'bridge.ts', additions: 1, deletions: 1 }])
   })
 })
 

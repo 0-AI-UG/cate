@@ -116,23 +116,6 @@ describe('handleDelete', () => {
 })
 
 describe('other actions', () => {
-  it('prunes only after every orphan’s panels agreed to close', async () => {
-    const prepare = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false)
-    await render(fakeHost({ prepareWorktreeClose: prepare }))
-    await act(async () => { await api.handlePrune([wt, { ...wt, id: 'wt2' }]) })
-    expect(rt.vcs.worktreePrune).not.toHaveBeenCalled()
-    prepare.mockResolvedValue(true)
-    await act(async () => { await api.handlePrune([wt]) })
-    expect(rt.vcs.worktreePrune).toHaveBeenCalled()
-  })
-
-  it('refuses direct PR creation for a worktree that already belongs to a PR', async () => {
-    await render()
-    await act(async () => { await api.handleCreatePR({ ...wt, prNumber: 9 }) })
-    expect(rt.vcs.createPr).not.toHaveBeenCalled()
-    expect(setError).toHaveBeenCalledWith('This worktree already belongs to PR #9. Open that pull request instead.')
-  })
-
   it('writes rename and recolor as metadata, creating it for an untracked checkout', async () => {
     const host = await render(fakeHost({ worktrees: [{ id: 'wt', path: wt.path, color: 'cyan', label: 'old', status: 'ready' }] }))
     act(() => api.makeCallbacks(wt).onRename(undefined))

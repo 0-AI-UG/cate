@@ -1,6 +1,6 @@
 // Prompt context from relations: what a panel's agent is told about the panels
 // connected to it, compiled at the last moment so relation edits made right
-// before a submit are honored by terminals and chats alike.
+// before a submit are honored.
 
 import { compileRelationContext, relationContextMode, relationPanels, type RelationContextMode, type RelationRoleOf } from '@workspace/relations/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
@@ -40,8 +40,6 @@ export interface PromptContext {
   consume(panelId: string, agentId: AgentId | null): string | null
   /** Flush connected editors so the agent reads what is on screen. */
   flush(panelId: string): Promise<void>
-  /** Flush connected editors, then consume. */
-  prepareForSend(panelId: string, agentId: AgentId | null): Promise<string | null>
   /** When context last went with the panel's prompt (epoch ms). */
   sentAt(panelId: string): number | undefined
   onSent(listener: (panelId: string) => void): () => void
@@ -84,10 +82,6 @@ export function createPromptContext(deps: PromptContextDeps): PromptContext {
     },
     async flush(panelId) {
       await deps.flushConnected?.(panelId)
-    },
-    async prepareForSend(panelId, agentId) {
-      await deps.flushConnected?.(panelId)
-      return consume(panelId, agentId)
     },
   }
 }

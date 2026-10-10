@@ -14,13 +14,11 @@ final class AgentConversation {
         let id: Int
         let role: String
         fileprivate(set) var text: String
-        fileprivate(set) var streaming: Bool
 
         init(id: Int, _ message: ConversationMessage) {
             self.id = id
             role = message.role
             text = message.text
-            streaming = message.streaming == true
         }
     }
 
@@ -61,7 +59,6 @@ final class AgentConversation {
             if index < messages.count, messages[index].role == message.role {
                 let existing = messages[index]
                 if existing.text != message.text { existing.text = message.text }
-                if existing.streaming != (message.streaming == true) { existing.streaming = message.streaming == true }
             } else if index < messages.count {
                 messages[index] = Message(id: index, message)
             } else {

@@ -100,13 +100,6 @@ describe('ApiRouter gating', () => {
     settings.cliEnabled = false
     await expect(router.call(router.clientCaller('c1'), 'cate.terminal.read', { panelId: 'term-1' })).resolves.toBeDefined()
   })
-
-  it('gates harness callers like CLI callers', async () => {
-    const { router, settings, tokens } = setup()
-    settings.cliEnabled = false
-    const harness = tokens.issue({ kind: 'harness', panelId: 'chat-1' })
-    await expect(router.call(harness.caller, 'cate.version', {})).rejects.toThrow(/cli-disabled/)
-  })
 })
 
 describe('ApiRouter dispatch', () => {
@@ -285,9 +278,9 @@ describe('ApiTokenRegistry', () => {
     let n = 0
     const tokens = new ApiTokenRegistry(() => `t${++n}`)
     const a = tokens.issue({ kind: 'cli', panelId: 'p1' })
-    const b = tokens.issue({ kind: 'harness', panelId: 'p2', placementGroupId: 'g' })
+    const b = tokens.issue({ kind: 'cli', panelId: 'p2', placementGroupId: 'g' })
     expect(tokens.resolve(a.token)).toMatchObject({ kind: 'cli', panelId: 'p1', placementGroupId: 'p1' })
-    expect(tokens.resolve(b.token)).toMatchObject({ kind: 'harness', panelId: 'p2', placementGroupId: 'g' })
+    expect(tokens.resolve(b.token)).toMatchObject({ kind: 'cli', panelId: 'p2', placementGroupId: 'g' })
     expect(tokens.resolve('nope')).toBeUndefined()
     tokens.revokePanel('p1')
     expect(tokens.resolve(a.token)).toBeUndefined()

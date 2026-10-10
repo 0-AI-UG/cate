@@ -161,14 +161,13 @@ export function indexCateApi(namespaces: readonly CateApiNamespace[]): Map<strin
 
 // ---- Handler contexts ------------------------------------------------------
 
-/** Who is calling. CLI and harness callers are gated by the `cli*` settings;
+/** Who is calling. CLI callers are gated by the `cli*` settings;
  *  clients are not (D3). */
 export interface ApiCaller {
-  kind: 'cli' | 'harness' | 'client'
+  kind: 'cli' | 'client'
   /** Stable key for per-caller state (sticky target, code sessions). */
   id: string
-  /** The panel the caller runs in: the terminal of a CLI token, the chat panel
-   *  of a harness token. */
+  /** The panel the caller runs in: the terminal of a CLI token. */
   panelId?: string
   /** New panels a caller creates are grouped with this id and implicit targets
    *  prefer panels in it. */

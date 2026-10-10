@@ -49,6 +49,25 @@ const splitGlobs = (value: string): string[] => value.split(',').map((s) => s.tr
 let nextId = 0
 const newSearchId = (): string => `search-${Date.now().toString(36)}-${++nextId}`
 
+/** Merges a streamed batch into the results so far. ripgrep emits each file
+ *  once per search, so this is normally an append; it dedupes by path
+ *  defensively (first occurrence wins). */
+export function mergeSearchResults(
+  existing: SearchFileResult[],
+  incoming: SearchFileResult[],
+): SearchFileResult[] {
+  if (incoming.length === 0) return existing
+  const seen = new Set(existing.map((f) => f.path))
+  const merged = existing.slice()
+  for (const f of incoming) {
+    if (!seen.has(f.path)) {
+      seen.add(f.path)
+      merged.push(f)
+    }
+  }
+  return merged
+}
+
 /** Starts searching whenever the store's query or options change, until disposed. */
 export function createSearchRunner<T extends SearchRunStore>(
   store: T,

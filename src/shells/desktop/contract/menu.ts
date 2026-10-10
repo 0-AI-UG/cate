@@ -72,3 +72,16 @@ export const MENU_SKELETON: Record<MenuBarId, { label: string; blocks: MenuSkele
   window: { label: 'Window', blocks: [[{ role: 'minimize' }, { role: 'zoom' }], [{ group: 'main' }]] },
   help: { label: 'Help', blocks: [[{ group: 'links' }], [{ group: 'learn' }]] },
 }
+
+/** A binding as an Electron accelerator (`CmdOrCtrl+Shift+W`), for the menu
+ *  bar and context menus; undefined when unbound. */
+export function shortcutAccelerator(shortcut: StoredShortcut | undefined): string | undefined {
+  if (!shortcut?.key) return undefined
+  const parts: string[] = []
+  if (shortcut.command) parts.push('CmdOrCtrl')
+  if (shortcut.control) parts.push('Ctrl')
+  if (shortcut.option) parts.push('Alt')
+  if (shortcut.shift) parts.push('Shift')
+  const names: Record<string, string> = { '\t': 'Tab', '\r': 'Enter', ' ': 'Space', '↑': 'Up', '↓': 'Down', '←': 'Left', '→': 'Right' }
+  return [...parts, names[shortcut.key] ?? shortcut.key].join('+')
+}

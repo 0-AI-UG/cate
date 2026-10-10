@@ -66,7 +66,6 @@ type Persisted = {
 
 const isStartPage = (url: string) => url === BROWSER_NEW_TAB_URL
 const hasPage = (url: string) => !isStartPage(url) && !isBrowserInternalPage(url)
-const changed = (message: string) => new RpcError('rejected', message)
 
 /** A page operation for a `cate` API call: the call's deadline and
  *  cancellation (its signal) govern, not the broker's default timeout. */
@@ -368,11 +367,19 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     return this.withSurface<BrowserSurfaceResult<Op>>(op, args, call)
   }
 
-  /** The active tab `tabId`, with a web page. A user's tab switch cancels
-   *  work bound to the tab it left. */
+  /** A bound tab that is no longer the panel's active one. */
+  private tabChanged(tabId: string): RpcError {
+    return new RpcError('rejected', `browser-tab-changed: the panel now shows tab ${this.state.activeTabId}, not ${tabId}. `
+      + `Act on the active tab (omit --tab, or a new cell's \`tab\` in code), or switch back `
+      + `(cate browser tab ${tabId} --panel ${this.panelId}, or cua.getTab({tabId:"${tabId}"}) in code).`)
+  }
+
+  /** The active tab `tabId` (the active tab, when the call names none, as the
+   *  CLI's commands do), with a web page. A user's tab switch cancels work
+   *  bound to the tab it left. */
   private boundTab(tabId: unknown): BrowserTab {
-    if (typeof tabId !== 'string') throw new RpcError('rejected', 'tabId-required')
-    if (tabId !== this.state.activeTabId) throw changed('browser-tab-changed')
+    if (tabId !== undefined && typeof tabId !== 'string') throw new RpcError('rejected', 'tabId-required')
+    if (tabId !== undefined && tabId !== this.state.activeTabId) throw this.tabChanged(tabId)
     const tab = this.activeTab
     if (!hasPage(tab.url) && !isStartPage(tab.url)) throw new RpcError('rejected', 'The active tab has no web page')
     return tab
@@ -380,7 +387,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
 
   private still(tabId: string): void {
     if (this.isDisposed) throw new RpcError('gone', `panel ${this.panelId} is gone`)
-    if (this.state.activeTabId !== tabId) throw changed('browser-tab-changed')
+    if (this.state.activeTabId !== tabId) throw this.tabChanged(tabId)
   }
 
   private async execute(tabId: string, method: string, args: Record<string, unknown>, settle: boolean, call?: SurfaceCallOptions): Promise<unknown> {
@@ -410,10 +417,9 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   }
 
   private async pageMethod(method: string, args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown> {
-    const tab = this.boundTab(args.tabId)
-    const tabId = tab.id
+    const tabId = this.boundTab(args.tabId).id
     if (BROWSER_ACTION_METHODS.has(method)) this.showAgentCursor({ kind: cursorKind(method), label: method })
-    return this.execute(tabId, method, args, false, apiCall(ctx))
+    return this.execute(tabId, method, { ...args, tabId }, false, apiCall(ctx))
   }
 
   override handleApi = sessionApi(browserApi, {
@@ -495,7 +501,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     return this.observeAfterNavigation(tabId, args, call)
   }
 
-  private resize(args: { tabId: string; width: number; height: number }, _ctx: ApiSessionContext): unknown {
+  private resize(args: { tabId?: string; width: number; height: number }, _ctx: ApiSessionContext): unknown {
     this.boundTab(args.tabId)
     const { width, height } = args
     const minimum = definition.minimumSize

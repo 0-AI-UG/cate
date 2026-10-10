@@ -1,6 +1,6 @@
 # Connected text editors
 
-An editor reachable through a terminal or chat panel's outgoing relations
+An editor reachable through a terminal panel's outgoing relations
 shares a normal working file with the agent. Agents read and write it with
 their usual filesystem tools; the `cate` CLI does not provide editor content
 commands.
@@ -18,7 +18,7 @@ of the workspace at once.
 - The "Shared with agent" indicator means edits autosave after 300 ms.
   Disconnecting the editor stops autosave. The relation's Next/Always/Off
   setting controls prompt context, independently of editor synchronization.
-- Submitting a prompt from a terminal or chat panel flushes the connected
+- Submitting a prompt from a terminal panel flushes the connected
   editors first. A conflict or failed save blocks submission (the flush fails
   with `conflict`) until the editor is resolved and the user retries.
 - External file writes reload a clean buffer. Changes made while the buffer

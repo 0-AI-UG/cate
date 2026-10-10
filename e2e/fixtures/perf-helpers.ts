@@ -1,8 +1,7 @@
 // Page-side lookups the perf specs share. They read the new client through the
 // e2e harness and the DOM: a browser panel's guest lives in the persistent
-// surface host (`[data-browser-surface="<panelId>"]`), a chat panel's guest
-// is `webview[data-chat-webview]`, and a terminal's PTY id is in its session
-// snapshot.
+// surface host (`[data-browser-surface="<panelId>"]`) and a terminal's PTY id
+// is in its session snapshot.
 
 import { expect } from '@playwright/test'
 import type { Page } from 'playwright'
@@ -20,8 +19,6 @@ export async function installPerfHelpers(page: Page): Promise<void> {
     }
     w.__perfE2E = {
       browserWebContentsId: (panelId: string) => guestId(`[data-browser-surface="${panelId}"] webview`),
-      chatWebContentsId: (panelId: string) => guestId(`webview[data-chat-webview="${panelId}"]`),
-      chatReady: (panelId: string) => !!document.querySelector(`webview[data-chat-webview="${panelId}"][data-chat-guest-ready="true"]`),
       panelOfNode: (nodeId: string) => window.__cateE2E!.nodes().find((n) => n.id === nodeId)?.panelId ?? null,
       async ptyIdOfNode(nodeId: string) {
         const panelId = window.__cateE2E!.nodes().find((n) => n.id === nodeId)?.panelId
@@ -47,8 +44,6 @@ declare global {
   interface Window {
     __perfE2E?: {
       browserWebContentsId(panelId: string): number | null
-      chatWebContentsId(panelId: string): number | null
-      chatReady(panelId: string): boolean
       ptyId(panelId: string, workspaceId?: string): Promise<string | null>
       panelOfNode(nodeId: string): string | null
       ptyIdOfNode(nodeId: string): Promise<string | null>

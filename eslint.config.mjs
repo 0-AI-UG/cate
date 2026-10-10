@@ -93,6 +93,22 @@ export default tseslint.config(
     },
   },
   {
+    // The client core and contracts run on every client, the iOS app's
+    // headless web view included: no DOM or browser globals.
+    files: [
+      'src/client/**/*.ts',
+      'src/**/client/**/*.ts',
+      'src/kernel/interaction/**/*.ts',
+      'src/**/contract.ts',
+      'src/**/contract/**/*.ts',
+      'src/panels/*/definition.ts',
+    ],
+    ignores: ['src/shells/**', '**/*.test.ts'],
+    rules: {
+      'no-restricted-globals': ['error', 'window', 'document', 'localStorage', 'sessionStorage', 'navigator'],
+    },
+  },
+  {
     // Tests lean on mocks/any and intentionally throw — relax further.
     files: ['**/*.test.{ts,tsx}', 'e2e/**/*.ts'],
     rules: {

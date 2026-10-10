@@ -13,9 +13,22 @@ const INTERACTIVE_ROLES = new Set([
   'button', 'checkbox', 'combobox', 'link', 'listbox', 'menuitem', 'option',
   'radio', 'searchbox', 'slider', 'spinbutton', 'switch', 'tab', 'textbox',
 ])
+// Unnamed containers only add depth and tokens; their children stay listed.
+const UNNAMED_SKIPPED = new Set([
+  'generic', 'none', 'presentation', 'paragraph', 'LabelText', 'LineBreak', 'Section',
+  'MenuListPopup', 'group', 'listitem', 'list', 'DescriptionListDetail', 'DescriptionListTerm',
+])
+// Only states that tell the agent something; a false boolean is the default.
+const STATE_PROPERTIES = ['checked', 'selected', 'expanded', 'disabled', 'required', 'readonly', 'pressed', 'level', 'focused']
 const INSPECT_ELEMENT = `function () {
-  if (!(this instanceof Element) || !this.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return { visible: false };
-  const rects = Array.from(this.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0);
+  if (!(this instanceof Element)) return { visible: false };
+  const boxes = element => element.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+    ? Array.from(element.getClientRects()).filter(rect => rect.width > 0 && rect.height > 0) : [];
+  let rects = boxes(this);
+  // Styled checkboxes and radios hide the native input behind a visible label.
+  if (!rects.length && this instanceof HTMLInputElement && (this.type === 'checkbox' || this.type === 'radio')) {
+    for (const label of this.labels || []) { rects = boxes(label); if (rects.length) break; }
+  }
   if (!rects.length) return { visible: false };
   return {
     visible: true,
@@ -95,32 +108,46 @@ export async function readBrowserAX({ frames, send, callOn, register }: AXOption
       if (inspection?.visible !== true) continue
       const { node, role, target } = candidates[index]
       const name = String(objectValue(node.name).value ?? '')
+      // The nearest listed ancestor sets the depth and, for text, whether it
+      // only repeats that ancestor's name.
+      let depth = 0
+      let owner: string | undefined
+      // A label's text is already the name of the control it labels.
+      const labelText = String(objectValue(byId.get(node.parentId)?.role).value ?? '') === 'LabelText'
+      let parent = byId.get(node.parentId)
+      const ancestors = new Set<unknown>()
+      while (parent && !ancestors.has(parent.nodeId)) {
+        ancestors.add(parent.nodeId)
+        if (emitted.has(parent.nodeId)) {
+          depth += 1
+          owner ??= `${String(objectValue(parent.name).value ?? '')}\n${String(objectValue(parent.value).value ?? '')}`
+        }
+        parent = byId.get(parent.parentId)
+      }
+      if (!name.trim() && UNNAMED_SKIPPED.has(role)) continue
+      if (role === 'StaticText' && (!name.trim() || labelText || owner?.includes(name.trim()))) continue
       const offscreen = inspection.offscreen === true
       const id = register(target)
       let value = objectValue(node.value).value
       // Unknown type is fail-closed: never expose a potentially protected value.
       if ((role === 'textbox' || role === 'searchbox') && inspection.password !== false) value = '••••••••'
       const states: CdpRecord = {}
-      let suffix = value === undefined ? '' : ` value=${JSON.stringify(value)}`
+      let suffix = value === undefined || value === '' ? '' : ` value=${JSON.stringify(value)}`
       if (Array.isArray(node.properties)) {
         for (const raw of node.properties) {
           const property = objectValue(raw)
-          if (['checked', 'selected', 'expanded', 'disabled', 'required', 'readonly', 'pressed', 'level', 'focused'].includes(String(property.name))) {
-            const state = objectValue(property.value).value
-            if (state !== undefined) { states[String(property.name)] = state; suffix += ` [${property.name}=${JSON.stringify(state)}]` }
-          }
+          const key = String(property.name)
+          if (!STATE_PROPERTIES.includes(key)) continue
+          const state = objectValue(property.value).value
+          if (state === undefined) continue
+          states[key] = state
+          if (state === true || state === 'true') suffix += ` [${key}]`
+          else if (key === 'expanded' && (state === false || state === 'false')) suffix += ' [collapsed]'
+          else if (state !== false && state !== 'false') suffix += ` [${key}=${typeof state === 'string' ? state : JSON.stringify(state)}]`
         }
       }
       if (offscreen) suffix += ' [offscreen]'
       elements.push({ id, role, name, ...(value === undefined ? {} : { value }), ...(Object.keys(states).length ? { states } : {}), ...(offscreen ? { offscreen: true } : {}) })
-      let depth = 0
-      let parent = byId.get(node.parentId)
-      const ancestors = new Set<unknown>()
-      while (parent && !ancestors.has(parent.nodeId)) {
-        ancestors.add(parent.nodeId)
-        if (emitted.has(parent.nodeId)) depth += 1
-        parent = byId.get(parent.parentId)
-      }
       if (node.nodeId !== undefined) emitted.add(node.nodeId)
       lines.push(`${'  '.repeat(depth)}- ${role}${name ? ` ${JSON.stringify(name)}` : ''}${suffix} [id=${id}]`)
     }

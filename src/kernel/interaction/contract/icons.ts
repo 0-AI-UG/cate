@@ -1,7 +1,7 @@
 // Icon names. Panel definitions and other pure code carry a name; the ui side
 // (`Icon`) maps it to a component.
 
-export const ICON_NAMES = ['terminal', 'globe', 'folders', 'grid', 'git-compare', 'plus', 't3'] as const
+export const ICON_NAMES = ['terminal', 'globe', 'folders', 'grid', 'git-compare', 'plus'] as const
 
 export type IconName = (typeof ICON_NAMES)[number]
 

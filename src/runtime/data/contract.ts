@@ -62,7 +62,6 @@ export const DATA_FILES = {
   skills: 'skills',
   skillSources: 'skills/sources.json',
   browser: 'browser',
-  t3: 't3',
   agents: 'agents',
   terminalLogs: 'terminal-logs',
   screenshots: 'screenshots',

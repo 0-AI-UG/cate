@@ -13,6 +13,7 @@ export function createMobileClientUi(bridge: MobileBridge): ClientUi {
     openSettings: () => {},
     confirm: async () => false,
     showError: (message: string) => { console.warn(message) },
+    showContextMenu: async () => null,
     confirmUnsavedChanges: async () => 'cancel' as const,
   }
   return ui as unknown as ClientUi

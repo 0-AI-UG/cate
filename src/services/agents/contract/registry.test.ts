@@ -6,9 +6,7 @@
 import { describe, expect, it, test } from 'vitest'
 import {
   AGENTS,
-  T3_AGENTS,
   agentForLaunchCommand,
-  agentIdForT3Provider,
   matchAgentDef,
   resumeCommandForAgent,
   type AgentId,
@@ -78,7 +76,7 @@ describe('agent registry coverage', () => {
 
   test('every agent has a launch command and a resume decision', () => {
     for (const a of AGENTS) {
-      const { command, resume } = a.runners.terminal
+      const { command, resume } = a
       expect(command, `${a.id} command`).toBeTruthy()
       expect(a.matchProcess(command.toLowerCase()) || a.id === 'claude-code',
         `${a.id} does not detect its own command name`).toBe(true)
@@ -87,19 +85,6 @@ describe('agent registry coverage', () => {
       if (resume.args && a.id !== 'hermes') expect(resume.args('abc')?.length).toBeGreaterThan(0)
     }
   })
-})
-
-test('the t3 runner exists exactly for claude-code, codex, cursor, grok and opencode', () => {
-  expect(T3_AGENTS.map((a) => a.id)).toEqual(['claude-code', 'codex', 'cursor', 'grok', 'opencode'])
-  expect(T3_AGENTS.map((a) => a.runners.t3.providerId).sort()).toEqual(['claude', 'codex', 'cursor', 'grok', 'opencode'])
-  for (const provider of T3_AGENTS) expect(provider.skills).not.toBeNull()
-})
-
-test('T3 provider and driver ids resolve to canonical execution identities', () => {
-  expect(agentIdForT3Provider('codex')).toBe('codex')
-  expect(agentIdForT3Provider('claude')).toBe('claude-code')
-  expect(agentIdForT3Provider('claudeAgent')).toBe('claude-code')
-  expect(agentIdForT3Provider('unknown')).toBeNull()
 })
 
 describe('agentForLaunchCommand', () => {

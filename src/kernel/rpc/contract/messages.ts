@@ -26,7 +26,7 @@ export interface ClientHello {
   features: string[]
 }
 
-/** Hello payload of a caller (the CLI, a T3 harness). */
+/** Hello payload of a caller (the CLI). */
 export interface CallerHello {
   token: string
 }

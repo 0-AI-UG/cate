@@ -1,6 +1,6 @@
 // Browser partitions and their loopback web proxies (architecture 12.3). One
 // partition per workspace runtime (`persist:ws-<runtimeId>`, shared by its
-// browser and chat panels), routed through that workspace's proxy with
+// browser panels), routed through that workspace's proxy with
 // `<-loopback>` so Chromium proxies loopback too. The proxy reaches loopback
 // ports through a renderer that holds the workspace connection: main asks it
 // for a pipe per connection (`dialLoopback` there is the transport's choice).
