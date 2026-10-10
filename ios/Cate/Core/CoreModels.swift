@@ -5,7 +5,7 @@ import Foundation
 struct CoreState: Decodable, Equatable {
     /// This client's id, as browser sessions name it.
     var clientId = ""
-    var workspaces: [Workspace] = []
+    var workspaces: [WorkspaceState] = []
     /// A workspace that must be trusted before it runs anything; nil when
     /// nothing asks.
     var trustPrompt: TrustPrompt?
@@ -18,27 +18,95 @@ struct TrustPrompt: Decodable, Equatable {
     let label: String
 }
 
-struct Workspace: Decodable, Equatable, Identifiable, Hashable {
+/// A workspace as the core pushes it (`MobileWorkspace`).
+struct WorkspaceState: Decodable, Equatable {
     let id: String
     let name: String
     let runtimeId: String
     let connection: Connection
-    /// Nil until the document arrives from the runtime.
     let panels: [Panel]?
-    /// Its ready checkouts, the main one first; empty unless two or more.
     let worktrees: [Worktree]
-    /// Empty while not connected or while relations are off.
     let relations: [Relation]
-    /// The workspace setting `panelRelationsEnabled`.
     let relationsEnabled: Bool
-    /// Empty while not connected.
     let agents: [Agent]
-    /// Keep-awake on the runtime's machine; nil while not connected.
     let power: PowerState?
-    /// This device's pushes from the workspace; nil until registered.
     let push: PushStatus?
-    /// The other clients in the workspace; empty while not connected.
     let others: [OtherClient]
+}
+
+/// A paired workspace. Each part is observed on its own, and changes only
+/// when the core's push changed it: an agent's status redraws the views
+/// that show agents, not every view of the workspace.
+@MainActor
+@Observable
+final class Workspace: Identifiable {
+    let id: String
+    private(set) var name: String
+    private(set) var runtimeId: String
+    private(set) var connection: Connection
+    /// Nil until the document arrives from the runtime.
+    private(set) var panels: [Panel]?
+    /// Its ready checkouts, the main one first; empty unless two or more.
+    private(set) var worktrees: [Worktree]
+    /// Empty while not connected or while relations are off.
+    private(set) var relations: [Relation]
+    /// The workspace setting `panelRelationsEnabled`.
+    private(set) var relationsEnabled: Bool
+    /// Empty while not connected.
+    private(set) var agents: [Agent]
+    /// Keep-awake on the runtime's machine; nil while not connected.
+    private(set) var power: PowerState?
+    /// This device's pushes from the workspace; nil until registered.
+    private(set) var push: PushStatus?
+    /// The other clients in the workspace; empty while not connected.
+    private(set) var others: [OtherClient]
+
+    init(_ state: WorkspaceState) {
+        id = state.id
+        name = state.name
+        runtimeId = state.runtimeId
+        connection = state.connection
+        panels = state.panels
+        worktrees = state.worktrees
+        relations = state.relations
+        relationsEnabled = state.relationsEnabled
+        agents = state.agents
+        power = state.power
+        push = state.push
+        others = state.others
+    }
+
+    /// Takes the parts that changed.
+    func update(_ state: WorkspaceState) {
+        if name != state.name { name = state.name }
+        if runtimeId != state.runtimeId { runtimeId = state.runtimeId }
+        if connection != state.connection { connection = state.connection }
+        if panels != state.panels { panels = state.panels }
+        if worktrees != state.worktrees { worktrees = state.worktrees }
+        if relations != state.relations { relations = state.relations }
+        if relationsEnabled != state.relationsEnabled { relationsEnabled = state.relationsEnabled }
+        if agents != state.agents { agents = state.agents }
+        if power != state.power { power = state.power }
+        if push != state.push { push = state.push }
+        if others != state.others { others = state.others }
+    }
+}
+
+/// A workspace as the app remembers it between launches: listed at once,
+/// connecting, while the core starts.
+struct RememberedWorkspace: Codable, Equatable {
+    let id: String
+    let name: String
+    let runtimeId: String
+
+    var state: WorkspaceState {
+        WorkspaceState(
+            id: id, name: name, runtimeId: runtimeId,
+            connection: Connection(kind: .connecting, title: "", text: "Connecting…", actions: []),
+            panels: nil, worktrees: [], relations: [], relationsEnabled: false, agents: [],
+            power: nil, push: nil, others: []
+        )
+    }
 }
 
 /// Another client in a workspace (`MobileOtherClient`).
@@ -363,7 +431,8 @@ enum ViewEvent {
     case load(tabId: String, url: String)
     case script(String)
     case reveal(Bool)
-    case text(String)
+    case text(String, version: Int)
+    case change(from: Int, to: Int, delta: [TextDelta])
     case error(String)
 
     private struct Envelope: Decodable {
@@ -373,6 +442,10 @@ enum ViewEvent {
         let script: String?
         let shown: Bool?
         let text: String?
+        let version: Int?
+        let from: Int?
+        let to: Int?
+        let delta: [TextDelta]?
         let message: String?
     }
 
@@ -383,11 +456,78 @@ enum ViewEvent {
         case "load": return .load(tabId: event.tabId ?? "", url: event.url ?? "")
         case "script": return .script(event.script ?? "")
         case "reveal": return .reveal(event.shown ?? false)
-        case "text": return .text(event.text ?? "")
+        case "text": return .text(event.text ?? "", version: event.version ?? 0)
+        case "change":
+            guard let from = event.from, let to = event.to, let delta = event.delta else { return nil }
+            return .change(from: from, to: to, delta: delta)
         case "error": return .error(event.message ?? "")
         default: return nil
         }
     }
+}
+
+/// One step of a text change (`MobileTextDelta`), in UTF-16 units.
+enum TextDelta: Decodable, Equatable {
+    case retain(Int)
+    case insert(String)
+    case delete(Int)
+
+    private enum Keys: String, CodingKey { case retain, insert, delete }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: Keys.self)
+        if let text = try container.decodeIfPresent(String.self, forKey: .insert) {
+            self = .insert(text)
+        } else if let count = try container.decodeIfPresent(Int.self, forKey: .retain) {
+            self = .retain(count)
+        } else {
+            self = .delete(try container.decode(Int.self, forKey: .delete))
+        }
+    }
+
+    /// The steps stay within a text of `length` units.
+    static func fits(_ delta: [TextDelta], length: Int) -> Bool {
+        var index = 0
+        var length = length
+        for step in delta {
+            switch step {
+            case .retain(let count): index += count
+            case .insert(let inserted):
+                let added = (inserted as NSString).length
+                index += added
+                length += added
+            case .delete(let count): length -= count
+            }
+            if index > length { return false }
+        }
+        return true
+    }
+
+    /// `text` after the steps; nil when they do not fit it.
+    static func apply(_ delta: [TextDelta], to text: String) -> String? {
+        let out = NSMutableString(string: text)
+        var index = 0
+        for step in delta {
+            switch step {
+            case .retain(let count):
+                index += count
+                if index > out.length { return nil }
+            case .insert(let inserted):
+                out.insert(inserted, at: index)
+                index += (inserted as NSString).length
+            case .delete(let count):
+                if index + count > out.length { return nil }
+                out.deleteCharacters(in: NSRange(location: index, length: count))
+            }
+        }
+        return out as String
+    }
+}
+
+/// A buffer's whole text (`buffer.text`).
+struct BufferText: Decodable {
+    let text: String
+    let version: Int
 }
 
 struct SnapshotEvent<Snapshot: Decodable>: Decodable {

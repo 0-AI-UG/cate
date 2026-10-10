@@ -17,6 +17,8 @@ export interface WorkspaceConnectionsOptions {
   build?: string
   backoff?: Partial<Backoff>
   now?: () => number
+  /** How long a released panel session stays open (`SESSION_LINGER_MS`). */
+  sessionLingerMs?: number
 }
 
 export class WorkspaceConnections {

@@ -14,6 +14,10 @@ import type { MobileBridge, MobileTerminalEvent } from '../contract'
 import type { MobileClient } from './boot'
 
 type Grid = { cols: number; rows: number }
+
+/** The scrollback the app's terminal keeps (SwiftTerm's default): the
+ *  screen it attaches with carries no more. */
+const APP_SCROLLBACK = 500
 type Event = MobileTerminalEvent extends infer E ? E extends unknown ? Omit<E, 'terminalId'> : never : never
 
 interface OpenTerminal {
@@ -110,6 +114,7 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
         process: connection.runtime.process,
         id: ptyId,
         size: () => held,
+        scrollback: APP_SCROLLBACK,
         onSize: (size) => {
           pty = { cols: size.cols, rows: size.rows }
           fitted = size.fitted

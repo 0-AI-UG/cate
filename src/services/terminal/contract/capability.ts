@@ -64,6 +64,9 @@ export interface AttachParams {
   cols?: number
   rows?: number
   visible?: boolean
+  /** The most scrollback lines the screen carries: a viewer that keeps
+   *  fewer asks for no more. Default: all of it. */
+  scrollback?: number
 }
 
 /** An attach starts with `size` (a live PTY only) and the serialized screen;

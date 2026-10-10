@@ -53,9 +53,10 @@ export class HeadlessScreen {
     return new Promise((resolve) => this.drainWaiters.push(resolve))
   }
 
-  capture(): ScreenCapture {
+  /** The screen with at most `scrollback` lines above it (all by default). */
+  capture(scrollback?: number): ScreenCapture {
     return {
-      screen: this.disposed ? '' : this.serializer.serialize(),
+      screen: this.disposed ? '' : this.serializer.serialize(scrollback === undefined ? undefined : { scrollback }),
       pending: [...this.queue],
       cols: this.term.cols,
       rows: this.term.rows,

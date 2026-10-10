@@ -26,6 +26,7 @@ struct EditorSnapshot: Decodable, Equatable {
 
 struct EditorPanelView: View {
     @Environment(CoreHost.self) private var core
+    @Environment(\.panelOnScreen) private var onScreen
     let workspaceId: String
     let panel: Panel
     @State private var session = PanelSession<EditorSnapshot>()
@@ -40,22 +41,24 @@ struct EditorPanelView: View {
         content
             .panelTitle(panel.title)
             .toolbar {
-                if let snapshot = session.snapshot, let path = snapshot.filePath, TextPreview.kind(path) != nil, snapshot.documentType == nil, !snapshot.draft {
-                    ToolbarItem(placement: .primaryAction) {
-                        let preview = showsPreview(snapshot) != nil
-                        Button(preview ? "Edit" : "Preview", systemImage: preview ? "pencil" : "eye") {
-                            sourceFor = preview ? path : nil
+                if onScreen {
+                    if let snapshot = session.snapshot, let path = snapshot.filePath, TextPreview.kind(path) != nil, snapshot.documentType == nil, !snapshot.draft {
+                        ToolbarItem(placement: .primaryAction) {
+                            let preview = showsPreview(snapshot) != nil
+                            Button(preview ? "Edit" : "Preview", systemImage: preview ? "pencil" : "eye") {
+                                sourceFor = preview ? path : nil
+                            }
                         }
                     }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Files", systemImage: "folder") { browsing = true }
-                        .disabled(session.snapshot?.checkout == nil)
-                }
-                if let snapshot = session.snapshot, snapshot.filePath != nil, snapshot.documentType == nil {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("Save", systemImage: "square.and.arrow.down") { run(["kind": "save"]) }
-                            .disabled(!snapshot.dirty || snapshot.draft)
+                        Button("Files", systemImage: "folder") { browsing = true }
+                            .disabled(session.snapshot?.checkout == nil)
+                    }
+                    if let snapshot = session.snapshot, snapshot.filePath != nil, snapshot.documentType == nil {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Save", systemImage: "square.and.arrow.down") { run(["kind": "save"]) }
+                                .disabled(!snapshot.dirty || snapshot.draft)
+                        }
                     }
                 }
             }
@@ -86,6 +89,10 @@ struct EditorPanelView: View {
             }
             .alert(item: $failure) { Alert(title: Text("Could not complete that"), message: Text($0.message)) }
             .task { await session.run(core, workspaceId: workspaceId, panelId: panel.id) }
+            // The file's buffer syncs while the snapshot naming it is on its way.
+            .task {
+                if let path = panel.detail { await core.call("buffer.warm", ["workspaceId": workspaceId, "path": path]) }
+            }
     }
 
     /// A saved file with a preview shows it until this device picks the source.
@@ -259,26 +266,35 @@ private struct FilePreview: View {
 }
 
 /// The text of a file's shared buffer on this view. Local edits apply at once
-/// and reach the core in order; edits made elsewhere arrive as whole text,
-/// taken when no local edit is in flight (each edit's answer carries the
-/// text after it, so nothing is missed).
+/// and reach the core in order. The buffer has a version: changes made
+/// elsewhere arrive as deltas from the version this view has; when they came
+/// between its own edits (an edit's answer is not one version on), or while
+/// edits were in flight, it takes the text whole once its edits are in.
 @MainActor
 @Observable
 final class BufferModel {
     private(set) var text: String?
     private(set) var error: String?
     @ObservationIgnored let viewId = UUID().uuidString
-    /// The text changed by someone else: the text view takes it.
-    @ObservationIgnored var onRemoteText: ((String) -> Void)?
+    /// A change made elsewhere: the text view takes it.
+    @ObservationIgnored var onRemote: ((RemoteText) -> Void)?
     @ObservationIgnored private weak var core: CoreHost?
+    @ObservationIgnored private var version = 0
     @ObservationIgnored private var pending = 0
-    @ObservationIgnored private var missed = false
+    /// Changes made elsewhere were missed: take the text whole.
+    @ObservationIgnored private var stale = false
+
+    enum RemoteText {
+        case whole(String)
+        case delta([TextDelta])
+    }
 
     func run(_ core: CoreHost, workspaceId: String, path: String) async {
         self.core = core
         core.openBuffer(viewId, workspaceId: workspaceId, path: path) { [weak self] data in
             switch ViewEvent.decode(data) {
-            case .text(let text): self?.remote(text)
+            case .text(let text, let version): self?.take(text, version: version)
+            case .change(let from, let to, let delta): self?.change(from: from, to: to, delta: delta)
             case .error(let message): self?.error = message
             default: break
             }
@@ -289,41 +305,63 @@ final class BufferModel {
         core.closeBuffer(viewId)
     }
 
-    private func remote(_ next: String) {
-        guard pending == 0 else {
-            missed = true
-            return
-        }
-        take(next)
+    /// The text whole: the text view takes it even when this model had it,
+    /// as the view may have missed a change.
+    private func take(_ next: String, version: Int) {
+        self.version = version
+        if next != text { text = next }
+        onRemote?(.whole(next))
     }
 
-    private func take(_ next: String) {
-        guard next != text else { return }
-        text = next
-        onRemoteText?(next)
+    private func change(from: Int, to: Int, delta: [TextDelta]) {
+        // Older than the text this view has: already in it.
+        if from < version { return }
+        guard pending == 0, from == version, let text, let next = TextDelta.apply(delta, to: text) else {
+            stale = true
+            resync()
+            return
+        }
+        version = to
+        self.text = next
+        onRemote?(.delta(delta))
     }
 
     /// The text view replaced `length` UTF-16 units at `from` with
     /// `replacement`, leaving `result`.
     func edit(from: Int, length: Int, replacement: String, result: String) {
         text = result
-        send(from: from, length: length, replacement: replacement)
-    }
-
-    private func send(from: Int, length: Int, replacement: String) {
         guard let core else { return }
         pending += 1
         core.editBuffer(viewId, from: from, length: length, text: replacement) { [weak self] reply in
             guard let self else { return }
             self.pending -= 1
-            guard self.pending == 0 else { return }
-            if self.missed {
-                // Text arrived while edits were in flight: ask for it whole.
-                self.missed = false
-                self.send(from: 0, length: 0, replacement: "")
-            } else if let reply {
-                self.take(reply)
+            if let reply, reply == self.version + 1 {
+                self.version = reply
+            } else {
+                self.stale = true
             }
+            self.resync()
+        }
+    }
+
+    /// The text view missed changes made elsewhere (while composing text).
+    func missedRemote() {
+        stale = true
+        resync()
+    }
+
+    /// Takes the text whole once no edit is in flight.
+    private func resync() {
+        guard stale, pending == 0, let core else { return }
+        stale = false
+        core.bufferText(viewId) { [weak self] reply in
+            guard let self, let reply else { return }
+            // Edits made since are in flight: the next answer resyncs.
+            guard self.pending == 0 else {
+                self.stale = true
+                return
+            }
+            if reply.version >= self.version { self.take(reply.text, version: reply.version) }
         }
     }
 }
@@ -400,10 +438,18 @@ private struct BufferTextView: UIViewRepresentable {
             self.model = model
         }
 
+        /// A change from elsewhere came while text was being composed.
+        private var missed = false
+
         func attach(_ view: UITextView) {
             self.view = view
             last = view.text as NSString
-            model.onRemoteText = { [weak self] text in self?.replace(with: text) }
+            model.onRemote = { [weak self] change in
+                switch change {
+                case .whole(let text): self?.replace(with: text)
+                case .delta(let delta): self?.apply(delta)
+                }
+            }
         }
 
         func textViewDidChange(_ view: UITextView) {
@@ -412,29 +458,76 @@ private struct BufferTextView: UIViewRepresentable {
             let next = view.text as NSString
             let (from, removed, inserted) = Self.difference(last, next)
             last = next
-            if removed == 0 && inserted.length == 0 { return }
-            model.edit(from: from, length: removed, replacement: inserted as String, result: next as String)
+            if removed != 0 || inserted.length != 0 {
+                model.edit(from: from, length: removed, replacement: inserted as String, result: next as String)
+            }
+            if missed {
+                missed = false
+                model.missedRemote()
+            }
         }
 
-        /// Text from elsewhere: only the changed range is replaced, so the
-        /// selection and scroll position stay.
+        /// Text from elsewhere, whole: only the changed range is replaced.
         private func replace(with text: String) {
-            guard let view, view.markedTextRange == nil else { return }
+            guard let view, view.markedTextRange == nil else {
+                missed = true
+                return
+            }
             let next = text as NSString
             let (from, removed, inserted) = Self.difference(view.text as NSString, next)
+            if removed != 0 || inserted.length != 0 {
+                keepingPlace(view) { replace(view, from: from, length: removed, with: inserted as String) }
+            }
             last = next
-            if removed == 0 && inserted.length == 0 { return }
-            let selection = view.selectedRange
+        }
+
+        /// A change from elsewhere, step by step.
+        private func apply(_ delta: [TextDelta]) {
+            guard let view, view.markedTextRange == nil else {
+                missed = true
+                return
+            }
+            guard TextDelta.fits(delta, length: view.textStorage.length) else {
+                if let text = model.text { replace(with: text) }
+                return
+            }
+            keepingPlace(view) {
+                var index = 0
+                for step in delta {
+                    switch step {
+                    case .retain(let count): index += count
+                    case .insert(let text):
+                        replace(view, from: index, length: 0, with: text)
+                        index += (text as NSString).length
+                    case .delete(let count): replace(view, from: index, length: count, with: "")
+                    }
+                }
+            }
+            last = view.text as NSString
+        }
+
+        /// The selection and scroll position stay where they were.
+        private var selection = NSRange()
+
+        private func keepingPlace(_ view: UITextView, _ change: () -> Void) {
+            selection = view.selectedRange
             let offset = view.contentOffset
-            view.textStorage.replaceCharacters(in: NSRange(location: from, length: removed), with: inserted as String)
-            let shift = inserted.length - removed
+            view.textStorage.beginEditing()
+            change()
+            view.textStorage.endEditing()
+            view.selectedRange = selection
+            view.setContentOffset(offset, animated: false)
+        }
+
+        private func replace(_ view: UITextView, from: Int, length: Int, with text: String) {
+            view.textStorage.replaceCharacters(in: NSRange(location: from, length: length), with: text)
+            let shift = (text as NSString).length - length
             func moved(_ location: Int) -> Int {
                 location <= from ? location : max(from, location + shift)
             }
             let start = moved(selection.location)
             let end = moved(selection.location + selection.length)
-            view.selectedRange = NSRange(location: start, length: max(0, end - start))
-            view.setContentOffset(offset, animated: false)
+            selection = NSRange(location: start, length: max(0, end - start))
         }
 
         /// The one range that differs: where it starts, how many UTF-16 units
@@ -507,36 +600,66 @@ private struct HTMLPreview: View {
 private struct TablePreview: View {
     let text: String
     let separator: Character
+    /// The rows and column widths, read off the main thread.
+    @State private var table: Table?
+
+    struct Table: Sendable {
+        let rows: [[String]]
+        let widths: [CGFloat]
+
+        /// Each column as wide as its longest cell in the first rows, in
+        /// average characters of the cells' font, within 48...280 points.
+        init(_ text: String, separator: Character) {
+            rows = TablePreview.rows(text, separator: separator)
+            var widths: [CGFloat] = []
+            for row in rows.prefix(200) {
+                for (column, cell) in row.enumerated() {
+                    let width = min(280, max(48, CGFloat(cell.count) * 8))
+                    if column < widths.count { widths[column] = max(widths[column], width) } else { widths.append(width) }
+                }
+            }
+            self.widths = widths
+        }
+    }
 
     var body: some View {
-        let rows = Self.rows(text, separator: separator)
-        if rows.isEmpty {
-            ContentUnavailableView("Empty file", systemImage: "tablecells")
-        } else {
-            ScrollView([.vertical, .horizontal]) {
-                SwiftUI.Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                    ForEach(Array(rows.prefix(2_000).enumerated()), id: \.offset) { index, row in
-                        GridRow {
-                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                Text(cell)
-                                    .font(.callout)
-                                    .fontWeight(index == 0 ? .semibold : .regular)
-                                    .lineLimit(3)
-                                    .frame(maxWidth: 280, alignment: .leading)
+        Group {
+            if let table, table.rows.isEmpty {
+                ContentUnavailableView("Empty file", systemImage: "tablecells")
+            } else if let table {
+                ScrollView([.vertical, .horizontal]) {
+                    // Rows are laid out as they scroll in.
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(table.rows.indices, id: \.self) { index in
+                            let row = table.rows[index]
+                            HStack(alignment: .top, spacing: 16) {
+                                ForEach(table.widths.indices, id: \.self) { column in
+                                    Text(column < row.count ? row[column] : "")
+                                        .font(.callout)
+                                        .fontWeight(index == 0 ? .semibold : .regular)
+                                        .lineLimit(3)
+                                        .frame(width: table.widths[column], alignment: .leading)
+                                }
                             }
+                            if index == 0 { Divider() }
                         }
-                        if index == 0 { Divider() }
                     }
+                    .padding()
+                    .textSelection(.enabled)
                 }
-                .padding()
-                .textSelection(.enabled)
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .task(id: text) {
+            let text = text, separator = separator
+            table = await Task.detached(priority: .userInitiated) { Table(text, separator: separator) }.value
         }
     }
 
     /// The rows, with quoted cells (which may hold the separator, quotes
     /// doubled and line breaks) taken whole.
-    static func rows(_ text: String, separator: Character) -> [[String]] {
+    nonisolated static func rows(_ text: String, separator: Character) -> [[String]] {
         var rows: [[String]] = []
         var row: [String] = []
         var cell = ""

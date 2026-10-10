@@ -1190,7 +1190,8 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   addon) per PTY keeps screen state and scrollback, so the session serializes
   the screen for any client that attaches and for restore.
 - Output fans out to every viewing client as a byte stream with flow control:
-  the `process.attach` stream, which starts with the serialized screen. A
+  the `process.attach` stream, which starts with the serialized screen (a
+  viewer that keeps less scrollback asks for at most its own `scrollback`). A
   terminal view attaches to it directly with the PTY id from its session's
   snapshot; the session channel carries no bytes.
   Input from every viewer goes to the same PTY, as in a shared tmux session.
@@ -1457,7 +1458,10 @@ Every panel type meets the same contract.
 2. **Views render snapshots and send ops.** A snapshot is plain JSON (no
    class instances, no `Map`). A view talks to its session channel through
    the session handles of `client/host` (`acquireSession`); in the desktop UI
-   `PanelSessionBoundary` is the only place a view attaches to it. Where a
+   `PanelSessionBoundary` is the only place a view attaches to it. A
+   connection shares one channel per panel and closes it a while
+   (`SESSION_LINGER_MS`) after the last handle is released, so the next view
+   of the panel starts from its snapshot. Where a
    service already serves the stream a view needs, the view attaches to that
    stream directly, named by its snapshot: the terminal view to
    `process.attach` (the PTY's bytes) and the editor view to `file.buffer`

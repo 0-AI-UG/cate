@@ -57,7 +57,7 @@ struct BrowserPanelView: View {
         .onChange(of: pages.url) { if !editingAddress { address = pages.url } }
         .onChange(of: editingAddress) { if !editingAddress { address = pages.url } }
         .onChange(of: session.snapshot) {
-            if let snapshot = session.snapshot { pages.update(snapshot, clientId: core.state.clientId) }
+            if let snapshot = session.snapshot { pages.update(snapshot, clientId: core.clientId) }
             if !editingAddress { address = pages.url }
         }
         .task {

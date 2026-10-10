@@ -72,6 +72,10 @@ export interface MobileNotification {
 }
 
 /** What a view the app opened is told, as JSON text (`view.event`). */
+/** One step of a text change, in UTF-16 units, applied in order from the
+ *  start: keep `retain` units, insert `insert`, or remove `delete` units. */
+export type MobileTextDelta = { retain: number } | { insert: string } | { delete: number }
+
 export type MobileViewEvent =
   /** `panel.open`: the panel's session snapshot, whole, on every change. */
   | { kind: 'snapshot'; snapshot: unknown }
@@ -83,9 +87,12 @@ export type MobileViewEvent =
   /** `chat.*`: show or hide the page (hidden while it loads and while it is
    *  on T3's start page). */
   | { kind: 'reveal'; shown: boolean }
-  /** `buffer.open`: the buffer's whole text, once synced and on every change
-   *  not made by this view. */
-  | { kind: 'text'; text: string }
+  /** `buffer.open`: the buffer's whole text once synced, at `version` (one
+   *  more for every change of the buffer, wherever it was made). */
+  | { kind: 'text'; text: string; version: number }
+  /** `buffer.open`: a change not made by this view, taking the buffer from
+   *  version `from` to `to`. */
+  | { kind: 'change'; from: number; to: number; delta: MobileTextDelta[] }
   /** `buffer.open`: the buffer could not be opened or its stream ended. */
   | { kind: 'error'; message: string }
   /** `agents.watch`: the agent's state (null while the panel hosts none),
@@ -363,6 +370,10 @@ export interface MobileCoreMethods {
   /** Runs one op on the view's session (the panel type's op JSON). */
   'panel.op': { params: { viewId: string; op: unknown }; result: MobileOpResult }
   'panel.close': { params: { viewId: string }; result: null }
+  /** Opens the sessions of panels the person is likely to open next (the
+   *  first few of `panelIds`), so their views start with a snapshot; each
+   *  stays open for a while (`SESSION_LINGER_MS`). */
+  'panel.warm': { params: { workspaceId: string; panelIds: string[] }; result: null }
   /** The panel types people can create, in creation order. */
   'panel.creatable': { params: { workspaceId: string }; result: MobilePanelChoice[] }
   /** Creates a panel of `type` at `placement` (the dock without one);
@@ -383,9 +394,16 @@ export interface MobileCoreMethods {
    *  as `text` events until `buffer.close`. */
   'buffer.open': { params: { viewId: string; workspaceId: string; path: string }; result: null }
   /** Replaces `length` UTF-16 units at `from` with `text`; answers with the
-   *  whole text after the edit, which includes edits made elsewhere. */
-  'buffer.edit': { params: { viewId: string; from: number; length: number; text: string }; result: { text: string } }
+   *  buffer's version after the edit (one more than before unless changes
+   *  made elsewhere came between). */
+  'buffer.edit': { params: { viewId: string; from: number; length: number; text: string }; result: { version: number } }
+  /** The buffer's whole text and its version. */
+  'buffer.text': { params: { viewId: string }; result: { text: string; version: number } }
   'buffer.close': { params: { viewId: string }; result: null }
+  /** Starts syncing a text file's buffer before its view opens it (an
+   *  editor opening while its session's snapshot is on its way); held for a
+   *  few seconds. Documents (images, PDFs) are skipped. */
+  'buffer.warm': { params: { workspaceId: string; path: string }; result: null }
   /** A folder's entries on the runtime's machine, folders first. */
   'files.list': { params: { workspaceId: string; path: string }; result: MobileFileEntry[] }
   /** A URL the workspace's web views load for a workspace file. */

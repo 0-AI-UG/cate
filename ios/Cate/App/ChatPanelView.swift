@@ -29,6 +29,7 @@ struct ChatConversation: Decodable, Identifiable, Equatable {
 
 struct ChatPanelView: View {
     @Environment(CoreHost.self) private var core
+    @Environment(\.panelOnScreen) private var onScreen
     @Environment(\.colorScheme) private var colorScheme
     let workspaceId: String
     let panel: Panel
@@ -87,7 +88,7 @@ struct ChatPanelView: View {
             }
         }
         .panelTitle(panel.title)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarBackground(onScreen ? .hidden : .automatic, for: .navigationBar)
         .alert("Rename Conversation", isPresented: $renaming) {
             TextField("Name", text: $newTitle)
             Button("Cancel", role: .cancel) {}
@@ -96,13 +97,15 @@ struct ChatPanelView: View {
         }
         .alert(item: $failure) { Alert(title: Text($0.message)) }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu { conversationMenu } label: {
-                    Label("Conversations", systemImage: "bubble.left.and.bubble.right")
+            if onScreen {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu { conversationMenu } label: {
+                        Label("Conversations", systemImage: "bubble.left.and.bubble.right")
+                    }
                 }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button("Restart T3 Code", systemImage: "arrow.clockwise") { Task { await session.send(["kind": "retry"]) } }
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Restart T3 Code", systemImage: "arrow.clockwise") { Task { await session.send(["kind": "retry"]) } }
+                }
             }
         }
         // A new binding or a restarted harness is a fresh load.

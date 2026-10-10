@@ -28,6 +28,9 @@ export interface BindTerminalOptions {
   /** The runtime terminal id. */
   id: string
   visible?: boolean
+  /** The most scrollback lines this view keeps; the attach's screen carries
+   *  no more. Default: all of it. */
+  scrollback?: number
   /** The size this view would fit, when it differs from its terminal's: a
    *  view that draws the PTY's grid (scaled into its frame) and reports the
    *  grid its frame holds. Report changes with `resized`. Default: the
@@ -74,7 +77,7 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
     viewer = null
     // `resume` re-opens the attach after a reconnect; it starts with a fresh
     // screen, so nothing is lost or doubled.
-    const current = proc.attach({ id, ...size(), visible }, { manualAck: true, resume: true })
+    const current = proc.attach({ id, ...size(), visible, ...(options.scrollback !== undefined ? { scrollback: options.scrollback } : {}) }, { manualAck: true, resume: true })
     sub = current
     current.onEvent((event) => {
       if (event.kind === 'screen') {

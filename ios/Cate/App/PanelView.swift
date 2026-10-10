@@ -14,6 +14,7 @@ struct PanelRoute: Hashable {
 struct PanelView: View {
     @Environment(CoreHost.self) private var core
     @Environment(Notifier.self) private var notifier
+    @Environment(\.panelOnScreen) private var onScreen
     let route: PanelRoute
     /// Shown in the workspace's screen, whose title picks it.
     var inWorkspace = false
@@ -40,7 +41,7 @@ struct PanelView: View {
         .environment(\.panelMark, panel.map { PanelMark(panel: $0, agent: agent) })
         .onChange(of: panel, initial: true) { known = panel }
         .toolbar {
-            if let panel, let worktrees = workspace?.worktrees, !worktrees.isEmpty {
+            if onScreen, let panel, let worktrees = workspace?.worktrees, !worktrees.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     WorktreeMenu(panel: panel, worktrees: worktrees)
                 }
@@ -49,10 +50,16 @@ struct PanelView: View {
         // Outside the toolbar, so its worktree menu has the switch too.
         .worktreeSwitching(route.workspaceId)
         // The agent in this panel is in view: its notifications stay quiet.
-        .onAppear { notifier.viewing = AgentRoute(workspaceId: route.workspaceId, panelId: route.panelId) }
-        .onDisappear {
-            if notifier.viewing == AgentRoute(workspaceId: route.workspaceId, panelId: route.panelId) { notifier.viewing = nil }
+        .onChange(of: onScreen, initial: true) { _, shown in
+            if shown { notifier.viewing = viewing } else if notifier.viewing == viewing { notifier.viewing = nil }
         }
+        .onDisappear {
+            if notifier.viewing == viewing { notifier.viewing = nil }
+        }
+    }
+
+    private var viewing: AgentRoute {
+        AgentRoute(workspaceId: route.workspaceId, panelId: route.panelId)
     }
 
     @ViewBuilder
@@ -79,6 +86,9 @@ extension EnvironmentValues {
     @Entry var panelInWorkspace = false
     /// What the panel's title shows besides its words.
     @Entry var panelMark: PanelMark?
+    /// False while the workspace's screen keeps the panel behind the one on
+    /// screen: its toolbar items stay out of the bar.
+    @Entry var panelOnScreen = true
 }
 
 /// A panel's title as the desktop's tabs show it: a panel that takes prompts

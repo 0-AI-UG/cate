@@ -1,6 +1,6 @@
 // The paired workspaces with their connection state, the app's home. It
 // connects to every workspace, so their agents' notifications arrive while
-// the app runs.
+// the app runs. The list shows as remembered while the core starts.
 
 import SwiftUI
 
@@ -12,9 +12,9 @@ struct WorkspacesView: View {
 
     var body: some View {
         Group {
-            if !core.ready {
+            if core.workspaces.isEmpty && !core.ready {
                 ProgressView()
-            } else if core.state.workspaces.isEmpty {
+            } else if core.workspaces.isEmpty {
                 ContentUnavailableView {
                     Label("No workspaces", systemImage: "desktopcomputer")
                 } description: {
@@ -24,7 +24,7 @@ struct WorkspacesView: View {
                 }
             } else {
                 List {
-                    ForEach(core.state.workspaces) { workspace in
+                    ForEach(core.workspaces) { workspace in
                         NavigationLink(value: workspace.id) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(workspace.name).font(.headline)
@@ -51,7 +51,7 @@ struct WorkspacesView: View {
             }
         }
         .task(id: core.ready) { if core.ready { await core.openAll() } }
-        .onChange(of: core.state.workspaces.isEmpty, initial: true) { _, empty in if !empty { notifier.askIfNeeded() } }
+        .onChange(of: core.workspaces.isEmpty, initial: true) { _, empty in if !empty { notifier.askIfNeeded() } }
     }
 }
 

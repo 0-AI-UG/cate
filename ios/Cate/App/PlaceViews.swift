@@ -330,6 +330,11 @@ struct CanvasPlace: View {
             let mine = nodes.filter { $0.panels.first.flatMap { panels[$0]?.worktreeId } == worktree.id }
             return mine.isEmpty ? nil : (worktree, mine)
         }
+        // The panels of the cards in view, which a tap opens.
+        let inView = nodes
+            .filter { node in visible.map { $0.intersects(CGRect(x: node.rect.x, y: node.rect.y, width: node.rect.width, height: node.rect.height)) } ?? true }
+            .compactMap { $0.panels.first }
+            .filter { panels[$0].map { $0.type != "canvas" } == true }
         if nodes.isEmpty {
             ContentUnavailableView("Empty canvas", systemImage: "square.grid.3x3", description: Text("Add a panel with +, or start an agent here."))
         } else {
@@ -425,6 +430,8 @@ struct CanvasPlace: View {
                 .animation(.snappy(duration: 0.25), value: spots)
                 .sensoryFeedback(.success, trigger: pending)
             }
+            // Under the bars, which float over the map.
+            .ignoresSafeArea()
             .background(Color(.systemGroupedBackground))
             .overlay(alignment: .bottom) {
                 if let placing {
@@ -438,6 +445,14 @@ struct CanvasPlace: View {
             .onChange(of: nodes) { old, new in
                 guard let id = touch.movingNode else { return }
                 if old.first(where: { $0.id == id })?.rect != new.first(where: { $0.id == id })?.rect { touch.endMove() }
+            }
+            // Their sessions open ahead of the tap (`panel.warm`), renewed
+            // while the map shows them.
+            .task(id: inView) {
+                while !Task.isCancelled {
+                    await core.call("panel.warm", ["workspaceId": workspaceId, "panelIds": inView])
+                    try? await Task.sleep(for: .seconds(25))
+                }
             }
         }
     }
@@ -716,6 +731,8 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
         scrollView.alwaysBounceHorizontal = true
         scrollView.alwaysBounceVertical = true
         scrollView.bouncesZoom = true
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
         scrollView.backgroundColor = .clear
         view.addSubview(scrollView)
 
@@ -747,6 +764,14 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
         if layout?.viewport != scrollView.bounds.size { render() }
     }
 
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        if layout?.safe != view.safeAreaInsets { render() }
+    }
+
+    /// The part of the scroll view no bar covers, in its own coordinates.
+    private var open: CGRect { scrollView.bounds.inset(by: view.safeAreaInsets) }
+
     /// On the map a swipe pans, pinches or drags; only a swipe from the
     /// screen's edge goes back, and not one that starts on a card's handle.
     override func viewDidAppear(_ animated: Bool) {
@@ -765,20 +790,22 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
     func render() {
         guard isViewLoaded, scrollView.bounds.width > 0, scrollView.zoomScale == 1 else { return }
         let viewport = scrollView.bounds.size
+        let safe = view.safeAreaInsets
         // Within the zoom range the nodes, spots and screen allow now: the
         // range moves when they change, and a scale outside it would put 1
         // outside the scroll view's zoom range.
-        let scale = min(Self.maxScale, max(minScale(viewport), self.scale ?? fit(viewport)))
+        let open = MapLayout.open(viewport, safe)
+        let scale = min(Self.maxScale, max(minScale(open), self.scale ?? fit(open)))
         self.scale = scale
         let previous = layout
-        let next = MapLayout(nodes: nodes, spots: spots, scale: scale, viewport: viewport)
+        let next = MapLayout(nodes: nodes, spots: spots, scale: scale, viewport: viewport, safe: safe)
         layout = next
         host.rootView = content(next)
         if host.view.frame.size != next.size {
             host.view.frame = CGRect(origin: .zero, size: next.size)
             scrollView.contentSize = next.size
         }
-        scrollView.minimumZoomScale = minScale(viewport) / scale
+        scrollView.minimumZoomScale = minScale(open) / scale
         scrollView.maximumZoomScale = Self.maxScale / scale
         if let previous {
             if !previous.maps(like: next) {
@@ -795,7 +822,7 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
     }
 
     /// Zoomed out no further than the whole canvas (and the spots a new
-    /// panel can take) on screen.
+    /// panel can take) on the open screen.
     private func minScale(_ viewport: CGSize) -> CGFloat {
         let extent = MapLayout.extent(nodes, spots)
         let whole = min(
@@ -820,8 +847,8 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
     /// The part of the canvas on screen.
     private func report() {
         guard let layout else { return }
-        let a = layout.canvasPoint(scrollView.convert(CGPoint(x: scrollView.bounds.minX, y: scrollView.bounds.minY), to: host.view))
-        let b = layout.canvasPoint(scrollView.convert(CGPoint(x: scrollView.bounds.maxX, y: scrollView.bounds.maxY), to: host.view))
+        let a = layout.canvasPoint(scrollView.convert(CGPoint(x: open.minX, y: open.minY), to: host.view))
+        let b = layout.canvasPoint(scrollView.convert(CGPoint(x: open.maxX, y: open.maxY), to: host.view))
         settled(CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y))
     }
 
@@ -830,16 +857,19 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
     private func zoom(to rect: CGRect) {
         guard let layout, scrollView.zoomScale == 1, rect.width > 0, rect.height > 0 else { return }
         let bounds = scrollView.bounds.size
+        let open = self.open
         let zoom = min(scrollView.maximumZoomScale, max(scrollView.minimumZoomScale,
-            min(bounds.width / (rect.width * layout.scale), bounds.height / (rect.height * layout.scale))))
+            min(open.width / (rect.width * layout.scale), open.height / (rect.height * layout.scale))))
         let middle = layout.viewPoint(CGPoint(x: rect.midX, y: rect.midY))
+        // From the open screen's middle to the scroll view's.
+        let shift = CGPoint(x: open.midX - scrollView.bounds.midX, y: open.midY - scrollView.bounds.midY)
         UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 1, initialSpringVelocity: 0) {
             self.scrollView.zoomScale = zoom
             let size = self.scrollView.contentSize
             let inset = self.scrollView.contentInset
             self.scrollView.contentOffset = CGPoint(
-                x: min(max(-inset.left, middle.x * zoom - bounds.width / 2), max(-inset.left, size.width - bounds.width)),
-                y: min(max(-inset.top, middle.y * zoom - bounds.height / 2), max(-inset.top, size.height - bounds.height))
+                x: min(max(-inset.left, middle.x * zoom - bounds.width / 2 - shift.x), max(-inset.left, size.width - bounds.width)),
+                y: min(max(-inset.top, middle.y * zoom - bounds.height / 2 - shift.y), max(-inset.top, size.height - bounds.height))
             )
         } completion: { _ in
             self.commitZoom()
@@ -871,7 +901,7 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
     private func commitZoom() {
         let zoom = scrollView.zoomScale
         guard zoom != 1, let layout, let scale else { return }
-        let middle = scrollView.convert(CGPoint(x: scrollView.bounds.midX, y: scrollView.bounds.midY), to: host.view)
+        let middle = scrollView.convert(CGPoint(x: open.midX, y: open.midY), to: host.view)
         let anchor = layout.canvasPoint(middle)
         UIView.performWithoutAnimation {
             // The scroll view clamps the zoom to its range: with 1 outside
@@ -881,12 +911,14 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
             scrollView.maximumZoomScale = max(scrollView.maximumZoomScale, 1)
             scrollView.zoomScale = 1
             scrollView.contentInset = .zero
-            self.scale = min(Self.maxScale, max(minScale(scrollView.bounds.size), scale * zoom))
+            self.scale = min(Self.maxScale, max(minScale(MapLayout.open(scrollView.bounds.size, view.safeAreaInsets)), scale * zoom))
             render()
             host.view.layoutIfNeeded()
             if let next = self.layout {
                 let point = next.viewPoint(anchor)
-                scrollView.contentOffset = clamped(CGPoint(x: point.x - scrollView.bounds.width / 2, y: point.y - scrollView.bounds.height / 2))
+                let safe = view.safeAreaInsets
+                let open = MapLayout.open(scrollView.bounds.size, safe)
+                scrollView.contentOffset = clamped(CGPoint(x: point.x - safe.left - open.width / 2, y: point.y - safe.top - open.height / 2))
             }
         }
         report()
@@ -1002,22 +1034,32 @@ struct MapLayout {
     let nodes: [CanvasModel.Node]
     let scale: CGFloat
     let viewport: CGSize
+    /// The bars over the map's edges: the map runs under them, and its
+    /// edges scroll clear of them.
+    let safe: UIEdgeInsets
     let bounds: CGRect
     let inset: CGPoint
     let size: CGSize
 
     /// `spots`, in canvas units, are reached by the map too.
-    init(nodes: [CanvasModel.Node], spots: [CGRect] = [], scale: CGFloat, viewport: CGSize) {
+    init(nodes: [CanvasModel.Node], spots: [CGRect] = [], scale: CGFloat, viewport: CGSize, safe: UIEdgeInsets = .zero) {
         self.nodes = nodes
         self.scale = scale
         self.viewport = viewport
+        self.safe = safe
         bounds = Self.extent(nodes, spots)
+        let open = Self.open(viewport, safe)
         // Room for the worktree territories, which reach past the windows.
         let padding = Self.padding + 90 * scale
         let width = bounds.width * scale + padding * 2
         let height = bounds.height * scale + padding * 2
-        inset = CGPoint(x: padding + max(0, (viewport.width - width) / 2), y: padding + max(0, (viewport.height - height) / 2))
-        size = CGSize(width: max(width, viewport.width), height: max(height, viewport.height))
+        inset = CGPoint(x: safe.left + padding + max(0, (open.width - width) / 2), y: safe.top + padding + max(0, (open.height - height) / 2))
+        size = CGSize(width: max(width, open.width) + safe.left + safe.right, height: max(height, open.height) + safe.top + safe.bottom)
+    }
+
+    /// The part of the screen no bar covers.
+    static func open(_ viewport: CGSize, _ safe: UIEdgeInsets) -> CGSize {
+        CGSize(width: max(1, viewport.width - safe.left - safe.right), height: max(1, viewport.height - safe.top - safe.bottom))
     }
 
     static func extent(_ nodes: [CanvasModel.Node], _ spots: [CGRect] = []) -> CGRect {

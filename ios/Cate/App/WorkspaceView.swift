@@ -1,11 +1,14 @@
 // One workspace as Cate lays it out: one of its dock's panels on screen at a
 // time, picked in the title menu; a canvas panel shows its map (PlaceViews).
+// The last few panels shown stay open behind it, so switching back is
+// instant, and the dock's sessions are opened ahead (`panel.warm`).
 // `+` adds a panel to the dock, or on a canvas at a spot picked on its map. On a
 // canvas the bottom bar lists the workspace's agents and starts a new one
 // there; elsewhere the title menu does. The workspace's own screen shows who
 // else is here, the computer it runs on and disconnecting.
 
 import SwiftUI
+import UIKit
 
 struct WorkspaceView: View {
     @Environment(CoreHost.self) private var core
@@ -18,6 +21,11 @@ struct WorkspaceView: View {
     @State private var placing: PanelChoice?
     @State private var showingAgents = false
     @State private var startingAgent = false
+    /// The dock panels shown last, the one on screen last; they stay open.
+    @State private var kept: [String] = []
+
+    /// How many dock panels stay open, the one on screen included.
+    private static let keptCount = 3
 
     var body: some View {
         let workspace = core.workspace(workspaceId)
@@ -28,18 +36,24 @@ struct WorkspaceView: View {
         let placement = canvas.map { Placement(canvasPanelId: $0.id, point: center) }
         Group {
             if let workspace, workspace.panels != nil {
-                Group {
+                ZStack {
+                    ForEach(docked.filter { kept.contains($0.id) && $0.type != "canvas" }) { shown in
+                        let onScreen = shown.id == panel?.id
+                        PanelView(route: PanelRoute(workspaceId: workspaceId, panelId: shown.id), inWorkspace: true)
+                            .environment(\.panelOnScreen, onScreen)
+                            .opacity(onScreen ? 1 : 0)
+                            .allowsHitTesting(onScreen)
+                            .accessibilityHidden(!onScreen)
+                    }
                     if let canvas {
                         PlaceHost(workspaceId: workspaceId) { actions in
                             CanvasPlace(workspaceId: workspaceId, canvasPanel: canvas, actions: actions, center: $center, placing: $placing)
                         }
-                    } else if let panel {
-                        PanelView(route: PanelRoute(workspaceId: workspaceId, panelId: panel.id), inWorkspace: true)
-                    } else {
+                        .id(canvas.id)
+                    } else if panel == nil {
                         ContentUnavailableView("Nothing in the dock", systemImage: "rectangle.stack", description: Text("Add a panel with +, or start an agent."))
                     }
                 }
-                .id(panel?.id)
                 .safeAreaInset(edge: .top) {
                     if !connected { ConnectionBanner(workspace: workspace) }
                 }
@@ -113,15 +127,27 @@ struct WorkspaceView: View {
         // The first canvas in the dock, else its first panel, until one is
         // picked; another when the one on screen closes.
         .onChange(of: docked.map(\.id), initial: true) { _, ids in
+            kept.removeAll { !ids.contains($0) }
             guard workspace?.panels != nil, selected.map({ !ids.contains($0) }) ?? true else { return }
             selected = docked.first { $0.type == "canvas" }?.id ?? ids.first
             center = nil
         }
-        .onChange(of: selected) {
+        .onChange(of: selected, initial: true) {
             center = nil
             placing = nil
+            // The keyboard belongs to the panel left behind.
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            guard let selected else { return }
+            kept = Array((kept.filter { $0 != selected } + [selected]).suffix(Self.keptCount))
         }
         .task { await core.open(workspaceId) }
+        // Each warm holds the sessions a while; renewed while the workspace is open.
+        .task(id: connected ? docked.map(\.id) : []) {
+            while connected, !Task.isCancelled {
+                await core.call("panel.warm", ["workspaceId": workspaceId, "panelIds": docked.map(\.id)])
+                try? await Task.sleep(for: .seconds(25))
+            }
+        }
     }
 }
 

@@ -49,11 +49,11 @@ struct RootView: View {
             next.append(route)
             path = next
         }
-        .alert("Trust this workspace?", isPresented: Binding(get: { core.state.trustPrompt != nil }, set: { _ in })) {
+        .alert("Trust this workspace?", isPresented: Binding(get: { core.trustPrompt != nil }, set: { _ in })) {
             Button("Trust") { Task { _ = await core.action("workspaces.answerTrust", ["trusted": true]) } }
             Button("Not Now", role: .cancel) { Task { _ = await core.action("workspaces.answerTrust", ["trusted": false]) } }
         } message: {
-            Text("\(core.state.trustPrompt?.label ?? "This workspace") runs terminals, agents and git only once it is trusted. Trusting it applies for everyone who opens it.")
+            Text("\(core.trustPrompt?.label ?? "This workspace") runs terminals, agents and git only once it is trusted. Trusting it applies for everyone who opens it.")
         }
         .alert("Not sent", isPresented: Binding(get: { notifier.failure != nil }, set: { if !$0 { notifier.failure = nil } })) {
             Button("OK", role: .cancel) {}

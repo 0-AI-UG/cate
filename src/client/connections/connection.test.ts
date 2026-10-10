@@ -113,9 +113,9 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }, build?: string) {
+function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }, build?: string, sessionLingerMs = 0) {
   registry = new WorkspaceConnections({
-      capabilities: RUNTIME_CAPABILITIES, identity, transports: transportsFor(rt, extra), version: '9.0.0', build, backoff })
+      capabilities: RUNTIME_CAPABILITIES, identity, transports: transportsFor(rt, extra), version: '9.0.0', build, backoff, sessionLingerMs })
   const opened = registry
   stopResolver = setRuntimeResolver((workspaceId) => opened.get(workspaceId)?.runtime ?? null)
   return registry.open('ws1', { kind: 'local', root: '/w' })
@@ -150,6 +150,17 @@ describe('WorkspaceConnection', () => {
     await connection.checkAlive(50)
     await vi.waitFor(() => expect(rt.dials).toHaveLength(2))
     await vi.waitFor(() => expect(connection.state.kind).toBe('connected'))
+  })
+
+  it('shows connecting while an asked-for retry dials', async () => {
+    const rt = fakeRuntime()
+    rt.down = true
+    const connection = openLocal(rt, {}, { initialMs: 60_000, maxMs: 60_000, factor: 1 })
+    await vi.waitFor(() => expect(connection.state.kind).toBe('offline'))
+    connection.retryNow()
+    expect(connection.state.kind).toBe('connecting')
+    await vi.waitFor(() => expect(connection.state.kind).toBe('offline'))
+    expect(rt.dials).toHaveLength(2)
   })
 
   it('makes typed calls and fills the runtime slot', async () => {
@@ -255,6 +266,33 @@ describe('WorkspaceConnection', () => {
     a.release()
     a.release()
     await new Promise((r) => setTimeout(r, 5))
+    expect(closed).toBe(0)
+    b.release()
+    await vi.waitFor(() => expect(closed).toBe(1))
+  })
+
+  it('keeps a released session open for the next view of its panel until it lingered', async () => {
+    const rt = fakeRuntime()
+    let opened = 0
+    let closed = 0
+    rt.server.register(sessionCapability, {
+      op: () => null,
+      subscribe: ({ panelId }, sink) => {
+        opened++
+        sink.emit({ kind: 'snapshot', rev: 0, snapshot: { panelId } })
+        return () => { closed++ }
+      },
+    } satisfies CapabilityImpl<typeof sessionCapability>)
+    const connection = openLocal(rt, {}, undefined, undefined, 60)
+    const a = connection.subscribeSession('p1')
+    await vi.waitFor(() => expect(a.getSnapshot()).not.toBeNull())
+    a.release()
+    await new Promise((r) => setTimeout(r, 20))
+    const b = connection.subscribeSession('p1')
+    // Back within the linger: the snapshot is there at once, same channel.
+    expect(b.getSnapshot()?.snapshot).toEqual({ panelId: 'p1' })
+    await new Promise((r) => setTimeout(r, 80))
+    expect(opened).toBe(1)
     expect(closed).toBe(0)
     b.release()
     await vi.waitFor(() => expect(closed).toBe(1))

@@ -167,6 +167,7 @@ private enum ReviewDisplay {
 
 struct ReviewPanelView: View {
     @Environment(CoreHost.self) private var core
+    @Environment(\.panelOnScreen) private var onScreen
     let workspaceId: String
     let panel: Panel
     @State private var session = PanelSession<ReviewSnapshot>()
@@ -190,7 +191,7 @@ struct ReviewPanelView: View {
         }
         .panelTitle(panel.title)
         .toolbar {
-            if let snapshot = session.snapshot, !snapshot.notRepository {
+            if onScreen, let snapshot = session.snapshot, !snapshot.notRepository {
                 ToolbarItem(placement: .primaryAction) { agentMenu(snapshot) }
                 ToolbarItem(placement: .primaryAction) { reviewMenu(snapshot) }
             }

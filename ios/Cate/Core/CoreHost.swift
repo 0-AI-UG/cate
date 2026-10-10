@@ -1,6 +1,9 @@
 // The client core: the portable TypeScript client running headless in a
-// hidden web view. The app reads its state (`state`, pushed on every change)
-// and asks it to act (`call`, the core API in src/shells/mobile/contract.ts).
+// hidden web view. The app reads its state (pushed on every change, decoded
+// off the main thread and taken part by part: `workspaces`, each observed on
+// its own) and asks it to act (`call`, the core API in
+// src/shells/mobile/contract.ts). The workspace list is remembered, so it
+// shows while the core starts.
 
 import CryptoKit
 import Foundation
@@ -10,7 +13,13 @@ import WebKit
 @MainActor
 @Observable
 final class CoreHost {
-    private(set) var state = CoreState()
+    /// This client's id, as browser sessions name it.
+    private(set) var clientId = ""
+    /// Every paired workspace; remembered ones, connecting, until the core's
+    /// first state.
+    private(set) var workspaces: [Workspace]
+    /// A workspace that must be trusted before it runs anything.
+    private(set) var trustPrompt: TrustPrompt?
     private(set) var ready = false
     /// Set when the core could not start; the app shows it instead.
     private(set) var failure: String?
@@ -37,8 +46,18 @@ final class CoreHost {
     @ObservationIgnored var notifications: ((CoreNotification) -> Void)?
     /// Removes a shown notification by id: its agent works again.
     @ObservationIgnored var withdrawNotification: ((String) -> Void)?
+    /// The last state pushed, and the order pushes came in: a decode that
+    /// finishes after a later one is dropped.
+    @ObservationIgnored private var lastState = CoreState()
+    @ObservationIgnored private var pushed = 0
+    @ObservationIgnored private var taken = 0
+
+    private static let rememberedKey = "workspaces.remembered"
 
     init() {
+        let remembered = (UserDefaults.standard.data(forKey: Self.rememberedKey))
+            .flatMap { try? JSONDecoder().decode([RememberedWorkspace].self, from: $0) } ?? []
+        workspaces = remembered.map { Workspace($0.state) }
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(AppSchemeHandler(), forURLScheme: AppSchemeHandler.scheme)
         webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 1, height: 1), configuration: config)
@@ -60,12 +79,44 @@ final class CoreHost {
     }
 
     func coreState(json: String) {
-        do {
-            let next = try JSONDecoder().decode(CoreState.self, from: Data(json.utf8))
-            if next != state { state = next }
-        } catch {
-            failure = "Unreadable core state: \(error)"
+        pushed += 1
+        let order = pushed
+        Task.detached(priority: .userInitiated) {
+            let next = Result { try JSONDecoder().decode(CoreState.self, from: Data(json.utf8)) }
+            await self.take(next, order: order)
         }
+    }
+
+    private func take(_ next: Result<CoreState, Error>, order: Int) {
+        guard order > taken else { return }
+        taken = order
+        let state: CoreState
+        switch next {
+        case .success(let decoded): state = decoded
+        case .failure(let error):
+            failure = "Unreadable core state: \(error)"
+            return
+        }
+        guard state != lastState else { return }
+        lastState = state
+        if clientId != state.clientId { clientId = state.clientId }
+        if trustPrompt != state.trustPrompt { trustPrompt = state.trustPrompt }
+        let known = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let next = state.workspaces.map { item in
+            guard let workspace = known[item.id] else { return Workspace(item) }
+            workspace.update(item)
+            return workspace
+        }
+        if next.map(\.id) != workspaces.map(\.id) { workspaces = next }
+        remember(state.workspaces.map { RememberedWorkspace(id: $0.id, name: $0.name, runtimeId: $0.runtimeId) })
+    }
+
+    @ObservationIgnored private var remembered: [RememberedWorkspace]?
+
+    private func remember(_ list: [RememberedWorkspace]) {
+        guard list != remembered else { return }
+        remembered = list
+        if let data = try? JSONEncoder().encode(list) { UserDefaults.standard.set(data, forKey: Self.rememberedKey) }
     }
 
     func coreFailed(_ message: String) {
@@ -134,7 +185,7 @@ final class CoreHost {
     func forget(_ workspaceId: String) async { await call("workspaces.forget", ["workspaceId": workspaceId]) }
 
     func workspace(_ id: String) -> Workspace? {
-        state.workspaces.first { $0.id == id }
+        workspaces.first { $0.id == id }
     }
 
     // MARK: Terminals
@@ -225,13 +276,21 @@ extension CoreHost {
         Task { await call("buffer.open", ["viewId": viewId, "workspaceId": workspaceId, "path": path]) }
     }
 
-    /// Replaces `length` UTF-16 units at `from`; `done` gets the whole text
-    /// after the edit. Edits reach the core in the order they were made.
-    func editBuffer(_ viewId: String, from: Int, length: Int, text: String, done: @escaping (String?) -> Void) {
+    /// Replaces `length` UTF-16 units at `from`; `done` gets the buffer's
+    /// version after the edit. Edits reach the core in the order they were
+    /// made.
+    func editBuffer(_ viewId: String, from: Int, length: Int, text: String, done: @escaping (Int?) -> Void) {
         enqueue(viewId) { [weak self] in
-            struct Reply: Decodable { let text: String }
+            struct Reply: Decodable { let version: Int }
             let reply = try? await self?.call("buffer.edit", ["viewId": viewId, "from": from, "length": length, "text": text], as: Reply.self)
-            done(reply?.text)
+            done(reply?.version)
+        }
+    }
+
+    /// The buffer's whole text and version, after the edits sent before.
+    func bufferText(_ viewId: String, done: @escaping (BufferText?) -> Void) {
+        enqueue(viewId) { [weak self] in
+            done(try? await self?.call("buffer.text", ["viewId": viewId], as: BufferText.self))
         }
     }
 
@@ -314,13 +373,13 @@ extension CoreHost {
 
     /// The workspace that runtime serves, if this phone is paired with it.
     func workspace(runtimeId: String) -> Workspace? {
-        state.workspaces.first { $0.runtimeId == runtimeId }
+        workspaces.first { $0.runtimeId == runtimeId }
     }
 
     /// Connects to every paired workspace that is not open, so the agents
     /// home sees all of them.
     func openAll() async {
-        for workspace in state.workspaces where workspace.connection.kind == .closed {
+        for workspace in workspaces where workspace.connection.kind == .closed {
             await open(workspace.id)
         }
     }

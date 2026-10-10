@@ -3,7 +3,7 @@
 import { runtimeFor } from '@kernel/rpc/client'
 import { isRpcError } from '@kernel/rpc/contract'
 import { openTrusted, joinErrorMessage, joinWorkspace, trustStore } from '@client/workspaces'
-import { closePanel, createPanel, creatableDefinitions } from '@client/host'
+import { acquireSession, closePanel, createPanel, creatableDefinitions } from '@client/host'
 import { documentStoreFor } from '@client/document'
 import { surfaceChoices, surfaceReplacement } from '@panels/definitions'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
@@ -22,6 +22,9 @@ import { createReviewHandlers } from './review'
 import { loopbackPort, type MobileStreams } from './streams'
 import type { MobileTerminals } from './terminals'
 import type { MobileViews } from './views'
+
+/** How many sessions one `panel.warm` opens. */
+const WARM_LIMIT = 8
 
 type Handlers = { [M in MobileCoreMethod]: (params: MobileCoreMethods[M]['params']) => Promise<MobileCoreMethods[M]['result']> }
 
@@ -128,6 +131,10 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       views.get(viewId)?.close()
       return null
     },
+    async 'panel.warm'({ workspaceId, panelIds }) {
+      for (const panelId of panelIds.slice(0, WARM_LIMIT)) acquireSession(workspaceId, panelId)?.release()
+      return null
+    },
     async 'panel.creatable'() {
       return creatableDefinitions().map(choice)
     },
@@ -171,10 +178,19 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
     async 'buffer.edit'({ viewId, from, length, text }) {
       const buffer = buffers.get(viewId)
       if (!buffer) throw new Error('The file is not open.')
-      return { text: buffer.edit(from, length, text) }
+      return { version: buffer.edit(from, length, text) }
+    },
+    async 'buffer.text'({ viewId }) {
+      const buffer = buffers.get(viewId)
+      if (!buffer) throw new Error('The file is not open.')
+      return buffer.text()
     },
     async 'buffer.close'({ viewId }) {
       buffers.get(viewId)?.close()
+      return null
+    },
+    async 'buffer.warm'(params) {
+      buffers.warm(params)
       return null
     },
     async 'files.list'({ workspaceId, path }) {

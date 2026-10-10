@@ -705,7 +705,8 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       }
       // Screen, then what is written but not yet in it, then live output:
       // all synchronous, so nothing falls between.
-      const capture = term.screen.capture()
+      const scrollback = Number.isInteger(params.scrollback) && params.scrollback! >= 0 ? params.scrollback : undefined
+      const capture = term.screen.capture(scrollback)
       sink.emit({ kind: 'screen', viewer: viewer.id, data: capture.screen, cols: capture.cols, rows: capture.rows })
       for (const chunk of capture.pending) sink.bytes(encoder.encode(chunk))
       if (!term.alive) {

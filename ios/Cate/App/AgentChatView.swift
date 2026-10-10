@@ -40,6 +40,11 @@ struct AgentChatView: View {
     @State private var interrupting = false
     /// The conversation is scrolled to its end: what comes in stays in view.
     @State private var atEnd = true
+    /// How many of the latest messages show; earlier ones on request, so a
+    /// long conversation opens without laying out all of it.
+    @State private var shown = AgentChatView.page
+
+    private static let page = 40
     /// The composer has the keyboard.
     @FocusState private var typing: Bool
 
@@ -119,7 +124,13 @@ struct AgentChatView: View {
                 // Not lazy: rows measured as they scroll in would move the
                 // conversation under the reader.
                 VStack(alignment: .leading, spacing: 16) {
-                    ForEach(conversation?.messages ?? []) { message in
+                    let messages = conversation?.messages ?? []
+                    if messages.count > shown {
+                        Button("Show Earlier Messages") { shown += Self.page }
+                            .font(.callout)
+                            .frame(maxWidth: .infinity)
+                    }
+                    ForEach(messages.suffix(shown)) { message in
                         MessageRow(message: message)
                     }
                     if let pending {

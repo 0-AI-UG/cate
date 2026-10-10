@@ -49,7 +49,14 @@ async function start(): Promise<void> {
       return JSON.stringify(await handler(JSON.parse(paramsJson)))
     },
   }
-  const push = () => { void bridge('core.state', { json: JSON.stringify(snapshotOf(client, agents, relations)) }) }
+  // A change that leaves the state as it was is not pushed.
+  let pushed = ''
+  const push = () => {
+    const json = JSON.stringify(snapshotOf(client, agents, relations))
+    if (json === pushed) return
+    pushed = json
+    void bridge('core.state', { json })
+  }
   watchState(client, agents, relations, push)
   push()
   await bridge('core.ready', {})

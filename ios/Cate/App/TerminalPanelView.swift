@@ -10,6 +10,7 @@ import SwiftUI
 import UIKit
 
 struct TerminalPanelView: View {
+    @Environment(\.panelOnScreen) private var onScreen
     let workspaceId: String
     let panel: Panel
     @State private var controller = TerminalController()
@@ -29,17 +30,19 @@ struct TerminalPanelView: View {
             }
             .panelTitle(panel.title)
             .toolbar {
-                if controller.fitsElsewhere {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Fit to phone", systemImage: "arrow.up.left.and.arrow.down.right", action: controller.fitToPhone)
+                if onScreen {
+                    if controller.fitsElsewhere {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button("Fit to phone", systemImage: "arrow.up.left.and.arrow.down.right", action: controller.fitToPhone)
+                        }
                     }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(
-                        controller.typing ? "Hide keyboard" : "Show keyboard",
-                        systemImage: controller.typing ? "keyboard.chevron.compact.down" : "keyboard",
-                        action: controller.toggleKeyboard
-                    )
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(
+                            controller.typing ? "Hide keyboard" : "Show keyboard",
+                            systemImage: controller.typing ? "keyboard.chevron.compact.down" : "keyboard",
+                            action: controller.toggleKeyboard
+                        )
+                    }
                 }
             }
     }

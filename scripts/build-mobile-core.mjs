@@ -20,6 +20,10 @@ const result = await build({
   target: 'safari17',
   outfile: path.join(repoRoot, 'ios/Cate/Core/Web/core.js'),
   sourcemap: 'linked',
+  // Less for the web view to load and parse at every launch; names kept for
+  // stacks and `error.name`, the source map for the inspector.
+  minify: true,
+  keepNames: true,
   // The runtime refuses a client of another build; the core is this checkout's.
   define: { __CATE_BUILD__: JSON.stringify(computeBuildId(repoRoot)) },
   logLevel: 'info',

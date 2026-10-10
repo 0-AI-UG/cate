@@ -60,6 +60,8 @@ export interface WorkspaceConnectionOptions {
   build?: string
   backoff?: Partial<Backoff>
   now?: () => number
+  /** How long a released panel session stays open; default `SESSION_LINGER_MS`. */
+  sessionLingerMs?: number
   /** Defaults to every declared capability. */
   /** The capabilities of the runtime proxy (`RUNTIME_CAPABILITIES`). */
   capabilities: readonly AnyCapability[]
@@ -116,7 +118,7 @@ export class WorkspaceConnection {
     this.runtime = createRuntimeProxy(this.rpc, opts.capabilities)
     this.rpc.onStateChange((state) => this.onRpcState(state))
     this.rpc.onReady(() => this.watchLifecycle())
-    this.sessions = new SessionSubscriptions(this.runtime.session)
+    this.sessions = new SessionSubscriptions(this.runtime.session, opts.sessionLingerMs)
   }
 
   get clientId(): string { return this.identity.clientId }
@@ -167,6 +169,8 @@ export class WorkspaceConnection {
     if (this.rpc.state === 'ready' || this.rpc.state === 'connecting') return
     this.stopAnnounced = false
     this.attempt = 0
+    // Background redials stay `offline`; an asked-for one shows it is trying.
+    this.setState({ kind: 'connecting' })
     this.dial()
   }
 
