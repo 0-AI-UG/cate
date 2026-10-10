@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import simpleGit from 'simple-git'
+import { simpleGit } from 'simple-git'
 import { testGitHost } from '../../../test/testGit'
 
 it('reports whether git ignores every changed path', async () => {

@@ -249,7 +249,10 @@ export function createGitHost(deps: GitHostDeps): GitHost {
   // No optional locks: a background `git status` otherwise takes index.lock
   // for a moment, and a concurrent `git add` or commit then fails on it.
   const env = () => ({ ...deps.env(), GIT_OPTIONAL_LOCKS: '0' })
-  const gitAt = (baseDir: string) => simpleGit({ baseDir, unsafe: USER_ENV_UNSAFE }).env(env())
+  const gitAt = (baseDir: string) => {
+    const vars = env()
+    return simpleGit({ baseDir, unsafe: USER_ENV_UNSAFE, allowEnvironment: Object.keys(vars) }).env(vars)
+  }
   const dir = async (cwd: string | undefined) => deps.resolveDir(cwd)
 
   function validateFilePath(cwd: string, filePath: string): string {
