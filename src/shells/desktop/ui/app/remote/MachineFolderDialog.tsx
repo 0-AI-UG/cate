@@ -120,6 +120,8 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
       icon={<Server size={16} />}
       title="Open a folder"
       dismissable={step !== 'opening'}
+      // Opened from Settings, which sits at z-[100001].
+      zClassName="z-[100002]"
       bodyClassName="px-5 py-4"
     >
       <p className="text-xs text-muted font-mono truncate">{machineLabel(machine)}</p>
