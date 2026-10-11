@@ -33,10 +33,13 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [installedNow, setInstalledNow] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  // Set on every mount: StrictMode unmounts and remounts once in dev.
   const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false }, [])
-  // Closing stops what still runs there (an install can take minutes).
-  useEffect(() => () => { void setup.cancel(machine).catch(() => {}) }, [machine, setup])
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
   // Read when the check ends, so a new callback does not check again.
   const ready = useRef({ onReady, lastPath })
   ready.current = { onReady, lastPath }
@@ -59,25 +62,33 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
     }
   }, [machine, setup])
 
-  const check = useCallback(async () => {
+  // Each run owns its check: its cleanup drops what it reports and stops what
+  // still runs on the machine (an install can take minutes), so a run
+  // cancelled by StrictMode or a close never reaches the dialog.
+  useEffect(() => {
+    let ignore = false
     setStep('checking')
     setError(null)
-    try {
-      const status = await setup.ensureRuntime(machine)
-      if (!mounted.current) return
-      setInstalledNow(status.installedNow)
-      setHome(status.home)
-      setStep('browse')
-      const { onReady, lastPath } = ready.current
-      onReady?.()
-      // A folder that is gone since falls back to the home folder.
-      if (!(lastPath && await open(lastPath))) await open(status.home)
-    } catch (err) {
-      if (mounted.current) setError(errorMessage(err, 'Could not set up the machine.'))
+    void (async () => {
+      try {
+        const status = await setup.ensureRuntime(machine)
+        if (ignore) return
+        setInstalledNow(status.installedNow)
+        setHome(status.home)
+        setStep('browse')
+        const { onReady, lastPath } = ready.current
+        onReady?.()
+        // A folder that is gone since falls back to the home folder.
+        if (!(lastPath && await open(lastPath))) await open(status.home)
+      } catch (err) {
+        if (!ignore) setError(errorMessage(err, 'Could not set up the machine.'))
+      }
+    })()
+    return () => {
+      ignore = true
+      void setup.cancel(machine).catch(() => {})
     }
-  }, [machine, open, setup])
-
-  useEffect(() => { void check() }, [check])
+  }, [machine, open, setup, attempt])
 
   const createFolder = async () => {
     if (!listing || !newFolder?.trim()) return
@@ -120,6 +131,8 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
       icon={<Server size={16} />}
       title="Open a folder"
       dismissable={step !== 'opening'}
+      // Opened from Settings, which sits at z-[100001].
+      zClassName="z-[100002]"
       bodyClassName="px-5 py-4"
     >
       <p className="text-xs text-muted font-mono truncate">{machineLabel(machine)}</p>
@@ -217,7 +230,7 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
           Cancel
         </button>
         {step === 'checking' && error ? (
-          <button type="button" className={btn.primary} onClick={() => void check()}>Try again</button>
+          <button type="button" className={btn.primary} onClick={() => setAttempt((n) => n + 1)}>Try again</button>
         ) : (
           <button type="button" className={btn.primary} onClick={() => void openWorkspace()} disabled={busy || !pathInput.trim()}>
             {step === 'opening' && <Spinner size={13} />}
