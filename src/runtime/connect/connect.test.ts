@@ -96,7 +96,7 @@ function rpcClient(name: string, keys: KeyPair) {
   return client
 }
 
-/** A local client asks for a pairing secret, as "Add device" does. */
+/** A local client asks for a pairing secret, as "Share" does. */
 async function addDevice(daemon: Daemon) {
   const desk = new RpcClient({ version: 'test', identity: { client: { clientId: 'desk', device: { name: 'desk', publicKey: '' }, features: [] } } })
   clients.push(desk)

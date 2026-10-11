@@ -1,6 +1,6 @@
-// Canvas page (ui/client/layout's canvas slice, plus the workspace's
-// `panelRelationsEnabled` from workspace/relations while a workspace is
-// active). Built-in wallpapers come from the module that bundles them.
+// Canvas pages: this device's (ui/client/layout's canvas slice; built-in
+// wallpapers come from the module that bundles them) and the workspace's
+// (`panelRelationsEnabled` from workspace/relations).
 
 import { SettingRow, Select, Slider, Toggle } from '../../../kernel/interaction'
 import { setClientSetting, setWorkspaceSetting, useClientSetting, useWorkspaceSetting } from '../../../kernel/settings'
@@ -25,7 +25,7 @@ export function installBuiltinWallpapers(list: readonly BuiltinWallpaper[]): voi
   wallpapers = list
 }
 
-export function CanvasPage({ workspaceId }: SettingsPageProps): JSX.Element {
+export function CanvasPage(): JSX.Element {
   const desktop = useDesktopPort()
   const zoomSpeed = useClientSetting('zoomSpeed')
   const autoFocus = useClientSetting('autoFocusLargestVisibleNode')
@@ -35,7 +35,6 @@ export function CanvasPage({ workspaceId }: SettingsPageProps): JSX.Element {
   const gridStyle = useClientSetting('canvasGridStyle')
   const bgImagePath = useClientSetting('canvasBackgroundImagePath')
   const bgOpacity = useClientSetting('canvasBackgroundImageOpacity')
-  const relationsEnabled = useWorkspaceSetting(workspaceId, 'panelRelationsEnabled')
 
   const activeBuiltin = bgImagePath.startsWith(BUILTIN_WALLPAPER_PREFIX)
     ? wallpapers.find((w) => `${BUILTIN_WALLPAPER_PREFIX}${w.id}` === bgImagePath)
@@ -71,17 +70,6 @@ export function CanvasPage({ workspaceId }: SettingsPageProps): JSX.Element {
       >
         <Toggle checked={territory} onChange={(v) => setClientSetting('showWorktreeTerritory', v)} />
       </SettingRow>
-      {workspaceId && (
-        <SettingRow
-          label="Panel relations"
-          description="Connect panels and include their context in agent prompts. Applies for everyone in this workspace; existing relations are kept while off."
-        >
-          <Toggle
-            checked={relationsEnabled}
-            onChange={(v) => { void setWorkspaceSetting(workspaceId, 'panelRelationsEnabled', v).catch(() => {}) }}
-          />
-        </SettingRow>
-      )}
       <SettingRow label="Grid style">
         <Select
           value={gridStyle}
@@ -141,5 +129,23 @@ function WallpaperSwatch({ selected, onClick, label, imageUrl }: {
     >
       {!imageUrl && <span className="flex h-full w-full items-center justify-center px-1 text-center">{label}</span>}
     </button>
+  )
+}
+
+export function WorkspaceCanvasPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
+  const relationsEnabled = useWorkspaceSetting(workspaceId, 'panelRelationsEnabled')
+  if (!workspaceId) return null
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow
+        label="Panel relations"
+        description="Connect panels and include their context in agent prompts. Existing relations are kept while off."
+      >
+        <Toggle
+          checked={relationsEnabled}
+          onChange={(v) => { void setWorkspaceSetting(workspaceId, 'panelRelationsEnabled', v).catch(() => {}) }}
+        />
+      </SettingRow>
+    </div>
   )
 }

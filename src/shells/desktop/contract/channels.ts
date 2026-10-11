@@ -81,7 +81,13 @@ export const DESKTOP_CHANNELS = {
   machineListDir: 'cate-desktop:machine:list-dir',
   machineMkdir: 'cate-desktop:machine:mkdir',
   machineWslDistros: 'cate-desktop:machine:wsl-distros',
+  machineSshHosts: 'cate-desktop:machine:ssh-hosts',
   machineCancel: 'cate-desktop:machine:cancel',
+  machinePrompt: 'cate-desktop:machine:prompt',
+  machinePromptAnswer: 'cate-desktop:machine:prompt-answer',
+  machinePromptCancel: 'cate-desktop:machine:prompt-cancel',
+  installProgress: 'cate-desktop:machine:install-progress',
+  installs: 'cate-desktop:machine:installs',
 
   webPartition: 'cate-desktop:web:partition',
   webRelease: 'cate-desktop:web:release',

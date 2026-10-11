@@ -174,7 +174,7 @@ describe('terminal service', () => {
     vb.binding.dispose()
   })
 
-  it('fits the PTY to the viewer that last asked, and tells every viewer', async () => {
+  it('sizes the PTY to the smallest visible viewer, and tells every viewer', async () => {
     const { ptys, connect } = setup()
     const a = await connect()
     const b = await connect()
@@ -183,38 +183,30 @@ describe('terminal service', () => {
     // The first viewer has the size from the start.
     await until(() => ptys[0].sizes.at(-1)?.[0] === 100)
     let size = { cols: 0, rows: 0 }
-    let fitted: boolean | null = null
-    const termB = new Terminal({ cols: 120, rows: 40, allowProposedApi: true })
-    const vb = bindTerminal({
-      terminal: termB, process: b, id,
-      onSize: (next) => {
-        size = { cols: next.cols, rows: next.rows }
-        fitted = next.fitted
-      },
-    })
-    await until(() => vb.viewer !== null)
-    await tick()
-    expect([size, fitted]).toEqual([{ cols: 100, rows: 30 }, false])
-    // Typing does not fit.
-    termB.input('ls\r')
-    await until(() => ptys[0].written.join('') === 'ls\r')
-    await tick()
-    expect(ptys[0].sizes.at(-1)).toEqual([100, 30])
-    vb.fit()
-    await until(() => ptys[0].sizes.at(-1)?.[0] === 120)
-    expect(ptys[0].sizes.at(-1)).toEqual([120, 40])
-    await until(() => fitted === true)
-    expect(size).toEqual({ cols: 120, rows: 40 })
-    // A resize of the viewer the PTY does not fit does not move it; of the fitted one it does.
-    va.term.resize(90, 20)
-    await tick(); await tick()
-    expect(ptys[0].sizes.at(-1)).toEqual([120, 40])
-    termB.resize(110, 35)
-    await until(() => ptys[0].sizes.at(-1)?.[0] === 110)
-    await until(() => size.cols === 110)
-    // The fitted viewer leaves: the PTY fits the one that remains.
-    vb.dispose()
+    const termB = new Terminal({ cols: 120, rows: 20, allowProposedApi: true })
+    const vb = bindTerminal({ terminal: termB, process: b, id, onSize: (next) => { size = next } })
+    // Cols and rows each take the smallest.
+    await until(() => ptys[0].sizes.at(-1)?.[1] === 20)
+    expect(ptys[0].sizes.at(-1)).toEqual([100, 20])
+    await until(() => size.rows === 20)
+    expect(size).toEqual({ cols: 100, rows: 20 })
+    // Shrinking a viewer shrinks the PTY; growing it gives back up to the other's.
+    va.term.resize(90, 30)
     await until(() => ptys[0].sizes.at(-1)?.[0] === 90)
+    expect(ptys[0].sizes.at(-1)).toEqual([90, 20])
+    va.term.resize(150, 50)
+    await until(() => ptys[0].sizes.at(-1)?.[0] === 120)
+    expect(ptys[0].sizes.at(-1)).toEqual([120, 20])
+    // A hidden viewer does not count.
+    vb.setVisible(false)
+    await until(() => ptys[0].sizes.at(-1)?.[1] === 50)
+    expect(ptys[0].sizes.at(-1)).toEqual([150, 50])
+    await until(() => size.cols === 150)
+    vb.setVisible(true)
+    await until(() => ptys[0].sizes.at(-1)?.[1] === 20)
+    // A viewer leaving gives its share back.
+    vb.dispose()
+    await until(() => ptys[0].sizes.at(-1)?.[1] === 50)
     va.binding.dispose()
   })
 
@@ -228,34 +220,14 @@ describe('terminal service', () => {
       terminal: term, process: a, id, size: () => own,
       onSize: ({ cols, rows }) => term.resize(cols, rows),
     })
-    // The first viewer: fitted at the size it reports, and its terminal takes it.
+    // The PTY takes the size it reports, and its terminal takes the PTY's.
     await until(() => term.cols === 100)
     expect(ptys[0].sizes.at(-1)).toEqual([100, 30])
     own = { cols: 60, rows: 20 }
     binding.resized()
     await until(() => term.cols === 60)
     expect(ptys[0].sizes.at(-1)).toEqual([60, 20])
-    // Fitting again, at another size, while it already fits.
-    own = { cols: 70, rows: 22 }
-    binding.fit()
-    await until(() => term.cols === 70)
-    expect(ptys[0].sizes.at(-1)).toEqual([70, 22])
     binding.dispose()
-  })
-
-  it('fits a viewer that asked before its attach answered', async () => {
-    const { ptys, connect } = setup()
-    const a = await connect()
-    const b = await connect()
-    const { id } = await a.spawn({ cols: 80, rows: 24 })
-    const va = await viewer(a, id, 100, 30)
-    await until(() => ptys[0].sizes.at(-1)?.[0] === 100)
-    const late = bindTerminal({ terminal: new Terminal({ cols: 50, rows: 20, allowProposedApi: true }), process: b, id })
-    late.fit()
-    await until(() => ptys[0].sizes.at(-1)?.[0] === 50)
-    expect(ptys[0].sizes.at(-1)).toEqual([50, 20])
-    va.binding.dispose()
-    late.dispose()
   })
 
   it('applies env contributors at spawn, including the cate CLI', async () => {

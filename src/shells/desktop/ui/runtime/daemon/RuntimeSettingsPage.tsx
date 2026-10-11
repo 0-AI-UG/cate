@@ -14,7 +14,7 @@ import { RunningWorkConfirm } from './RunningWork'
 const REACH: Record<RuntimeNetwork, number> = { off: 0, sameNetwork: 1, cateConnect: 2 }
 
 /** Sets network access, asking first when the change cuts devices off. */
-async function changeNetwork(workspaceId: string, from: RuntimeNetwork, to: RuntimeNetwork): Promise<void> {
+export async function changeNetwork(workspaceId: string, from: RuntimeNetwork, to: RuntimeNetwork): Promise<void> {
   if (REACH[to] < REACH[from]) {
     const who = to === 'off'
       ? 'Every paired device disconnects'

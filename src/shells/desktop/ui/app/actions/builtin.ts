@@ -1,5 +1,5 @@
 // The actions ui/app owns: the palette, settings, the sidebar, overlays,
-// workspace switching, undo, opening folders, the tour, the focused panel's
+// workspace switching, undo, opening, joining and sharing workspaces, the tour, the focused panel's
 // close, rename and claimed keys, and creating panels of every type (from the
 // definitions, through client/host's panel actions).
 
@@ -43,9 +43,10 @@ export const BUILTIN_ACTIONS = defineActions({
   previousWorkspace: { title: 'Previous Workspace', key: key('←', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 0 } },
   undo: { title: 'Undo', key: key('z', { command: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   redo: { title: 'Redo', key: key('z', { command: true, shift: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
-  openFolder: { title: 'Open Folder…', key: key('o', { command: true }), menu: { bar: 'file', group: 'open' } },
-  openRemoteFolder: { title: 'Open Folder on Another Machine…', menu: { bar: 'file', group: 'open' } },
-  newWorkspace: { title: 'New Workspace', menu: { bar: 'file', group: 'open' } },
+  openWorkspace: { title: 'Open…', key: key('o', { command: true }), welcome: true, menu: { bar: 'file', group: 'open', order: 0 } },
+  openFolder: { title: 'Open Folder…', key: key('o', { command: true, shift: true }), menu: { bar: 'file', group: 'open', order: 1 } },
+  joinWorkspace: { title: 'Join with a Code…', menu: { bar: 'file', group: 'open', order: 2 } },
+  shareWorkspace: { title: 'Share Workspace…', menu: { bar: 'file', group: 'open', order: 3 } },
   showTutorial: { title: 'Show Tutorial', menu: { bar: 'help', group: 'learn' } },
   saveFile: { title: 'Save', key: key('s', { command: true }), menu: { bar: 'file', group: 'save' } },
   // No native accelerator: Cmd+R must still reach a focused browser.
@@ -130,17 +131,14 @@ export function registerBuiltinActions(): () => void {
         run: () => { void pickAndOpenFolder() },
         enabled: () => !!desktopPort(),
       },
-      openRemoteFolder: {
-        run: () => useUIStore.getState().openSettings('remote-machines'),
-        enabled: () => !!tryClientApp()?.machines,
+      openWorkspace: { run: () => useUIStore.getState().setOpenDialogOpen(true) },
+      joinWorkspace: {
+        run: () => useUIStore.getState().openJoinDialog(),
+        enabled: () => !!tryClientApp()?.pair,
       },
-      newWorkspace: {
-        // The welcome screen opens or joins a workspace.
-        run: () => {
-          const ui = useUIStore.getState()
-          ui.closeOverlay()
-          ui.setSelectedWorkspace(null)
-        },
+      shareWorkspace: {
+        run: ({ workspaceId }) => useUIStore.getState().openShare(workspaceId),
+        enabled: ({ workspaceId }) => !!workspaceId,
       },
       showTutorial: { run: () => setUiState('onboardingCompleted', false) },
       saveFile: focusedPanelClaim('saveFile'),

@@ -30,5 +30,11 @@ it('reaches the folder list under StrictMode, whose first check is cancelled', a
   await act(async () => { await new Promise((r) => setTimeout(r, 100)) })
   expect(document.body.textContent).toContain('app')
   expect(document.body.textContent).not.toContain('Cancelled')
+  // The first check was cancelled and a second one ran.
+  expect(setup.cancel).toHaveBeenCalledTimes(1)
+  expect(setup.ensureRuntime).toHaveBeenCalledTimes(2)
   act(() => root.unmount())
+  // Closing stops what still runs on the machine.
+  expect(setup.cancel).toHaveBeenCalledTimes(2)
+  host.remove()
 })

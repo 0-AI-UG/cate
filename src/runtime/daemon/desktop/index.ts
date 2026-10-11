@@ -2,6 +2,7 @@ export { startLocalRuntime, type LocalRuntime, type StartLocalOptions } from './
 export {
   createMachineProvisioner,
   dialMachine,
+  listSshHosts,
   listWslDistros,
   machineErrorMessage,
   NotInstalledError,
@@ -10,3 +11,4 @@ export {
   type MachineRunner,
   type MachineRunResult,
 } from './machine'
+export { startAskpass, type AskpassServer, type SshPrompting } from './askpass'

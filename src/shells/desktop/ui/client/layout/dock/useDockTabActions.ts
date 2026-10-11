@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
   dockPanels,
   isCanvasDock,
+  renamePanelChange,
   type DocChange,
   type DockRef,
   type DockStack,
@@ -88,7 +89,7 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
   const commitRename = useCallback((panelId: string) => {
     const trimmed = renameValue.trim()
     if (trimmed && trimmed !== renameSeedRef.current) {
-      documentStoreFor(workspaceId)?.propose({ kind: 'updatePanel', id: panelId, patch: { title: trimmed } })
+      documentStoreFor(workspaceId)?.propose(renamePanelChange(panelId, trimmed))
     }
     setRenameId(null)
   }, [renameValue, workspaceId])

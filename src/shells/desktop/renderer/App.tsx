@@ -7,7 +7,7 @@ import { MAIN_WINDOW } from '@workspace/document/contract'
 import { PersistentPanelHost } from '../ui/client/host/PersistentPanelHost'
 import { FileDropOverlay, useFileDropTracker } from '../ui/client/layout/drag'
 import { MainWindowView, WindowView } from '../ui/client/layout/windows'
-import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '../ui/app'
+import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useShownWorkspaceId, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '../ui/app'
 import { useWorkspaceList } from '../ui/client/workspaces'
 import type { DesktopClient } from './boot'
 import { PerfHud } from './perf/PerfHud'
@@ -31,7 +31,8 @@ function Surfaces({ client, windowId, hidden }: { client: DesktopClient; windowI
 }
 
 function MainApp({ client }: { client: DesktopClient }) {
-  const workspaceId = useUIStore((s) => s.selectedWorkspaceId)
+  // A workspace, or the welcome screen (none at all, none selected).
+  const workspaceId = useShownWorkspaceId()
   const overlay = useUIStore((s) => s.overlay)
   // Native surfaces would paint over the connection cover.
   const { blocked } = useWorkspaceBlock(workspaceId)

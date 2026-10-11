@@ -26,6 +26,7 @@ export {
 
 // State.
 export { useUIStore, selectedWorkspaceId, type UIStore, type UIState, type OverlayRequest } from './state/uiStore'
+export { useShownWorkspaceId, useWindowContent } from './state/windowContent'
 export {
   createUiStateStore,
   installUiState,
@@ -95,16 +96,18 @@ export {
   useSettingsPages,
   visiblePages,
   SETTINGS_GROUPS,
+  SETTINGS_SCOPES,
+  type SettingsGroup,
   type SettingsPage,
   type SettingsPageProps,
-  type SettingsGroup,
+  type SettingsScope,
 } from './settings/registry'
 export { DEFAULT_SETTINGS_PAGES, registerDefaultSettingsPages } from './settings/defaultPages'
 export { installBuiltinWallpapers, BUILTIN_WALLPAPER_PREFIX, type BuiltinWallpaper } from './settings/pages/CanvasPage'
 
 // Pairing.
 export { JoinWorkspaceDialog } from './pairing/JoinWorkspaceDialog'
-export { DevicesPage, AddDevice, WorkspaceDevices } from './pairing/DevicesPage'
+export { DevicesPage, PairingCode, WorkspaceDevices } from './pairing/DevicesPage'
 
 // Notifications (display of runtime notification events).
 export * from './notifications'

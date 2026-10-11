@@ -106,14 +106,18 @@ export function descendantsOf(pid: number, tree: ProcTree): number[] {
 
 const SHELLS = new Set(['zsh', 'bash', 'fish', 'sh', 'tcsh', 'ksh', 'dash'])
 
+/** A login shell's name starts with a dash (`-zsh`). */
 function isShellProcess(name: string): boolean {
-  return SHELLS.has(name.toLowerCase())
+  return SHELLS.has(name.toLowerCase().replace(/^-/, ''))
 }
 
-/** The first non-shell direct child of the shell (a dev server, an editor, an
- *  agent CLI). Agent identity is not decided here: the agents service anchors
- *  it to the pid its hooks report. */
+/** The PTY's own program when it is no shell (an agent CLI started in place
+ *  of the shell), else the first non-shell direct child of the shell (a dev
+ *  server, an editor, an agent CLI). Agent identity is not decided here: the
+ *  agents service anchors it to the pid its hooks report. */
 export function activityForPid(shellPid: number, tree: ProcTree): TerminalActivity {
+  const own = tree.nameByPid.get(shellPid)
+  if (own && !isShellProcess(own)) return { type: 'running', processName: own }
   for (const childPid of tree.childrenByPid.get(shellPid) ?? []) {
     const name = tree.nameByPid.get(childPid)
     if (name && !isShellProcess(name)) return { type: 'running', processName: name }

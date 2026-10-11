@@ -1,18 +1,24 @@
 // Machines the desktop shell runs commands on (architecture 7.1, 7.5): over
 // the system `ssh` (so ~/.ssh/config, keys, the agent and known_hosts apply)
 // or `wsl.exe`. `createMachineProvisioner` pipes small scripts to the
-// machine's `sh -s` to install this app's build and browse folders;
+// machine's `sh -s` to browse folders, and installs this app's build by
+// streaming its runtime tarball to the machine (downloaded here first when
+// this device has none for the machine's target), so the machine needs no
+// network of its own;
 // `dialMachine` runs that build's `runtime.cjs bridge`, which starts the
 // workspace's runtime when nothing answers and carries its local socket over
 // the command's stdio.
 
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import fs from 'node:fs'
+import { readdir, readFile, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import {
   BRIDGE_READY,
   machineKey,
   bridgeScript,
-  installScript,
   isMachine,
   listDirScript,
   machineCommand,
@@ -21,12 +27,19 @@ import {
   parseDirListing,
   parseMkdir,
   parseProbe,
+  parseSshConfig,
   readMarked,
   probeScript,
+  pushInstallScript,
   type Machine,
   type MachineSetup,
+  type RuntimeInstallProgress,
+  type RuntimeTarget,
+  type SshConfigHost,
   type SshProbe,
 } from '../contract'
+import { downloadRuntimeRelease } from '../node'
+import type { SshPrompting } from './askpass'
 
 export interface MachineRunResult {
   code: number | null
@@ -34,8 +47,17 @@ export interface MachineRunResult {
   stderr: string
 }
 
-/** Runs `script` with `sh -s` on `machine`; `signal` stops it. */
-export type MachineRunner = (machine: Machine, script: string, timeoutMs: number, signal?: AbortSignal) => Promise<MachineRunResult>
+/** Runs `script` with `sh -s` on `machine`; with `input` (a file), runs it
+ *  with `sh -c` and streams the file to its stdin, telling `onSent` how much
+ *  went. `signal` stops it. */
+export type MachineRunner = (
+  machine: Machine,
+  script: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  input?: string,
+  onSent?: (sent: number, total: number) => void,
+) => Promise<MachineRunResult>
 
 const SHORT_MS = 45_000
 const INSTALL_MS = 10 * 60_000
@@ -49,12 +71,18 @@ function spawnError(machine: Machine, err: NodeJS.ErrnoException): Error {
     : 'No `wsl.exe` was found. Install WSL and try again.')
 }
 
-/** The system `ssh` or `wsl.exe`, with the script on stdin. */
-export function systemMachineRunner(): MachineRunner {
-  return (machine, script, timeoutMs, signal) => new Promise((resolve, reject) => {
+/** Spawns the machine's command; ssh asks through `prompting` when given. */
+function spawnOn(machine: Machine, script: 'stdin' | string, prompting: SshPrompting | undefined): ChildProcessWithoutNullStreams {
+  const ask = machine.kind === 'ssh' ? prompting : undefined
+  const { command, args } = machineCommand(machine, script, ask ? { controlPath: ask.controlPath } : {})
+  return spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...(ask ? { env: ask.env(machine) } : {}) })
+}
+
+/** The system `ssh` or `wsl.exe`, with the script (or `input`) on stdin. */
+export function systemMachineRunner(prompting?: SshPrompting): MachineRunner {
+  return (machine, script, timeoutMs, signal, input, onSent) => new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('Cancelled.'))
-    const { command, args } = machineCommand(machine, 'stdin')
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    const child = spawnOn(machine, input ? script : 'stdin', prompting)
     let stdout = ''
     let stderr = ''
     const timer = setTimeout(() => {
@@ -77,7 +105,19 @@ export function systemMachineRunner(): MachineRunner {
       resolve({ code, stdout, stderr })
     })
     child.stdin.on('error', () => { /* exited early; reported on close */ })
-    child.stdin.end(`${script}\n`)
+    if (!input) return void child.stdin.end(`${script}\n`)
+    const stream = fs.createReadStream(input)
+    if (onSent) {
+      // What the pipe took (it holds back the file as ssh sends it).
+      const total = fs.statSync(input).size
+      let sent = 0
+      stream.on('data', (chunk) => { sent += chunk.length; onSent(sent, total) })
+    }
+    stream.once('error', (err) => {
+      clearTimeout(timer)
+      child.kill()
+      reject(err)
+    }).pipe(child.stdin)
   })
 }
 
@@ -87,7 +127,7 @@ export function machineErrorMessage(machine: Machine, stderr: string): string {
   const name = machineLabel(machine)
   if (machine.kind === 'ssh') {
     if (/Permission denied/i.test(text)) {
-      return `${name} refused the login. Cate signs in with your SSH keys or agent, not a password: check that \`ssh ${name}\` works in a terminal without asking for one.`
+      return `${name} refused the login. Check the password or your SSH keys, and that \`ssh ${name}\` works in a terminal.`
     }
     if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed/i.test(text)) {
       return `The host key of ${name} does not match the one in known_hosts. Check the machine, then fix known_hosts.`
@@ -100,31 +140,54 @@ export function machineErrorMessage(machine: Machine, stderr: string): string {
 }
 
 export interface MachineProvisioner extends MachineSetup {
-  ensureRuntime(machine: Machine): Promise<SshProbe & { installedNow: boolean }>
+  /** With `keep`, `cancel` leaves the check and install running while this
+   *  caller waits on it (a workspace connecting through the machine). */
+  ensureRuntime(machine: Machine, opts?: { keep?: boolean }): Promise<SshProbe & { installedNow: boolean }>
 }
 
 export function createMachineProvisioner(deps: {
   /** This app's build; the install the machine needs. */
   build: string | undefined
   version: string
+  /** This build's runtime tarball for `target` on this device, or null to
+   *  download release `version`'s. Throws when neither can be this build. */
+  localTarball?: (target: RuntimeTarget) => string | null
   run?: MachineRunner
+  /** Lets ssh ask for passwords and codes; without it, keys and agent only. */
+  prompting?: SshPrompting
+  fetch?: typeof fetch
   /** The WSL distros (`wsl.exe --list --quiet`); default: none off Windows. */
   wslDistros?: () => Promise<string[]>
+  /** The hosts of this device's SSH config; default: none. */
+  sshHosts?: () => Promise<SshConfigHost[]>
+  /** How far an install on `machine` is; null once it ended. */
+  onProgress?: (machine: Machine, progress: RuntimeInstallProgress | null) => void
 }): MachineProvisioner {
-  const run = deps.run ?? systemMachineRunner()
+  const run = deps.run ?? systemMachineRunner(deps.prompting)
   /** What runs per machine, for `cancel`. */
   const running = new Map<string, Set<AbortController>>()
+  /** Callers per machine that keep its check and install running. */
+  const kept = new Map<string, number>()
+  /** The check and install running per machine. */
+  const installing = new Map<string, Set<AbortController>>()
 
-  const exec = async (machine: Machine, script: string, timeoutMs = SHORT_MS): Promise<string> => {
+  /** Runs `work` with a signal that `cancel(machine)` aborts. */
+  const tracked = async <T>(machine: Machine, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     if (!isMachine(machine)) throw new Error('invalid machine')
     const key = machineKey(machine)
     const controller = new AbortController()
+    if (ensuring.has(key)) installing.set(key, (installing.get(key) ?? new Set()).add(controller))
     const set = running.get(key) ?? new Set()
     running.set(key, set.add(controller))
-    const result = await run(machine, script, timeoutMs, controller.signal).finally(() => {
+    return work(controller.signal).finally(() => {
+      installing.get(key)?.delete(controller)
       set.delete(controller)
       if (set.size === 0 && running.get(key) === set) running.delete(key)
     })
+  }
+
+  const exec = async (machine: Machine, script: string, timeoutMs = SHORT_MS, input?: string, onSent?: (sent: number, total: number) => void): Promise<string> => {
+    const result = await tracked(machine, (signal) => run(machine, script, timeoutMs, signal, input, onSent))
     if (result.code === 255 || (result.code !== 0 && machine.kind === 'wsl' && !result.stdout)) {
       throw new Error(machineErrorMessage(machine, result.stderr))
     }
@@ -142,20 +205,70 @@ export function createMachineProvisioner(deps: {
 
   const probe = async (machine: Machine): Promise<SshProbe> => parseProbe(await exec(machine, probeScript(build())))
 
+  /** Streams `file` to the machine's install: uploading, then unpacking
+   *  once all of it went. */
+  const send = async (machine: Machine, file: string): Promise<void> => {
+    const report = deps.onProgress
+    await exec(machine, pushInstallScript(build()), INSTALL_MS, file, report && ((sent, total) => {
+      report(machine, sent < total ? { phase: 'upload', received: sent, total } : { phase: 'install' })
+    }))
+  }
+
+  /** Streams this build's tarball for `target` to the machine's install. */
+  const push = async (machine: Machine, target: RuntimeTarget): Promise<void> => {
+    const local = deps.localTarball?.(target)
+    if (local) return send(machine, local)
+    const download = path.join(os.tmpdir(), `cate-runtime-${process.pid}-${Date.now()}-${target}.tgz`)
+    try {
+      await tracked(machine, (signal) => downloadRuntimeRelease({
+        version: deps.version,
+        dest: download,
+        platform: target.split('-')[0] as NodeJS.Platform,
+        arch: target.split('-')[1],
+        fetch: (url) => (deps.fetch ?? fetch)(url, { signal }),
+        ...(deps.onProgress ? { onProgress: (received: number, total: number | null) => deps.onProgress?.(machine, { phase: 'download', received, total }) } : {}),
+      }).catch((err: unknown) => { throw signal.aborted ? new Error('Cancelled.') : err }))
+      await send(machine, download)
+    } finally {
+      await rm(download, { force: true })
+    }
+  }
+
+  const ensure = async (machine: Machine): Promise<SshProbe & { installedNow: boolean }> => {
+    const before = await probe(machine)
+    if (before.installed) return { ...before, installedNow: false }
+    if (!before.target) throw new Error(`Cate has no runtime for ${before.system}. It runs on Linux (glibc) and macOS, x64 or arm64.`)
+    if (!before.canInstall) throw new Error(`Installing needs tar on ${machineLabel(machine)}.`)
+    try {
+      await push(machine, before.target)
+    } finally {
+      deps.onProgress?.(machine, null)
+    }
+    const after = await probe(machine)
+    if (!after.installed) throw new Error(`The runtime did not install on ${machineLabel(machine)}.`)
+    return { ...after, installedNow: true }
+  }
+  /** One check (and install) per machine at a time: workspaces of one
+   *  machine reconnecting together share it instead of racing two installs. */
+  const ensuring = new Map<string, Promise<SshProbe & { installedNow: boolean }>>()
+
   return {
-    async ensureRuntime(machine) {
-      const before = await probe(machine)
-      if (before.installed) return { ...before, installedNow: false }
-      if (!before.target) throw new Error(`Cate has no runtime for ${before.system}. It runs on Linux (glibc) and macOS, x64 or arm64.`)
-      if (!before.canInstall) throw new Error(`Installing needs curl and tar on ${machineLabel(machine)}.`)
-      await exec(machine, installScript(deps.version), INSTALL_MS)
-      const after = await probe(machine)
-      if (!after.installed) {
-        throw new Error(after.current
-          ? `Release ${deps.version} installed as build ${after.current}, not this app's ${build()}. A development build cannot set up another machine.`
-          : `The runtime did not install on ${machineLabel(machine)}.`)
+    ensureRuntime(machine, opts = {}) {
+      if (!isMachine(machine)) return Promise.reject(new Error('invalid machine'))
+      const key = machineKey(machine)
+      let next = ensuring.get(key)
+      if (!next) {
+        // Registered before it starts, so what it runs counts as the install.
+        next = Promise.resolve().then(() => ensure(machine)).finally(() => ensuring.delete(key))
+        ensuring.set(key, next)
       }
-      return { ...after, installedNow: true }
+      if (!opts.keep) return next
+      kept.set(key, (kept.get(key) ?? 0) + 1)
+      return next.finally(() => {
+        const left = (kept.get(key) ?? 1) - 1
+        if (left > 0) kept.set(key, left)
+        else kept.delete(key)
+      })
     },
     async listDir(machine, path) {
       return parseDirListing(await exec(machine, listDirScript(path)))
@@ -164,11 +277,48 @@ export function createMachineProvisioner(deps: {
       return parseMkdir(await exec(machine, mkdirScript(path)))
     },
     wslDistros: deps.wslDistros ?? (() => Promise.resolve([])),
+    sshHosts: deps.sshHosts ?? (() => Promise.resolve([])),
     async cancel(machine) {
       if (!isMachine(machine)) return
-      for (const controller of running.get(machineKey(machine)) ?? []) controller.abort()
+      const key = machineKey(machine)
+      // A connecting workspace still waits on the install: it goes on.
+      const keep = kept.has(key) ? installing.get(key) : undefined
+      for (const controller of running.get(key) ?? []) if (!keep?.has(controller)) controller.abort()
     },
   }
+}
+
+/** The files an `Include` names: `~` is the home dir, a relative path is
+ *  under ~/.ssh, and `*` / `?` match within the last segment. */
+async function includedFiles(pattern: string, home: string): Promise<string[]> {
+  const abs = pattern.startsWith('~') ? path.join(home, pattern.slice(1)) : path.isAbsolute(pattern) ? pattern : path.join(home, '.ssh', pattern)
+  const name = path.basename(abs)
+  if (!/[*?]/.test(name)) return [abs]
+  const re = new RegExp(`^${name.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`)
+  const entries = await readdir(path.dirname(abs)).catch(() => [] as string[])
+  return entries.filter((entry) => re.test(entry)).sort().map((entry) => path.join(path.dirname(abs), entry))
+}
+
+/** The concrete hosts of `~/.ssh/config` and the files it includes: a
+ *  file's own hosts, then its includes'; a host listed twice keeps the first.
+ *  Only the shown details follow this order: connecting passes the alias and
+ *  ssh resolves it. Unreadable files are skipped. */
+export async function listSshHosts(home: string = os.homedir()): Promise<SshConfigHost[]> {
+  const hosts = new Map<string, SshConfigHost>()
+  const seen = new Set<string>()
+  const read = async (file: string, depth: number): Promise<void> => {
+    if (depth > 8 || seen.has(file)) return
+    seen.add(file)
+    const text = await readFile(file, 'utf-8').catch(() => null)
+    if (text === null) return
+    const parsed = parseSshConfig(text)
+    for (const host of parsed.hosts) if (!hosts.has(host.alias)) hosts.set(host.alias, host)
+    for (const pattern of parsed.includes) {
+      for (const included of await includedFiles(pattern, home)) await read(included, depth + 1)
+    }
+  }
+  await read(path.join(home, '.ssh', 'config'), 0)
+  return [...hosts.values()]
 }
 
 /** The distros `wsl.exe --list --quiet` names (it prints UTF-16). */
@@ -219,11 +369,11 @@ function childDuplex(child: ChildProcessWithoutNullStreams, first: Uint8Array): 
 /** Runs this app's bridge to the runtime of `root` on `machine`: a byte pipe
  *  to the runtime's local socket. Rejects with `NotInstalledError` when the
  *  build is missing there. */
-export function dialMachine(machine: Machine, root: string, opts: { build: string; timeoutMs?: number }): Promise<ByteDuplex> {
+export function dialMachine(machine: Machine, root: string, opts: { build: string; timeoutMs?: number; prompting?: SshPrompting }): Promise<ByteDuplex> {
   if (!isMachine(machine)) return Promise.reject(new Error('invalid machine'))
-  const { command, args } = machineCommand(machine, bridgeScript(opts.build, root))
+  const script = bridgeScript(opts.build, root)
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+    const child = spawnOn(machine, script, opts.prompting)
     const ready = Buffer.from(BRIDGE_READY)
     let head = Buffer.alloc(0)
     let stderr = ''

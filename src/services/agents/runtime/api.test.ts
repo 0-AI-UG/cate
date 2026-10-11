@@ -25,6 +25,7 @@ function fakeTerminals() {
       return session ? { session, messages: [{ role: 'user' as const, text: 'hello' }] } : null
     }),
     conversationStamp: async () => null,
+    onStep: () => () => {},
     dispose: () => {},
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
@@ -83,6 +84,7 @@ beforeEach(() => {
   starter = {
     start: vi.fn(async () => ({ panelId: 'new', agentId: 'codex' as const })),
     types: vi.fn(async () => []),
+    starting: vi.fn(() => []),
   }
   handlers = createAgentApiHandlers(agents, starter)
 })
@@ -125,6 +127,25 @@ describe('cate.agent.*', () => {
     expect(terminal.terminals.send).toHaveBeenCalledWith('term', 'go')
     vi.mocked(terminal.terminals.send).mockResolvedValueOnce({ ok: false, error: 'agent-busy' })
     await expect(rpcError(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx()))).resolves.toBe('agent-busy')
+  })
+
+  it('tells a terminal with no agent apart from a missing panel', async () => {
+    terminal.set('idle-shell', { status: 'notRunning', present: false })
+    await expect(rpcError(handlers.send({ targetPanelId: 'idle-shell', prompt: 'go' }, ctx()))).resolves.toMatch(/^no-agent-in-terminal/)
+    await expect(rpcError(handlers.send({ targetPanelId: 'none', prompt: 'go' }, ctx()))).resolves.toBe('agent-panel-not-found')
+  })
+
+  it('lists a started agent as starting and waits for it until its CLI is up', async () => {
+    vi.mocked(starter.starting).mockReturnValue([{ panelId: 'term', agentId: 'codex' }])
+    expect(await handlers.list({}, ctx())).toEqual([
+      { panelId: 'term', title: 'Backend', agentId: 'codex', agentName: 'Codex', state: 'starting', canReceivePrompt: false },
+    ])
+    await expect(rpcError(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx()))).resolves.toMatch(/^agent-starting/)
+
+    const waiting = handlers.wait({ panelIds: ['term'], timeoutSeconds: 5 }, ctx())
+    vi.mocked(starter.starting).mockReturnValue([])
+    terminal.set('term', { status: 'waitingForInput', canReceivePrompt: true })
+    await expect(waiting).resolves.toMatchObject({ timedOut: false, agents: [{ panelId: 'term', state: 'waitingForInput' }] })
   })
 
   it('waits until every named agent can take a prompt', async () => {

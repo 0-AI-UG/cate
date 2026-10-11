@@ -13,6 +13,7 @@ import type {
   AgentHookConfig,
   AgentSendResult,
   AgentSession,
+  AgentStep,
   PanelAgentState,
 } from '../contract'
 import type { StoredAgentChange } from './changes/store'
@@ -82,6 +83,8 @@ export interface AgentTerminals extends AgentPanelSource {
   /** Changes whenever the conversation may have (the session store's file
    *  times), or null when it cannot tell, so it is read on every look. */
   conversationStamp(panelId: string): Promise<string | null>
+  /** A panel's agent completed a tool call (its hooks reported it). */
+  onStep(listener: (panelId: string, step: AgentStep) => void): () => void
   dispose(): void
 }
 

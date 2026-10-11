@@ -12,9 +12,50 @@ import {
   parseMkdir,
   parseProbe,
   parseSshCommand,
+  parseSshConfig,
   probeScript,
 } from './ssh'
 import { bridgeScript, isMachine, machineCommand, machineKey } from './machine'
+
+describe('parseSshConfig', () => {
+  it('lists concrete hosts with their first values, and the includes', () => {
+    const config = [
+      'Include ~/.orbstack/ssh/config config.d/*',
+      '# a comment',
+      'Host prod staging',
+      '  HostName 10.0.0.5',
+      '  User deploy # trailing comment',
+      '  Port 2222',
+      'Host *.internal !bad *',
+      '  User nobody',
+      'Match host prod',
+      '  User other',
+      'Host prod',
+      '  User ignored',
+      'Host=box',
+      '  HostName="box.example.com"',
+      'Host -oProxyCommand=x',
+    ].join('\n')
+    expect(parseSshConfig(config)).toEqual({
+      hosts: [
+        { alias: 'prod', hostName: '10.0.0.5', user: 'deploy', port: 2222 },
+        { alias: 'staging', hostName: '10.0.0.5', user: 'deploy', port: 2222 },
+        { alias: 'box', hostName: 'box.example.com' },
+      ],
+      includes: ['~/.orbstack/ssh/config', 'config.d/*'],
+    })
+  })
+})
+
+describe('parseSshConfig as Windows writes it', () => {
+  it('reads a BOM, CRLF line ends and quoted Windows paths', () => {
+    const config = '\uFEFFInclude "C:\\Users\\My Name\\.ssh\\work" C:/ssh/extra\r\nHost win\r\n  HostName 10.0.0.9\r\n  User Administrator\r\n'
+    expect(parseSshConfig(config)).toEqual({
+      hosts: [{ alias: 'win', hostName: '10.0.0.9', user: 'Administrator' }],
+      includes: ['C:\\Users\\My Name\\.ssh\\work', 'C:/ssh/extra'],
+    })
+  })
+})
 
 describe('parseSshCommand', () => {
   it('reads a host or an ssh command line', () => {
@@ -56,6 +97,10 @@ it('builds machine commands only from validated fields', () => {
       '-p', '2', '--', 'u@h', 'sh', '-s',
     ],
   })
+  // Asking through SSH_ASKPASS: no BatchMode, one shared connection per machine.
+  expect(machineCommand({ kind: 'ssh', target: { destination: 'h' } }, 'stdin', { controlPath: '/c/%C' }).args.slice(0, 7)).toEqual([
+    '-T', '-o', 'ControlMaster=auto', '-o', 'ControlPath=/c/%C', '-o', 'ControlPersist=600',
+  ])
   expect(machineCommand({ kind: 'ssh', target: { destination: 'h' } }, "echo 'x'").args.slice(-4)).toEqual(['h', 'sh', '-c', `'echo '\\''x'\\'''`])
   expect(machineCommand({ kind: 'wsl', distro: 'Ubuntu' }, 'echo x')).toEqual({ command: 'wsl.exe', args: ['-d', 'Ubuntu', '--exec', 'sh', '-c', 'echo x'] })
   expect(machineKey({ kind: 'wsl', distro: 'Ubuntu' })).toBe('wsl:Ubuntu')
@@ -74,15 +119,13 @@ describe.skipIf(process.platform === 'win32')('scripts on a real sh', () => {
     const probe = parseProbe(`motd noise\n${sh(probeScript(BUILD))}`)
     expect(probe.home).toBe(home)
     expect(probe.installed).toBe(false)
-    expect(probe.current).toBeNull()
     expect(probe.system).toMatch(/\S+ \S+/)
 
     const dir = path.join(home, '.cate', 'runtime', BUILD)
     fs.mkdirSync(path.join(dir, 'cate', 'bin'), { recursive: true })
     fs.writeFileSync(path.join(dir, '.ok'), BUILD)
     fs.writeFileSync(path.join(dir, 'cate', 'bin', 'cate'), '#!/bin/sh\n', { mode: 0o755 })
-    fs.writeFileSync(path.join(home, '.cate', 'runtime', 'current'), `${BUILD}\n`)
-    expect(parseProbe(sh(probeScript(BUILD)))).toMatchObject({ installed: true, current: BUILD })
+    expect(parseProbe(sh(probeScript(BUILD))).installed).toBe(true)
     expect(parseProbe(sh(probeScript('2.0.5+bbbbbbbbbbbb'))).installed).toBe(false)
   })
 

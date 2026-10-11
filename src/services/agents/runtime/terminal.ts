@@ -23,12 +23,14 @@ import {
   type AgentId,
   type AgentSendResult,
   type AgentSession,
+  type AgentStep,
   type PanelAgentState,
   type TerminalResumeStamp,
 } from '../contract'
 import type { AgentsBase, AgentTerminals } from './core'
 import { createAgentStatusMachine, type AgentStatusMachine } from './status'
 import { createResumeStamps, type ResumeStamps } from './stamps'
+import { agentStepOf } from './steps'
 
 /** The part of the terminal service the terminal agents use. */
 export type AgentTerminalService = Pick<TerminalService,
@@ -91,6 +93,10 @@ interface TerminalInfo {
 }
 
 const ENTER_DELAY_MS = 0
+/** How long a sent prompt has to start a turn before the send reports it was
+ *  not taken: the CLI showed a dialog that the Enter answered instead, or the
+ *  text went to something else on the screen. */
+const SUBMIT_CONFIRM_MS = 10_000
 /** Between two interrupt keys (opencode's second Esc confirms the first). */
 const INTERRUPT_KEY_GAP_MS = 500
 
@@ -104,6 +110,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   stampsFile.update((all) => Object.fromEntries(Object.entries(all).filter(([panelId]) => document.panel(panelId))))
   const changeListeners = new Set<(panelId: string) => void>()
   const exitListeners = new Set<(panelId: string, exitCode: number) => void>()
+  const stepListeners = new Set<(panelId: string, step: AgentStep) => void>()
   /** Contexts last published per terminal, to skip identical updates. */
   const sentContext = new Map<string, string | null>()
   /** The agent a hook came from in each terminal since its agent started. */
@@ -208,6 +215,15 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }))
 
   offs.push(terminal.onInput((terminalId, data) => hooks.noteInput(terminalId, data)))
+
+  offs.push(hooks.onToolCall((terminalId, call) => {
+    const panelId = panelOf(terminalId)
+    if (!panelId) return
+    const step = agentStepOf(call, terminals.get(terminalId)?.cwd ?? null)
+    for (const listener of stepListeners) {
+      try { listener(panelId, step) } catch { /* a subscriber must not break the others */ }
+    }
+  }))
 
   offs.push(terminal.onExit((terminalId, exitCode) => {
     const panelId = panelOf(terminalId)
@@ -350,6 +366,20 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     }
   }
 
+  /** Resolves true when the terminal's agent starts a turn within
+   *  SUBMIT_CONFIRM_MS, false otherwise. */
+  const nextTurnStart = (terminalId: string): Promise<boolean> => new Promise((resolve) => {
+    const done = (started: boolean): void => {
+      clearTimeout(timer)
+      off()
+      resolve(started)
+    }
+    const off = hooks.subscribe((event) => {
+      if (event.terminalId === terminalId && event.kind === 'turn-start') done(true)
+    })
+    const timer = setTimeout(() => done(false), SUBMIT_CONFIRM_MS)
+  })
+
   return {
     state,
     panelIds: () => panelTerminal.keys(),
@@ -360,7 +390,13 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       // The agent's submit hook takes the context and its turn-start
       // consumes it; consuming here would clear it before the hook reads it.
       await agents.promptContext.flush(panelId).catch(() => {})
-      return await submit(panelId, prompt) ? { ok: true } : { ok: false, error: 'agent-panel-unavailable' }
+      // Delivered means a turn started: a prompt typed into a dialog the CLI
+      // opened after its last turn is lost without one.
+      const started = nextTurnStart(terminalId)
+      if (!await submit(panelId, prompt)) return { ok: false, error: 'agent-panel-unavailable' }
+      return await started
+        ? { ok: true }
+        : { ok: false, error: 'agent-prompt-not-taken: the agent started no turn; it may be showing a dialog. Check its screen with cate terminal read' }
     },
     async conversation(panelId): Promise<{ session: AgentSession; messages: AgentConversationMessage[] } | null> {
       const session = sessionOf(panelId, liveTerminal(panelId))
@@ -402,6 +438,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       return () => { changeListeners.delete(listener) }
     },
     terminalOf: liveTerminal,
+    onStep(listener) {
+      stepListeners.add(listener)
+      return () => { stepListeners.delete(listener) }
+    },
     onExit(listener) {
       exitListeners.add(listener)
       return () => { exitListeners.delete(listener) }

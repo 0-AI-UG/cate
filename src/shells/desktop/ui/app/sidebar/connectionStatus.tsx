@@ -37,8 +37,12 @@ function remedyAction(connection: WorkspaceConnection, state: ConnectionState, r
     case 'resolve': return { label: 'Resolve…', run: () => void selectWorkspace(id) }
     case 'retry': return { label: 'Try again', run: () => connection.retryNow() }
     case 'start': return { label: 'Start again', run: () => connection.retryNow() }
-    case 'remove': return workspaces ? { label: 'Remove from list', run: () => void workspaces.removeRecent(id) } : null
-    case 'pair': return { label: 'Pair again…', run: () => useUIStore.getState().setJoinDialogOpen(true) }
+    case 'remove': return workspaces ? { label: 'Remove from Sidebar', run: () => void workspaces.removeRecent(id) } : null
+    case 'pair': {
+      const entry = workspaces?.get(id)
+      const machine = entry?.kind === 'paired' ? entry.machineName : undefined
+      return { label: 'Pair again…', run: () => useUIStore.getState().openJoinDialog(machine ? { machine } : {}) }
+    }
     case 'forget': {
       if (!workspaces) return null
       return {

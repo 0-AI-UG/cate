@@ -1,9 +1,10 @@
 // Desktop-only actions ui/app offers when a shell provides them: the app
-// updater, the post-update feedback prompt, native menus, window chrome and
-// usage analytics. The desktop shell fills this slot; other shells leave it
+// updater, the post-update feedback prompt, native menus, window chrome,
+// ssh's sign-in prompts, runtime install progress and usage analytics. The desktop shell fills this slot; other shells leave it
 // empty and the UI hides what depends on it.
 
 import { useSyncExternalStore } from 'react'
+import type { RuntimeInstallProgress } from '@runtime/daemon/contract'
 
 export type UpdateState = 'idle' | 'checking' | 'up-to-date' | 'downloading' | 'downloaded' | 'error' | 'disabled'
 
@@ -23,6 +24,20 @@ export interface FeedbackPrompt {
   /** Empty on a first install. */
   fromVersion: string
   toVersion: string
+}
+
+/** A runtime install and how far it is (null: it ended). `target` is
+ *  `local` for this device's, else the machine's `machineKey`. */
+export interface InstallProgressEvent {
+  target: string
+  progress: RuntimeInstallProgress | null
+}
+
+export interface MachinePrompt {
+  id: string
+  machine: string
+  /** ssh's own words. */
+  prompt: string
 }
 
 export interface MenuItem {
@@ -65,6 +80,17 @@ export interface DesktopPort {
   pickFolder(): Promise<string | null>
   /** Asks for an image file; returns its path. */
   pickImage(): Promise<string | null>
+  /** This device as the workspace list names it ("This Mac"). */
+  thisMachineName: string
+  // What ssh asks while it signs in to a machine (a password, a code).
+  onMachinePrompt(listener: (prompt: MachinePrompt) => void): () => void
+  /** Main withdrew a prompt (ssh stopped waiting, or it timed out). */
+  onMachinePromptCancel(listener: (id: string) => void): () => void
+  /** null: the person cancelled. */
+  answerMachinePrompt(id: string, answer: string | null): void
+  // Runtime installs the shell runs (this device's, machines').
+  installs(): Promise<InstallProgressEvent[]>
+  onInstallProgress(listener: (event: InstallProgressEvent) => void): () => void
   // Usage analytics; never carries paths or names.
   trackEvent(name: string, props?: Record<string, string | number | boolean>): void
 }

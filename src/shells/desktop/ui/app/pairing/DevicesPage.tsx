@@ -1,25 +1,32 @@
-// "Devices" settings page of a workspace: add a device (turn on network
-// access if it is off, then show a one-time QR code and pairing code with its
-// expiry), and every device that has opened the workspace, paired or as a
-// user of the runtime's machine, with revoke.
+// "Devices" settings page of a workspace: every device that has opened it,
+// paired or as a user of the runtime's machine, with revoke; adding one is
+// Share's. Also the one-time pairing code (QR and typed, with its expiry)
+// that Share shows.
 
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { Smartphone, Trash2 } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
-import { SecondaryButton, Select, SearchableBlock, Spinner } from '../../kernel/interaction'
+import { SecondaryButton, SearchableBlock, SettingRow, Spinner } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSetting } from '../../kernel/settings'
 import type { CreatedSecret, PairingMode, WorkspaceDevice } from '@runtime/pairing/contract'
 import { clientIdentity } from '@client/connections'
 import { useOtherClients } from '../../client/document'
 import type { SettingsPageProps } from '../settings/registry'
+import { useUIStore } from '../state/uiStore'
 
 export function DevicesPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
   if (!workspaceId) return null
   return (
     <div className="flex flex-col gap-1">
-      <AddDevice workspaceId={workspaceId} />
+      <SettingRow
+        label="Add a device"
+        description="Share the workspace to choose who can join and show a one-time code."
+        keywords="add device pair pairing qr code phone join network share"
+      >
+        <SecondaryButton onClick={() => useUIStore.getState().openShare(workspaceId)}>Share…</SecondaryButton>
+      </SettingRow>
       <WorkspaceDevices workspaceId={workspaceId} />
     </div>
   )
@@ -44,20 +51,17 @@ export function formatCountdown(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export function AddDevice({ workspaceId }: { workspaceId: string }): JSX.Element {
+/** A one-time code (QR and typed) for another device to join with. Network
+ *  access off: creating it turns on same-network access first. */
+export function PairingCode({ workspaceId }: { workspaceId: string }): JSX.Element {
   const runtime = useRuntime(workspaceId)
   const network = useWorkspaceSetting(workspaceId, 'runtimeNetwork')
-  const [mode, setMode] = useState<PairingMode>('sameNetwork')
   const [secret, setSecret] = useState<CreatedSecret | null>(null)
   const [qrSvg, setQrSvg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const secondsLeft = useSecondsLeft(secret?.expiresAt ?? null)
   const expired = secret !== null && secondsLeft === 0
-
-  useEffect(() => {
-    if (network !== 'off') setMode(network)
-  }, [network])
 
   useEffect(() => {
     if (!secret) { setQrSvg(null); return }
@@ -72,10 +76,8 @@ export function AddDevice({ workspaceId }: { workspaceId: string }): JSX.Element
     setBusy(true)
     setError(null)
     try {
-      // Only ever widens access: Cate Connect serves the same network too.
-      if (network === 'off' || (network === 'sameNetwork' && mode === 'cateConnect')) {
-        await setWorkspaceSetting(workspaceId, 'runtimeNetwork', mode)
-      }
+      const mode: PairingMode = network === 'off' ? 'sameNetwork' : network
+      if (network === 'off') await setWorkspaceSetting(workspaceId, 'runtimeNetwork', mode)
       setSecret(await runtime.pairing.createSecret({ mode }))
     } catch (err) {
       setError(errorMessage(err, 'Could not create a pairing code.'))
@@ -85,53 +87,38 @@ export function AddDevice({ workspaceId }: { workspaceId: string }): JSX.Element
   }
 
   return (
-    <SearchableBlock keywords="add device pair pairing qr code phone join network">
-      <div className="py-3 border-b border-subtle flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex flex-col min-w-0">
-            <span className="text-[13px] font-medium text-primary">Add device</span>
-            <span className="text-xs text-muted mt-0.5">
-              {network === 'off'
-                ? 'Turns on network access for this workspace, then shows a one-time code for the other device.'
-                : 'Shows a one-time code. Scan it with the other device, or type the code there under "Join a workspace".'}
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-xs text-muted">
+          {network === 'off'
+            ? 'Turns on same-network access, then shows a one-time code for the other device.'
+            : 'A one-time code. Scan it with the other device, or type it there under "Join with a Code".'}
+        </span>
+        <SecondaryButton onClick={() => void create()} disabled={!runtime || busy}>
+          {busy ? <Spinner size={12} /> : <Smartphone size={12} />}
+          {secret && !expired ? 'New code' : 'Create code'}
+        </SecondaryButton>
+      </div>
+      {error && <span role="alert" className="text-xs text-danger">{error}</span>}
+      {secret && (
+        <div className="flex items-center gap-5" aria-label="Pairing code">
+          <div
+            className={`w-36 h-36 shrink-0 rounded-lg bg-white p-1.5 ${expired ? 'opacity-20' : ''}`}
+            data-testid="pairing-qr"
+            // The SVG is generated locally by qrcode from the runtime's link.
+            dangerouslySetInnerHTML={qrSvg ? { __html: qrSvg } : undefined}
+          />
+          <div className="flex flex-col gap-2 min-w-0">
+            <code className={`text-[15px] font-mono tracking-wider text-primary select-all ${expired ? 'line-through text-muted' : ''}`}>
+              {secret.code.toUpperCase()}
+            </code>
+            <span className="text-xs text-muted">
+              {expired ? 'Expired. Make a new code.' : `Works once. Expires in ${formatCountdown(secondsLeft)}.`}
             </span>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <Select
-              value={mode}
-              onChange={(v) => setMode(v as PairingMode)}
-              options={[
-                { value: 'sameNetwork', label: 'Same network' },
-                { value: 'cateConnect', label: 'Cate Connect' },
-              ]}
-            />
-            <SecondaryButton onClick={() => void create()} disabled={!runtime || busy}>
-              {busy ? <Spinner size={12} /> : <Smartphone size={12} />}
-              {secret && !expired ? 'New code' : 'Add device'}
-            </SecondaryButton>
-          </div>
         </div>
-        {error && <span role="alert" className="text-xs text-danger">{error}</span>}
-        {secret && (
-          <div className="flex items-center gap-5" aria-label="Pairing code">
-            <div
-              className={`w-36 h-36 shrink-0 rounded-lg bg-white p-1.5 ${expired ? 'opacity-20' : ''}`}
-              data-testid="pairing-qr"
-              // The SVG is generated locally by qrcode from the runtime's link.
-              dangerouslySetInnerHTML={qrSvg ? { __html: qrSvg } : undefined}
-            />
-            <div className="flex flex-col gap-2 min-w-0">
-              <code className={`text-[15px] font-mono tracking-wider text-primary select-all ${expired ? 'line-through text-muted' : ''}`}>
-                {secret.code.toUpperCase()}
-              </code>
-              <span className="text-xs text-muted">
-                {expired ? 'Expired. Make a new code.' : `Works once. Expires in ${formatCountdown(secondsLeft)}.`}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    </SearchableBlock>
+      )}
+    </div>
   )
 }
 

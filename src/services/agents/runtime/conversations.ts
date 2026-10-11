@@ -4,15 +4,17 @@
 // when the panel's agent state changes (and twice shortly after, for a CLI
 // that writes its store just after its hook), every half second while the
 // agent works and every few seconds while it is there; a look reads the
-// session store only when its stamp moved.
+// session store only when its stamp moved. The steps (tool calls the hooks
+// report) are kept for every panel, watched or not, in memory only, and go
+// out as they come.
 
-import { diffAgentConversation, type AgentConversation, type AgentConversationChange } from '../contract'
+import { diffAgentConversation, type AgentConversation, type AgentConversationChange, type AgentStep } from '../contract'
 import type { AgentTerminals } from './core'
 import type { AgentPanels } from './panels'
 
 export interface AgentConversationsDeps {
   panels: Pick<AgentPanels, 'state' | 'subscribe'>
-  terminals: Pick<AgentTerminals, 'conversation' | 'conversationStamp'>
+  terminals: Pick<AgentTerminals, 'conversation' | 'conversationStamp' | 'onStep'>
   /** Tests: the look cadence while working and otherwise, and the looks after a state change. */
   workingMs?: number
   presentMs?: number
@@ -44,6 +46,8 @@ interface Watch {
 const WORKING_MS = 500
 const PRESENT_MS = 3_000
 const SETTLE_MS = [400, 1_500] as const
+/** The steps kept per panel, the latest. */
+const MAX_STEPS = 500
 
 export function createAgentConversations(deps: AgentConversationsDeps): AgentConversations {
   const { panels, terminals } = deps
@@ -51,6 +55,9 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
   const presentMs = deps.presentMs ?? PRESENT_MS
   const settleMs = deps.settleMs ?? SETTLE_MS
   const watches = new Map<string, Watch>()
+  const steps = new Map<string, AgentStep[]>()
+  const stepsSince = new Date().toISOString()
+  const stepsOf = (panelId: string): AgentStep[] => steps.get(panelId) ?? []
 
   const publish = (watch: Watch, next: AgentConversation): void => {
     const change = diffAgentConversation(watch.current, next)
@@ -89,7 +96,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
         }
       }
     }
-    return { status: state?.status ?? null, canReceivePrompt: state?.canReceivePrompt ?? false, messages }
+    return { status: state?.status ?? null, canReceivePrompt: state?.canReceivePrompt ?? false, messages, steps: stepsOf(panelId), stepsSince }
   }
 
   const look = async (panelId: string, watch: Watch, forced: boolean): Promise<void> => {
@@ -129,6 +136,13 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
     }
   })
 
+  const offSteps = terminals.onStep((panelId, step) => {
+    const kept = [...stepsOf(panelId), step]
+    steps.set(panelId, kept.length > MAX_STEPS ? kept.slice(-MAX_STEPS) : kept)
+    const watch = watches.get(panelId)
+    if (watch?.ready) publish(watch, { ...watch.current, steps: stepsOf(panelId) })
+  })
+
   const stop = (panelId: string, watch: Watch): void => {
     if (watch.tick) clearTimeout(watch.tick)
     for (const timer of watch.settles) clearTimeout(timer)
@@ -141,7 +155,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
       if (!watch) {
         watch = {
           listeners: new Set(),
-          current: { status: null, canReceivePrompt: false, messages: [] },
+          current: { status: null, canReceivePrompt: false, messages: [], steps: [], stepsSince },
           ready: false,
           stamp: undefined,
           reading: false,
@@ -164,6 +178,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
     },
     dispose() {
       offPanels()
+      offSteps()
       for (const [panelId, watch] of [...watches]) stop(panelId, watch)
     },
   }

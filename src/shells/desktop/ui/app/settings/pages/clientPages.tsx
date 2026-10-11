@@ -1,8 +1,8 @@
 // Small pages: ui/app's own slices (Sidebar, Notifications) and the pages
 // of slices whose owners have no page of their own yet (Editor from
 // panels/editor, Terminal from services/terminal, Browser from
-// services/browser). Workspace keys show
-// only while a workspace is active.
+// services/browser). Terminal and Browser have a device page and a
+// workspace page each, so no page mixes the two.
 
 import { useEffect, useState } from 'react'
 import { NumberInput, SecondaryButton, Select, SettingRow, Slider, TextInput, Toggle } from '../../../kernel/interaction'
@@ -98,7 +98,7 @@ export function EditorPage(): JSX.Element {
   )
 }
 
-export function TerminalPage({ workspaceId }: SettingsPageProps): JSX.Element {
+export function TerminalPage(): JSX.Element {
   const fontFamily = useClientSetting('terminalFontFamily')
   const fontSize = useClientSetting('terminalFontSize')
   const scrollSpeed = useClientSetting('terminalScrollSpeed')
@@ -106,14 +106,8 @@ export function TerminalPage({ workspaceId }: SettingsPageProps): JSX.Element {
   const cursorBlink = useClientSetting('terminalCursorBlink')
   const optionIsMeta = useClientSetting('terminalOptionIsMeta')
   const linkTarget = useClientSetting('terminalLinkOpenTarget')
-  const ws = useWorkspaceSettings(workspaceId)
   return (
     <div className="flex flex-col gap-1">
-      {workspaceId && (
-        <SettingRow label="Default shell path" description="For this workspace. Leave blank to auto-detect ($SHELL, then a platform default).">
-          <TextInput value={ws.defaultShellPath} onChange={(v) => setWs(workspaceId, 'defaultShellPath', v)} placeholder="Auto-detect" />
-        </SettingRow>
-      )}
       <SettingRow label="Font family override">
         <TextInput value={fontFamily} onChange={(v) => setClientSetting('terminalFontFamily', v)} placeholder="e.g., Menlo, Monaco" />
       </SettingRow>
@@ -151,29 +145,34 @@ export function TerminalPage({ workspaceId }: SettingsPageProps): JSX.Element {
           ]}
         />
       </SettingRow>
-      {workspaceId && (
-        <>
-          <SettingRow label="Scrollback" description="Lines each terminal of this workspace keeps.">
-            <NumberInput value={ws.terminalScrollback} onChange={(v) => setWs(workspaceId, 'terminalScrollback', v)} min={100} max={10000} step={100} />
-          </SettingRow>
-          <SettingRow
-            label="Auto-suspend idle background terminals"
-            description="Pause terminals idle and offscreen for 2 minutes to free memory. Resumes instantly on focus."
-          >
-            <Toggle checked={ws.autoSuspendIdleTerminals} onChange={(v) => setWs(workspaceId, 'autoSuspendIdleTerminals', v)} />
-          </SettingRow>
-        </>
-      )}
     </div>
   )
 }
 
-export function BrowserPage({ workspaceId }: SettingsPageProps): JSX.Element {
-  const proxyUrl = useClientSetting('browserProxyUrl')
+export function WorkspaceTerminalPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
   const ws = useWorkspaceSettings(workspaceId)
+  if (!workspaceId) return null
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow label="Default shell path" description="Leave blank to auto-detect ($SHELL, then a platform default).">
+        <TextInput value={ws.defaultShellPath} onChange={(v) => setWs(workspaceId, 'defaultShellPath', v)} placeholder="Auto-detect" />
+      </SettingRow>
+      <SettingRow label="Scrollback" description="Lines each terminal keeps.">
+        <NumberInput value={ws.terminalScrollback} onChange={(v) => setWs(workspaceId, 'terminalScrollback', v)} min={100} max={10000} step={100} />
+      </SettingRow>
+      <SettingRow
+        label="Auto-suspend idle background terminals"
+        description="Pause terminals idle and offscreen for 2 minutes to free memory. Resumes instantly on focus."
+      >
+        <Toggle checked={ws.autoSuspendIdleTerminals} onChange={(v) => setWs(workspaceId, 'autoSuspendIdleTerminals', v)} />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function BrowserPage(): JSX.Element {
+  const proxyUrl = useClientSetting('browserProxyUrl')
   const [proxyDraft, setProxyDraft] = useState(proxyUrl)
-  const [confirmingClear, setConfirmingClear] = useState(false)
-  const [message, setMessage] = useState('')
 
   useEffect(() => { setProxyDraft(proxyUrl) }, [proxyUrl])
 
@@ -182,6 +181,31 @@ export function BrowserPage({ workspaceId }: SettingsPageProps): JSX.Element {
     setProxyDraft(value)
     if (value !== proxyUrl) setClientSetting('browserProxyUrl', value)
   }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow
+        label="Proxy"
+        description="The upstream proxy for every browser panel. Leave empty for a direct connection. Supports authenticated proxy URLs, PAC scripts, and ;bypass= lists."
+      >
+        <TextInput
+          value={proxyDraft}
+          onChange={setProxyDraft}
+          onBlur={saveProxy}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+          placeholder="http://proxy.company.com:8080"
+          layoutClassName="w-72 px-2"
+          className="font-mono"
+        />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function WorkspaceBrowserPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
+  const ws = useWorkspaceSettings(workspaceId)
+  const [confirmingClear, setConfirmingClear] = useState(false)
+  const [message, setMessage] = useState('')
 
   const clearHistory = async () => {
     if (!workspaceId) return
@@ -199,67 +223,48 @@ export function BrowserPage({ workspaceId }: SettingsPageProps): JSX.Element {
     setConfirmingClear(false)
   }
 
+  if (!workspaceId) return null
   return (
     <div className="flex flex-col gap-1">
-      {workspaceId && (
-        <>
-          <SettingRow label="Homepage">
-            <TextInput
-              value={ws.browserHomepage}
-              onChange={(v) => setWs(workspaceId, 'browserHomepage', v)}
-              placeholder="about:blank"
-              disabled={ws.browserNewTabBehavior !== 'homepage'}
-            />
-          </SettingRow>
-          <SettingRow label="Search engine" keywords="Google DuckDuckGo Bing Brave">
-            <Select
-              value={ws.browserSearchEngine}
-              onChange={(v) => setWs(workspaceId, 'browserSearchEngine', v as WorkspaceSettings['browserSearchEngine'])}
-              options={[
-                { value: 'google', label: 'Google' },
-                { value: 'duckDuckGo', label: 'DuckDuckGo' },
-                { value: 'bing', label: 'Bing' },
-                { value: 'brave', label: 'Brave' },
-              ]}
-            />
-          </SettingRow>
-          <SettingRow label="New tab opens" keywords="Start page Homepage">
-            <Select
-              value={ws.browserNewTabBehavior}
-              onChange={(v) => setWs(workspaceId, 'browserNewTabBehavior', v as WorkspaceSettings['browserNewTabBehavior'])}
-              options={[
-                { value: 'startPage', label: 'Start page' },
-                { value: 'homepage', label: 'Homepage' },
-              ]}
-            />
-          </SettingRow>
-        </>
-      )}
-      <SettingRow
-        label="Proxy"
-        description="This device's upstream proxy for every browser panel. Leave empty for a direct connection. Supports authenticated proxy URLs, PAC scripts, and ;bypass= lists."
-      >
+      <SettingRow label="Homepage">
         <TextInput
-          value={proxyDraft}
-          onChange={setProxyDraft}
-          onBlur={saveProxy}
-          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
-          placeholder="http://proxy.company.com:8080"
-          layoutClassName="w-72 px-2"
-          className="font-mono"
+          value={ws.browserHomepage}
+          onChange={(v) => setWs(workspaceId, 'browserHomepage', v)}
+          placeholder="about:blank"
+          disabled={ws.browserNewTabBehavior !== 'homepage'}
         />
       </SettingRow>
-      {workspaceId && (
-        <SettingRow
-          label="Clear browsing history"
-          description="The history this workspace's browser panels share."
-          hint={message ? <span className="text-xs text-muted">{message}</span> : undefined}
-        >
-          <SecondaryButton onClick={() => void clearHistory()}>
-            {confirmingClear ? 'Confirm clear' : 'Clear…'}
-          </SecondaryButton>
-        </SettingRow>
-      )}
+      <SettingRow label="Search engine" keywords="Google DuckDuckGo Bing Brave">
+        <Select
+          value={ws.browserSearchEngine}
+          onChange={(v) => setWs(workspaceId, 'browserSearchEngine', v as WorkspaceSettings['browserSearchEngine'])}
+          options={[
+            { value: 'google', label: 'Google' },
+            { value: 'duckDuckGo', label: 'DuckDuckGo' },
+            { value: 'bing', label: 'Bing' },
+            { value: 'brave', label: 'Brave' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow label="New tab opens" keywords="Start page Homepage">
+        <Select
+          value={ws.browserNewTabBehavior}
+          onChange={(v) => setWs(workspaceId, 'browserNewTabBehavior', v as WorkspaceSettings['browserNewTabBehavior'])}
+          options={[
+            { value: 'startPage', label: 'Start page' },
+            { value: 'homepage', label: 'Homepage' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Clear browsing history"
+        description="The history the browser panels share."
+        hint={message ? <span className="text-xs text-muted">{message}</span> : undefined}
+      >
+        <SecondaryButton onClick={() => void clearHistory()}>
+          {confirmingClear ? 'Confirm clear' : 'Clear…'}
+        </SecondaryButton>
+      </SettingRow>
     </div>
   )
 }

@@ -85,9 +85,10 @@ export interface AgentHookEvent {
   raw: Record<string, unknown>
 }
 
-/** One completed, successful tool call reported by a hook payload: the input
- *  edit capture consumes. Each agent's spec maps its own payload spelling onto
- *  this, so nothing downstream reads raw CLI payloads. */
+/** One tool call that ran, as a hook payload reports it: the input edit
+ *  capture consumes (successful calls only) and the step an agent chat shows
+ *  (every call). Each agent's spec maps its own payload spelling onto this,
+ *  so nothing downstream reads raw CLI payloads. */
 export interface AgentToolCall {
   sessionId: string | null
   turnId?: string
@@ -100,6 +101,8 @@ export interface AgentToolCall {
   cwd?: string
   /** The spawning session, when the call ran in a subagent session. */
   parentSessionId?: string
+  /** The CLI said it failed (not every CLI can tell a failed command). */
+  failed?: true
 }
 
 export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
@@ -203,7 +206,8 @@ export interface AgentHookSpec {
   /** Normalize one raw payload posted by this agent's bridge. Null = drop
    *  (an event Cate doesn't track, e.g. claude's idle_prompt notification). */
   normalize(payload: Record<string, unknown>): NormalizedHookFields | null
-  /** The completed, successful tool call this payload reports, or null. */
+  /** The tool call that ran which this payload reports (`failed` when the
+   *  CLI said so), or null. */
   toolCall(payload: Record<string, unknown>): AgentToolCall | null
   /** The CLI re-announces turn-start while a turn is already running (so a
    *  repeated turn-start without a turn id is the same turn, not a new one). */
@@ -238,25 +242,25 @@ function payloadTurnId(p: Record<string, unknown>): string | undefined {
   return str(p.turn_id) ?? str(p.turnId) ?? str(p.promptId) ?? undefined
 }
 
-/** A reported tool call, unless the CLI marked it failed. The CLIs all flag
- *  failure one of these ways, on the tool output or the payload itself. */
-function succeededToolCall(p: Record<string, unknown>, call: Omit<AgentToolCall, 'turnId'>): AgentToolCall | null {
+/** A reported tool call, `failed` when the CLI marked it so. The CLIs all
+ *  flag failure one of these ways, on the tool output or the payload itself. */
+function reportedToolCall(p: Record<string, unknown>, call: Omit<AgentToolCall, 'turnId'>, failed = false): AgentToolCall {
   const output = obj(call.output)
-  if (output.is_error === true || output.success === false || p.success === false || p.error_type
-    || ['error', 'failed', 'declined'].includes(String(output.status ?? p.status))) return null
-  return { ...call, turnId: payloadTurnId(p) }
+  const marked = failed || output.is_error === true || output.success === false || p.success === false || !!p.error_type
+    || ['error', 'failed', 'declined'].includes(String(output.status ?? p.status))
+  return { ...call, turnId: payloadTurnId(p), ...(marked ? { failed: true as const } : {}) }
 }
 
 /** The shape shared by the CLIs with snake_case PostToolUse-style payloads. */
-function snakeCaseToolCall(p: Record<string, unknown>, sessionId: string | null): AgentToolCall | null {
-  return succeededToolCall(p, {
+function snakeCaseToolCall(p: Record<string, unknown>, sessionId: string | null, failed = false): AgentToolCall {
+  return reportedToolCall(p, {
     sessionId,
     name: str(p.tool_name) ?? '',
     input: p.tool_input,
     output: p.tool_response,
     callId: str(p.tool_use_id) ?? undefined,
     cwd: str(p.cwd) ?? undefined,
-  })
+  }, failed)
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +450,10 @@ const claudeSpec: AgentHookSpec = {
       default: return null
     }
   },
-  toolCall: (p) => p.hook_event_name === 'PostToolUse' ? snakeCaseToolCall(p, str(p.session_id)) : null,
+  // A call that failed has its own event.
+  toolCall: (p) => p.hook_event_name === 'PostToolUse' || p.hook_event_name === 'PostToolUseFailure'
+    ? snakeCaseToolCall(p, str(p.session_id), p.hook_event_name === 'PostToolUseFailure')
+    : null,
 }
 
 // ---------------------------------------------------------------------------
@@ -651,13 +658,13 @@ const cursorSpec: AgentHookSpec = {
     const sessionId = str(p.session_id) ?? str(p.conversation_id)
     // afterFileEdit carries the before/after fragments on the payload itself.
     if (p.hook_event_name === 'afterFileEdit') {
-      return succeededToolCall(p, { sessionId, name: 'Edit', input: p, output: undefined, callId: str(p.tool_use_id) ?? undefined })
+      return reportedToolCall(p, { sessionId, name: 'Edit', input: p, output: undefined, callId: str(p.tool_use_id) ?? undefined })
     }
     if (p.hook_event_name !== 'postToolUse') return null
     // Cursor also reports a generic Write completion (new contents only) for
     // the same edit, without a shared id; afterFileEdit is authoritative.
     if (p.tool_name === 'Write') return null
-    return succeededToolCall(p, {
+    return reportedToolCall(p, {
       sessionId,
       name: str(p.tool_name) ?? '',
       input: p.tool_input,
@@ -745,7 +752,7 @@ const grokSpec: AgentHookSpec = {
   },
   // Subagent edits are real workspace edits, so unlike normalize() this keeps them.
   toolCall: (p) => p.hookEventName === 'post_tool_use'
-    ? succeededToolCall(p, {
+    ? reportedToolCall(p, {
         sessionId: str(p.sessionId),
         name: str(p.toolName) ?? '',
         input: p.toolInput,
@@ -807,9 +814,11 @@ export const CateHookBridge = async () => {
         SUBAGENT_SESSIONS.add(sessionID)
         PARENT_SESSIONS.set(sessionID, props.info.parentID)
       }
-      const editCompleted = event.type === "message.part.updated" && props.part?.type === "tool" && props.part.state?.status === "completed"
-      if (event.type === "message.part.updated" && !editCompleted) return
-      if (SUBAGENT_SESSIONS.has(sessionID) && !editCompleted) return
+      // A tool call that ran. An errored part is also a refused one, so only
+      // completed parts count (a failing command still completes).
+      const toolDone = event.type === "message.part.updated" && props.part?.type === "tool" && props.part.state?.status === "completed"
+      if (event.type === "message.part.updated" && !toolDone) return
+      if (SUBAGENT_SESSIONS.has(sessionID) && !toolDone) return
       fetch(ENDPOINT + "/hook", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: "Bearer " + TOKEN },
@@ -824,7 +833,7 @@ export const CateHookBridge = async () => {
             directory: props.info?.directory ?? null,
             permission: props.permission ?? null,
             metadata: props.metadata ?? null,
-            ...(editCompleted ? { part: props.part, parentSessionId: PARENT_SESSIONS.get(sessionID) } : {}),
+            ...(toolDone ? { part: props.part, parentSessionId: PARENT_SESSIONS.get(sessionID) } : {}),
           },
         }),
       }).catch(() => {})
@@ -871,7 +880,7 @@ const opencodeSpec: AgentHookSpec = {
     const part = obj(p.part)
     const state = obj(part.state)
     if (p.type !== 'message.part.updated' || part.type !== 'tool' || state.status !== 'completed') return null
-    return succeededToolCall(p, {
+    return reportedToolCall(p, {
       sessionId: str(p.sessionID),
       name: str(part.tool) ?? '',
       input: state.input,
@@ -945,6 +954,12 @@ const kiroSpec: AgentHookSpec = {
 // Cate terminals and returns connected-panel context from pre_llm_call.
 // ---------------------------------------------------------------------------
 
+/** A Hermes tool result: JSON text, or already an object. */
+function hermesResult(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string') return obj(value)
+  try { return obj(JSON.parse(value)) } catch { return {} }
+}
+
 const HERMES_INTERACTIVE_PLATFORMS = new Set(['cli', 'tui'])
 
 const hermesSpec: AgentHookSpec = {
@@ -979,8 +994,10 @@ const hermesSpec: AgentHookSpec = {
       default: return null
     }
   },
-  toolCall: (p) => p.hook_event_name === 'post_tool_call'
-    ? succeededToolCall(p, {
+  // A call the person refused is reported too, as a blocked result: it did
+  // not run, so it is no call (other CLIs post nothing for one).
+  toolCall: (p) => p.hook_event_name === 'post_tool_call' && hermesResult(p.result).status !== 'blocked'
+    ? reportedToolCall(p, {
         sessionId: str(p.session_id),
         name: str(p.tool_name) ?? '',
         input: p.args,

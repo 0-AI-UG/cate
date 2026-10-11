@@ -15,12 +15,12 @@ import { documentStoreFor } from '@client/document'
 import { useUIStore } from '../state/uiStore'
 import { tryClientApp } from '../app'
 import { DevicesPage } from '../pairing/DevicesPage'
-import { RemoteMachinesPage } from '../remote/RemoteMachinesPage'
+import { MachinesPage } from '../remote/MachinesPage'
 import { ConnectionNotice } from '../sidebar/connectionStatus'
 import { AppearancePage } from './pages/AppearancePage'
-import { CanvasPage } from './pages/CanvasPage'
+import { CanvasPage, WorkspaceCanvasPage } from './pages/CanvasPage'
 import { ShortcutsPage } from './pages/ShortcutsPage'
-import { BrowserPage, EditorPage, NotificationsPage, SidebarPage, TerminalPage } from './pages/clientPages'
+import { BrowserPage, EditorPage, NotificationsPage, SidebarPage, TerminalPage, WorkspaceBrowserPage, WorkspaceTerminalPage } from './pages/clientPages'
 import { registerSettingsPage, type SettingsPage, type SettingsPageProps } from './registry'
 
 function RuntimePage({ workspaceId }: SettingsPageProps): JSX.Element | null {
@@ -55,22 +55,27 @@ function HooksPage({ workspaceId }: SettingsPageProps): JSX.Element {
 }
 
 export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
-  { id: 'appearance', title: 'Appearance', group: 'general', scope: 'client', order: 10, component: AppearancePage },
-  { id: 'notifications', title: 'Notifications', group: 'general', scope: 'client', order: 20, component: NotificationsPage },
-  { id: 'remote-machines', title: 'Remote machines', group: 'general', scope: 'client', order: 30, component: RemoteMachinesPage },
-  { id: 'canvas', title: 'Canvas', group: 'workspace', scope: 'client', order: 10, component: CanvasPage },
-  { id: 'sidebar', title: 'Sidebar', group: 'workspace', scope: 'client', order: 20, component: SidebarPage },
-  { id: 'runtime', title: 'Runtime', group: 'workspace', scope: 'workspace', order: 30, component: RuntimePage },
-  { id: 'devices', title: 'Devices', group: 'workspace', scope: 'workspace', order: 40, component: DevicesPage },
-  { id: 'worktrees', title: 'Worktrees', group: 'workspace', scope: 'workspace', order: 50, component: WorktreesPage },
-  { id: 'terminal', title: 'Terminal', group: 'tools', scope: 'client', order: 10, component: TerminalPage },
-  { id: 'browser', title: 'Browser', group: 'tools', scope: 'client', order: 20, component: BrowserPage },
-  { id: 'editor', title: 'Editor', group: 'tools', scope: 'client', order: 30, component: EditorPage },
-  { id: 'cli', title: 'CLI', group: 'tools', scope: 'workspace', order: 40, component: CliSettingsPage },
-  { id: 'github', title: 'GitHub', group: 'tools', scope: 'workspace', order: 50, component: GitHubPage },
-  { id: 'shortcuts', title: 'Shortcuts', group: 'tools', scope: 'client', order: 90, component: ShortcutsPage },
-  { id: 'hooks', title: 'Hooks', group: 'agents', scope: 'workspace', order: 20, component: HooksPage },
-  { id: 'skills', title: 'Skills', group: 'agents', scope: 'workspace', order: 30, component: SkillsPage },
+  // This device. General (0) and Updates (90) come from the desktop shell.
+  { id: 'appearance', title: 'Appearance', scope: 'client', group: 'general', order: 10, component: AppearancePage },
+  { id: 'notifications', title: 'Notifications', scope: 'client', group: 'general', order: 20, component: NotificationsPage },
+  { id: 'sidebar', title: 'Sidebar', scope: 'client', group: 'layout', order: 10, component: SidebarPage },
+  { id: 'canvas', title: 'Canvas', scope: 'client', group: 'layout', order: 20, component: CanvasPage },
+  { id: 'terminal', title: 'Terminal', scope: 'client', group: 'tools', order: 10, component: TerminalPage },
+  { id: 'editor', title: 'Editor', scope: 'client', group: 'tools', order: 20, component: EditorPage },
+  { id: 'browser', title: 'Browser', scope: 'client', group: 'tools', order: 30, component: BrowserPage },
+  { id: 'shortcuts', title: 'Shortcuts', scope: 'client', group: 'tools', order: 40, component: ShortcutsPage },
+  { id: 'machines', title: 'Machines', scope: 'client', group: 'connections', order: 10, component: MachinesPage },
+  // The active workspace.
+  { id: 'runtime', title: 'Runtime', scope: 'workspace', group: 'runtime', order: 10, component: RuntimePage },
+  { id: 'devices', title: 'Devices', scope: 'workspace', group: 'runtime', order: 20, component: DevicesPage },
+  { id: 'workspace-terminal', title: 'Terminal', scope: 'workspace', group: 'tools', order: 10, component: WorkspaceTerminalPage },
+  { id: 'workspace-browser', title: 'Browser', scope: 'workspace', group: 'tools', order: 20, component: WorkspaceBrowserPage },
+  { id: 'workspace-canvas', title: 'Canvas', scope: 'workspace', group: 'tools', order: 30, component: WorkspaceCanvasPage },
+  { id: 'worktrees', title: 'Worktrees', scope: 'workspace', group: 'sourceControl', order: 10, component: WorktreesPage },
+  { id: 'github', title: 'GitHub', scope: 'workspace', group: 'sourceControl', order: 20, component: GitHubPage },
+  { id: 'cli', title: 'CLI', scope: 'workspace', group: 'agents', order: 10, component: CliSettingsPage },
+  { id: 'hooks', title: 'Hooks', scope: 'workspace', group: 'agents', order: 20, component: HooksPage },
+  { id: 'skills', title: 'Skills', scope: 'workspace', group: 'agents', order: 30, component: SkillsPage },
 ]
 
 export function registerDefaultSettingsPages(): () => void {

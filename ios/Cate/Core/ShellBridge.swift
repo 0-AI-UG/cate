@@ -74,10 +74,10 @@ final class ShellBridge: NSObject, WKScriptMessageHandlerWithReply {
             let terminalId = try string("terminalId")
             switch try string("kind") {
             case "size":
-                guard let cols = params["cols"] as? Int, let rows = params["rows"] as? Int, let fitted = params["fitted"] as? Bool else {
+                guard let cols = params["cols"] as? Int, let rows = params["rows"] as? Int else {
                     throw BridgeError(description: "terminal.event: bad size")
                 }
-                host?.terminalEvent(terminalId, .size(cols: cols, rows: rows, fitted: fitted))
+                host?.terminalEvent(terminalId, .size(cols: cols, rows: rows))
             case "reset":
                 host?.terminalEvent(terminalId, .reset)
             case "output":

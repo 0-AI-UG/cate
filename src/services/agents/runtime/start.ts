@@ -28,8 +28,9 @@ export interface AgentTerminalLaunch {
 
 export interface AgentStartPorts {
   terminals: {
-    /** A new terminal panel running `launch`; resolves once its PTY started. */
-    create(params: { cwd: string; worktreeId?: string; title: string; launch: AgentTerminalLaunch; placement: AgentPlacement }): Promise<string>
+    /** A new terminal panel running `launch`; resolves once its PTY started.
+     *  `titleChosen`: the caller named it, so the agent never retitles it. */
+    create(params: { cwd: string; worktreeId?: string; title: string; titleChosen?: boolean; launch: AgentTerminalLaunch; placement: AgentPlacement }): Promise<string>
     /** Restarts an existing terminal panel's PTY with `launch`. */
     relaunch(panelId: string, params: { cwd: string; worktreeId?: string; launch: AgentTerminalLaunch }): Promise<void>
     /** A terminal panel's PTY, or null for a panel that is no terminal. */
@@ -60,7 +61,13 @@ export interface AgentStarter {
   start(callerPanelId: string | undefined, args: AgentStartArgs): Promise<{ panelId: string; agentId: AgentId }>
   /** Every agent CLI, in registry order. */
   types(): Promise<AgentTypeInfo[]>
+  /** Started agents whose CLI has not been observed yet: until its first
+   *  hook, a started panel is no agent panel to the terminal agents. */
+  starting(): Array<{ panelId: string; agentId: AgentId }>
 }
+
+/** How long a started agent counts as starting before its CLI is observed. */
+const START_GRACE_MS = 60_000
 
 function fail(code: string): never {
   throw new RpcError('rejected', code)
@@ -70,6 +77,13 @@ function fail(code: string): never {
 type StartRequest = Omit<AgentStartArgs, 'agentId'> & { agentId?: AgentId }
 
 export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): AgentStarter {
+  const pending = new Map<string, { agentId: AgentId; at: number }>()
+  /** Still starting: recent, its terminal running, its agent not observed. */
+  const stillStarting = (panelId: string, at: number): boolean =>
+    Date.now() - at < START_GRACE_MS
+    && ports.terminals.state(panelId)?.alive === true
+    && (agents.panels.state(panelId)?.status ?? 'notRunning') === 'notRunning'
+
   /** The checkout to run in: the asked worktree, else the caller's own. */
   const checkoutFor = (callerPanelId: string | undefined, worktreeId: string | undefined): { cwd: string; worktreeId?: string } => {
     if (worktreeId) {
@@ -128,10 +142,14 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
           // Reuse the panel, not its shell process: restarting the PTY
           // launches the canonical executable and argv directly.
           await ports.terminals.relaunch(args.terminalPanelId, { ...checkout, launch })
+          pending.set(args.terminalPanelId, { agentId, at: Date.now() })
           return { panelId: args.terminalPanelId, agentId }
         }
-        const title = args.title?.trim() || prompt.replace(/\s+/g, ' ').slice(0, 54)
-        return { panelId: await ports.terminals.create({ ...checkout, title, launch, placement }), agentId }
+        const chosen = args.title?.trim()
+        const title = chosen || prompt.replace(/\s+/g, ' ').slice(0, 54)
+        const panelId = await ports.terminals.create({ ...checkout, title, ...(chosen ? { titleChosen: true } : {}), launch, placement })
+        pending.set(panelId, { agentId, at: Date.now() })
+        return { panelId, agentId }
       } catch (error) {
         if (created) await ports.worktrees.remove(created.id).catch(() => {})
         throw error
@@ -148,6 +166,15 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
         displayName: agent.displayName,
         ready: ready.has(agent.id),
       }))
+    },
+
+    starting() {
+      const out: Array<{ panelId: string; agentId: AgentId }> = []
+      for (const [panelId, { agentId, at }] of pending) {
+        if (stillStarting(panelId, at)) out.push({ panelId, agentId })
+        else pending.delete(panelId)
+      }
+      return out
     },
   }
 }

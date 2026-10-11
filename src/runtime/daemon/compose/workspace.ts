@@ -16,7 +16,7 @@ import type { WorkspaceSettings } from '@panels/settings'
 import type { DataPaths, openSecretsFile } from '@runtime/data/runtime'
 import { workspaceCapability } from '@workspace/lifecycle/contract'
 import { createTrustGate, workspaceCapabilityImpl, workspaceInfo } from '@workspace/lifecycle/runtime'
-import { documentCapability, presenceCapability, type PanelRecord } from '@workspace/document/contract'
+import { PANEL_TITLE_CHOSEN_FIELD, documentCapability, presenceCapability, type PanelRecord } from '@workspace/document/contract'
 import {
   createDocumentService,
   createPresence,
@@ -452,7 +452,7 @@ function agentsDocument(document: ReturnType<typeof createDocumentService>): Age
     setRelationContextMode: (panelId, mode) => update(panelId, { fields: { [RELATION_CONTEXT_MODE_FIELD]: mode } }),
     setTitleFromAgent(panelId, title) {
       const record = document.get().panels[panelId]
-      if (!record || record.fields.titleUserOverridden === true || record.title === title) return
+      if (!record || record.fields[PANEL_TITLE_CHOSEN_FIELD] === true || record.title === title) return
       update(panelId, { title })
     },
     onChange: (listener) => document.subscribe(() => listener()),

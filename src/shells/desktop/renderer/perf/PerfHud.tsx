@@ -118,7 +118,7 @@ export function PerfHud({ api, connections }: { api: DesktopApi; connections: Wo
   return (
     <div className="fixed bottom-2 left-2 z-[10000] w-[280px] max-h-[70vh] overflow-auto rounded-md bg-black/80 backdrop-blur-sm text-[10px] leading-tight font-mono text-zinc-200 p-2 pointer-events-auto select-text shadow-lg ring-1 ring-white/10">
       <div className="flex items-center justify-between mb-1 text-zinc-400">
-        <span className="font-semibold tracking-wide text-zinc-300">CATE PERF</span>
+        <span className="font-semibold tracking-wide text-zinc-300">Cate perf</span>
         <span>⌘⌥P to hide</span>
       </div>
       <div className="flex gap-3 mb-1">

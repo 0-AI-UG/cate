@@ -1,23 +1,24 @@
-// "Join a workspace": type the pairing code another device shows, pair, then
-// open the workspace.
+// "Join with a Code": type the pairing code another device shows (Share →
+// Create code there), or open its link, pair, then open the workspace.
 
 import { useState } from 'react'
 import { Link2 } from 'lucide-react'
 import { Modal, btn, inputCls, Spinner } from '../../kernel/interaction'
 import { clientApp } from '../app'
 import { selectWorkspace } from '../navigation'
-import { useUIStore } from '../state/uiStore'
+import { useUIStore, type JoinRequest } from '../state/uiStore'
 import { joinErrorMessage, joinWorkspace } from '@client/workspaces'
 
 export function JoinWorkspaceDialog(): JSX.Element | null {
-  const open = useUIStore((s) => s.joinDialogOpen)
-  if (!open) return null
-  return <OpenJoinDialog />
+  const request = useUIStore((s) => s.joinDialog)
+  if (!request) return null
+  // A new request (another link opened) starts the dialog over.
+  return <OpenJoinDialog key={`${request.code ?? ''}|${request.machine ?? ''}`} request={request} />
 }
 
-function OpenJoinDialog(): JSX.Element {
-  const close = () => useUIStore.getState().setJoinDialogOpen(false)
-  const [code, setCode] = useState('')
+function OpenJoinDialog({ request }: { request: JoinRequest }): JSX.Element {
+  const close = () => useUIStore.getState().closeJoinDialog()
+  const [code, setCode] = useState(request.code ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const app = clientApp()
@@ -38,8 +39,10 @@ function OpenJoinDialog(): JSX.Element {
     }
   }
 
+  const where = request.machine ? `On ${request.machine}` : 'On the device that has the workspace open'
+
   return (
-    <Modal onClose={close} width={440} icon={<Link2 size={16} />} title="Join a workspace" dismissable={!busy} bodyClassName="px-5 py-4">
+    <Modal onClose={close} width={440} icon={<Link2 size={16} />} title="Join with a code" dismissable={!busy} bodyClassName="px-5 py-4">
       {!pair ? (
         <p className="text-[13px] text-secondary">This version of Cate cannot join workspaces on other devices yet.</p>
       ) : (
@@ -51,7 +54,7 @@ function OpenJoinDialog(): JSX.Element {
           }}
         >
           <p className="text-[13px] leading-relaxed text-secondary">
-            On a device that has the workspace open, go to Settings → Devices → Add device. Type the code it shows.
+            {where}, click Share and create a code. Type the code here.
           </p>
           <input
             autoFocus

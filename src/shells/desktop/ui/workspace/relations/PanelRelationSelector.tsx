@@ -285,7 +285,7 @@ export function PanelRelationSelector({
         {savedLabels.length > 0 ? (
           <>
             <div className="my-1 h-px bg-surface-border" />
-            <div className="px-2 pb-1 pt-0.5 text-[9px] font-medium uppercase tracking-wide text-muted">
+            <div className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-muted">
               Saved relationships
             </div>
             <div className="max-h-36 overflow-y-auto">

@@ -115,6 +115,9 @@ export type ServeResult =
 /** How long a nested runtime stays up to tell clients why it refuses them. */
 const NESTED_REFUSAL_MS = 10_000
 
+/** This machine as people know it, for paired devices. */
+const machineName = (): string => os.hostname().replace(/\.local$/, '')
+
 /** Once per daemon process, before serving: PTYs inherit the login shell's
  *  environment. */
 export async function prepareDaemonProcess(): Promise<void> {
@@ -282,6 +285,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   rpc.register(runtimeCapability, runtimeCapabilityImpl({
     runtimeId,
     root,
+    machineName: machineName(),
     version,
     rpc,
     perf,

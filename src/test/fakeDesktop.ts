@@ -133,7 +133,13 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       listDir: async () => { throw new Error('no machines') },
       mkdir: async () => { throw new Error('no machines') },
       wslDistros: async () => [],
+      sshHosts: async () => [],
       cancel: async () => {},
+      onPrompt: () => off,
+      onPromptCancel: () => off,
+      answerPrompt: () => {},
+      installs: async () => [],
+      onInstallProgress: () => off,
     },
     transports: {
       async dialLocal() {

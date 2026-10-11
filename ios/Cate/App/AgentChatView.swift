@@ -1,7 +1,9 @@
 // An agent as a chat. A new chat starts empty: say what to do, pick what
 // runs it in the box, send. Your message shows at once and the reply line
-// shimmers while the agent starts and works; the same screen then follows
-// the agent. A permission or question is answered in the panel it runs in
+// shimmers while the agent starts and works, naming the step it last
+// completed; the same screen then follows the agent. Each turn's steps fold
+// into one row before its reply. What you send while the agent works waits
+// in a queue until it can take it. A permission or question is answered in the panel it runs in
 // (the live terminal), one tap away in the toolbar.
 // Review opens the workspace's review panel filtered to this agent's panel.
 // The runtime pushes the conversation as it changes (AgentConversation);
@@ -33,6 +35,7 @@ struct AgentChatView: View {
     @State private var startedAt: Date?
     @State private var startFailure: String?
     @State private var options = AgentChoiceOptions()
+    @State private var attachments = ComposerAttachments()
     @AppStorage("agents.agent") private var remembered = ""
     @AppStorage("agents.worktree") private var worktree = true
     @State private var failure: OpFailure?
@@ -126,11 +129,21 @@ struct AgentChatView: View {
                             .font(.callout)
                             .frame(maxWidth: .infinity)
                     }
+                    let steps = conversation?.steps ?? [:]
                     ForEach(messages.suffix(shown)) { message in
+                        if let group = steps[message.id] {
+                            AgentStepsRow(group: group)
+                        }
                         MessageRow(message: message)
+                    }
+                    if let group = steps[messages.count] {
+                        AgentStepsRow(group: group)
                     }
                     if let pending {
                         UserBubble(text: pending)
+                    }
+                    if let queued = conversation?.queued {
+                        QueuedBubble(text: queued) { unqueue() }
                     }
                     if let activity = activity(workspace, agent) {
                         ShimmerText(text: activity)
@@ -177,7 +190,11 @@ struct AgentChatView: View {
     private func activity(_ workspace: Workspace?, _ agent: Agent?) -> String? {
         guard panelId != nil else { return sending ? "Starting \(options.label)…" : nil }
         let name = agent?.name ?? "The agent"
-        if conversation?.working == true { return interrupting ? "Stopping \(name)…" : "\(name) is working…" }
+        if conversation?.working == true {
+            if interrupting { return "Stopping \(name)…" }
+            if let step = conversation?.activity { return [step.tool, step.subject].compactMap(\.self).joined(separator: " · ") }
+            return "\(name) is working…"
+        }
         if let agent {
             // Seen in the terminal, not yet heard from through its hooks.
             if agent.status == "notRunning", agent.present, startedAt != nil { return "Starting \(agent.name)…" }
@@ -204,19 +221,24 @@ struct AgentChatView: View {
                 placeholder: "What should the agent do?",
                 canSend: connected && options.ready != nil,
                 sending: sending,
+                workspaceId: workspaceId,
+                attachments: attachments,
                 options: options,
                 worktree: $worktree,
                 send: start,
                 typing: $typing
             )
         } else {
-            let canSend = connected && conversation?.canReceivePrompt == true
+            let canSend = connected && (conversation?.canReceivePrompt == true || canQueue(agent))
             let stop: (() -> Void)? = connected && conversation?.working == true ? { interrupt() } : nil
             AgentComposer(
                 text: $draft,
-                placeholder: canSend ? "Reply to \(agent?.name ?? "the agent")" : composerHint(agent),
+                placeholder: composerHint(agent),
                 canSend: canSend,
                 sending: sending,
+                workspaceId: workspaceId,
+                searchRoot: agent?.checkout,
+                attachments: attachments,
                 send: reply,
                 stop: stop,
                 typing: $typing
@@ -224,10 +246,16 @@ struct AgentChatView: View {
         }
     }
 
+    /// The agent is there but busy: a prompt waits until it can take it.
+    private func canQueue(_ agent: Agent?) -> Bool {
+        guard let agent, agent.present, conversation?.status != nil else { return false }
+        return conversation?.canReceivePrompt != true
+    }
+
     private func composerHint(_ agent: Agent?) -> String {
         guard let agent else { return "Reply" }
-        if agent.needsYou { return "Answer the agent above first" }
-        if conversation?.working == true { return "\(agent.name) is working…" }
+        if conversation?.canReceivePrompt == true { return "Reply to \(agent.name)" }
+        if canQueue(agent) { return agent.needsYou ? "Queue a reply for after you answer" : "Queue a reply" }
         return "The agent is not at its prompt"
     }
 
@@ -250,11 +278,13 @@ struct AgentChatView: View {
 
     /// Starts the agent; its panel goes where the chat was asked from.
     private func start() {
-        guard let agentId = options.ready?.agentId else { return }
-        let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let agentId = options.ready?.agentId, attachments.ready else { return }
+        let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = attachments.prompt(typed)
         guard !prompt.isEmpty else { return }
         starting = prompt
         draft = ""
+        attachments.clear()
         startFailure = nil
         sending = true
         Task {
@@ -280,13 +310,19 @@ struct AgentChatView: View {
     }
 
     private func reply() {
-        guard let panelId, let conversation else { return }
-        let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let panelId, let conversation, attachments.ready else { return }
+        let prompt = attachments.prompt(draft.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !prompt.isEmpty else { return }
+        draft = ""
+        attachments.clear()
+        // Busy: it waits in the core until the agent can take it.
+        guard conversation.canReceivePrompt else {
+            Task { await core.call("agents.queue", ["viewId": conversation.viewId, "prompt": prompt]) }
+            return
+        }
         // Shown at once (pending in the core); back in the box if it does
         // not go through.
         sending = true
-        draft = ""
         Task {
             let result = await core.action("agents.send", [
                 "viewId": conversation.viewId, "workspaceId": workspaceId, "panelId": panelId, "prompt": prompt,
@@ -296,6 +332,15 @@ struct AgentChatView: View {
                 if draft.isEmpty { draft = prompt }
                 failure = OpFailure(message: result.message ?? "The prompt did not go through.")
             }
+        }
+    }
+
+    /// The queued prompt back in the box.
+    private func unqueue() {
+        guard let conversation else { return }
+        Task {
+            let prompt = try? await core.call("agents.unqueue", ["viewId": conversation.viewId], as: String?.self)
+            if let prompt { draft = draft.isEmpty ? prompt : "\(prompt)\n\n\(draft)" }
         }
     }
 
@@ -404,6 +449,26 @@ private struct MessageRow: View {
         } else {
             MarkdownText(text: message.text)
         }
+    }
+}
+
+/// A prompt waiting for the agent to be at its prompt; it can be taken back.
+private struct QueuedBubble: View {
+    let text: String
+    let unqueue: () -> Void
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            UserBubble(text: text).opacity(0.55)
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                Text("Queued")
+                Button("Edit", action: unqueue).buttonStyle(.borderless)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 

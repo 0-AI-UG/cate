@@ -10,6 +10,11 @@
 // - `CATE_RUNTIME_BUNDLE` makes the shell start `dist-runtime/runtime.cjs`
 //   with this Node instead of installing the runtime tarball.
 // - CATE_E2E=1 installs `window.__cateE2E` (src/client/ui/e2e/e2eHarness.ts).
+// - A stand-in `hermes` that is not installed comes first on the app's and
+//   the runtime's PATH. The runtime runs `hermes` itself (hook readiness,
+//   its plugin), and a real Hermes run under the temp HOME rewrites the
+//   machine's shared Hermes launchers to that HOME's tools, which are gone
+//   once the test ends.
 //
 // Runtimes are detached daemons that outlive the app; `closeApp` stops the
 // ones under the test's HOME.
@@ -20,7 +25,7 @@ import { expect } from '@playwright/test'
 import type {} from '../../src/shells/desktop/ui/app/e2e/e2eHarness'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 
 export interface LaunchResult {
@@ -76,6 +81,16 @@ export interface LaunchOptions {
   env?: Record<string, string>
 }
 
+/** A bin dir under `home` whose `hermes` reports that it is not installed. */
+function agentCliGuard(home: string): string {
+  const dir = path.join(home, 'e2e-bin')
+  mkdirSync(dir, { recursive: true })
+  const hermes = path.join(dir, 'hermes')
+  writeFileSync(hermes, '#!/bin/sh\necho "hermes: not installed (Cate e2e)" >&2\nexit 127\n')
+  chmodSync(hermes, 0o755)
+  return dir
+}
+
 let userDataCounter = 0
 /** The HOME each app was launched with, so `closeApp(app)` can clean up. */
 const homes = new WeakMap<ElectronApplication, string>()
@@ -98,6 +113,9 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
     ...(opts.perf ? { CATE_PERF: '1' } : {}),
     ...opts.env,
   }
+  const guard = agentCliGuard(home)
+  env.PATH = [guard, env.PATH].filter(Boolean).join(path.delimiter)
+  env.CATE_E2E_PATH_PREPEND = [guard, env.CATE_E2E_PATH_PREPEND].filter(Boolean).join(path.delimiter)
   // Playwright forces colored output while some hosts export NO_COLOR; both in
   // a real terminal make every Node CLI print a warning.
   delete env.NO_COLOR

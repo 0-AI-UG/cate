@@ -52,6 +52,7 @@ beforeEach(() => {
     interrupt: async () => ({ ok: true }),
     conversation: async () => null,
     conversationStamp: async () => null,
+    onStep: () => () => {},
     dispose: () => {},
   }))
   ports = {
@@ -89,6 +90,20 @@ describe('agent start', () => {
       launch: { kind: 'agents.start', params: { agentId: 'codex', prompt: 'Fix the login' } },
       placement: { near: 'supervisor' },
     })
+  })
+
+  it('marks a title the caller chose, so the agent never retitles the panel', async () => {
+    await starter().start('supervisor', { prompt: 'Fix the login', title: '  Alpha ' })
+    expect(ports.terminals.create).toHaveBeenCalledWith(expect.objectContaining({ title: 'Alpha', titleChosen: true }))
+  })
+
+  it('counts a started agent as starting until its terminal stops or its CLI is observed', async () => {
+    const agentStarter = starter()
+    ports.terminals.state.mockReturnValue({ alive: true, busy: true })
+    await agentStarter.start('supervisor', { prompt: 'Fix it' })
+    expect(agentStarter.starting()).toEqual([{ panelId: 'new-terminal', agentId: 'codex' }])
+    ports.terminals.state.mockReturnValue({ alive: false, busy: false })
+    expect(agentStarter.starting()).toEqual([])
   })
 
   it('runs a client\'s start in a new worktree where it asks', async () => {

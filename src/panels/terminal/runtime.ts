@@ -6,7 +6,7 @@ import type { AgentStartPorts } from '@services/agents/runtime'
 import type { LaunchIntent } from '@services/terminal/contract'
 import type { PanelKit } from '@panels/framework/contract'
 import type { DisposeReason, PanelSessionClass, SessionKit } from '@panels/framework/runtime'
-import type { PanelRecord } from '@workspace/document/contract'
+import { PANEL_TITLE_CHOSEN_FIELD, type PanelRecord } from '@workspace/document/contract'
 import { terminalDefinition } from './definition'
 import { TerminalSession, type TerminalSessionDeps } from './session'
 
@@ -64,10 +64,15 @@ export function createTerminalPanels(deps: Omit<TerminalSessionDeps, 'takeLaunch
     session: BoundTerminalSession as unknown as PanelSessionClass,
     sessionOf: (panelId) => live.get(panelId),
     agentTerminals: (kit, host) => ({
-      async create({ cwd, worktreeId, title, launch, placement }) {
+      async create({ cwd, worktreeId, title, titleChosen, launch, placement }) {
         const id = kit.newId()
         launches.set(id, launch)
-        const record = kit.record('terminal', { id, title: kit.uniqueTitle(title, id), worktreeId, fields: { cwd } })
+        const record = kit.record('terminal', {
+          id,
+          title: kit.uniqueTitle(title, id),
+          worktreeId,
+          fields: { cwd, ...(titleChosen ? { [PANEL_TITLE_CHOSEN_FIELD]: true } : {}) },
+        })
         if (!kit.add(record, placement)) {
           launches.delete(id)
           throw new Error('could not place the terminal')

@@ -111,10 +111,6 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       terminals.get(terminalId)?.resize(cols, rows)
       return null
     },
-    async 'terminal.fit'({ terminalId }) {
-      terminals.get(terminalId)?.fit()
-      return null
-    },
     async 'terminal.close'({ terminalId }) {
       terminals.get(terminalId)?.close()
       return null
@@ -196,6 +192,10 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       return entries
         .map(({ name, path, isDirectory }) => ({ name, path, isDirectory }))
         .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name))
+    },
+    async 'files.search'({ workspaceId, query, root }) {
+      const found = await runtimeFor(workspaceId).search.files({ query, maxResults: 20, ...(root ? { root } : {}) })
+      return found.map(({ name, path, relativePath, isDirectory }) => ({ name, path, relativePath, isDirectory }))
     },
     async 'files.url'({ workspaceId, path }) {
       return (await runtimeFor(workspaceId).file.serveUrl({ path })).url

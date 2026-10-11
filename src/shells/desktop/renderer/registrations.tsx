@@ -108,8 +108,8 @@ export function registerDesktopRenderer(api: DesktopApi): () => void {
     }),
     syncMenuModel(api),
     setAgentChangesOpener(async (request) => (await openAgentChanges(request)) !== null),
-    registerSettingsPage({ id: 'general', title: 'General', group: 'general', scope: 'client', order: 0, component: GeneralPage }),
-    registerSettingsPage({ id: 'updates', title: 'Updates', group: 'general', scope: 'client', order: 90, component: UpdatesPage }),
+    registerSettingsPage({ id: 'general', title: 'General', scope: 'client', group: 'general', order: 0, component: GeneralPage }),
+    registerSettingsPage({ id: 'updates', title: 'Updates', scope: 'client', group: 'general', order: 90, component: UpdatesPage }),
   ]
   return () => {
     for (const stop of stops.splice(0)) stop()

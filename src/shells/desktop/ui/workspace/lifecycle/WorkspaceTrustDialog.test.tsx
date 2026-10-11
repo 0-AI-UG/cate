@@ -34,7 +34,7 @@ const button = (text: string) =>
 describe('WorkspaceTrustDialog', () => {
   it('renders nothing without a question', () => {
     setup()
-    expect(document.body.textContent).not.toContain('Do you trust this project?')
+    expect(document.body.textContent).not.toContain('Do you trust this workspace?')
   })
 
   it('shows the asking workspace and trusts it on the primary button', async () => {
@@ -47,7 +47,7 @@ describe('WorkspaceTrustDialog', () => {
     await act(async () => { button('Trust and open').click() })
     await expect(gate).resolves.toBe(true)
     expect(setTrust).toHaveBeenCalledWith({ trusted: true })
-    expect(document.body.textContent).not.toContain('Do you trust this project?')
+    expect(document.body.textContent).not.toContain('Do you trust this workspace?')
   })
 
   it('shows why trusting failed and lets the person retry', async () => {
@@ -57,7 +57,7 @@ describe('WorkspaceTrustDialog', () => {
     await act(async () => { gate = store.ensureTrusted('ws', '/repo') })
     await act(async () => { button('Trust and open').click() })
     expect(document.querySelector('[role="alert"]')?.textContent).toBe('The runtime did not answer')
-    expect(document.body.textContent).toContain('Do you trust this project?')
+    expect(document.body.textContent).toContain('Do you trust this workspace?')
     await act(async () => { button('Trust and open').click() })
     await expect(gate).resolves.toBe(true)
     expect(setTrust).toHaveBeenCalledTimes(2)

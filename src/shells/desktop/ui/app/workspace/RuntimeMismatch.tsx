@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { ModalCard, btn, Spinner } from '../../kernel/interaction'
+import { ModalCard, ProgressBar, btn, Spinner } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
 import { compareSemver, type RuntimeUpdateProgress } from '@runtime/daemon/contract'
 import type { WorkspaceConnection } from '@client/connections'
@@ -128,16 +128,7 @@ function UpdateProgressCard({ run, version }: { run: RuntimeUpdateRun; version: 
           <Spinner size={13} />
           {label}
         </p>
-        <div
-          role="progressbar"
-          aria-label={label}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(fraction * 100)}
-          className="relative h-1.5 overflow-hidden rounded-full bg-surface-5"
-        >
-          <div className="h-full rounded-full bg-focus-blue transition-[width] duration-300" style={{ width: `${fraction * 100}%` }} />
-        </div>
+        <ProgressBar value={fraction} label={label} />
         {detail && <p className="text-[12px] text-muted">{detail}</p>}
       </div>
     </ModalCard>

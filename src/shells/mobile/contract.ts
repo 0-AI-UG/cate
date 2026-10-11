@@ -11,7 +11,7 @@
 
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
-import type { AgentConversationMessage, AgentId, AgentStatus, AgentTypeInfo } from '@services/agents/contract'
+import type { AgentConversationMessage, AgentId, AgentStatus, AgentStep, AgentStepGroup, AgentTypeInfo } from '@services/agents/contract'
 import type { RelationKind } from '@workspace/document/contract'
 import type { RelationContextMode } from '@workspace/relations/contract'
 
@@ -91,14 +91,17 @@ export type MobileViewEvent =
   | { kind: 'error'; message: string }
   /** `agents.watch`: the agent's state (null while the panel hosts none),
    *  the prompt sent from this view that the conversation does not show yet,
-   *  and the messages from index `from` on, which replace the app's. */
+   *  the one queued until the agent can take it, the messages from index
+   *  `from` on, which replace the app's, and the steps (null: unchanged). */
   | {
     kind: 'conversation'
     status: AgentStatus | null
     canReceivePrompt: boolean
     pending: string | null
+    queued: string | null
     from: number
     messages: AgentConversationMessage[]
+    steps: MobileAgentSteps | null
   }
 
 /** A loopback stream (`stream.open`): bytes from the runtime's machine
@@ -108,12 +111,11 @@ export type MobileStreamEvent =
   | { streamId: string; kind: 'end' }
 
 /** What a terminal view is told: `size` is the PTY's grid, which the view
- *  draws (before the screen, and on every change), and whether the PTY fits
- *  this view; `reset` clears the screen; `output` is bytes (base64; UTF-8 may
+ *  draws (before the screen, and on every change); `reset` clears the screen; `output` is bytes (base64; UTF-8 may
  *  split between chunks); `state` is the panel's PTY state as the view shows
  *  it. */
 export type MobileTerminalEvent =
-  | { terminalId: string; kind: 'size'; cols: number; rows: number; fitted: boolean }
+  | { terminalId: string; kind: 'size'; cols: number; rows: number }
   | { terminalId: string; kind: 'reset' }
   | { terminalId: string; kind: 'output'; data: string }
   | { terminalId: string; kind: 'state'; status: 'starting' | 'running' | 'exited' | 'failed'; text: string | null }
@@ -299,6 +301,23 @@ export type MobileActionResult = { ok: true } | { ok: false; message: string }
  *  switching would stop what runs; the app asks, then sends `discard`. */
 export type MobileSwitchResult = MobileActionResult | { ok: false; message: string; dirty: true }
 
+/** Where an agent chat shows its steps (`agentStepGroups`), and the step
+ *  its running turn last completed. */
+export interface MobileAgentSteps {
+  groups: AgentStepGroup[]
+  activity: AgentStep | null
+}
+
+/** A file a search found (`search.files`). */
+export interface MobileFileMatch {
+  name: string
+  /** Absolute, on the runtime's machine. */
+  path: string
+  /** Relative to the searched folder. */
+  relativePath: string
+  isDirectory: boolean
+}
+
 /** An agent CLI a new agent can run, as the composer offers it
  *  (`cate.agent.types`). */
 export type MobileAgentChoice = AgentTypeInfo
@@ -341,15 +360,13 @@ export interface MobileCoreMethods {
   /** Shows a terminal panel in a view the app names `terminalId`: the PTY's
    *  grid, screen and live output, as `terminal.event`s, following the panel
    *  to each new PTY until `terminal.close`. `cols` x `rows` is the grid the
-   *  view holds, as for every viewer: the PTY takes it while it fits this
-   *  view. */
+   *  view holds, as for every viewer: the PTY takes the smallest cols and
+   *  rows of the visible viewers. */
   'terminal.open': { params: { terminalId: string; workspaceId: string; panelId: string; cols: number; rows: number }; result: null }
   /** Keystrokes, exactly as typed. */
   'terminal.input': { params: { terminalId: string; data: string }; result: null }
   /** The grid the view holds changed. */
   'terminal.resize': { params: { terminalId: string; cols: number; rows: number }; result: null }
-  /** Fits the PTY to this view ("Fit to phone"). */
-  'terminal.fit': { params: { terminalId: string }; result: null }
   'terminal.close': { params: { terminalId: string }; result: null }
 
   /** Follows a panel's session in a view the app names `viewId`: its
@@ -394,6 +411,9 @@ export interface MobileCoreMethods {
   'buffer.warm': { params: { workspaceId: string; path: string }; result: null }
   /** A folder's entries on the runtime's machine, folders first. */
   'files.list': { params: { workspaceId: string; path: string }; result: MobileFileEntry[] }
+  /** Files whose names match `query`, under `root` (the workspace root when
+   *  omitted), best first. */
+  'files.search': { params: { workspaceId: string; query: string; root?: string }; result: MobileFileMatch[] }
   /** A URL the workspace's web views load for a workspace file. */
   'files.url': { params: { workspaceId: string; path: string }; result: string }
 
@@ -411,6 +431,18 @@ export interface MobileCoreMethods {
   /** Sends a prompt from the view `viewId` follows: pending there until the
    *  conversation has it. */
   'agents.send': { params: { viewId: string; workspaceId: string; panelId: string; prompt: string }; result: MobileActionResult }
+  /** Sends a prompt from the view `viewId` follows once the agent can take
+   *  it (replacing one queued there). */
+  'agents.queue': { params: { viewId: string; prompt: string }; result: null }
+  /** Takes the view's queued prompt back; null when none waits. */
+  'agents.unqueue': { params: { viewId: string }; result: string | null }
+  /** Stores a photo (`image`) or another file in the workspace's data on the
+   *  runtime's machine, for a prompt to name; `data` is base64. Answers with
+   *  its path there. */
+  'agents.attach': {
+    params: { workspaceId: string; name: string; kind: 'image' | 'file'; data: string }
+    result: { ok: true; path: string } | { ok: false; message: string }
+  }
   /** Stops the agent's turn (Esc, Ctrl-C); the agent stays. */
   'agents.interrupt': { params: { workspaceId: string; panelId: string }; result: MobileActionResult }
   /** Every agent CLI, in registry order. */

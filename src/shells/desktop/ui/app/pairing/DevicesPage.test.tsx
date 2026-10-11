@@ -8,6 +8,7 @@ import { installMockClientUi } from '../../../../../test/clientUi'
 import type { WorkspaceDevice } from '@runtime/pairing/contract'
 import { createClientIdentity, installClientIdentity } from '@client/connections'
 import { DevicesPage, formatCountdown } from './DevicesPage'
+import { SharePanel } from './ShareDialog'
 
 type Event = ChannelEvent<WorkspaceSettings, Partial<WorkspaceSettings>>
 
@@ -82,20 +83,39 @@ afterEach(() => {
   installClientIdentity(null)
 })
 
-describe('DevicesPage', () => {
+describe('Share and Devices', () => {
   it('turns network access on before creating a code, then shows the code, QR and expiry', async () => {
     const { runtime, calls } = fakeRuntime()
     uninstall = setRuntimeResolver((id) => (id === 'w1' ? runtime : null))
     installMockClientUi()
-    act(() => root.render(<DevicesPage workspaceId="w1" />))
+    act(() => root.render(<SharePanel workspaceId="w1" />))
     await flush()
-    const add = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Add device'))!
+    expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Only its machine')
+    const add = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Create code'))!
     await act(async () => { add.click() })
     await flush()
     expect(calls).toEqual(['set runtimeNetwork=sameNetwork', 'createSecret sameNetwork'])
     expect(host.textContent).toContain('ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567')
     expect(host.textContent).toMatch(/Expires in (9:59|10:00)/)
     expect(host.querySelector('[data-testid="pairing-qr"] svg')).not.toBeNull()
+    expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Same network')
+  })
+
+  it('widens access at once and asks before narrowing it', async () => {
+    const { runtime, calls } = fakeRuntime()
+    uninstall = setRuntimeResolver(() => runtime)
+    const ui = installMockClientUi({ confirm: vi.fn(async () => false) })
+    act(() => root.render(<SharePanel workspaceId="w1" />))
+    await flush()
+    const radio = (label: string) => [...host.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes(label)) as HTMLButtonElement
+    await act(async () => { radio('Anywhere').click() })
+    await flush()
+    expect(calls).toEqual(['set runtimeNetwork=cateConnect'])
+    expect(ui.confirm).not.toHaveBeenCalled()
+    await act(async () => { radio('Only its machine').click() })
+    await flush()
+    expect(ui.confirm).toHaveBeenCalled()
+    expect(calls).toEqual(['set runtimeNetwork=cateConnect'])
   })
 
   it('lists every device, this one marked, and revokes after confirmation', async () => {

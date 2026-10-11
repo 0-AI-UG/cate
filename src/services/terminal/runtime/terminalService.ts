@@ -1,8 +1,8 @@
 // The terminal service: PTYs in the runtime, each with a headless screen that
 // any number of viewers attach to. Output fans out to every viewer as a flow
 // controlled byte stream; input from any viewer goes to the same PTY; the PTY
-// fits the viewer that last asked (`view` with `fit`; the first viewer until
-// then), and every viewer is told its size and whether it fits. Activity,
+// takes the smallest cols and rows of its visible viewers, and every viewer
+// is told its size. Activity,
 // ports and cwd are scanned here and published as statuses. Everything that
 // runs a process asks `trust.requireTrusted()` first (9.2).
 
@@ -166,7 +166,6 @@ interface Viewer {
   cols?: number
   rows?: number
   visible: boolean
-  lastFit: number
   /** The last `size` event sent, so each change is sent once. */
   told: string
   decoder: TextDecoder
@@ -184,7 +183,6 @@ interface Term {
   screen: HeadlessScreen
   log: TerminalLog | null
   viewers: Map<string, Viewer>
-  fittedViewer: string | null
   activity: TerminalActivity
   ports: number[]
   cwd: string | null
@@ -315,34 +313,28 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     } catch { /* pty gone */ }
   }
 
-  const applySize = (term: Term): void => {
-    const viewer = term.fittedViewer ? term.viewers.get(term.fittedViewer) : undefined
-    if (!viewer || !validSize(viewer.cols) || !validSize(viewer.rows)) return
-    const { cols, rows } = viewer
-    if (cols === term.screen.cols && rows === term.screen.rows) return
-    term.screen.resize(cols, rows)
-    if (term.alive) {
-      try { term.pty.resize(cols, rows) } catch { /* pty gone */ }
-    }
-  }
-
-  /** Tells every viewer the PTY's size and whether the PTY fits it. */
-  const tellSize = (term: Term): void => {
-    const { cols, rows } = term.screen
+  /** Sizes the PTY to the smallest cols and rows of its visible viewers
+   *  (unchanged while none is visible) and tells every viewer the size. */
+  const resize = (term: Term): void => {
+    let cols = Infinity
+    let rows = Infinity
     for (const v of term.viewers.values()) {
-      const fitted = term.fittedViewer === v.id
-      const told = `${cols}x${rows}:${fitted}`
+      if (!v.visible || !validSize(v.cols) || !validSize(v.rows)) continue
+      cols = Math.min(cols, v.cols)
+      rows = Math.min(rows, v.rows)
+    }
+    if (cols !== Infinity && (cols !== term.screen.cols || rows !== term.screen.rows)) {
+      term.screen.resize(cols, rows)
+      if (term.alive) {
+        try { term.pty.resize(cols, rows) } catch { /* pty gone */ }
+      }
+    }
+    const told = `${term.screen.cols}x${term.screen.rows}`
+    for (const v of term.viewers.values()) {
       if (v.told === told) continue
       v.told = told
-      v.sink.emit({ kind: 'size', cols, rows, fitted })
+      v.sink.emit({ kind: 'size', cols: term.screen.cols, rows: term.screen.rows })
     }
-  }
-
-  const fitTo = (term: Term, viewer: Viewer): void => {
-    viewer.lastFit = Date.now()
-    term.fittedViewer = viewer.id
-    applySize(term)
-    tellSize(term)
   }
 
   const dropViewer = (term: Term, viewer: Viewer): void => {
@@ -350,13 +342,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     term.viewers.delete(viewer.id)
     if (viewer.lagTimer) clearTimeout(viewer.lagTimer)
     setPaused(term, `viewer:${viewer.id}`, false)
-    if (term.fittedViewer === viewer.id) {
-      let next: Viewer | undefined
-      for (const v of term.viewers.values()) if (!next || v.lastFit > next.lastFit) next = v
-      term.fittedViewer = next?.id ?? null
-      applySize(term)
-      tellSize(term)
-    }
+    resize(term)
     syncTimers()
     touch(term)
   }
@@ -531,7 +517,6 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       viewer.sink.end({ reason: 'exit', exitCode })
     }
     term.viewers.clear()
-    term.fittedViewer = null
     saveScreen(term)
     term.log?.dispose()
     term.log = null
@@ -622,7 +607,6 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         screen: new HeadlessScreen(params.cols, params.rows, settings.terminalScrollback),
         log: null,
         viewers: new Map(),
-        fittedViewer: null,
         activity: { type: 'idle' },
         ports: [],
         cwd,
@@ -677,11 +661,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         viewer.visible = params.visible
         if (viewer.visible) resume(term)
       }
-      if (params.fit) fitTo(term, viewer)
-      else if (term.fittedViewer === viewer.id) {
-        applySize(term)
-        tellSize(term)
-      }
+      resize(term)
     },
 
     attach(params, sink) {
@@ -691,17 +671,15 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         sink,
         ...(validSize(params.cols) && validSize(params.rows) ? { cols: params.cols, rows: params.rows } : {}),
         visible: params.visible !== false,
-        lastFit: 0,
         told: '',
         decoder: new TextDecoder(),
         lagTimer: null,
       }
-      // A live PTY: the viewer joins (the first one has the PTY fit it) and
-      // is told the grid and whether it fits before the screen comes.
+      // A live PTY: the viewer joins and is told the grid before the
+      // screen comes.
       if (term.alive) {
         term.viewers.set(viewer.id, viewer)
-        if (!term.fittedViewer) fitTo(term, viewer)
-        tellSize(term)
+        resize(term)
       }
       // Screen, then what is written but not yet in it, then live output:
       // all synchronous, so nothing falls between.

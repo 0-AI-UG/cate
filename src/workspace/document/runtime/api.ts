@@ -6,7 +6,7 @@ import type { Point } from '@workspace/canvas/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { ApiRouter } from '@kernel/api/runtime'
 import { RpcError } from '@kernel/rpc/contract'
-import { removalSet, type PanelId, type PanelRecord } from '../contract'
+import { removalSet, renamePanelChange, type PanelId, type PanelRecord } from '../contract'
 import { canvasApi, panelApi } from '../contract/api'
 import type { DocumentService } from './documentService'
 import type { PresenceService } from './presence'
@@ -38,6 +38,8 @@ export interface PanelListRow {
   type: string
   title: string
   focused: boolean
+  /** The worktree the panel works in (`cate agent start --worktree`). */
+  worktreeId?: string
   filePath?: string
   url?: string
 }
@@ -67,6 +69,7 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
           type: record.type,
           title: record.title,
           focused: record.id === active,
+          ...(record.worktreeId ? { worktreeId: record.worktreeId } : {}),
           ...info(record),
         }))
       },
@@ -74,14 +77,21 @@ export function createDocumentApiHandlers(deps: DocumentApiDeps): {
         if (!document.get().panels[panelId]) throw new RpcError('gone', `panel ${panelId} is gone`)
         const removing = removalSet(document.get(), [panelId])
         const ids = [...removing]
-        deps.checkRemoval(removing, new Set(discard === true ? ids : []))
+        try {
+          deps.checkRemoval(removing, new Set(discard === true ? ids : []))
+        } catch (err) {
+          if (err instanceof RpcError && err.code === 'dirty') {
+            throw new RpcError('dirty', `${err.message}; pass --discard to close it anyway`, err.data)
+          }
+          throw err
+        }
         document.apply({ kind: 'removePanels', ids: [panelId], ...(discard === true ? { discard: ids } : {}) })
         return { panelIds: ids }
       },
       setTitle: ({ title, panelId }, ctx) => {
         const target = panelId ?? ctx.caller.panelId
         if (!target) throw new RpcError('rejected', 'no panel: pass --panel <id>')
-        document.apply({ kind: 'updatePanel', id: target, patch: { title } })
+        document.apply(renamePanelChange(target, title))
         return { panelId: target, title }
       },
       'target.set': ({ panelId }, ctx) => {

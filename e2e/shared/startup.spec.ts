@@ -35,7 +35,7 @@ test.describe('startup with a paired workspace [network]', () => {
     // Nothing in front of the app: no dialog, the sidebar is not inert and takes clicks.
     await expect(page.locator('[role="dialog"]')).toHaveCount(0)
     await expect(page.locator('[data-app-sidebar] [inert]')).toHaveCount(0)
-    await page.getByRole('button', { name: 'Join a Workspace' }).first().click()
+    await page.locator('[data-app-sidebar]').getByRole('button', { name: 'Open…' }).first().click()
     await expect(page.locator('[role="dialog"]')).toHaveCount(1)
     await page.keyboard.press('Escape')
   })

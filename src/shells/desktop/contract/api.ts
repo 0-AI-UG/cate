@@ -8,7 +8,7 @@ import type { DeviceStore } from '@kernel/state/contract'
 import type { ActionId, ContextMenuItem } from '@kernel/interaction/contract'
 import type { MenuModel } from './menu'
 import type { FileRef } from '@workspace/files/contract'
-import type { Machine, MachineSetup } from '@runtime/daemon/contract'
+import type { Machine, MachineSetup, RuntimeInstallProgress } from '@runtime/daemon/contract'
 import type { PipeMessage } from './pipe'
 
 export type DesktopWindowKind = 'main' | 'detached'
@@ -112,6 +112,22 @@ export interface DragPointer {
 export interface DesktopNetworkTarget {
   runtimeId: string
   endpoints: readonly ({ kind: 'lan'; address: string; port: number } | { kind: 'connect' })[]
+}
+
+/** A runtime install main runs, and how far it is (null: it ended).
+ *  `target` is `local` for this device's, else the machine's `machineKey`. */
+export interface InstallProgressEvent {
+  target: string
+  progress: RuntimeInstallProgress | null
+}
+
+/** Something ssh asks (a password, a passphrase, a one-time code). */
+export interface MachinePrompt {
+  id: string
+  /** The machine as the person knows it. */
+  machine: string
+  /** ssh's own words. */
+  prompt: string
 }
 
 export interface PairResult {
@@ -266,8 +282,17 @@ export interface DesktopApi {
     onLoopbackRequest(listener: (request: LoopbackRequest) => void): () => void
   }
   /** Setting up a runtime on a machine this device runs commands on (the
-   *  system `ssh`, `wsl.exe`). */
-  machines: MachineSetup
+   *  system `ssh`, `wsl.exe`), and what ssh asks the person on the way. */
+  machines: MachineSetup & {
+    onPrompt(listener: (prompt: MachinePrompt) => void): () => void
+    /** A prompt main withdrew (ssh stopped waiting, or it timed out). */
+    onPromptCancel(listener: (id: string) => void): () => void
+    /** null: the person cancelled. */
+    answerPrompt(id: string, answer: string | null): void
+    /** The runtime installs running now (this device's and machines'). */
+    installs(): Promise<InstallProgressEvent[]>
+    onInstallProgress(listener: (event: InstallProgressEvent) => void): () => void
+  }
   pipes: DesktopPipes
   web: {
     /** The workspace's browser partition, routed through its loopback web

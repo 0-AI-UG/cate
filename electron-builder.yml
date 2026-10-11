@@ -49,6 +49,9 @@ mac:
     - name: Web URLs
       schemes: [http, https]
       role: Viewer
+    - name: Cate pairing links
+      schemes: [cate]
+      role: Viewer
   extraResources:
     - from: dist-native/passkeys.node
       to: passkeys.node

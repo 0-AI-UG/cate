@@ -4,6 +4,7 @@ import { act } from 'react'
 import type { ConnectionState } from '@client/connections'
 import type { WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../app'
+import { installDesktopPort, type DesktopPort, type InstallProgressEvent } from '../desktop'
 import { ConnectionBlocker } from './ConnectionBlocker'
 
 let host: HTMLDivElement
@@ -83,7 +84,7 @@ describe('ConnectionBlocker', () => {
     mount(connection)
     expect(cover()?.textContent).toContain('/p/app is inside the workspace /p')
     const labels = [...cover()!.querySelectorAll('button')].map((b) => b.textContent)
-    expect(labels).toEqual(['Open p', 'Try again', 'Remove from list'])
+    expect(labels).toEqual(['Open p', 'Try again', 'Remove from Sidebar'])
     act(() => (cover()!.querySelectorAll('button')[1] as HTMLButtonElement).click())
     expect(connection.retryNow).toHaveBeenCalled()
   })
@@ -109,5 +110,28 @@ describe('ConnectionBlocker', () => {
     act(() => connection.set({ kind: 'connected' }))
     expect(cover()).toBeNull()
     expect(content().hasAttribute('inert')).toBe(false)
+  })
+
+  it('while connecting waits for an install on the machine, shows how far it is', async () => {
+    let send: (event: InstallProgressEvent) => void = () => {}
+    installDesktopPort({
+      installs: async () => [],
+      onInstallProgress: (listener: (event: InstallProgressEvent) => void) => { send = listener; return () => {} },
+    } as unknown as DesktopPort)
+    const connection = fakeConnection({ kind: 'connecting' } as ConnectionState)
+    installClientApp({
+      workspaces: { get: () => ({ kind: 'machine', name: 'site', machine: { kind: 'ssh', target: { destination: 'box' } }, root: '/srv/site' }), removeRecent } as unknown as WorkspaceList,
+      connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
+      version: '2.0.5',
+    })
+    act(() => root.render(<ConnectionBlocker workspaceId="ws"><button>panel</button></ConnectionBlocker>))
+    act(() => { vi.advanceTimersByTime(500) })
+    act(() => send({ target: 'ssh:ssh box', progress: { phase: 'upload', received: 12_000_000, total: 48_000_000 } }))
+    expect(cover()?.textContent).toContain('Sending the Cate runtime to box')
+    expect(cover()?.textContent).toContain('12.0 of 48.0 MB')
+    expect(cover()?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('25')
+    act(() => send({ target: 'ssh:ssh box', progress: null }))
+    expect(cover()?.querySelector('[role="progressbar"]')).toBeNull()
+    installDesktopPort(null)
   })
 })

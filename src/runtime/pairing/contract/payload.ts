@@ -51,10 +51,17 @@ export function encodePairingUri(payload: PairingPayload): string {
   return `cate://pair?${params.map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')}`
 }
 
+const PAIRING_PREFIX = 'cate://pair?'
+
+/** Whether `url` is a pairing link (what the QR code holds). */
+export function isPairingLink(url: string): boolean {
+  return url.startsWith(PAIRING_PREFIX)
+}
+
 // Parsed by hand: URL and URLSearchParams are not reliable on every JS engine a client runs on.
 export function decodePairingUri(uri: string): PairingPayload {
-  const prefix = 'cate://pair?'
-  if (!uri.startsWith(prefix)) throw new PairingFormatError('not a cate pairing link')
+  const prefix = PAIRING_PREFIX
+  if (!isPairingLink(uri)) throw new PairingFormatError('not a cate pairing link')
   const params = new Map<string, string>()
   for (const part of uri.slice(prefix.length).split('&')) {
     const eq = part.indexOf('=')

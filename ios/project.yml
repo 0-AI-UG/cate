@@ -97,7 +97,7 @@ targets:
           NSAllowsLocalNetworking: true
           NSAllowsArbitraryLoadsInWebContent: true
         # Scanning the pairing QR (client feature `camera`).
-        NSCameraUsageDescription: Cate scans the pairing code shown by the computer you connect to.
+        NSCameraUsageDescription: Cate scans the pairing code shown by the computer you connect to, and takes photos you send to agents.
 
   # Opens each push sealed for this device (the runtime seals it; Cate
   # Connect and APNs only carry ciphertext) and shows what it says.

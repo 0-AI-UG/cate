@@ -1,7 +1,8 @@
-// runtime/daemon ui: the Runtime settings page and the running-work
-// confirmation shown before stopping or updating a runtime.
+// runtime/daemon ui: the Runtime settings page (and its network access
+// change, which Share uses too) and the running-work confirmation shown
+// before stopping or updating a runtime.
 
-export { RuntimeSettingsPage, type RuntimeSettingsPageProps } from './RuntimeSettingsPage'
+export { RuntimeSettingsPage, changeNetwork, type RuntimeSettingsPageProps } from './RuntimeSettingsPage'
 export {
   RunningWorkConfirm,
   listRunningWork,

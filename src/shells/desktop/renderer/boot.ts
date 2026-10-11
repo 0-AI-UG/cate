@@ -269,10 +269,11 @@ function rememberSelectedWorkspace(api: DesktopApi): () => void {
   return useUIStore.subscribe((state) => {
     if (state.selectedWorkspaceId === last) return
     last = state.selectedWorkspaceId
-    if (!last) return
+    const shown = last
+    // None shown (the welcome screen): the next launch starts there too.
     void (async () => {
-      const boot = ((await api.device.get('boot').catch(() => null)) ?? {}) as BootSnapshot
-      await api.device.set('boot', { ...boot, lastWorkspace: last })
+      const { lastWorkspace: _previous, ...boot } = ((await api.device.get('boot').catch(() => null)) ?? {}) as BootSnapshot
+      await api.device.set('boot', shown ? { ...boot, lastWorkspace: shown } : boot)
     })().catch(() => {})
   })
 }

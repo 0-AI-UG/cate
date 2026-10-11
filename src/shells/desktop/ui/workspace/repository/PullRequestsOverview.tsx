@@ -98,7 +98,7 @@ export function PullRequestsOverview({ workspaceId, initialRepository = '', onOp
             </label>
             {(filter !== 'all' || repository) && <Button variant="ghost" size="sm" className="mt-3" onClick={() => { setFilter('all'); setRepository('') }}>Reset filters</Button>}
           </ToolbarPopover>
-          <IconButton label="GitHub settings" size={32} onClick={() => clientUi().openSettings('source control')}><Settings2 size={14} /></IconButton>
+          <IconButton label="GitHub settings" size={32} onClick={() => clientUi().openSettings('github')}><Settings2 size={14} /></IconButton>
           <IconButton label="Refresh pull requests" size={32} loading={loading} onClick={() => void load(true)} className="border border-subtle"><RefreshCw size={14} /></IconButton>
         </div>
         {openError && <p role="alert" className="mb-3 text-sm text-danger">{openError}</p>}

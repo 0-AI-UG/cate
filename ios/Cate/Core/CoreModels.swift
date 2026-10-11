@@ -352,17 +352,59 @@ struct ConversationMessage: Decodable, Hashable {
     let createdAt: String?
 }
 
+/// A tool call an agent completed, as its hooks reported it.
+struct AgentStep: Decodable, Hashable {
+    /// The tool's name as the CLI calls it.
+    let tool: String
+    /// What it worked on (a command, a path), one line.
+    let subject: String?
+    let at: String
+}
+
+/// Steps shown together before message `before` (the message count: at the
+/// end). A ghost stands for steps that ran before the runtime kept them.
+struct AgentStepGroup: Decodable, Hashable {
+    let before: Int
+    let steps: [AgentStep]
+    let ghost: Bool
+}
+
+/// Where a chat's steps show, and the step its running turn last completed.
+struct AgentSteps: Decodable, Hashable {
+    let groups: [AgentStepGroup]
+    let activity: AgentStep?
+}
+
 /// What changed in a followed agent chat (`agents.watch`'s `conversation`
 /// event): the agent's state, the prompt sent from it that the conversation
-/// does not show yet, and the messages from index `from` on.
+/// does not show yet, the one queued until the agent can take it, the
+/// messages from index `from` on, and the steps when they changed.
 struct ConversationEvent: Decodable {
     let kind: String
     /// Nil while the panel hosts no agent.
     let status: String?
     let canReceivePrompt: Bool
     let pending: String?
+    let queued: String?
     let from: Int
     let messages: [ConversationMessage]
+    let steps: AgentSteps?
+}
+
+/// A file a search found (`files.search`).
+struct FileMatch: Decodable, Hashable, Identifiable {
+    let name: String
+    let path: String
+    let relativePath: String
+    let isDirectory: Bool
+    var id: String { path }
+}
+
+/// A stored attachment (`agents.attach`).
+struct AttachResult: Decodable {
+    let ok: Bool
+    let path: String?
+    let message: String?
 }
 
 /// An agent CLI a new agent can run (`MobileAgentChoice`).
@@ -392,9 +434,9 @@ struct JoinResult: Decodable {
 
 /// What a terminal view is told (`MobileTerminalEvent`).
 enum TerminalEvent {
-    /// The PTY's grid, which the view draws, and whether the PTY fits this
-    /// view: before the screen and on every change.
-    case size(cols: Int, rows: Int, fitted: Bool)
+    /// The PTY's grid, which the view draws: before the screen and on every
+    /// change.
+    case size(cols: Int, rows: Int)
     /// Clear the screen; the serialized screen follows as output.
     case reset
     /// Bytes for the terminal; UTF-8 may split between chunks.

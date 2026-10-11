@@ -1,8 +1,8 @@
-// The terminal view's grid. The xterm always has the PTY's grid, which fits
-// whichever viewer last asked (`fit`, services/terminal). The view reports the
-// grid its panel holds (the runtime resizes the PTY to it while the PTY fits
-// this view) and, when the PTY's grid is not the panel's, the render box takes
-// the grid's size, scaled down to the panel when it is bigger.
+// The terminal view's grid. The xterm always has the PTY's grid: the smallest
+// cols and rows of its visible viewers (services/terminal). The view reports
+// the grid its panel holds and, when the PTY's grid is not the panel's, the
+// render box takes the grid's size, scaled down to the panel while it is
+// bigger (until the PTY follows a shrink).
 
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { BindTerminalOptions, TerminalBinding } from '@services/terminal/client'
@@ -52,8 +52,6 @@ export interface TerminalGrid {
   bindingOptions(xterm: TerminalXterm): Pick<BindTerminalOptions, 'size' | 'onSize'>
   /** Null while the render box fills the panel. */
   layout: GridLayout | null
-  /** The PTY's grid, when the PTY fits another view and not this panel's grid. */
-  elsewhere: Grid | null
 }
 
 export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
@@ -61,8 +59,6 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
   const [panel, setPanel] = useState<Grid | null>(null)
   const panelRef = useRef<Grid | null>(null)
   const [pty, setPty] = useState<Grid | null>(null)
-  const [fitted, setFitted] = useState(false)
-  const fittedRef = useRef(false)
   const cellScaleRef = useRef(cellScale)
   cellScaleRef.current = cellScale
   const busyRef = useRef(busy)
@@ -76,8 +72,7 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
     return xterm.current.gridFor({ width: box.clientWidth * scale.w, height: box.clientHeight * scale.h })
   }
 
-  // Report the panel's grid when it changes; while the PTY fits this view,
-  // take it at once rather than a round trip later.
+  // Report the panel's grid when it changes.
   const scheduleRef = useRef<() => void>(() => {})
   useEffect(() => {
     const box = container.current
@@ -93,7 +88,6 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
       if (!next || sameGrid(next, panelRef.current)) return
       panelRef.current = next
       setPanel(next)
-      if (fittedRef.current && xterm.current) resizeXterm(xterm.current, next)
       binding.current?.resized()
     }
     const schedule = () => {
@@ -116,32 +110,28 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
   // Another cell size changes the grid the panel holds.
   useEffect(() => { scheduleRef.current() }, [cellScale, font])
 
-  const elsewhere = pty && !fitted && !sameGrid(pty, panel) ? pty : null
   const [layout, setLayout] = useState<GridLayout | null>(null)
   useEffect(() => {
     const box = container.current
     const gridBox = xterm.current?.gridBox()
-    if (!ready || !box || !gridBox || !elsewhere) {
+    if (!ready || !box || !gridBox || !pty || sameGrid(pty, panel)) {
       setLayout(null)
       return
     }
     setLayout(gridLayoutFor(gridBox, { width: box.clientWidth * cellScale.w, height: box.clientHeight * cellScale.h }))
-    // `elsewhere` is derived from these.
+    // `gridBox` follows `pty` and `font`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, pty, panel, fitted, cellScale, font])
+  }, [ready, pty, panel, cellScale, font])
 
   return {
     bindingOptions: (term) => ({
       size: () => panelRef.current ?? measure() ?? { cols: term.terminal.cols, rows: term.terminal.rows },
       // Before the screen is written, so it lands on the PTY's grid.
-      onSize: ({ cols, rows, fitted: next }) => {
-        resizeXterm(term, { cols, rows })
-        fittedRef.current = next
-        setPty({ cols, rows })
-        setFitted(next)
+      onSize: (next) => {
+        resizeXterm(term, next)
+        setPty(next)
       },
     }),
     layout,
-    elsewhere,
   }
 }

@@ -493,7 +493,7 @@ function AgentMenu({
               {working ? <Spinner size={11} /> : on ? <Check size={11} /> : null}
             </span>
             <span className="flex-1">{t.label}</span>
-            {t.beta && <span className="text-[8px] uppercase opacity-60">beta</span>}
+            {t.beta && <span className="text-[8px] opacity-60">beta</span>}
           </button>
         )
       })}

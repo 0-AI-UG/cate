@@ -218,7 +218,13 @@ const api: DesktopApi = {
     listDir: (machine, path) => invoke(C.machineListDir, machine, path),
     mkdir: (machine, path) => invoke(C.machineMkdir, machine, path),
     wslDistros: () => invoke(C.machineWslDistros),
+    sshHosts: () => invoke(C.machineSshHosts),
     cancel: (machine) => invoke(C.machineCancel, machine),
+    onPrompt: (listener) => listen(C.machinePrompt, listener),
+    onPromptCancel: (listener) => listen(C.machinePromptCancel, listener),
+    answerPrompt: (id, answer) => ipcRenderer.send(C.machinePromptAnswer, id, answer),
+    installs: () => invoke(C.installs),
+    onInstallProgress: (listener) => listen(C.installProgress, listener),
   },
   pipes: {
     onMessage(pipe, listener) {

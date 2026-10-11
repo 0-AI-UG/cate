@@ -1,5 +1,6 @@
 // A followed agent chat (`agents.watch`): the messages, the agent's state
-// read with them, and the prompt sent from here until it shows. Each message
+// read with them, the prompt sent from here until it shows and the one
+// queued until the agent can take it, and where the steps show. Each message
 // is its own object, numbered by its place in the conversation: a reply that
 // grows changes that one message's text, so only its row redraws.
 
@@ -27,6 +28,11 @@ final class AgentConversation {
     private(set) var status: String?
     private(set) var canReceivePrompt = false
     private(set) var pending: String?
+    private(set) var queued: String?
+    /// The step groups by the message they show before.
+    private(set) var steps: [Int: AgentStepGroup] = [:]
+    /// The step the running turn last completed.
+    private(set) var activity: AgentStep?
     /// The first event came in.
     private(set) var loaded = false
     @ObservationIgnored let viewId = UUID().uuidString
@@ -51,6 +57,12 @@ final class AgentConversation {
         if status != event.status { status = event.status }
         if canReceivePrompt != event.canReceivePrompt { canReceivePrompt = event.canReceivePrompt }
         if pending != event.pending { pending = event.pending }
+        if queued != event.queued { queued = event.queued }
+        if let next = event.steps {
+            let groups = Dictionary(next.groups.map { ($0.before, $0) }, uniquingKeysWith: { _, last in last })
+            if steps != groups { steps = groups }
+            if activity != next.activity { activity = next.activity }
+        }
         guard event.from <= messages.count else { return }
         let end = event.from + event.messages.count
         if end < messages.count { messages.removeSubrange(end...) }

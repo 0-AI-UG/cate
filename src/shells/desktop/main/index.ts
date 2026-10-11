@@ -14,8 +14,8 @@ import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createJsonStateFile } from '@kernel/state/node'
 import { createElectronMainSink } from '@kernel/log/desktop/main'
 import { clientSettingsTable, type ClientSettings } from '../settings'
-import { RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/contract'
-import { createMachineProvisioner, dialMachine, listWslDistros, NotInstalledError, startLocalRuntime } from '@runtime/daemon/desktop'
+import { machineKey, RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/contract'
+import { createMachineProvisioner, dialMachine, listSshHosts, listWslDistros, NotInstalledError, startAskpass, startLocalRuntime, type SshPrompting } from '@runtime/daemon/desktop'
 import { isRuntimeInstalled } from '@runtime/daemon/node'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { createBrowserDesktop, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
@@ -37,8 +37,9 @@ import { installThemeBootCache } from './themeBoot'
 import { registerTransportIpc } from './transportIpc'
 import { createShellTransportHost } from './transports'
 import { canSelfUpdate, createAutoUpdater } from './updater/autoUpdater'
-import { installBundledRuntime } from './updater/runtimeInstall'
-import { registerMachineIpc } from './machineIpc'
+import { installBundledRuntime, machineRuntimeTarball } from './updater/runtimeInstall'
+import { createMachinePrompts, registerMachineIpc } from './machineIpc'
+import { createInstallProgress } from './installProgress'
 import { DEFAULT_UPDATE_RECORD, normalizeUpdateRecord } from './updater/updateState'
 import { createWebPartitions } from './webPartitions'
 import { installAppCsp, installWebSecurity } from './webSecurity'
@@ -166,6 +167,9 @@ app.on('open-url', (event, url) => {
   openRequests.openUrl(url)
 })
 
+// Every runtime install main runs tells the windows how far it is.
+const installs = createInstallProgress((event) => registry.broadcast(C.installProgress, [event]))
+
 // This build's runtime installs in the background; a local dial waits for it
 // (and retries the install after a failure).
 let runtimeInstall: Promise<string> | null = null
@@ -175,7 +179,8 @@ const ensureRuntime = (): Promise<string> => {
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
-  }).catch((error) => {
+    onProgress: (progress) => installs.report('local', progress),
+  }).finally(() => installs.report('local', null)).catch((error) => {
     runtimeInstall = null
     log.error('runtime install failed: %O', error)
     throw new Error(`The Cate runtime could not be installed: ${(error as Error).message}`)
@@ -279,7 +284,32 @@ app.whenReady().then(() => {
   const pins = new KnownRuntimes(deviceStoreOf(device))
   const e2ePath = IS_E2E ? process.env.CATE_E2E_PATH_PREPEND : undefined
   const runtimeEnv = e2ePath ? { ...process.env, PATH: `${e2ePath}${path.delimiter}${process.env.PATH ?? ''}` } : process.env
-  const machines = createMachineProvisioner({ build: RUNTIME_BUILD, version: RUNTIME_VERSION, wslDistros: listWslDistros })
+  const machinePrompts = createMachinePrompts(registry)
+  const dialingMachines = new Map<string, Promise<unknown>>()
+  // ssh asks for passwords and codes in the app; Windows' OpenSSH cannot
+  // share a connection, so there it stays keys and agent only.
+  let prompting: SshPrompting | undefined
+  if (process.platform !== 'win32') {
+    try {
+      prompting = startAskpass({
+        dir: path.join(os.homedir(), '.cate', 'ssh'),
+        node: process.execPath,
+        ask: machinePrompts.ask,
+        onError: (err) => log.warn('ssh prompts: %s', err.message),
+      })
+    } catch (err) {
+      log.warn('ssh prompts unavailable: %s', (err as Error).message)
+    }
+  }
+  const machines = createMachineProvisioner({
+    build: RUNTIME_BUILD,
+    version: RUNTIME_VERSION,
+    prompting,
+    onProgress: (machine, progress) => installs.report(machineKey(machine), progress),
+    localTarball: (target) => machineRuntimeTarball({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }, target),
+    wslDistros: listWslDistros,
+    sshHosts: () => listSshHosts(),
+  })
   const host = createShellTransportHost({
     startLocal: async (root) => {
       let installDir = await ensureRuntime()
@@ -296,15 +326,23 @@ app.whenReady().then(() => {
         ...(bundle ? { launch: { node: process.env.CATE_RUNTIME_NODE || 'node', bundle } } : { installDir }),
       })
     },
-    dialMachine: async (machine, root) => {
-      if (!RUNTIME_BUILD) throw new Error('This build of Cate has no build id, so it cannot run its runtime on another machine.')
-      try {
-        return await dialMachine(machine, root, { build: RUNTIME_BUILD })
-      } catch (err) {
-        if (!(err instanceof NotInstalledError)) throw err
-        await machines.ensureRuntime(machine)
-        return dialMachine(machine, root, { build: RUNTIME_BUILD })
-      }
+    // One dial per machine at a time: the first signs in (and asks for a
+    // password once), the next ones reuse its shared connection.
+    dialMachine: (machine, root) => {
+      const key = machineKey(machine)
+      const dial = (dialingMachines.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
+        if (!RUNTIME_BUILD) throw new Error('This build of Cate has no build id, so it cannot run its runtime on another machine.')
+        try {
+          return await dialMachine(machine, root, { build: RUNTIME_BUILD, prompting })
+        } catch (err) {
+          if (!(err instanceof NotInstalledError)) throw err
+          await machines.ensureRuntime(machine, { keep: true })
+          return dialMachine(machine, root, { build: RUNTIME_BUILD, prompting })
+        }
+      })
+      dialingMachines.set(key, dial)
+      void dial.finally(() => { if (dialingMachines.get(key) === dial) dialingMachines.delete(key) }).catch(() => {})
+      return dial
     },
     deviceKeys: () => device.deviceKeys(),
     deviceName: () => os.hostname().replace(/\.local$/, ''),
@@ -318,7 +356,7 @@ app.whenReady().then(() => {
   registerNatives({ registry, settingsFile, backgrounds, focusWindow })
   registerCapture(registry)
   registerTransportIpc({ host, partitions })
-  registerMachineIpc(machines)
+  registerMachineIpc(machines, installs, machinePrompts)
   const perf = startPerfMonitor(featureFlags.perf())
   appIpc = registerAppIpc({
     registry,

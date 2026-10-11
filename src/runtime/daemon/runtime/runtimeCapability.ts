@@ -7,6 +7,8 @@ import type { PerfSampler } from './perf'
 export interface RuntimeCapabilityDeps {
   runtimeId: string
   root: string
+  /** The machine's name, shown to paired devices. */
+  machineName: string
   version: string
   rpc: RpcServer
   perf: PerfSampler
@@ -37,6 +39,7 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
     info: (): RuntimeStatus => ({
       runtimeId: deps.runtimeId,
       root: deps.root,
+      machineName: deps.machineName,
       version: deps.version,
       protocol: deps.rpc.protocol,
       pid: process.pid,

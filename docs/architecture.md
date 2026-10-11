@@ -454,18 +454,32 @@ the pieces that make it reachable and secure.
   code and pairing code. `serve` is a command of the installed runtime, not a
   `cate` API method.
 - **Machines (SSH, WSL).** The desktop app opens folders on machines it runs
-  commands on: SSH machines from the client settings page "Remote machines"
-  (saved in the client setting `sshMachines`), and on Windows the WSL distros
-  (`wsl.exe --list`). A machine is `{kind: 'ssh', target}` or
+  commands on, picked in "Open…" (12.5): SSH machines (saved in the client
+  setting `sshMachines` once they answer, offered from the hosts of
+  `~/.ssh/config` and its includes, or added by an ssh command; the client
+  settings page "Machines" lists, adds and removes them), and on Windows the
+  WSL distros (`wsl.exe --list`). A machine is `{kind: 'ssh', target}` or
   `{kind: 'wsl', distro}` (`runtime/daemon/contract/machine.ts`). The main
-  process runs the system `ssh` non-interactively (`BatchMode`, so keys and
-  the agent only; `StrictHostKeyChecking=accept-new`; no tty; a keepalive
-  that notices a dead link within 45 s) or `wsl.exe -d <distro>`, and pipes
+  process runs the system `ssh` without a tty (`StrictHostKeyChecking=accept-new`;
+  a keepalive that notices a dead link within 45 s). What ssh asks (a
+  password, a passphrase, a one-time code) goes through `SSH_ASKPASS` to a
+  helper (`runtime/daemon/desktop/askpass.ts`: Electron as Node, a socket in
+  the private `~/.cate/ssh/`) and is asked in the app's last focused main
+  window; every command for a machine shares one connection
+  (`ControlMaster`, `ControlPersist` 10 minutes), so a password is asked once,
+  not per command, and dials to one machine run one at a time so the first
+  signs in for the rest; a prompt ssh stops waiting for is withdrawn. On
+  Windows, whose OpenSSH shares no connections, ssh runs with `BatchMode`
+  (keys and the agent only) or `wsl.exe -d <distro>`, and pipes
   small scripts to the machine's `sh -s` (`runtime/daemon/contract/ssh.ts`):
   `ensureRuntime` looks for this app's build in `~/.cate/runtime/<build>/` and
-  only when it is missing runs that release's `install.sh` (pinned to the
-  app's version, so the build matches; glibc Linux and macOS, x64 or arm64);
-  a folder browser lists and creates folders. Opening a folder records it as
+  only when it is missing streams this build's runtime tarball for the
+  machine's target into its `tar` (glibc Linux and macOS, x64 or arm64), so
+  the machine needs no network of its own. The tarball is one the app ships
+  when the target is its own, else that release's, downloaded by the app; a
+  checkout matches no release and pushes the one `npm run runtime:tarball --
+  --target <target>` built. A tarball of another build is refused. A folder
+  browser lists and creates folders. Opening a folder records it as
   a workspace on that machine (`{machine, root}` in the workspace list); its
   connection runs `runtime.cjs bridge <root>` of that build on the machine
   (7.3, 7.5). Nothing needs to listen on the network and no pairing happens:
@@ -739,7 +753,7 @@ the LAN listener plus the Cate Connect registration; `off` closes the
 listeners and drops every network connection. Turning it on is done from a
 connected client or by `cate serve`.
 
-- **Pairing payload.** With network access on, "Add device" creates a one-time
+- **Pairing payload.** With network access on, "Share" (12.5) creates a one-time
   pairing secret (10 random bytes, 80 bits, valid for 10 minutes, single use) and shows
   it as:
   - a QR code encoding
@@ -750,7 +764,7 @@ connected client or by `cate serve`.
     over mDNS or Cate Connect and refuses a key that does not derive that
     id; the proofs below bind the handshake, and 80 bits keep a captured
     proof safe from offline guessing.
-- **The `pairing` capability**: `createSecret {mode}` (for "Add device"),
+- **The `pairing` capability**: `createSecret {mode}` (for "Share"),
   `list`, `revoke {deviceKey}`. `pair` itself is the one message a runtime
   accepts from an unknown key.
 - **Pair message.** The joining client connects (7.5), completes the Noise
@@ -938,9 +952,12 @@ or that changes shared state, is a **workspace** setting.
   settings; each shell adds its own client slices (the desktop's in
   `shells/desktop/settings.ts`), so a client never carries another shell's
   settings and the kernel names no feature.
-- The settings window shows the client settings and the settings of the
-  active workspace. With no workspace open (the welcome screen), only client
-  settings exist.
+- The settings window has two tabs: Device (the client settings) and
+  Workspace (the active workspace's, for everyone connected to it), each
+  listing its pages in groups. Each page is one scope and never mixes the
+  two; a module with keys of both has a page in each. With no workspace open
+  (the welcome screen), only the device pages exist and the tabs are hidden.
+  A search spans both.
 
 | Slice (owner) | Client keys | Workspace keys |
 |---|---|---|
@@ -952,7 +969,7 @@ or that changes shared state, is a **workspace** setting.
 | Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
-| Remote machines (`shells/desktop`) | `sshMachines` | |
+| Machines (`shells/desktop`) | `sshMachines` | |
 | Shortcuts (`kernel/interaction`) | `customShortcuts` | |
 | Desktop (`shells/desktop`) | `warnBeforeQuit`, `betaUpdatesEnabled`, `disableGpuRasterization` (applies after restart) | |
 | Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
@@ -1190,15 +1207,11 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   terminal view attaches to it directly with the PTY id from its session's
   snapshot; the session channel carries no bytes.
   Input from every viewer goes to the same PTY, as in a shared tmux session.
-  The PTY fits the viewer that last asked (`view` with `fit`; the first
-  viewer until then) and follows that viewer's resizes; typing does not fit.
-  Every viewer is told the PTY's size and whether the PTY fits it (the
-  `size` event) and the same rules apply to all of them. Every view draws
-  the PTY's grid: a view the PTY does not fit scales it down to its frame
-  when it is bigger, or leaves it in the corner when it is smaller, and
-  offers to fit (a Fit button and "Fit Terminal to View" in the tab menu on
-  the desktop, "Fit to phone" on the phone). When to fit is the person's
-  choice.
+  The PTY takes the smallest cols and the smallest rows of its visible
+  viewers, as tmux does, and follows them; with none visible it keeps its
+  size. Every viewer is told the PTY's size (the `size` event) and the same
+  rules apply to all of them. Every view draws the PTY's grid at its own
+  font, in the corner of its frame when the frame holds more.
 - **Extension points** (so terminal never imports agents): PTY env
   contributors (the `cate` CLI on PATH with `CATE_SOCKET` and `CATE_TOKEN`,
   agent hook env), output and activity observers, launch intents.
@@ -1500,7 +1513,10 @@ headless.
   resolve an update). A folder that is gone says so and offers removing it.
 - **`client/workspaces`**: the device's workspace list: local recents,
   workspaces on machines (`{machine, root}`), paired
-  workspaces and their pinned keys (`known-runtimes.json`), sidebar order;
+  workspaces and their pinned keys (`known-runtimes.json`) and the machine
+  name their runtime reports (`runtime.info`), sidebar order; the machine
+  each workspace lives on (`machineOf`, `groupByMachine`) for lists grouped
+  by machine;
   and the trust question (`trustStore`, `ensureOpenedTrusted`): opening an
   untrusted workspace queues one question, every shell shows its head, and
   the answer is `workspace.setTrust` for everyone.
@@ -1663,6 +1679,45 @@ a panel type in a menu by hand.
   visible item, the keys forwarded from web pages) and sends it to main,
   which only renders it. Main names no action.
 
+### 12.5 Opening, joining and sharing
+
+Three nouns, used by every shell: a **machine** is where a workspace's
+runtime runs (this device, an SSH host, a WSL distro, or the computer of a
+paired runtime); a **workspace** is a folder on a machine; a **device** is
+what joins one. Three verbs: **open** a folder on a machine this device
+reaches (its own, or one it runs commands on, 7.1), **join** a workspace on
+another device with a pairing code, **share** a workspace (who can join and
+a code).
+
+- **Open.** One picker (desktop: "Open…", the welcome screen) lists the
+  recent workspaces, then the machines: this device (a folder picker), the
+  saved SSH machines, the SSH config's hosts and the WSL distros, with adding
+  an SSH machine by its command and joining with a code. A
+  machine opens its folder dialog wherever it was picked from; the client
+  settings page "Machines" lists the saved SSH machines to open a folder
+  on, add or remove.
+- **Join.** "Join with a Code" takes the typed code or the `cate://pair`
+  link (opening such a link with the app fills it in; joining stays the
+  person's click). Pairing again with a known machine names it.
+- **Share.** One place sets network access ("who can join": only its
+  machine, the same network, anywhere through Cate Connect), creates the
+  code (turning on same-network access when it is off) and lists the
+  devices. Wider access is the person's choice in that place; narrower access
+  asks first, since it cuts devices off. The workspace's settings keep the
+  same setting and the device list with revoke.
+- **Where it lives.** Lists of workspaces group them by machine
+  (`groupByMachine`, machine by machine in list order: the sidebar, moving
+  to the next workspace); a machine's header opens another folder there and
+  reconnects its open workspaces. Rows reorder within their machine.
+- **What a window shows.** One rule (`windowContent` in
+  `client/workspaces`): the selected workspace while it is listed, else the
+  welcome screen (no workspace at all, or none selected). On every change of
+  the list, `reconcileWindow` brings the window's state back to what the rule
+  can show (a selection that left gives way to the next open workspace or
+  none; a dialog about it closes), and the list closes the connection of a
+  workspace removed elsewhere. The welcome screen is one view: the Open
+  picker and what is new in this version.
+
 ## 13. Several clients
 
 With the application in the runtime, sharing is the runtime accepting a second
@@ -1679,8 +1734,9 @@ device.
 
 ### 13.2 Joining
 
-Someone in the workspace turns on network access and adds a device; the joiner
-scans the QR (or types the code), pairs (section 7.7) and connects. The joiner
+Someone in the workspace shares it (12.5): picks who can join (network
+access) and creates a code; the joiner scans the QR (or types the code, or
+opens its `cate://pair` link), pairs (section 7.7) and connects. The joiner
 receives the document, the workspace settings and presence, and subscribes to
 the sessions they view.
 The device that opened the workspace on its machine needs no code: it is a

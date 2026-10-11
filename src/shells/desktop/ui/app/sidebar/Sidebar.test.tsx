@@ -60,7 +60,7 @@ afterEach(() => {
 })
 
 describe('Sidebar', () => {
-  it('with no workspaces, offers buttons to open or join one', () => {
+  it('with no workspaces, the list stays as it is: no headers, nothing in their place', () => {
     const none: WorkspaceListSnapshot = { entries: [], open: [] }
     const empty = { ...list, getSnapshot: () => none }
     installClientApp({
@@ -69,16 +69,26 @@ describe('Sidebar', () => {
       version: '2.1.0',
     })
     act(() => root.render(<Sidebar />))
-    const buttons = [...host.querySelectorAll('[data-sidebar-empty] button')]
-    expect(buttons.map((b) => b.textContent)).toContain('Join a Workspace')
-    act(() => (buttons.find((b) => b.textContent === 'Join a Workspace') as HTMLButtonElement).click())
-    expect(useUIStore.getState().joinDialogOpen).toBe(true)
+    expect(host.querySelectorAll('[data-machine], [role="treeitem"]')).toHaveLength(0)
+    expect(host.querySelector('[aria-label="Open…"]')).not.toBeNull()
   })
 
-  it('lists local and paired workspaces', () => {
+  it('lists local and paired workspaces under their machines', () => {
     act(() => root.render(<Sidebar />))
     expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(3)
     expect(host.textContent).toContain('Shared')
+    expect([...host.querySelectorAll('[data-machine]')].map((h) => h.textContent)).toEqual(['This device', 'Paired'])
+  })
+
+  it('reconnects the open workspaces of a machine from its header', async () => {
+    act(() => root.render(<Sidebar />))
+    await act(async () => { rowOf('site').click() })
+    const header = host.querySelector('[data-machine="this"]')!
+    await act(async () => { (header.querySelector('[aria-label^="Reconnect"]') as HTMLButtonElement).click() })
+    expect(list.close).toHaveBeenCalledWith('local:/p/site')
+    expect(list.open).toHaveBeenLastCalledWith('local:/p/site')
+    // The paired machine has nothing open: nothing to reconnect.
+    expect(host.querySelector('[data-machine="paired:"] [aria-label^="Reconnect"]')).toBeNull()
   })
 
   it('opens and selects a workspace on click', async () => {

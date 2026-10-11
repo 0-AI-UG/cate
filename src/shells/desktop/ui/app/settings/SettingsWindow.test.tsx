@@ -6,7 +6,7 @@ import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { createClientSettingsStore } from '@kernel/settings/client'
 import { installClientSettings, useClientSetting, setClientSetting } from '../../kernel/settings'
 import { SettingsWindow } from './SettingsWindow'
-import { registerSettingsPage, resolveSectionId, visiblePages, type SettingsPage } from './registry'
+import { registerSettingsPage, resolveSectionId, settingsPages, visiblePages, type SettingsPage } from './registry'
 import { SidebarPage } from './pages/clientPages'
 import { clientSettingsTable } from '../../../settings'
 
@@ -15,8 +15,8 @@ let root: Root
 const stops: (() => void)[] = []
 
 const page = (over: Partial<SettingsPage> & Pick<SettingsPage, 'id' | 'title'>): SettingsPage => ({
-  group: 'general',
   scope: 'client',
+  group: 'general',
   component: () => <SettingRow label={`${over.title} row`}><span /></SettingRow>,
   ...over,
 })
@@ -54,6 +54,12 @@ describe('settings page registry', () => {
     expect(visiblePages(pages, 'w').map((p) => p.id)).toEqual(['appearance', 'runtime', 'canvas'])
   })
 
+  it('orders device pages before workspace pages', () => {
+    stops.push(registerSettingsPage(page({ id: 'runtime', title: 'Runtime', scope: 'workspace', order: 1 })))
+    stops.push(registerSettingsPage(page({ id: 'shortcuts', title: 'Shortcuts', order: 99 })))
+    expect(settingsPages().map((p) => p.id)).toEqual(['shortcuts', 'runtime'])
+  })
+
   it('resolves a section by id or title, falling back to the first page', () => {
     expect(resolveSectionId('Runtime', pages)).toBe('runtime')
     expect(resolveSectionId('canvas', pages)).toBe('canvas')
@@ -66,7 +72,7 @@ describe('SettingsWindow', () => {
   beforeEach(() => {
     stops.push(registerSettingsPage(page({ id: 'appearance', title: 'Appearance' })))
     stops.push(registerSettingsPage(page({ id: 'notifications', title: 'Notifications' })))
-    stops.push(registerSettingsPage(page({ id: 'runtime', title: 'Runtime', group: 'workspace', scope: 'workspace' })))
+    stops.push(registerSettingsPage(page({ id: 'runtime', title: 'Runtime', scope: 'workspace' })))
   })
 
   it('shows only client pages without a workspace', () => {
@@ -75,13 +81,36 @@ describe('SettingsWindow', () => {
     expect(text).toContain('Appearance row')
     expect(text).toContain('Notifications row')
     expect(text).not.toContain('Runtime row')
+    expect(document.body.querySelector('[data-scope="workspace"]')).toBeNull()
   })
 
-  it("adds the active workspace's pages, marked as workspace settings", () => {
+  it("shows the active workspace's pages under their own tab", () => {
     act(() => root.render(<SettingsWindow workspaceId="local:/p" onClose={() => {}} />))
-    const section = document.body.querySelector('[data-section-id="runtime"]')!
-    expect(section.textContent).toContain('Runtime row')
-    expect(section.textContent).toContain('Workspace')
+    const tabs = [...document.body.querySelectorAll('[role="tab"]')] as HTMLButtonElement[]
+    expect(tabs.map((t) => t.textContent)).toEqual(['Device', 'Workspace'])
+    expect(document.body.querySelector('[data-scope="client"] h1')!.textContent).toBe('This device')
+    expect(document.body.textContent).not.toContain('Runtime row')
+    act(() => { tabs[1].click() })
+    expect(document.body.querySelector('[data-scope="client"]')).toBeNull()
+    expect(document.body.querySelector('[data-scope="workspace"] h1')!.textContent).toMatch(/^Workspace: /)
+    expect(document.body.textContent).toContain('Runtime row')
+  })
+
+  it('opens on the tab of the requested page', () => {
+    act(() => root.render(<SettingsWindow workspaceId="local:/p" section="runtime" onClose={() => {}} />))
+    expect(document.body.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Workspace')
+  })
+
+  it('has no tabs without a workspace', () => {
+    act(() => root.render(<SettingsWindow workspaceId={null} onClose={() => {}} />))
+    expect(document.body.querySelector('[role="tab"]')).toBeNull()
+  })
+
+  it('searches both tabs, hiding a scope whose pages all miss', () => {
+    act(() => root.render(<SettingsWindow workspaceId="local:/p" onClose={() => {}} />))
+    type(document.body.querySelector('input[type="search"]') as HTMLInputElement, 'runtime')
+    expect((document.body.querySelector('[data-scope="client"]') as HTMLElement).hidden).toBe(true)
+    expect((document.body.querySelector('[data-scope="workspace"]') as HTMLElement).hidden).toBe(false)
   })
 
   it('filters rows by the search and hides empty pages', () => {

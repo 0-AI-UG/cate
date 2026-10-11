@@ -59,7 +59,7 @@ export function RepositoryOverview({ tab, onTabChange, header, onOpenPullRequest
   const url = remote && githubRepositoryUrl(remote.fetchUrl)
   const openLink = (suffix = '') => { if (url) clientUi().openExternal(url + suffix) }
   return <section aria-label="Repository" className="absolute inset-0 z-40 flex min-h-0 flex-col overflow-hidden bg-canvas-bg text-primary">
-    {header(<IconButton label="GitHub settings" onClick={() => clientUi().openSettings('source control')}><Settings2 size={15} /></IconButton>)}
+    {header(<IconButton label="GitHub settings" onClick={() => clientUi().openSettings('github')}><Settings2 size={15} /></IconButton>)}
     <div className="mx-auto flex min-h-0 w-full max-w-[1040px] flex-1 flex-col px-6 pt-4">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">

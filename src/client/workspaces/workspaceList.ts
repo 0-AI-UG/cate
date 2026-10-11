@@ -36,6 +36,8 @@ export interface PairedWorkspace {
   runtimeId: string
   name: string
   endpoints: NetworkEndpoint[]
+  /** The runtime's machine, learned on connect; absent until then. */
+  machineName?: string
   pairedAt: number
   lastOpenedAt: number | null
 }
@@ -113,6 +115,8 @@ export class WorkspaceList {
     this.stops.push(this.store.subscribe(WORKSPACES_DOCUMENT, (value) => {
       this.file = normalize(value)
       this.refresh()
+      // Removed elsewhere (another window, a hand edit): no longer open here.
+      for (const id of this.snapshot.open) if (!this.get(id)) this.close(id)
     }))
     this.refresh()
   }
@@ -132,7 +136,7 @@ export class WorkspaceList {
   async addLocal(root: string, name = basename(root)): Promise<LocalWorkspace> {
     const lastOpenedAt = this.now()
     const rest = this.file.local.filter((w) => w.root !== root)
-    this.file = { ...this.file, local: [{ root, name, lastOpenedAt }, ...rest].slice(0, RECENTS_LIMIT) }
+    this.file = { ...this.file, local: this.trimmed([{ root, name, lastOpenedAt }, ...rest], idOf.local) }
     await this.save()
     return this.get(localWorkspaceId(root)) as LocalWorkspace
   }
@@ -143,7 +147,7 @@ export class WorkspaceList {
     const id = machineWorkspaceId(machine, root)
     const lastOpenedAt = this.now()
     const rest = this.file.machine.filter((w) => idOf.machine(w) !== id)
-    this.file = { ...this.file, machine: [{ machine, root, name, lastOpenedAt }, ...rest].slice(0, RECENTS_LIMIT) }
+    this.file = { ...this.file, machine: this.trimmed([{ machine, root, name, lastOpenedAt }, ...rest], idOf.machine) }
     await this.save()
     return this.get(id) as MachineWorkspace
   }
@@ -186,9 +190,9 @@ export class WorkspaceList {
     return connection
   }
 
-  /** Keeps a paired workspace's addresses current: on every connect the
-   *  runtime says where it is reachable now, for the next dial and the next
-   *  launch. */
+  /** Keeps a paired workspace's addresses and machine name current: on
+   *  every connect the runtime says where it is reachable now (for the next
+   *  dial and the next launch) and which machine it is on. */
   private followEndpoints(connection: WorkspaceConnection, runtimeId: string): void {
     let asked = false
     connection.subscribe(() => {
@@ -196,14 +200,23 @@ export class WorkspaceList {
       if (asked) return
       asked = true
       connection.runtime.runtime.info().then(async (info) => {
-        const endpoints = info.endpoints
         const current = this.file.paired.find((w) => w.runtimeId === runtimeId)
-        if (!endpoints?.length || !current || JSON.stringify(endpoints) === JSON.stringify(current.endpoints)) return
-        connection.retarget({ kind: 'network', runtimeId, endpoints })
-        this.file = { ...this.file, paired: this.file.paired.map((w) => (w.runtimeId === runtimeId ? { ...w, endpoints } : w)) }
+        if (!current) return
+        const endpoints = info.endpoints?.length && JSON.stringify(info.endpoints) !== JSON.stringify(current.endpoints) ? info.endpoints : null
+        const machineName = info.machineName && info.machineName !== current.machineName ? info.machineName : null
+        if (!endpoints && !machineName) return
+        if (endpoints) connection.retarget({ kind: 'network', runtimeId, endpoints })
+        const next = { ...current, ...(endpoints ? { endpoints } : {}), ...(machineName ? { machineName } : {}) }
+        this.file = { ...this.file, paired: this.file.paired.map((w) => (w.runtimeId === runtimeId ? next : w)) }
         await this.save()
       }).catch(() => { /* asked again on the next connect */ })
     })
+  }
+
+  /** The newest `RECENTS_LIMIT` recents, and any older one still open. */
+  private trimmed<T>(recents: T[], id: (w: T) => string): T[] {
+    const open = new Set(this.snapshot.open)
+    return recents.filter((w, i) => i < RECENTS_LIMIT || open.has(id(w)))
   }
 
   close(id: string): void {
@@ -320,6 +333,7 @@ function normalize(value: unknown): WorkspacesFile {
       runtimeId: w.runtimeId,
       name: isStr(w.name) ? w.name : w.runtimeId,
       endpoints: Array.isArray(w.endpoints) ? w.endpoints.map(normalizeEndpoint).filter((e): e is NetworkEndpoint => e !== null) : [],
+      ...(isStr(w.machineName) ? { machineName: w.machineName } : {}),
       pairedAt: isNum(w.pairedAt) ? w.pairedAt : 0,
       lastOpenedAt: isNum(w.lastOpenedAt) ? w.lastOpenedAt : null,
     })

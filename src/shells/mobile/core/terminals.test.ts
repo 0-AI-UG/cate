@@ -93,19 +93,18 @@ describe('mobile terminals', () => {
     expect(t.attaches[0].written).toEqual(['pwd\r'])
   })
 
-  it('gives the app the PTY grid before the screen, and every change with whether it fits', async () => {
+  it('gives the app the PTY grid before the screen, and every change', async () => {
     const t = setup()
     t.setSnapshot({ ptyId: 'pty-1' })
     t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
     t.attaches[0].emit({ kind: 'screen', viewer: 'v1', data: 'x', cols: 120, rows: 40 })
-    t.attaches[0].emit({ kind: 'size', cols: 120, rows: 40, fitted: false })
-    t.attaches[0].emit({ kind: 'size', cols: 45, rows: 30, fitted: true })
+    t.attaches[0].emit({ kind: 'size', cols: 45, rows: 30 })
     await tick()
-    expect(t.events.filter((e) => e.kind !== 'state').map((e) => e.kind === 'size' ? [e.cols, e.rows, e.fitted] : e.kind))
-      .toEqual([[120, 40, false], 'reset', 'output', [45, 30, true]])
+    expect(t.events.filter((e) => e.kind !== 'state').map((e) => e.kind === 'size' ? [e.cols, e.rows] : e.kind))
+      .toEqual([[120, 40], 'reset', 'output', [45, 30]])
   })
 
-  it('reports the grid it holds and fits when asked', async () => {
+  it('reports the grid it holds', async () => {
     const t = setup()
     t.setSnapshot({ ptyId: 'pty-1' })
     t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
@@ -113,8 +112,6 @@ describe('mobile terminals', () => {
     expect(t.views).toEqual([{ id: 'pty-1', viewer: 'v1', cols: 45, rows: 30, visible: true }])
     t.terminals.get('v')!.resize(90, 20)
     expect(t.views.at(-1)).toEqual({ id: 'pty-1', viewer: 'v1', cols: 90, rows: 20, visible: true })
-    t.terminals.get('v')!.fit()
-    expect(t.views.at(-1)).toEqual({ id: 'pty-1', viewer: 'v1', cols: 90, rows: 20, visible: true, fit: true })
   })
 
   it('follows the panel to a new PTY and reports its state', async () => {

@@ -47,7 +47,7 @@ export const agentsCapability = defineCapability('agents', {
     /** The same functions as `cate agent start / types / send / interrupt`. */
     start: method<AgentStartRequest, { panelId: string; agentId: AgentId | null }>({ mutates: true, timeoutMs: 90_000 }),
     types: method<void, AgentTypeInfo[]>(),
-    send: method<{ panelId: string; prompt: string }, { ok: true }>({ mutates: true }),
+    send: method<{ panelId: string; prompt: string }, { ok: true }>({ mutates: true, timeoutMs: 20_000 }),
     interrupt: method<{ panelId: string }, { ok: true }>({ mutates: true }),
   },
   streams: {

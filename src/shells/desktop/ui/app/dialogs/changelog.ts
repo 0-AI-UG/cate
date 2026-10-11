@@ -1,3 +1,5 @@
+export const CHANGELOG_URL = 'https://github.com/0-AI-UG/cate/blob/main/CHANGELOG.md'
+
 interface ChangelogSection {
   title: string
   items: string[]
@@ -74,4 +76,18 @@ export function findChangelogRelease(
 ): ChangelogRelease | null {
   const normalized = version.replace(/^v/, '')
   return releases.find((release) => release.version.replace(/^v/, '') === normalized) ?? null
+}
+
+/** An item's lead (its bold feature name), or the whole item, without
+ *  inline Markdown. */
+export function changelogHeadline(item: string): string {
+  const feature = item.match(/^\*\*(.+?)\*\*/)
+  return stripInlineMarkdown(feature ? feature[1] : item)
+}
+
+export function stripInlineMarkdown(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
 }

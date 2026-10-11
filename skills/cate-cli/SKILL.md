@@ -230,12 +230,14 @@ cate panel create editor --file app.tsx
 cate panel create terminal
 cate panel create canvas
 cate panel title "API tests"             # rename the calling panel (or --panel <id>)
-cate panel close <id>                    # fails with dirty on unsaved work
-cate panel close <id> --discard          # close and drop unsaved work
+cate panel close <id>                    # fails with dirty on unsaved work or a running program
+cate panel close <id> --discard          # close anyway: drops unsaved work, stops the program
 cate notify "Build finished" --level info
 ```
 
-`panel create` and `editor open` print the new panel's short id. New panels
+`panel create` and `editor open` print the new panel's short id. `panel list
+--json` also gives each panel's `worktreeId`, for `cate agent start
+--worktree`. New panels
 open next to the calling terminal, and `editor open` reuses an editor that
 already shows the file. `cate version` prints the API version the workspace's
 runtime speaks; `cate --version` prints the CLI's own.
@@ -267,7 +269,11 @@ its panel id. It runs the agent CLI in a terminal (`--agent <id>` picks one
 whose Cate hooks are on; `cate agent types` lists them). It works in
 your checkout, an existing worktree (`--worktree <id>`) or a new one
 (`--new-worktree <name>`), not both. `--canvas <id>` places it on that canvas
-panel's canvas instead. From then on it is an agent panel like any other:
+panel's canvas instead. `--title` names the panel for good; without it the agent's own session title
+replaces the prompt-based one. Until the agent CLI is up, the panel is listed
+as `starting`: `cate agent wait <id>` waits for it, while `send`, `read` and
+`interrupt` fail with `agent-starting`. From then on it is an agent panel like
+any other:
 
 ```bash
 cate agent start --agent codex --new-worktree fix-login "Fix the flaky login test"
@@ -292,8 +298,14 @@ cate agent read <panel-id> [--json]
 
 Panel ids may be the unique short ids printed by `cate agent list`. `wait`
 accepts 5000 to 60000 milliseconds and may be called with no ids to monitor every
-live agent panel. A successful send delivers the prompt exactly once; the target
-must be at its normal prompt rather than busy or waiting on structured input.
+live agent panel; it exits 1 when it timed out, after printing the states. A
+successful send delivers the prompt exactly once: it returns once the agent
+started its turn. The target must be at its normal prompt rather than busy or
+waiting on structured input. When the agent starts no turn within 10 seconds
+(it showed a dialog that took the Enter), `send` fails with
+`agent-prompt-not-taken`: read its screen with `cate terminal read` before
+sending again. A terminal with no agent in it fails with `no-agent-in-terminal`;
+use `cate terminal type` and `press` there.
 `read` prints the conversation's user and assistant messages, read from the
 agent CLI's own session store. `--json` gives `{ panelId, title, agentId,
 agentName, state, canReceivePrompt, session, messages: [{ role, text,

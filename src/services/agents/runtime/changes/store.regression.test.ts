@@ -7,7 +7,8 @@ import { createAgentHooks } from '../hooks/agentHooks'
 import { createAgentChangesStore } from './store'
 import { filesFromTool } from './edits'
 import { filterAgentChanges } from '../../contract'
-import type { AgentId } from '../../contract'
+import type { AgentId, AgentToolCall } from '../../contract'
+import { agentStepOf } from '../steps'
 
 import type { StoredAgentChange } from './store'
 /** Stored records as the agents core resolves them: their panel. */
@@ -104,6 +105,8 @@ describe.each(adapters)('$id capture contract', (adapter) => {
   })
 
   if (adapter.id !== 'opencode') it.skipIf(process.platform === 'win32')('runs the materialized stdin bridge through HTTP to durable capture', async () => {
+    const calls: Array<[string, AgentToolCall]> = []
+    hooks.onToolCall((terminalId, call) => calls.push([terminalId, call]))
     const env = await hooks.envForPty('one', { PATH: process.env.PATH ?? '' })
     if (adapter.id === 'grok') env.GROK_HOOK_EVENT = 'post_tool_use'
     const endpoint = await hooks.endpoint()
@@ -112,6 +115,8 @@ describe.each(adapters)('$id capture contract', (adapter) => {
       child.stdin!.end(JSON.stringify(adapter.wrap({ file_path: 'bridge.ts', old_string: 'a', new_string: 'b' }, {}, 'bridge-session', 'bridge-call')))
     })
     expect((await hooks.listChanges('/repo')).flatMap((record) => record.files)).toMatchObject([{ path: 'bridge.ts', additions: 1, deletions: 1 }])
+    // The same call is the panel's chat step, named by the file.
+    expect(calls.map(([terminalId, call]) => [terminalId, agentStepOf(call, '/repo', 't')])).toEqual([['one', { tool: adapter.tool, subject: 'bridge.ts', at: 't' }]])
   })
 })
 
@@ -131,7 +136,14 @@ it('executes the generated OpenCode plugin and retains child-session linkage', a
     const bridge = await CateHookBridge();
     await bridge.event({ event: { type: 'session.created', properties: { info: { id: 'child', parentID: 'parent' } } } });
     await bridge.event({ event: { type: 'message.part.updated', properties: { part: { sessionID: 'child', type: 'tool', tool: 'edit', callID: 'edit', state: { status: 'completed', input: { filePath: 'plugin.ts', oldString: 'old', newString: 'new' } } } } } });
+    await bridge.event({ event: { type: 'message.part.updated', properties: { part: { sessionID: 'child', type: 'tool', tool: 'bash', callID: 'running', state: { status: 'running', input: { command: 'npm test' } } } } } });
+    await bridge.event({ event: { type: 'message.part.updated', properties: { part: { sessionID: 'child', type: 'tool', tool: 'bash', callID: 'refused', state: { status: 'error', input: { command: 'rm -rf build' }, error: 'The user rejected permission to use this specific tool call.' } } } } });
   `
+  const calls: AgentToolCall[] = []
+  hooks.onToolCall((_terminalId, call) => calls.push(call))
   await new Promise<void>((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', script], { env, timeout: 10000 }, (error) => error ? reject(error) : resolve()))
   expect(filterAgentChanges(shown(await hooks.listChanges('/repo')), { sessionId: 'parent' })).toMatchObject([{ agentId: 'opencode', sessionId: 'child', parentSessionId: 'parent', files: [{ path: 'plugin.ts', additions: 1, deletions: 1 }] }])
+  // Steps are the calls that ran: not one still running, nor an errored one
+  // (OpenCode's refused calls are errored parts).
+  expect(calls.map((call) => agentStepOf(call, '/repo', 't').subject)).toEqual(['plugin.ts'])
 })

@@ -107,7 +107,7 @@ export function createAgentChangesStore(directory: string) {
         if (!explicitTurn || !turns.has(sessionKey) || turns.get(sessionKey) === explicitTurn) turns.delete(sessionKey)
         return
       }
-      if (!call) return
+      if (!call || call.failed) return
       const reportedCwd = event?.cwd || call.cwd
       if (reportedCwd && (!path.isAbsolute(reportedCwd) || reportedCwd.includes('\0'))) return
       const executionCwd = reportedCwd ? canonical(reportedCwd) : terminal.cwd

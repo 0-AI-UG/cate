@@ -120,7 +120,7 @@ function UpdateReadyDialogWith({ port }: { port: DesktopPort }): JSX.Element | n
             <CateLogo size={30} className="relative text-white" />
           </div>
           {version && (
-            <span className="mt-4 text-[10px] font-bold uppercase tracking-widest text-blue-400 [text-shadow:0_2px_12px_rgba(0,0,0,0.5)]">
+            <span className="mt-4 text-[11px] font-bold text-blue-400 [text-shadow:0_2px_12px_rgba(0,0,0,0.5)]">
               v{version}
             </span>
           )}

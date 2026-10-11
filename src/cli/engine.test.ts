@@ -226,7 +226,7 @@ describe('runCli', () => {
   it('derives wait timeouts from the arguments', async () => {
     const callFn = vi.fn(async () => ({ agents: [], timedOut: true }))
     const { d, out } = deps({ call: callFn })
-    await runCli(['agent', 'wait', '--wait-timeout', '20000'], CATE_API, d)
+    expect(await runCli(['agent', 'wait', '--wait-timeout', '20000'], CATE_API, d)).toBe(1)
     expect(callFn).toHaveBeenCalledWith('cate.agent.wait', { timeoutSeconds: 20 }, 27_000)
     expect(out).toEqual(['(no agent runs)\n(timed out before every agent was ready)'])
   })

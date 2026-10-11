@@ -1,9 +1,10 @@
 // Transient UI state of one client window: which workspace it shows, the
-// command palette, the application overlay (settings, skills, ...) and the
-// sidebar. Canvas tools, the worktree lens and relation editing belong to
+// command palette, the application overlay (settings, skills, ...), the
+// sidebar, and the dialogs that open, join and share workspaces. Canvas tools, the worktree lens and relation editing belong to
 // their own modules.
 
 import { create } from 'zustand'
+import type { Machine } from '@runtime/daemon/contract'
 import { desktopPort } from '../desktop'
 
 export interface OverlayRequest {
@@ -19,8 +20,21 @@ export interface UIState {
   commandPaletteOpen: boolean
   overlay: OverlayRequest | null
   sidebarHidden: boolean
-  /** Set by "Join a workspace" and the welcome screen. */
-  joinDialogOpen: boolean
+  /** "Join with a Code": open, with what to start from. */
+  joinDialog: JoinRequest | null
+  /** "Open…": the picker of machines and workspaces. */
+  openDialogOpen: boolean
+  /** The machine whose folder dialog is open. */
+  machineFolder: Machine | null
+  /** The workspace "Share" shows. */
+  shareWorkspaceId: string | null
+}
+
+export interface JoinRequest {
+  /** A pairing code or link to fill in (an opened `cate://pair` link). */
+  code?: string
+  /** The machine whose code to type (pairing again with a known one). */
+  machine?: string
 }
 
 export interface UIActions {
@@ -32,7 +46,11 @@ export interface UIActions {
   toggleSettings(): void
   setSidebarHidden(hidden: boolean): void
   toggleSidebar(): void
-  setJoinDialogOpen(open: boolean): void
+  openJoinDialog(request?: JoinRequest): void
+  closeJoinDialog(): void
+  setOpenDialogOpen(open: boolean): void
+  openMachineFolder(machine: Machine | null): void
+  openShare(workspaceId: string | null): void
 }
 
 export type UIStore = UIState & UIActions
@@ -42,7 +60,10 @@ export const INITIAL_UI_STATE: UIState = {
   commandPaletteOpen: false,
   overlay: null,
   sidebarHidden: false,
-  joinDialogOpen: false,
+  joinDialog: null,
+  openDialogOpen: false,
+  machineFolder: null,
+  shareWorkspaceId: null,
 }
 
 export const useUIStore = create<UIStore>((set, get) => ({
@@ -62,7 +83,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
   setSidebarHidden: (sidebarHidden) => set({ sidebarHidden }),
   toggleSidebar: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
-  setJoinDialogOpen: (joinDialogOpen) => set({ joinDialogOpen }),
+  // Opening or joining leaves Settings: the workspace shows next.
+  openJoinDialog: (request = {}) => set({ joinDialog: request, openDialogOpen: false, overlay: null }),
+  closeJoinDialog: () => set({ joinDialog: null }),
+  setOpenDialogOpen: (openDialogOpen) => set(openDialogOpen ? { openDialogOpen, overlay: null } : { openDialogOpen }),
+  openMachineFolder: (machineFolder) => set({ machineFolder, openDialogOpen: false }),
+  openShare: (shareWorkspaceId) => set({ shareWorkspaceId }),
 }))
 
 export const selectedWorkspaceId = (): string | null => useUIStore.getState().selectedWorkspaceId

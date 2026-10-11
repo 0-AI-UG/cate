@@ -4,7 +4,9 @@
 // this workspace only: the sidebar and other workspaces stay usable. An
 // incompatible runtime is resolved right here (RuntimeMismatchCard), which
 // stays up through the restart of an update. Every other state shows the
-// core's status (`connectionStatus`) and its actions.
+// core's status (`connectionStatus`) and its actions, and while the
+// connection waits for a runtime install (this device's, or the machine's),
+// how far it is.
 //
 // A dip that recovers quickly (a reconnect) is not worth a flash, so
 // connecting and offline cover only after a short grace; incompatible,
@@ -13,10 +15,12 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { BACKDROP, ModalCard, btn, Spinner } from '../../kernel/interaction'
 import type { ConnectionState, WorkspaceConnection } from '@client/connections'
+import { machineLabel } from '@runtime/daemon/contract'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
 import { connectionActions, connectionDotClass, statusOf } from '../sidebar/connectionStatus'
 import { RuntimeMismatchCard, useRuntimeUpdate } from './RuntimeMismatch'
+import { InstallProgressView, installTargetOf, useInstallProgress } from './installProgress'
 
 const GRACE_MS = 400
 const noop = () => () => {}
@@ -62,6 +66,8 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
 
   const status = statusOf(connection, state)
   const actions = connectionActions(connection, state)
+  const entry = workspaceId ? tryClientApp()?.workspaces.get(workspaceId) : undefined
+  const install = useInstallProgress(state.kind === 'connecting' ? installTargetOf(entry) : null)
   return (
     <div className="relative h-full">
       <div ref={content} className="h-full">{children}</div>
@@ -75,6 +81,7 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
                   {status?.title}
                 </span>
                 <span className="text-[13px] leading-relaxed text-secondary break-words">{status?.message}</span>
+                {install && <div className="mt-1"><InstallProgressView progress={install} where={entry?.kind === 'machine' ? machineLabel(entry.machine) : undefined} /></div>}
                 {actions.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {actions.map((action, i) => (

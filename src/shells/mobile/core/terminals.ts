@@ -3,8 +3,8 @@
 // binding the desktop view uses, behind an `XtermLike` whose screen is the
 // app's native terminal: output goes over the bridge as `terminal.event`s,
 // acknowledged once the app has drawn it. Like every view, it draws the PTY's
-// grid and reports the grid it holds, which the PTY takes while it fits this
-// view.
+// grid and reports the grid it holds (the PTY takes the smallest of its
+// visible views').
 
 import type { WorkspaceConnection, SessionHandle } from '@client/connections'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
@@ -24,8 +24,6 @@ interface OpenTerminal {
   input(data: string): void
   /** The grid the view holds changed. */
   resize(cols: number, rows: number): void
-  /** Fits the PTY to this view. */
-  fit(): void
   close(): void
 }
 
@@ -51,7 +49,6 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
     const { terminalId, workspaceId, panelId } = params
     let held: Grid = { cols: params.cols, rows: params.rows }
     let pty: Grid | null = null
-    let fitted = false
     let closed = false
     const emit = (event: Event) => closed
       ? Promise.resolve(null)
@@ -76,7 +73,7 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
     let told = ''
     const tell = () => {
       if (!pty) return
-      const event = { kind: 'size' as const, ...pty, fitted }
+      const event = { kind: 'size' as const, ...pty }
       const key = JSON.stringify(event)
       if (key === told) return
       told = key
@@ -117,7 +114,6 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
         scrollback: APP_SCROLLBACK,
         onSize: (size) => {
           pty = { cols: size.cols, rows: size.rows }
-          fitted = size.fitted
           tell()
         },
       })
@@ -146,7 +142,6 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
         held = { cols, rows }
         binding?.resized()
       },
-      fit() { binding?.fit() },
       close() {
         if (closed) return
         closed = true

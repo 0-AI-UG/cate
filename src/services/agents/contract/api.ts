@@ -78,6 +78,9 @@ export const agentApi = defineCateApi(
       access: 'read',
       handler: 'service',
       summary: 'List the agent CLIs: whether each can start in a terminal here (its Cate hooks are on)',
+      // The first hook inspection runs each installed CLI's own check
+      // (Hermes' plugin list can take over 10 s), as start does.
+      timeoutMs: 90_000,
       format: 'prettyJson',
     },
     list: {
@@ -111,11 +114,13 @@ export const agentApi = defineCateApi(
     send: {
       access: 'control',
       handler: 'service',
-      summary: 'Send a prompt to an agent panel at its prompt',
+      summary: 'Send a prompt to an agent panel at its prompt; succeeds once the agent started its turn',
       args: {
         targetPanelId: panel().pos('panelId').flag('panel').help('Agent panel id or unique prefix, from cate agent list'),
         prompt: str.nonEmpty().rest('prompt').help('The prompt'),
       },
+      // Waits up to 10 s for the agent's turn to start.
+      timeoutMs: 20_000,
     },
     interrupt: {
       access: 'control',

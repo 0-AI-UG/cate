@@ -1,5 +1,6 @@
 // ui/app's DesktopPort over the desktop IPC: the updater, the post-update
-// feedback prompt, native menus, the window-controls inset and analytics.
+// feedback prompt, native menus, the window-controls inset, ssh's prompts,
+// runtime install progress and analytics.
 
 import type { DesktopPort, UpdateStatus } from '../ui/app'
 import type { DesktopApi, DesktopAppInfo, UpdateStatus as ShellUpdateStatus, WindowState } from '../contract'
@@ -52,6 +53,12 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
       return picked?.[0] ?? null
     },
     pickImage: () => api.dialogs.pickCanvasBackground(),
+    thisMachineName: isMac ? 'This Mac' : 'This PC',
+    onMachinePrompt: (listener) => api.machines.onPrompt(listener),
+    onMachinePromptCancel: (listener) => api.machines.onPromptCancel(listener),
+    answerMachinePrompt: (id, answer) => api.machines.answerPrompt(id, answer),
+    installs: () => api.machines.installs(),
+    onInstallProgress: (listener) => api.machines.onInstallProgress(listener),
     trackEvent: (name, props) => api.analytics.track(name, props),
   }
 }

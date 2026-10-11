@@ -34,7 +34,7 @@ export function WorkspaceTrustDialog({ store = defaultStore }: { store?: TrustSt
     store.answer(trusted).then(
       () => setBusyChoice(null),
       (err: unknown) => {
-        setError(errorMessage(err, 'Could not trust this project.'))
+        setError(errorMessage(err, 'Could not trust this workspace.'))
         setBusyChoice(null)
       },
     )
@@ -45,13 +45,15 @@ export function WorkspaceTrustDialog({ store = defaultStore }: { store?: TrustSt
       onClose={() => answer(false)}
       width={420}
       icon={<ShieldWarning size={16} className="text-amber-400" />}
-      title="Do you trust this project?"
+      title="Do you trust this workspace?"
       dismissable={!busy}
+      // Above Settings (z-[100001]): a workspace can open from there.
+      zClassName="z-[100002]"
       bodyClassName="px-5 py-4"
     >
       <p className="text-[13px] leading-relaxed text-secondary">
         Trusting lets Cate run terminals, agents and git in this folder and apply the skills
-        it ships in <code className="font-mono text-[12px]">.cate/</code>. A project's git config
+        it ships in <code className="font-mono text-[12px]">.cate/</code>. A workspace's git config
         and files can run code on your machine through them.
       </p>
 
@@ -63,7 +65,7 @@ export function WorkspaceTrustDialog({ store = defaultStore }: { store?: TrustSt
       </div>
 
       <p className="mt-3 text-[12px] leading-relaxed text-muted">
-        Only open projects you would run code from. This is remembered per project.
+        Only open workspaces you would run code from. This is remembered per workspace.
       </p>
 
       {error && <p role="alert" className="mt-3 text-[12px] text-danger">{error}</p>}

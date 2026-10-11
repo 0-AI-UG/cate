@@ -3,7 +3,7 @@
 // shell pipes to the machine's `sh -s` (over SSH or in a WSL distro), and how
 // their output reads. Pure.
 
-import { GH_OWNER, GH_REPO, isBuildId, releaseTag, runtimeTarget, type RuntimeTarget } from './install'
+import { isBuildId, runtimeTarget, type RuntimeTarget } from './install'
 import type { Machine } from './machine'
 
 /** How to reach a machine; the shell builds the `ssh` argv from these fields
@@ -110,6 +110,51 @@ export function parseSshCommand(text: string): ParsedSshCommand {
   return isSshTarget(parsed) ? { ok: true, target: parsed } : { ok: false, error: 'That is not a valid host.' }
 }
 
+/** A host the person's SSH config names, connected to by its alias (ssh
+ *  applies the rest of the config itself). */
+export interface SshConfigHost {
+  alias: string
+  hostName?: string
+  user?: string
+  port?: number
+}
+
+/** The concrete hosts of one ssh_config file, in order, and the files it
+ *  includes (as written). Patterns (`*`, `?`, `!`) and `Match` blocks are
+ *  skipped; as in ssh, the first value of a key wins. */
+export function parseSshConfig(text: string): { hosts: SshConfigHost[]; includes: string[] } {
+  const hosts = new Map<string, SshConfigHost>()
+  const includes: string[] = []
+  let current: SshConfigHost[] = []
+  // A BOM and CRLF line ends, as Windows editors write them.
+  for (const raw of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const match = /^(\S+?)(?:\s*=\s*|\s+)(.*)$/.exec(line)
+    if (!match) continue
+    const key = match[1].toLowerCase()
+    const args = words(match[2].replace(/\s+#.*$/, '')) ?? []
+    if (key === 'host') {
+      current = args.filter((alias) => !/[*?!]/.test(alias) && validHost(alias)).map((alias) => {
+        const host = hosts.get(alias) ?? { alias }
+        hosts.set(alias, host)
+        return host
+      })
+    } else if (key === 'match') {
+      current = []
+    } else if (key === 'include') {
+      includes.push(...args)
+    } else if (args[0] !== undefined) {
+      for (const host of current) {
+        if (key === 'hostname') host.hostName ??= args[0]
+        else if (key === 'user') host.user ??= args[0]
+        else if (key === 'port' && /^\d+$/.test(args[0])) host.port ??= Number(args[0])
+      }
+    }
+  }
+  return { hosts: [...hosts.values()], includes }
+}
+
 /** The target as an ssh command line, to show. */
 export function formatSshTarget(target: SshTarget): string {
   const q = (s: string) => (/^[\w@%+=:,./~-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`)
@@ -160,29 +205,30 @@ export function probeScript(build: string): string {
     `ldd --version 2>&1 | grep -qi musl && printf '${MARK}musl=1\\n'`,
     `printf '${MARK}home=%s\\n' "$HOME"`,
     `[ -f ${dir}/.ok ] && [ -x ${dir}/cate/bin/cate ] && printf '${MARK}installed=1\\n'`,
-    `command -v curl >/dev/null 2>&1 && printf '${MARK}curl=1\\n'`,
     `command -v tar >/dev/null 2>&1 && printf '${MARK}tar=1\\n'`,
-    `cur=$(cat "$HOME/.cate/runtime/current" 2>/dev/null) && printf '${MARK}current=%s\\n' "$cur"`,
     'exit 0',
   ].join('\n')
 }
 
-/** The install script of release `version` (published with each release). */
-export function installScriptUrl(version: string): string {
-  return `https://github.com/${GH_OWNER}/${GH_REPO}/releases/download/${releaseTag(version)}/install.sh`
-}
-
-/** Installs release `version` with its install script. The script is
- *  downloaded first: piped into `sh`, a failed download would install
- *  nothing and still succeed. */
-export function installScript(version: string): string {
-  if (!/^\d+\.\d+\.\d+(-[\w.-]+)?$/.test(version)) throw new Error(`invalid version ${version}`)
+/** Installs the runtime tarball on stdin as `build` (run with `sh -c`, the
+ *  desktop streaming the tarball in), as `scripts/install.sh` lays it out. A
+ *  tarball of another build is refused. */
+export function pushInstallScript(build: string): string {
+  const dir = installDir(build)
   return [
     'set -e',
-    't=$(mktemp)',
-    `trap 'rm -f "$t"' EXIT`,
-    `curl -fsSL ${shQuote(installScriptUrl(version))} -o "$t"`,
-    `CATE_VERSION=${shQuote(version)} sh "$t"`,
+    'root="$HOME/.cate/runtime"',
+    'mkdir -p "$root"',
+    'chmod 700 "$HOME/.cate"',
+    'tmp=$(mktemp -d "$root/.install-$$-XXXXXX")',
+    `trap 'rm -rf "$tmp"' EXIT INT TERM`,
+    'tar -xzf - -C "$tmp"',
+    '[ -f "$tmp/runtime.cjs" ] && [ -x "$tmp/runtime/bin/node" ] && [ -f "$tmp/BUILD" ] || { echo "The runtime tarball is incomplete." >&2; exit 1; }',
+    'got=$(tr -d \'[:space:]\' <"$tmp/BUILD")',
+    `[ "$got" = ${shQuote(build)} ] || { echo "The runtime tarball is build $got, not this app's "${shQuote(build)}"." >&2; exit 1; }`,
+    // Another install of this build may have finished meanwhile.
+    `if [ ! -f ${dir}/.ok ]; then printf '%s' "$got" >"$tmp/.ok"; rm -rf ${dir}; mv "$tmp" ${dir}; fi`,
+    'printf \'%s\\n\' "$got" >"$root/current"',
   ].join('\n')
 }
 
@@ -232,8 +278,7 @@ export interface SshProbe {
   home: string
   /** This app's build is installed there. */
   installed: boolean
-  /** The build `~/.cate/runtime/current` names. */
-  current: string | null
+  /** `tar` is there to unpack the runtime. */
   canInstall: boolean
 }
 
@@ -250,8 +295,7 @@ export function parseProbe(stdout: string): SshProbe {
     system: `${os}${m.has('musl') ? ' (musl)' : ''} ${arch}`.trim(),
     home: first('home'),
     installed: m.has('installed'),
-    current: first('current') || null,
-    canInstall: m.has('curl') && m.has('tar'),
+    canInstall: m.has('tar'),
   }
 }
 
@@ -291,6 +335,8 @@ export interface MachineSetup {
   mkdir(machine: Machine, path: string): Promise<string>
   /** The WSL distros of this machine; empty where there is no WSL. */
   wslDistros(): Promise<string[]>
+  /** The hosts this device's SSH config names; empty without one. */
+  sshHosts(): Promise<SshConfigHost[]>
   /** Stops what still runs on the machine for this client (an install, a
    *  listing): the person closed what asked for it. */
   cancel(machine: Machine): Promise<void>

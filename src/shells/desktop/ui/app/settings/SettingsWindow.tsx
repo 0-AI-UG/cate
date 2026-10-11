@@ -1,7 +1,8 @@
-// The settings window: a section nav (search + scroll-spy) beside one long
-// scrollable column of registered pages. It shows the client settings, and
-// while a workspace is active that workspace's settings too (they apply for
-// everyone in it). With no workspace only client pages exist.
+// The settings window: a nav (search, scope tabs, grouped pages, scroll-spy)
+// beside a scrollable column of the tab's pages. Two tabs: Device (client
+// settings) and, while a workspace is active, Workspace (that workspace's
+// settings, for everyone in it). With no workspace only the device pages
+// exist and the tabs are hidden. A search spans both tabs.
 //
 // The search box filters rows across every page (SettingsSearchContext from
 // kernel/interaction); empty pages collapse and the nav lists only pages with matches.
@@ -9,19 +10,25 @@
 // into the shell's `settings-content-slot` when both exist, else the window
 // takes the whole screen.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeft,
   Braces as BracketsCurly,
+  FolderOpen,
+  GitBranch,
+  Laptop,
   LayoutDashboard,
+  Network,
   Search as MagnifyingGlass,
-  Settings2,
   RotateCcw,
+  Server,
+  Settings2,
   Sparkles,
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
+import { workspaceLocation, type WorkspaceEntry, type WorkspaceListSnapshot } from '@client/workspaces'
 import { SettingsSearchContext } from '../../kernel/interaction'
 import { clientSettingsTable } from '../../../settings'
 import { clientSettings } from '../../kernel/settings'
@@ -29,15 +36,34 @@ import { createLogger } from '@kernel/log/contract'
 import { LeftSidebarReopen, OverlayHeader } from '../chrome/chrome'
 import { UpdateButton } from '../chrome/UpdateButton'
 import { useDesktopPort } from '../desktop'
-import { SETTINGS_GROUPS, resolveSectionId, useSettingsPages, visiblePages, type SettingsGroup } from './registry'
+import { tryClientApp } from '../app'
+import { SETTINGS_GROUPS, SETTINGS_SCOPES, resolveSectionId, useSettingsPages, visiblePages, type SettingsGroup, type SettingsPage, type SettingsScope } from './registry'
 
 const log = createLogger('settings')
 
+const SCOPE_ICONS: Record<SettingsScope, LucideIcon> = {
+  client: Laptop,
+  workspace: FolderOpen,
+}
+
 const GROUP_ICONS: Record<SettingsGroup, LucideIcon> = {
   general: Settings2,
-  workspace: LayoutDashboard,
+  runtime: Server,
+  layout: LayoutDashboard,
   tools: Wrench,
+  sourceControl: GitBranch,
   agents: Sparkles,
+  connections: Network,
+}
+
+const NO_WORKSPACES: WorkspaceListSnapshot = { entries: [], open: [] }
+const noSubscribe = (): (() => void) => () => {}
+
+/** The workspace list's entry for `workspaceId`, to name it. */
+function useWorkspaceEntry(workspaceId: string | null): WorkspaceEntry | null {
+  const list = tryClientApp()?.workspaces
+  const snapshot = useSyncExternalStore(list?.subscribe ?? noSubscribe, list?.getSnapshot ?? (() => NO_WORKSPACES))
+  return snapshot.entries.find((entry) => entry.id === workspaceId) ?? null
 }
 
 const sectionDomId = (id: string): string => `settings-section-${id.replace(/[^a-z0-9-]+/gi, '-')}`
@@ -54,6 +80,14 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const allPages = useSettingsPages()
   const pages = useMemo(() => visiblePages(allPages, workspaceId), [allPages, workspaceId])
   const desktop = useDesktopPort()
+  const workspace = useWorkspaceEntry(workspaceId)
+  const scopeTitle = (scope: SettingsScope): string =>
+    scope === 'client' ? 'This device' : `Workspace: ${workspace?.name ?? 'this workspace'}`
+  const scopeDescription = (scope: SettingsScope): string => {
+    if (scope === 'client') return 'Saved on this computer. Applies to every workspace you open here.'
+    const where = workspace ? workspaceLocation(workspace) : null
+    return `${where ? `${where}. ` : ''}Saved with the workspace. Applies for everyone connected to it.`
+  }
   const scrollRef = useRef<HTMLDivElement>(null)
   const [slots, setSlots] = useState<{ sidebar: HTMLElement; content: HTMLElement } | null>(null)
   const [rawQuery, setRawQuery] = useState('')
@@ -61,6 +95,11 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const [activeIds, setActiveIds] = useState<Set<string>>(() => new Set())
   const [visible, setVisible] = useState<Set<string>>(() => new Set(pages.map((p) => p.id)))
   const query = rawQuery.trim().toLowerCase()
+  const searching = query !== ''
+  const [tab, setTab] = useState<SettingsScope>('client')
+  const scope: SettingsScope = workspaceId ? tab : 'client'
+  const shownScopes = searching ? SETTINGS_SCOPES : [scope]
+  const shownPages = useMemo(() => pages.filter((p) => searching || p.scope === scope), [pages, searching, scope])
 
   useLayoutEffect(() => {
     const sidebar = document.getElementById('settings-sidebar-slot')
@@ -74,6 +113,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     setConfirmingReset(false)
     const target = resolveSectionId(section, pages)
     if (!target) return
+    setTab(pages.find((p) => p.id === target)?.scope ?? 'client')
     setActiveIds(new Set([target]))
     requestAnimationFrame(() => {
       scrollRef.current?.querySelector(`#${sectionDomId(target)}`)?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
@@ -87,12 +127,12 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     const root = scrollRef.current
     if (!root) return
     const next = new Set<string>()
-    for (const page of pages) {
+    for (const page of shownPages) {
       if (query === '' || page.title.toLowerCase().includes(query)) next.add(page.id)
       else if (root.querySelector(`#${sectionDomId(page.id)} [data-srow]`)) next.add(page.id)
     }
     setVisible(next)
-  }, [query, pages, slots])
+  }, [query, shownPages, slots])
 
   // Scroll-spy: every page overlapping the viewport is active.
   useEffect(() => {
@@ -115,7 +155,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     onScroll()
     root.addEventListener('scroll', onScroll, { passive: true })
     return () => root.removeEventListener('scroll', onScroll)
-  }, [visible, slots])
+  }, [visible, shownPages, slots])
 
   // Escape clears the search first, then closes.
   useEffect(() => {
@@ -152,7 +192,28 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     setActiveIds(new Set([id]))
   }
 
-  const navPages = pages.filter((p) => query === '' || visible.has(p.id))
+  const selectTab = (next: SettingsScope): void => {
+    setTab(next)
+    scrollRef.current?.scrollTo?.({ top: 0 })
+  }
+
+  const navPages = shownPages.filter((p) => !searching || visible.has(p.id))
+
+  const renderPage = (page: SettingsPage): JSX.Element => {
+    const sectionMatched = query !== '' && page.title.toLowerCase().includes(query)
+    const hidden = query !== '' && !visible.has(page.id)
+    const Page = page.component
+    return (
+      <section key={page.id} id={sectionDomId(page.id)} data-section-id={page.id} hidden={hidden} className="scroll-mt-8">
+        <h2 className="text-sm font-medium text-secondary mb-2 px-1">{page.title}</h2>
+        <div className="rounded-xl border border-subtle bg-surface-1 px-3 py-2 overflow-hidden">
+          <SettingsSearchContext.Provider value={{ query, sectionMatched }}>
+            <Page workspaceId={workspaceId} />
+          </SettingsSearchContext.Provider>
+        </div>
+      </section>
+    )
+  }
 
   const navigation = (
     <div className="min-h-0 flex-1 flex flex-col text-primary">
@@ -175,42 +236,78 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
           />
         </div>
       </div>
-      <nav className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
-        {SETTINGS_GROUPS.map((group) => {
-          const children = navPages.filter((p) => p.group === group.id)
-          if (children.length === 0) return null
-          const GroupIcon = GROUP_ICONS[group.id]
-          const groupActive = children.some((p) => activeIds.has(p.id))
-          return (
-            <div key={group.id}>
+      {workspaceId && !searching && (
+        <div role="tablist" aria-label="Settings scope" className="mx-3 mb-3 grid grid-cols-2 gap-0.5 rounded-lg bg-surface-2 p-0.5">
+          {SETTINGS_SCOPES.map((option) => {
+            const Icon = SCOPE_ICONS[option]
+            const selected = option === scope
+            return (
               <button
                 type="button"
-                onClick={() => jumpTo(children[0].id)}
-                aria-current={groupActive ? 'true' : undefined}
-                className={`w-full h-[30px] px-2 flex items-center gap-2 rounded-md text-[13px] font-medium transition-colors ${
-                  groupActive ? 'bg-surface-3 text-primary' : 'text-secondary hover:bg-hover hover:text-primary'
+                role="tab"
+                key={option}
+                aria-selected={selected}
+                title={scopeDescription(option)}
+                onClick={() => selectTab(option)}
+                className={`h-7 flex items-center justify-center gap-1.5 rounded-md text-xs transition-colors ${
+                  selected ? 'bg-surface-4 text-primary shadow-sm' : 'text-secondary hover:text-primary'
                 }`}
               >
-                <GroupIcon size={15} />
-                {group.title}
+                <Icon size={13} />
+                {option === 'client' ? 'Device' : 'Workspace'}
               </button>
-              {groupActive && (
-                <div className="ml-6 mt-0.5 mb-1 flex flex-col gap-0.5">
-                  {children.map((page) => (
+            )
+          })}
+        </div>
+      )}
+      <nav className="flex-1 overflow-y-auto px-2 pb-3">
+        {shownScopes.map((shown) => {
+          const scoped = navPages.filter((p) => p.scope === shown)
+          if (scoped.length === 0) return null
+          return (
+            <div key={shown}>
+              {searching && workspaceId && (
+                <div className="px-2 pt-1 pb-2 text-[13px] font-medium text-primary truncate">{scopeTitle(shown)}</div>
+              )}
+              {SETTINGS_GROUPS.map((group) => {
+                const children = scoped.filter((p) => p.group === group.id)
+                if (children.length === 0) return null
+                const GroupIcon = GROUP_ICONS[group.id]
+                // The group of the page in view opens; the rest collapse.
+                const groupActive = children.some((p) => activeIds.has(p.id))
+                return (
+                  <div key={group.id} className="mb-0.5">
                     <button
                       type="button"
-                      key={page.id}
-                      onClick={() => jumpTo(page.id)}
-                      aria-current={activeIds.has(page.id) ? 'page' : undefined}
-                      className={`text-left px-2 py-1 rounded-md text-xs transition-colors ${
-                        activeIds.has(page.id) ? 'text-primary' : 'text-muted hover:text-secondary'
+                      onClick={() => jumpTo(children[0].id)}
+                      aria-current={groupActive ? 'true' : undefined}
+                      className={`w-full h-[30px] px-2 flex items-center gap-2 rounded-md text-[13px] font-medium transition-colors ${
+                        groupActive ? 'bg-surface-3 text-primary' : 'text-secondary hover:bg-hover hover:text-primary'
                       }`}
                     >
-                      {page.title}
+                      <GroupIcon size={15} />
+                      {group.title}
                     </button>
-                  ))}
-                </div>
-              )}
+                    {groupActive && (
+                      <div className="ml-6 mt-0.5 mb-1 flex flex-col gap-0.5">
+                        {children.map((page) => (
+                          <button
+                            type="button"
+                            key={page.id}
+                            onClick={() => jumpTo(page.id)}
+                            aria-current={activeIds.has(page.id) ? 'page' : undefined}
+                            className={`text-left px-2 py-1 rounded-md text-xs transition-colors ${
+                              activeIds.has(page.id) ? 'text-primary' : 'text-muted hover:text-secondary'
+                            }`}
+                          >
+                            {page.title}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )
         })}
@@ -255,27 +352,19 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
         </button>
       </OverlayHeader>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="w-full max-w-[860px] mx-auto flex flex-col gap-7 pb-12">
-          {pages.map((page) => {
-            const sectionMatched = query !== '' && page.title.toLowerCase().includes(query)
-            const hidden = query !== '' && !visible.has(page.id)
-            const Page = page.component
+        <div className="w-full max-w-[860px] mx-auto flex flex-col gap-12 pb-12">
+          {shownScopes.map((shown) => {
+            const scoped = shownPages.filter((p) => p.scope === shown)
+            if (scoped.length === 0) return null
+            const hidden = searching && !scoped.some((p) => visible.has(p.id))
             return (
-              <section key={page.id} id={sectionDomId(page.id)} data-section-id={page.id} hidden={hidden} className="scroll-mt-8">
-                <h2 className="text-sm font-medium text-secondary mb-2 px-1 flex items-center gap-2">
-                  {page.title}
-                  {page.scope === 'workspace' && (
-                    <span className="text-[10px] font-normal uppercase tracking-wide text-muted" title="Applies for everyone in this workspace">
-                      Workspace
-                    </span>
-                  )}
-                </h2>
-                <div className="rounded-xl border border-subtle bg-surface-1 px-3 py-2 overflow-hidden">
-                  <SettingsSearchContext.Provider value={{ query, sectionMatched }}>
-                    <Page workspaceId={workspaceId} />
-                  </SettingsSearchContext.Provider>
-                </div>
-              </section>
+              <div key={shown} data-scope={shown} hidden={hidden} className="flex flex-col gap-7">
+                <header className="px-1 border-b border-subtle pb-3">
+                  <h1 className="text-base font-semibold text-primary truncate">{scopeTitle(shown)}</h1>
+                  <p className="text-xs text-muted mt-0.5">{scopeDescription(shown)}</p>
+                </header>
+                {scoped.map(renderPage)}
+              </div>
             )
           })}
           {query !== '' && visible.size === 0 && (

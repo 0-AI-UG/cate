@@ -45,7 +45,7 @@
 		<string>_cate._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Cate scans the pairing code shown by the computer you connect to.</string>
+	<string>Cate scans the pairing code shown by the computer you connect to, and takes photos you send to agents.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Cate connects to workspaces running on computers on your network.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

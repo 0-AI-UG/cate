@@ -99,7 +99,6 @@ export default function TerminalView({
     xterm.open(renderBox)
     xtermRef.current = xterm
     const unregister = registerTerminalView(workspaceId, panelId, {
-      fit: () => bindingRef.current?.fit(),
       resetRendering: () => xterm.resetRendering(),
     })
     const offTheme = subscribeTheme((theme) => xterm.setOptions({ theme: theme.terminal }))
@@ -322,8 +321,6 @@ export default function TerminalView({
   }, [retrying, send])
 
   const failed = snapshot?.status === 'failed'
-  // The PTY fits another view; only a live one can be fitted to this one.
-  const fitElsewhere = snapshot?.status === 'running' ? grid.elsewhere : null
 
   return (
     <div className="relative w-full h-full flex flex-col" onKeyDown={onKeyDown}>
@@ -372,16 +369,6 @@ export default function TerminalView({
             ['--cell-scale' as string]: String(cellScale.w),
           }}
         />
-        {fitElsewhere && (
-          <button
-            type="button"
-            onClick={() => bindingRef.current?.fit()}
-            className="absolute bottom-2 right-3 z-40 px-2 py-0.5 rounded-md border border-subtle bg-surface-3/90 text-[11px] text-secondary hover:text-primary"
-            title={`The terminal is ${fitElsewhere.cols}x${fitElsewhere.rows}, sized for another view. Fit it to this one.`}
-          >
-            Fit
-          </button>
-        )}
         {failed && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-surface-1/85 backdrop-blur-sm">
             <div className="max-w-md mx-6 rounded-lg border border-subtle bg-surface-3 p-4 text-center">

@@ -208,7 +208,7 @@ export function BrowserMenu({
         className={item}
         onClick={() => {
           onClose()
-          clientUi().openSettings('browser')
+          clientUi().openSettings('workspace-browser')
         }}
       >
         <Gear size={16} className="shrink-0 text-secondary" /> Browser settings…

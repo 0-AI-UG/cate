@@ -29,6 +29,22 @@ async function setup(store = createMemoryDeviceStore()) {
 }
 
 describe('WorkspaceList', () => {
+  it('keeps an open workspace past the recents limit, and closes one removed elsewhere', async () => {
+    const { store, list } = await setup()
+    const first = await list.addLocal('/w/0')
+    await list.open(first.id)
+    for (let i = 1; i <= 31; i++) await list.addLocal(`/w/${i}`)
+    // The 30 newest, and the open one though it is older.
+    expect(list.getSnapshot().entries).toHaveLength(31)
+    expect(list.get(first.id)).toBeDefined()
+
+    // Another window removes it: this one stops showing it as open.
+    const file = await store.get(WORKSPACES_DOCUMENT) as { local: { root: string }[] }
+    store.change(WORKSPACES_DOCUMENT, { ...file, local: file.local.filter((w) => w.root !== '/w/0') })
+    expect(list.get(first.id)).toBeUndefined()
+    expect(list.getSnapshot().open).not.toContain(first.id)
+  })
+
   it('keeps workspaces on machines, reached through the machine', async () => {
     const store = createMemoryDeviceStore()
     const { list } = await setup(store)

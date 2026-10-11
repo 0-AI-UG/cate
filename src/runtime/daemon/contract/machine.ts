@@ -32,17 +32,22 @@ export function machineLabel(machine: Machine): string {
 
 /** The program and arguments that run `sh` on the machine. `script` reads
  *  the script from stdin (`sh -s`); a string runs it with `sh -c` and leaves
- *  stdin to the command. SSH is non-interactive (keys and agent only), no
- *  tty, and a host seen for the first time is remembered. */
-export function machineCommand(machine: Machine, script: 'stdin' | string): { command: string; args: string[] } {
+ *  stdin to the command. SSH has no tty, and a host seen for the first time
+ *  is remembered. Without `controlPath` it is non-interactive (keys and agent
+ *  only); with it, prompts go to `SSH_ASKPASS` and commands share one
+ *  connection per machine there, so a password is asked once. */
+export function machineCommand(machine: Machine, script: 'stdin' | string, opts: { controlPath?: string } = {}): { command: string; args: string[] } {
   const sh = script === 'stdin' ? ['sh', '-s'] : ['sh', '-c', script]
   if (machine.kind === 'wsl') return { command: 'wsl.exe', args: ['-d', machine.distro, '--exec', ...sh] }
   const { target } = machine
+  const login = opts.controlPath
+    ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${opts.controlPath}`, '-o', 'ControlPersist=600']
+    : ['-o', 'BatchMode=yes']
   return {
     command: 'ssh',
     args: [
       '-T',
-      '-o', 'BatchMode=yes',
+      ...login,
       '-o', 'StrictHostKeyChecking=accept-new',
       '-o', 'ConnectTimeout=15',
       // A dead connection is noticed within 45 s.

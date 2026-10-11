@@ -3,7 +3,7 @@
 // panels, top-level panels, the panels of its other windows, and its skills.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2 } from 'lucide-react'
+import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, Server } from 'lucide-react'
 import { Icon, Tooltip } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
@@ -103,6 +103,7 @@ export function WorkspaceRow({
     const items: MenuItem[] = [
       { id: 'select', label: 'Select Workspace', enabled: !isSelected },
       { id: 'rename', label: 'Rename Workspace' },
+      { id: 'share', label: 'Share…', enabled: isOpen },
       { id: 'settings', label: 'Workspace Settings…', enabled: isOpen },
       { type: 'separator' },
       { id: 'copy-cwd', label: 'Copy Working Directory', enabled: !!cwd },
@@ -111,7 +112,7 @@ export function WorkspaceRow({
       { id: 'close', label: 'Close Workspace', enabled: isOpen },
       entry.kind === 'paired'
         ? { id: 'forget', label: 'Forget Workspace…' }
-        : { id: 'remove', label: 'Remove from Recents' },
+        : { id: 'remove', label: 'Remove from Sidebar' },
     ]
     setMenuOpen(true)
     const id = await showMenu(items)
@@ -119,6 +120,9 @@ export function WorkspaceRow({
     switch (id) {
       case 'select': void selectWorkspace(workspaceId); break
       case 'rename': beginRename(); break
+      case 'share':
+        if (await selectWorkspace(workspaceId)) useUIStore.getState().openShare(workspaceId)
+        break
       case 'settings':
         await selectWorkspace(workspaceId)
         useUIStore.getState().openSettings('runtime')
@@ -226,7 +230,9 @@ export function WorkspaceRow({
         <WorkspaceToggle connection={isOpen ? connection : undefined} canExpand={canExpand} expanded={isExpanded} onToggle={onToggleExpand} />
         {entry.kind === 'paired'
           ? <Link2 size={14} className="flex-shrink-0 opacity-90" />
-          : <FolderIcon size={14} className="flex-shrink-0 opacity-90" />}
+          : entry.kind === 'machine'
+            ? <Server size={14} className="flex-shrink-0 opacity-90" />
+            : <FolderIcon size={14} className="flex-shrink-0 opacity-90" />}
         {renamingWorkspace !== null ? (
           <InlineEditInput
             ref={renameInputRef}
@@ -271,7 +277,7 @@ export function WorkspaceRow({
           {renderWindow(tree.primary)}
           {tree.others.length > 0 && (
             <>
-              <div className="flex items-center gap-1.5 h-6 pl-7 pr-2 text-[11px] uppercase tracking-wide text-muted opacity-70">
+              <div className="flex items-center gap-1.5 h-6 pl-7 pr-2 text-[11px] text-muted opacity-70">
                 <span className="truncate">Other windows</span>
               </div>
               {tree.others.map(renderWindow)}

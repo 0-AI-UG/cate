@@ -12,6 +12,9 @@ export interface RuntimeClientInfo {
 export interface RuntimeStatus {
   runtimeId: string
   root: string
+  /** The machine it runs on, as its owner knows it (its host name). Absent
+   *  from older runtimes. */
+  machineName?: string
   version: string
   protocol: ProtocolVersion
   pid: number
@@ -38,6 +41,12 @@ export interface RuntimePerfSample {
 export type RuntimeUpdateProgress =
   | { phase: 'download'; received: number; total: number | null }
   | { phase: 'install' }
+
+/** How far installing a runtime is: downloading its release, sending the
+ *  tarball to another machine (SSH, WSL), unpacking it. */
+export type RuntimeInstallProgress =
+  | RuntimeUpdateProgress
+  | { phase: 'upload'; received: number; total: number }
 
 export const runtimeCapability = defineCapability('runtime', {
   methods: {

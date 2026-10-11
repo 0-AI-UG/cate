@@ -152,16 +152,44 @@ describe('mobile actions', () => {
       const actions = createActionHandlers({} as never, createMobileConversations(bridge))
       await actions['agents.watch']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
       expect(runtime.agents.conversation).toHaveBeenCalledWith({ panelId: 'p1' }, { resume: true })
-      conversation.emit({ kind: 'snapshot', rev: 0, snapshot: { status: 'waitingForInput', canReceivePrompt: true, messages: [{ role: 'user', text: 'Complete this coding task:\n\nSay hi' }, { role: 'assistant', text: 'Hi.' }] } })
-      expect(events.at(-1)).toEqual({ kind: 'conversation', status: 'waitingForInput', canReceivePrompt: true, pending: null, from: 0, messages: [{ role: 'user', text: 'Say hi' }, { role: 'assistant', text: 'Hi.' }] })
+      conversation.emit({ kind: 'snapshot', rev: 0, snapshot: {
+        status: 'waitingForInput',
+        canReceivePrompt: true,
+        messages: [{ role: 'user', text: 'Complete this coding task:\n\nSay hi', createdAt: '2026-01-01T00:00:01.000Z' }, { role: 'assistant', text: 'Hi.' }],
+        steps: [],
+        stepsSince: '2026-01-01T00:00:00.000Z',
+      } })
+      expect(events.at(-1)).toEqual({
+        kind: 'conversation', status: 'waitingForInput', canReceivePrompt: true, pending: null, queued: null, from: 0,
+        messages: [{ role: 'user', text: 'Say hi', createdAt: '2026-01-01T00:00:01.000Z' }, { role: 'assistant', text: 'Hi.' }],
+        steps: { groups: [], activity: null },
+      })
 
       await expect(actions['agents.send']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1', prompt: 'go' })).resolves.toEqual({ ok: true })
       expect(send).toHaveBeenCalledWith({ panelId: 'p1', prompt: 'go' })
       expect(events.at(-1)).toMatchObject({ pending: 'go', from: 2, messages: [] })
 
       // The turn shows with the prompt: one event, pending gone.
-      conversation.emit({ kind: 'change', rev: 1, change: { status: 'running', canReceivePrompt: false, from: 2, messages: [{ role: 'user', text: 'go' }] } })
-      expect(events.at(-1)).toEqual({ kind: 'conversation', status: 'running', canReceivePrompt: false, pending: null, from: 2, messages: [{ role: 'user', text: 'go' }] })
+      conversation.emit({ kind: 'change', rev: 1, change: { status: 'running', canReceivePrompt: false, from: 2, messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }] } })
+      expect(events.at(-1)).toEqual({
+        kind: 'conversation', status: 'running', canReceivePrompt: false, pending: null, queued: null, from: 2,
+        messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }], steps: null,
+      })
+
+      // A step of the running turn shows at its end and as what it is doing.
+      const step = { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:05.000Z' }
+      conversation.emit({ kind: 'change', rev: 2, change: { stepsFrom: 0, steps: [step] } })
+      expect(events.at(-1)).toMatchObject({ from: 3, messages: [], steps: { groups: [{ before: 3, steps: [step], ghost: false }], activity: step } })
+
+      // Queued while it works, sent once it can take a prompt.
+      await actions['agents.queue']({ viewId: 'v', prompt: 'next' })
+      expect(events.at(-1)).toMatchObject({ queued: 'next', pending: null })
+      expect(send).toHaveBeenCalledTimes(1)
+      conversation.emit({ kind: 'change', rev: 3, change: { status: 'waitingForInput', canReceivePrompt: true } })
+      expect(send).toHaveBeenLastCalledWith({ panelId: 'p1', prompt: 'next' })
+      expect(events.at(-1)).toMatchObject({ queued: null, pending: 'next' })
+      await actions['agents.queue']({ viewId: 'v', prompt: 'later' })
+      await expect(actions['agents.unqueue']({ viewId: 'v' })).resolves.toBe('later')
 
       await expect(actions['agents.interrupt']({ workspaceId: 'ws', panelId: 'p1' }))
         .resolves.toEqual({ ok: false, message: 'The agent is not running.' })

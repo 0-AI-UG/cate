@@ -623,8 +623,10 @@ export async function runCli(
       await prepareOutput(method.format, value, { image: deps.writeImage, text: deps.writeText })
       deps.stdout(formatOutput(method.format, value))
     }
-    const isError = !!value && typeof value === 'object' && (value as { isError?: unknown }).isError === true
-    return isError ? EXIT_API_ERROR : EXIT_OK
+    // A result can fail without an error: a tool result's isError, or a wait
+    // that timed out (its states are still printed).
+    const outcome = value && typeof value === 'object' ? value as { isError?: unknown; timedOut?: unknown } : {}
+    return outcome.isError === true || outcome.timedOut === true ? EXIT_API_ERROR : EXIT_OK
   } catch (err) {
     if (err instanceof RpcError) {
       deps.stderr(`cate: ${method.method}: ${err.message}`)

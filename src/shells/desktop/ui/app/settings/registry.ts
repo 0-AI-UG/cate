@@ -1,19 +1,29 @@
 // The settings window's pages. Each slice owner's page registers here (the
 // window never imports a module's page by name): ui/app registers the pages
 // of the modules below it at start, the desktop shell registers its own
-// (General, Updates), and higher modules register theirs. A workspace page
-// shows only while a workspace is active and edits that workspace's settings
-// for everyone in it.
+// (General, Updates), and higher modules register theirs. Pages are split by
+// where their settings live: `client` pages edit this device's settings,
+// `workspace` pages the active workspace's (for everyone in it) and show only
+// while a workspace is active. A page never mixes the two.
 
 import { useSyncExternalStore, type ComponentType } from 'react'
 
-export type SettingsGroup = 'general' | 'workspace' | 'tools' | 'agents'
+export type SettingsScope = 'client' | 'workspace'
 
+/** The window's tabs, in order. */
+export const SETTINGS_SCOPES: readonly SettingsScope[] = ['client', 'workspace']
+
+export type SettingsGroup = 'general' | 'runtime' | 'layout' | 'tools' | 'sourceControl' | 'agents' | 'connections'
+
+/** The nav's groups in order; a scope shows the ones its pages use. */
 export const SETTINGS_GROUPS: readonly { id: SettingsGroup; title: string }[] = [
   { id: 'general', title: 'General' },
-  { id: 'workspace', title: 'Workspace' },
+  { id: 'runtime', title: 'Runtime' },
+  { id: 'layout', title: 'Layout' },
   { id: 'tools', title: 'Tools' },
+  { id: 'sourceControl', title: 'Source control' },
   { id: 'agents', title: 'Agents' },
+  { id: 'connections', title: 'Connections' },
 ]
 
 export interface SettingsPageProps {
@@ -25,10 +35,10 @@ export interface SettingsPage {
   /** Stable, lowercase; `openSettings(id)` scrolls to it. */
   id: string
   title: string
+  /** Whose settings the page edits; `workspace` pages need an active workspace. */
+  scope: SettingsScope
   group: SettingsGroup
-  /** `workspace` pages need an active workspace. */
-  scope: 'client' | 'workspace'
-  /** Position within the group; lower first. */
+  /** Position within its group; lower first. */
   order?: number
   component: ComponentType<SettingsPageProps>
 }
@@ -37,10 +47,12 @@ const pages = new Map<string, SettingsPage>()
 const listeners = new Set<() => void>()
 let snapshot: readonly SettingsPage[] = []
 
+const groupRank = (group: SettingsGroup): number => SETTINGS_GROUPS.findIndex((g) => g.id === group)
+
 const changed = (): void => {
-  const groupRank = new Map(SETTINGS_GROUPS.map((g, i) => [g.id, i]))
   snapshot = [...pages.values()].sort((a, b) =>
-    (groupRank.get(a.group)! - groupRank.get(b.group)!) || ((a.order ?? 100) - (b.order ?? 100)) || a.title.localeCompare(b.title))
+    (SETTINGS_SCOPES.indexOf(a.scope) - SETTINGS_SCOPES.indexOf(b.scope)) ||
+    (groupRank(a.group) - groupRank(b.group)) || ((a.order ?? 100) - (b.order ?? 100)) || a.title.localeCompare(b.title))
   for (const l of [...listeners]) l()
 }
 

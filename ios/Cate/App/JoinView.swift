@@ -1,5 +1,5 @@
 // Joining a workspace: scan the pairing QR code another device shows
-// (Settings → Devices → Add device, or `cate serve`), or type its code. The
+// (Share → Create code, or `cate serve`), or type its code. The
 // QR code's `cate://pair` link is only ever scanned, here or by the Camera
 // app (which opens Cate with it, `link`); it is never typed or pasted.
 
@@ -50,7 +50,7 @@ struct JoinView: View {
                     } header: {
                         Text(QRScanner.isAvailable ? "Or type the code" : "Pairing code")
                     } footer: {
-                        Text("On a computer with the workspace open, go to Settings → Devices → Add device, or run `cate serve` in the workspace.")
+                        Text("On a computer with the workspace open, click Share and create a code, or run `cate serve` in the workspace.")
                     }
                 }
                 if let error {

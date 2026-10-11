@@ -6,15 +6,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Star, Github as GithubLogo, Mail as Envelope, SquareArrowOutUpRight as ArrowSquareOut } from 'lucide-react'
 import { Spinner } from '../../kernel/interaction'
-import { findChangelogRelease, parseChangelog } from './changelog'
+import { CHANGELOG_URL, findChangelogRelease, parseChangelog, stripInlineMarkdown } from './changelog'
 import changelogMarkdown from '../../../../../../CHANGELOG.md?raw'
 import heroImg from '../assets/dialog-hero.jpg'
 import { useDesktopPort, type DesktopPort, type FeedbackPrompt } from '../desktop'
 import { TELEMETRY_NOTICE_VERSION, useUiState } from '../state/uiState'
 import { openLink } from './WelcomeDialog'
 
-const GITHUB_REPO = 'https://github.com/0-AI-UG/cate'
-const CHANGELOG_URL = `${GITHUB_REPO}/blob/main/CHANGELOG.md`
 const NEWSLETTER_URL = 'https://cate.cero-ai.com'
 const changelogReleases = parseChangelog(changelogMarkdown)
 
@@ -122,7 +120,7 @@ function FeedbackDialogWith({ port }: { port: DesktopPort }): JSX.Element | null
               <img src={heroImg} alt="" className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-[#1a1a1e] via-[#1a1a1e]/50 to-transparent" />
               <div className="absolute bottom-0 left-0 right-0 px-5 pb-4">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">
+                <span className="text-[11px] font-bold text-emerald-400">
                   {isFirstInstall ? 'Welcome' : `v${payload.toVersion}`}
                 </span>
                 <h2 className="text-white text-lg font-bold leading-tight drop-shadow-lg">
@@ -147,7 +145,7 @@ function FeedbackDialogWith({ port }: { port: DesktopPort }): JSX.Element | null
                     <div className="flex flex-col gap-4">
                       {release.sections.map((section) => (
                         <section key={section.title}>
-                          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                          <h3 className="mb-2 text-[11px] font-semibold text-emerald-400">
                             {section.title}
                           </h3>
                           <ul className="flex flex-col gap-2">
@@ -191,7 +189,7 @@ function FeedbackDialogWith({ port }: { port: DesktopPort }): JSX.Element | null
               {/* Feedback section (updates only) */}
               {!isFirstInstall && (
                 <div className="border-t border-white/[0.06] pt-3 mt-1">
-                  <p className="text-[#777] text-[11px] font-medium uppercase tracking-wider mb-2">Rate this update</p>
+                  <p className="text-[#777] text-[11px] font-medium mb-2">Rate this update</p>
                   <div className="flex items-center justify-center gap-1">
                     {[1, 2, 3, 4, 5].map((n) => {
                       const filled = n <= displayRating
@@ -260,11 +258,4 @@ function renderChangelogItem(item: string) {
       {stripInlineMarkdown(feature[3])}
     </>
   )
-}
-
-function stripInlineMarkdown(value: string): string {
-  return value
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
 }

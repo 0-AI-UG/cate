@@ -3,14 +3,15 @@
 // panels are client/host's; this module plugs workspace selection and window
 // raising into its reveal hooks.
 
-import { openTrusted } from '@client/workspaces'
+import { byMachine, openTrusted, reconcileWindow, selectionAfter } from '@client/workspaces'
 import { documentStoreFor } from '@client/document'
 import { createPanel, installRevealHooks, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
-import { MAIN_WINDOW, type PanelId } from '@workspace/document/contract'
+import { MAIN_WINDOW, renamePanelChange, type PanelId } from '@workspace/document/contract'
 import { isLoopbackUrl } from '@runtime/tunnel/contract'
+import { isPairingLink } from '@runtime/pairing/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { openWindowAt } from '../client/layout/windows'
-import { clientApp } from './app'
+import { clientApp, tryClientApp } from './app'
 import { desktopPort } from './desktop'
 import { useUIStore } from './state/uiStore'
 import { openFile } from './workspace/fileActions'
@@ -49,22 +50,53 @@ export function closeWorkspace(workspaceId: string): void {
   workspaces.close(workspaceId)
   const ui = useUIStore.getState()
   if (ui.selectedWorkspaceId !== workspaceId) return
-  const next = workspaces.getSnapshot().open.find((id) => id !== workspaceId) ?? null
-  ui.setSelectedWorkspace(next)
+  const { open, entries } = workspaces.getSnapshot()
+  ui.setSelectedWorkspace(selectionAfter(workspaceId, open, entries))
 }
 
-/** The next or previous workspace in sidebar order, wrapping. */
+/** Reconnects open workspaces: their documents and sessions load again
+ *  from the runtime. The shown one stays shown. */
+export async function reconnectWorkspaces(ids: readonly string[]): Promise<void> {
+  const { workspaces } = clientApp()
+  const shown = useUIStore.getState().selectedWorkspaceId
+  for (const id of ids) workspaces.close(id)
+  await Promise.all(ids.map((id) => (id === shown ? selectWorkspace(id) : workspaces.open(id).then(() => {}))))
+}
+
+/** The next or previous workspace in sidebar order (machine by machine),
+ *  wrapping. */
 export function cycleWorkspace(step: 1 | -1): void {
-  const entries = clientApp().workspaces.getSnapshot().entries
+  const entries = byMachine(clientApp().workspaces.getSnapshot().entries)
   if (entries.length === 0) return
   const current = entries.findIndex((e) => e.id === useUIStore.getState().selectedWorkspaceId)
   const next = entries[(current + step + entries.length) % entries.length]
   if (next) void selectWorkspace(next.id)
 }
 
-/** Plugs workspace selection and window raising into client/host's reveal. */
+/** Keeps the window's state to what `windowContent` can show, on every
+ *  change of the list (`reconcileWindow`): the selection and the Share
+ *  dialog only ever name listed workspaces, so everything that reads them
+ *  (views, actions, the sidebar) agrees. */
+function reconcileWithList(): () => void {
+  const workspaces = tryClientApp()?.workspaces
+  if (!workspaces) return () => {}
+  const reconcile = () => {
+    const ui = useUIStore.getState()
+    const state = { selected: ui.selectedWorkspaceId, share: ui.shareWorkspaceId }
+    const next = reconcileWindow(state, workspaces.getSnapshot())
+    if (next === state) return
+    if (next.selected !== state.selected) ui.setSelectedWorkspace(next.selected)
+    if (next.share !== state.share) ui.openShare(next.share)
+  }
+  reconcile()
+  return workspaces.subscribe(reconcile)
+}
+
+/** Plugs workspace selection and window raising into client/host's reveal,
+ *  and keeps the shown workspace one of the list. */
 export function installNavigationHooks(): () => void {
-  return installRevealHooks({
+  const stopFollowing = reconcileWithList()
+  const stopReveal = installRevealHooks({
     async selectWorkspace(workspaceId) {
       if (useUIStore.getState().selectedWorkspaceId !== workspaceId) await selectWorkspace(workspaceId)
     },
@@ -72,6 +104,7 @@ export function installNavigationHooks(): () => void {
       if (windowId !== MAIN_WINDOW) desktopPort()?.focusWindow(workspaceId, windowId)
     },
   })
+  return () => { stopFollowing(); stopReveal() }
 }
 
 export function revealPanel(workspaceId: string, panelId: PanelId): Promise<boolean> {
@@ -86,7 +119,7 @@ export function closePanels(workspaceId: string, panelIds: PanelId[]): Promise<b
 export function renamePanel(workspaceId: string, panelId: PanelId, title: string): boolean {
   const store = documentStoreFor(workspaceId)
   if (!store) return false
-  return store.propose({ kind: 'updatePanel', id: panelId, patch: { title } }).ok
+  return store.propose(renamePanelChange(panelId, title)).ok
 }
 
 /** Moves a panel into a new detached window (a placement op every client
@@ -112,9 +145,14 @@ export async function openWorkspaceFile(workspaceId: string, path: string): Prom
   openFile(workspaceId, path)
 }
 
-/** A `cate://` or web URL opened with the app: in a panel of the shown
- *  workspace that opens URLs, else outside the app. */
+/** A URL opened with the app: a `cate://pair` link fills in "Join with a
+ *  Code" (joining stays the person's click); a web URL opens in a panel of
+ *  the shown workspace that opens URLs, else outside the app. */
 export function openUrl(url: string): void {
+  if (isPairingLink(url)) {
+    useUIStore.getState().openJoinDialog({ code: url })
+    return
+  }
   const workspaceId = useUIStore.getState().selectedWorkspaceId
   const type = panelTypeOpening('url')
   if (/^https?:/i.test(url) && workspaceId && type && createPanel(workspaceId, type, { url })) return

@@ -55,6 +55,15 @@ export interface PanelPatch {
   fields?: { [key: string]: Json }
 }
 
+/** A panel record field: a person chose the title (a rename, or a title given
+ *  when the panel was made), so an agent's session title never replaces it. */
+export const PANEL_TITLE_CHOSEN_FIELD = 'titleUserOverridden'
+
+/** A person renaming a panel. */
+export function renamePanelChange(id: PanelId, title: string): DocChange {
+  return { kind: 'updatePanel', id, patch: { title, fields: { [PANEL_TITLE_CHOSEN_FIELD]: true } } }
+}
+
 export interface RelationPatch {
   kind?: RelationKind
   /** null removes. */

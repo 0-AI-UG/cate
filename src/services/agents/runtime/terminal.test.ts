@@ -7,7 +7,7 @@ import { createTerminalService, type ActivityScan, type EnvContributor, type Lau
 import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, type AgentId } from '../contract'
+import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentStep } from '../contract'
 import { createAgentsCore, type AgentsCore } from './core'
 import type { AgentsDocument } from './promptContext'
 import type { RelationContextMode } from '@workspace/relations/contract'
@@ -234,17 +234,33 @@ describe('terminal agents', () => {
     doc.document.setRelationContextMode('term', 'once')
     doc.modes.delete('term')
 
-    await expect(agents.send('term', 'line one\nline two')).resolves.toEqual({ ok: true })
-    expect(terminal.writes).toEqual([
+    const sent = agents.send('term', 'line one\nline two')
+    await vi.waitFor(() => expect(terminal.writes).toEqual([
       { id: 'pty-1', data: '\x1b[200~line one\rline two\x1b[201~' },
       { id: 'pty-1', data: '\r' },
-    ])
+    ]))
     // The agent's submit hook takes the one-shot relation context, and its
-    // turn-start disarms it.
+    // turn-start disarms it and confirms the send.
     expect(doc.modes.get('term')).toBeUndefined()
     const output = await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
     expect(JSON.parse(output).hookSpecificOutput.additionalContext).toContain('Browser')
     expect(doc.modes.get('term')).toBe('off')
+    await expect(sent).resolves.toEqual({ ok: true })
+  })
+
+  it('fails a send whose prompt starts no turn (a dialog took the Enter)', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const sent = agents.send('term', 'hello')
+      await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expect(sent).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/^agent-prompt-not-taken/) })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('flags an agent running without Cate hooks until one of its hooks arrives', async () => {
@@ -296,6 +312,102 @@ describe('terminal agents', () => {
     expect(agentTerminals.terminalOf('term')).toBeNull()
     expect(agents.panels.state('term')).toBeNull()
     expect(changes).toHaveBeenLastCalledWith({ term: null })
+  })
+})
+
+/** Each CLI's completed tool calls as its hooks post them: a file edit and a
+ *  shell command, in the spelling the real CLI uses (the tools of the live
+ *  lifecycle fixture, `live/hookLifecycle.itest.ts`). */
+const TOOL_POSTS: Record<AgentId, { edit: (file: string) => Record<string, unknown>; shell: (command: string) => Record<string, unknown> }> = {
+  'claude-code': {
+    edit: (file) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'e', tool_name: 'Write', tool_input: { file_path: file, content: 'after\n' }, tool_response: { type: 'create' } }),
+    shell: (command) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'b', tool_name: 'Bash', tool_input: { command, description: 'Run it' }, tool_response: { stdout: '', stderr: '' } }),
+  },
+  codex: {
+    edit: (file) => ({ hook_event_name: 'PostToolUse', session_id: 's', turn_id: 't', tool_use_id: 'e', tool_name: 'apply_patch', tool_input: { command: `*** Begin Patch\n*** Add File: ${file}\n+after\n*** End Patch` }, tool_response: 'Success.' }),
+    shell: (command) => ({ hook_event_name: 'PostToolUse', session_id: 's', turn_id: 't', tool_use_id: 'b', tool_name: 'Bash', tool_input: { command }, tool_response: '' }),
+  },
+  cursor: {
+    edit: (file) => ({ hook_event_name: 'afterFileEdit', conversation_id: 's', file_path: file, edits: [{ old_string: '', new_string: 'after\n' }] }),
+    shell: (command) => ({ hook_event_name: 'postToolUse', conversation_id: 's', tool_use_id: 'b', tool_name: 'Shell', tool_input: { command }, tool_output: '{"exitCode":0}' }),
+  },
+  grok: {
+    edit: (file) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'e', toolName: 'write', toolInput: { file_path: file, content: 'after\n' }, toolResponse: {} }),
+    shell: (command) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'b', toolName: 'run_terminal_command', toolInput: { command, description: 'Run it' }, toolResponse: {} }),
+  },
+  hermes: {
+    edit: (file) => ({ hook_event_name: 'post_tool_call', session_id: 's', tool_call_id: 'e', tool_name: 'write_file', args: { path: file, content: 'after\n' }, result: '{}', status: 'completed', platform: 'cli' }),
+    shell: (command) => ({ hook_event_name: 'post_tool_call', session_id: 's', tool_call_id: 'b', tool_name: 'terminal', args: { command, workdir: '.' }, result: '{}', status: 'completed', platform: 'cli' }),
+  },
+  kiro: {
+    edit: (file) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'e', tool_name: 'fs_write', tool_input: { path: file, text: 'after\n' }, tool_response: {} }),
+    shell: (command) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'b', tool_name: 'execute_bash', tool_input: { command }, tool_response: {} }),
+  },
+  opencode: {
+    edit: (file) => ({ type: 'message.part.updated', sessionID: 's', part: { type: 'tool', tool: 'write', callID: 'e', state: { status: 'completed', input: { filePath: file, content: 'after\n' }, metadata: {} } } }),
+    shell: (command) => ({ type: 'message.part.updated', sessionID: 's', part: { type: 'tool', tool: 'bash', callID: 'b', state: { status: 'completed', input: { command, description: 'Run it' }, metadata: {} } } }),
+  },
+}
+
+describe('terminal agents steps', () => {
+  it.each(Object.keys(TOOL_POSTS) as AgentId[])('%s: a completed edit and command are steps of the panel, named the same way', async (agentId) => {
+    const steps: Array<[string, AgentStep]> = []
+    agentTerminals.onStep((panelId, step) => steps.push([panelId, step]))
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    // CLIs report paths in the canonical checkout (macOS's /var is /private/var).
+    await post(env, agentId, TOOL_POSTS[agentId].edit(path.join(fs.realpathSync(root), 'src', 'created.txt')))
+    await post(env, agentId, TOOL_POSTS[agentId].shell('npm test -- --run\nsecond line'))
+    expect(steps.map(([panelId, step]) => [panelId, step.subject])).toEqual([
+      ['term', 'src/created.txt'],
+      ['term', 'npm test -- --run'],
+    ])
+    expect(steps.every(([, step]) => step.tool && !Number.isNaN(Date.parse(step.at)))).toBe(true)
+  })
+
+  it('a call the CLI says failed is still a step, but never a recorded edit', async () => {
+    const steps: AgentStep[] = []
+    agentTerminals.onStep((_panelId, step) => steps.push(step))
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    const file = path.join(fs.realpathSync(root), 'failed.txt')
+    // Each CLI's own failure spelling, where it has one.
+    await post(env, 'claude-code', { ...TOOL_POSTS['claude-code'].edit(file), hook_event_name: 'PostToolUseFailure', error: 'denied by the file system' })
+    await post(env, 'hermes', { ...TOOL_POSTS.hermes.edit(file), status: 'failed' })
+    await post(env, 'kiro', { ...TOOL_POSTS.kiro.edit(file), tool_response: { is_error: true } })
+    expect(steps.map((step) => step.subject)).toEqual(['failed.txt', 'failed.txt', 'failed.txt'])
+    await expect(agents.changes(root)).resolves.toMatchObject({ records: [] })
+  })
+
+  it('a command the person refused is no step, one that failed is', async () => {
+    const steps: AgentStep[] = []
+    agentTerminals.onStep((_panelId, step) => steps.push(step))
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    // Hermes 0.21 reports both through post_tool_call (captured live).
+    const hermes = (command: string, result: Record<string, unknown>) => ({
+      ...TOOL_POSTS.hermes.shell(command), status: 'error', error_type: 'tool_error', result: JSON.stringify(result),
+    })
+    await post(env, 'hermes', hermes('rm -rf -- target.txt', { output: '', exit_code: -1, error: 'BLOCKED: User denied this command.', status: 'blocked' }))
+    await post(env, 'hermes', hermes('exit 7', { output: '', exit_code: 7, error: null }))
+    expect(steps.map((step) => step.subject)).toEqual(['exit 7'])
+  })
+
+  it('a post for another terminal, or without a valid token, is no step', async () => {
+    const steps: AgentStep[] = []
+    agentTerminals.onStep((_panelId, step) => steps.push(step))
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    await post({ ...env, CATE_HOOK_TOKEN: 'forged' }, 'claude-code', TOOL_POSTS['claude-code'].shell('ls'))
+    await post({ ...env, CATE_TERMINAL_ID: 'pty-unknown' }, 'claude-code', TOOL_POSTS['claude-code'].shell('ls'))
+    expect(steps).toEqual([])
+  })
+
+  it('a panel\'s conversation carries its steps as they come', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    const seen: AgentStep[][] = []
+    const stop = agents.conversations.watch('term', (conversation) => { seen.push(conversation.steps) })
+    await vi.waitFor(() => expect(seen.length).toBeGreaterThan(0))
+    await post(env, 'claude-code', TOOL_POSTS['claude-code'].shell('npm test'))
+    await vi.waitFor(() => expect(seen.at(-1)?.map((step) => step.subject)).toEqual(['npm test']))
+    stop()
   })
 })
 

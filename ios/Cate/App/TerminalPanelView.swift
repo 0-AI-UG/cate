@@ -1,9 +1,8 @@
 // A terminal panel, live: SwiftTerm draws the screen the core streams
 // (`terminal.*` in the core API) and sends keystrokes back. As every view, it
 // reports the grid it holds (the screen at a readable font) and draws the
-// PTY's grid, which fits whichever view last asked: whole, with the font
-// fitted to the screen, and pinching zooms in. While the PTY fits another
-// view, "Fit to phone" fits it to this one.
+// PTY's grid, the smallest of its visible views': whole, with the font
+// fitted to the screen, and pinching zooms in.
 
 import SwiftTerm
 import SwiftUI
@@ -31,11 +30,6 @@ struct TerminalPanelView: View {
             .panelTitle(panel.title)
             .toolbar {
                 if onScreen {
-                    if controller.fitsElsewhere {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button("Fit to phone", systemImage: "arrow.up.left.and.arrow.down.right", action: controller.fitToPhone)
-                        }
-                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button(
                             controller.typing ? "Hide keyboard" : "Show keyboard",
@@ -56,12 +50,7 @@ final class TerminalController {
     fileprivate(set) var message: String?
     /// The keyboard is up.
     fileprivate(set) var typing = false
-    /// The live PTY fits another view, at another grid than this one's.
-    fileprivate(set) var fitsElsewhere = false
     @ObservationIgnored fileprivate weak var viewport: TerminalViewport?
-    @ObservationIgnored fileprivate var fit: (() -> Void)?
-
-    func fitToPhone() { fit?() }
 
     func toggleKeyboard() {
         guard let terminal = viewport?.terminal else { return }
@@ -86,7 +75,6 @@ private struct TerminalScreen: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.connect(viewport, core: core, controller: controller, workspaceId: workspaceId, panelId: panelId)
         controller.viewport = viewport
-        controller.fit = { [core, terminalId = coordinator.terminalId] in core.fitTerminal(terminalId) }
         viewport.terminal.terminalDelegate = coordinator
         viewport.terminal.onFirstResponder = { [controller] in controller.typing = $0 }
         viewport.onHeldGrid = { [weak coordinator] in coordinator?.held($0) }
@@ -108,12 +96,6 @@ private struct TerminalScreen: UIViewRepresentable {
         private var workspaceId = ""
         private var panelId = ""
         private var opened = false
-        /// The grid this view holds, the PTY's, whether the PTY fits this
-        /// view, and whether it runs.
-        private var held: Grid?
-        private var pty: Grid?
-        private var fitted = false
-        private var running = false
         /// The person typed: bring the cursor into view with the echo.
         private var followCursor = false
 
@@ -126,10 +108,8 @@ private struct TerminalScreen: UIViewRepresentable {
         }
 
         /// The grid the screen holds, once laid out and on every change: the
-        /// terminal opens with it, and while the PTY fits this view the screen
-        /// takes it at once rather than a round trip later.
+        /// terminal opens with it.
         func held(_ grid: Grid) {
-            held = grid
             guard let core else { return }
             if !opened {
                 opened = true
@@ -138,19 +118,14 @@ private struct TerminalScreen: UIViewRepresentable {
                 }
             } else {
                 core.resizeTerminal(terminalId, cols: grid.cols, rows: grid.rows)
-                if fitted { viewport?.setGrid(grid) }
             }
-            updateFit()
         }
 
         private func handle(_ event: TerminalEvent) {
             guard let viewport else { return }
             switch event {
-            case .size(let cols, let rows, let fitted):
-                pty = Grid(cols: cols, rows: rows)
-                self.fitted = fitted
+            case .size(let cols, let rows):
                 viewport.setGrid(Grid(cols: cols, rows: rows))
-                updateFit()
             case .reset:
                 // RIS, as xterm's reset: the serialized screen follows.
                 viewport.terminal.feed(text: "\u{1b}c")
@@ -160,16 +135,9 @@ private struct TerminalScreen: UIViewRepresentable {
                     followCursor = false
                     viewport.scrollToCursor()
                 }
-            case .state(let status, let text):
-                running = status == "running"
+            case .state(_, let text):
                 controller?.message = text
-                updateFit()
             }
-        }
-
-        private func updateFit() {
-            let elsewhere = running && !fitted && pty != nil && pty != held
-            if controller?.fitsElsewhere != elsewhere { controller?.fitsElsewhere = elsewhere }
         }
 
         func close() {

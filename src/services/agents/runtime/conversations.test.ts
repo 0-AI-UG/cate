@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  agentStep,
   applyAgentConversationChange,
   diffAgentConversation,
   type AgentConversation,
   type AgentConversationChange,
   type AgentConversationMessage,
   type AgentStatus,
+  type AgentStep,
   type PanelAgentState,
 } from '../contract'
 import { createAgentConversations } from './conversations'
@@ -17,6 +19,7 @@ const session = { agentId: 'claude-code' as const, sessionId: 's1', cwd: '/repo'
 function setup() {
   const states = new Map<string, PanelAgentState>()
   const listeners = new Set<(panelId: string) => void>()
+  const stepListeners = new Set<(panelId: string, step: AgentStep) => void>()
   let messages: AgentConversationMessage[] = []
   let stamp = 'a'
   const conversation = vi.fn(async () => ({ session, messages: [...messages] }))
@@ -28,8 +31,10 @@ function setup() {
     conversation,
     conversationStamp: async () => stamp,
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    onStep: (listener) => { stepListeners.add(listener); return () => { stepListeners.delete(listener) } },
     dispose: () => {},
   }
+  const step = (panelId: string, next: AgentStep) => { for (const listener of stepListeners) listener(panelId, next) }
   const panels = createAgentPanels(terminals)
   const setStatus = (status: AgentStatus) => {
     states.set('p1', {
@@ -42,7 +47,7 @@ function setup() {
     messages = next
     stamp += 'a'
   }
-  return { panels, terminals, conversation, setStatus, write }
+  return { panels, terminals, conversation, setStatus, write, step }
 }
 
 describe('agent conversations', () => {
@@ -57,7 +62,10 @@ describe('agent conversations', () => {
     const seen: Array<{ conversation: AgentConversation; change: AgentConversationChange | null }> = []
     conversations.watch('p1', (conversation, change) => { seen.push({ conversation, change }) })
     await vi.advanceTimersByTimeAsync(0)
-    expect(seen).toEqual([{ conversation: { status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'fix it' }] }, change: null }])
+    expect(seen).toEqual([{
+      conversation: { status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'fix it' }], steps: [], stepsSince: expect.any(String) },
+      change: null,
+    }])
 
     write([{ role: 'user', text: 'fix it' }, { role: 'assistant', text: 'On it' }])
     await vi.advanceTimersByTimeAsync(100)
@@ -83,6 +91,27 @@ describe('agent conversations', () => {
     conversations.dispose()
   })
 
+  it('keeps the steps of every panel and sends them as they come', async () => {
+    const { panels, terminals, conversation, setStatus, step } = setup()
+    setStatus('running')
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
+    const first: AgentStep = { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:01.000Z' }
+    step('p1', first)
+    const changes: AgentConversationChange[] = []
+    let read: AgentConversation | null = null
+    conversations.watch('p1', (conversation, change) => {
+      if (change) changes.push(change)
+      else read = conversation
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(read!.steps).toEqual([first])
+    const second: AgentStep = { tool: 'Read', subject: 'src/a.ts', at: '2026-01-01T00:00:02.000Z' }
+    step('p1', second)
+    expect(changes).toEqual([{ stepsFrom: 1, steps: [second] }])
+    expect(conversation).toHaveBeenCalledTimes(1)
+    conversations.dispose()
+  })
+
   it('reads the store only when its stamp moved', async () => {
     const { panels, terminals, conversation, setStatus } = setup()
     setStatus('running')
@@ -97,17 +126,37 @@ describe('agent conversations', () => {
 })
 
 describe('conversation changes', () => {
-  const base: AgentConversation = { status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'b' }] }
+  const base: AgentConversation = {
+    status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'b' }], steps: [], stepsSince: 'x',
+  }
 
   it('round-trips through apply', () => {
-    const next: AgentConversation = { status: 'waitingForInput', canReceivePrompt: true, messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'bc' }, { role: 'user', text: 'd' }] }
+    const next: AgentConversation = {
+      ...base,
+      status: 'waitingForInput',
+      canReceivePrompt: true,
+      messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'bc' }, { role: 'user', text: 'd' }],
+      steps: [{ tool: 'Bash', at: 't' }],
+    }
     const change = diffAgentConversation(base, next)!
-    expect(change).toEqual({ status: 'waitingForInput', canReceivePrompt: true, from: 1, messages: next.messages.slice(1) })
+    expect(change).toEqual({
+      status: 'waitingForInput', canReceivePrompt: true, from: 1, messages: next.messages.slice(1), stepsFrom: 0, steps: next.steps,
+    })
     expect(applyAgentConversationChange(base, change)).toEqual(next)
   })
 
   it('is null for the same conversation, and truncates a shorter one', () => {
     expect(diffAgentConversation(base, { ...base, messages: [...base.messages] })).toBeNull()
     expect(diffAgentConversation(base, { ...base, messages: base.messages.slice(0, 1) })).toEqual({ from: 1, messages: [] })
+  })
+})
+
+describe('agent steps', () => {
+  it('reads what a tool call worked on from any CLI\'s input the same way', () => {
+    expect(agentStep({ name: 'Bash', input: { command: 'npm test\nmore' } }, 't')).toEqual({ tool: 'Bash', subject: 'npm test', at: 't' })
+    expect(agentStep({ name: 'shell', input: { command: ['git', 'status'] } }, 't')).toEqual({ tool: 'shell', subject: 'git status', at: 't' })
+    expect(agentStep({ name: 'read_file', input: { filePath: '/repo/a.ts' } }, 't')).toEqual({ tool: 'read_file', subject: '/repo/a.ts', at: 't' })
+    expect(agentStep({ name: ' ', input: 42 }, 't')).toEqual({ tool: 'Tool', at: 't' })
+    expect(agentStep({ name: 'Grep', input: { pattern: 'x'.repeat(300) } }, 't').subject).toHaveLength(160)
   })
 })

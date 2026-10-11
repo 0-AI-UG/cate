@@ -6,6 +6,8 @@
 import { runtimeFor } from '@kernel/rpc/client'
 import { isRpcError } from '@kernel/rpc/contract'
 import { openAgentChanges } from '@panels/review/client'
+import { fsClient } from '@workspace/files/client'
+import { base64ToBytes } from '@workspace/files/contract'
 import type { MobileActionResult, MobileCoreMethods } from '../contract'
 import type { MobileAgents } from './agents'
 import type { MobileConversations } from './conversations'
@@ -16,7 +18,7 @@ type Handlers<M extends keyof MobileCoreMethods> = {
 }
 
 export type ActionMethod =
-  | 'agents.watch' | 'agents.unwatch' | 'agents.send' | 'agents.interrupt'
+  | 'agents.watch' | 'agents.unwatch' | 'agents.send' | 'agents.queue' | 'agents.unqueue' | 'agents.attach' | 'agents.interrupt'
   | 'agents.choices' | 'agents.start' | 'agents.review'
   | 'power.set' | 'push.device' | 'push.useCateConnect'
 
@@ -70,6 +72,23 @@ export function createActionHandlers(agents: MobileAgents, conversations: Mobile
       const result = await attempt(() => runtimeFor(workspaceId).agents.send({ panelId, prompt }))
       if (!result.ok) conversations.unsent(viewId)
       return result
+    },
+    async 'agents.queue'({ viewId, prompt }) {
+      conversations.queue(viewId, prompt)
+      return null
+    },
+    async 'agents.unqueue'({ viewId }) {
+      return conversations.unqueue(viewId)
+    },
+    async 'agents.attach'({ workspaceId, name, kind, data }) {
+      try {
+        const files = fsClient(workspaceId)
+        const bytes = base64ToBytes(data)
+        const { path } = kind === 'image' ? await files.storeScreenshot(name, bytes) : await files.storeDownload(name, bytes)
+        return { ok: true, path }
+      } catch (error) {
+        return { ok: false, message: wordsFor(error) }
+      }
     },
     'agents.interrupt': ({ workspaceId, panelId }) =>
       attempt(() => runtimeFor(workspaceId).agents.interrupt({ panelId })),

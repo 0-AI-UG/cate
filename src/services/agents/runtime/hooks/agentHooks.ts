@@ -56,6 +56,7 @@ import {
   type AgentConversationMessage,
   type AgentId,
   type AgentSessionLocator,
+  type AgentToolCall,
   type HookInjectionContext,
 } from '../../contract'
 
@@ -128,6 +129,8 @@ export interface AgentHooks {
   noteAgentExited(terminalId: string): void
   /** Subscribe to normalized hook events. Returns an unsubscribe. */
   subscribe(onEvent: (event: AgentHookEvent) => void): () => void
+  /** Subscribe to the completed tool calls hooks report, by terminal. */
+  onToolCall(listener: (terminalId: string, call: AgentToolCall) => void): () => void
   /** The ingestion endpoint (boots it if needed) — for tests/diagnostics.
    *  `tokenFor` derives the bearer token a given terminal's posts must carry. */
   endpoint(): Promise<{ url: string; dir: string; tokenFor: (terminalId: string) => string }>
@@ -309,6 +312,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
   const homeDir = deps.homeDir ?? os.homedir()
   const externalPlugins = deps.externalPlugins ?? EXTERNAL_PLUGINS
   const listeners = new Set<(event: AgentHookEvent) => void>()
+  const toolCallListeners = new Set<(terminalId: string, call: AgentToolCall) => void>()
   let ready: Promise<HookState> | null = null
   let disposed = false
   const inputSessions = new Map<string, Pick<AgentHookEvent, 'agentId' | 'sessionId'>>()
@@ -589,9 +593,15 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
                 event.sourcePid = body.pid
                 event.sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
               }
+              const call = spec ? spec.toolCall(body.payload as Record<string, unknown>) : null
               if (spec) {
-                try { await changes.ingestHook(terminalId, agentId as AgentId, event, spec.toolCall(body.payload as Record<string, unknown>)) }
+                try { await changes.ingestHook(terminalId, agentId as AgentId, event, call) }
                 catch (error) { deps.onChangeError?.(error) }
+              }
+              if (call) {
+                for (const listener of toolCallListeners) {
+                  try { listener(terminalId, call) } catch { /* a subscriber must not break ingestion */ }
+                }
               }
               // Read the context the submit hook answers with before subscribers
               // see the turn-start: a one-shot context is disarmed by it.
@@ -886,6 +896,11 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     subscribe(onEvent) {
       listeners.add(onEvent)
       return () => { listeners.delete(onEvent) }
+    },
+
+    onToolCall(listener) {
+      toolCallListeners.add(listener)
+      return () => { toolCallListeners.delete(listener) }
     },
 
     async endpoint() {

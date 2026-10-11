@@ -162,7 +162,7 @@ function OpenPalette(): JSX.Element {
           return (
             <React.Fragment key={section.label}>
               {showSeparator && <div className="mx-3.5 my-1 border-t border-subtle" />}
-              <div className="px-3.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">{section.label}</div>
+              <div className="px-3.5 pt-2 pb-1 text-[11px] font-semibold text-muted">{section.label}</div>
               {section.items.map((item) => {
                 const i = index++
                 const selected = i === selectedIndex

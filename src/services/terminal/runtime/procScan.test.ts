@@ -47,6 +47,20 @@ describe('terminal process activity', () => {
 
     expect(activityForPid(10, processes)).toEqual({ type: 'running', processName: 'codex' })
   })
+
+  it('reports an agent CLI started in place of the shell, not its helpers', () => {
+    const processes = tree([
+      [10, 1, 'claude'],
+      [20, 10, 'caffeinate'],
+    ])
+
+    expect(activityForPid(10, processes)).toEqual({ type: 'running', processName: 'claude' })
+    expect(activityForPid(10, tree([[10, 1, 'claude']]))).toEqual({ type: 'running', processName: 'claude' })
+  })
+
+  it('treats a login shell as a shell', () => {
+    expect(activityForPid(10, tree([[10, 1, '-zsh']]))).toEqual({ type: 'idle' })
+  })
 })
 
 describe('process table', () => {

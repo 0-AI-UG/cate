@@ -1,11 +1,13 @@
 // Paths and URLs opened with the app (Finder "Open With", the dock, a web
-// link handed to Cate). A path is added and opened as a local workspace, a URL
-// opens in a browser panel: both by the main window's renderer, once it said
+// link handed to Cate, a scanned pairing link). A path is added and opened as
+// a local workspace, a web URL opens in a browser panel and a pairing link in
+// "Join with a Code": all by the main window's renderer, once it said
 // it listens. Requests before that are queued. Register before app ready:
 // macOS sends `open-file` early.
 
 import fs from 'node:fs'
 import type { WebContents } from 'electron'
+import { isPairingLink } from '@runtime/pairing/contract'
 
 /** The real path of a folder the person opens, so one folder reached two
  *  ways (a symlink, `c:` and `C:`) is one workspace; the path as given when
@@ -33,7 +35,9 @@ export interface OpenRequestsDeps {
   focusOnDeliver: boolean
 }
 
-function isWebUrl(url: string): boolean {
+/** A web URL, or a pairing link (the pairing QR code's). */
+function isOpenableUrl(url: string): boolean {
+  if (isPairingLink(url)) return true
   try {
     const protocol = new URL(url).protocol
     return protocol === 'http:' || protocol === 'https:'
@@ -61,7 +65,7 @@ export function createOpenRequests(deps: OpenRequestsDeps) {
       flush()
     },
     openUrl(url: string) {
-      if (!isWebUrl(url)) return
+      if (!isOpenableUrl(url)) return
       pending.push({ kind: 'url', value: url })
       if (!deps.target() && deps.started()) deps.createMainWindow()
       flush()

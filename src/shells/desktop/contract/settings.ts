@@ -41,7 +41,7 @@ export const sidebarSettings = defineSettings({
   },
 })
 
-/** Machines this device sets workspaces up on over SSH ("Remote machines"). */
+/** Machines this device sets workspaces up on over SSH (Settings → "Machines"). */
 export const remoteMachineSettings = defineSettings({
   scope: 'client',
   keys: {

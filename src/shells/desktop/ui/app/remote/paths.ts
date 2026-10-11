@@ -22,3 +22,14 @@ export function parentPath(path: string): string {
 export function joinPath(dir: string, name: string): string {
   return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`
 }
+
+/** The folders from `/` down to `path`, for a breadcrumb. */
+export function crumbsOf(path: string): Array<{ name: string; path: string }> {
+  const out = [{ name: '/', path: '/' }]
+  let current = ''
+  for (const part of path.split('/').filter(Boolean)) {
+    current += `/${part}`
+    out.push({ name: part, path: current })
+  }
+  return out
+}

@@ -28,7 +28,7 @@ export default definePanel({
   dropSize: { width: 820, height: 560 },
   canLiveOnCanvas: true,
   navigable: true,
-  creation: { order: 8, inWorktree: true },
+  creation: { order: 8, toolbar: true, inWorktree: true },
   defaultTitle: 'Diff Review',
   channel: channel<ReviewSnapshot, Partial<ReviewSnapshot>, ReviewOp>(),
   api: reviewApi,

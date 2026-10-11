@@ -211,11 +211,6 @@ final class CoreHost {
         }
     }
 
-    /// Fits the PTY to this view.
-    func fitTerminal(_ terminalId: String) {
-        Task { await call("terminal.fit", ["terminalId": terminalId]) }
-    }
-
     func closeTerminal(_ terminalId: String) {
         terminals[terminalId] = nil
         Task { await call("terminal.close", ["terminalId": terminalId]) }

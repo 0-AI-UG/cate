@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createLogger } from '@kernel/log/contract'
-import { RUNTIME_BUILD, RUNTIME_VERSION, runtimeTarget, tarballName } from '@runtime/daemon/contract'
+import { RUNTIME_BUILD, RUNTIME_VERSION, runtimeTarget, tarballName, type RuntimeTarget, type RuntimeUpdateProgress } from '@runtime/daemon/contract'
 import { ensureRuntimeInstalled } from '@runtime/daemon/node'
 import { cateHome } from '@runtime/data/node'
 
@@ -40,9 +40,28 @@ function bundledRuntimeTarball(options: BundledTarballOptions): string | null {
   return exists(file) ? file : null
 }
 
+/** This build's runtime tarball for another machine (SSH, WSL) of `target`,
+ *  or null when the release is downloaded instead. A packaged app has the
+ *  ones it ships for this device's CPU (both on macOS); a checkout matches no
+ *  release, so it needs the tarball built for the target. */
+export function machineRuntimeTarball(options: BundledTarballOptions, target: RuntimeTarget): string | null {
+  const [platform, arch] = target.split('-') as [NodeJS.Platform, string]
+  const host = options.platform ?? process.platform
+  if (options.isPackaged) {
+    // Only macOS names its tarballs by arch; elsewhere the one shipped is the host's.
+    if (platform !== host || (host !== 'darwin' && arch !== (options.arch ?? process.arch))) return null
+    return bundledRuntimeTarball({ ...options, platform, arch })
+  }
+  const file = bundledRuntimeTarball({ ...options, platform, arch })
+  if (file) return file
+  throw new Error(`This development build has no runtime for ${target}. Build it with \`npm run runtime:tarball -- --target ${target}${platform === 'linux' ? ' --docker' : ''}\`.`)
+}
+
 /** Resolves once this build's runtime is installed (the runtime prunes
- *  unused installs when it starts); rejects with a message the local dial can show. */
-export async function installBundledRuntime(options: BundledTarballOptions & { home?: string; build?: string }): Promise<string> {
+ *  unused installs when it starts); rejects with a message the local dial can
+ *  show. `onProgress` hears each step of an install (nothing when it is
+ *  installed already). */
+export async function installBundledRuntime(options: BundledTarballOptions & { home?: string; build?: string; onProgress?: (progress: RuntimeUpdateProgress) => void }): Promise<string> {
   const version = options.version ?? RUNTIME_VERSION
   const build = options.build ?? RUNTIME_BUILD
   const tarball = bundledRuntimeTarball(options)
@@ -57,6 +76,7 @@ export async function installBundledRuntime(options: BundledTarballOptions & { h
       ...(tarball ? { tarball } : {}),
       platform: options.platform,
       arch: options.arch,
+      ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     })
   } catch (err) {
     if (options.isPackaged) throw err

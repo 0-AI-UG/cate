@@ -36,9 +36,8 @@ export interface BindTerminalOptions {
    *  grid its frame holds. Report changes with `resized`. Default: the
    *  terminal's size, reported on its resizes. */
   size?: () => { cols: number; rows: number }
-  /** The PTY's grid and whether it fits this view: before the screen is
-   *  written, and on every change. */
-  onSize?: (size: { cols: number; rows: number; fitted: boolean }) => void
+  /** The PTY's grid: before the screen is written, and on every change. */
+  onSize?: (size: { cols: number; rows: number }) => void
   /** The PTY exited; the screen stays. */
   onExit?: (code: number) => void
   /** The attach failed (the terminal is gone, the connection refused). */
@@ -48,8 +47,6 @@ export interface BindTerminalOptions {
 export interface TerminalBinding {
   /** This viewer's id once attached. */
   readonly viewer: string | null
-  /** Fits the PTY to this view; it then follows this view's resizes. */
-  fit(): void
   /** The view's `size` changed. */
   resized(): void
   setVisible(visible: boolean): void
@@ -62,15 +59,12 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
   const encoder = new TextEncoder()
   let visible = options.visible !== false
   let viewer: string | null = null
-  // `fit` before the attach answers: sent with the first view report.
-  let pendingFit = false
-  let fitted = false
   let sub: Subscription<AttachEvent, AttachEnd> | null = null
   let disposed = false
 
-  const view = (extra: { fit?: boolean } = {}): void => {
+  const view = (): void => {
     if (!viewer || disposed) return
-    proc.view({ id, viewer, ...size(), visible, ...extra }).catch(() => {})
+    proc.view({ id, viewer, ...size(), visible }).catch(() => {})
   }
 
   const attach = (): void => {
@@ -82,15 +76,13 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
     current.onEvent((event) => {
       if (event.kind === 'screen') {
         viewer = event.viewer
-        options.onSize?.({ cols: event.cols, rows: event.rows, fitted })
+        options.onSize?.({ cols: event.cols, rows: event.rows })
         terminal.reset()
         if (event.data) terminal.write(event.data)
         // The view may have been resized while the attach was in flight.
-        view(pendingFit ? { fit: true } : {})
-        pendingFit = false
+        view()
       } else if (event.kind === 'size') {
-        fitted = event.fitted
-        options.onSize?.({ cols: event.cols, rows: event.rows, fitted })
+        options.onSize?.({ cols: event.cols, rows: event.rows })
       } else if (event.kind === 'exit') {
         options.onExit?.(event.code)
       }
@@ -114,10 +106,6 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
 
   return {
     get viewer() { return viewer },
-    fit() {
-      if (viewer) view({ fit: true })
-      else pendingFit = true
-    },
     resized: () => view(),
     setVisible(next) {
       if (next === visible) return

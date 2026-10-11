@@ -4,11 +4,13 @@
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdir, mkdtemp, realpath, rm, readFile, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { mkdir, mkdtemp, realpath, rm, readFile, symlink, writeFile } from 'node:fs/promises'
+import os, { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { AGENT_DEFS, AGENT_HOOK_SPECS, AGENT_INTERRUPT_INPUT, type AgentHookEvent } from '../../contract'
+import { AGENT_DEFS, AGENT_HOOK_SPECS, AGENT_INTERRUPT_INPUT, agentStepGroups, type AgentConversationMessage, type AgentHookEvent, type AgentId, type AgentStep } from '../../contract'
+import { AGENT_SESSION_STORES } from '../sessions'
+import { agentStepOf } from '../steps'
 import { createAgentHooks } from '../hooks/agentHooks'
 import { createAgentChangesStore } from '../changes/store'
 import { createAgentStatusMachine } from '../status'
@@ -19,6 +21,48 @@ import { HOOK_LIFECYCLE_CASES, NATIVE_HOOK_KINDS, selectHookLifecycleCases } fro
 import { redactHookSmokeOutput, selectHookSmokeAgents } from './hookSmoke.config'
 
 const selected = selectHookSmokeAgents(process.env.CATE_HOOK_SMOKE_AGENTS)
+
+/** Where this fixture's CLI keeps the sessions Cate reads (it moves them off
+ *  the real home through each CLI's own env): the path under a home the
+ *  production store reader looks at, and where they are; null where the CLI
+ *  keeps the real home's. */
+function relocatedStore(agentId: AgentId, env: Record<string, string>): [string, string] | null {
+  switch (agentId) {
+    case 'claude-code': return ['.claude/projects', path.join(env.CLAUDE_CONFIG_DIR, 'projects')]
+    case 'codex': return ['.codex/sessions', path.join(env.CODEX_HOME, 'sessions')]
+    // Cursor writes its transcript from what its own service streams, which
+    // the fake provider does not: its reader is pinned by unit fixtures.
+    case 'cursor': return ['.cursor/projects', path.join(env.CURSOR_DATA_DIR, 'projects')]
+    case 'grok': return ['.grok/sessions', path.join(env.GROK_HOME, 'sessions')]
+    case 'kiro': return ['.kiro/sessions', path.join(env.HOME, '.kiro', 'sessions')]
+    case 'opencode': return ['.local/share/opencode', path.join(env.XDG_DATA_HOME, 'opencode')]
+    case 'hermes': return null
+  }
+}
+
+/** The CLI's own record of the session, read by Cate's production store
+ *  reader as the runtime does (no transcript path), from a home that holds
+ *  the fixture's store where the reader looks. */
+async function readSession(agentId: AgentId, env: Record<string, string>, directory: string, session: AgentHookEvent): Promise<AgentConversationMessage[] | null> {
+  const relocated = relocatedStore(agentId, env)
+  let homeDir = os.homedir()
+  if (relocated) {
+    homeDir = path.join(directory, 'store-home')
+    const target = path.join(homeDir, relocated[0])
+    await mkdir(path.dirname(target), { recursive: true })
+    await symlink(relocated[1], target).catch(() => {})
+  }
+  return AGENT_SESSION_STORES[agentId].conversation({
+    session: { agentId, sessionId: session.sessionId!, cwd: session.cwd, profile: session.profile },
+    homeDir,
+  })
+}
+
+/** The prompt and a reply after it are in the CLI's own record. */
+const recorded = (messages: AgentConversationMessage[] | null): boolean => {
+  const prompt = messages?.findIndex((message) => message.role === 'user' && message.text.includes('CATE_LIFECYCLE')) ?? -1
+  return prompt >= 0 && messages!.slice(prompt + 1).some((message) => message.role === 'assistant')
+}
 
 describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full hook lifecycle', () => {
   for (const agentId of selected) {
@@ -39,6 +83,11 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const trace: Array<{ event: AgentHookEvent; state: unknown; ready: boolean; notifications: number }> = []
         const events: AgentHookEvent[] = []
         const posts: Array<Record<string, unknown>> = []
+        // Steps as the conversation runtime keeps them (`agentStep`), from the
+        // tool calls the real CLI's hooks report.
+        const stepsSince = new Date().toISOString()
+        const steps: AgentStep[] = []
+        const offSteps = hooks.onToolCall((id, call) => { if (id === terminalId) steps.push(agentStepOf(call, cwd)) })
         const unsubscribe = hooks.subscribe((event) => {
           events.push(event); status.noteHookEvent(event)
           trace.push({ event, state: state(), ready: canAgentReceivePrompt(terminalId), notifications })
@@ -99,10 +148,10 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           await runLiveCli('git', ['init', '-q'], { cwd, env })
           if (agentId !== 'hermes') await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
           launch = await configureHookCli(agentId, directory, cwd, env, provider, 'CATE_LIFECYCLE: edit target.txt then finish.')
-          if (scenario === 'automatic-denial') {
-            launch.args[1] = 'sonnet'
-            launch.args.unshift('--permission-mode', 'auto')
-          }
+          // Claude's default permission mode changed to auto (2.1.296), whose
+          // classifier answers prompts itself: name the mode each scenario needs.
+          if (agentId === 'claude-code') launch.args.unshift('--permission-mode', scenario === 'automatic-denial' ? 'auto' : 'default')
+          if (scenario === 'automatic-denial') launch.args[3] = 'sonnet'
           if (scenario === 'automatic-approval') {
             if (agentId === 'codex') {
               const configPath = path.join(env.CODEX_HOME, 'config.toml')
@@ -180,8 +229,12 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 if (!approvalMenuAt) approvalMenuAt = Date.now()
                 if (Date.now() - approvalMenuAt < 1000) return undefined
                 approved = true
+                // Claude's menu grows choices between versions: pick its "No" by
+                // the number it shows.
+                const claudeNo = screen.match(/(\d)\.\s+No\b/)?.[1]
                 const keys = scenario === 'permission-deny'
-                  ? agentId === 'grok' ? '4\r' : agentId === 'hermes' ? '\x1b[B\x1b[B\x1b[B\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r' : '\x1b[B\x1b[B\r'
+                  ? agentId === 'grok' ? '4\r' : agentId === 'hermes' ? '\x1b[B\x1b[B\x1b[B\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r'
+                    : agentId === 'claude-code' && claudeNo ? claudeNo : '\x1b[B\x1b[B\r'
                   : agentId === 'grok' ? '3\r' : '\r'
                 if (keys.length > 1) {
                   approvalEnterAt = Date.now()
@@ -200,6 +253,11 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 const transcript = events.find((event) => event.transcriptPath)?.transcriptPath
                 if (!transcript) return false
                 try { if (!(await readFile(transcript, 'utf8')).includes(provider.answer)) return false } catch { return false }
+              }
+              // The CLI's own record is read below: let it write the turn first.
+              if (scenario === 'edit' && agentId !== 'cursor') {
+                const session = events.find((event) => event.sessionId)
+                if (!session || !recorded(await readSession(agentId, env, directory, session))) return false
               }
               if (scenario === 'session-end') return events.some((event) => event.kind === 'session-end')
               if (scenario === 'session-reset') return events.filter((event) => event.kind === 'session-start').length >= 2
@@ -291,10 +349,41 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             if (event.kind === 'permission-check' && event.approvalMode !== 'manual') { expect(observed).toBe('running'); expect(ready).toBe(false) }
             if (event.kind === 'turn-end' || event.kind === 'session-end') { expect(observed).toBe('waitingForInput'); expect(ready).toBe(true) }
           }
+          if (scenario === 'edit') {
+            // The edit is one step, named by the file it wrote, for every CLI.
+            expect(steps.map((step) => step.subject), 'the edit\'s step names the file').toEqual(['created.txt'])
+            expect(steps[0].tool).toBe(agentId === 'cursor' ? 'Edit' : edit.name)
+          }
+          if (scenario === 'edit' && agentId !== 'cursor') {
+            // The CLI's own record dates the prompt, so the step lands in its
+            // turn, before the reply; a turn from before steps were kept
+            // shows a ghost instead.
+            const session = events.find((event) => event.sessionId)!
+            const messages = await readSession(agentId, env, directory, session)
+            const prompt = messages?.findIndex((message) => message.role === 'user' && message.text.includes('CATE_LIFECYCLE')) ?? -1
+            expect(prompt, 'the CLI\'s session store has the prompt').toBeGreaterThanOrEqual(0)
+            expect(Number.isNaN(Date.parse(messages![prompt].createdAt ?? '')), 'the prompt is dated').toBe(false)
+            const reply = messages!.findIndex((message, index) => index > prompt && message.role === 'assistant')
+            expect(reply, 'the CLI\'s session store has the reply').toBeGreaterThan(prompt)
+            expect(agentStepGroups({ status: 'waitingForInput', messages: messages!, steps, stepsSince })).toEqual([
+              { before: messages!.findLastIndex((message) => message.role === 'assistant'), steps, ghost: false },
+            ])
+            expect(agentStepGroups({ status: 'waitingForInput', messages: messages!, steps: [], stepsSince: new Date(Date.now() + 60_000).toISOString() }))
+              .toEqual([{ before: messages!.findLastIndex((message) => message.role === 'assistant'), steps: [], ghost: true }])
+          }
+          // A command that ran is a step named by the command, failed or not
+          // (not every CLI can tell a failed one); one that was refused is none.
+          // The hook may name the tool its own way (Codex's exec_command is Bash).
+          const commandSteps = steps.filter((step) => step.subject === command)
+          if (['permission-allow', 'automatic-approval', 'tool-failure'].includes(scenario)) {
+            expect(commandSteps, 'the command that ran is a step').toHaveLength(1)
+            expect(commandSteps[0].tool).toBeTruthy()
+          }
+          if (scenario === 'permission-deny' || scenario === 'automatic-denial') expect(commandSteps, 'a refused command is no step').toEqual([])
           if (scenario === 'provider-failure') expect(posts.some((post) => ['StopFailure', 'stop_failure'].includes(String(post.hook_event_name ?? post.hookEventName)))).toBe(true)
 
         } finally {
-          unsubscribe(); hooks.dispose()
+          unsubscribe(); offSteps(); hooks.dispose()
           proxy.closeAllConnections(); await new Promise<void>((resolve) => proxy.close(() => resolve()))
           await provider.close(); await launch?.close?.()
           await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
