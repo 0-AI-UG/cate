@@ -117,4 +117,29 @@ describe('PanelHost', () => {
     await render(<PersistentPanelHost workspaceIds={['w']} windowId={MAIN_WINDOW} Scope={Scope} />)
     expect(document.querySelector('[data-testid="browser"]')?.textContent).toBe('scope of w')
   })
+
+  it('a surface shown in a dock focuses its panel itself: its pane never sees a press in it', async () => {
+    const Scope = ({ children }: { children: React.ReactNode }) => <>{children}</>
+    await render(<PersistentPanelHost workspaceIds={['w']} windowId={MAIN_WINDOW} Scope={Scope} />)
+    const surface = document.querySelector('[data-browser-surface="b1"]')!
+    expect(ws.state.getSnapshot().focusedPanelId).toBeNull()
+    act(() => { surface.dispatchEvent(new Event('pointerdown', { bubbles: true })) })
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('b1')
+    // A webview taking the focus does the same.
+    act(() => ws.state.focus('t1'))
+    act(() => { surface.dispatchEvent(new Event('focusin', { bubbles: true })) })
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('b1')
+  })
+
+  it('a surface on a canvas node leaves focusing to the node', async () => {
+    ws.detach()
+    ws = attachTestWorkspace('w', buildDocument([
+      add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+      add('bn', { to: 'canvas', canvasId: 'C', nodeId: 'N', layoutId: 'LN', stackId: 'sn', rect: { origin: { x: 0, y: 0 }, size: { width: 300, height: 200 } } }, 'browser'),
+    ]))
+    const Scope = ({ children }: { children: React.ReactNode }) => <>{children}</>
+    await render(<PersistentPanelHost workspaceIds={['w']} windowId={MAIN_WINDOW} Scope={Scope} />)
+    act(() => { document.querySelector('[data-browser-surface="bn"]')!.dispatchEvent(new Event('pointerdown', { bubbles: true })) })
+    expect(ws.state.getSnapshot().focusedPanelId).toBeNull()
+  })
 })
