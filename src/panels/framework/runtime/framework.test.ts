@@ -377,7 +377,8 @@ describe('session channel over rpc', () => {
     await a.ready
     const channelA = new SessionSubscriptions(a.session).acquire<CounterSnapshot>('t1')
     const revs: number[] = []
-    channelA.subscribe(() => revs.push(channelA.getSnapshot()!.rev))
+    // Null once the channel ends at teardown.
+    channelA.subscribe(() => { const state = channelA.getSnapshot(); if (state) revs.push(state.rev) })
     await tick()
     expect(channelA.getSnapshot()).toEqual({ rev: 0, snapshot: { count: 0, dirty: false } })
 
