@@ -4,11 +4,10 @@
 // ConnectionBlocker), never in a dialog over the app (7.10).
 
 import { ChevronRight as CaretRight } from 'lucide-react'
-import { clientUi, errorMessage } from '@kernel/interaction'
 import { useConnectionState } from '../../client/connections'
 import { connectionStatus, type ConnectionRemedy, type ConnectionState, type ConnectionStatus, type WorkspaceConnection } from '@client/connections'
 import { tryClientApp } from '../app'
-import { openLocalFolder, selectWorkspace } from '../navigation'
+import { closeWorkspace, openLocalFolder, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
 
 /** The dot color of a connection state. */
@@ -37,22 +36,12 @@ function remedyAction(connection: WorkspaceConnection, state: ConnectionState, r
     case 'resolve': return { label: 'Resolve…', run: () => void selectWorkspace(id) }
     case 'retry': return { label: 'Try again', run: () => connection.retryNow() }
     case 'start': return { label: 'Start again', run: () => connection.retryNow() }
-    case 'remove': return workspaces ? { label: 'Remove from Sidebar', run: () => void workspaces.removeRecent(id) } : null
+    // A paired one asks first.
+    case 'close': return { label: workspaces?.get(id)?.kind === 'paired' ? 'Close Workspace…' : 'Close Workspace', run: () => void closeWorkspace(id) }
     case 'pair': {
       const entry = workspaces?.get(id)
       const machine = entry?.kind === 'paired' ? entry.machineName : undefined
       return { label: 'Pair again…', run: () => useUIStore.getState().openJoinDialog(machine ? { machine } : {}) }
-    }
-    case 'forget': {
-      if (!workspaces) return null
-      return {
-        label: 'Forget…',
-        run: () => void (async () => {
-          const name = workspaces.get(id)?.name ?? 'this workspace'
-          if (!await clientUi().confirm(`Forget "${name}"? This device can open it again only after pairing with a new code.`)) return
-          await workspaces.forget(id).catch((err) => clientUi().showError(errorMessage(err, 'Could not forget the workspace.')))
-        })(),
-      }
     }
     case 'openNested': {
       if (state.kind !== 'refused' || !state.nestedIn) return null

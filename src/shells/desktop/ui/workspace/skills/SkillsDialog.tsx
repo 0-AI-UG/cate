@@ -249,7 +249,7 @@ export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: 
           ) : browseRows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[13px] text-muted">
               {!skills
-                ? 'Open a folder to browse skills.'
+                ? 'Open a workspace to browse skills.'
                 : index.length === 0
                   ? 'No catalog yet. Add a repo in Settings → Skills.'
                   : empty
@@ -392,7 +392,7 @@ function SkillRow({
         className={`shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-40 ${
           installed ? 'text-secondary hover:text-primary' : 'text-primary'
         }`}
-        title={skills ? 'Install for an agent in this workspace' : 'Open a folder first'}
+        title={skills ? 'Install for an agent in this workspace' : 'Open a workspace first'}
       >
         {installed ? 'Agents' : 'Install'}
         <CaretDown size={10} className="opacity-60" />

@@ -40,7 +40,7 @@ it('renders the catalog in the content area without a modal', async () => {
 
 it('disables install without an open workspace', async () => {
   await act(async () => root.render(<SkillsDialog workspaceId={null} onClose={() => {}} container={slot} />))
-  expect(slot.textContent).toContain('Open a folder to browse skills.')
+  expect(slot.textContent).toContain('Open a workspace to browse skills.')
 })
 
 it('uses the host header chrome when given', async () => {

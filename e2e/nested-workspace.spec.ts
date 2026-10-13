@@ -46,6 +46,6 @@ test('a folder around the open workspace can be removed from the list again', as
   const page = app.mainWindow
   const blocker = page.locator('[data-connection-blocker]')
   await expect(blocker).toContainText(`contains the workspace ${app.project!}`, { timeout: 30_000 })
-  await blocker.getByRole('button', { name: 'Remove from Sidebar' }).click()
+  await blocker.getByRole('button', { name: 'Close Workspace' }).click()
   await expect.poll(() => entries(app!)).toEqual([app!.workspaceId])
 })

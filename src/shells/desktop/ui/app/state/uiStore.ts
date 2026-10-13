@@ -83,11 +83,13 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
   setSidebarHidden: (sidebarHidden) => set({ sidebarHidden }),
   toggleSidebar: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
-  // Opening or joining leaves Settings: the workspace shows next.
-  openJoinDialog: (request = {}) => set({ joinDialog: request, openDialogOpen: false, overlay: null }),
+  // Opening or joining leaves Settings: the workspace shows next. The Open
+  // dialog stays underneath, so dismissing a dialog started from it goes back
+  // to it; one that succeeds closes it.
+  openJoinDialog: (request = {}) => set({ joinDialog: request, overlay: null }),
   closeJoinDialog: () => set({ joinDialog: null }),
   setOpenDialogOpen: (openDialogOpen) => set(openDialogOpen ? { openDialogOpen, overlay: null } : { openDialogOpen }),
-  openMachineFolder: (machineFolder) => set({ machineFolder, openDialogOpen: false }),
+  openMachineFolder: (machineFolder) => set({ machineFolder }),
   openShare: (shareWorkspaceId) => set({ shareWorkspaceId }),
 }))
 

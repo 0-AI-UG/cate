@@ -129,7 +129,7 @@ export type MobileBridge = <M extends MobileBridgeMethod>(
 
 /** What the app offers for a connection state: try again
  *  (`workspaces.retry`), pair again (the join sheet), or forget the
- *  workspace (`workspaces.forget`). */
+ *  workspace (`workspaces.forget`, the core's `close` remedy). */
 export type MobileConnectionAction = 'retry' | 'pair' | 'forget'
 
 /** A connection's state as the app shows it; the wording lives here once
@@ -351,11 +351,13 @@ export interface MobileCoreMethods {
   'workspaces.open': { params: { workspaceId: string }; result: null }
   /** The person's answer to `trustPrompt`. */
   'workspaces.answerTrust': { params: { trusted: boolean }; result: { ok: boolean; message?: string } }
+  /** Disconnects; the workspace stays in the list. */
   'workspaces.close': { params: { workspaceId: string }; result: null }
   /** Stops the workspace's runtime for everyone (`runtime.stop`), then closes it. */
   'workspaces.stop': { params: { workspaceId: string }; result: null }
   'workspaces.retry': { params: { workspaceId: string }; result: null }
-  /** Closes it and deletes the pinned runtime key. */
+  /** Disconnects it and drops it from the list, deleting its pinned
+   *  runtime key: opening it again takes a new code. */
   'workspaces.forget': { params: { workspaceId: string }; result: null }
   /** Shows a terminal panel in a view the app names `terminalId`: the PTY's
    *  grid, screen and live output, as `terminal.event`s, following the panel

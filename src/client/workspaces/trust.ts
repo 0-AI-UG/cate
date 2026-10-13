@@ -129,13 +129,13 @@ async function ensureOpenedTrusted(
 
 /** Opens a workspace (when it is not open) the way every client does: the
  *  connection first, then the trust question once its runtime answers; a
- *  declined workspace is closed again with `close`. Rejects when opening
- *  fails; `trusted` settles once the question is answered. */
+ *  declined workspace is disconnected again but stays in the list (closing
+ *  it would drop a paired one's pinned key). Rejects when opening fails;
+ *  `trusted` settles once the question is answered. */
 export async function openTrusted(
   deps: {
-    workspaces: Pick<WorkspaceList, 'get' | 'getSnapshot' | 'open'>
+    workspaces: Pick<WorkspaceList, 'get' | 'getSnapshot' | 'open' | 'disconnect'>
     connections: Pick<WorkspaceConnections, 'get'>
-    close(workspaceId: string): void
     store?: TrustStore
   },
   workspaceId: string,
@@ -143,7 +143,7 @@ export async function openTrusted(
   if (deps.workspaces.getSnapshot().open.includes(workspaceId)) return { trusted: Promise.resolve(true) }
   await deps.workspaces.open(workspaceId)
   const trusted = ensureOpenedTrusted(deps, workspaceId).then((answer) => {
-    if (answer === 'declined') deps.close(workspaceId)
+    if (answer === 'declined') deps.workspaces.disconnect(workspaceId)
     return answer === 'trusted'
   })
   return { trusted }

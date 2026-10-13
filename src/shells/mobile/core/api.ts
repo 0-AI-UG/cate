@@ -46,7 +46,7 @@ const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
 
 export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers {
   const { workspaces, connections } = client
-  const open = (workspaceId: string) => openTrusted({ workspaces, connections, close: (id) => workspaces.close(id) }, workspaceId)
+  const open = (workspaceId: string) => openTrusted({ workspaces, connections }, workspaceId)
   const { terminals, views, browsers, buffers, streams, agents, conversations } = parts
   return {
     ...createActionHandlers(agents, conversations),
@@ -80,14 +80,14 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       }
     },
     async 'workspaces.close'({ workspaceId }) {
-      workspaces.close(workspaceId)
+      workspaces.disconnect(workspaceId)
       return null
     },
     async 'workspaces.stop'({ workspaceId }) {
       try {
         await runtimeFor(workspaceId).runtime.stop()
       } finally {
-        workspaces.close(workspaceId)
+        workspaces.disconnect(workspaceId)
       }
       return null
     },
@@ -96,7 +96,7 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       return null
     },
     async 'workspaces.forget'({ workspaceId }) {
-      await workspaces.forget(workspaceId)
+      await workspaces.close(workspaceId)
       return null
     },
     async 'terminal.open'(params) {

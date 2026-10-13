@@ -1,13 +1,13 @@
-// "Open a folder" on a machine this device runs commands on (SSH, WSL):
-// check (and, the first time, install) the runtime there, pick or create the
-// folder, then open it as a workspace. Its connection runs the machine's
+// "Open a workspace" on a machine this device runs commands on (SSH, WSL):
+// check (and, the first time, install) the runtime there, shown on its own,
+// then pick or create the folder and open it as a workspace. Its connection runs the machine's
 // bridge, which starts the runtime whenever nothing answers.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Folder, FolderPlus, Server } from 'lucide-react'
+import { AlertCircle, ArrowUp, Folder, FolderPlus, Server } from 'lucide-react'
 import { LoadingState, Modal, btn, inputCls, Spinner } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
-import { machineKey, machineLabel, type Machine, type MachineSetup, type SshDirListing } from '@runtime/daemon/contract'
+import { machineKey, machineLabel, type Machine, type MachineSetup, type RuntimeInstallProgress, type SshDirListing } from '@runtime/daemon/contract'
 import { clientApp } from '../app'
 import { selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
@@ -35,7 +35,6 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
   const [newFolder, setNewFolder] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [installedNow, setInstalledNow] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const install = useInstallProgress(step === 'checking' ? machineKey(machine) : null)
   // Set on every mount: StrictMode unmounts and remounts once in dev.
@@ -78,7 +77,6 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
       try {
         const status = await setup.ensureRuntime(machine)
         if (ignore) return
-        setInstalledNow(status.installedNow)
         setHome(status.home)
         setStep('browse')
         const { onReady, lastPath } = ready.current
@@ -119,6 +117,7 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
       onOpened?.(target.path)
       onClose()
       useUIStore.getState().closeOverlay()
+      useUIStore.getState().setOpenDialogOpen(false)
       await selectWorkspace(entry.id)
     } catch (err) {
       if (!mounted.current) return
@@ -135,131 +134,167 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
       onClose={onClose}
       width={560}
       icon={<Server size={16} />}
-      title={`Open a folder on ${machineLabel(machine)}`}
+      title={`Open a workspace on ${machineLabel(machine)}`}
       dismissable={step !== 'opening'}
       // Above Settings (z-[100001]), which can open it too.
       zClassName="z-[100002]"
       bodyClassName="min-h-0 flex-1 flex flex-col"
     >
-      <div className="flex flex-col gap-3 p-4 min-h-0">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className={btn.ghost}
-            aria-label="Up one folder"
-            disabled={busy || !listing || up === listing.path}
-            onClick={() => up && void open(up)}
-          >
-            <ArrowUp size={14} />
-          </button>
-          <nav aria-label="Folder" className="no-scrollbar min-w-0 flex-1 flex items-center gap-0.5 overflow-x-auto text-[12px]">
-            {listing && crumbsOf(listing.path).map((crumb, index, all) => (
-              <span key={crumb.path} className="flex shrink-0 items-center gap-0.5">
-                {index > 1 && <span className="text-muted">/</span>}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void open(crumb.path)}
-                  className={`rounded px-1.5 py-0.5 hover:bg-hover ${index === all.length - 1 ? 'text-primary font-medium' : 'text-secondary'}`}
-                >
-                  {crumb.name}
-                </button>
-              </span>
-            ))}
-          </nav>
-          <button type="button" className={btn.ghost} disabled={busy || !listing} onClick={() => { setError(null); setNewFolder('') }}>
-            <FolderPlus size={14} />
-            New Folder
-          </button>
-        </div>
-
-        <div role="listbox" aria-label="Folders" className="h-64 overflow-auto rounded-md border border-subtle bg-surface-0 p-1">
-          {step === 'checking' && !error && (
-            <div className="flex items-start gap-2 px-2 py-1.5 text-[12px] text-secondary">
-              <Spinner size={12} className="mt-0.5 shrink-0" />
-              <span>Checking the Cate runtime there. The first time, Cate installs it, which can take a few minutes.</span>
-            </div>
-          )}
-          {step === 'checking' && !error && install && (
-            <div className="px-2 py-1.5"><InstallProgressView progress={install} where={machineLabel(machine)} /></div>
-          )}
-          {newFolder !== null && (
-            <form
-              className="flex items-center gap-2 px-2 py-1"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void createFolder()
-              }}
-            >
-              <Folder size={14} className="shrink-0 text-muted" />
-              <input
-                autoFocus
-                aria-label="New folder name"
-                className={inputCls}
-                value={newFolder}
-                onChange={(e) => setNewFolder(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Escape') return
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setNewFolder(null)
-                }}
-                disabled={busy}
-              />
-            </form>
-          )}
-          {step !== 'checking' && loading && <LoadingState size={12} className="justify-start px-2 py-1 text-[12px]" />}
-          {listing && !loading && listing.dirs.length === 0 && <div className="px-2 py-1 text-[12px] text-muted">No folders here.</div>}
-          {listing && !loading && listing.dirs.map((name) => (
+      {step === 'checking' ? (
+        <MachineSetupView
+          where={machineLabel(machine)}
+          install={install}
+          error={error}
+          onCancel={onClose}
+          onRetry={() => setAttempt((n) => n + 1)}
+        />
+      ) : (
+        <div className="flex flex-col gap-3 p-4 min-h-0">
+          <div className="flex items-center gap-1">
             <button
-              key={name}
               type="button"
-              role="option"
-              aria-selected={selected === name}
-              disabled={busy}
-              onClick={() => {
-                setSelected(name)
-                setPathInput(joinPath(listing.path, name))
-              }}
-              onDoubleClick={() => void open(joinPath(listing.path, name))}
-              className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] text-primary ${selected === name ? 'bg-surface-4' : 'hover:bg-hover'}`}
+              className={btn.ghost}
+              aria-label="Up one folder"
+              disabled={busy || !listing || up === listing.path}
+              onClick={() => up && void open(up)}
             >
-              <Folder size={14} className="shrink-0 text-secondary" />
-              <span className="truncate">{name}</span>
+              <ArrowUp size={14} />
             </button>
-          ))}
-        </div>
+            <nav aria-label="Folder" className="no-scrollbar min-w-0 flex-1 flex items-center gap-0.5 overflow-x-auto text-[12px]">
+              {listing && crumbsOf(listing.path).map((crumb, index, all) => (
+                <span key={crumb.path} className="flex shrink-0 items-center gap-0.5">
+                  {index > 1 && <span className="text-muted">/</span>}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void open(crumb.path)}
+                    className={`rounded px-1.5 py-0.5 hover:bg-hover ${index === all.length - 1 ? 'text-primary font-medium' : 'text-secondary'}`}
+                  >
+                    {crumb.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+            <button type="button" className={btn.ghost} disabled={busy || !listing} onClick={() => { setError(null); setNewFolder('') }}>
+              <FolderPlus size={14} />
+              New Folder
+            </button>
+          </div>
 
-        {installedNow && <div className="text-[12px] text-secondary">Installed the Cate runtime.</div>}
-        {error && <div role="alert" className="text-[12px] text-error">{error}</div>}
+          <div role="listbox" aria-label="Folders" className="h-64 overflow-auto rounded-md border border-subtle bg-surface-0 p-1">
+            {newFolder !== null && (
+              <form
+                className="flex items-center gap-2 px-2 py-1"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void createFolder()
+                }}
+              >
+                <Folder size={14} className="shrink-0 text-muted" />
+                <input
+                  autoFocus
+                  aria-label="New folder name"
+                  className={inputCls}
+                  value={newFolder}
+                  onChange={(e) => setNewFolder(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Escape') return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setNewFolder(null)
+                  }}
+                  disabled={busy}
+                />
+              </form>
+            )}
+            {loading && <LoadingState size={12} className="justify-start px-2 py-1 text-[12px]" />}
+            {listing && !loading && listing.dirs.length === 0 && <div className="px-2 py-1 text-[12px] text-muted">No folders here.</div>}
+            {listing && !loading && listing.dirs.map((name) => (
+              <button
+                key={name}
+                type="button"
+                role="option"
+                aria-selected={selected === name}
+                disabled={busy}
+                onClick={() => {
+                  setSelected(name)
+                  setPathInput(joinPath(listing.path, name))
+                }}
+                onDoubleClick={() => void open(joinPath(listing.path, name))}
+                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] text-primary ${selected === name ? 'bg-surface-4' : 'hover:bg-hover'}`}
+              >
+                <Folder size={14} className="shrink-0 text-secondary" />
+                <span className="truncate">{name}</span>
+              </button>
+            ))}
+          </div>
 
-        <form
-          className="flex items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            void open(pathInput)
-          }}
-        >
-          <input
-            className={`${inputCls} font-mono`}
-            value={pathInput}
-            onChange={(e) => { setPathInput(e.target.value); setSelected(null) }}
-            placeholder={home}
-            aria-label="Folder path"
-            spellCheck={false}
-            disabled={busy}
-          />
-          <button type="button" className={btn.secondary} onClick={onClose} disabled={step === 'opening'}>Cancel</button>
-          {step === 'checking' && error ? (
-            <button type="button" className={btn.primary} onClick={() => setAttempt((n) => n + 1)}>Try again</button>
-          ) : (
+          {error && <div role="alert" className="text-[12px] text-error">{error}</div>}
+
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void open(pathInput)
+            }}
+          >
+            <input
+              className={`${inputCls} font-mono`}
+              value={pathInput}
+              onChange={(e) => { setPathInput(e.target.value); setSelected(null) }}
+              placeholder={home}
+              aria-label="Folder path"
+              spellCheck={false}
+              disabled={busy}
+            />
+            <button type="button" className={btn.secondary} onClick={onClose} disabled={step === 'opening'}>Cancel</button>
             <button type="button" className={btn.primary} onClick={() => void openWorkspace()} disabled={busy || !pathInput.trim()}>
               {step === 'opening' && <Spinner size={13} />}
               Open
             </button>
-          )}
-        </form>
-      </div>
+          </form>
+        </div>
+      )}
     </Modal>
+  )
+}
+
+/** Before the folders: reaching the machine and, the first time, installing
+ *  the runtime there, or why that failed. */
+function MachineSetupView({ where, install, error, onCancel, onRetry }: {
+  where: string
+  install: RuntimeInstallProgress | null
+  error: string | null
+  onCancel: () => void
+  onRetry: () => void
+}): JSX.Element {
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 px-6 text-center">
+        {error ? (
+          <>
+            <AlertCircle size={20} className="text-error" />
+            <span className="text-[14px] font-medium text-primary">Could not set up {where}</span>
+            <span role="alert" className="max-w-[420px] break-words text-[12px] leading-relaxed text-secondary">{error}</span>
+          </>
+        ) : install ? (
+          <>
+            <span className="text-[14px] font-medium text-primary">Setting up {where}</span>
+            <span className="text-[12px] text-secondary">Cate installs its runtime there once. This can take a few minutes.</span>
+            <div className="mt-2 w-full max-w-[360px] text-left"><InstallProgressView progress={install} where={where} /></div>
+          </>
+        ) : (
+          <>
+            <Spinner size={16} />
+            <span role="status" className="text-[14px] font-medium text-primary">Connecting to {where}</span>
+            <span className="text-[12px] text-secondary">Checking for the Cate runtime there.</span>
+          </>
+        )}
+      </div>
+      <div className="flex justify-end gap-2">
+        <button type="button" className={btn.secondary} onClick={onCancel}>Cancel</button>
+        {error && <button type="button" className={btn.primary} onClick={onRetry}>Try again</button>}
+      </div>
+    </div>
   )
 }

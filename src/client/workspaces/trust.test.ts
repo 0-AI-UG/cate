@@ -113,30 +113,36 @@ describe('ensureTrusted', () => {
 
 describe('openTrusted', () => {
   const opens = vi.fn()
-  const deps = (open: string[], close: (id: string) => void) => ({
+  const disconnect = vi.fn()
+  const close = vi.fn()
+  const deps = (open: string[]) => ({
     workspaces: {
-      get: (id: string) => ({ id, kind: 'local' as const, root: `/${id}`, name: id }),
+      get: (id: string) => ({ id, kind: 'paired' as const, runtimeId: id, name: id, endpoints: [] }),
       getSnapshot: () => ({ open }),
       open: async (id: string) => { opens(id); open.push(id) },
+      disconnect,
+      close,
     },
     connections: { get: () => ({ state: { kind: 'connected' }, subscribe: () => () => {} }) },
-    close,
     store,
   }) as unknown as Parameters<typeof openTrusted>[0]
 
-  it('opens, asks once its runtime answers, and closes a declined workspace again', async () => {
-    const close = vi.fn()
-    const opened = await openTrusted(deps([], close), 'ws')
+  it('opens, asks once its runtime answers, and only disconnects a declined workspace', async () => {
+    disconnect.mockClear()
+    close.mockClear()
+    const opened = await openTrusted(deps([]), 'ws')
     await tick()
-    expect(store.current()).toMatchObject({ workspaceId: 'ws', label: '/ws' })
+    expect(store.current()).toMatchObject({ workspaceId: 'ws' })
     await store.answer(false)
     await expect(opened.trusted).resolves.toBe(false)
-    expect(close).toHaveBeenCalledWith('ws')
+    expect(disconnect).toHaveBeenCalledWith('ws')
+    // Closing would drop the entry and, for a paired one, its pinned key.
+    expect(close).not.toHaveBeenCalled()
   })
 
   it('asks nothing for a workspace already open', async () => {
     opens.mockClear()
-    await expect((await openTrusted(deps(['ws'], vi.fn()), 'ws')).trusted).resolves.toBe(true)
+    await expect((await openTrusted(deps(['ws']), 'ws')).trusted).resolves.toBe(true)
     expect(opens).not.toHaveBeenCalled()
   })
 })

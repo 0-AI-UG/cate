@@ -38,3 +38,27 @@ it('reaches the folder list under StrictMode, whose first check is cancelled', a
   expect(setup.cancel).toHaveBeenCalledTimes(2)
   host.remove()
 })
+
+it('shows the setup on its own, without the folder browser, until the runtime is there', async () => {
+  let fail: (err: Error) => void = () => {}
+  const setup = {
+    ensureRuntime: vi.fn(() => new Promise((_resolve, reject) => { fail = reject })),
+    listDir: vi.fn(),
+    mkdir: vi.fn(),
+    wslDistros: vi.fn(async () => []),
+    cancel: vi.fn(async () => {}),
+  } as unknown as MachineSetup
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  await act(async () => root.render(<MachineFolderDialog machine={{ kind: 'wsl', distro: 'Arch' }} setup={setup} onClose={() => {}} />))
+  expect(document.body.textContent).toContain('Connecting to WSL: Arch')
+  expect(document.querySelector('[aria-label="Folders"]')).toBeNull()
+  expect(document.querySelector('[aria-label="Folder path"]')).toBeNull()
+  await act(async () => { fail(new Error('Permission denied.')) })
+  expect(document.body.textContent).toContain('Could not set up WSL: Arch')
+  expect(document.body.textContent).toContain('Permission denied.')
+  expect([...document.querySelectorAll('button')].some((b) => b.textContent === 'Try again')).toBe(true)
+  act(() => root.unmount())
+  host.remove()
+})

@@ -293,7 +293,7 @@ shell's native side.
 | Client state: viewport, zoom, active tabs, maximize, focus, selection, per-panel view state, undo history, one-shot intents | core |
 | Document mirror with optimistic ops | core |
 | Connections: finding, starting and pairing runtimes, the security layer, reconnect, loopback routing | core |
-| Workspace list, recents, known runtimes, onboarding progress | core (stored through the shell's `DeviceStore`) |
+| Workspace list, known runtimes, onboarding progress | core (stored through the shell's `DeviceStore`) |
 | Where each window sits on screen (main and detached) | shell native (stored in the device's `boot.json`) |
 | Client settings (section 8) | core |
 | Panel creation and placement, close guards, actions and shortcuts (section 12.4) | core |
@@ -330,7 +330,7 @@ Every piece of state belongs to exactly one class.
 | **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, a review's comparison, notes and agent review, agent status | every client viewing the panel |
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes | through the runtime |
 | **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), browser history and bookmarks, skill sources, trust, granted paths, devices | every client of the workspace |
-| **Device** | one client device | client settings, workspace list and recents, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
+| **Device** | one client device | client settings, workspace list, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
 | **Client** | one running client, in memory | viewport, zoom, active tab per stack, the maximized stack of a window and node of a canvas, the tab a browser panel shows and its page zoom, an editor's source or preview, a review's file filter, focused file, collapsed and expanded files and context lines, focus, selection, undo history, open overlays, a drag in progress, one-shot intents (reveal a line), mounted webviews | never |
 
 Rules:
@@ -1508,13 +1508,15 @@ headless.
   means and what can be done about it, which every shell shows: a title, a
   message without socket paths, errno codes or timings, and its remedies,
   main one first (try again; start again, only where the transport starts the
-  runtime; remove a local or machine entry; forget a paired one; pair again
+  runtime; close the workspace; pair again
   after a refusal of this device; open the workspace a folder is nested in;
-  resolve an update). A folder that is gone says so and offers removing it.
-- **`client/workspaces`**: the device's workspace list: local recents,
-  workspaces on machines (`{machine, root}`), paired
+  resolve an update). A folder that is gone says so and offers closing it.
+- **`client/workspaces`**: the device's workspace list, the workspaces open
+  on this device: local ones, ones on machines (`{machine, root}`), paired
   workspaces and their pinned keys (`known-runtimes.json`) and the machine
-  name their runtime reports (`runtime.info`), sidebar order; the machine
+  name their runtime reports (`runtime.info`), sidebar order. A workspace
+  is in it from opening until closing, across restarts; closing one
+  disconnects it and drops it (a paired one with its pinned key); the machine
   each workspace lives on (`machineOf`, `groupByMachine`) for lists grouped
   by machine;
   and the trust question (`trustStore`, `ensureOpenedTrusted`): opening an
@@ -1689,8 +1691,8 @@ reaches (its own, or one it runs commands on, 7.1), **join** a workspace on
 another device with a pairing code, **share** a workspace (who can join and
 a code).
 
-- **Open.** One picker (desktop: "Open…", the welcome screen) lists the
-  recent workspaces, then the machines: this device (a folder picker), the
+- **Open.** One picker (desktop: "Open Workspace…") lists the machines: this device
+  (a folder picker), the
   saved SSH machines, the SSH config's hosts and the WSL distros, with adding
   an SSH machine by its command and joining with a code. A
   machine opens its folder dialog wherever it was picked from; the client
@@ -1953,7 +1955,7 @@ client-local work (a file drop still importing).
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
 | Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/` |
 | Machine, `~/.cate/runtime/<build>/` | the installed daemon (the program, not state) |
-| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (minimap corner, onboarding progress), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (recents, paired workspaces, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
+| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (minimap corner, onboarding progress), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
 Every JSON state file above is written through `kernel/state`, except the
 project's skill manifests: `workspace/skills` publishes `skills.json` and

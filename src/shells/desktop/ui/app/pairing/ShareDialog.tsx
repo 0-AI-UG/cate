@@ -4,7 +4,7 @@
 // off (Runtime settings' `changeNetwork`).
 
 import { Users } from 'lucide-react'
-import { Modal } from '../../kernel/interaction'
+import { Modal, SEGMENT } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { useWorkspaceSetting } from '../../kernel/settings'
 import type { RuntimeNetwork } from '@runtime/daemon/contract'
@@ -14,9 +14,9 @@ import { useUIStore } from '../state/uiStore'
 import { PairingCode, WorkspaceDevices } from './DevicesPage'
 
 const ACCESS: { value: RuntimeNetwork; label: string; detail: string }[] = [
-  { value: 'off', label: 'Only its machine', detail: 'Nobody else can join.' },
-  { value: 'sameNetwork', label: 'Same network', detail: 'Paired devices on this network.' },
-  { value: 'cateConnect', label: 'Anywhere', detail: 'Paired devices, through Cate Connect.' },
+  { value: 'off', label: 'Only its machine', detail: 'Only the machine the workspace runs on can open it.' },
+  { value: 'sameNetwork', label: 'Same network', detail: 'Paired devices can join while they are on the same network.' },
+  { value: 'cateConnect', label: 'Anywhere', detail: 'Paired devices can join from any network, through Cate Connect.' },
 ]
 
 export function ShareDialog(): JSX.Element | null {
@@ -38,35 +38,34 @@ function OpenShareDialog({ workspaceId }: { workspaceId: string }): JSX.Element 
 
 export function SharePanel({ workspaceId }: { workspaceId: string }): JSX.Element {
   const network = useWorkspaceSetting(workspaceId, 'runtimeNetwork')
+  const selected = ACCESS.find((option) => option.value === network)
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <span className="text-[13px] font-medium text-primary">Who can join</span>
-        <div role="radiogroup" aria-label="Who can join" className="grid grid-cols-3 gap-1.5">
-          {ACCESS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={network === option.value}
-              onClick={() => {
-                if (option.value === network) return
-                changeNetwork(workspaceId, network, option.value).catch((err: unknown) => clientUi().showError(errorMessage(err, 'Could not change who can join.')))
-              }}
-              className={`flex flex-col items-start gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${
-                network === option.value ? 'border-focus-blue bg-hover' : 'border-subtle hover:bg-hover'
-              }`}
-            >
-              <span className="text-[13px] text-primary">{option.label}</span>
-              <span className="text-[11px] leading-snug text-muted">{option.detail}</span>
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] font-medium text-primary">Who can join</span>
+          <div role="radiogroup" aria-label="Who can join" className={SEGMENT.group}>
+            {ACCESS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={network === option.value}
+                onClick={() => {
+                  if (option.value === network) return
+                  changeNetwork(workspaceId, network, option.value).catch((err: unknown) => clientUi().showError(errorMessage(err, 'Could not change who can join.')))
+                }}
+                className={SEGMENT.seg(network === option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
+        {selected && <span className="text-xs text-muted">{selected.detail}</span>}
       </div>
-      <div className="flex flex-col gap-2">
-        <span className="text-[13px] font-medium text-primary">Add a device</span>
-        <PairingCode workspaceId={workspaceId} />
-      </div>
+      <PairingCode workspaceId={workspaceId} />
+      <div className="border-t border-subtle" />
       <WorkspaceDevices workspaceId={workspaceId} />
     </div>
   )

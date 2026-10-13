@@ -26,8 +26,12 @@ function fakeList() {
       snapshot = { ...snapshot, open: [...snapshot.open, id] }
       for (const l of listeners) l()
     }),
-    close: vi.fn((id: string) => {
+    disconnect: vi.fn((id: string) => {
       snapshot = { ...snapshot, open: snapshot.open.filter((o) => o !== id) }
+      for (const l of listeners) l()
+    }),
+    close: vi.fn(async (id: string) => {
+      snapshot = { ...snapshot, entries: snapshot.entries.filter((e) => e.id !== id), open: snapshot.open.filter((o) => o !== id) }
       for (const l of listeners) l()
     }),
     reorder: vi.fn(async () => {}),
@@ -70,7 +74,7 @@ describe('Sidebar', () => {
     })
     act(() => root.render(<Sidebar />))
     expect(host.querySelectorAll('[data-machine], [role="treeitem"]')).toHaveLength(0)
-    expect(host.querySelector('[aria-label="Open…"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="Open Workspace…"]')).not.toBeNull()
   })
 
   it('lists local and paired workspaces under their machines', () => {
@@ -78,17 +82,6 @@ describe('Sidebar', () => {
     expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(3)
     expect(host.textContent).toContain('Shared')
     expect([...host.querySelectorAll('[data-machine]')].map((h) => h.textContent)).toEqual(['This device', 'Paired'])
-  })
-
-  it('reconnects the open workspaces of a machine from its header', async () => {
-    act(() => root.render(<Sidebar />))
-    await act(async () => { rowOf('site').click() })
-    const header = host.querySelector('[data-machine="this"]')!
-    await act(async () => { (header.querySelector('[aria-label^="Reconnect"]') as HTMLButtonElement).click() })
-    expect(list.close).toHaveBeenCalledWith('local:/p/site')
-    expect(list.open).toHaveBeenLastCalledWith('local:/p/site')
-    // The paired machine has nothing open: nothing to reconnect.
-    expect(host.querySelector('[data-machine="paired:"] [aria-label^="Reconnect"]')).toBeNull()
   })
 
   it('opens and selects a workspace on click', async () => {
@@ -108,9 +101,22 @@ describe('Sidebar', () => {
     })
     expect(rowOf('cate').className).toContain('ring-1')
     const container = host.querySelector('[data-sidebar-keynav]') as HTMLElement
-    act(() => { container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })) })
+    await act(async () => { container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })) })
     expect(list.close).toHaveBeenCalledWith('local:/p/cate')
     expect(list.close).toHaveBeenCalledWith('local:/p/site')
+  })
+
+  it('closing the shown workspace with its neighbour shows the next one left', async () => {
+    act(() => root.render(<Sidebar />))
+    await act(async () => { rowOf('cate').click() })
+    act(() => {
+      rowOf('cate').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
+      rowOf('site').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
+    })
+    const container = host.querySelector('[data-sidebar-keynav]') as HTMLElement
+    await act(async () => { container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })) })
+    expect(list.close).toHaveBeenCalledTimes(2)
+    expect(useUIStore.getState().selectedWorkspaceId).toBe('paired:abc')
   })
 
   it('hides itself and toggles settings', () => {

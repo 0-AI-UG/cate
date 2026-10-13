@@ -28,11 +28,12 @@ function fakeConnection(state: ConnectionState) {
   return connection
 }
 
-const removeRecent = vi.fn(async () => {})
+const close = vi.fn(async () => {})
+const getSnapshot = () => ({ entries: [], open: [] })
 
 function mount(connection: ReturnType<typeof fakeConnection>) {
   installClientApp({
-    workspaces: { get: () => ({ name: 'ws' }), removeRecent } as unknown as WorkspaceList,
+    workspaces: { get: () => ({ kind: 'local', id: 'ws', name: 'ws' }), close, getSnapshot } as unknown as WorkspaceList,
     connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
     version: '2.0.5',
   })
@@ -84,17 +85,18 @@ describe('ConnectionBlocker', () => {
     mount(connection)
     expect(cover()?.textContent).toContain('/p/app is inside the workspace /p')
     const labels = [...cover()!.querySelectorAll('button')].map((b) => b.textContent)
-    expect(labels).toEqual(['Open p', 'Try again', 'Remove from Sidebar'])
+    expect(labels).toEqual(['Open p', 'Try again', 'Close Workspace'])
     act(() => (cover()!.querySelectorAll('button')[1] as HTMLButtonElement).click())
     expect(connection.retryNow).toHaveBeenCalled()
   })
 
-  it('a folder that is gone offers to remove it from the list', () => {
+  it('a folder that is gone offers to close it', async () => {
     mount(fakeConnection({ kind: 'offline', lastSeen: null, retrying: true, error: "ENOENT: no such file or directory, realpath '/p/app'" }))
     act(() => { vi.advanceTimersByTime(400) })
     expect(cover()?.textContent).toContain('Folder not found')
     act(() => (cover()!.querySelector('button') as HTMLButtonElement).click())
-    expect(removeRecent).toHaveBeenCalledWith('ws')
+    await act(async () => {})
+    expect(close).toHaveBeenCalledWith('ws')
   })
 
   it('covers a lost connection only after a grace, and uncovers when it is back', () => {
@@ -120,7 +122,7 @@ describe('ConnectionBlocker', () => {
     } as unknown as DesktopPort)
     const connection = fakeConnection({ kind: 'connecting' } as ConnectionState)
     installClientApp({
-      workspaces: { get: () => ({ kind: 'machine', name: 'site', machine: { kind: 'ssh', target: { destination: 'box' } }, root: '/srv/site' }), removeRecent } as unknown as WorkspaceList,
+      workspaces: { get: () => ({ kind: 'machine', name: 'site', machine: { kind: 'ssh', target: { destination: 'box' } }, root: '/srv/site' }), close, getSnapshot } as unknown as WorkspaceList,
       connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
       version: '2.0.5',
     })

@@ -1,8 +1,11 @@
-// The device's workspace list (12.1, 16): local recents by root path,
-// workspaces on machines this device runs commands on (SSH, WSL) by machine
-// and root, paired workspaces by runtimeId, and the sidebar order, in the
-// `workspaces` device document. Pinned runtime keys live in `known-runtimes` (runtime/pairing).
-// Opening a workspace is opening its connection.
+// The device's workspace list (12.1, 16): the workspaces open on this
+// device, in the sidebar's order: local ones by root path, ones on machines
+// this device runs commands on (SSH, WSL) by machine and root, paired ones by
+// runtimeId, in the `workspaces` device document. Pinned runtime keys live in
+// `known-runtimes` (runtime/pairing). A workspace is in the list from when
+// it is opened until it is closed, across restarts; its connection is made
+// when it is shown. Closing one disconnects it and drops it from the list
+// (a paired one with its pinned key: opening it again takes a new code).
 
 import type { DeviceStore } from '@kernel/state/contract'
 import type { WorkspaceConnection, WorkspaceConnections, ConnectionTarget } from '@client/connections'
@@ -11,7 +14,6 @@ import { isMachine, machineKey, machineLabel, type Machine } from '@runtime/daem
 import { KnownRuntimes } from '@runtime/pairing/client'
 
 export const WORKSPACES_DOCUMENT = 'workspaces'
-const RECENTS_LIMIT = 30
 
 export interface LocalWorkspace {
   kind: 'local'
@@ -48,14 +50,15 @@ interface WorkspacesFile {
   local: Omit<LocalWorkspace, 'kind' | 'id'>[]
   machine: Omit<MachineWorkspace, 'kind' | 'id'>[]
   paired: Omit<PairedWorkspace, 'kind' | 'id'>[]
-  /** Sidebar order by workspace id; entries not named follow, newest first. */
+  /** Sidebar order by workspace id (a new one joins last); entries not
+   *  named (a hand edit) follow, newest first. */
   order: string[]
 }
 
 export interface WorkspaceListSnapshot {
   /** In sidebar order. */
   entries: readonly WorkspaceEntry[]
-  /** Ids of the workspaces open in this client. */
+  /** Ids of the workspaces connected in this client. */
   open: readonly string[]
 }
 
@@ -115,8 +118,8 @@ export class WorkspaceList {
     this.stops.push(this.store.subscribe(WORKSPACES_DOCUMENT, (value) => {
       this.file = normalize(value)
       this.refresh()
-      // Removed elsewhere (another window, a hand edit): no longer open here.
-      for (const id of this.snapshot.open) if (!this.get(id)) this.close(id)
+      // Closed elsewhere (another window, a hand edit): disconnected here.
+      for (const id of this.snapshot.open) if (!this.get(id)) this.disconnect(id)
     }))
     this.refresh()
   }
@@ -132,32 +135,32 @@ export class WorkspaceList {
     return this.snapshot.entries.find((e) => e.id === id)
   }
 
-  /** Records a local workspace (or refreshes it) as just opened. */
+  /** Adds a local workspace to the list (or refreshes it) as just opened. */
   async addLocal(root: string, name = basename(root)): Promise<LocalWorkspace> {
     const lastOpenedAt = this.now()
     const rest = this.file.local.filter((w) => w.root !== root)
-    this.file = { ...this.file, local: this.trimmed([{ root, name, lastOpenedAt }, ...rest], idOf.local) }
+    this.file = { ...this.file, local: [{ root, name, lastOpenedAt }, ...rest], order: this.joined(localWorkspaceId(root)) }
     await this.save()
     return this.get(localWorkspaceId(root)) as LocalWorkspace
   }
 
-  /** Records a workspace on a machine this device runs commands on (or
+  /** Adds a workspace on a machine this device runs commands on (or
    *  refreshes it) as just opened. */
   async addMachine(machine: Machine, root: string, name = basename(root)): Promise<MachineWorkspace> {
     const id = machineWorkspaceId(machine, root)
     const lastOpenedAt = this.now()
     const rest = this.file.machine.filter((w) => idOf.machine(w) !== id)
-    this.file = { ...this.file, machine: this.trimmed([{ machine, root, name, lastOpenedAt }, ...rest], idOf.machine) }
+    this.file = { ...this.file, machine: [{ machine, root, name, lastOpenedAt }, ...rest], order: this.joined(id) }
     await this.save()
     return this.get(id) as MachineWorkspace
   }
 
-  /** Records a workspace this device just paired with and pins its key. */
+  /** Adds a workspace this device just paired with and pins its key. */
   async addPaired(opts: { runtimeId: string; name: string; endpoints: NetworkEndpoint[]; publicKey: Uint8Array }): Promise<PairedWorkspace> {
     await this.known.pin(opts.runtimeId, opts.publicKey)
     const rest = this.file.paired.filter((w) => w.runtimeId !== opts.runtimeId)
     const entry = { runtimeId: opts.runtimeId, name: opts.name, endpoints: opts.endpoints, pairedAt: this.now(), lastOpenedAt: null }
-    this.file = { ...this.file, paired: [...rest, entry] }
+    this.file = { ...this.file, paired: [...rest, entry], order: this.joined(pairedWorkspaceId(opts.runtimeId)) }
     await this.save()
     return this.get(pairedWorkspaceId(opts.runtimeId)) as PairedWorkspace
   }
@@ -213,35 +216,33 @@ export class WorkspaceList {
     })
   }
 
-  /** The newest `RECENTS_LIMIT` recents, and any older one still open. */
-  private trimmed<T>(recents: T[], id: (w: T) => string): T[] {
-    const open = new Set(this.snapshot.open)
-    return recents.filter((w, i) => i < RECENTS_LIMIT || open.has(id(w)))
-  }
-
-  close(id: string): void {
+  /** Closes the workspace's connection; it stays in the list (to
+   *  reconnect, or when another client of this device still shows it). */
+  disconnect(id: string): void {
     this.connections.close(id)
   }
 
-  /** Drops a local workspace, or one on a machine, from the recents. */
-  async removeRecent(id: string): Promise<void> {
-    this.close(id)
+  /** Disconnects the workspace and drops it from the list; a paired one
+   *  also loses its pinned key, so opening it again takes a new code. */
+  async close(id: string): Promise<void> {
+    const entry = this.get(id)
+    this.disconnect(id)
+    if (!entry) return
+    if (entry.kind === 'paired') await this.known.forget(entry.runtimeId)
     this.file = {
       ...this.file,
       local: this.file.local.filter((w) => idOf.local(w) !== id),
       machine: this.file.machine.filter((w) => idOf.machine(w) !== id),
+      paired: this.file.paired.filter((w) => idOf.paired(w) !== id),
     }
     await this.save()
   }
 
-  /** "Forget this workspace": closes it, deletes the pinned key and the entry. */
-  async forget(id: string): Promise<void> {
-    const entry = this.get(id)
-    if (!entry || entry.kind !== 'paired') return
-    this.close(id)
-    await this.known.forget(entry.runtimeId)
-    this.file = { ...this.file, paired: this.file.paired.filter((w) => w.runtimeId !== entry.runtimeId) }
-    await this.save()
+  /** The sidebar order as shown, with `id` last unless it is listed
+   *  already: entries the file did not rank keep their place. */
+  private joined(id: string): string[] {
+    const shown = this.snapshot.entries.map((e) => e.id)
+    return shown.includes(id) ? shown : [...shown, id]
   }
 
   /** Sets the sidebar order. */

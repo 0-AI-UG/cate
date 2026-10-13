@@ -46,7 +46,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     target: '[data-app-sidebar="left"]',
     tight: true,
     title: 'Your projects',
-    body: 'Switch workspaces, open folders, and join workspaces shared from another device from the sidebar.',
+    body: 'Switch, open and join workspaces, including ones shared from another device, from the sidebar.',
   },
   {
     id: 'palette',

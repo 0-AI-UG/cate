@@ -11,6 +11,8 @@ import { useUIStore } from '../state/uiStore'
 import { MachineFolderHost } from './MachineFolderHost'
 import { MachinesPage } from './MachinesPage'
 import { WorkspacePicker } from './WorkspacePicker'
+import { OpenWorkspaceDialog } from './OpenWorkspaceDialog'
+import { installDesktopPort, type DesktopPort } from '../desktop'
 import { clientSettingsTable, type ClientSettings } from '../../../settings'
 
 /** Settings → Machines, and the folder dialog it opens. */
@@ -24,7 +26,7 @@ function fakeWorkspaces(addMachine = vi.fn(async () => ({ id: 'w1' }))) {
   return { getSnapshot: () => snapshot, subscribe: () => () => {}, get: () => undefined, addMachine } as unknown as WorkspaceList & { addMachine: typeof addMachine }
 }
 
-vi.mock('../navigation', () => ({ selectWorkspace: vi.fn(async () => true) }))
+vi.mock('../navigation', () => ({ selectWorkspace: vi.fn(async () => true), openLocalFolder: vi.fn(async () => true) }))
 
 let host: HTMLDivElement
 let root: Root
@@ -60,7 +62,8 @@ afterEach(() => {
   host.remove()
   installClientApp(null)
   installClientSettings(null)
-  useUIStore.setState({ machineFolder: null, joinDialog: null })
+  installDesktopPort(null)
+  useUIStore.setState({ machineFolder: null, joinDialog: null, openDialogOpen: false })
 })
 
 const option = (label: string) =>
@@ -89,7 +92,9 @@ it('adds a machine once it answers, then opens the picked folder as a workspace'
   const box = ssh({ destination: 'u@box', port: 2222 })
   expect(setup.ensureRuntime).toHaveBeenCalledWith(box)
   expect(store.get('sshMachines')).toMatchObject([{ target: { destination: 'u@box', port: 2222 } }])
-  expect(document.body.textContent).toContain('Installed the Cate runtime.')
+  // Once it answers, the setup screen gives way to the folders.
+  expect(document.body.textContent).not.toContain('Setting up')
+  expect(document.body.querySelector('[role="listbox"][aria-label="Folders"]')).not.toBeNull()
   expect(setup.listDir).toHaveBeenCalledWith(box, '/home/u')
 
   // A double click opens a folder; a click selects one for Open.
@@ -123,7 +128,7 @@ it('shows why a machine cannot be set up and retries', async () => {
   installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
   await act(async () => root.render(<Settings />))
-  await act(async () => button('Open a folder').click())
+  await act(async () => button('Open a workspace').click())
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('refused the login')
   await act(async () => button('Try again').click())
   expect(setup.ensureRuntime).toHaveBeenCalledTimes(2)
@@ -137,7 +142,7 @@ it('falls back to the home folder when the last one is gone, and opens a typed p
   installClientApp({ workspaces: workspaces as unknown as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
   await act(async () => root.render(<Settings />))
-  await act(async () => button('Open a folder').click())
+  await act(async () => button('Open a workspace').click())
   const path = document.body.querySelector('input[aria-label="Folder path"]') as HTMLInputElement
   expect(path.value).toBe('/home/u')
   await act(async () => type(path, '/srv/site'))
@@ -184,13 +189,43 @@ it('Open joins a workspace on another device with a code', async () => {
   expect(useUIStore.getState().joinDialog).toEqual({})
 })
 
+it('the Open dialog stays when the native folder dialog is cancelled, and closes on a pick', async () => {
+  const pickFolder = vi.fn<() => Promise<string | null>>(async () => null)
+  installDesktopPort({ pickFolder, thisMachineName: 'This Mac' } as unknown as DesktopPort)
+  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
+  useUIStore.setState({ openDialogOpen: true })
+  await act(async () => root.render(<OpenWorkspaceDialog />))
+  await act(async () => option('This Mac').click())
+  expect(pickFolder).toHaveBeenCalled()
+  expect(useUIStore.getState().openDialogOpen).toBe(true)
+  pickFolder.mockResolvedValueOnce('/code/app')
+  await act(async () => option('This Mac').click())
+  expect(useUIStore.getState().openDialogOpen).toBe(false)
+})
+
+it('the Open dialog steps aside for a machine\'s folders and comes back when they are dismissed', async () => {
+  const setup = fakeSetup(['Ubuntu'])
+  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  useUIStore.setState({ openDialogOpen: true })
+  await act(async () => root.render(<><OpenWorkspaceDialog /><MachineFolderHost /></>))
+  await act(async () => option('Ubuntu').click())
+  expect(option('Ubuntu')).toBeUndefined()
+  await act(async () => button('Cancel').click())
+  expect(option('Ubuntu')).toBeTruthy()
+  // Opening a folder there closes both.
+  await act(async () => option('Ubuntu').click())
+  await act(async () => button('Open').click())
+  expect(useUIStore.getState().openDialogOpen).toBe(false)
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+})
+
 it('closing the dialog stops what still runs on the machine', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockImplementation(() => new Promise(() => {}))
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
   installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
   await act(async () => root.render(<Settings />))
-  await act(async () => button('Open a folder').click())
+  await act(async () => button('Open a workspace').click())
   await act(async () => button('Cancel').click())
   expect(setup.cancel).toHaveBeenCalledWith(ssh({ destination: 'u@box' }))
 })

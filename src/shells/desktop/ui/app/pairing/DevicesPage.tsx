@@ -5,13 +5,13 @@
 
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { Smartphone, Trash2 } from 'lucide-react'
+import { QrCode, RefreshCw, Smartphone, Trash2 } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
-import { SecondaryButton, SearchableBlock, SettingRow, Spinner } from '../../kernel/interaction'
+import { Button, SecondaryButton, SearchableBlock, SettingRow, Spinner } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSetting } from '../../kernel/settings'
 import type { CreatedSecret, PairingMode, WorkspaceDevice } from '@runtime/pairing/contract'
-import { clientIdentity } from '@client/connections'
+import { clientIdentity, relativeTime } from '@client/connections'
 import { useOtherClients } from '../../client/document'
 import type { SettingsPageProps } from '../settings/registry'
 import { useUIStore } from '../state/uiStore'
@@ -86,38 +86,54 @@ export function PairingCode({ workspaceId }: { workspaceId: string }): JSX.Eleme
     }
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-4">
-        <span className="text-xs text-muted">
-          {network === 'off'
-            ? 'Turns on same-network access, then shows a one-time code for the other device.'
-            : 'A one-time code. Scan it with the other device, or type it there under "Join with a Code".'}
-        </span>
-        <SecondaryButton onClick={() => void create()} disabled={!runtime || busy}>
-          {busy ? <Spinner size={12} /> : <Smartphone size={12} />}
-          {secret && !expired ? 'New code' : 'Create code'}
-        </SecondaryButton>
-      </div>
-      {error && <span role="alert" className="text-xs text-danger">{error}</span>}
-      {secret && (
-        <div className="flex items-center gap-5" aria-label="Pairing code">
-          <div
-            className={`w-36 h-36 shrink-0 rounded-lg bg-white p-1.5 ${expired ? 'opacity-20' : ''}`}
-            data-testid="pairing-qr"
-            // The SVG is generated locally by qrcode from the runtime's link.
-            dangerouslySetInnerHTML={qrSvg ? { __html: qrSvg } : undefined}
-          />
-          <div className="flex flex-col gap-2 min-w-0">
-            <code className={`text-[15px] font-mono tracking-wider text-primary select-all ${expired ? 'line-through text-muted' : ''}`}>
-              {secret.code.toUpperCase()}
-            </code>
-            <span className="text-xs text-muted">
-              {expired ? 'Expired. Make a new code.' : `Works once. Expires in ${formatCountdown(secondsLeft)}.`}
-            </span>
-          </div>
+  const howTo = 'On the other device, scan the QR code or type the code under "Join with a Code".'
+
+  if (!secret) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-subtle bg-surface-0 px-6 py-6 text-center">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-hover text-secondary">
+          <QrCode size={18} />
         </div>
-      )}
+        <div className="flex flex-col gap-1">
+          <span className="text-[14px] font-medium text-primary">Add a device</span>
+          <span className="max-w-[340px] text-xs leading-relaxed text-muted">
+            Show a one-time code here. {howTo}
+            {network === 'off' && ' Turns on same-network access first.'}
+          </span>
+        </div>
+        <Button variant="primary" onClick={() => void create()} disabled={!runtime} loading={busy}>
+          Show pairing code
+        </Button>
+        {error && <span role="alert" className="text-xs text-danger">{error}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-5 rounded-xl border border-subtle bg-surface-0 p-4" aria-label="Pairing code">
+      <div
+        className={`h-36 w-36 shrink-0 rounded-lg bg-white p-1.5 ${expired ? 'opacity-20' : ''}`}
+        data-testid="pairing-qr"
+        // The SVG is generated locally by qrcode from the runtime's link.
+        dangerouslySetInnerHTML={qrSvg ? { __html: qrSvg } : undefined}
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <span className="text-[14px] font-medium text-primary">Add a device</span>
+        <span className="text-xs leading-relaxed text-muted">{howTo}</span>
+        <code className={`break-all font-mono text-[15px] tracking-wider select-all ${expired ? 'text-muted line-through' : 'text-primary'}`}>
+          {secret.code.toUpperCase()}
+        </code>
+        <div className="flex items-center justify-between gap-3">
+          <span className={`text-xs ${expired ? 'text-danger' : 'text-muted'}`}>
+            {expired ? 'Expired.' : `Works once. Expires in ${formatCountdown(secondsLeft)}.`}
+          </span>
+          <Button size="sm" variant={expired ? 'primary' : 'ghost'} onClick={() => void create()} disabled={!runtime} loading={busy}>
+            <RefreshCw size={11} />
+            New code
+          </Button>
+        </div>
+        {error && <span role="alert" className="text-xs text-danger">{error}</span>}
+      </div>
     </div>
   )
 }
@@ -159,40 +175,47 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
   return (
     <SearchableBlock keywords="devices paired revoke remove phone">
       <div className="py-3 flex flex-col gap-2">
-        <span className="text-[13px] font-medium text-primary">Devices</span>
+        <span className="text-[13px] font-medium text-primary">
+          Devices{devices && devices.length > 0 && <span className="ml-1.5 font-normal text-muted">{devices.length}</span>}
+        </span>
         {error && <span className="text-xs text-danger">{error}</span>}
         {devices === null ? (
           !error && <Spinner size={12} />
         ) : devices.length === 0 ? (
           <span className="text-xs text-muted">No device has opened this workspace.</span>
         ) : (
-          <ul className="flex flex-col" aria-label="Devices">
-            {devices.map((device) => (
-              <li key={device.publicKey} data-device-key={device.publicKey} className="flex items-center gap-3 py-1.5">
-                <span
-                  aria-label={online.has(device.publicKey) ? 'Connected' : 'Not connected'}
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${online.has(device.publicKey) ? 'bg-green-500' : 'bg-transparent'}`}
-                />
-                <Smartphone size={14} className="text-muted shrink-0" />
-                <div className="flex flex-col min-w-0 flex-1">
-                  <span className="text-[13px] text-primary truncate">
-                    {device.name}
-                    {device.publicKey === ownKey && <span className="text-muted"> (this device)</span>}
+          <ul className="-mx-2 flex flex-col" aria-label="Devices">
+            {devices.map((device) => {
+              const connected = online.has(device.publicKey)
+              return (
+                <li key={device.publicKey} data-device-key={device.publicKey} className="group/device flex items-center gap-3 rounded-md px-2 py-2 hover:bg-hover">
+                  <span className="relative shrink-0 text-muted">
+                    <Smartphone size={15} />
+                    <span
+                      aria-label={connected ? 'Connected' : 'Not connected'}
+                      className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface-0 ${connected ? 'bg-green-500' : 'bg-transparent border-transparent'}`}
+                    />
                   </span>
-                  <span className="text-[11px] text-muted font-mono truncate">
-                    {device.fingerprint} · {device.admittedBy === 'pairing' ? 'paired' : "as this machine's user"} · last seen {new Date(device.lastSeen).toLocaleString()}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  aria-label={`Remove ${device.name}`}
-                  onClick={() => void revoke(device)}
-                  className="w-7 h-7 flex items-center justify-center rounded-md text-muted hover:text-red-400 hover:bg-hover"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </li>
-            ))}
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-[13px] text-primary">
+                      {device.name}
+                      {device.publicKey === ownKey && <span className="text-muted"> (this device)</span>}
+                    </span>
+                    <span className="truncate text-[11px] text-muted" title={`Fingerprint ${device.fingerprint}`}>
+                      {device.admittedBy === 'pairing' ? 'Paired' : "Joined as this machine's user"} · {connected ? 'connected now' : `last seen ${relativeTime(device.lastSeen)}`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${device.name}`}
+                    onClick={() => void revoke(device)}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 hover:bg-hover hover:text-red-400 focus:opacity-100 group-hover/device:opacity-100"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>

@@ -20,7 +20,7 @@ export function MachinesPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
 
   if (!setup) {
-    return <p className="text-[13px] text-secondary">This version of Cate cannot open folders on other machines.</p>
+    return <p className="text-[13px] text-secondary">This version of Cate cannot open workspaces on other machines.</p>
   }
 
   const add = () => {
@@ -57,7 +57,7 @@ export function MachinesPage(): JSX.Element {
                     {machine.lastPath && <span className="text-xs text-muted font-mono truncate">Last: {machine.lastPath}</span>}
                   </div>
                   <SecondaryButton onClick={() => useUIStore.getState().openMachineFolder({ kind: 'ssh', target: machine.target })}>
-                    Open a folder
+                    Open a workspace
                   </SecondaryButton>
                   <button
                     type="button"

@@ -1,19 +1,17 @@
 // The sidebar's workspace list from client/workspaces, under the machine
 // each workspace lives on, in sidebar order within each. Click selects (and
 // opens), Cmd/Ctrl and Shift build a multi-selection that Delete closes, rows
-// drag to reorder, and "+" opens the Open picker. A machine's header opens
-// another folder there and reconnects its open workspaces.
+// drag to reorder, and "+" (or, with no workspaces, a button) opens the Open
+// picker.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Monitor, Plus, RotateCw, Server, Link2 } from 'lucide-react'
-import { SidebarHeaderButton, SidebarSectionHeader, Tooltip } from '../../kernel/interaction'
-import { clientUi } from '@kernel/interaction'
+import { FolderOpen, Monitor, Plus, Server, Link2 } from 'lucide-react'
+import { Button, SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
 import { groupByMachine, type MachineGroup } from '@client/workspaces'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
 import { useDesktopPort } from '../desktop'
-import { closeWorkspace, pickAndOpenFolder, reconnectWorkspaces, selectWorkspace } from '../navigation'
-import { forgetMachine, savedMachine } from '../remote/machines'
+import { closeWorkspaces, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
 import { showMenu } from './menu'
 import { WorkspaceRow } from './WorkspaceRow'
@@ -79,7 +77,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
   }, [entries])
 
   const closeSelected = useCallback(() => {
-    for (const id of multiSelected) closeWorkspace(id)
+    void closeWorkspaces([...multiSelected])
     setMultiSelected(new Set())
     anchorRef.current = null
   }, [multiSelected])
@@ -123,15 +121,24 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
         large
         leadingAction={headerLeadingAction}
         actions={
-          <SidebarHeaderButton action="openWorkspace" onClick={() => useUIStore.getState().setOpenDialogOpen(true)} title="Open…">
+          <SidebarHeaderButton action="openWorkspace" onClick={() => useUIStore.getState().setOpenDialogOpen(true)} title="Open Workspace…">
             <Plus size={14} />
           </SidebarHeaderButton>
         }
       />
       <div className="flex-1 overflow-y-auto pb-1" role="tree" aria-label="Workspaces">
+        {groups.length === 0 && (
+          <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
+            <p className="text-xs text-muted">No workspaces yet</p>
+            <Button onClick={() => useUIStore.getState().setOpenDialogOpen(true)}>
+              <FolderOpen size={13} />
+              Open a workspace
+            </Button>
+          </div>
+        )}
         {groups.map((group) => (
           <React.Fragment key={group.machine.key}>
-            <MachineHeader group={group} open={open} />
+            <MachineHeader group={group} />
             {group.entries.map((entry) => {
               const index = entries.indexOf(entry)
               const isLast = entry === group.entries[group.entries.length - 1]
@@ -183,66 +190,19 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
   )
 }
 
-/** A machine's header: its name, opening another folder there, and
- *  reconnecting its open workspaces. */
-function MachineHeader({ group, open }: { group: MachineGroup; open: readonly string[] }): JSX.Element {
+/** A machine's header: its icon and name, grouping its workspaces. */
+function MachineHeader({ group }: { group: MachineGroup }): JSX.Element {
   const port = useDesktopPort()
   const { machine } = group
   const label = machine.kind === 'this' ? port?.thisMachineName ?? 'This device' : machine.label ?? 'Paired'
   const Icon = machine.kind === 'this' ? Monitor : machine.kind === 'machine' ? Server : Link2
-  const openHere = () => {
-    const ui = useUIStore.getState()
-    if (machine.kind === 'this') void pickAndOpenFolder()
-    else if (machine.kind === 'machine') ui.openMachineFolder(machine.machine)
-    else ui.openJoinDialog(machine.label ? { machine: machine.label } : {})
-  }
-  const openTitle = machine.kind === 'paired' ? 'Join Another Workspace Here…' : 'Open Another Folder Here…'
-  const saved = machine.kind === 'machine' ? savedMachine(machine.machine) : undefined
-  const openIds = group.entries.filter((e) => open.includes(e.id)).map((e) => e.id)
-  const reconnect = () => void reconnectWorkspaces(openIds)
-
-  const onContextMenu = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    const choice = await showMenu([
-      { id: 'open', label: openTitle },
-      { id: 'reconnect', label: 'Reconnect', enabled: openIds.length > 0 },
-      ...(saved ? [{ type: 'separator' as const }, { id: 'remove', label: 'Remove Machine…' }] : []),
-    ])
-    if (choice === 'open') openHere()
-    if (choice === 'reconnect') reconnect()
-    if (choice === 'remove' && saved && await clientUi().confirm(`Remove ${saved.target.destination}? Its workspaces stay in the sidebar.`)) forgetMachine(saved.id)
-  }
-
   return (
     <div
       data-machine={machine.key}
-      onContextMenu={(e) => void onContextMenu(e)}
-      className="group/machine mx-1.5 mt-2 mb-0.5 flex h-6 items-center gap-1.5 px-1.5 text-[11px] font-medium text-muted"
+      className="mx-1.5 mt-2 mb-0.5 flex h-6 items-center gap-1.5 px-1.5 text-[11px] font-medium text-muted"
     >
       <Icon size={11} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {openIds.length > 0 && (
-        <Tooltip label="Reconnect">
-          <button
-            type="button"
-            aria-label={`Reconnect ${label}`}
-            onClick={reconnect}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded opacity-0 hover:bg-hover hover:text-primary group-hover/machine:opacity-100 focus:opacity-100"
-          >
-            <RotateCw size={11} />
-          </button>
-        </Tooltip>
-      )}
-      <Tooltip label={openTitle}>
-        <button
-          type="button"
-          aria-label={openTitle}
-          onClick={openHere}
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded opacity-0 hover:bg-hover hover:text-primary group-hover/machine:opacity-100 focus:opacity-100"
-        >
-          <Plus size={12} />
-        </button>
-      </Tooltip>
     </div>
   )
 }

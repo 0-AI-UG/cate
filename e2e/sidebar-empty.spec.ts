@@ -1,5 +1,5 @@
-// With no workspace, the window shows one welcome screen: the logo, the Open
-// picker (opening or joining a workspace) and what is new in this version.
+// With no workspace, the window shows one welcome screen: the logo, the buttons to
+// open or join a workspace, and what is new in this version.
 
 import { test, expect } from '@playwright/test'
 import { closeApp, launchApp, type LaunchResult } from './fixtures/electron-app'
@@ -12,6 +12,6 @@ test('with no workspace, the welcome screen shows what is new and opens or joins
   const welcome = app.mainWindow.locator('[data-welcome]')
   await expect(welcome.locator('[data-whats-new]')).toContainText(/Cate \d+\.\d+\.\d+/)
   await expect(welcome.getByRole('button', { name: 'Full changelog' })).toBeVisible()
-  await welcome.getByRole('option', { name: /Join with a code/ }).click()
+  await welcome.getByRole('button', { name: 'Join with a code' }).click()
   await expect(app.mainWindow.locator('[role="dialog"]')).toHaveCount(1)
 })

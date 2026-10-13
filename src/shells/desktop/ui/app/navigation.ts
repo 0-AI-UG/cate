@@ -1,9 +1,10 @@
 // Moving between workspaces: selecting one opens its connection (and asks for
-// trust the first time), closing one disconnects. Revealing and closing
+// trust the first time), closing one disconnects it and drops it from the
+// list. Revealing and closing
 // panels are client/host's; this module plugs workspace selection and window
 // raising into its reveal hooks.
 
-import { byMachine, openTrusted, reconcileWindow, selectionAfter } from '@client/workspaces'
+import { byMachine, openTrusted, reconcileWindow } from '@client/workspaces'
 import { documentStoreFor } from '@client/document'
 import { createPanel, installRevealHooks, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
 import { MAIN_WINDOW, renamePanelChange, type PanelId } from '@workspace/document/contract'
@@ -23,7 +24,7 @@ export async function selectWorkspace(workspaceId: string): Promise<boolean> {
   if (!entry) return false
   let opened: { trusted: Promise<boolean> }
   try {
-    opened = await openTrusted({ workspaces, connections: clientApp().connections, close: closeWorkspace }, workspaceId)
+    opened = await openTrusted({ workspaces, connections: clientApp().connections }, workspaceId)
   } catch (err) {
     clientUi().showError(errorMessage(err, `Could not open ${entry.name}`))
     return false
@@ -44,14 +45,42 @@ export async function pickAndOpenFolder(): Promise<boolean> {
   return root ? openLocalFolder(root) : false
 }
 
-/** Disconnects this client; the runtime follows `runtimeLifetime`. */
-export function closeWorkspace(workspaceId: string): void {
+/** Closes workspaces: disconnects this client (the runtime follows
+ *  `runtimeLifetime`) and drops them from the list. Paired ones ask first,
+ *  once, since opening one again takes a new code. When the shown one is
+ *  closed, its nearest neighbour left in the list shows next. */
+export async function closeWorkspaces(workspaceIds: readonly string[]): Promise<boolean> {
   const { workspaces } = clientApp()
-  workspaces.close(workspaceId)
-  const ui = useUIStore.getState()
-  if (ui.selectedWorkspaceId !== workspaceId) return
-  const { open, entries } = workspaces.getSnapshot()
-  ui.setSelectedWorkspace(selectionAfter(workspaceId, open, entries))
+  const closing = workspaceIds.map((id) => workspaces.get(id)).filter((e) => e !== undefined)
+  if (closing.length === 0) return false
+  const paired = closing.filter((e) => e.kind === 'paired')
+  if (paired.length > 0) {
+    const what = paired.length === 1 ? `"${paired[0].name}"` : `${paired.length} paired workspaces`
+    if (!await clientUi().confirm(`Close ${what}? To open ${paired.length === 1 ? 'it' : 'one'} again, this device needs a new code from the device it is on.`)) return false
+  }
+  const ids = new Set(closing.map((e) => e.id))
+  const { entries } = workspaces.getSnapshot()
+  const shown = useUIStore.getState().selectedWorkspaceId
+  const index = entries.findIndex((e) => e.id === shown)
+  const next = shown && ids.has(shown)
+    ? entries.slice(index + 1).find((e) => !ids.has(e.id)) ?? entries.slice(0, index).reverse().find((e) => !ids.has(e.id))
+    : undefined
+  let ok = true
+  for (const entry of closing) {
+    try {
+      await workspaces.close(entry.id)
+    } catch (err) {
+      clientUi().showError(errorMessage(err, `Could not close ${entry.name}`))
+      ok = false
+    }
+  }
+  if (next) void selectWorkspace(next.id)
+  return ok
+}
+
+/** Closes one workspace (see `closeWorkspaces`). */
+export function closeWorkspace(workspaceId: string): Promise<boolean> {
+  return closeWorkspaces([workspaceId])
 }
 
 /** Reconnects open workspaces: their documents and sessions load again
@@ -59,7 +88,7 @@ export function closeWorkspace(workspaceId: string): void {
 export async function reconnectWorkspaces(ids: readonly string[]): Promise<void> {
   const { workspaces } = clientApp()
   const shown = useUIStore.getState().selectedWorkspaceId
-  for (const id of ids) workspaces.close(id)
+  for (const id of ids) workspaces.disconnect(id)
   await Promise.all(ids.map((id) => (id === shown ? selectWorkspace(id) : workspaces.open(id).then(() => {}))))
 }
 

@@ -80,7 +80,9 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
                   {state.kind === 'connecting' ? <Spinner size={13} /> : <span className={`w-2 h-2 rounded-full ${connectionDotClass(state)}`} />}
                   {status?.title}
                 </span>
-                <span className="text-[13px] leading-relaxed text-secondary break-words">{status?.message}</span>
+                <span className="text-[13px] leading-relaxed text-secondary break-words">
+                  {install ? 'Cate installs its runtime first. This can take a few minutes.' : status?.message}
+                </span>
                 {install && <div className="mt-1"><InstallProgressView progress={install} where={entry?.kind === 'machine' ? machineLabel(entry.machine) : undefined} /></div>}
                 {actions.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">

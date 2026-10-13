@@ -91,7 +91,7 @@ describe('Share and Devices', () => {
     act(() => root.render(<SharePanel workspaceId="w1" />))
     await flush()
     expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Only its machine')
-    const add = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Create code'))!
+    const add = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Show pairing code'))!
     await act(async () => { add.click() })
     await flush()
     expect(calls).toEqual(['set runtimeNetwork=sameNetwork', 'createSecret sameNetwork'])

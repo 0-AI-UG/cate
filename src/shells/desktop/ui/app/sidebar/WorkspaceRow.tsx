@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, Server } from 'lucide-react'
 import { Icon, Tooltip } from '../../kernel/interaction'
-import { clientUi, errorMessage } from '@kernel/interaction'
+import { clientUi } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
 import { useDocument } from '../../client/document'
@@ -109,10 +109,7 @@ export function WorkspaceRow({
       { id: 'copy-cwd', label: 'Copy Working Directory', enabled: !!cwd },
       { id: 'close-panels', label: 'Close All Panels', enabled: isOpen && tree.count > 0 },
       { type: 'separator' },
-      { id: 'close', label: 'Close Workspace', enabled: isOpen },
-      entry.kind === 'paired'
-        ? { id: 'forget', label: 'Forget Workspace…' }
-        : { id: 'remove', label: 'Remove from Sidebar' },
+      { id: 'close', label: entry.kind === 'paired' ? 'Close Workspace…' : 'Close Workspace' },
     ]
     setMenuOpen(true)
     const id = await showMenu(items)
@@ -129,13 +126,7 @@ export function WorkspaceRow({
         break
       case 'copy-cwd': if (cwd) void clientUi().writeClipboard?.(cwd); break
       case 'close-panels': void closePanels(workspaceId, allPanelIds()); break
-      case 'close': closeWorkspace(workspaceId); break
-      case 'remove': void app.workspaces.removeRecent(workspaceId); break
-      case 'forget': {
-        const ok = await clientUi().confirm(`Forget "${entry.name}"? This device can open it again only after pairing with a new code.`)
-        if (ok) await app.workspaces.forget(workspaceId).catch((err) => clientUi().showError(errorMessage(err, 'Could not forget the workspace.')))
-        break
-      }
+      case 'close': void closeWorkspace(workspaceId); break
     }
   }
 

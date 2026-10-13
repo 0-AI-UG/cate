@@ -19,7 +19,7 @@ const MOBILE_ACTIONS: Partial<Record<ConnectionRemedy, MobileConnectionAction>> 
   retry: 'retry',
   start: 'retry',
   pair: 'pair',
-  forget: 'forget',
+  close: 'forget',
 }
 
 export function connectionOf(state: ConnectionState, startsRuntime = false): MobileConnection {

@@ -1,4 +1,6 @@
-// The "Open…" dialog: the workspace picker in a modal.
+// The "Open…" dialog: the workspace picker in a modal. It steps aside while
+// a dialog started from it (a machine's folders, joining) is open, and comes
+// back when that one is dismissed.
 
 import { FolderOpen } from 'lucide-react'
 import { Modal } from '../../kernel/interaction'
@@ -6,7 +8,7 @@ import { useUIStore } from '../state/uiStore'
 import { WorkspacePicker } from './WorkspacePicker'
 
 export function OpenWorkspaceDialog(): JSX.Element | null {
-  const open = useUIStore((s) => s.openDialogOpen)
+  const open = useUIStore((s) => s.openDialogOpen && !s.machineFolder && !s.joinDialog)
   if (!open) return null
   const close = () => useUIStore.getState().setOpenDialogOpen(false)
   return (

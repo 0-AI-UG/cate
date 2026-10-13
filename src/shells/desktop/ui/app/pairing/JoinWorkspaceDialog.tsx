@@ -1,5 +1,5 @@
 // "Join with a Code": type the pairing code another device shows (Share →
-// Create code there), or open its link, pair, then open the workspace.
+// Show pairing code there), or open its link, pair, then open the workspace.
 
 import { useState } from 'react'
 import { Link2 } from 'lucide-react'
@@ -31,6 +31,7 @@ function OpenJoinDialog({ request }: { request: JoinRequest }): JSX.Element {
     try {
       const entry = await joinWorkspace(input, { pair, workspaces: app.workspaces })
       close()
+      useUIStore.getState().setOpenDialogOpen(false)
       // It takes the runtime's folder name once it connects (nameJoinedWorkspaces).
       await selectWorkspace(entry.id)
     } catch (err) {

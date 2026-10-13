@@ -32,12 +32,12 @@ test.describe('invite and remove a device [network]', () => {
     // Share (from the Devices settings): who can join, a code, the devices.
     p.a.page.evaluate(() => window.__cateE2E!.openSettings('devices'))
     await p.a.page.getByRole('button', { name: 'Share…' }).click()
-    await p.a.page.getByRole('dialog', { name: /^Share/ }).getByRole('button', { name: 'Create code' }).click()
+    await p.a.page.getByRole('dialog', { name: /^Share/ }).getByRole('button', { name: 'Show pairing code' }).click()
     const code = (await p.a.page.locator('[aria-label="Pairing code"] code').textContent())!.trim()
     expect(code).toMatch(/\S{8,}/)
 
     c = await launchApp({ workspace: false, domTerminals: true })
-    await c.mainWindow.locator('[data-onboarding="welcome-actions"]').getByRole('option', { name: /Join with a code/ }).click()
+    await c.mainWindow.locator('[data-onboarding="welcome-actions"]').getByRole('button', { name: 'Join with a code' }).click()
     await c.mainWindow.getByRole('textbox', { name: 'Pairing code' }).fill(code)
     await c.mainWindow.getByRole('button', { name: 'Join', exact: true }).click()
 

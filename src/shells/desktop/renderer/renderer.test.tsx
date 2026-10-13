@@ -152,7 +152,7 @@ afterAll(() => {
 describe('desktop renderer', () => {
   it('boots every install and renders the welcome page without a workspace', async () => {
     await act(async () => root.render(<App client={client} />))
-    expect(host.textContent).toContain('Infinite canvas for coding')
+    expect(host.textContent).toContain('An infinite canvas for your terminals')
     expect(client.window).toEqual({ kind: 'main' })
   })
 

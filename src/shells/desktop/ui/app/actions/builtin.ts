@@ -3,7 +3,6 @@
 // close, rename and claimed keys, and creating panels of every type (from the
 // definitions, through client/host's panel actions).
 
-import { clientUi, errorMessage } from '@kernel/interaction'
 import { defineActions, storedShortcut, type ActionId } from '@kernel/interaction/contract'
 import { documentStoreFor } from '@client/document'
 import {
@@ -18,10 +17,10 @@ import {
   requestPanelShortcut,
   type ActionBinding,
 } from '@client/host'
-import { clientApp, tryClientApp } from '../app'
+import { tryClientApp } from '../app'
 import { desktopPort } from '../desktop'
 import { hasOverlay } from '../overlays'
-import { closeWorkspace, cycleWorkspace, pickAndOpenFolder, selectWorkspace } from '../navigation'
+import { cycleWorkspace, pickAndOpenFolder, reconnectWorkspaces } from '../navigation'
 import { setUiState } from '../state/uiState'
 import { useUIStore } from '../state/uiStore'
 
@@ -43,8 +42,8 @@ export const BUILTIN_ACTIONS = defineActions({
   previousWorkspace: { title: 'Previous Workspace', key: key('←', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 0 } },
   undo: { title: 'Undo', key: key('z', { command: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   redo: { title: 'Redo', key: key('z', { command: true, shift: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
-  openWorkspace: { title: 'Open…', key: key('o', { command: true }), welcome: true, menu: { bar: 'file', group: 'open', order: 0 } },
-  openFolder: { title: 'Open Folder…', key: key('o', { command: true, shift: true }), menu: { bar: 'file', group: 'open', order: 1 } },
+  openWorkspace: { title: 'Open Workspace…', key: key('o', { command: true }), welcome: true, menu: { bar: 'file', group: 'open', order: 0 } },
+  openFolder: { title: 'Open Local Workspace…', key: key('o', { command: true, shift: true }), menu: { bar: 'file', group: 'open', order: 1 } },
   joinWorkspace: { title: 'Join with a Code…', menu: { bar: 'file', group: 'open', order: 2 } },
   shareWorkspace: { title: 'Share Workspace…', menu: { bar: 'file', group: 'open', order: 3 } },
   showTutorial: { title: 'Show Tutorial', menu: { bar: 'help', group: 'learn' } },
@@ -58,7 +57,6 @@ export const BUILTIN_ACTIONS = defineActions({
   openRepository: { title: 'Repository / Source Control Changes', key: key('g', { command: true, shift: true }) },
   openPullRequests: { title: 'Pull Requests', key: key('g', { command: true, option: true }) },
   reconnectWorkspace: { title: 'Reconnect Workspace' },
-  forgetWorkspace: { title: 'Forget Workspace…' },
 })
 
 const selectedDocument = () => {
@@ -104,8 +102,6 @@ function overlay(view: string, section?: string): ActionBinding {
     enabled: () => hasOverlay(view),
   }
 }
-
-const entryOf = (workspaceId: string | null) => workspaceId ? tryClientApp()?.workspaces.get(workspaceId) ?? null : null
 
 export function registerBuiltinActions(): () => void {
   const stops = [
@@ -162,21 +158,9 @@ export function registerBuiltinActions(): () => void {
       reconnectWorkspace: {
         // Reconnects: the document and sessions load again from the runtime.
         async run({ workspaceId }) {
-          if (!workspaceId) return
-          closeWorkspace(workspaceId)
-          await selectWorkspace(workspaceId)
+          if (workspaceId) await reconnectWorkspaces([workspaceId])
         },
         enabled: ({ workspaceId }) => !!workspaceId,
-      },
-      forgetWorkspace: {
-        async run({ workspaceId }) {
-          const entry = entryOf(workspaceId)
-          if (entry?.kind !== 'paired') return
-          const ok = await clientUi().confirm(`Forget "${entry.name}"? This device can open it again only after pairing with a new code.`)
-          if (!ok) return
-          await clientApp().workspaces.forget(entry.id).catch((err) => clientUi().showError(errorMessage(err, 'Could not forget the workspace.')))
-        },
-        enabled: ({ workspaceId }) => entryOf(workspaceId)?.kind === 'paired',
       },
     }),
     registerPanelActions((type, { workspaceId }) => newPanel(type, workspaceId)),

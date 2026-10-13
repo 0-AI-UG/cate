@@ -29,22 +29,6 @@ async function setup(store = createMemoryDeviceStore()) {
 }
 
 describe('WorkspaceList', () => {
-  it('keeps an open workspace past the recents limit, and closes one removed elsewhere', async () => {
-    const { store, list } = await setup()
-    const first = await list.addLocal('/w/0')
-    await list.open(first.id)
-    for (let i = 1; i <= 31; i++) await list.addLocal(`/w/${i}`)
-    // The 30 newest, and the open one though it is older.
-    expect(list.getSnapshot().entries).toHaveLength(31)
-    expect(list.get(first.id)).toBeDefined()
-
-    // Another window removes it: this one stops showing it as open.
-    const file = await store.get(WORKSPACES_DOCUMENT) as { local: { root: string }[] }
-    store.change(WORKSPACES_DOCUMENT, { ...file, local: file.local.filter((w) => w.root !== '/w/0') })
-    expect(list.get(first.id)).toBeUndefined()
-    expect(list.getSnapshot().open).not.toContain(first.id)
-  })
-
   it('keeps workspaces on machines, reached through the machine', async () => {
     const store = createMemoryDeviceStore()
     const { list } = await setup(store)
@@ -63,12 +47,9 @@ describe('WorkspaceList', () => {
     ] })
     const reloaded = (await setup(store)).list
     expect(reloaded.getSnapshot().entries.map((e) => e.id)).toEqual(list.getSnapshot().entries.map((e) => e.id))
-
-    await reloaded.removeRecent(entry.id)
-    expect(reloaded.get(entry.id)).toBeUndefined()
   })
 
-  it('keeps recents, paired workspaces and the sidebar order across loads', async () => {
+  it('keeps the workspaces, their names and the sidebar order across loads', async () => {
     const { store, list } = await setup()
     await list.addLocal('/home/me/alpha')
     await list.addLocal('/home/me/beta')
@@ -79,21 +60,41 @@ describe('WorkspaceList', () => {
       publicKey: key,
     })
     expect(paired.id).toBe('paired:RT1')
-    // Newest first before any explicit order.
-    expect(list.getSnapshot().entries.map((e) => e.id)).toEqual(['paired:RT1', 'local:/home/me/beta', 'local:/home/me/alpha'])
+    // A new one joins last, and opening one does not move it.
+    await list.open('local:/home/me/alpha')
+    expect(list.getSnapshot().entries.map((e) => e.id)).toEqual(['local:/home/me/alpha', 'local:/home/me/beta', 'paired:RT1'])
 
-    await list.reorder(['local:/home/me/alpha', 'paired:RT1'])
+    await list.reorder(['paired:RT1', 'local:/home/me/alpha', 'local:/home/me/beta'])
     await list.rename('local:/home/me/alpha', 'Alpha')
 
     const again = await setup(store)
     const entries = again.list.getSnapshot().entries
-    expect(entries.map((e) => e.id)).toEqual(['local:/home/me/alpha', 'paired:RT1', 'local:/home/me/beta'])
-    expect(entries[0]).toMatchObject({ kind: 'local', root: '/home/me/alpha', name: 'Alpha' })
-    expect(entries[1]).toMatchObject({ kind: 'paired', runtimeId: 'RT1', endpoints: [{ kind: 'lan', address: '10.0.0.2', port: 4000 }] })
+    expect(entries.map((e) => e.id)).toEqual(['paired:RT1', 'local:/home/me/alpha', 'local:/home/me/beta'])
+    expect(entries[1]).toMatchObject({ kind: 'local', root: '/home/me/alpha', name: 'Alpha' })
+    expect(entries[0]).toMatchObject({ kind: 'paired', runtimeId: 'RT1', endpoints: [{ kind: 'lan', address: '10.0.0.2', port: 4000 }] })
     expect(await again.list.known.get('RT1')).toEqual(key)
   })
 
-  it('opens a workspace as a connection and closes it again', async () => {
+  it('a new workspace joins last in a list whose file names no order', async () => {
+    const store = createMemoryDeviceStore()
+    await store.set(WORKSPACES_DOCUMENT, {
+      local: [{ root: '/old', name: 'old', lastOpenedAt: 1 }, { root: '/newer', name: 'newer', lastOpenedAt: 2 }],
+      machine: [], paired: [], order: [],
+    })
+    const { list } = await setup(store)
+    expect(list.getSnapshot().entries.map((e) => e.id)).toEqual(['local:/newer', 'local:/old'])
+    await list.addLocal('/added')
+    expect(list.getSnapshot().entries.map((e) => e.id)).toEqual(['local:/newer', 'local:/old', 'local:/added'])
+  })
+
+  it('keeps every workspace until it is closed, however many there are', async () => {
+    const { list } = await setup()
+    for (let i = 0; i < 35; i++) await list.addLocal(`/w/${i}`)
+    // Another window may show any of them: none drops out on its own.
+    expect(list.getSnapshot().entries).toHaveLength(35)
+  })
+
+  it('opens a workspace as a connection', async () => {
     const { list, connections } = await setup()
     const entry = await list.addLocal('/w')
     const connection = await list.open(entry.id)
@@ -101,23 +102,60 @@ describe('WorkspaceList', () => {
     expect(connections.get(entry.id)).toBe(connection)
     expect(tryRuntimeFor(entry.id)).toBe(connection.runtime)
     expect(list.getSnapshot().open).toEqual([entry.id])
-    list.close(entry.id)
-    expect(list.getSnapshot().open).toEqual([])
-    expect(connection.state.kind).toBe('closed')
   })
 
-  it('forgets a paired workspace: closes it and deletes its pinned key', async () => {
+  const kinds = {
+    local: (list: WorkspaceList) => list.addLocal('/w/app'),
+    machine: (list: WorkspaceList) => list.addMachine({ kind: 'ssh', target: { destination: 'u@box' } }, '/srv/app'),
+    paired: (list: WorkspaceList) => list.addPaired({ runtimeId: 'RT3', name: 'Box', endpoints: [{ kind: 'connect' }], publicKey: key }),
+  }
+
+  for (const [kind, add] of Object.entries(kinds)) {
+    it(`a ${kind} workspace: open, reconnect, close`, async () => {
+      const { store, list } = await setup()
+      const other = await list.addLocal('/w/other')
+      await list.open(other.id)
+      const entry = await add(list)
+      const ids = () => list.getSnapshot().entries.map((e) => e.id)
+      await list.open(entry.id)
+      expect(ids()).toEqual([other.id, entry.id])
+      expect(list.getSnapshot().open).toEqual([other.id, entry.id])
+
+      // Reconnecting keeps it in its place.
+      await list.reorder([entry.id, other.id])
+      list.disconnect(entry.id)
+      expect(list.getSnapshot().open).toEqual([other.id])
+      expect(ids()).toEqual([entry.id, other.id])
+      const connection = await list.open(entry.id)
+      expect(ids()).toEqual([entry.id, other.id])
+
+      // Closing disconnects it and drops it, from the file too; a paired
+      // one loses its pinned key.
+      await list.close(entry.id)
+      expect(connection.state.kind).toBe('closed')
+      expect(ids()).toEqual([other.id])
+      expect(list.getSnapshot().open).toEqual([other.id])
+      expect((await setup(store)).list.getSnapshot().entries.map((e) => e.id)).toEqual([other.id])
+      if (entry.kind === 'paired') expect(await list.known.get(entry.runtimeId)).toBeUndefined()
+    })
+  }
+
+  it('closing the last one leaves an empty file', async () => {
     const { store, list } = await setup()
     const entry = await list.addPaired({ runtimeId: 'RT2', name: 'Box', endpoints: [{ kind: 'connect' }], publicKey: key })
-    const connection = await list.open(entry.id)
-    expect(connection.target).toEqual({ kind: 'network', runtimeId: 'RT2', endpoints: [{ kind: 'connect' }] })
-    await list.reorder([entry.id])
-    await list.forget(entry.id)
-    expect(connection.state.kind).toBe('closed')
-    expect(list.getSnapshot().entries).toEqual([])
-    expect(await list.known.get('RT2')).toBeUndefined()
+    await list.open(entry.id)
+    await list.close(entry.id)
     expect(await store.get(KNOWN_RUNTIMES_DOCUMENT)).toEqual({ runtimes: {} })
     expect(await store.get(WORKSPACES_DOCUMENT)).toEqual({ local: [], machine: [], paired: [], order: [] })
+  })
+
+  it('disconnects a workspace another window closed', async () => {
+    const { store, list } = await setup()
+    const entry = await list.addLocal('/w')
+    await list.open(entry.id)
+    store.change(WORKSPACES_DOCUMENT, { local: [], machine: [], paired: [], order: [] })
+    expect(list.get(entry.id)).toBeUndefined()
+    expect(list.getSnapshot().open).toEqual([])
   })
 
   it('follows outside edits and ignores malformed entries', async () => {

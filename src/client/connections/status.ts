@@ -19,10 +19,10 @@ export function relativeTime(then: number, now: number = Date.now()): string {
 }
 
 /** What the person can do: resolve an incompatible runtime where the
- *  workspace says how, try again, start a stopped runtime, drop a local or
- *  machine entry from the list, forget a paired workspace, pair again, or
- *  open the workspace a folder is nested in. */
-export type ConnectionRemedy = 'resolve' | 'retry' | 'start' | 'remove' | 'forget' | 'pair' | 'openNested'
+ *  workspace says how, try again, start a stopped runtime, close the
+ *  workspace (drop it from the list), pair again, or open the workspace a
+ *  folder is nested in. */
+export type ConnectionRemedy = 'resolve' | 'retry' | 'start' | 'close' | 'pair' | 'openNested'
 
 export interface ConnectionStatus {
   /** A short heading. */
@@ -55,14 +55,14 @@ function readableError(error: string | undefined): string | null {
 /** The state in words and what to do about it; null when connected. */
 export function connectionStatus(state: ConnectionState, context: StatusContext): ConnectionStatus | null {
   const { startsRuntime, now } = context
-  const unreachable: ConnectionRemedy[] = startsRuntime ? ['retry', 'remove'] : ['retry', 'forget']
+  const unreachable: ConnectionRemedy[] = ['retry', 'close']
   switch (state.kind) {
     case 'connecting':
       return { title: 'Connecting', message: startsRuntime ? 'Starting the workspace runtime.' : 'Connecting to the workspace.', remedies: [] }
     case 'offline': {
       const missing = missingFolderOf(state.error)
       if (missing) {
-        return { title: 'Folder not found', message: `${missing} is not there any more. If it moved, open it from its new place.`, remedies: ['remove', 'retry'] }
+        return { title: 'Folder not found', message: `${missing} is not there any more. If it moved, open it from its new place.`, remedies: ['close', 'retry'] }
       }
       const reason = readableError(state.error)
       if (state.lastSeen) {
@@ -75,15 +75,15 @@ export function connectionStatus(state: ConnectionState, context: StatusContext)
     case 'incompatible':
       return { title: 'Runtime out of date', message: `The workspace runtime (${state.runtimeVersion}) needs an update.`, remedies: ['resolve'] }
     case 'refused':
-      if (state.nestedIn) return { title: 'Already open', message: state.message, remedies: ['openNested', 'retry', 'remove'] }
+      if (state.nestedIn) return { title: 'Already open', message: state.message, remedies: ['openNested', 'retry', 'close'] }
       if (state.unpaired) {
-        return { title: 'Not paired', message: 'This device is not paired with the workspace any more. Pair it again with a new code, or forget the workspace.', remedies: ['pair', 'forget'] }
+        return { title: 'Not paired', message: 'This device is not paired with the workspace any more. Pair it again with a new code, or close the workspace.', remedies: ['pair', 'close'] }
       }
       return { title: 'Connection refused', message: state.message, remedies: ['retry'] }
     case 'stopped':
       return startsRuntime
         ? { title: 'Runtime stopped', message: 'The workspace runtime was stopped. Its terminals and agents have ended.', remedies: ['start'] }
-        : { title: 'Runtime stopped', message: 'The workspace runtime was stopped on its machine. It runs again once someone opens the workspace there.', remedies: ['retry', 'forget'] }
+        : { title: 'Runtime stopped', message: 'The workspace runtime was stopped on its machine. It runs again once someone opens the workspace there.', remedies: ['retry', 'close'] }
     default:
       return null
   }

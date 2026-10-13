@@ -49,7 +49,7 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
     focusWindow: (workspaceId, windowId) => { void api.windows.focus({ workspaceId, windowId }) },
     openClientSettingsFile: () => api.os.openSettingsFile(),
     async pickFolder() {
-      const picked = await api.dialogs.open({ title: 'Open Folder', directory: true })
+      const picked = await api.dialogs.open({ title: 'Open Workspace', directory: true })
       return picked?.[0] ?? null
     },
     pickImage: () => api.dialogs.pickCanvasBackground(),
