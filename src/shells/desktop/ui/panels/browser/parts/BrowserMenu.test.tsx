@@ -88,7 +88,7 @@ describe('BrowserMenu', () => {
     act(() => settingsButton?.click())
 
     expect(onClose).toHaveBeenCalledOnce()
-    expect(ui.openSettings).toHaveBeenCalledWith('browser')
+    expect(ui.openSettings).toHaveBeenCalledWith('workspace-browser')
   })
 
   it('does not keep browser preferences in the panel menu', () => {

@@ -28,11 +28,37 @@ describe.skipIf(process.platform === 'win32')('startAskpass', () => {
         return request.prompt.includes('code') ? null : 'hunter2'
       },
     })
-    const env = server.env({ kind: 'ssh', target: { destination: 'me@box' } })
+    const env = server.env({ kind: 'ssh', target: { destination: 'me@box' } }, 'owner')
     expect(await run(env, "me@box's password: ")).toEqual({ code: 0, stdout: 'hunter2\n' })
     expect(asked).toEqual([{ machine: 'me@box', prompt: "me@box's password: " }])
     expect((await run(env, 'Verification code: ')).code).not.toBe(0)
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700)
     expect(server.controlPath).toBe(path.join(dir, '%C'))
+  })
+
+  it('withdraws only the questions of the ssh that went away', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'askpass-'))
+    const withdrawn: string[] = []
+    const asked: string[] = []
+    let answerKept = () => {}
+    server = startAskpass({
+      dir,
+      node: process.execPath,
+      ask: (request, signal) => new Promise((resolve) => {
+        asked.push(request.prompt)
+        let answered = false
+        signal.addEventListener('abort', () => { if (!answered) { withdrawn.push(request.prompt); resolve(null) } })
+        if (request.prompt === 'kept') answerKept = () => { answered = true; resolve('answer') }
+      }),
+    })
+    const machine = { kind: 'ssh' as const, target: { destination: 'me@box' } }
+    const cancelled = run(server.env(machine, 'a'), 'cancelled')
+    const kept = run(server.env(machine, 'b'), 'kept')
+    await expect.poll(() => asked.length, { timeout: 10_000 }).toBe(2)
+    server.withdraw('a')
+    expect((await cancelled).code).not.toBe(0)
+    answerKept()
+    expect(await kept).toEqual({ code: 0, stdout: 'answer\n' })
+    expect(withdrawn).toEqual(['cancelled'])
   })
 })

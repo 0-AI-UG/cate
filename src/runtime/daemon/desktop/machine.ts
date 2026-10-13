@@ -10,8 +10,9 @@
 // the command's stdio.
 
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
-import { readdir, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { ByteDuplex } from '@kernel/rpc/contract'
@@ -71,17 +72,26 @@ function spawnError(machine: Machine, err: NodeJS.ErrnoException): Error {
     : 'No `wsl.exe` was found. Install WSL and try again.')
 }
 
-/** Spawns the machine's command; ssh asks through `prompting` when given. */
+/** Spawns the machine's command; ssh asks through `prompting` when given,
+ *  and what it still asks is withdrawn once it exits (cancelled, timed out). */
 function spawnOn(machine: Machine, script: 'stdin' | string, prompting: SshPrompting | undefined): ChildProcessWithoutNullStreams {
   const ask = machine.kind === 'ssh' ? prompting : undefined
   const { command, args } = machineCommand(machine, script, ask ? { controlPath: ask.controlPath } : {})
-  return spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...(ask ? { env: ask.env(machine) } : {}) })
+  const owner = randomUUID()
+  const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...(ask ? { env: ask.env(machine, owner) } : {}) })
+  if (ask) child.once('close', () => ask.withdraw(owner))
+  return child
 }
 
 /** The system `ssh` or `wsl.exe`, with the script (or `input`) on stdin. */
 export function systemMachineRunner(prompting?: SshPrompting): MachineRunner {
   return (machine, script, timeoutMs, signal, input, onSent) => new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('Cancelled.'))
+    // The file is checked before ssh starts, so a missing one leaves nothing running.
+    let total = 0
+    if (input) {
+      try { total = fs.statSync(input).size } catch (err) { return reject(err) }
+    }
     const child = spawnOn(machine, input ? script : 'stdin', prompting)
     let stdout = ''
     let stderr = ''
@@ -100,16 +110,17 @@ export function systemMachineRunner(prompting?: SshPrompting): MachineRunner {
       clearTimeout(timer)
       reject(spawnError(machine, err))
     })
+    const stream = input ? fs.createReadStream(input) : null
     child.once('close', (code) => {
       clearTimeout(timer)
+      // Exited before it took all of the file: let go of it.
+      stream?.destroy()
       resolve({ code, stdout, stderr })
     })
     child.stdin.on('error', () => { /* exited early; reported on close */ })
-    if (!input) return void child.stdin.end(`${script}\n`)
-    const stream = fs.createReadStream(input)
+    if (!stream) return void child.stdin.end(`${script}\n`)
     if (onSent) {
       // What the pipe took (it holds back the file as ssh sends it).
-      const total = fs.statSync(input).size
       let sent = 0
       stream.on('data', (chunk) => { sent += chunk.length; onSent(sent, total) })
     }
@@ -218,7 +229,10 @@ export function createMachineProvisioner(deps: {
   const push = async (machine: Machine, target: RuntimeTarget): Promise<void> => {
     const local = deps.localTarball?.(target)
     if (local) return send(machine, local)
-    const download = path.join(os.tmpdir(), `cate-runtime-${process.pid}-${Date.now()}-${target}.tgz`)
+    // A directory of its own (0700): in the shared temp directory, another
+    // user could plant or swap the file between the checksum and the upload.
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cate-runtime-'))
+    const download = path.join(dir, `${target}.tgz`)
     try {
       await tracked(machine, (signal) => downloadRuntimeRelease({
         version: deps.version,
@@ -230,7 +244,7 @@ export function createMachineProvisioner(deps: {
       }).catch((err: unknown) => { throw signal.aborted ? new Error('Cancelled.') : err }))
       await send(machine, download)
     } finally {
-      await rm(download, { force: true })
+      await rm(dir, { recursive: true, force: true })
     }
   }
 

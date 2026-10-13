@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { BrowserWindow } from 'electron'
-import { isMachine, machineLabel, type Machine } from '@runtime/daemon/contract'
+import { isMachine, type Machine } from '@runtime/daemon/contract'
 import type { MachineProvisioner } from '@runtime/daemon/desktop'
 import { DESKTOP_CHANNELS as C, type MachinePrompt } from '../contract'
 import { handle, listen } from './ipc'
@@ -26,31 +26,27 @@ function remotePath(value: unknown): string {
   return value
 }
 
-export function registerMachineIpc(machines: MachineProvisioner, installs: InstallProgressHub, prompts: MachinePrompts): void {
+export function registerMachineIpc(machines: MachineProvisioner, installs: InstallProgressHub): void {
   handle(C.installs, () => installs.snapshot())
   handle(C.machineEnsureRuntime, (_event, m: unknown) => machines.ensureRuntime(machine(m)))
   handle(C.machineListDir, (_event, m: unknown, path: unknown) => machines.listDir(machine(m), remotePath(path)))
   handle(C.machineMkdir, (_event, m: unknown, path: unknown) => machines.mkdir(machine(m), remotePath(path)))
   handle(C.machineWslDistros, () => machines.wslDistros())
   handle(C.machineSshHosts, () => machines.sshHosts())
-  handle(C.machineCancel, (_event, m: unknown) => {
-    const target = machine(m)
-    prompts.cancelFor(machineLabel(target))
-    return machines.cancel(target)
-  })
+  // What cancel stops withdraws its own questions (its ssh exits); those of
+  // work it leaves running stay.
+  handle(C.machineCancel, (_event, m: unknown) => machines.cancel(machine(m)))
 }
 
 export interface MachinePrompts {
   /** Asks in a main window; null when nobody answers, or once `signal`
    *  aborts (ssh stopped waiting), and the window drops the question. */
   ask(request: { machine: string; prompt: string }, signal?: AbortSignal): Promise<string | null>
-  /** Withdraws the questions for a machine (the person cancelled what asked). */
-  cancelFor(machine: string): void
 }
 
 /** Asks for what ssh prompts in a main window. */
 export function createMachinePrompts(registry: WindowRegistry<BrowserWindow>): MachinePrompts {
-  const pending = new Map<string, { contents: number; machine: string; resolve: (answer: string | null) => void }>()
+  const pending = new Map<string, { contents: number; resolve: (answer: string | null) => void }>()
   listen(C.machinePromptAnswer, (event, id: unknown, answer: unknown) => {
     const waiting = typeof id === 'string' ? pending.get(id) : undefined
     // Only the window that was asked answers.
@@ -80,16 +76,13 @@ export function createMachinePrompts(registry: WindowRegistry<BrowserWindow>): M
           if (answer === null && !contents.isDestroyed()) contents.send(C.machinePromptCancel, id)
           resolve(answer)
         }
-        pending.set(id, { contents: contents.id, machine: request.machine, resolve: finish })
+        pending.set(id, { contents: contents.id, resolve: finish })
         contents.once('destroyed', onDestroyed)
         signal?.addEventListener('abort', onAbort, { once: true })
         const prompt: MachinePrompt = { id, machine: request.machine, prompt: request.prompt }
         contents.send(C.machinePrompt, prompt)
         if (!target.win.isFocused()) target.win.focus()
       })
-    },
-    cancelFor(machine) {
-      for (const waiting of [...pending.values()]) if (waiting.machine === machine) waiting.resolve(null)
     },
   }
 }

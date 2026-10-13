@@ -391,8 +391,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       // consumes it; consuming here would clear it before the hook reads it.
       await agents.promptContext.flush(panelId).catch(() => {})
       // Delivered means a turn started: a prompt typed into a dialog the CLI
-      // opened after its last turn is lost without one.
-      const started = nextTurnStart(terminalId)
+      // opened after its last turn is lost without one. A slash command is
+      // the CLI's own and may start none (`/compact`, `/clear`).
+      const command = prompt.trimStart().startsWith('/')
+      const started = command ? Promise.resolve(true) : nextTurnStart(terminalId)
       if (!await submit(panelId, prompt)) return { ok: false, error: 'agent-panel-unavailable' }
       return await started
         ? { ok: true }

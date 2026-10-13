@@ -1,6 +1,7 @@
 // What ssh asks while it signs in to a machine (a password, a passphrase, a
 // one-time code), in ssh's own words. Prompts queue: one at a time; one
-// main withdraws (ssh stopped waiting) leaves the queue.
+// main withdraws (ssh stopped waiting) leaves the queue, and what was typed
+// into it goes with it.
 
 import { useEffect, useState } from 'react'
 import { KeyRound } from 'lucide-react'
@@ -10,7 +11,6 @@ import { useDesktopPort, type MachinePrompt } from '../desktop'
 export function MachinePromptDialog(): JSX.Element | null {
   const port = useDesktopPort()
   const [queue, setQueue] = useState<MachinePrompt[]>([])
-  const [answer, setAnswer] = useState('')
 
   useEffect(() => {
     if (!port) return
@@ -23,13 +23,17 @@ export function MachinePromptDialog(): JSX.Element | null {
   if (!current || !port) return null
   const reply = (value: string | null) => {
     port.answerMachinePrompt(current.id, value)
-    setAnswer('')
     setQueue((q) => q.slice(1))
   }
 
+  return <PromptDialog key={current.id} prompt={current} reply={reply} />
+}
+
+/** One prompt; keyed by its id, so its answer never outlives it. */
+function PromptDialog({ prompt: current, reply }: { prompt: MachinePrompt; reply: (value: string | null) => void }): JSX.Element {
+  const [answer, setAnswer] = useState('')
   return (
     <Modal
-      key={current.id}
       onClose={() => reply(null)}
       width={420}
       icon={<KeyRound size={16} />}

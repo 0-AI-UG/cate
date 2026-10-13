@@ -356,7 +356,7 @@ app.whenReady().then(() => {
   registerNatives({ registry, settingsFile, backgrounds, focusWindow })
   registerCapture(registry)
   registerTransportIpc({ host, partitions })
-  registerMachineIpc(machines, installs, machinePrompts)
+  registerMachineIpc(machines, installs)
   const perf = startPerfMonitor(featureFlags.perf())
   appIpc = registerAppIpc({
     registry,

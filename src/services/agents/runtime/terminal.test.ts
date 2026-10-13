@@ -263,6 +263,21 @@ describe('terminal agents', () => {
     }
   })
 
+  it('does not wait for a turn after a slash command, which may start none', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const sent = agents.send('term', '/compact')
+      await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expect(sent).resolves.toEqual({ ok: true })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('flags an agent running without Cate hooks until one of its hooks arrives', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     terminal.scan('pty-1', 'term', 'claude')

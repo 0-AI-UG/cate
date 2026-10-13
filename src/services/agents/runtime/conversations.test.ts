@@ -47,7 +47,12 @@ function setup() {
     messages = next
     stamp += 'a'
   }
-  return { panels, terminals, conversation, setStatus, write, step }
+  /** The panel hosts no agent any more (closed). */
+  const remove = () => {
+    states.delete('p1')
+    for (const listener of listeners) listener('p1')
+  }
+  return { panels, terminals, conversation, setStatus, write, step, remove }
 }
 
 describe('agent conversations', () => {
@@ -109,6 +114,40 @@ describe('agent conversations', () => {
     step('p1', second)
     expect(changes).toEqual([{ stepsFrom: 1, steps: [second] }])
     expect(conversation).toHaveBeenCalledTimes(1)
+    conversations.dispose()
+  })
+
+  it('drops the steps of a panel that hosts no agent any more', async () => {
+    const { panels, terminals, setStatus, step, remove } = setup()
+    setStatus('running')
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
+    step('p1', { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:01.000Z' })
+    remove()
+    let read: AgentConversation | null = null
+    conversations.watch('p1', (conversation, change) => { if (!change) read = conversation })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(read!.steps).toEqual([])
+    conversations.dispose()
+  })
+
+  it('past the kept steps, a new step does not send them all again', async () => {
+    const { panels, terminals, setStatus, step } = setup()
+    setStatus('running')
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
+    const changes: AgentConversationChange[] = []
+    let read: AgentConversation | null = null
+    conversations.watch('p1', (conversation, change) => {
+      if (change) changes.push(change)
+      else read = conversation
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    const at = (i: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString()
+    for (let i = 0; i < 560; i++) step('p1', { tool: 'Bash', subject: `step ${i}`, at: at(i) })
+    // Trimmed now and then, never on every step.
+    expect(changes.filter((change) => (change.steps?.length ?? 0) > 1).length).toBeLessThanOrEqual(1)
+    const steps = changes.reduce((conversation, change) => applyAgentConversationChange(conversation, change), read!).steps
+    expect(steps.length).toBeLessThanOrEqual(500)
+    expect(steps.at(-1)?.subject).toBe('step 559')
     conversations.dispose()
   })
 

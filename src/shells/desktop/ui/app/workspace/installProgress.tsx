@@ -9,6 +9,8 @@ import type { WorkspaceEntry } from '@client/workspaces'
 import { desktopPort, type InstallProgressEvent } from '../desktop'
 
 const current = new Map<string, RuntimeInstallProgress>()
+/** Targets an event was heard for: newer than the snapshot, ended or not. */
+const heard = new Set<string>()
 const listeners = new Set<() => void>()
 let started = false
 
@@ -24,10 +26,13 @@ function start(): void {
   const port = desktopPort()
   if (started || !port) return
   started = true
-  port.onInstallProgress(apply)
+  port.onInstallProgress((event) => {
+    heard.add(event.target)
+    apply(event)
+  })
   port.installs().then((events) => {
-    // Something heard meanwhile is newer.
-    for (const event of events) if (!current.has(event.target)) apply(event)
+    // Something heard meanwhile is newer, an end too.
+    for (const event of events) if (!heard.has(event.target)) apply(event)
   }, () => {})
 }
 

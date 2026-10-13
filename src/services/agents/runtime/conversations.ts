@@ -5,8 +5,8 @@
 // that writes its store just after its hook), every half second while the
 // agent works and every few seconds while it is there; a look reads the
 // session store only when its stamp moved. The steps (tool calls the hooks
-// report) are kept for every panel, watched or not, in memory only, and go
-// out as they come.
+// report) are kept for every panel that hosts an agent, watched or not, in
+// memory only, and go out as they come.
 
 import { diffAgentConversation, type AgentConversation, type AgentConversationChange, type AgentStep } from '../contract'
 import type { AgentTerminals } from './core'
@@ -46,8 +46,10 @@ interface Watch {
 const WORKING_MS = 500
 const PRESENT_MS = 3_000
 const SETTLE_MS = [400, 1_500] as const
-/** The steps kept per panel, the latest. */
+/** The steps kept per panel, the latest; past it the oldest go
+ *  `TRIM_STEPS` at a time, so the watchers get them all again only then. */
 const MAX_STEPS = 500
+const TRIM_STEPS = 100
 
 export function createAgentConversations(deps: AgentConversationsDeps): AgentConversations {
   const { panels, terminals } = deps
@@ -124,6 +126,8 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
 
   const offPanels = panels.subscribe((change) => {
     for (const panelId of Object.keys(change)) {
+      // Closed, or no agent any more: its steps go.
+      if (!panels.state(panelId)) steps.delete(panelId)
       const watch = watches.get(panelId)
       if (!watch) continue
       void look(panelId, watch, true)
@@ -138,7 +142,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
 
   const offSteps = terminals.onStep((panelId, step) => {
     const kept = [...stepsOf(panelId), step]
-    steps.set(panelId, kept.length > MAX_STEPS ? kept.slice(-MAX_STEPS) : kept)
+    steps.set(panelId, kept.length > MAX_STEPS ? kept.slice(TRIM_STEPS) : kept)
     const watch = watches.get(panelId)
     if (watch?.ready) publish(watch, { ...watch.current, steps: stepsOf(panelId) })
   })

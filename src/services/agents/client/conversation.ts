@@ -65,25 +65,38 @@ export function watchAgentChat(workspaceId: string, panelId: string): AgentChatH
     notify()
   }
 
+  /** Messages there were when a prompt that failed to send went back in
+   *  the queue: the agent may still have taken it. */
+  let requeuedFrom: number | null = null
+  const shows = (conversation: AgentConversation, from: number, prompt: string) =>
+    conversation.messages.slice(from).some((message) => message.role === 'user' && message.text.includes(prompt))
+
   /** The queued prompt goes out when the agent can take it; back in the
-   *  queue when it did not go through. */
+   *  queue when it did not go through and the conversation does not show
+   *  it (the agent may take a prompt and still fail the send). */
   const flush = () => {
     const prompt = chat.queued
     if (prompt === null || !runtime || chat.pending !== null || !chat.conversation?.canReceivePrompt) return
     const target = runtime
     chat = { ...chat, queued: null }
+    requeuedFrom = null
     sent(prompt)
+    const from = pendingFrom
     target.agents.send({ panelId, prompt }).catch(() => {
-      chat = { ...chat, pending: chat.pending === prompt ? null : chat.pending, queued: chat.queued ?? prompt }
+      if (chat.pending !== prompt) return
+      requeuedFrom = chat.queued === null ? from : requeuedFrom
+      chat = { ...chat, pending: null, queued: chat.queued ?? prompt }
       notify()
     })
   }
 
   const take = (conversation: AgentConversation) => {
     const next = shown(conversation)
-    const pending = chat.pending
-    const arrived = pending !== null && next.messages.slice(pendingFrom).some((message) => message.role === 'user' && message.text.includes(pending))
-    chat = { ...chat, conversation: next, pending: arrived ? null : pending }
+    const { pending, queued } = chat
+    const arrived = pending !== null && shows(next, pendingFrom, pending)
+    const late = queued !== null && requeuedFrom !== null && shows(next, requeuedFrom, queued)
+    if (late) requeuedFrom = null
+    chat = { ...chat, conversation: next, pending: arrived ? null : pending, queued: late ? null : queued }
     notify()
     flush()
   }
@@ -117,6 +130,7 @@ export function watchAgentChat(workspaceId: string, panelId: string): AgentChatH
       notify()
     },
     queue(prompt) {
+      requeuedFrom = null
       chat = { ...chat, queued: prompt }
       notify()
       flush()
@@ -124,6 +138,7 @@ export function watchAgentChat(workspaceId: string, panelId: string): AgentChatH
     unqueue() {
       const prompt = chat.queued
       if (prompt === null) return null
+      requeuedFrom = null
       chat = { ...chat, queued: null }
       notify()
       return prompt

@@ -35,7 +35,7 @@ it('shows the local repository and GitHub links, and switches to pull requests',
   await m.render(<RepositoryOverview tab={tab} onTabChange={onTabChange} header={header} onOpenPullRequest={vi.fn()} />)
   expect(m.host.textContent).toContain('Existing pull request list')
   await act(async () => m.host.querySelector<HTMLButtonElement>('[aria-label="GitHub settings"]')!.click())
-  expect(ui.openSettings).toHaveBeenCalledWith('source control')
+  expect(ui.openSettings).toHaveBeenCalledWith('github')
 })
 
 it('shows loading feedback during discovery and remote lookup', async () => {

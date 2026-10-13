@@ -91,6 +91,27 @@ it.skipIf(process.platform === 'win32')('reports the download, the upload and th
   expect(phases).toEqual(['download', 'install', null])
 })
 
+it.skipIf(process.platform === 'win32')('downloads the release into a directory only this user can reach, and removes it', async () => {
+  const bytes = fs.readFileSync(runtimeTarball(BUILD))
+  const sha = createHash('sha256').update(bytes).digest('hex')
+  const fetch = (async (url: string) => new Response(url.endsWith('.sha256') ? `${sha}  x.tgz\n` : bytes)) as unknown as typeof globalThis.fetch
+  const sent: { dir: string; mode: number }[] = []
+  const run = localRunner()
+  const ssh = createMachineProvisioner({
+    build: BUILD, version: '2.0.5', localTarball: () => null, fetch,
+    run: (machine, script, timeoutMs, signal, input, onSent) => {
+      if (input) sent.push({ dir: path.dirname(input), mode: fs.statSync(path.dirname(input)).mode & 0o777 })
+      return run(machine, script, timeoutMs, signal, input, onSent)
+    },
+  })
+  await ssh.ensureRuntime(target)
+  expect(sent).toHaveLength(1)
+  // Not the shared temp directory, where another user could plant the file.
+  expect(sent[0].dir).not.toBe(os.tmpdir())
+  expect(sent[0].mode).toBe(0o700)
+  expect(fs.existsSync(sent[0].dir)).toBe(false)
+})
+
 it('cancel leaves an install a connecting workspace waits on, and stops one nobody keeps', async () => {
   /** A machine that answers the probe once released, or never when aborted. */
   const gated = (): { run: MachineRunner; release: () => void } => {
@@ -169,6 +190,7 @@ function fakeSsh(delaySeconds = 0): string {
   fs.writeFileSync(path.join(bin, 'ssh'), [
     '#!/bin/sh',
     `printf '%s\\n' "$@" > '${argvFile}'`,
+    `echo $$ > '${path.join(home, 'pid')}'`,
     'while [ "$1" != "--" ]; do shift; done; shift 2',
     'echo "Welcome to box"',
     `sleep ${delaySeconds}`,
@@ -197,6 +219,35 @@ it.skipIf(process.platform === 'win32')('streams a file to the script run with s
   const result = await systemMachineRunner()(target, 'cat; echo " done"', 5000, undefined, input)
   expect(result).toEqual({ code: 0, stdout: 'Welcome to box\npayload bytes done\n', stderr: '' })
   expect(fs.readFileSync(argvFile, 'utf-8').trim().split('\n').slice(-3)).toEqual(['sh', '-c', `'cat; echo " done"'`])
+})
+
+it.skipIf(process.platform === 'win32')('stops ssh when the file to stream is not there', async () => {
+  fakeSsh(30)
+  const missing = path.join(home, 'gone.tgz')
+  await expect(systemMachineRunner()(target, 'cat', 60_000, undefined, missing, () => {})).rejects.toThrow(/ENOENT/)
+  const pidFile = path.join(home, 'pid')
+  // ssh may not have started its script yet; once it has, it must be gone.
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  if (!fs.existsSync(pidFile)) return
+  const pid = Number(fs.readFileSync(pidFile, 'utf-8'))
+  await expect.poll(() => { try { process.kill(pid, 0); return true } catch { return false } }, { timeout: 2000 }).toBe(false)
+})
+
+it.skipIf(process.platform === 'win32')('withdraws the prompts of an ssh once it exits, and no other', async () => {
+  fakeSsh()
+  const owners: string[] = []
+  const withdrawn: string[] = []
+  const prompting = {
+    controlPath: path.join(home, '%C'),
+    env: (_machine: Machine, owner: string) => { owners.push(owner); return { ...process.env } },
+    withdraw: (owner: string) => { withdrawn.push(owner) },
+  }
+  const run = systemMachineRunner(prompting)
+  await run(target, 'echo one', 5000)
+  await run(target, 'echo two', 5000)
+  expect(owners).toHaveLength(2)
+  expect(new Set(owners).size).toBe(2)
+  expect(withdrawn).toEqual(owners)
 })
 
 it.skipIf(process.platform === 'win32')('bridges to the runtime past the login banner', async () => {

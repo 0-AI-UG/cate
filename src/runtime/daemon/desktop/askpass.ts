@@ -13,8 +13,11 @@ import { machineLabel, type Machine } from '../contract'
 
 /** What ssh needs to ask through the app. */
 export interface SshPrompting {
-  /** The environment of an ssh command for `machine`. */
-  env(machine: Machine): NodeJS.ProcessEnv
+  /** The environment of an ssh command for `machine`; its prompts belong
+   *  to `owner` (one per ssh process). */
+  env(machine: Machine, owner: string): NodeJS.ProcessEnv
+  /** Withdraws the questions `owner` still waits on: its ssh went away. */
+  withdraw(owner: string): void
   /** ssh's ControlPath for shared connections. */
   controlPath: string
 }
@@ -35,7 +38,7 @@ socket.on('end', () => {
   if (typeof answer !== 'string') process.exit(1)
   process.stdout.write(answer + '\\n')
 })
-socket.end(JSON.stringify({ prompt: process.argv[2] || '', machine: process.env.CATE_ASKPASS_MACHINE || '' }))
+socket.end(JSON.stringify({ prompt: process.argv[2] || '', machine: process.env.CATE_ASKPASS_MACHINE || '', owner: process.env.CATE_ASKPASS_OWNER || '' }))
 `
 
 /** Writes the helper and listens; throws when it cannot. */
@@ -58,6 +61,8 @@ export function startAskpass(opts: {
   fs.writeFileSync(script, '#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "$CATE_ASKPASS_NODE" "$CATE_ASKPASS_HELPER" "$@"\n', { mode: 0o700 })
   fs.rmSync(socketPath, { force: true })
 
+  /** The questions each owner waits on. */
+  const waiting = new Map<string, Set<AbortController>>()
   // Half-open: the helper ends its side once it has sent the prompt.
   const server = net.createServer({ allowHalfOpen: true }, (socket) => {
     let request = ''
@@ -67,8 +72,15 @@ export function startAskpass(opts: {
     const gone = new AbortController()
     socket.on('close', () => gone.abort())
     socket.on('end', () => {
-      let parsed: { prompt?: unknown; machine?: unknown }
+      let parsed: { prompt?: unknown; machine?: unknown; owner?: unknown }
       try { parsed = JSON.parse(request) as typeof parsed } catch { return void socket.end('{}') }
+      const owner = String(parsed.owner ?? '')
+      const questions = waiting.get(owner) ?? new Set()
+      waiting.set(owner, questions.add(gone))
+      gone.signal.addEventListener('abort', () => {
+        questions.delete(gone)
+        if (questions.size === 0 && waiting.get(owner) === questions) waiting.delete(owner)
+      }, { once: true })
       opts.ask({ machine: String(parsed.machine ?? ''), prompt: String(parsed.prompt ?? '') }, gone.signal).then(
         (answer) => socket.end(JSON.stringify({ answer })),
         () => socket.end('{}'),
@@ -80,7 +92,7 @@ export function startAskpass(opts: {
 
   return {
     controlPath: path.join(opts.dir, '%C'),
-    env: (machine) => ({
+    env: (machine, owner) => ({
       ...process.env,
       SSH_ASKPASS: script,
       // ssh 8.4+; an older one keeps to keys and the agent.
@@ -89,7 +101,11 @@ export function startAskpass(opts: {
       CATE_ASKPASS_HELPER: helper,
       CATE_ASKPASS_SOCKET: socketPath,
       CATE_ASKPASS_MACHINE: machineLabel(machine),
+      CATE_ASKPASS_OWNER: owner,
     }),
+    withdraw(owner) {
+      for (const question of [...(waiting.get(owner) ?? [])]) question.abort()
+    },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   }
 }
