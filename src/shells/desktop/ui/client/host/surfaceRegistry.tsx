@@ -364,6 +364,12 @@ export function syncPanelSurfaces(): void {
   const activeIds = [...slots.entries()]
     .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
     .map(([id]) => id)
+  // A slot whose subtree left the document (a dock stack another pane has expanded over) is not unmounted, so
+  // nothing unregistered it: park its surface, or it keeps floating over what replaced it.
+  for (const [id, slot] of slots) {
+    const surface = surfaces.get(id)
+    if (surface && !slot.isConnected) parkSurface(surface)
+  }
   if (activeIds.length === 0) {
     geometryAnimations.clear()
     return
@@ -449,6 +455,13 @@ function watchSurfaces(): void {
     window.removeEventListener('resize', schedule)
     window.removeEventListener('scroll', schedule, true)
   }
+}
+
+/** Re-measures every surface and the elements it tracks on the next frame. A pane whose slot moved in or out of the
+ *  document (a stack another pane expanded over) is not watched while it is out, so whoever moves it calls this. */
+export function resyncPanelSurfaces(): void {
+  rebuildTracking = true
+  schedule()
 }
 
 function refreshSurfaces(panelId: string): void {
