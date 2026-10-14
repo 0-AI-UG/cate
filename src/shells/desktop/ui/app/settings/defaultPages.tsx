@@ -15,7 +15,6 @@ import { documentStoreFor } from '@client/document'
 import { useUIStore } from '../state/uiStore'
 import { tryClientApp } from '../app'
 import { DevicesPage } from '../pairing/DevicesPage'
-import { MachinesPage } from '../remote/MachinesPage'
 import { ConnectionNotice } from '../sidebar/connectionStatus'
 import { AppearancePage } from './pages/AppearancePage'
 import { CanvasPage, WorkspaceCanvasPage } from './pages/CanvasPage'
@@ -64,7 +63,6 @@ export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'editor', title: 'Editor', scope: 'client', group: 'tools', order: 20, component: EditorPage },
   { id: 'browser', title: 'Browser', scope: 'client', group: 'tools', order: 30, component: BrowserPage },
   { id: 'shortcuts', title: 'Shortcuts', scope: 'client', group: 'tools', order: 40, component: ShortcutsPage },
-  { id: 'machines', title: 'Machines', scope: 'client', group: 'connections', order: 10, component: MachinesPage },
   // The active workspace.
   { id: 'runtime', title: 'Runtime', scope: 'workspace', group: 'runtime', order: 10, component: RuntimePage },
   { id: 'devices', title: 'Devices', scope: 'workspace', group: 'runtime', order: 20, component: DevicesPage },

@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineCateApi, defineCliArea, sessionApi, str } from '@kernel/api/contract'
+import { defineCateApi, defineCliArea, num, sessionApi, str, type ApiSessionContext } from '@kernel/api/contract'
 import { ApiRouter, ApiTokenRegistry } from '@kernel/api/runtime'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
@@ -72,14 +72,19 @@ const TEST_AREAS = {
 
 const fakeTerminalApi = defineCateApi(
   'terminal',
-  { read: { access: 'read', handler: 'session', args: { prefix: str } } },
+  {
+    read: { access: 'read', handler: 'session', args: { prefix: str } },
+    add: { access: 'control', handler: 'session', args: { by: num } },
+  },
   { area: TEST_AREAS.terminal },
 )
 
 type CounterSnapshot = { count: number; dirty: boolean }
-type CounterOp = { kind: 'bump'; by: number } | { kind: 'setDirty'; dirty: boolean }
+type CounterOp = { kind: 'bump'; by: number } | { kind: 'setDirty'; dirty: boolean } | { kind: 'slowBump'; by: number }
 
 const log: string[] = []
+// `slowBump` reads the count, waits for this, then writes.
+let slowGate: Promise<void> = Promise.resolve()
 
 class CounterSession extends PanelSession<CounterSnapshot, CounterOp> {
   constructor(kit: SessionKit, record: PanelRecord) {
@@ -98,9 +103,19 @@ class CounterSession extends PanelSession<CounterSnapshot, CounterOp> {
       return this.state.count
     },
     setDirty: ({ dirty }) => { this.publish({ dirty }) },
+    slowBump: async ({ by }) => {
+      const count = this.state.count
+      await slowGate
+      this.publish({ count: count + by })
+      return this.state.count
+    },
   }
   override handleApi = sessionApi(fakeTerminalApi, {
     read: ({ prefix }) => `${prefix}${this.state.count}`,
+    add: ({ by }) => {
+      this.publish({ count: this.state.count + by })
+      return this.state.count
+    },
   })
   override closeBlocker(): RpcError | null {
     return this.state.dirty ? new RpcError('dirty', 'unsaved') : null
@@ -325,6 +340,23 @@ describe('session host lifecycle', () => {
     w.document.apply({ kind: 'closeWindow', windowId: 'w2' })
     expect(w.host.session(detached)).toBeUndefined()
     expect(w.host.session(nested)).toBeDefined()
+    w.dispose()
+  })
+
+  it('runs control API calls in the panel\'s op queue and read ones alongside it', async () => {
+    const w = world()
+    w.document.apply(addTo('t1'))
+    await w.host.started('t1')
+    let open!: () => void
+    slowGate = new Promise((resolve) => { open = resolve })
+    const ctx = (exclusive: boolean) => ({ panelId: 't1', method: 'cate.terminal.x', exclusive }) as unknown as ApiSessionContext
+    const op = w.host.op('t1', { kind: 'slowBump', by: 1 }, { clientId: null, connectionId: null })
+    const add = w.host.handleApi('t1', 'add', { by: 10 }, ctx(true))
+    await expect(w.host.handleApi('t1', 'read', { prefix: '' }, ctx(false))).resolves.toBe('0')
+    open()
+    await expect(op).resolves.toBe(1)
+    await expect(add).resolves.toBe(11)
+    slowGate = Promise.resolve()
     w.dispose()
   })
 

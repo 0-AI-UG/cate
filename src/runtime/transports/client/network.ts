@@ -12,6 +12,7 @@ import { decodePairingUri, parsePairingCode, type PairingMode } from '../../pair
 import type { KnownRuntimes } from '../../pairing/client'
 import { secureChannelDuplex, type KeyPair, type MessagePortLike } from '../../security/contract'
 import { formatAddress, pairingEndpoints, type NetworkEndpoint, type NetworkTarget, type PeerConnectionFactory, type WebSocketFactory } from '../contract'
+import { connectFailureOf, NetworkUnreachableError, sameNetworkFailureOf, type NetworkFailure } from './failure'
 import { dialSameNetwork, type SameNetworkDialOptions } from './sameNetwork'
 import { openSecureConnection } from './secure'
 
@@ -62,37 +63,39 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
 
   /** The first raw message port that reaches the runtime. */
   const reach = async (runtimeId: string, addresses: string[], viaConnect: boolean): Promise<{ port: MessagePortLike; via: PairingMode }> => {
-    const errors: string[] = []
+    let failure: NetworkFailure
     try {
       const port = await sameNetwork({ runtimeId, addresses, discover: deps.discover, webSocket: deps.webSocket, verify: asOpened })
       return { port, via: 'sameNetwork' }
     } catch (error) {
-      errors.push((error as Error).message)
+      failure = { sameNetwork: sameNetworkFailureOf(error) }
     }
     if (viaConnect) {
       try {
         return { port: await cateConnect(runtimeId), via: 'cateConnect' }
       } catch (error) {
-        errors.push((error as Error).message)
+        failure.connect = connectFailureOf(error)
       }
     }
-    throw new Error(errors.join('; '))
+    throw new NetworkUnreachableError(failure)
   }
 
   return {
     // Each way in is checked by the handshake before it counts: an address
     // where another machine (another key) answers is passed over for the
-    // remaining ones, then Cate Connect.
+    // remaining ones, then Cate Connect. Cate Connect is tried whatever the
+    // stored endpoints say: a device paired on the same network still reaches
+    // a runtime that turned Cate Connect on later, which it would otherwise
+    // learn only by connecting. The pinned key keeps it as safe as a LAN dial.
     async dialNetwork(target) {
       const addresses = target.endpoints.flatMap((e) => (e.kind === 'lan' ? [formatAddress(e.address, e.port)] : []))
-      const viaConnect = target.endpoints.some((e) => e.kind === 'connect')
       const secure = async (port: MessagePortLike) => (await openSecureConnection(port, {
         kind: 'connect',
         deviceKeys: deps.deviceKeys(),
         runtimeId: target.runtimeId,
         pins: deps.pins,
       })).channel
-      const errors: string[] = []
+      let failure: NetworkFailure
       try {
         const channel = await sameNetwork({
           runtimeId: target.runtimeId,
@@ -103,38 +106,37 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
         })
         return secureChannelDuplex(channel)
       } catch (error) {
-        errors.push((error as Error).message)
+        failure = { sameNetwork: sameNetworkFailureOf(error) }
       }
-      if (viaConnect) {
-        try {
-          const port = await cateConnect(target.runtimeId)
-          const channel = await secure(port).catch((error: unknown) => { port.close(); throw error })
-          return secureChannelDuplex(channel)
-        } catch (error) {
-          errors.push((error as Error).message)
-        }
+      try {
+        const port = await cateConnect(target.runtimeId)
+        const channel = await secure(port).catch((error: unknown) => { port.close(); throw error })
+        return secureChannelDuplex(channel)
+      } catch (error) {
+        failure.connect = connectFailureOf(error)
       }
-      throw new Error(errors.join('; '))
+      throw new NetworkUnreachableError(failure)
     },
     async pair(request) {
       const link = request.link.trim()
       let runtimeId: string
+      let secretId: string
       let secret: Uint8Array
       let fingerprint: string | undefined
       let addresses: string[] = []
       let mode: PairingMode | undefined
       if (link.startsWith('cate://')) {
         const payload = decodePairingUri(link)
-        ;({ runtimeId, secret, fingerprint, addresses, mode } = payload)
+        ;({ runtimeId, secretId, secret, fingerprint, addresses, mode } = payload)
       } else {
-        ;({ runtimeId, secret } = parsePairingCode(link))
+        ;({ runtimeId, secretId, secret } = parsePairingCode(link))
       }
       const { port, via } = await reach(runtimeId, addresses, mode !== 'sameNetwork')
       const { channel } = await openSecureConnection(port, {
         kind: 'pair',
         deviceKeys: deps.deviceKeys(),
         deviceName: request.deviceName?.trim() || deps.deviceName(),
-        target: { runtimeId, secret, ...(fingerprint ? { fingerprint } : {}) },
+        target: { runtimeId, secretId, secret, ...(fingerprint ? { fingerprint } : {}) },
         pins: deps.pins,
       })
       // Pinned now; the workspace connection dials again by key.

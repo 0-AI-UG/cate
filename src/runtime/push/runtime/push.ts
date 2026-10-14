@@ -26,7 +26,7 @@ export interface PushSender {
   push(push: ConnectPush): Promise<ConnectPushResult>
 }
 
-/** A notification event (architecture 10.5) as pushes carry it. */
+/** A notification event (architecture 10.4) as pushes carry it. */
 export interface PushEvent {
   kind: string
   panelId?: string

@@ -1,17 +1,21 @@
 // The loopback web proxy of one workspace (architecture 12.3). A workspace's
-// browser partition routes every request here. Loopback hosts go to the
-// runtime's machine through the workspace connection's `dialLoopback(port)`;
-// every other host is reached directly, or through the client's upstream
-// `browserProxyUrl`. Plain HTTP, CONNECT and upgrades (WebSocket); pages are
-// never rewritten. A per-launch credential keeps other local processes out.
+// browser partition routes every request here. Loopback hosts (decided on the
+// resolved address) go to the runtime's machine through the workspace
+// connection's `dialLoopback(port)`; every other host is reached directly, or
+// through the client's upstream `browserProxyUrl`, except that a connection
+// that does not reach the client's network never gets the client's private
+// ranges. Plain HTTP, CONNECT and upgrades (WebSocket); pages are never
+// rewritten. A per-launch credential keeps other local processes out.
 
 import crypto from 'node:crypto'
+import dns from 'node:dns'
 import http from 'node:http'
 import net from 'node:net'
 import { Duplex } from 'node:stream'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
 import { isLoopbackHostname } from '@runtime/tunnel/contract'
+import { isPrivateAddress } from '@runtime/transports/contract'
 
 const log = createLogger('loopback-proxy')
 
@@ -25,6 +29,11 @@ export interface LoopbackProxyOptions {
   /** The client's `browserProxyUrl`, read per request. Only `http://` upstreams
    *  are supported here; anything else connects directly. */
   upstream?(): string | undefined
+  /** Whether the workspace connection is on the client's own network (the
+   *  local socket). When it is not, the client's private ranges are refused. */
+  reachesClientNetwork(): boolean
+  /** Every address of a host name. Default `dns.lookup` (all). */
+  lookup?(host: string): Promise<string[]>
   credentials: ProxyCredentials
 }
 
@@ -44,6 +53,71 @@ export function parseAuthority(authority: string): { host: string; port: number 
   const port = Number(match[3])
   if (port < 1 || port > 65_535) return null
   return { host: match[1] ?? match[2], port }
+}
+
+/** `host` as WHATWG URL parsing reads it (`2130706433` and `0x7f.1` are
+ *  127.0.0.1), without IPv6 brackets; null when it is no valid host. */
+export function canonicalHost(host: string): string | null {
+  const bare = host.replace(/^\[|\]$/g, '')
+  try {
+    return new URL(`http://${bare.includes(':') ? `[${bare}]` : bare}/`).hostname.replace(/^\[|\]$/g, '')
+  } catch {
+    return null
+  }
+}
+
+/** `::ffff:a.b.c.d` for an IPv4-mapped address in hex form, else `address`. */
+function dottedMapped(address: string): string {
+  const match = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(address)
+  if (!match) return address
+  const [high, low] = [parseInt(match[1], 16), parseInt(match[2], 16)]
+  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`
+}
+
+/** Where a request goes: the runtime's machine, `host` (the address that was
+ *  checked, or the name when an upstream proxy resolves it), or nowhere. */
+export type ProxyRoute = { kind: 'loopback' } | { kind: 'direct'; host: string } | { kind: 'refused' }
+
+export interface RouteDeps {
+  lookup(host: string): Promise<string[]>
+  reachesClientNetwork: boolean
+  /** An upstream proxy is configured: it gets the name (its ACLs may be by
+   *  name), also one the client cannot resolve. */
+  upstream: boolean
+}
+
+/**
+ * Decides on the address, not the name: a name that resolves to loopback is
+ * the runtime's machine too (D10), and the address checked is the one
+ * connected to, so a second lookup cannot rebind it. Private, link-local and
+ * unique local addresses are refused unless the connection reaches the
+ * client's network.
+ */
+export async function routeFor(host: string, deps: RouteDeps): Promise<ProxyRoute> {
+  const name = canonicalHost(host)
+  if (!name) return { kind: 'refused' }
+  if (isLoopbackHostname(name)) return { kind: 'loopback' }
+  let address = name
+  if (!net.isIP(name)) {
+    let addresses: string[]
+    try {
+      addresses = await deps.lookup(name)
+    } catch (error) {
+      if (deps.upstream) return { kind: 'direct', host: name }
+      throw error
+    }
+    if (addresses.length === 0) throw new Error(`${name} has no address`)
+    if (addresses.some((entry) => isLoopbackHostname(dottedMapped(entry)))) return { kind: 'loopback' }
+    address = addresses[0]
+  }
+  const plain = dottedMapped(address)
+  if (isLoopbackHostname(plain)) return { kind: 'loopback' }
+  if (!deps.reachesClientNetwork && isPrivateAddress(plain)) return { kind: 'refused' }
+  return { kind: 'direct', host: deps.upstream ? name : address }
+}
+
+async function lookupAll(host: string): Promise<string[]> {
+  return (await dns.promises.lookup(host, { all: true, verbatim: true })).map((entry) => entry.address)
 }
 
 /** A kernel/rpc byte pipe as a Node stream, for `http.request` and piping. */
@@ -149,6 +223,7 @@ async function upstreamConnect(upstream: Upstream, host: string, port: number, d
 
 export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<LoopbackProxy> {
   const dialDirect = options.dialDirect ?? directConnect
+  const lookup = options.lookup ?? lookupAll
   const expected = Buffer.from(`Basic ${Buffer.from(`${options.credentials.username}:${options.credentials.password}`).toString('base64')}`)
   let warnedUpstream = false
 
@@ -167,15 +242,23 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
     return parsed
   }
 
-  /** A raw byte stream to host:port, wherever it lives. */
-  const openRaw = async (host: string, port: number): Promise<Duplex> => {
-    if (isLoopbackHostname(host)) return byteDuplexStream(await options.dialLoopback(port))
+  const route = (host: string, up: Upstream | null) =>
+    routeFor(host, { lookup, reachesClientNetwork: options.reachesClientNetwork(), upstream: up !== null })
+
+  /** A raw byte stream to host:port, wherever it lives; null when refused. */
+  const openRaw = async (host: string, port: number): Promise<Duplex | null> => {
     const up = upstream()
-    return up ? upstreamConnect(up, host, port, dialDirect) : dialDirect(host, port)
+    const to = await route(host, up)
+    if (to.kind === 'refused') return null
+    if (to.kind === 'loopback') return byteDuplexStream(await options.dialLoopback(port))
+    return up ? upstreamConnect(up, to.host, port, dialDirect) : dialDirect(to.host, port)
   }
 
   const deny = (socket: Duplex, status = '407 Proxy Authentication Required') => {
     socket.end(`HTTP/1.1 ${status}\r\nProxy-Authenticate: Basic realm="cate"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`)
+  }
+  const refuse = (socket: Duplex) => {
+    socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
   }
 
   // CONNECT and upgrade sockets leave the http server's bookkeeping.
@@ -215,8 +298,13 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
       upstreamRes.pipe(res)
     }
     try {
-      const loopback = isLoopbackHostname(url.hostname)
-      const up = loopback ? null : upstream()
+      const configured = upstream()
+      const to = await route(url.hostname, configured)
+      if (to.kind === 'refused') {
+        res.writeHead(403).end()
+        return
+      }
+      const up = to.kind === 'loopback' ? null : configured
       let request: http.ClientRequest
       if (up) {
         request = http.request({
@@ -224,7 +312,7 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
           headers: { ...headers, ...(up.authorization ? { 'proxy-authorization': up.authorization } : {}) },
         }, onResponse)
       } else {
-        const stream = loopback ? byteDuplexStream(await options.dialLoopback(port)) : await dialDirect(url.hostname, port)
+        const stream = to.kind === 'loopback' ? byteDuplexStream(await options.dialLoopback(port)) : await dialDirect(to.host, port)
         request = http.request({
           // No agent: with `agent: false` Node ignores createConnection.
           method: req.method, path: url.pathname + url.search, headers,
@@ -247,7 +335,7 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
     if (!authorized(req)) return deny(socket)
     const target = parseAuthority(req.url ?? '')
     if (!target) return deny(socket, '400 Bad Request')
-    let stream: Duplex
+    let stream: Duplex | null
     try {
       stream = await openRaw(target.host, target.port)
     } catch (error) {
@@ -255,6 +343,7 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
       socket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
       return
     }
+    if (!stream) return refuse(socket)
     socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
     if (head.length > 0) stream.write(head)
     splice(socket, stream)
@@ -265,13 +354,14 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
     let url: URL
     try { url = new URL(req.url ?? '') } catch { return deny(socket, '400 Bad Request') }
     const port = Number(url.port || (url.protocol === 'https:' || url.protocol === 'wss:' ? 443 : 80))
-    let stream: Duplex
+    let stream: Duplex | null
     try {
       stream = await openRaw(url.hostname, port)
     } catch {
       socket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
       return
     }
+    if (!stream) return refuse(socket)
     stream.write(upgradeHead(req, url.pathname + url.search))
     if (head.length > 0) stream.write(head)
     splice(socket, stream)

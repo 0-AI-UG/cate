@@ -18,15 +18,16 @@ import { decodePairingUri, pairingCapability, parsePairingCode } from '../pairin
 import { encodeBase64, pushCapability } from '../push/contract'
 import { openPushMessage } from '../../test/push'
 import { KnownRuntimes, PairingError } from '../pairing/client'
-import type { IceServer, PeerConnectionFactory } from '../transports/contract'
+import type { IceServer, PeerConnectionFactory, PeerConnectionLike } from '../transports/contract'
 import { openSecureConnection } from '../transports/client'
 import { dialLocal, loadNodePeerConnection, nodeWebSocketFactory } from '../transports/node'
 import { runtimeCapability } from '../daemon/contract'
 import { serveWorkspace, type Daemon } from '../daemon/entry'
 import { CateConnectError, CONNECTION_FAILED } from './contract'
-import { dialCateConnect, lookupRuntime } from './client'
+import { dialCateConnect } from './client'
 import { startConnectRegistration, type ConnectRegistration, type RegistrationState } from './runtime'
 import { startConnectStandIn, type ConnectStandIn } from './testing/standIn'
+import { seedWorkspaceSettings } from '../../test/workspaceSettings'
 
 let createPeer: PeerConnectionFactory
 let tmp: string
@@ -63,10 +64,10 @@ async function daemonOn(service: ConnectStandIn, name = 'w') {
   const root = path.join(tmp, name)
   fs.mkdirSync(root, { recursive: true })
   fs.mkdirSync(path.join(tmp, 'h'), { recursive: true })
+  await seedWorkspaceSettings(root, path.join(tmp, 'h'), { runtimeNetwork: 'cateConnect' })
   const result = await serveWorkspace({
     root,
     home: path.join(tmp, 'h'),
-    network: 'cateConnect',
     lifecycle: createLifecycleBus(),
     log: createLogger('test'),
     lan: { host: '127.0.0.1', port: 0, advertise: false, addresses: () => [] },
@@ -102,7 +103,7 @@ async function addDevice(daemon: Daemon) {
   clients.push(desk)
   await desk.attach(framePortOver(await dialLocal(daemon.endpoint), 'stream'))
   const pairing = createCapabilityProxy(desk, pairingCapability)
-  return { pairing, created: await pairing.createSecret({ mode: 'cateConnect' }) }
+  return { pairing, created: await pairing.createSecret({ mode: 'cateConnect', acknowledged: true }) }
 }
 
 const dial = (service: ConnectStandIn, runtimeId: string, timeoutMs = 10_000) =>
@@ -112,8 +113,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
   it('pairs and calls runtime.info over a WebRTC data channel, then reconnects by key', async () => {
     const service = await standIn()
     const daemon = await daemonOn(service)
-    expect(await lookupRuntime({ url: service.url, runtimeId: daemon.networkId, webSocket: nodeWebSocketFactory }))
-      .toEqual({ online: true, iceServers: [] })
+    expect(daemon.network.registration()!.state()).toEqual({ kind: 'registered' })
 
     const { created } = await addDevice(daemon)
     const payload = decodePairingUri(created.uri)
@@ -169,8 +169,6 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     const again = await daemonOn(service)
     expect(again.network.registration()!.state()).toEqual({ kind: 'registered' })
     expect(again.networkId).not.toBe(first.networkId)
-    expect(await lookupRuntime({ url: service.url, runtimeId: again.networkId, webSocket: nodeWebSocketFactory }))
-      .toEqual({ online: true, iceServers: [] })
   }, 30_000)
 
   it('hands both sides the ICE servers of the session, and logs its path and bytes', async () => {
@@ -225,6 +223,35 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     expect(error).toBeInstanceOf(CateConnectError)
     expect(error).toMatchObject({ code: 'no-path', message: CONNECTION_FAILED })
     await expect(dial(service, 'offlineofflineof')).rejects.toMatchObject({ code: 'offline' })
+  }, 20_000)
+
+  it('keeps at most 8 sessions in WebRTC setup and ignores more until one settles', async () => {
+    const service = await standIn()
+    const runtimeKeys = generateKeyPair()
+    // Peer connections that never get anywhere: each session times out.
+    let created = 0
+    const never = () => new Promise<never>(() => {})
+    const stalled = (): PeerConnectionLike => ({
+      connectionState: 'new', localDescription: null, onicecandidate: null, ondatachannel: null, onconnectionstatechange: null,
+      createDataChannel: never as never, createOffer: never, createAnswer: never,
+      setLocalDescription: never, setRemoteDescription: never, addIceCandidate: never, close: () => {},
+    })
+    const flooded = startConnectRegistration({
+      url: service.url,
+      runtimeKeys,
+      webSocket: nodeWebSocketFactory,
+      peerConnection: async () => () => { created++; return stalled() },
+      onConnection: () => {},
+      sessionTimeoutMs: 1_000,
+    })
+    registrations.push(flooded)
+    await registered(flooded)
+    const runtimeId = networkIdOf(runtimeKeys.publicKey)
+    await Promise.allSettled(Array.from({ length: 10 }, () => dial(service, runtimeId, 1_500)))
+    expect(created).toBe(8)
+    // The timed-out sessions gave their places back.
+    await dial(service, runtimeId, 1_500).catch(() => {})
+    expect(created).toBe(9)
   }, 20_000)
 
   describe('through a man in the middle', () => {

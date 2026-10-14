@@ -1,8 +1,10 @@
 // Undo (section 13.6). The inverse of an op is computed against the document
 // the op applied to. It names the old ids again (a removed stack comes back
 // under its own id) so a later undo of the undo still lines up. When the
-// inverse is sent later, `applicable` drops the parts that no longer apply.
+// inverse is sent later, `applicable` drops the parts that no longer apply:
+// what is gone, and what someone changed since the op set it.
 
+import { jsonEqual } from '@kernel/state/contract'
 import { applyOp } from './apply'
 import { removalSet } from './apply'
 import {
@@ -42,16 +44,76 @@ export function invertOp(before: Doc, op: DocOp | DocChange | DocBatch, newId: (
 }
 
 /** The changes that still apply to `doc`, in order, each tried on the result
- *  of the ones kept before it. */
-export function applicable(doc: Doc, changes: readonly DocChange[]): DocChange[] {
+ *  of the ones kept before it. With `after`, the document the inverted op
+ *  left, a value the op set that `doc` no longer holds (someone changed it
+ *  since) is left as it is: that field, rect or ratio is dropped, and a
+ *  replaced record that changed since is not put back. */
+export function applicable(doc: Doc, changes: readonly DocChange[], after?: Doc): DocChange[] {
   const kept: DocChange[] = []
-  for (const change of changes) {
+  const now = doc
+  for (const original of changes) {
+    const change = after ? unchangedPart(now, after, original) : original
+    if (!change) continue
     const result = applyOp(doc, change)
     if (result.error) continue
     kept.push(change)
     doc = result.doc
   }
   return kept
+}
+
+/** The part of `change` (an inverse) whose target `now` still holds as the
+ *  op left it in `after`, or null when nothing is left. */
+function unchangedPart(now: Doc, after: Doc, change: DocChange): DocChange | null {
+  switch (change.kind) {
+    case 'replacePanel':
+      return jsonEqual(now.panels[change.record.id], after.panels[change.record.id]) ? change : null
+    case 'updatePanel': {
+      const a = after.panels[change.id]
+      const n = now.panels[change.id]
+      if (!a || !n) return change
+      const patch: PanelPatch = {}
+      if (change.patch.title !== undefined && n.title === a.title) patch.title = change.patch.title
+      if (change.patch.worktreeId !== undefined && (n.worktreeId ?? null) === (a.worktreeId ?? null)) patch.worktreeId = change.patch.worktreeId
+      if (change.patch.fields) {
+        const fields = Object.entries(change.patch.fields).filter(([key]) => jsonEqual(n.fields[key] ?? null, a.fields[key] ?? null))
+        if (fields.length) patch.fields = Object.fromEntries(fields)
+      }
+      return Object.keys(patch).length ? { ...change, patch } : null
+    }
+    case 'updateRelation': {
+      const a = after.relations[change.id]
+      const n = now.relations[change.id]
+      if (!a || !n) return change
+      const patch = Object.fromEntries(Object.entries(change.patch).filter(([key]) =>
+        jsonEqual(n[key as keyof RelationPatch] ?? null, a[key as keyof RelationPatch] ?? null)))
+      return Object.keys(patch).length ? { ...change, patch } : null
+    }
+    case 'setNodeRects': {
+      const a = after.canvases[change.canvasId]?.nodes
+      const n = now.canvases[change.canvasId]?.nodes
+      if (!a || !n) return change
+      const rects = change.rects.filter(({ nodeId }) => !a[nodeId] || !n[nodeId] || jsonEqual(n[nodeId].rect, a[nodeId].rect))
+      return rects.length ? { ...change, rects } : null
+    }
+    case 'setSplitRatio': {
+      const a = splitRatios(after, change.splitId)
+      const n = splitRatios(now, change.splitId)
+      return !a || !n || jsonEqual(n, a) ? change : null
+    }
+    case 'setWorktree':
+    case 'removeWorktree': {
+      const id = change.kind === 'setWorktree' ? change.worktree.id : change.id
+      return jsonEqual(now.worktrees[id], after.worktrees[id]) ? change : null
+    }
+    default:
+      return change
+  }
+}
+
+function splitRatios(doc: Doc, splitId: string): number[] | undefined {
+  const ref = docIndex(doc).splits.get(splitId)
+  return ref && findSplit(dockOf(doc, ref), splitId)?.ratios
 }
 
 function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => string): DocChange[] {

@@ -153,8 +153,7 @@ private struct TerminalScreen: UIViewRepresentable {
         }
 
         func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-            guard let url = URL(string: link), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
-            UIApplication.shared.open(url)
+            core?.openTerminalLink(terminalId, uri: link)
         }
 
         func clipboardCopy(source: TerminalView, content: Data) {

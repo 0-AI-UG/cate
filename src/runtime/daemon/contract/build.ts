@@ -1,6 +1,7 @@
 // The build of this bundle (scripts/build-id.mjs): the version plus a hash of
-// the sources. The daemon sends it in `hello`; a client refuses a runtime of
-// another build. Unset outside a bundle (tests).
+// the sources. The daemon sends it in `hello`; a runtime of another build of
+// the same protocol connects as `stale` (architecture 7.10). Unset outside a
+// bundle (tests).
 
 declare const __CATE_BUILD__: string | undefined
 

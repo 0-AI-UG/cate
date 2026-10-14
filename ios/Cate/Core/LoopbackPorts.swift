@@ -5,7 +5,9 @@
 // (IPv4 and IPv6) and each connection becomes a stream to that port on the
 // runtime's machine, through the workspace connection (`stream.*`). URLs are
 // never rewritten, so origins and cookies behave as on the runtime's machine.
-// The workspace that asked last owns a port.
+// The workspace that asked last owns a port, and the port closes when that
+// workspace closes or disconnects. While a port listens, other apps on this
+// phone can reach it too.
 
 import Foundation
 import Network
@@ -22,7 +24,18 @@ final class LoopbackPorts {
         let forward = forwards[port] ?? Forward(port: port, nwPort: nwPort, core: core)
         forwards[port] = forward
         forward.owner = workspaceId
+        // Listens again where a listener failed before.
+        forward.listen()
         await forward.ready()
+    }
+
+    /// Closes the ports whose owner is no longer connected (closed,
+    /// disconnected or forgotten).
+    func keep(connected: Set<String>) {
+        for (port, forward) in forwards where !connected.contains(forward.owner) {
+            forward.close()
+            forwards[port] = nil
+        }
     }
 }
 
@@ -31,21 +44,30 @@ final class LoopbackPorts {
 private final class Forward {
     var owner = ""
     private let port: Int
+    private let nwPort: NWEndpoint.Port
     private weak var core: CoreHost?
-    private var listeners: [NWListener] = []
+    /// The live listeners by host; a failed one is dropped, so `listen`
+    /// tries that host again.
+    private var listeners: [String: NWListener] = [:]
     private var pending = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var pipes: Set<Pipe> = []
 
     init(port: Int, nwPort: NWEndpoint.Port, core: CoreHost) {
         self.port = port
+        self.nwPort = nwPort
         self.core = core
-        for host in ["127.0.0.1", "::1"] {
+    }
+
+    /// Starts a listener on each loopback host that has none.
+    func listen() {
+        for host in ["127.0.0.1", "::1"] where listeners[host] == nil {
             let parameters = NWParameters.tcp
             parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: nwPort)
             guard let listener = try? NWListener(using: parameters) else { continue }
             pending += 1
-            listeners.append(listener)
+            listeners[host] = listener
+            let port = port
             listener.newConnectionHandler = { [weak self] connection in
                 MainActor.assumeIsolated { self?.accept(connection) }
             }
@@ -57,6 +79,9 @@ private final class Forward {
                     case .failed(let error):
                         print("loopback \(host):\(port) not forwarded: \(error)")
                         listener?.cancel()
+                        if let self, let listener, self.listeners[host] === listener {
+                            self.listeners[host] = nil
+                        }
                         self?.settled()
                     default:
                         break
@@ -66,6 +91,17 @@ private final class Forward {
             // The listeners run on the main queue.
             listener.start(queue: .main)
         }
+    }
+
+    /// Stops listening and ends the connections it accepted.
+    func close() {
+        for listener in listeners.values { listener.cancel() }
+        listeners.removeAll()
+        for pipe in pipes { pipe.finish() }
+        pipes.removeAll()
+        pending = 0
+        for waiter in waiters { waiter.resume() }
+        waiters.removeAll()
     }
 
     func ready() async {
@@ -177,7 +213,7 @@ private final class Pipe: Hashable {
         })
     }
 
-    private func finish() {
+    func finish() {
         guard !finished else { return }
         finished = true
         if opened { core?.closeStream(streamId) }

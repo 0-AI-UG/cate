@@ -16,6 +16,7 @@ import { placeholderName } from './naming'
 
 export interface PairingTarget {
   runtimeId: string
+  secretId: string
   secret: Uint8Array
   /** Only from a scanned link. */
   fingerprint?: string
@@ -28,10 +29,10 @@ export function parsePairingInput(text: string): PairingTarget {
   const input = text.trim()
   if (input.startsWith('cate://')) {
     const payload = decodePairingUri(input)
-    return { runtimeId: payload.runtimeId, secret: payload.secret, fingerprint: payload.fingerprint, endpoints: pairingEndpoints(payload.addresses, payload.mode) }
+    return { runtimeId: payload.runtimeId, secretId: payload.secretId, secret: payload.secret, fingerprint: payload.fingerprint, endpoints: pairingEndpoints(payload.addresses, payload.mode) }
   }
   const code = parsePairingCode(input)
-  return { runtimeId: code.runtimeId, secret: code.secret, endpoints: [] }
+  return { runtimeId: code.runtimeId, secretId: code.secretId, secret: code.secret, endpoints: [] }
 }
 
 /** A message for a failed join. */

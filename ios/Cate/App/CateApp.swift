@@ -35,6 +35,10 @@ struct RootView: View {
                 .agentDestinations()
         }
         .environment(\.joinWorkspace) { joining = JoinRequest(link: nil) }
+        // Every screen goes on this one path: a screen shown apart from it
+        // (`navigationDestination(isPresented:)`) is dropped when the path
+        // changes, as a chat opened from it does.
+        .environment(\.navigate) { path.append($0) }
         .sheet(item: $joining) { request in
             JoinView(link: request.link) { workspaceId in
                 joining = nil

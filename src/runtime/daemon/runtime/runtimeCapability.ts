@@ -1,6 +1,6 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CapabilityImpl, RpcServer } from '@kernel/rpc/runtime'
-import { buildVersion, isBuildId, type RuntimeStatus, type RuntimeStopReason, type RuntimeUpdateProgress, type runtimeCapability } from '../contract'
+import { buildVersion, compareSemver, isBuildId, type RuntimeStatus, type RuntimeStopReason, type RuntimeUpdateProgress, type runtimeCapability } from '../contract'
 import type { NetworkEndpoint } from '@runtime/transports/contract'
 import type { PerfSampler } from './perf'
 
@@ -51,6 +51,10 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
     async update({ version, build, ifIdle }, ctx) {
       if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(-[\w.-]+)?$/.test(version)) {
         throw new RpcError('rejected', `invalid version ${String(version)}`)
+      }
+      // Never back to an older release (another device may need this one).
+      if (compareSemver(version, deps.version) < 0) {
+        throw new RpcError('rejected', `${version} is older than the running ${deps.version}`)
       }
       if (build !== undefined && (typeof build !== 'string' || !isBuildId(build) || buildVersion(build) !== version)) {
         throw new RpcError('rejected', `invalid build ${String(build)} for version ${version}`)

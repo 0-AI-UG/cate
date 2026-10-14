@@ -25,6 +25,8 @@ export interface JsonStateFileOptions<T> {
   /** File mode, e.g. 0o600 for secrets (the directory is then 0o700). */
   mode?: number
   debounceMs?: number
+  /** A value was written to the file. */
+  onWritten?: (value: T) => void
 }
 
 export interface JsonStateFile<T> {
@@ -60,6 +62,7 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
     defaults,
     normalize,
     debounceMs: options.debounceMs,
+    onWritten: options.onWritten,
     backend: {
       readSync: () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : null),
       read: async () => {

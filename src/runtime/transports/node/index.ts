@@ -4,6 +4,7 @@ export {
   discoverRuntime,
   lanAddresses,
   nodeWebSocketFactory,
+  sameNetworkProblem,
   type Advertisement,
   type DiscoverOptions,
 } from './sameNetwork'

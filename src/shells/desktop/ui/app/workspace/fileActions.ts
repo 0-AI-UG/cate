@@ -4,26 +4,17 @@
 
 import type { PanelPlacementOptions } from '@panels/framework/contract'
 import { tryRuntimeFor } from '@kernel/rpc/client'
-import { documentStoreFor } from '@client/document'
-import { createPanel, focusedPanelId, panelDefinition, panelTypeOpening, revealPanel } from '@client/host'
+import { createPanel, createPanelFrom, focusedPanelId, panelShowingFile, panelTypeOpening, revealPanel } from '@client/host'
 import { activeCanvasId, createPanelOnCanvas } from '../../client/layout/canvas'
 import type { FileLineLocation } from '@workspace/files/contract'
 import type { FileViewsHost } from '../../workspace/files'
 
-/** Files open in the type that `opens` files; one already working on `path`
- *  is reused. */
-const panelShowing = (workspaceId: string, type: string, path: string): string | null => {
-  const doc = documentStoreFor(workspaceId)?.getSnapshot()
-  const checkout = panelDefinition(type)?.checkoutPath
-  if (!doc || !checkout) return null
-  return Object.values(doc.panels).find((p) => p.type === type && checkout(p) === path)?.id ?? null
-}
-
-/** Opens one file; returns the editor panel. */
+/** Opens one file in the type that `opens` files, reusing one already
+ *  working on `path`; returns the editor panel. */
 export function openFile(workspaceId: string, path: string, placement: PanelPlacementOptions & { canvas?: boolean } = {}): string | null {
   const type = panelTypeOpening('file')
   if (!type) return null
-  const existing = panelShowing(workspaceId, type, path)
+  const existing = panelShowingFile(workspaceId, type, path)
   if (existing) {
     void revealPanel(workspaceId, existing)
     return existing
@@ -53,9 +44,13 @@ export function revealLine(workspaceId: string, panelId: string, path: string, l
   void runtime?.session.op({ panelId, op: { kind: 'openFile', path, line, column } }).catch(() => {})
 }
 
-export function openTerminal(workspaceId: string, cwd: string, near?: string): string | null {
+/** Opens a terminal in `cwd`; one a panel asked for goes through that
+ *  panel's placement flow. */
+export function openTerminal(workspaceId: string, cwd: string, fromPanelId?: string): void {
   const type = panelTypeOpening('directory')
-  return type ? createPanel(workspaceId, type, { cwd, near: near ?? focusedPanelId(workspaceId) ?? undefined }) : null
+  if (!type) return
+  if (fromPanelId) void createPanelFrom(workspaceId, fromPanelId, type, { cwd })
+  else createPanel(workspaceId, type, { cwd, near: focusedPanelId(workspaceId) ?? undefined })
 }
 
 export const fileViewsHost: FileViewsHost = {

@@ -7,6 +7,10 @@ export interface MethodOptions {
   /** The call changes something: the client attaches an opId so a resend is
    *  applied once. */
   mutates?: boolean
+  /** The method dedupes resends itself across runtime restarts (document ops,
+   *  whose opIds are persisted), so a call in flight when the runtime
+   *  restarted is resent instead of failing with `interrupted`. */
+  idempotent?: boolean
   /** Default deadline for this method; 0 disables it. */
   timeoutMs?: number
   /** Callable across protocol majors (`runtime.update`, `runtime.info`), so an
@@ -23,6 +27,7 @@ export interface StreamDeclOptions {
 export interface MethodSpec<P = unknown, R = unknown> {
   readonly kind: 'method'
   readonly mutates: boolean
+  readonly idempotent: boolean
   readonly timeoutMs?: number
   readonly crossMajor: boolean
   readonly __types?: { params: P; result: R }
@@ -39,6 +44,7 @@ export function method<P = void, R = void>(opts: MethodOptions = {}): MethodSpec
   return {
     kind: 'method',
     mutates: opts.mutates === true,
+    idempotent: opts.idempotent === true,
     crossMajor: opts.crossMajor === true,
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
   }
@@ -67,6 +73,9 @@ export interface Capability<
   readonly name: N
   readonly methods: M
   readonly streams: S
+  /** A caller (a hello naming a cate token, not a client) may use it. Every
+   *  other capability serves clients only. */
+  readonly callers: boolean
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,7 +89,7 @@ export function defineCapability<
   M extends MethodSpecs = {},
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   S extends StreamSpecs = {},
->(name: N, def: { methods?: M; streams?: S }): Capability<N, M, S> {
+>(name: N, def: { methods?: M; streams?: S; callers?: boolean }): Capability<N, M, S> {
   if (!NAME_RE.test(name)) throw new Error(`Invalid capability name "${name}"`)
   const methods = (def.methods ?? {}) as M
   const streams = (def.streams ?? {}) as S
@@ -90,7 +99,7 @@ export function defineCapability<
   for (const key of Object.keys(streams)) {
     if (key in methods) throw new Error(`"${name}.${key}" is declared as both method and stream`)
   }
-  return Object.freeze({ name, methods: Object.freeze(methods), streams: Object.freeze(streams) })
+  return Object.freeze({ name, methods: Object.freeze(methods), streams: Object.freeze(streams), callers: def.callers === true })
 }
 
 // ---- Derived types ----------------------------------------------------------

@@ -3,8 +3,9 @@
 // starts, a removed one is disposed (its state file set aside under
 // `sessions/removed/` for a day, so undoing the removal brings the state
 // back), a replaced one is swapped under the same id, and a changed record is
-// passed on. Ops for a panel run one after another and fail with `gone` once
-// it is removed.
+// passed on. Ops for a panel run one after another, with its exclusive `cate`
+// API calls (`control` ones) among them, and fail with `gone` once it is
+// removed.
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -180,10 +181,15 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
       return entryOf(panelId).session.attach(subscriber)
     },
     async handleApi(panelId, method, args, ctx) {
-      const entry = entryOf(panelId)
-      await entry.started
-      if (!entry.session.handleApi) throw new RpcError('unsupported', `${ctx.method} is not handled by this panel`)
-      return entry.session.handleApi(method, args, ctx)
+      const run = async () => {
+        const entry = entryOf(panelId)
+        await entry.started
+        if (!entry.session.handleApi) throw new RpcError('unsupported', `${ctx.method} is not handled by this panel`)
+        return entry.session.handleApi(method, args, ctx)
+      }
+      if (!ctx.exclusive) return run()
+      entryOf(panelId)
+      return lock.run(panelId, run)
     },
     checkRemoval(removing, discard) {
       for (const panelId of removing) {

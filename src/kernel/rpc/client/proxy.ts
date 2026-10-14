@@ -14,7 +14,7 @@ import type { RpcClient } from './client'
 export function createCapabilityProxy<C extends AnyCapability>(client: RpcClient, cap: C): CapabilityProxy<C> {
   const proxy: Record<string, unknown> = {}
   for (const [name, spec] of Object.entries(cap.methods as MethodSpecs)) {
-    const callSpec = { mutates: spec.mutates, timeoutMs: spec.timeoutMs, crossMajor: spec.crossMajor }
+    const callSpec = { mutates: spec.mutates, idempotent: spec.idempotent, timeoutMs: spec.timeoutMs, crossMajor: spec.crossMajor }
     proxy[name] = (params?: unknown, opts?: CallOptions) => client.call(cap.name, name, params, callSpec, opts)
   }
   for (const name of Object.keys(cap.streams)) {

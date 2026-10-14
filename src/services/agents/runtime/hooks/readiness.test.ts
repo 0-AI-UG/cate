@@ -44,7 +44,7 @@ describe('agent CLI hook readiness', () => {
     ])
 
     const states = await inspectAgentCliHooks(inspect, '/repo')
-    expect(states.filter((state) => state.injected).map((state) => state.agent.id)).toEqual([
+    expect(states.filter((state) => state.folderPresent).map((state) => state.agent.id)).toEqual([
       'claude-code',
       'codex',
     ])

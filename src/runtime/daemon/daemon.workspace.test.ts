@@ -119,6 +119,8 @@ describe.skipIf(process.platform === 'win32')('daemon workspace', () => {
     const cli = await connect(endpoint, { caller: { token } })
     const cliApi = createCapabilityProxy(cli, apiCapability)
     await expect(cliApi.call({ method: 'cate.version' })).resolves.toEqual(expect.any(Number))
+    // A caller reaches only the `api` capability.
+    await expect(createCapabilityProxy(cli, workspaceCapability).getTrust()).rejects.toMatchObject({ code: 'rejected' })
     // Read access through the CLI is on by default.
     const rows = await cliApi.call({ method: 'cate.panel.list' }) as { panelId: string }[]
     expect(rows.map((row) => row.panelId)).toEqual(['term-1'])

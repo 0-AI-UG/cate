@@ -46,3 +46,45 @@ export function subscribeCanvasToolbarItems(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
+
+// --- Spawn flyouts ------------------------------------------------------------
+// A pop-over a module shows while the pointer rests on a panel type's
+// new-panel button (the agents over the terminal button).
+
+export interface SpawnFlyoutProps {
+  workspaceId: string
+  canvasId: string
+  /** The side of the button the flyout opens on. */
+  side: 'up' | 'left'
+  /** Closes the flyout (after a pick). */
+  onClose(): void
+  /** Whether it shows anything; the button's tooltip steps aside while it does. */
+  onShown(shown: boolean): void
+}
+
+export interface SpawnFlyout {
+  panelType: string
+  Component: React.ComponentType<SpawnFlyoutProps>
+}
+
+const flyouts = new Map<string, SpawnFlyout>()
+const flyoutListeners = new Set<() => void>()
+
+export function registerSpawnFlyout(flyout: SpawnFlyout): () => void {
+  flyouts.set(flyout.panelType, flyout)
+  for (const listener of [...flyoutListeners]) listener()
+  return () => {
+    if (flyouts.get(flyout.panelType) !== flyout) return
+    flyouts.delete(flyout.panelType)
+    for (const listener of [...flyoutListeners]) listener()
+  }
+}
+
+export function spawnFlyoutFor(panelType: string): SpawnFlyout | undefined {
+  return flyouts.get(panelType)
+}
+
+export function subscribeSpawnFlyouts(listener: () => void): () => void {
+  flyoutListeners.add(listener)
+  return () => { flyoutListeners.delete(listener) }
+}

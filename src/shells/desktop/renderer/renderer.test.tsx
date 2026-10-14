@@ -68,7 +68,6 @@ vi.mock('@xterm/xterm', () => ({
   },
 }))
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: class { findNext() {} findPrevious() {} clearDecorations() {} } }))
-vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 
 /** A runtime with the document and workspace capabilities over a real
  *  document service; trusted from the start. */

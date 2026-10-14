@@ -7,8 +7,10 @@
 // visible views').
 
 import type { WorkspaceConnection, SessionHandle } from '@client/connections'
+import { openLink } from '@client/host'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
 import { bindTerminal, type TerminalBinding, type XtermLike } from '@services/terminal/client'
+import { osc8Target } from '@services/terminal/contract'
 import { bytesToBase64 } from '@workspace/files/contract'
 import type { MobileBridge, MobileTerminalEvent } from '../contract'
 import type { MobileClient } from './boot'
@@ -24,6 +26,7 @@ interface OpenTerminal {
   input(data: string): void
   /** The grid the view holds changed. */
   resize(cols: number, rows: number): void
+  openLink(uri: string): void
   close(): void
 }
 
@@ -141,6 +144,10 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
         if (cols === held.cols && rows === held.rows) return
         held = { cols, rows }
         binding?.resized()
+      },
+      openLink(uri) {
+        const target = osc8Target(uri)
+        if (target) void openLink(workspaceId, target, { from: panelId, external: true }).catch(() => {})
       },
       close() {
         if (closed) return

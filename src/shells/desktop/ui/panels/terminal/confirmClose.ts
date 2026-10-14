@@ -12,8 +12,6 @@ const FIRST_SNAPSHOT_MS = 2000
 declare module '@kernel/interaction/contract' {
   interface ClientUi {
     confirmCloseTerminal(request: { count: number; processName?: string | null }): Promise<'close' | 'cancel'>
-    /** Where a clicked terminal link opens; the answer is remembered. */
-    promptLinkOpen(url: string): Promise<'canvas' | 'external' | 'cancel'>
   }
 }
 

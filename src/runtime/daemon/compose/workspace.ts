@@ -85,8 +85,6 @@ export interface WorkspaceDeps {
   secrets: ReturnType<typeof openSecretsFile>
   busy: BusyRegistry
   log: Logger
-  /** `cate serve` trusts the workspace it serves. */
-  trustOnStart: boolean
   /** Panel types; default `PANEL_RUNTIMES`. */
   panels?: readonly PanelRuntime[]
   /** Counts work toward `runtime.perf` counters. */
@@ -103,8 +101,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
 
   // ---- Workspace --------------------------------------------------------------
 
-  const trust = createTrustGate({ file: paths.trust, trustOnStart: deps.trustOnStart })
-  const files = createFilesRuntime({ root, dataPaths: paths, log: log.child('files') })
+  const trust = createTrustGate({ file: paths.trust })
+  const files = createFilesRuntime({ root, dataPaths: paths, trust, log: log.child('files') })
   const document = createDocumentService({ file: paths.document, log: log.child('document') })
   const presence = createPresence({ lifecycle: deps.lifecycle })
   const prepareCateDir = (cateDir: string) => ensureCateGitignore(path.dirname(cateDir))
@@ -225,11 +223,25 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     attended: () => presence.clients().some((client) => client.attentive),
     ...(deps.countPerf ? { countPerf: deps.countPerf } : {}),
   })
+  // A PTY's CLI token dies with its process, and every one when trust is
+  // revoked (revoking ends the processes too).
+  const ptyTokens = new Map<string, string>()
+  const revokePtyToken = (terminalId: string) => {
+    const token = ptyTokens.get(terminalId)
+    if (token === undefined) return
+    ptyTokens.delete(terminalId)
+    tokens.revoke(token)
+  }
   offs.push(terminal.registerEnvContributor(cateCliEnvContributor({
     socketPath: deps.endpoint,
-    mintToken: (panelId) => tokens.issue({ kind: 'cli', panelId }).token,
+    mintToken: (panelId, terminalId) => {
+      const { token } = tokens.issue({ kind: 'cli', panelId })
+      ptyTokens.set(terminalId, token)
+      return token
+    },
     binDir: layout.cateBin,
   })))
+  offs.push(terminal.onExit((terminalId) => revokePtyToken(terminalId)))
 
   const browserData = createBrowserDataRuntime({
     dataPaths: paths,
@@ -372,6 +384,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       return
     }
     for (const term of terminal.list()) if (term.alive) terminal.kill(term.id)
+    for (const terminalId of [...ptyTokens.keys()]) revokePtyToken(terminalId)
   }))
 
   return {

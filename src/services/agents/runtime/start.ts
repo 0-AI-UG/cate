@@ -8,7 +8,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { Point } from '@workspace/canvas/contract'
 import type { PlaceTarget } from '@workspace/document/contract'
-import { AGENT_LAUNCH, AGENTS, isAgentId, type AgentId, type AgentTypeInfo } from '../contract'
+import { AGENT_DEFS, AGENT_LAUNCH, AGENTS, isAgentId, type AgentId, type AgentTypeInfo } from '../contract'
 import type { AgentsCore } from './core'
 import { evaluateAgentCliHooks, inspectAgentCliHooks, resolveDriverAgent } from './hooks/readiness'
 
@@ -44,7 +44,8 @@ export interface AgentStartPorts {
 }
 
 export interface AgentStartArgs {
-  prompt: string
+  /** Absent: the agent's interactive session, waiting for its first prompt. */
+  prompt?: string
   agentId?: string
   title?: string
   worktreeId?: string
@@ -107,7 +108,7 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
   /** The hook-ready agent for the checkout (strict for a preference). */
   const chooseAgent = async (agentId: AgentId | undefined, cwd: string): Promise<AgentId> => {
     try {
-      const agent = await resolveDriverAgent((dir) => agents.hooks.inspectWorkspace(dir), cwd, agentId ?? '', {
+      const agent = await resolveDriverAgent((dir) => agents.hooks.inspectFolders(dir), cwd, agentId ?? '', {
         fallbackCwd: agents.root,
         hookConfig: agents.settings.agentHookInjection(),
       })
@@ -120,9 +121,9 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
   return {
     async start(callerPanelId, input) {
       agents.trust.requireTrusted()
-      const prompt = input.prompt.trim()
-      if (!prompt) fail('prompt-required')
-      if (prompt.includes('\0')) fail('invalid-prompt')
+      const prompt = input.prompt?.trim()
+      if (prompt === '') fail('prompt-required')
+      if (prompt?.includes('\0')) fail('invalid-prompt')
       if (input.agentId !== undefined && !isAgentId(input.agentId)) fail('unsupported-agent')
       if (input.worktreeId && input.newWorktree) fail('choose-worktreeId-or-newWorktree')
       const args = input as StartRequest
@@ -136,7 +137,7 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
 
       const created = args.newWorktree ? await ports.worktrees.create(args.newWorktree) : null
       const checkout = created ? { cwd: created.path, worktreeId: created.id } : existing!
-      const launch = { kind: AGENT_LAUNCH.start, params: { agentId, prompt } }
+      const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt ? { prompt } : {}) } }
       try {
         if (args.terminalPanelId) {
           // Reuse the panel, not its shell process: restarting the PTY
@@ -146,7 +147,7 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
           return { panelId: args.terminalPanelId, agentId }
         }
         const chosen = args.title?.trim()
-        const title = chosen || prompt.replace(/\s+/g, ' ').slice(0, 54)
+        const title = chosen || (prompt ? prompt.replace(/\s+/g, ' ').slice(0, 54) : AGENT_DEFS[agentId].displayName)
         const panelId = await ports.terminals.create({ ...checkout, title, ...(chosen ? { titleChosen: true } : {}), launch, placement })
         pending.set(panelId, { agentId, at: Date.now() })
         return { panelId, agentId }
@@ -158,7 +159,7 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
 
     async types() {
       agents.trust.requireTrusted()
-      const states = await inspectAgentCliHooks((dir) => agents.hooks.inspectWorkspace(dir), agents.root)
+      const states = await inspectAgentCliHooks((dir) => agents.hooks.inspectFolders(dir), agents.root)
       const config = agents.settings.agentHookInjection()
       const ready = new Set(states.filter((state) => evaluateAgentCliHooks(state, config).ready).map((state) => state.agent.id))
       return AGENTS.map((agent) => ({

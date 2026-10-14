@@ -68,8 +68,8 @@ function live(agents: AgentsCore, panelId: string): PanelAgentState {
 /** Starts an agent for a caller panel (a client: none), placing it on a
  *  canvas when asked: `cate agent start` and the agents capability. */
 export function startAgent(starter: AgentStarter, callerPanelId: string | undefined, request: AgentStartRequest) {
-  const { canvasPanelId, position, ...args } = request
-  const placement = canvasPanelId ? { near: canvasPanelId, ...(position ? { position } : {}) } : undefined
+  const { canvasPanelId, position, at, ...args } = request
+  const placement = at ? { at } : canvasPanelId ? { near: canvasPanelId, ...(position ? { position } : {}) } : undefined
   return starter.start(callerPanelId, { ...args, ...(placement ? { placement } : {}) })
 }
 

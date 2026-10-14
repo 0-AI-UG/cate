@@ -1,13 +1,16 @@
 // "Share": who can join a workspace (its network access), a one-time code
-// for the next device, and the devices that joined. Picking wider access is
+// for the next device (each one confirmed first), and the devices that joined. Picking wider access is
 // the person's consent; narrower access asks first, since it cuts devices
 // off (Runtime settings' `changeNetwork`).
 
+import { useState } from 'react'
 import { Users } from 'lucide-react'
-import { Modal, SEGMENT } from '../../kernel/interaction'
+import { Button, Modal, SEGMENT } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { useWorkspaceSetting } from '../../kernel/settings'
 import type { RuntimeNetwork } from '@runtime/daemon/contract'
+import { sameNetworkProblemMessage } from '@runtime/pairing/contract'
+import type { SameNetworkProblem } from '@runtime/transports/contract'
 import { changeNetwork } from '../../runtime/daemon'
 import { clientApp } from '../app'
 import { useUIStore } from '../state/uiStore'
@@ -31,14 +34,20 @@ function OpenShareDialog({ workspaceId }: { workspaceId: string }): JSX.Element 
   return (
     // Above Settings (z-[100001]), whose Devices page opens it too.
     <Modal onClose={close} width={520} icon={<Users size={16} />} title={`Share "${name}"`} zClassName="z-[100002]" bodyClassName="px-5 py-4 overflow-y-auto">
-      <SharePanel workspaceId={workspaceId} />
+      <SharePanel workspaceId={workspaceId} onCancel={close} />
     </Modal>
   )
 }
 
-export function SharePanel({ workspaceId }: { workspaceId: string }): JSX.Element {
+export function SharePanel({ workspaceId, onCancel }: { workspaceId: string; onCancel?: () => void }): JSX.Element {
   const network = useWorkspaceSetting(workspaceId, 'runtimeNetwork')
   const selected = ACCESS.find((option) => option.value === network)
+  // From the shown code: devices could not reach this machine on its network.
+  const [problem, setProblem] = useState<SameNetworkProblem | null>(null)
+  const choose = (value: RuntimeNetwork) => {
+    if (value === network) return
+    changeNetwork(workspaceId, network, value).catch((err: unknown) => clientUi().showError(errorMessage(err, 'Could not change who can join.')))
+  }
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
@@ -51,10 +60,7 @@ export function SharePanel({ workspaceId }: { workspaceId: string }): JSX.Elemen
                 type="button"
                 role="radio"
                 aria-checked={network === option.value}
-                onClick={() => {
-                  if (option.value === network) return
-                  changeNetwork(workspaceId, network, option.value).catch((err: unknown) => clientUi().showError(errorMessage(err, 'Could not change who can join.')))
-                }}
+                onClick={() => choose(option.value)}
                 className={SEGMENT.seg(network === option.value)}
               >
                 {option.label}
@@ -62,9 +68,14 @@ export function SharePanel({ workspaceId }: { workspaceId: string }): JSX.Elemen
             ))}
           </div>
         </div>
-        {selected && <span className="text-xs text-muted">{selected.detail}</span>}
+        {problem && network === 'sameNetwork' ? (
+          <div role="alert" className="flex items-center justify-between gap-3">
+            <span className="text-xs text-warning">{sameNetworkProblemMessage(problem)}</span>
+            <Button size="sm" variant="primary" onClick={() => choose('cateConnect')}>Use Anywhere</Button>
+          </div>
+        ) : selected && <span className="text-xs text-muted">{selected.detail}</span>}
       </div>
-      <PairingCode workspaceId={workspaceId} />
+      <PairingCode workspaceId={workspaceId} onSameNetworkProblem={setProblem} onCancel={onCancel} />
       <div className="border-t border-subtle" />
       <WorkspaceDevices workspaceId={workspaceId} />
     </div>

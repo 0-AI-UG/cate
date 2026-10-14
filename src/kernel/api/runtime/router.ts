@@ -159,7 +159,7 @@ export class ApiRouter {
         caller,
         sticky,
       })
-      const sessionCtx: ApiSessionContext = { ...ctx, panelId }
+      const sessionCtx: ApiSessionContext = { ...ctx, panelId, exclusive: method.access === 'control' && !method.concurrent }
       run = () => this.options.sessions.handleApi(panelId, method.name, args, sessionCtx)
     } else {
       const handler = this.services.get(method.method)

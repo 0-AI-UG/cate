@@ -115,6 +115,10 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       terminals.get(terminalId)?.close()
       return null
     },
+    async 'terminal.openLink'({ terminalId, uri }) {
+      terminals.get(terminalId)?.openLink(uri)
+      return null
+    },
 
     async 'panel.open'(params) {
       views.open(params)

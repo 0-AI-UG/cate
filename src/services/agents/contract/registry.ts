@@ -1,4 +1,4 @@
-// The agent registry (architecture 2, 10.4): everything Cate knows about an
+// The agent registry (architecture 2, 10.3): everything Cate knows about an
 // agent CLI is declared here or in a table keyed by AgentId. Every such table
 // is a total Record<AgentId, ...> (null where an agent has no entry), so a new
 // agent is a compile error until every table has it. Do not loosen them to
@@ -75,6 +75,9 @@ export interface AgentDef {
   sessionStore: string
   /** Shell-free argv that starts the CLI on its first prompt. */
   promptArgs: (prompt: string) => string[]
+  /** Shell-free argv that starts the CLI's interactive session without a
+   *  prompt. */
+  startArgs: readonly string[]
   /** The keys, pressed in order, that stop the CLI's turn and keep it at its
    *  prompt (verified by the live interrupt scenario). */
   interruptKeys: readonly AgentInterruptKey[]
@@ -117,6 +120,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     resume: { args: (sid) => ['--resume', sid], fromSessionStart: false },
     sessionStore: '.claude/projects',
     promptArgs: (prompt) => [prompt],
+    startArgs: [],
     interruptKeys: ['escape'],
     matchProcess: (n) => n === 'claude' || n === 'claude-code',
     promptContextHook: 'additional-context',
@@ -131,6 +135,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     resume: { args: (sid) => ['resume', sid], fromSessionStart: true },
     sessionStore: '.codex/sessions',
     promptArgs: (prompt) => [prompt],
+    startArgs: [],
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'codex',
     promptContextHook: 'additional-context',
@@ -152,6 +157,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
     sessionStore: '.cursor/chats',
     promptArgs: (prompt) => [prompt],
+    startArgs: [],
     interruptKeys: ['escape'],
     matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
     promptContextHook: null,
@@ -171,6 +177,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     resume: { args: (sid) => ['--resume', sid], fromSessionStart: true },
     sessionStore: '.grok/sessions',
     promptArgs: (prompt) => [prompt],
+    startArgs: [],
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'grok' || /^grok-\d/.test(n),
     promptContextHook: null,
@@ -187,6 +194,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     // Seed the persistent TUI instead of the one-shot `run` command so the
     // agent can take follow-up prompts on the same PTY.
     promptArgs: (prompt) => ['--prompt', prompt],
+    startArgs: [],
     interruptKeys: ['escape', 'escape'],
     matchProcess: (n) => n === 'opencode',
     promptContextHook: 'endpoint',
@@ -209,6 +217,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     sessionStore: '.hermes/state.db',
     // Hermes >=0.21 keeps `chat -q` interactive when attached to a PTY.
     promptArgs: (prompt) => ['chat', '-q', prompt],
+    startArgs: ['chat'],
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
     hookProcess: 'self',
@@ -226,6 +235,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     resume: { args: (sid) => ['chat', '--v3', '--resume-id', sid], fromSessionStart: false },
     sessionStore: '.kiro/sessions',
     promptArgs: (prompt) => ['chat', '--v3', prompt],
+    startArgs: ['chat', '--v3'],
     interruptKeys: ['ctrl-c'],
     matchProcess: (n) => n === 'kiro-cli',
     promptContextHook: 'plain-text',

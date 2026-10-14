@@ -1,15 +1,13 @@
 // The daemon program, bundled as `runtime.cjs`:
-//   node runtime.cjs serve <root> [--detach] [--network sameNetwork|cateConnect] [--json]
+//   node runtime.cjs serve <root> [--detach]
 //   node runtime.cjs bridge <root>
 // Without `--detach` it serves the workspace in this process. With it, it
 // starts a detached copy of itself (stdio to `<data>/logs/`) and returns once
 // that copy's socket answers, or at once when a runtime already serves root.
-// `--network` is `cate serve`: network access on, the workspace trusted, and
-// a pairing QR code and code printed for the first device (one JSON line
-// with `--json`). `bridge` starts the runtime the same way when nothing
-// answers, then carries its local socket over stdin and stdout: a client that
-// can run a command on this machine (ssh, wsl.exe) reaches the runtime as a
-// local client does (7.5).
+// `bridge` starts the runtime the same way when nothing answers, then carries
+// its local socket over stdin and stdout: a client that can run a command on
+// this machine (ssh, wsl.exe, `cate serve`) reaches the runtime as a local
+// client does (7.5).
 
 import './loadPty'
 import os from 'node:os'
@@ -20,9 +18,8 @@ import { runtimeIdFromCanonicalRoot } from '@runtime/data/contract'
 import { canonicalRoot, cateHome, ensureLocalEndpoint, workspaceDataDir } from '@runtime/data/node'
 import { ensureDataDir } from '@runtime/data/runtime'
 import { dialLocal, dialLocalRetrying } from '@runtime/transports/node'
-import { pairOverLocal, printPairing } from './compose/pairOverLocal'
 import type { ByteDuplex } from '@kernel/rpc/contract'
-import { BRIDGE_READY, installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_RELEASE, RUNTIME_VERSION, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
+import { BRIDGE_READY, installDirFromExecPath, installLayout, parseDaemonArgv, RUNTIME_BUILD, RUNTIME_RELEASE, START_LOCAL_BUDGET_MS, type ServeArgs } from './contract'
 import { prepareDaemonProcess, serveWorkspace } from './entry'
 import { pruneRuntimeInstalls, releaseRuntimeInUse, spawnDetachedDaemon } from './node'
 
@@ -53,11 +50,8 @@ async function connectOrStart(rootArg: string): Promise<{ root: string; endpoint
 
 async function detach(args: ServeArgs): Promise<number> {
   try {
-    const { root, endpoint, duplex } = await connectOrStart(args.root)
+    const { duplex } = await connectOrStart(args.root)
     duplex.close()
-    // `cate serve` turns network on and shows a code through the socket, so
-    // only this process prints one.
-    if (args.network) await pairOverLocal(endpoint, args.network, root, args.json)
     return 0
   } catch (err) {
     process.stderr.write(`cate runtime: ${(err as Error).message}\n`)
@@ -90,7 +84,7 @@ async function bridge(rootArg: string): Promise<number> {
 async function serve(args: ServeArgs): Promise<number> {
   const root = await canonicalRoot(args.root)
   const dataDir = workspaceDataDir(runtimeIdFromCanonicalRoot(root), os.homedir())
-  // Warnings go to the terminal of a `cate serve` in the foreground; a
+  // Warnings go to the terminal of a daemon run in the foreground; a
   // detached daemon's stdout is daemon.out.log, which they would only grow
   // (they are in the rotated daemon.log).
   const file = createFileSink({ file: path.join(dataDir, 'logs', 'daemon.log') })
@@ -98,7 +92,7 @@ async function serve(args: ServeArgs): Promise<number> {
 
   // The login shell environment is captured once the socket is bound, so a
   // slow shell profile does not hold up the client's start.
-  const result = await serveWorkspace({ root, network: args.network, log, prepareProcess: prepareDaemonProcess })
+  const result = await serveWorkspace({ root, log, prepareProcess: prepareDaemonProcess })
   if (result.kind === 'nested') {
     log.error(result.message)
     await result.closed
@@ -106,11 +100,9 @@ async function serve(args: ServeArgs): Promise<number> {
   }
   if (result.kind === 'running') {
     log.info('%s is already served on %s', root, result.endpoint)
-    if (args.network) await pairOverLocal(result.endpoint, args.network, root, args.json)
     return 0
   }
   const { daemon } = result
-  if (args.network) await printPairing(root, daemon.pairing.createSecret(args.network), args.json)
   // Installs nothing uses go (an update leaves the previous one behind).
   // Only a release build from its own install: a checkout's leaves them alone.
   if (RUNTIME_RELEASE && RUNTIME_BUILD && path.basename(installDirFromExecPath(process.execPath, process.platform)) === RUNTIME_BUILD) {

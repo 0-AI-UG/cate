@@ -12,6 +12,7 @@ export function processCapabilityImpl(service: TerminalService): CapabilityImpl<
     cwd: ({ id }) => service.cwd(id),
     read: ({ id, lines }) => service.read(id, lines),
     snapshot: ({ id }) => service.snapshot(id),
+    links: (params) => service.links(params),
     list: () => service.list(),
     attach: (params, sink) => service.attach(params, sink),
     statuses: (_params, sink) => {

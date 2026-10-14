@@ -29,7 +29,7 @@ import {
   PairingFormatError,
 } from './contract'
 import { KnownRuntimes, pairWithRuntime, PairingError } from './client'
-import { openDevicesFile, PairingService, type DevicesFile, type DevicesStore } from './runtime'
+import { openDevicesFile, pairingCapabilityImpl, PairingService, type DevicesFile, type DevicesStore } from './runtime'
 
 const RUNTIME_KEYS = generateKeyPair()
 const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
@@ -60,9 +60,11 @@ function setup(options: { now?: () => number } = {}) {
   return { runtimeKeys, service, deviceStore, pins, store }
 }
 
+interface Secret { secretId: string; secret: Uint8Array }
+
 async function attempt(
   ctx: ReturnType<typeof setup>,
-  secret: Uint8Array,
+  { secretId, secret }: Secret,
   deviceKeys: KeyPair = generateKeyPair(),
   fp?: string,
   runtimeId = RUNTIME_ID,
@@ -72,15 +74,16 @@ async function attempt(
   const paired = pairWithRuntime(a, {
     deviceKeys,
     deviceName: 'Anton’s phone',
-    target: { runtimeId, secret, fingerprint: fp },
+    target: { runtimeId, secretId, secret, fingerprint: fp },
     pins: ctx.pins,
   })
   const [client, runtime] = await Promise.allSettled([paired, accepted])
   return { client, runtime, deviceKeys }
 }
 
-function secretOf(uri: string): Uint8Array {
-  return decodePairingUri(uri).secret
+function secretOf(uri: string): Secret {
+  const { secretId, secret } = decodePairingUri(uri)
+  return { secretId, secret }
 }
 
 describe('pairing payload and code', () => {
@@ -90,6 +93,7 @@ describe('pairing payload and code', () => {
     const payload = {
       runtimeId: RUNTIME_ID,
       fingerprint: fingerprint(generateKeyPair().publicKey),
+      secretId: 'ab2c',
       secret,
       mode: 'cateConnect' as const,
       addresses: ['192.168.1.4:4100', '[fe80::1]:4100'],
@@ -103,14 +107,16 @@ describe('pairing payload and code', () => {
   it('rejects malformed payloads', () => {
     expect(() => decodePairingUri('https://x')).toThrow(PairingFormatError)
     expect(() => decodePairingUri('cate://pair?r=short&k=x&s=y&m=sameNetwork')).toThrow(PairingFormatError)
+    const uri = encodePairingUri({ runtimeId: RUNTIME_ID, fingerprint: fingerprint(RUNTIME_KEYS.publicKey), secretId: 'ab2c', secret, mode: 'sameNetwork', addresses: [] })
+    expect(() => decodePairingUri(uri.replace('&i=ab2c', ''))).toThrow(PairingFormatError)
   })
 
-  it('round trips the 32-character code in groups of four', () => {
-    const code = formatPairingCode({ runtimeId: RUNTIME_ID, secret })
-    expect(code).toMatch(/^([a-z2-7]{4}-){7}[a-z2-7]{4}$/)
-    expect(code.replace(/-/g, '')).toHaveLength(32)
-    expect(parsePairingCode(code)).toEqual({ runtimeId: RUNTIME_ID, secret })
-    expect(parsePairingCode(code.toUpperCase().replace(/-/g, ' '))).toEqual({ runtimeId: RUNTIME_ID, secret })
+  it('round trips the 36-character code in groups of four', () => {
+    const code = formatPairingCode({ runtimeId: RUNTIME_ID, secretId: 'ab2c', secret })
+    expect(code).toMatch(/^([a-z2-7]{4}-){8}[a-z2-7]{4}$/)
+    expect(code.replace(/-/g, '')).toHaveLength(36)
+    expect(parsePairingCode(code)).toEqual({ runtimeId: RUNTIME_ID, secretId: 'ab2c', secret })
+    expect(parsePairingCode(code.toUpperCase().replace(/-/g, ' '))).toEqual({ runtimeId: RUNTIME_ID, secretId: 'ab2c', secret })
     expect(() => parsePairingCode('abcd')).toThrow(PairingFormatError)
   })
 
@@ -120,6 +126,15 @@ describe('pairing payload and code', () => {
     expect(verifyRuntimeProof(secret, hash, runtimeProof(secret, hash))).toBe(true)
     expect(verifyRuntimeProof(secret, hash, clientProof(secret, hash))).toBe(false)
     expect(verifyClientProof(secret, new Uint8Array(64), clientProof(secret, hash))).toBe(false)
+  })
+})
+
+describe('a same-network code on a machine devices cannot reach', () => {
+  it('says so with a same-network code only', () => {
+    const service = new PairingService({ runtimePublicKey: RUNTIME_KEYS.publicKey, store: memoryStore(), sameNetworkProblem: () => 'publicNetwork' })
+    expect(service.createSecret('sameNetwork').sameNetworkProblem).toBe('publicNetwork')
+    expect(service.createSecret('cateConnect')).not.toHaveProperty('sameNetworkProblem')
+    expect(setup().service.createSecret('sameNetwork')).not.toHaveProperty('sameNetworkProblem')
   })
 })
 
@@ -184,6 +199,13 @@ describe('pairing flow', () => {
     expect(ctx.service.list()).toMatchObject([{ name: 'phone', admittedBy: 'pairing' }])
   })
 
+  it('makes a secret only when the person confirmed this time', () => {
+    const impl = pairingCapabilityImpl(setup().service)
+    const ctx = {} as Parameters<typeof impl.createSecret>[1]
+    expect(() => impl.createSecret({ mode: 'sameNetwork' } as never, ctx)).toThrow(/must confirm/)
+    expect(impl.createSecret({ mode: 'sameNetwork', acknowledged: true }, ctx)).toMatchObject({ code: expect.any(String) })
+  })
+
   it('revokes a device removed by editing devices.json, as removing it in the app does', async () => {
     const ctx = setup()
     const revoked: string[] = []
@@ -209,21 +231,31 @@ describe('pairing flow', () => {
     expect(seen.at(-1)).toEqual([])
   })
 
-  it('a wrong proof is refused, and the live secrets burn only after five', async () => {
+  it('a wrong proof burns only the secret it names', async () => {
     const ctx = setup()
-    const created = ctx.service.createSecret('sameNetwork')
-    const wrong = await attempt(ctx, new Uint8Array(10).fill(7))
+    const first = secretOf(ctx.service.createSecret('sameNetwork').uri)
+    const other = secretOf(ctx.service.createSecret('sameNetwork').uri)
+    expect(first.secretId).not.toBe(other.secretId)
+    const wrong = await attempt(ctx, { secretId: first.secretId, secret: new Uint8Array(10).fill(7) })
     expect((wrong.client as PromiseRejectedResult).reason.reason).toBe('invalid-proof')
     expect((wrong.runtime as PromiseRejectedResult).reason).toBeInstanceOf(UnpairedPeerError)
-    // One stray guess does not cost the person their pairing code.
-    const right = await attempt(ctx, secretOf(created.uri))
-    expect(right.client.status).toBe('fulfilled')
-
-    const next = ctx.service.createSecret('sameNetwork')
-    for (let i = 0; i < 5; i++) await attempt(ctx, new Uint8Array(10).fill(i + 1))
-    const late = await attempt(ctx, secretOf(next.uri))
+    const late = await attempt(ctx, first)
     expect((late.client as PromiseRejectedResult).reason.reason).toBe('no-secret')
+    // The other code still works.
+    const right = await attempt(ctx, other)
+    expect(right.client.status).toBe('fulfilled')
     expect(ctx.service.list()).toHaveLength(1)
+  })
+
+  it('an unknown secret id is refused and burns nothing', async () => {
+    const ctx = setup()
+    const created = secretOf(ctx.service.createSecret('sameNetwork').uri)
+    const unknown = created.secretId === 'aaaa' ? 'bbbb' : 'aaaa'
+    for (let i = 0; i < 10; i++) {
+      const guess = await attempt(ctx, { secretId: unknown, secret: new Uint8Array(10).fill(i) })
+      expect((guess.client as PromiseRejectedResult).reason.reason).toBe('no-secret')
+    }
+    expect((await attempt(ctx, created)).client.status).toBe('fulfilled')
   })
 
   it('an expired secret is refused', async () => {
@@ -262,7 +294,7 @@ describe('pairing flow', () => {
     const pairing = pairWithRuntime(a, {
       deviceKeys: generateKeyPair(),
       deviceName: 'x',
-      target: { runtimeId: RUNTIME_ID, secret: new Uint8Array(10) },
+      target: { runtimeId: RUNTIME_ID, secretId: 'aaaa', secret: new Uint8Array(10) },
       pins: ctx.pins,
     })
     await fake

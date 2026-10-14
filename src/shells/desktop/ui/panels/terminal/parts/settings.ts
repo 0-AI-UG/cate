@@ -7,7 +7,6 @@ import { clientSettingsTable, type ClientSettings } from '../../../../settings'
 
 export interface TerminalSettingsSource {
   getAll(): ClientSettings
-  set<K extends keyof ClientSettings & string>(key: K, value: ClientSettings[K]): boolean
   subscribe(listener: () => void): () => void
 }
 
@@ -24,10 +23,6 @@ export function installTerminalViewSettings(next: TerminalSettingsSource | null)
 
 export function terminalViewSettings(): ClientSettings {
   return source?.getAll() ?? clientSettingsTable.defaults
-}
-
-export function setTerminalViewSetting<K extends keyof ClientSettings & string>(key: K, value: ClientSettings[K]): void {
-  source?.set(key, value)
 }
 
 export function resolveTerminalFontFamily(raw: string): string {

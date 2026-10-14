@@ -9,7 +9,8 @@ export interface FileViewsHost {
   openFiles(workspaceId: string, paths: string[], mode?: 'dock' | 'canvas'): void
   /** Opens a file at a line and 1-based column. */
   openMatch(workspaceId: string, path: string, line: number, column: number): void
-  /** Opens a terminal in `cwd`, placed next to `panelId` when given. */
+  /** Opens a terminal in `cwd`; with `panelId`, placed through that
+   *  panel's placement flow. */
   openTerminal(workspaceId: string, cwd: string, panelId?: string): void
 }
 

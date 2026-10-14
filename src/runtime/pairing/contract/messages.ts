@@ -3,12 +3,15 @@
 // accepts from an unknown key. Pure.
 
 import { bytesToHex, hexToBytes, utf8Decode, utf8Encode } from '../../security/contract'
+import { SECRET_ID_CHARS } from './payload'
 
 export const DEVICE_NAME_MAX = 64
 
 export interface PairRequest {
   type: 'pair'
   deviceName: string
+  /** Which live secret the proof is for (sent in clear; it is no secret). */
+  secretId: string
   /** hex clientProof */
   proof: string
 }
@@ -37,8 +40,8 @@ export function decodePairMessage(bytes: Uint8Array): PairMessage | null {
   const message = value as Record<string, unknown>
   switch (message.type) {
     case 'pair':
-      return typeof message.deviceName === 'string' && isProof(message.proof)
-        ? { type: 'pair', deviceName: message.deviceName, proof: message.proof }
+      return typeof message.deviceName === 'string' && isSecretId(message.secretId) && isProof(message.proof)
+        ? { type: 'pair', deviceName: message.deviceName, secretId: message.secretId, proof: message.proof }
         : null
     case 'paired':
       return isProof(message.proof) ? { type: 'paired', proof: message.proof } : null
@@ -51,6 +54,8 @@ export function decodePairMessage(bytes: Uint8Array): PairMessage | null {
   }
 }
 
+const isSecretId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length === SECRET_ID_CHARS && /^[a-z2-7]+$/.test(value)
 const isProof = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 
 export const proofToWire = (proof: Uint8Array): string => bytesToHex(proof)

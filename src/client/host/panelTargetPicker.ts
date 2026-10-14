@@ -1,14 +1,15 @@
 // Asking the user where a panel should go: a new one at a spot they pick, or
 // an existing one. On a canvas the canvas view shows its targeting overlay
 // (it installs the picker); without a canvas the choice is a menu over the
-// docked panels of the type.
+// docked panels of the type. A panel another panel opens always gets its
+// place here (`createPanelFrom`).
 
 import { canvasOf, canvasPanelOf, documentOrder, placementOf, isCanvasDock, type PanelId, type PlaceTarget } from '@workspace/document/contract'
 import type { Point, Size } from '@workspace/canvas/contract'
-import { placeTargetFor, type PanelPlacementOptions } from '@panels/framework/contract'
+import { placeTargetFor, type PanelCreateOptions, type PanelPlacementOptions } from '@panels/framework/contract'
 import { clientUi } from '@kernel/interaction'
 import { documentStoreFor } from '@client/document'
-import { newId } from './createPanel'
+import { createPanel, newId } from './createPanel'
 import { panelDefinition, panelLabel } from './definitions'
 import { revealPanel } from './reveal'
 
@@ -71,6 +72,31 @@ export async function pickPanelPlace(request: PanelTargetRequest): Promise<Panel
   const doc = documentStoreFor(request.workspaceId)?.getSnapshot()
   const definition = panelDefinition(request.panelType)
   return doc && definition ? { kind: 'new', at: placeTargetFor(doc, definition, target.placement, newId) } : null
+}
+
+/** Where a new panel of `panelType` that `sourcePanelId` asked for goes:
+ *  on the source's canvas a spot through the canvas's placement flow, in a
+ *  dock beside the source; without a source the first docked canvas, else
+ *  the main window. Null when the person cancelled. */
+export async function pickNewPanelPlace(workspaceId: string, panelType: string, sourcePanelId?: PanelId): Promise<PlaceTarget | null> {
+  const place = await pickPanelPlace({ workspaceId, panelType, availability: 'new', ...(sourcePanelId ? { sourcePanelId } : {}) })
+  return place?.kind === 'new' ? place.at : null
+}
+
+/** Creates a panel of `type` that `sourcePanelId` asked for, at a place from
+ *  `pickNewPanelPlace` (inheriting the source's worktree), and brings it on
+ *  screen. Every panel one panel opens for another (a clicked link, "open
+ *  in ...") is placed here. Null when cancelled or not created. */
+export async function createPanelFrom(
+  workspaceId: string,
+  sourcePanelId: PanelId | undefined,
+  type: string,
+  options: PanelCreateOptions & Record<string, unknown> = {},
+): Promise<PanelId | null> {
+  const at = await pickNewPanelPlace(workspaceId, type, sourcePanelId)
+  const id = at ? createPanel(workspaceId, type, { ...options, ...(sourcePanelId ? { near: sourcePanelId } : {}), at }) : null
+  if (id) void revealPanel(workspaceId, id)
+  return id
 }
 
 export async function requestPanelTarget(request: PanelTargetRequest): Promise<PanelTarget | null> {

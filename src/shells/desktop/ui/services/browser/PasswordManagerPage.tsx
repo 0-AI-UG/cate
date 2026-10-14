@@ -1,15 +1,17 @@
 // The browser's password manager page (chrome://password-manager). Saved
 // passwords live in the runtime (`browserData`, secrets.json) and are shared by
 // every client of the workspace; importing from Chrome reads this client's
-// Chrome through the desktop page bridge.
+// Chrome through the desktop page bridge. When the runtime is on another
+// machine, importing asks first: the passwords leave this computer.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Globe, Key, Search as MagnifyingGlass, Plus, Trash } from 'lucide-react'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { LoadingState, Spinner, SecondaryButton, Select } from '../../kernel/interaction'
+import { InlineNotice, LoadingState, Spinner, SecondaryButton, Select } from '../../kernel/interaction'
 import { useRuntime } from '../../kernel/rpc'
 import type { BrowserChromeImport, BrowserChromeProfiles, BrowserCredentialSuggestion } from '@services/browser/contract'
 import { browserPageBridge } from '@services/browser/desktop/renderer'
+import { tryClientApp } from '../../app/app'
 
 type PasswordManagerTab = 'passwords' | 'advanced'
 
@@ -27,6 +29,14 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
   const [manualPassword, setManualPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  // An import waiting for "Import anyway": the runtime is not on this
+  // computer's network, so it is on another machine.
+  const [pendingImport, setPendingImport] = useState<(() => Promise<void>) | null>(null)
+  const runtimeIsHere = tryClientApp()?.connections.get(workspaceId)?.reachesClientNetwork ?? true
+  const confirmFirst = (run: () => Promise<void>) => {
+    if (runtimeIsHere) void run()
+    else setPendingImport(() => run)
+  }
 
   const load = useCallback(async () => {
     if (!runtime) return
@@ -290,16 +300,27 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
                           label: profile.profileName,
                         }))}
                       />
-                      <SecondaryButton onClick={() => void importProfile()} disabled={busy}>
+                      <SecondaryButton onClick={() => confirmFirst(importProfile)} disabled={busy || pendingImport !== null}>
                         Import profile
                       </SecondaryButton>
                     </>
                   )}
-                  <SecondaryButton onClick={() => void importFile()} disabled={busy}>
+                  <SecondaryButton onClick={() => confirmFirst(importFile)} disabled={busy || pendingImport !== null}>
                     {busy && <Spinner size={13} />}
                     {busy ? 'Importing' : 'Choose Chrome export…'}
                   </SecondaryButton>
                 </div>
+              )}
+              {pendingImport && (
+                <InlineNotice tone="warning" className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <span>These passwords will be stored on the machine running this workspace, not on this computer.</span>
+                  <span className="flex gap-2">
+                    <SecondaryButton onClick={() => setPendingImport(null)}>Cancel</SecondaryButton>
+                    <SecondaryButton onClick={() => { const run = pendingImport; setPendingImport(null); void run() }}>
+                      Import anyway
+                    </SecondaryButton>
+                  </span>
+                </InlineNotice>
               )}
             </section>
 

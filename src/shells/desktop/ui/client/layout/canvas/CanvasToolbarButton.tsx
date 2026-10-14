@@ -8,6 +8,7 @@ interface CanvasToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElemen
   active?: boolean
   size?: 'panel' | 'zoom'
   tooltipPlacement?: 'top' | 'right'
+  tooltipSuppressed?: boolean
 }
 
 export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarButtonProps>(function CanvasToolbarButton({
@@ -16,13 +17,14 @@ export const CanvasToolbarButton = forwardRef<HTMLButtonElement, CanvasToolbarBu
   active = false,
   size = 'panel',
   tooltipPlacement = 'top',
+  tooltipSuppressed = false,
   className = '',
   children,
   type = 'button',
   ...props
 }, ref) {
   return (
-    <Tooltip action={action} label={label} placement={tooltipPlacement}>
+    <Tooltip action={action} label={label} placement={tooltipPlacement} suppressed={tooltipSuppressed}>
       <button
         {...props}
         ref={ref}

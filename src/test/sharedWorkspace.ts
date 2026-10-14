@@ -30,6 +30,7 @@ import { attachBuffer, type AttachedBuffer } from '@workspace/files/client'
 import { BUFFER_TEXT } from '@workspace/files/contract'
 import { createShellTransportHost } from '../shells/desktop/main/transports'
 import { serveWorkspace, type Daemon } from '../runtime/daemon/entry'
+import { seedWorkspaceSettings } from './workspaceSettings'
 
 export interface TestClient {
   name: string
@@ -146,7 +147,6 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
       beforeStart,
       root,
       home,
-      network: 'sameNetwork',
       lifecycle: createLifecycleBus(),
       log: createLogger('test'),
       lan: { host: '127.0.0.1', advertise: false, addresses: (port) => [`127.0.0.1:${port}`] },
@@ -154,6 +154,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     if (served.kind !== 'serving') throw new Error(`expected to serve, got ${served.kind}`)
     return served.daemon
   }
+  await seedWorkspaceSettings(root, home, { runtimeNetwork: 'sameNetwork' })
   let daemon = await serve()
   const clients: TestClient[] = []
   const buffers: { attached: AttachedBuffer; doc: Y.Doc }[] = []
@@ -269,7 +270,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
       sameNetwork: (options) => dialSameNetwork({ ...options, discover: async () => daemon.network.addresses() }),
       cateConnect: () => Promise.reject(new Error('no Cate Connect in tests')),
     })
-    const secret = await inviter.connection.runtime.pairing.createSecret({ mode: 'sameNetwork' })
+    const secret = await inviter.connection.runtime.pairing.createSecret({ mode: 'sameNetwork', acknowledged: true })
     const paired = await host.pair({ link: secret.uri })
     const workspaceId = `paired:${paired.runtimeId}-${counter++}`
     const link = createLink()

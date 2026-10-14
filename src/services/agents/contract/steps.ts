@@ -1,8 +1,9 @@
 // Where an agent chat shows its steps (pure, for every client) (the tool calls its hooks reported):
 // each under the turn it ran in, a turn being a prompt and everything up to
 // the next one. Steps are matched to turns by time, the same for every CLI.
-// A finished turn shows its steps before its final reply; a running one at
-// its end. A turn from before the runtime kept steps (`stepsSince`) that the
+// A step shows before the turn's first reply dated after it, so steps sit
+// between the replies they came between; one no reply follows shows before
+// the final reply of a finished turn, at the end of a running one. A turn from before the runtime kept steps (`stepsSince`) that the
 // agent answered shows a ghost: something ran there, not what. Some CLIs
 // date prompts to the minute, so only a turn over a minute older is one.
 
@@ -50,19 +51,22 @@ export function agentStepGroups(conversation: Pick<AgentConversation, 'status' |
     for (let index = end - 1; index > turn.index; index--) {
       if (messages[index].role === 'assistant') { reply = index; break }
     }
-    const before = running || reply < 0 ? end : reply
+    const fallback = running || reply < 0 ? end : reply
+    const replies: Array<{ index: number; time: number }> = []
+    for (let index = turn.index + 1; index < end; index++) {
+      const time = timeOf(messages[index].createdAt)
+      if (messages[index].role === 'assistant' && time !== null) replies.push({ index, time })
+    }
     const steps = stepsOf[i]
-    if (steps.length > 0) groups.push({ before, steps, ghost: false })
-    else if (!running && reply >= 0 && turn.time < since - STORE_PRECISION_MS) groups.push({ before, steps: [], ghost: true })
+    for (const step of steps) {
+      const time = timeOf(step.at) ?? Infinity
+      const before = replies.find((reply) => reply.time > time)?.index ?? fallback
+      const group = groups[groups.length - 1]
+      if (group && group.before === before && !group.ghost) group.steps.push(step)
+      else groups.push({ before, steps: [step], ghost: false })
+    }
+    if (steps.length > 0) return
+    if (!running && reply >= 0 && turn.time < since - STORE_PRECISION_MS) groups.push({ before: fallback, steps: [], ghost: true })
   })
   return groups
-}
-
-/** The step the agent last completed in the turn it is running, or null. */
-export function agentActivity(conversation: Pick<AgentConversation, 'status' | 'messages' | 'steps' | 'stepsSince'>): AgentStep | null {
-  if (conversation.status !== 'running') return null
-  const groups = agentStepGroups(conversation)
-  const group = groups[groups.length - 1]
-  if (!group || group.ghost || group.before !== conversation.messages.length) return null
-  return group.steps[group.steps.length - 1] ?? null
 }

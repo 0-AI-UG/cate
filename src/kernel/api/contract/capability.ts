@@ -1,6 +1,6 @@
 // The `api` capability: how callers reach the router over the runtime
 // protocol. The CLI connects with its token; clients call it
-// from their own connection. The router enforces each method's timeout, so the
+// from their own connection. It is the only capability a caller may use. The router enforces each method's timeout, so the
 // capability declares none; callers pass one per call.
 
 import { defineCapability, method } from '@kernel/rpc/contract'
@@ -13,6 +13,7 @@ export interface ApiCallParams {
 }
 
 export const apiCapability = defineCapability('api', {
+  callers: true,
   methods: {
     call: method<ApiCallParams, unknown>({ mutates: true, timeoutMs: 0 }),
   },

@@ -26,6 +26,9 @@ const execFileP = ((file: string, args: readonly string[], options: Parameters<t
 const REVIEW_PATCH_MAX_BYTES = 2 * 1024 * 1024
 const REVIEW_PATCH_MAX_LINES = 20_000
 const REVIEW_CONTENT_MAX_BYTES = 25 * 1024 * 1024
+/** A git call silent this long is stopped (a remote that never answers);
+ *  it would otherwise hold the repository's write queue forever. */
+const GIT_TIMEOUT_MS = 120_000
 
 type Methods = VcsCapability['methods']
 type Op<K extends keyof Methods> = (params: ParamsOf<Methods[K]>) => Promise<ResultOf<Methods[K]>>
@@ -106,7 +109,7 @@ export interface GitHostDeps {
 
 function gitBuffer(cwd: string, args: string[], env: NodeJS.ProcessEnv, input?: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = execFile('git', ['-C', cwd, ...args], { env, encoding: 'buffer', maxBuffer: REVIEW_CONTENT_MAX_BYTES, windowsHide: true }, (error, stdout) => {
+    const child = execFile('git', ['-C', cwd, ...args], { env, encoding: 'buffer', maxBuffer: REVIEW_CONTENT_MAX_BYTES, timeout: GIT_TIMEOUT_MS, windowsHide: true }, (error, stdout) => {
       if (error) reject(error)
       else resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout))
     })
@@ -247,11 +250,13 @@ const USER_ENV_UNSAFE = {
 
 export function createGitHost(deps: GitHostDeps): GitHost {
   // No optional locks: a background `git status` otherwise takes index.lock
-  // for a moment, and a concurrent `git add` or commit then fails on it.
-  const env = () => ({ ...deps.env(), GIT_OPTIONAL_LOCKS: '0' })
+  // for a moment, and a concurrent `git add` or commit then fails on it. No
+  // prompts: there is no terminal to answer a credential prompt, so git and
+  // gh fail instead of waiting.
+  const env = () => ({ ...deps.env(), GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' })
   const gitAt = (baseDir: string) => {
     const vars = env()
-    return simpleGit({ baseDir, unsafe: USER_ENV_UNSAFE, allowEnvironment: Object.keys(vars) }).env(vars)
+    return simpleGit({ baseDir, unsafe: USER_ENV_UNSAFE, allowEnvironment: Object.keys(vars), timeout: { block: GIT_TIMEOUT_MS } }).env(vars)
   }
   const dir = async (cwd: string | undefined) => deps.resolveDir(cwd)
 

@@ -1,4 +1,4 @@
-// The workspace's notification events (architecture 10.5): publishers call
+// The workspace's notification events (architecture 10.4): publishers call
 // `publish`, clients follow the `notifications` capability's stream, and the
 // composition root hands them to push delivery.
 

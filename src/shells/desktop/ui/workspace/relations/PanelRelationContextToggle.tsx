@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Waypoints } from 'lucide-react'
 import type { PanelRecord } from '@workspace/document/contract'
-import { compileRelationContext, isExecutionSurface, relationContextMode, relationPanelOf, relationPanels } from '@workspace/relations/contract'
+import { isExecutionSurface, relatedPanelIds, relationContextMode, relationPanelOf, relationPanels, relationReach } from '@workspace/relations/contract'
 import { setRelationContextMode } from './actions'
 import { relationRoleOf, useRelationMap, useRelationPanels, useRelationsEnabled } from './host'
 import { relationUiPort } from './port'
@@ -26,8 +26,11 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
   // A host may keep a stale record prop while the panel stays mounted.
   const currentPanel = records[panel.id] ?? panel
   const transport = relationUiPort().useContextTransport(workspaceId, currentPanel)
-  const compiled = useMemo(() => {
-    return compileRelationContext(panel.id, relationPanels(Object.values(records), relationRoleOf), Object.values(relationMap))
+  // How many panels go with a prompt; what is sent is the runtime's own
+  // preview (`agents.previewContext`), never compiled here.
+  const count = useMemo(() => {
+    const steps = relationReach(panel.id, relationPanels(Object.values(records), relationRoleOf), Object.values(relationMap))
+    return steps ? relatedPanelIds(steps).length : 0
   }, [panel.id, records, relationMap])
   const mode = relationContextMode(currentPanel.fields)
   const enabled = mode !== 'off'
@@ -36,10 +39,9 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
   const expanded = hovered || keyboardFocused || menuOpen || enabled || justSent || !!blocked
 
   const openMenu = async () => {
-    if (menuOpen || !compiled) return
+    if (menuOpen || count === 0) return
     setMenuOpen(true)
     try {
-      const count = compiled.relatedPanelIds.length
       const choice = await relationUiPort().showMenu([
         ...(blocked
           ? [{ label: blocked.reason, enabled: false }, { type: 'separator' as const }]
@@ -56,15 +58,15 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
         setRelationContextMode(workspaceId, panel.id, choice)
       } else if (choice === 'preview') {
         // What the runtime would send, guidance included.
-        const content = (await relationUiPort().previewContext(workspaceId, panel.id)) ?? compiled.text
-        await relationUiPort().openTextPreview({ workspaceId, sourcePanelId: panel.id, title: 'Connected panel context.md', content })
+        const content = await relationUiPort().previewContext(workspaceId, panel.id)
+        if (content !== null) await relationUiPort().openTextPreview({ workspaceId, sourcePanelId: panel.id, title: 'Connected panel context.md', content })
       }
     } finally {
       setMenuOpen(false)
     }
   }
 
-  if (!panelRelationsEnabled || !compiled || !transport || !isExecutionSurface(relationPanelOf(currentPanel, relationRoleOf))) return null
+  if (!panelRelationsEnabled || count === 0 || !transport || !isExecutionSurface(relationPanelOf(currentPanel, relationRoleOf))) return null
 
   return (
     <button
@@ -72,7 +74,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
       aria-pressed={enabled}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
-      aria-label={`${compiled.relatedPanelIds.length} connected panels, ${blocked ? `not sent: ${blocked.label}` : mode === 'once' ? 'next message' : mode === 'always' ? 'every message' : 'off'}`}
+      aria-label={`${count} connected panels, ${blocked ? `not sent: ${blocked.label}` : mode === 'once' ? 'next message' : mode === 'always' ? 'every message' : 'off'}`}
       title={blocked?.reason ?? 'Choose when connected panels are included'}
       className={`inline-flex h-[20px] min-w-0 items-center rounded-full border transition-[border-color,background-color,color,filter] ${blocked
         ? 'border-transparent bg-warning text-black/85 hover:brightness-110'
@@ -103,7 +105,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
           transition: 'max-width 150ms ease, opacity 150ms ease',
         }}
       >
-        {justSent ? 'Context sent · ' : ''}{compiled.relatedPanelIds.length} panel{compiled.relatedPanelIds.length === 1 ? '' : 's'}{justSent ? '' : ` · ${blocked ? blocked.label : mode === 'once' ? 'Next' : mode === 'always' ? 'Always' : 'Off'}`}
+        {justSent ? 'Context sent · ' : ''}{count} panel{count === 1 ? '' : 's'}{justSent ? '' : ` · ${blocked ? blocked.label : mode === 'once' ? 'Next' : mode === 'always' ? 'Always' : 'Off'}`}
       </span>
     </button>
   )

@@ -34,6 +34,11 @@ const testCap = defineCapability('test', {
   },
 })
 
+const callerCap = defineCapability('callerTest', {
+  callers: true,
+  methods: { whoami: method<void, { clientId: string | null; token: string | null }>() },
+})
+
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 
 function deferred<T = void>() {
@@ -82,6 +87,9 @@ function setup(opts: { server?: Partial<ConstructorParameters<typeof RpcServer>[
   const lifecycle = createLifecycleBus()
   const server = new RpcServer({ version: '1.0.0', lifecycle, ...opts.server })
   server.register(testCap, makeImpl(opts.impl))
+  server.register(callerCap, {
+    whoami: (_p: void, ctx: CallContext) => ({ clientId: ctx.connection.client?.clientId ?? null, token: ctx.connection.caller?.token ?? null }),
+  })
   const client = new RpcClient({
     version: '1.0.0',
     identity: opts.caller
@@ -94,7 +102,7 @@ function setup(opts: { server?: Partial<ConstructorParameters<typeof RpcServer>[
     server.serve(serverPort)
     return { port: clientPort, ready: client.attach(clientPort) }
   }
-  return { server, client, api, connect, lifecycle }
+  return { server, client, api, callerApi: createCapabilityProxy(client, callerCap), connect, lifecycle }
 }
 
 describe('rpc server and client', () => {
@@ -287,6 +295,51 @@ describe('rpc server and client', () => {
     expect(runs).toBe(2)
   })
 
+  it('sends queued calls before the calls a ready listener makes', async () => {
+    const seen: number[] = []
+    const { api, connect, client } = setup({ impl: { bump: ({ by }) => { seen.push(by); return by } } })
+    const queued = api.bump({ by: 1 })
+    let fromListener: Promise<number> | null = null
+    client.onReady(() => { fromListener ??= api.bump({ by: 2 }) })
+    await connect().ready
+    await expect(queued).resolves.toBe(1)
+    await expect(fromListener).resolves.toBe(2)
+    expect(seen).toEqual([1, 2])
+  })
+
+  it('fails a mutating call in flight across a runtime restart with interrupted, unless idempotent', async () => {
+    const restartCap = defineCapability('restart', {
+      methods: {
+        bump: method<void, string>({ mutates: true }),
+        put: method<void, string>({ mutates: true, idempotent: true }),
+      },
+      streams: {},
+    })
+    const hang = new Promise<string>(() => {})
+    const serve = (impl: CapabilityImpl<typeof restartCap>) => {
+      const server = new RpcServer({ version: '1.0.0', lifecycle: createLifecycleBus() })
+      server.register(restartCap, impl)
+      return server
+    }
+    const client = new RpcClient({ version: '1.0.0', identity: { client: { clientId: 'c1', device: { name: 'mac', publicKey: 'fp' }, features: [] } } })
+    const api = createCapabilityProxy(client, restartCap)
+    const attach = (server: RpcServer) => {
+      const [serverPort, clientPort] = createMemoryPortPair()
+      server.serve(serverPort)
+      return { port: clientPort, ready: client.attach(clientPort) }
+    }
+    const first = attach(serve({ bump: () => hang, put: () => hang }))
+    await first.ready
+    const bump = api.bump()
+    const put = api.put()
+    await tick()
+    first.port.close('daemon died')
+    await attach(serve({ bump: () => 'again', put: () => 'resent' })).ready
+    await expect(bump).rejects.toMatchObject({ code: 'interrupted' })
+    await expect(put).resolves.toBe('resent')
+    client.close()
+  })
+
   it('answers an op whose outcome is no longer kept with duplicate', async () => {
     const { api, connect, client, server } = setup({ server: { opResultCache: 1 } })
     await connect().ready
@@ -345,7 +398,11 @@ describe('rpc server and client', () => {
   it('lets a caller in with a token and refuses what acceptHello rejects', async () => {
     const ok = setup({ caller: true, server: { acceptHello: (h) => { if (h.caller?.token !== 'tok') throw new RpcError('rejected') } } })
     await ok.connect().ready
-    await expect(ok.api.whoami()).resolves.toEqual({ clientId: null, canvas: false, token: 'tok' })
+    await expect(ok.callerApi.whoami()).resolves.toEqual({ clientId: null, token: 'tok' })
+    // A caller reaches only capabilities declared with `callers`.
+    await expect(ok.api.whoami()).rejects.toMatchObject({ code: 'rejected' })
+    const sub = ok.api.ticks({ every: 1 })
+    await expect(sub.done).rejects.toMatchObject({ code: 'rejected' })
 
     const refused = setup({ server: { acceptHello: () => { throw new RpcError('untrusted', 'unknown device') } } })
     const pending = refused.api.read({ path: '/a' })

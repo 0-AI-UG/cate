@@ -10,6 +10,7 @@ export const RPC_ERROR_CODES = [
   'no-renderer', // no client can run the page operation (10.2)
   'timeout',
   'duplicate',   // an op already handled whose outcome is no longer kept
+  'interrupted', // the runtime restarted while the op was in flight; it may or may not have run
 ] as const
 
 export type RpcErrorCode = (typeof RPC_ERROR_CODES)[number]

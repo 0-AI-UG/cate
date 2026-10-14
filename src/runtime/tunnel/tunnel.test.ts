@@ -24,7 +24,7 @@ beforeEach(async () => {
   rpc.register(tunnelCapability, tunnelCapabilityImpl())
   const [serverPort, clientPort] = createMemoryPortPair()
   rpc.serve(serverPort)
-  client = new RpcClient({ version: 'test', identity: { caller: { token: 't' } } })
+  client = new RpcClient({ version: 'test', identity: { client: { clientId: 'c1', device: { name: 'test', publicKey: 'fp' }, features: [] } } })
   await client.attach(clientPort)
 })
 

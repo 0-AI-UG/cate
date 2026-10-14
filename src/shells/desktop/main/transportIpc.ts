@@ -7,6 +7,7 @@ import { MessageChannelMain, type WebContents } from 'electron'
 import type { ByteDuplex } from '@kernel/rpc/contract'
 import { isMachine } from '@runtime/daemon/contract'
 import { pairingErrorMessage } from '@runtime/pairing/client'
+import { NetworkUnreachableError } from '@runtime/transports/client'
 import { DESKTOP_CHANNELS as C, type DesktopNetworkTarget } from '../contract'
 import { handle } from './ipc'
 import { awaitPortPipe, bridgePipe } from './pipes'
@@ -76,18 +77,18 @@ export function registerTransportIpc(deps: { host: ShellTransportHost; partition
     try {
       return await host.pair(request)
     } catch (err) {
-      throw new Error(pairingErrorMessage(err))
+      throw new Error(err instanceof NetworkUnreachableError ? err.message : pairingErrorMessage(err))
     }
   })
 
-  handle(C.webPartition, (event, workspace: { runtimeId: string }) => {
+  handle(C.webPartition, (event, workspace: { runtimeId: string; reachesClientNetwork: boolean }) => {
     const contents = event.sender
     if (!releasing.has(contents)) {
       releasing.add(contents)
       const id = contents.id
       contents.once('destroyed', () => partitions.releaseDialer(id))
     }
-    return partitions.partitionFor(String(workspace?.runtimeId ?? ''), rendererDialer(contents))
+    return partitions.partitionFor(String(workspace?.runtimeId ?? ''), rendererDialer(contents), workspace?.reachesClientNetwork === true)
   })
   handle(C.webRelease, (event, workspace: { runtimeId: string }) => {
     partitions.release(String(workspace?.runtimeId ?? ''), event.sender.id)

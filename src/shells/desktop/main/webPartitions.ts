@@ -32,8 +32,9 @@ export interface WebPartitionsDeps {
 export interface WebPartitions {
   readonly credentials: ProxyCredentials
   /** Prepares the workspace's partition and registers `dialer` for its
-   *  loopback requests; the partition name. */
-  partitionFor(runtimeId: string, dialer: LoopbackDialer): Promise<string>
+   *  loopback requests; the partition name. `reachesClientNetwork`: the
+   *  dialer's connection is on this machine's network (12.3). */
+  partitionFor(runtimeId: string, dialer: LoopbackDialer, reachesClientNetwork: boolean): Promise<string>
   release(runtimeId: string, dialerId: number): void
   /** Drops every registration of a renderer that went away. */
   releaseDialer(dialerId: number): void
@@ -51,6 +52,9 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
   const ports = new Set<number>()
   const prepared = new Set<string>()
   const dialers = new Map<string, LoopbackDialer[]>()
+  // False once any connection to the runtime said it does not reach this
+  // machine's network: the private ranges stay refused for that runtime.
+  const reaches = new Map<string, boolean>()
 
   const dialLoopback = async (runtimeId: string, port: number): Promise<ByteDuplex> => {
     const live = (dialers.get(runtimeId) ?? []).filter((d) => !d.isDestroyed())
@@ -70,6 +74,7 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
         const started = await startProxy({
           credentials,
           upstream: deps.upstream,
+          reachesClientNetwork: () => reaches.get(runtimeId) === true,
           dialLoopback: (port) => dialLoopback(runtimeId, port),
         })
         ports.add(started.port)
@@ -91,8 +96,9 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
 
   return {
     credentials,
-    async partitionFor(runtimeId, dialer) {
+    async partitionFor(runtimeId, dialer, reachesClientNetwork) {
       if (!isRuntimeId(runtimeId)) throw new Error('invalid runtime id')
+      reaches.set(runtimeId, (reaches.get(runtimeId) ?? true) && reachesClientNetwork)
       const list = dialers.get(runtimeId) ?? []
       if (!list.some((d) => d.id === dialer.id)) list.push(dialer)
       dialers.set(runtimeId, list)

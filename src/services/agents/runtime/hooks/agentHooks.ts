@@ -109,6 +109,10 @@ export interface AgentHooks {
    *  `approvals` also resolves config-based approval detection, which runs
    *  the CLI (Codex's app-server): only the Settings UI asks for it. */
   inspectWorkspace(cwd: string, options?: { approvals?: boolean }): Promise<AgentHookAgentState[]>
+  /** Whether each agent's repo-local config folder is in a checkout (the
+   *  'auto' in-use signal): all readiness needs. Filesystem only, unlike
+   *  inspectWorkspace, whose injection check can run an agent's CLI. */
+  inspectFolders(cwd: string): Promise<Array<Pick<AgentHookAgentState, 'agentId' | 'folderPresent'>>>
   /** Whether Cate's hooks for one agent are installed for a checkout (its
    *  `injected` in inspectWorkspace), without inspecting the others. */
   hooksInstalled(cwd: string, agentId: AgentId): Promise<boolean>
@@ -887,6 +891,14 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         })
       }
       return states
+    },
+
+    async inspectFolders(cwd) {
+      const repoLocal = isRepoLocalCwd(cwd, homeDir)
+      return await Promise.all(AGENTS.map(async (agent) => {
+        const folder = agentHookFolder(agent.id)
+        return { agentId: agent.id, folderPresent: repoLocal && !!folder && await dirExists(path.join(cwd, folder)) }
+      }))
     },
 
     async hooksInstalled(cwd, agentId) {

@@ -18,11 +18,12 @@ const AGENT_TASK_PREFIX = 'Complete this coding task:\n\n'
  * so prompt text cannot become shell syntax, and prefixing the positional
  * prompt prevents option or subcommand injection into the CLI's argv parser.
  * Every executable comes from the registry; callers cannot provide a path or
- * flags.
+ * flags. Without a prompt the CLI opens its interactive session.
  */
-export function agentLaunchCommand(launch: { agentId: AgentId; prompt: string }): { executable: string; args: string[] } {
+export function agentLaunchCommand(launch: { agentId: AgentId; prompt?: string }): { executable: string; args: string[] } {
   const agent = AGENT_DEFS[launch.agentId]
   if (!agent) throw new Error(`Unsupported agent: ${launch.agentId}`)
+  if (launch.prompt === undefined) return { executable: agent.command, args: [...agent.startArgs] }
   const prompt = launch.prompt.trim()
   if (!prompt) throw new Error('A prompt is required')
   if (prompt.includes('\0')) throw new Error('Prompts cannot contain NUL bytes')

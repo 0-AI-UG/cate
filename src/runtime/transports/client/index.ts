@@ -1,4 +1,5 @@
-export { dialSameNetwork, SameNetworkUnreachableError, type SameNetworkDialOptions } from './sameNetwork'
+export { dialSameNetwork, SameNetworkUnreachableError, type SameNetworkDialOptions, type SameNetworkFailure } from './sameNetwork'
+export { NetworkUnreachableError, networkFailureMessage, type NetworkFailure } from './failure'
 export { openSecureConnection, type SecureConnection, type SecureOpen } from './secure'
 export {
   createNetworkDialer,

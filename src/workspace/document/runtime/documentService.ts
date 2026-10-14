@@ -38,6 +38,12 @@ export interface DocumentService {
   readonly seq: number
   /** New at every start (the sequencer's epoch). */
   readonly epoch: string
+  /** The seq loaded from document.json at start. */
+  readonly startSeq: number
+  /** The seq of the last document.json write. */
+  readonly persistedSeq: number
+  /** Runs after each document.json write that moved `persistedSeq`. */
+  onPersisted(listener: (seq: number) => void): () => void
   /** A client's op, deduped on its opId. A removal (or a replacePanel, which
    *  drops the old session) the removal guard refuses fails with its code
    *  (`dirty`). */
@@ -127,6 +133,8 @@ export function createDocumentService(options: DocumentServiceOptions): Document
   const sequencer = createSequencer({ doc: initial.doc, seq: initial.seq, counters: initial.counters, keep: options.keep })
   const lastSeen = initial.lastSeen
   const listeners = new Set<(event: AppliedEvent) => void>()
+  const persistedListeners = new Set<(seq: number) => void>()
+  let persistedSeq = initial.seq
   let removalGuard: RemovalGuard | null = null
   let runtimeCounter = sequencer.counters.get(RUNTIME_CLIENT_ID) ?? 0
 
@@ -147,6 +155,13 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     defaults: snapshot(),
     normalize: (parsed, defaults) => (parsed && typeof parsed === 'object' ? parsed as DocumentFileData : defaults),
     debounceMs,
+    onWritten: (written) => {
+      if (written.seq <= persistedSeq) return
+      persistedSeq = written.seq
+      for (const listener of [...persistedListeners]) {
+        try { listener(persistedSeq) } catch (err) { log.error('persisted listener failed: %O', err) }
+      }
+    },
   })
 
   const schedule = () => {
@@ -173,6 +188,12 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     get: () => sequencer.doc,
     get seq() { return sequencer.seq },
     get epoch() { return sequencer.epoch },
+    startSeq: initial.seq,
+    get persistedSeq() { return persistedSeq },
+    onPersisted(listener) {
+      persistedListeners.add(listener)
+      return () => { persistedListeners.delete(listener) }
+    },
     submit(op) {
       if (removalGuard) {
         for (const change of opChanges(op)) {
@@ -219,6 +240,7 @@ export function createDocumentService(options: DocumentServiceOptions): Document
       disposed = true
       listeners.clear()
       file.dispose()
+      persistedListeners.clear()
     },
   }
 }

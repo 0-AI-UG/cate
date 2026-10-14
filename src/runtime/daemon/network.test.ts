@@ -19,6 +19,7 @@ import { dialSameNetwork, openSecureConnection } from '@runtime/transports/clien
 import { dialLocal, nodeWebSocketFactory } from '@runtime/transports/node'
 import { runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
+import { seedWorkspaceSettings } from '../../test/workspaceSettings'
 
 let tmp: string
 let home: string
@@ -43,10 +44,10 @@ afterEach(async () => {
 })
 
 async function start(network?: 'sameNetwork') {
+  if (network) await seedWorkspaceSettings(root, home, { runtimeNetwork: network })
   const result = await serveWorkspace({
     root,
     home,
-    network,
     lifecycle: createLifecycleBus(),
     log: createLogger('test'),
     lan: { host: '127.0.0.1', port: 0, advertise: false, addresses: (port) => [`127.0.0.1:${port}`] },
@@ -85,7 +86,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     expect(info?.endpoints.sameNetwork?.addresses).toHaveLength(1)
 
     const desk = await local(daemon)
-    const created = await createCapabilityProxy(desk, pairingCapability).createSecret({ mode: 'sameNetwork' })
+    const created = await createCapabilityProxy(desk, pairingCapability).createSecret({ mode: 'sameNetwork', acknowledged: true })
     const payload = decodePairingUri(created.uri)
     expect(payload).toMatchObject({ runtimeId: daemon.networkId, mode: 'sameNetwork', addresses: info!.endpoints.sameNetwork!.addresses })
 
@@ -107,7 +108,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     const daemon = await start('sameNetwork')
     const desk = await local(daemon)
     const pairingApi = createCapabilityProxy(desk, pairingCapability)
-    const typed = parsePairingCode((await pairingApi.createSecret({ mode: 'sameNetwork' })).code)
+    const typed = parsePairingCode((await pairingApi.createSecret({ mode: 'sameNetwork', acknowledged: true })).code)
     // mDNS: the runtime answers under its network id.
     const discover = async (runtimeId: string) =>
       daemon.networkId === runtimeId ? (await readRuntimeInfo(daemon.paths.dir))!.endpoints.sameNetwork!.addresses : []
@@ -156,7 +157,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     await expect.poll(async () => (await readRuntimeInfo(daemon.paths.dir))?.endpoints.sameNetwork?.addresses).toEqual(addresses)
 
     const phone = device('phone')
-    const payload = decodePairingUri((await createCapabilityProxy(desk, pairingCapability).createSecret({ mode: 'sameNetwork' })).uri)
+    const payload = decodePairingUri((await createCapabilityProxy(desk, pairingCapability).createSecret({ mode: 'sameNetwork', acknowledged: true })).uri)
     const { frames } = await openSecureConnection(
       await dialSameNetwork({ runtimeId: daemon.networkId, addresses: payload.addresses, webSocket: nodeWebSocketFactory }),
       { kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name, target: payload, pins: phone.pins },

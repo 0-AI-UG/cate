@@ -62,7 +62,7 @@ function OpenJoinDialog({ request }: { request: JoinRequest }): JSX.Element {
             aria-label="Pairing code"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+            placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
             className={`${inputCls} font-mono`}
           />
           {error && <span role="alert" className="text-[12px] text-danger">{error}</span>}

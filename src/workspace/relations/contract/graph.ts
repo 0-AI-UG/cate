@@ -226,15 +226,25 @@ function resourceInstruction(
   return `${prefix}${target} ${action}`
 }
 
-/** Compile the reachable flow up to the next execution surfaces, regardless
- * of the relation kind used to reach them. Sends are transport operations;
- * each destination receives its own downstream segment through the same
- * submit-time context hook as a user-entered prompt. */
-export function compileRelationContext(
+/** One step of the flow from an execution surface: a relation, the panel it
+ *  reaches and the panel that acts on it (the source, or a resource panel
+ *  in between). */
+export interface RelationStep {
+  relation: PanelRelation
+  target: RelationPanel
+  actor: RelationPanel
+  /** The relation was followed from the source itself. */
+  fromSource: boolean
+}
+
+/** The flow reachable from an execution surface, up to the next execution
+ *  surfaces, regardless of the relation kind used to reach them; null when
+ *  the panel is not an execution surface. */
+export function relationReach(
   sourcePanelId: string,
   panels: Record<string, RelationPanel>,
   relations: readonly PanelRelation[],
-): PanelRelationContext | null {
+): RelationStep[] | null {
   const source = panels[sourcePanelId]
   if (!source || !isExecutionSurface(source)) return null
 
@@ -246,49 +256,65 @@ export function compileRelationContext(
     outgoing.set(relation.fromPanelId, list)
   }
 
-  const instructions: string[] = []
-  const targetExecutionPanelIds: string[] = []
-  const relatedPanelIds: string[] = []
+  const steps: RelationStep[] = []
   const seenRelations = new Set<string>()
   const queue = [{ panelId: sourcePanelId, actorId: sourcePanelId }]
   while (queue.length > 0) {
     const { panelId: fromId, actorId } = queue.shift()!
-    const actor = panels[actorId]
     for (const relation of outgoing.get(fromId) ?? []) {
       if (seenRelations.has(relation.id)) continue
       seenRelations.add(relation.id)
       const target = panels[relation.toPanelId]
       if (!target) continue
-      if (!relatedPanelIds.includes(target.id)) relatedPanelIds.push(target.id)
-      if (isExecutionSurface(target)) {
-        if (!targetExecutionPanelIds.includes(target.id)) targetExecutionPanelIds.push(target.id)
-        const instruction = relation.kind === 'context'
-          ? 'Send relevant context by running'
-          : relation.kind === 'verify' ? 'Ask it to verify by running' : 'When ready, run'
-        const task = relation.kind === 'context'
-          ? '<relevant context and how to use it>'
-          : relation.kind === 'verify' ? '<result to verify and relevant findings>' : '<task and relevant findings>'
-        instructions.push(
-          `${actorId === sourcePanelId ? '' : `${panelRef(actor)}: `}`
-          + `${panelRef(target)}${customIntent(relation.label)} ${instruction} `
-          + `cate agent send --panel ${shortPanelId(target.id)} "${task}".`,
-        )
-        continue
-      }
-      instructions.push(resourceInstruction(
-        relation.kind,
-        target,
-        relation.label,
-        actorId === sourcePanelId ? undefined : actor,
-      ))
-      queue.push({ panelId: target.id, actorId })
+      steps.push({ relation, target, actor: panels[actorId], fromSource: actorId === sourcePanelId })
+      if (!isExecutionSurface(target)) queue.push({ panelId: target.id, actorId })
     }
+  }
+  return steps
+}
+
+/** The panels the flow from `sourcePanelId` reaches (`relationReach`). */
+export function relatedPanelIds(steps: readonly RelationStep[]): string[] {
+  return [...new Set(steps.map((step) => step.target.id))]
+}
+
+/** Compile the reachable flow up to the next execution surfaces, regardless
+ * of the relation kind used to reach them. Sends are transport operations;
+ * each destination receives its own downstream segment through the same
+ * submit-time context hook as a user-entered prompt. */
+export function compileRelationContext(
+  sourcePanelId: string,
+  panels: Record<string, RelationPanel>,
+  relations: readonly PanelRelation[],
+): PanelRelationContext | null {
+  const steps = relationReach(sourcePanelId, panels, relations)
+  if (!steps) return null
+
+  const instructions: string[] = []
+  const targetExecutionPanelIds: string[] = []
+  for (const { relation, target, actor, fromSource: viaSource } of steps) {
+    if (isExecutionSurface(target)) {
+      if (!targetExecutionPanelIds.includes(target.id)) targetExecutionPanelIds.push(target.id)
+      const instruction = relation.kind === 'context'
+        ? 'Send relevant context by running'
+        : relation.kind === 'verify' ? 'Ask it to verify by running' : 'When ready, run'
+      const task = relation.kind === 'context'
+        ? '<relevant context and how to use it>'
+        : relation.kind === 'verify' ? '<result to verify and relevant findings>' : '<task and relevant findings>'
+      instructions.push(
+        `${viaSource ? '' : `${panelRef(actor)}: `}`
+        + `${panelRef(target)}${customIntent(relation.label)} ${instruction} `
+        + `cate agent send --panel ${shortPanelId(target.id)} "${task}".`,
+      )
+      continue
+    }
+    instructions.push(resourceInstruction(relation.kind, target, relation.label, viaSource ? undefined : actor))
   }
 
   if (instructions.length === 0) return null
   return {
     targetExecutionPanelIds,
-    relatedPanelIds,
+    relatedPanelIds: relatedPanelIds(steps),
     text: [
       '<cate-connected-panels>',
       'Routing context:',

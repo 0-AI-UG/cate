@@ -6,7 +6,7 @@
 
 import { byMachine, openTrusted, reconcileWindow } from '@client/workspaces'
 import { documentStoreFor } from '@client/document'
-import { createPanel, installRevealHooks, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
+import { focusedPanelId, installRevealHooks, openLink, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
 import { MAIN_WINDOW, renamePanelChange, type PanelId } from '@workspace/document/contract'
 import { isLoopbackUrl } from '@runtime/tunnel/contract'
 import { isPairingLink } from '@runtime/pairing/contract'
@@ -175,16 +175,18 @@ export async function openWorkspaceFile(workspaceId: string, path: string): Prom
 }
 
 /** A URL opened with the app: a `cate://pair` link fills in "Join with a
- *  Code" (joining stays the person's click); a web URL opens in a panel of
- *  the shown workspace that opens URLs, else outside the app. */
+ *  Code" (joining stays the person's click); a web URL opens in the shown
+ *  workspace, placed from its focused panel, else outside the app. */
 export function openUrl(url: string): void {
   if (isPairingLink(url)) {
     useUIStore.getState().openJoinDialog({ code: url })
     return
   }
   const workspaceId = useUIStore.getState().selectedWorkspaceId
-  const type = panelTypeOpening('url')
-  if (/^https?:/i.test(url) && workspaceId && type && createPanel(workspaceId, type, { url })) return
+  if (/^https?:/i.test(url) && workspaceId) {
+    void openLink(workspaceId, { kind: 'url', url }, { from: focusedPanelId(workspaceId) ?? undefined })
+    return
+  }
   // A loopback URL means a runtime's machine: without a workspace to open it
   // in, it goes nowhere rather than to this device's browser (D10).
   if (!isLoopbackUrl(url)) clientUi().openExternal(url)

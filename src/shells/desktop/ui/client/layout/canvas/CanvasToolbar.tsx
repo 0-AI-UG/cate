@@ -16,7 +16,7 @@ import { cornerFromPoint } from './parts/corners'
 import { canvasAtPoint, canvasContainerFor } from './parts/dom'
 import { useCanvasView, useCanvasViewStore } from './context'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
-import { canvasToolbarItems, subscribeCanvasToolbarItems, type CanvasToolbarItem } from './toolbarItems'
+import { canvasToolbarItems, spawnFlyoutFor, subscribeCanvasToolbarItems, subscribeSpawnFlyouts, type CanvasToolbarItem } from './toolbarItems'
 import { useCanvasToolbarAction } from './toolbarAction'
 import { useCanvasUi } from './uiState'
 import Minimap from './Minimap'
@@ -38,8 +38,14 @@ function DefinitionIcon({ definition, size }: { definition: AnyPanelDefinition; 
   return isIconName(definition.icon) ? <Icon name={definition.icon} size={size} /> : <Plus size={size} />
 }
 
+/** Hover intent: open after a short rest, close after a short grace so the
+ *  pointer can travel from the button into the flyout. */
+const FLYOUT_OPEN_MS = 140
+const FLYOUT_CLOSE_MS = 180
+
 // A new-panel button with drag-to-place: a click opens the placement picker,
-// a drag onto a canvas drops the panel centred on the cursor.
+// a drag onto a canvas drops the panel centred on the cursor. Resting on it
+// shows the type's spawn flyout, when a module registered one.
 function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   definition: AnyPanelDefinition
   workspaceId: string
@@ -50,9 +56,40 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   const [ghost, setGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const justDragged = useRef(false)
   const size = definition.defaultSize
+  const flyout = useSyncExternalStore(subscribeSpawnFlyouts, () => spawnFlyoutFor(definition.type))
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const [flyoutAnchor, setFlyoutAnchor] = useState<DOMRect | null>(null)
+  const [flyoutShown, setFlyoutShown] = useState(false)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flyoutSide = placement === 'top' ? 'up' : 'left'
+
+  const clearHoverTimer = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+  }
+  const closeFlyout = () => {
+    clearHoverTimer()
+    setFlyoutAnchor(null)
+    setFlyoutShown(false)
+  }
+  const hoverIn = () => {
+    if (!flyout) return
+    clearHoverTimer()
+    if (flyoutAnchor) return
+    hoverTimer.current = setTimeout(() => {
+      const rect = wrapperRef.current?.getBoundingClientRect()
+      if (rect) setFlyoutAnchor(rect)
+    }, FLYOUT_OPEN_MS)
+  }
+  const hoverOut = () => {
+    clearHoverTimer()
+    hoverTimer.current = setTimeout(closeFlyout, FLYOUT_CLOSE_MS)
+  }
+  useEffect(() => clearHoverTimer, [])
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
+    closeFlyout()
     const startX = e.clientX
     const startY = e.clientY
     let moved = false
@@ -85,9 +122,10 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   }
 
   return (
-    <>
+    <div ref={wrapperRef} className="flex shrink-0" onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
       <CanvasToolbarButton
         onClick={() => {
+          closeFlyout()
           if (justDragged.current) { justDragged.current = false; return }
           createPanelOnCanvas(workspaceId, canvasId, definition.type)
         }}
@@ -96,9 +134,23 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
         label={`New ${definition.label.toLowerCase()}`}
         size="panel"
         tooltipPlacement={placement}
+        tooltipSuppressed={!!flyoutAnchor && flyoutShown}
       >
         <DefinitionIcon definition={definition} size={18} />
       </CanvasToolbarButton>
+      {flyout && flyoutAnchor && createPortal(
+        <div
+          className="fixed z-[90]"
+          style={flyoutSide === 'up'
+            ? { left: flyoutAnchor.left + flyoutAnchor.width / 2, bottom: window.innerHeight - flyoutAnchor.top, transform: 'translateX(-50%)', paddingBottom: 10 }
+            : { right: window.innerWidth - flyoutAnchor.left, bottom: window.innerHeight - flyoutAnchor.bottom, paddingRight: 10 }}
+          onMouseEnter={clearHoverTimer}
+          onMouseLeave={hoverOut}
+        >
+          <flyout.Component workspaceId={workspaceId} canvasId={canvasId} side={flyoutSide} onClose={closeFlyout} onShown={setFlyoutShown} />
+        </div>,
+        document.body,
+      )}
       {ghost && createPortal(
         <div
           style={{
@@ -125,7 +177,7 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
         </div>,
         document.body,
       )}
-    </>
+    </div>
   )
 }
 

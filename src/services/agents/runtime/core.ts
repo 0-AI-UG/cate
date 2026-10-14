@@ -1,4 +1,4 @@
-// The agents service core (architecture 10.4): hook ingestion, pid presence,
+// The agents service core (architecture 10.3): hook ingestion, pid presence,
 // change history, prompt context, the terminal agents (terminal.ts) and the
 // panel states over them. Agents publish their notification events through
 // the workspace's notifications.

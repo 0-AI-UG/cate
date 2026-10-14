@@ -2,7 +2,9 @@
 // ops apply at once on top of the confirmed document and go to the runtime;
 // the runtime's ops rebuild the view. After a reconnect the subscription
 // resumes from the last seq and unconfirmed ops go out again (their opIds make
-// that safe). Undo covers this client's own confirmed ops.
+// that safe). This client's confirmed ops stay kept until document.json holds
+// them: a runtime that restarted without them gets them again as new ops.
+// Undo covers this client's own confirmed ops.
 
 import { isRpcError, type Subscription } from '@kernel/rpc/contract'
 import {
@@ -12,6 +14,7 @@ import {
   invertOp,
   type DocBatch,
   type DocChange,
+  type AppliedOp,
   type DocOp,
   type OpId,
   type ApplyResult,
@@ -30,7 +33,7 @@ export interface DocumentLink {
   /** The next op counter of `clientId`, from its identity (never restarts). */
   nextCounter(): number
   remote: DocumentRemote
-  /** Runs after each successful hello, before queued calls go out. */
+  /** Runs after each successful hello, once queued and resent calls went out. */
   onReady(listener: (info: { reconnect: boolean }) => void): () => void
 }
 
@@ -75,6 +78,11 @@ export interface DocumentStore {
 type Origin = 'do' | 'undo' | 'redo'
 
 const UNDO_LIMIT = 200
+/** An op's inverse and the document the op left: undo skips what changed since. */
+interface UndoEntry {
+  changes: DocChange[]
+  after: WorkspaceDocument
+}
 const opKey = (opId: OpId) => `${opId.clientId}:${opId.counter}`
 const newId = () => globalThis.crypto.randomUUID()
 
@@ -84,12 +92,14 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
   const refusedListeners = new Set<(refused: RefusedOp) => void>()
   const inFlight = new Set<string>()
   const origins = new Map<string, Origin>()
-  let undoStack: DocChange[][] = []
-  let redoStack: DocChange[][] = []
+  let undoStack: UndoEntry[] = []
+  let redoStack: UndoEntry[] = []
   let undoState: UndoState = { canUndo: false, canRedo: false }
   let synced = false
   // The runtime epoch the mirror's seq belongs to.
   let epoch = ''
+  // This client's confirmed ops after the runtime's last document.json write.
+  let unpersisted: AppliedOp[] = []
   let disposed = false
   let sub: Subscription<DocumentEvent, void> | null = null
   let markReady!: () => void
@@ -132,12 +142,26 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
   }
 
   const onEvent = (event: DocumentEvent) => {
+    if (event.kind === 'persisted') {
+      unpersisted = unpersisted.filter((entry) => entry.seq > event.seq)
+      return
+    }
     if (event.kind === 'doc') {
+      // A new epoch: the runtime restarted from document.json, without the
+      // ops after `startSeq`. Their opIds are not in its counters any more
+      // and later ops of this client may have gone in already, so they go
+      // again as new ops.
+      const lost = epoch !== '' && event.epoch !== epoch ? unpersisted.filter((entry) => entry.seq > event.startSeq) : []
+      if (epoch !== event.epoch) unpersisted = []
       mirror.reset(event.doc, event.seq)
       epoch = event.epoch
       if (!synced) {
         synced = true
         markReady()
+      }
+      for (const { op } of lost) {
+        const { opId: _opId, ...change } = op
+        propose(change as DocChange | DocBatch, null)
       }
       notify()
       return
@@ -148,17 +172,21 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
       resubscribe()
       return
     }
-    if (outcome.mine) confirmed(outcome.before, event.op)
+    if (outcome.mine) {
+      unpersisted.push({ seq: event.seq, op: event.op })
+      confirmed(outcome.before, mirror.confirmed, event.op)
+    }
     notify()
   }
 
-  const confirmed = (before: WorkspaceDocument, op: DocOp) => {
+  const confirmed = (before: WorkspaceDocument, after: WorkspaceDocument, op: DocOp) => {
     const key = opKey(op.opId)
     const origin = origins.get(key)
     origins.delete(key)
     if (!origin) return
-    const inverse = invertOp(before, op, newId)
-    if (inverse.length === 0) return
+    const changes = invertOp(before, op, newId)
+    if (changes.length === 0) return
+    const inverse = { changes, after }
     if (origin === 'undo') {
       redoStack = [...redoStack, inverse]
     } else {
@@ -228,7 +256,7 @@ export function createDocumentStore(link: DocumentLink): DocumentStore {
       if (!entry) return false
       if (from === 'undo') undoStack = undoStack.slice(0, -1)
       else redoStack = redoStack.slice(0, -1)
-      const changes = applicable(mirror.doc, entry)
+      const changes = applicable(mirror.doc, entry.changes, entry.after)
       if (changes.length === 0) {
         notify()
         continue

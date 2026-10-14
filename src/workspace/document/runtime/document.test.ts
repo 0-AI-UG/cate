@@ -185,10 +185,11 @@ describe('document capability', () => {
     await tick()
     await expect(a.doc.apply({ op: op('ca', 1, addPanel('p1')) })).resolves.toEqual({ status: 'applied', seq: 1 })
     service.apply(addPanel('p2'))
+    await service.flush()
     await tick()
     for (const events of [eventsA, eventsB]) {
-      expect(events.map((e) => e.kind)).toEqual(['doc', 'op', 'op'])
-      expect(events.slice(1).map((e) => (e as { seq: number }).seq)).toEqual([1, 2])
+      expect(events.map((e) => e.kind)).toEqual(['doc', 'persisted', 'op', 'op', 'persisted'])
+      expect(events.slice(1).map((e) => (e as { seq: number }).seq)).toEqual([0, 1, 2, 2])
     }
     service.dispose()
   })
@@ -212,12 +213,12 @@ describe('document capability', () => {
     const missed: DocumentEvent[] = []
     a.doc.subscribe({ sinceSeq: 1, epoch: service.epoch }).onEvent((e) => missed.push(e))
     await tick()
-    expect(missed).toMatchObject([{ kind: 'op', seq: 2 }, { kind: 'op', seq: 3 }])
+    expect(missed).toMatchObject([{ kind: 'op', seq: 2 }, { kind: 'op', seq: 3 }, { kind: 'persisted', seq: 0 }])
 
     const full: DocumentEvent[] = []
     a.doc.subscribe({ sinceSeq: 99, epoch: service.epoch }).onEvent((e) => full.push(e))
     await tick()
-    expect(full).toMatchObject([{ kind: 'doc', seq: 3 }])
+    expect(full).toMatchObject([{ kind: 'doc', seq: 3, startSeq: 0 }, { kind: 'persisted', seq: 0 }])
     expect(Object.keys((full[0] as { doc: { panels: object } }).doc.panels)).toEqual(['p1', 'p2', 'p3'])
     service.dispose()
   })

@@ -13,7 +13,7 @@ export type SettingsScope = 'client' | 'workspace'
 /** The window's tabs, in order. */
 export const SETTINGS_SCOPES: readonly SettingsScope[] = ['client', 'workspace']
 
-export type SettingsGroup = 'general' | 'runtime' | 'layout' | 'tools' | 'sourceControl' | 'agents' | 'connections'
+export type SettingsGroup = 'general' | 'runtime' | 'layout' | 'tools' | 'sourceControl' | 'agents'
 
 /** The nav's groups in order; a scope shows the ones its pages use. */
 export const SETTINGS_GROUPS: readonly { id: SettingsGroup; title: string }[] = [
@@ -23,7 +23,6 @@ export const SETTINGS_GROUPS: readonly { id: SettingsGroup; title: string }[] = 
   { id: 'tools', title: 'Tools' },
   { id: 'sourceControl', title: 'Source control' },
   { id: 'agents', title: 'Agents' },
-  { id: 'connections', title: 'Connections' },
 ]
 
 export interface SettingsPageProps {

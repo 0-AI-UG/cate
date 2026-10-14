@@ -1,9 +1,10 @@
 // services/terminal contract: the `process` capability (PTYs, their shared
-// screens and status) and the terminal settings slices. Pure.
+// screens, their links and status) and the terminal settings slices. Pure.
 
 import type { TerminalStatuses, TerminalStatusChange } from './contract/capability'
 
 export * from './contract/capability'
+export * from './contract/links'
 export * from './contract/settings'
 
 /** Applies a status change to a mirrored status map. */

@@ -2,12 +2,12 @@ import { expect, it } from 'vitest'
 import { buildVersion, checksumUrl, installDirFromExecPath, installLayout, isBuildId, parseDaemonArgv, releaseUrl, runtimeInstallDir, runtimeTarget, serveArgv } from './contract'
 
 it('round-trips the serve command line', () => {
-  const args = { root: '/w', detach: true, network: 'cateConnect' as const }
-  expect(serveArgv(args)).toEqual(['serve', '/w', '--detach', '--network', 'cateConnect'])
+  const args = { root: '/w', detach: true }
+  expect(serveArgv(args)).toEqual(['serve', '/w', '--detach'])
   expect(parseDaemonArgv(serveArgv(args))).toEqual({ command: 'serve', args })
   expect(parseDaemonArgv(['serve', '/w'])).toEqual({ command: 'serve', args: { root: '/w', detach: false } })
   expect(parseDaemonArgv(['serve']).command).toBe('error')
-  expect(parseDaemonArgv(['serve', '/w', '--network', 'off']).command).toBe('error')
+  expect(parseDaemonArgv(['serve', '/w', '--network', 'sameNetwork']).command).toBe('error')
   expect(parseDaemonArgv(['serve', '/w', '--bogus']).command).toBe('error')
   expect(parseDaemonArgv(['--root', '/w']).command).toBe('error')
   expect(parseDaemonArgv(['bridge', '/w'])).toEqual({ command: 'bridge', root: '/w' })

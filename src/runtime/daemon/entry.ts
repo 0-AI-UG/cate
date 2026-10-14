@@ -11,6 +11,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createLogger, type Logger } from '@kernel/log/contract'
 import { createLifecycleBus, type LifecycleBus } from '@kernel/lifecycle/runtime'
+import { removeStrayTemporaries } from '@kernel/state/node'
 import { RpcError } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { settingsCapability } from '@kernel/settings/contract'
@@ -36,13 +37,13 @@ import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
 import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
 import { pairingEndpoints, type PeerConnectionFactory, type WebSocketFactory } from '@runtime/transports/contract'
-import { loadNodePeerConnection, nodeWebSocketFactory } from '@runtime/transports/node'
+import { loadNodePeerConnection, nodeWebSocketFactory, sameNetworkProblem } from '@runtime/transports/node'
 import { createNetworkPeers, serveLocal, type SameNetworkOptions } from '@runtime/transports/runtime'
 import { tunnelCapability } from '@runtime/tunnel/contract'
 import { tunnelCapabilityImpl } from '@runtime/tunnel/runtime'
 import type { PanelRuntime } from '@panels/runtime'
 import { applyLoginEnv } from '@services/terminal/runtime'
-import { installDirFromExecPath, RUNTIME_BUILD, RUNTIME_VERSION, runtimeCapability, type NestedRefusal, type ServeArgs } from './contract'
+import { installDirFromExecPath, RUNTIME_BUILD, RUNTIME_VERSION, runtimeCapability, type NestedRefusal } from './contract'
 import { composeWorkspace, type Workspace } from './compose/workspace'
 import { ensureRuntimeInstalled } from './node'
 import {
@@ -61,7 +62,6 @@ type StopReason =
 
 export interface ServeOptions {
   root: string
-  network?: ServeArgs['network']
   /** The user's home; `.cate/` lives under it. Default `os.homedir()`. */
   home?: string
   version?: string
@@ -155,6 +155,9 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     const closed = new Promise<void>((resolve) => setTimeout(() => void refusing.close().then(resolve), NESTED_REFUSAL_MS))
     return { kind: 'nested', message, closed }
   }
+  // This daemon is the data dir's only writer now: temporary files there are
+  // what a forced exit left behind.
+  await removeStrayTemporaries([paths.dir, paths.sessions, paths.buffers])
   // A too-long data dir is reached through a /tmp symlink (data/node); keep it
   // there for the CLI's CATE_SOCKET even if a tmp cleaner removes it.
   const relink = setInterval(() => {
@@ -163,6 +166,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   relink.unref()
   let workspace: Workspace | undefined
   const rpc = new RpcServer({ version, build: RUNTIME_BUILD, lifecycle, acceptHello: (hello) => workspace?.acceptHello(hello) })
+  // `pairing` exists by the time `listener.open()` serves the first hello.
   const listener = serveLocal(lock.server, rpc)
   const writeInfo = (remote: Omit<RuntimeEndpoints, 'local'> = {}) => writeRuntimeInfo(paths.dir, {
     runtimeId,
@@ -184,7 +188,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   // derives; the path's runtimeId names only its data dir and socket.
   const networkId = networkIdOf(keys.publicKey)
   const settings = createWorkspaceSettingsStore({ dataDir: paths.dir, table: workspaceSettingsTable })
-  if (options.network) settings.set('runtimeNetwork', options.network)
 
   const busy = createBusyRegistry()
   const perf = createPerfSampler()
@@ -194,6 +197,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     runtimePublicKey: keys.publicKey,
     store: devicesFile,
     addresses: () => network.addresses(),
+    sameNetworkProblem: () => sameNetworkProblem(),
   })
   // Every client is a device of the workspace, whatever carried it in, and
   // removing a device drops all its connections (7.6).
@@ -214,8 +218,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     secrets,
     busy,
     log,
-    // `cate serve` (network on from the command line) trusts what it serves.
-    trustOnStart: options.network !== undefined,
     countPerf: (name) => perf.count(name),
     ...(options.panels ? { panels: options.panels } : {}),
   })
@@ -255,6 +257,13 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
         resolveStopped(reason)
       }, RUNTIME_STOP_DEADLINE_MS)
       deadline.unref()
+      // State files first: the deadline must not cut off a pairing or a
+      // setting made just before the stop. They are written again below.
+      settings.flushSync()
+      devicesFile.flushSync()
+      pushFile.flushSync()
+      secrets.flushSync()
+      await ws.document.flush().catch((err: Error) => log.warn('could not write document.json: %s', err.message))
       // Clients learn why before their connections close.
       for (const listener of [...stoppingListeners]) listener(reason.kind)
       if (stoppingListeners.size > 0) await new Promise((resolve) => setTimeout(resolve, 50))

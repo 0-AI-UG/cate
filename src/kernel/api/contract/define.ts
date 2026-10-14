@@ -49,6 +49,11 @@ export interface CateApiMethodSpec<S extends ArgShape = ArgShape> {
    *  the reserved `panelId` argument (CLI `--panel`) naming its target; the
    *  router resolves and strips it before the session sees the arguments. */
   target?: TargetPolicy
+  /** `session` methods only. A `control` method runs in the panel's op
+   *  queue, one after another with its ops; a `concurrent` one runs alongside
+   *  them (a browser page operation waits on the client, which meanwhile
+   *  keeps sending the panel's ops, a tab switch among them). */
+  concurrent?: boolean
   /** Accept argument keys the shape does not declare and pass them through
    *  (option bags of page operations). */
   extraArgs?: boolean
@@ -204,6 +209,8 @@ export interface ApiHandlerContext {
 export interface ApiSessionContext extends ApiHandlerContext {
   /** The resolved target panel. */
   panelId: string
+  /** Runs in the panel's op queue: a `control` method that is not `concurrent`. */
+  exclusive: boolean
 }
 
 type MethodsOf<N> = N extends CateApiNamespace<infer M> ? M : never

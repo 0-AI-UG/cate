@@ -1,6 +1,4 @@
-import { defineSettings, numberIn, oneOf, setting } from '@kernel/settings/contract/define'
-
-export type TerminalLinkOpenTarget = 'ask' | 'canvas' | 'external'
+import { defineSettings, numberIn, setting } from '@kernel/settings/contract/define'
 
 export const terminalClientSettings = defineSettings({
   scope: 'client',
@@ -14,8 +12,6 @@ export const terminalClientSettings = defineSettings({
     /** Off by default: each blink wakes the compositor. */
     terminalCursorBlink: setting(false),
     terminalOptionIsMeta: setting(true),
-    /** Cmd/Ctrl+Shift+click always opens externally. */
-    terminalLinkOpenTarget: setting<TerminalLinkOpenTarget>('ask', oneOf('ask', 'canvas', 'external')),
   },
 })
 

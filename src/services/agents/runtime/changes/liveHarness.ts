@@ -89,23 +89,31 @@ export async function runLiveTui(binary: string, args: string[], options: {
   timeout?: number
   /** Decode cursor movement/redraws when asserting on a real TUI response. */
   renderScreen?: boolean
+  /** The PTY's size; 120x40 by default. */
+  cols?: number
+  rows?: number
+  /** Every chunk of output, as the PTY wrote it. */
+  onData?: (chunk: string) => void
   complete: (screen: string) => boolean | Promise<boolean>
   respond?: (screen: string) => string | undefined
 }): Promise<void> {
   const { spawn } = await import('node-pty')
+  const cols = options.cols ?? 120
+  const rows = options.rows ?? 40
   const rendered = options.renderScreen
-    ? new (await import('@xterm/headless')).Terminal({ cols: 120, rows: 40, scrollback: 200, allowProposedApi: true })
+    ? new (await import('@xterm/headless')).Terminal({ cols, rows, scrollback: 200, allowProposedApi: true })
     : undefined
   const screenText = () => rendered
     ? Array.from({ length: rendered.buffer.active.length }, (_, index) => rendered.buffer.active.getLine(index)?.translateToString(true) ?? '').join('\n')
     : stripVTControlCharacters(screen)
   // POSIX forkpty creates a session/process group owned by the returned pid.
-  const terminal = spawn(binary, args, { cwd: options.cwd, env: { ...options.env, PWD: options.cwd }, name: 'xterm-256color', cols: 120, rows: 40 })
+  const terminal = spawn(binary, args, { cwd: options.cwd, env: { ...options.env, PWD: options.cwd }, name: 'xterm-256color', cols, rows })
   let screen = '', bytes = 0, exited = false
   const data = terminal.onData((chunk) => {
     bytes += Buffer.byteLength(chunk)
     screen = (screen + chunk).slice(-64 * 1024)
     rendered?.write(chunk)
+    options.onData?.(chunk)
   })
   const exit = terminal.onExit(() => { exited = true })
   try {

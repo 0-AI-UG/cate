@@ -96,6 +96,41 @@ describe('agent conversations', () => {
     conversations.dispose()
   })
 
+  it('holds a turn\'s end until its reply is read, then sends both together', async () => {
+    const { panels, terminals, setStatus, write } = setup()
+    setStatus('running')
+    write([{ role: 'user', text: 'fix it' }])
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [], endMs: 1_000 })
+    const changes: AgentConversationChange[] = []
+    conversations.watch('p1', (_conversation, change) => { if (change) changes.push(change) })
+    await vi.advanceTimersByTimeAsync(0)
+    setStatus('waitingForInput')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(changes).toEqual([])
+    write([{ role: 'user', text: 'fix it' }, { role: 'assistant', text: 'Fixed.' }])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(changes).toEqual([{ status: 'waitingForInput', canReceivePrompt: true, from: 1, messages: [{ role: 'assistant', text: 'Fixed.' }] }])
+    conversations.dispose()
+  })
+
+  it('waits for a reply after the last step, and ends without one after a while', async () => {
+    const { panels, terminals, setStatus, write, step } = setup()
+    setStatus('running')
+    write([{ role: 'user', text: 'fix it', createdAt: '2026-01-01T00:00:00.000Z' }, { role: 'assistant', text: 'Looking', createdAt: '2026-01-01T00:00:01.000Z' }])
+    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [], endMs: 1_000 })
+    const changes: AgentConversationChange[] = []
+    conversations.watch('p1', (_conversation, change) => { if (change) changes.push(change) })
+    await vi.advanceTimersByTimeAsync(0)
+    step('p1', { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:02.000Z' })
+    changes.length = 0
+    setStatus('waitingForInput')
+    await vi.advanceTimersByTimeAsync(900)
+    expect(changes).toEqual([])
+    await vi.advanceTimersByTimeAsync(200)
+    expect(changes).toEqual([{ status: 'waitingForInput', canReceivePrompt: true }])
+    conversations.dispose()
+  })
+
   it('keeps the steps of every panel and sends them as they come', async () => {
     const { panels, terminals, conversation, setStatus, step } = setup()
     setStatus('running')

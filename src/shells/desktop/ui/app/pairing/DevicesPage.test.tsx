@@ -42,8 +42,8 @@ function fakeRuntime() {
       }),
     },
     pairing: {
-      createSecret: vi.fn(async ({ mode }: { mode: string }) => {
-        calls.push(`createSecret ${mode}`)
+      createSecret: vi.fn(async ({ mode, acknowledged }: { mode: string; acknowledged?: boolean }) => {
+        calls.push(`createSecret ${mode}${acknowledged === true ? '' : ' unacknowledged'}`)
         return { uri: 'cate://pair?r=abcdefghijklmnop', code: 'abcd-efgh-ijkl-mnop-qrst-uvwx-yz23-4567', expiresAt: Date.now() + 600_000 }
       }),
       // The runtime sends the list, then again on every change.
@@ -67,6 +67,8 @@ function fakeRuntime() {
   return { runtime, calls }
 }
 
+const button = (label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent?.includes(label)) as HTMLButtonElement | undefined
+
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)) })
 
 beforeEach(() => {
@@ -84,21 +86,54 @@ afterEach(() => {
 })
 
 describe('Share and Devices', () => {
-  it('turns network access on before creating a code, then shows the code, QR and expiry', async () => {
+  it('asks first, turns network access on before creating a code, then shows the code, QR and expiry', async () => {
     const { runtime, calls } = fakeRuntime()
     uninstall = setRuntimeResolver((id) => (id === 'w1' ? runtime : null))
     installMockClientUi()
-    act(() => root.render(<SharePanel workspaceId="w1" />))
+    const cancel = vi.fn()
+    act(() => root.render(<SharePanel workspaceId="w1" onCancel={cancel} />))
     await flush()
     expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Only its machine')
-    const add = [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Show pairing code'))!
-    await act(async () => { add.click() })
+    // Nothing is made or turned on before the person confirms.
+    expect(host.textContent).toContain('Anyone who joins can use this computer as you')
+    expect(host.textContent).toContain('Turns on same-network access first')
+    expect(calls).toEqual([])
+    await act(async () => { button('Cancel')!.click() })
+    expect(cancel).toHaveBeenCalled()
+    expect(calls).toEqual([])
+    await act(async () => { button('I understand, show code')!.click() })
     await flush()
     expect(calls).toEqual(['set runtimeNetwork=sameNetwork', 'createSecret sameNetwork'])
     expect(host.textContent).toContain('ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567')
     expect(host.textContent).toMatch(/Expires in (9:59|10:00)/)
     expect(host.querySelector('[data-testid="pairing-qr"] svg')).not.toBeNull()
     expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Same network')
+  })
+
+  it('asks again for every new code, after New code and after the access changes', async () => {
+    const { runtime, calls } = fakeRuntime()
+    uninstall = setRuntimeResolver(() => runtime)
+    installMockClientUi()
+    act(() => root.render(<SharePanel workspaceId="w1" />))
+    await flush()
+    await act(async () => { button('I understand, show code')!.click() })
+    await flush()
+    expect(host.textContent).toContain('ABCD-EFGH')
+
+    await act(async () => { button('New code')!.click() })
+    await flush()
+    expect(host.textContent).not.toContain('ABCD-EFGH')
+    expect(host.textContent).toContain('Anyone who joins can use this computer as you')
+    await act(async () => { button('I understand, show code')!.click() })
+    await flush()
+    expect(host.textContent).toContain('ABCD-EFGH')
+
+    const anywhere = [...host.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes('Anywhere')) as HTMLButtonElement
+    await act(async () => { anywhere.click() })
+    await flush()
+    expect(host.textContent).not.toContain('ABCD-EFGH')
+    expect(host.textContent).toContain('Anyone who joins can use this computer as you')
+    expect(calls).toEqual(['set runtimeNetwork=sameNetwork', 'createSecret sameNetwork', 'createSecret sameNetwork', 'set runtimeNetwork=cateConnect'])
   })
 
   it('widens access at once and asks before narrowing it', async () => {

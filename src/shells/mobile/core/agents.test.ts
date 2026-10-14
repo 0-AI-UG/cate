@@ -160,34 +160,38 @@ describe('mobile actions', () => {
         stepsSince: '2026-01-01T00:00:00.000Z',
       } })
       expect(events.at(-1)).toEqual({
-        kind: 'conversation', status: 'waitingForInput', canReceivePrompt: true, pending: null, queued: null, from: 0,
-        messages: [{ role: 'user', text: 'Say hi', createdAt: '2026-01-01T00:00:01.000Z' }, { role: 'assistant', text: 'Hi.' }],
-        steps: { groups: [], activity: null },
+        kind: 'chat', loaded: true, status: 'waitingForInput', canReceivePrompt: true, queued: null, turn: null, from: 0,
+        items: [
+          { kind: 'prompt', id: 'm0', text: 'Say hi', sent: true },
+          { kind: 'reply', id: 'm1', text: 'Hi.' },
+        ],
       })
 
       await expect(actions['agents.send']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1', prompt: 'go' })).resolves.toEqual({ ok: true })
       expect(send).toHaveBeenCalledWith({ panelId: 'p1', prompt: 'go' })
-      expect(events.at(-1)).toMatchObject({ pending: 'go', from: 2, messages: [] })
+      expect(events.at(-1)).toMatchObject({ turn: { step: null }, from: 2, items: [{ kind: 'prompt', id: 'm2', text: 'go', sent: false }] })
 
-      // The turn shows with the prompt: one event, pending gone.
+      // The turn shows with the prompt: one event, the same item sent.
       conversation.emit({ kind: 'change', rev: 1, change: { status: 'running', canReceivePrompt: false, from: 2, messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }] } })
       expect(events.at(-1)).toEqual({
-        kind: 'conversation', status: 'running', canReceivePrompt: false, pending: null, queued: null, from: 2,
-        messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }], steps: null,
+        kind: 'chat', loaded: true, status: 'running', canReceivePrompt: false, queued: null, turn: { step: null }, from: 2,
+        items: [{ kind: 'prompt', id: 'm2', text: 'go', sent: true }],
       })
 
       // A step of the running turn shows at its end and as what it is doing.
       const step = { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:05.000Z' }
       conversation.emit({ kind: 'change', rev: 2, change: { stepsFrom: 0, steps: [step] } })
-      expect(events.at(-1)).toMatchObject({ from: 3, messages: [], steps: { groups: [{ before: 3, steps: [step], ghost: false }], activity: step } })
+      expect(events.at(-1)).toMatchObject({ from: 3, items: [{ kind: 'steps', id: 's3', steps: [step], ghost: false }], turn: { step } })
 
       // Queued while it works, sent once it can take a prompt.
       await actions['agents.queue']({ viewId: 'v', prompt: 'next' })
-      expect(events.at(-1)).toMatchObject({ queued: 'next', pending: null })
+      expect(events.at(-1)).toMatchObject({ queued: 'next', from: 4, items: [] })
       expect(send).toHaveBeenCalledTimes(1)
       conversation.emit({ kind: 'change', rev: 3, change: { status: 'waitingForInput', canReceivePrompt: true } })
       expect(send).toHaveBeenLastCalledWith({ panelId: 'p1', prompt: 'next' })
-      expect(events.at(-1)).toMatchObject({ queued: null, pending: 'next' })
+      expect(events.at(-1)).toMatchObject({
+        queued: null, turn: { step: null }, from: 4, items: [{ kind: 'prompt', id: 'm3', text: 'next', sent: false }],
+      })
       await actions['agents.queue']({ viewId: 'v', prompt: 'later' })
       await expect(actions['agents.unqueue']({ viewId: 'v' })).resolves.toBe('later')
 

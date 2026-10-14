@@ -1,4 +1,4 @@
-// How every client consumes notification events (architecture 10.5): one
+// How every client consumes notification events (architecture 10.4): one
 // subscription to the `notifications` stream per open workspace, each event
 // handed to the shell's display.
 

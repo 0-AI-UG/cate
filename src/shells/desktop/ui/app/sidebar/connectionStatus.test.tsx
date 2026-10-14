@@ -51,7 +51,7 @@ describe('WorkspaceToggle', () => {
   it('while not connected, is a status dot that opens the workspace', () => {
     const onToggle = vi.fn()
     const toggle = render(fakeConnection({ kind: 'offline', lastSeen: null, retrying: false, error: 'ECONNREFUSED' }), onToggle)
-    expect(toggle.getAttribute('aria-label')).toBe('Not reachable: The workspace did not answer. Its machine may be off or offline. Cate keeps trying.')
+    expect(toggle.getAttribute('aria-label')).toBe('Not reachable: Its machine may be off or offline.')
     expect(toggle.title).toBe(toggle.getAttribute('aria-label'))
     expect(toggle.dataset.connectionStatus).toBe('offline')
     act(() => toggle.click())

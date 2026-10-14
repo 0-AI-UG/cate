@@ -80,8 +80,6 @@ export interface DesktopPort {
   pickFolder(): Promise<string | null>
   /** Asks for an image file; returns its path. */
   pickImage(): Promise<string | null>
-  /** This device as the workspace list names it ("This Mac"). */
-  thisMachineName: string
   // What ssh asks while it signs in to a machine (a password, a code).
   onMachinePrompt(listener: (prompt: MachinePrompt) => void): () => void
   /** Main withdrew a prompt (ssh stopped waiting, or it timed out). */

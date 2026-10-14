@@ -1,7 +1,10 @@
 // The generic rpc client. It outlives connections: calls made while
 // disconnected are queued, calls in flight when a connection drops are resent
 // on the next one (a mutating call keeps its opId, so the runtime applies it
-// once), and streams marked `resume` are reopened.
+// once), and streams marked `resume` are reopened. The runtime remembers opIds
+// only while it runs: a mutating call in flight when it restarted (a new
+// `epoch` in its hello) fails with `interrupted` instead, unless its method is
+// `idempotent`.
 
 import {
   CancelledError,
@@ -45,6 +48,7 @@ export interface RpcClientOptions {
 
 export interface CallSpec {
   mutates?: boolean
+  idempotent?: boolean
   timeoutMs?: number
   crossMajor?: boolean
 }
@@ -58,7 +62,10 @@ export interface ReadyInfo {
 interface PendingCall {
   req: ReqMessage
   crossMajor: boolean
+  idempotent: boolean
   sent: boolean
+  /** The runtime epoch it was last sent to. */
+  sentEpoch?: string
   resolve: (value: unknown) => void
   reject: (err: Error) => void
   cleanup: () => void
@@ -94,8 +101,9 @@ export class RpcClient {
     return 'client' in this.opts.identity ? this.opts.identity.client.clientId : null
   }
 
-  /** Runs after each successful hello, before queued and resent calls go out:
-   *  the place to resync (send the last document sequence number). */
+  /** Runs after each successful hello, once queued and resent calls went out
+   *  (so a call it makes comes after them): the place to resync (send the
+   *  last document sequence number). */
   onReady(listener: Listener<ReadyInfo>): () => void {
     this.readyListeners.add(listener)
     return () => { this.readyListeners.delete(listener) }
@@ -162,6 +170,7 @@ export class RpcClient {
       const call: PendingCall = {
         req,
         crossMajor: spec.crossMajor === true,
+        idempotent: spec.idempotent === true,
         sent: false,
         resolve,
         reject,
@@ -238,6 +247,7 @@ export class RpcClient {
     if ((this._state === 'ready' || this._state === 'incompatible') && this.port) {
       this.port.send({ kind: 'msg', msg: call.req })
       call.sent = true
+      call.sentEpoch = this._remote?.epoch
     }
   }
 
@@ -292,19 +302,30 @@ export class RpcClient {
     const waiter = this.attachWaiter
     this.clearHello(null)
     waiter?.resolve(hello)
-    if (compatible) {
-      const info: ReadyInfo = { hello, reconnect: this.everReady }
-      this.everReady = true
-      for (const listener of [...this.readyListeners]) {
-        try { listener(info) } catch { /* a listener must not block the queue */ }
-      }
-      for (const stream of [...this.streams.values()]) if (!stream.sent) this.sendStream(stream)
-    } else {
+    for (const call of [...this.calls.values()]) {
+      if (call.sentEpoch === undefined || call.sentEpoch === hello.epoch || !call.req.opId || call.idempotent) continue
+      this.settleCall(call.req.id, new RpcError('interrupted', 'The runtime restarted; this call may or may not have run'), false)
+    }
+    if (!compatible) {
       const err = this.incompatibleError()
       for (const stream of [...this.streams.values()]) stream.finish(err)
       this.streams.clear()
+      for (const call of [...this.calls.values()].sort((a, b) => a.req.id - b.req.id)) this.flushCall(call)
+      return
     }
-    for (const call of [...this.calls.values()].sort((a, b) => a.req.id - b.req.id)) this.flushCall(call)
+    // Queued and resent work goes out in its original order before the ready
+    // listeners run: a call a listener makes has a higher opId counter, and
+    // the runtime would answer an older one sent after it `duplicate`.
+    const queued = [
+      ...[...this.calls.values()].map((call) => ({ id: call.req.id, send: () => this.flushCall(call) })),
+      ...[...this.streams.values()].filter((s) => !s.sent).map((s) => ({ id: s.wireId, send: () => this.sendStream(s) })),
+    ]
+    for (const item of queued.sort((a, b) => a.id - b.id)) item.send()
+    const info: ReadyInfo = { hello, reconnect: this.everReady }
+    this.everReady = true
+    for (const listener of [...this.readyListeners]) {
+      try { listener(info) } catch { /* a listener must not block the others */ }
+    }
   }
 
   private onDisconnect(reason?: string): void {

@@ -9,14 +9,12 @@ import type { WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../app'
 import { useUIStore } from '../state/uiStore'
 import { MachineFolderHost } from './MachineFolderHost'
-import { MachinesPage } from './MachinesPage'
 import { WorkspacePicker } from './WorkspacePicker'
 import { OpenWorkspaceDialog } from './OpenWorkspaceDialog'
 import { installDesktopPort, type DesktopPort } from '../desktop'
 import { clientSettingsTable, type ClientSettings } from '../../../settings'
+import { installMockClientUi } from '../../../../../test/clientUi'
 
-/** Settings → Machines, and the folder dialog it opens. */
-const Settings = () => <><MachinesPage /><MachineFolderHost /></>
 /** The Open picker, and the folder dialog it opens. */
 const Picker = () => <><WorkspacePicker /><MachineFolderHost /></>
 
@@ -78,15 +76,20 @@ function type(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+/** Adds a machine in the picker by its ssh command. */
+async function addInPicker(command: string) {
+  await act(async () => option('Add an SSH machine…').click())
+  await act(async () => type(document.body.querySelector('input[aria-label="SSH command"]') as HTMLInputElement, command))
+  await act(async () => button('Connect').click())
+}
+
 it('adds a machine once it answers, then opens the picked folder as a workspace', async () => {
   const setup = fakeSetup()
   const workspaces = fakeWorkspaces()
   installClientApp({ workspaces, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
-  await act(async () => root.render(<Settings />))
-  const input = host.querySelector('input[placeholder^="ssh "]') as HTMLInputElement
-  await act(async () => type(input, 'ssh -p 2222 u@box'))
-  await act(async () => button('Add').click())
+  await act(async () => root.render(<Picker />))
+  await addInPicker('ssh -p 2222 u@box')
 
   // The runtime is ensured before any folder is shown, and only then saved.
   const box = ssh({ destination: 'u@box', port: 2222 })
@@ -114,9 +117,8 @@ it('does not save a machine that never answered', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockRejectedValue(new Error('u@box refused the login.'))
   installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
-  await act(async () => root.render(<Settings />))
-  await act(async () => type(host.querySelector('input[placeholder^="ssh "]') as HTMLInputElement, 'u@box'))
-  await act(async () => button('Add').click())
+  await act(async () => root.render(<Picker />))
+  await addInPicker('u@box')
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('refused the login')
   expect(store.get('sshMachines')).toEqual([])
 })
@@ -127,8 +129,8 @@ it('shows why a machine cannot be set up and retries', async () => {
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
   installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
-  await act(async () => root.render(<Settings />))
-  await act(async () => button('Open a workspace').click())
+  await act(async () => root.render(<Picker />))
+  await act(async () => option('u@box').click())
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('refused the login')
   await act(async () => button('Try again').click())
   expect(setup.ensureRuntime).toHaveBeenCalledTimes(2)
@@ -141,8 +143,8 @@ it('falls back to the home folder when the last one is gone, and opens a typed p
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' }, lastPath: '/gone' }])
   installClientApp({ workspaces: workspaces as unknown as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
-  await act(async () => root.render(<Settings />))
-  await act(async () => button('Open a workspace').click())
+  await act(async () => root.render(<Picker />))
+  await act(async () => option('u@box').click())
   const path = document.body.querySelector('input[aria-label="Folder path"]') as HTMLInputElement
   expect(path.value).toBe('/home/u')
   await act(async () => type(path, '/srv/site'))
@@ -172,14 +174,17 @@ it('Open lists WSL distros to open a folder in', async () => {
   expect(setup.ensureRuntime).toHaveBeenCalledWith({ kind: 'wsl', distro: 'Ubuntu' })
 })
 
-it('Open adds a machine by its ssh command', async () => {
-  const setup = fakeSetup()
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+it('Open removes a saved machine once confirmed', async () => {
+  const ui = installMockClientUi()
+  store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
+  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
   await act(async () => root.render(<Picker />))
-  await act(async () => option('Add an SSH machine…').click())
-  await act(async () => type(document.body.querySelector('input[aria-label="SSH command"]') as HTMLInputElement, 'ssh u@box'))
-  await act(async () => button('Connect').click())
-  expect(setup.ensureRuntime).toHaveBeenCalledWith(ssh({ destination: 'u@box' }))
+  await act(async () => button('Remove u@box').click())
+  expect(store.get('sshMachines')).toHaveLength(1)
+  ui.confirm.mockResolvedValueOnce(true)
+  await act(async () => button('Remove u@box').click())
+  expect(store.get('sshMachines')).toEqual([])
+  expect(option('u@box')).toBeUndefined()
 })
 
 it('Open joins a workspace on another device with a code', async () => {
@@ -191,15 +196,15 @@ it('Open joins a workspace on another device with a code', async () => {
 
 it('the Open dialog stays when the native folder dialog is cancelled, and closes on a pick', async () => {
   const pickFolder = vi.fn<() => Promise<string | null>>(async () => null)
-  installDesktopPort({ pickFolder, thisMachineName: 'This Mac' } as unknown as DesktopPort)
+  installDesktopPort({ pickFolder } as unknown as DesktopPort)
   installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
   useUIStore.setState({ openDialogOpen: true })
   await act(async () => root.render(<OpenWorkspaceDialog />))
-  await act(async () => option('This Mac').click())
+  await act(async () => option('This device').click())
   expect(pickFolder).toHaveBeenCalled()
   expect(useUIStore.getState().openDialogOpen).toBe(true)
   pickFolder.mockResolvedValueOnce('/code/app')
-  await act(async () => option('This Mac').click())
+  await act(async () => option('This device').click())
   expect(useUIStore.getState().openDialogOpen).toBe(false)
 })
 
@@ -224,18 +229,16 @@ it('closing the dialog stops what still runs on the machine', async () => {
   setup.ensureRuntime.mockImplementation(() => new Promise(() => {}))
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
   installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
-  await act(async () => root.render(<Settings />))
-  await act(async () => button('Open a workspace').click())
+  await act(async () => root.render(<Picker />))
+  await act(async () => option('u@box').click())
   await act(async () => button('Cancel').click())
   expect(setup.cancel).toHaveBeenCalledWith(ssh({ destination: 'u@box' }))
 })
 
 it('refuses an ssh command it cannot read', async () => {
   installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
-  await act(async () => root.render(<Settings />))
-  const input = host.querySelector('input[placeholder^="ssh "]') as HTMLInputElement
-  await act(async () => type(input, 'ssh -o ProxyCommand=x box'))
-  await act(async () => button('Add').click())
+  await act(async () => root.render(<Picker />))
+  await addInPicker('ssh -o ProxyCommand=x box')
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('~/.ssh/config')
   expect(store.get('sshMachines')).toEqual([])
 })

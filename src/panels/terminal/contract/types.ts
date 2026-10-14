@@ -30,18 +30,10 @@ export type TerminalOp =
   | { kind: 'restart'; discard?: boolean }
   /** Binds the panel to another checkout (null: the root) with a fresh shell. */
   | { kind: 'switchWorktree'; worktreeId: string | null; discard?: boolean }
-  /** A clicked link the person chose to open inside Cate. */
-  | { kind: 'openUrl'; url: string }
-  | { kind: 'openFile'; path: string; line?: number; column?: number }
 
 export interface TerminalCreateOptions extends PanelCreateOptions {
   cwd?: string
 }
-
-/** Where a clicked link goes. */
-export type TerminalOpenTarget =
-  | { kind: 'url'; url: string }
-  | { kind: 'file'; path: string; line?: number; column?: number }
 
 /** What the session persists in `sessions/<panelId>.json`. */
 export type TerminalPersisted = {

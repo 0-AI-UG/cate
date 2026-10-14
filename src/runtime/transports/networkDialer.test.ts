@@ -11,9 +11,10 @@ import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { PairingService, type DevicesFile } from '@runtime/pairing/runtime'
 import { encodePublicKey, generateKeyPair, networkIdOf, type KeyPair } from '@runtime/security/contract'
-import { createNetworkDialer, dialSameNetwork, type NetworkDialer } from './client'
+import { CateConnectError } from '@runtime/connect/contract'
+import { createNetworkDialer, dialSameNetwork, NetworkUnreachableError, SameNetworkUnreachableError, type NetworkDialer, type NetworkDialerDeps } from './client'
 import { nodeWebSocketFactory } from './node'
-import { pairingEndpoints } from './contract'
+import { openWebSocket, pairingEndpoints, sameNetworkUrl } from './contract'
 import { createNetworkPeers, serveSameNetwork, type NetworkPeers, type SameNetworkListener } from './runtime'
 
 const RUNTIME_KEYS = generateKeyPair()
@@ -47,7 +48,7 @@ afterEach(async () => {
   await lan.close()
 })
 
-function shell() {
+function shell(overrides: Partial<NetworkDialerDeps> = {}) {
   const deviceKeys = generateKeyPair()
   const pins = new KnownRuntimes(createMemoryDeviceStore())
   const host = createNetworkDialer({
@@ -59,6 +60,7 @@ function shell() {
     sameNetwork: (options) => dialSameNetwork({ ...options, discover: async (id) => (id === RUNTIME_ID ? lan.addresses() : []) }),
     createPeer: () => { throw new Error('Cate Connect is not part of this test') },
     cateConnect: () => Promise.reject(new Error('Cate Connect is not part of this test')),
+    ...overrides,
   })
   return { host, pins, deviceKeys }
 }
@@ -132,5 +134,49 @@ describe('network dialer and a stranger on a known address', () => {
       strangerPeers.dispose()
       await stranger.close()
     }
+  })
+})
+
+describe('network dialer when the same network fails', () => {
+  const unreachable = (): never => { throw new SameNetworkUnreachableError('noAnswer', 'no answer') }
+
+  it('tries Cate Connect for a runtime paired on the same network only', async () => {
+    const { host: pairer, deviceKeys, pins } = shell()
+    await pairer.pair({ link: pairing.createSecret('sameNetwork').uri })
+    const connected: string[] = []
+    // Cate Connect stands in as a raw port to the same runtime.
+    const host = createNetworkDialer({
+      deviceKeys: () => deviceKeys,
+      deviceName: () => 'phone',
+      pins,
+      webSocket: nodeWebSocketFactory,
+      sameNetwork: async () => unreachable(),
+      createPeer: () => { throw new Error('unused') },
+      cateConnect: (runtimeId) => {
+        connected.push(runtimeId)
+        return openWebSocket(nodeWebSocketFactory, sameNetworkUrl(lan.addresses()[0], RUNTIME_ID)!)
+      },
+    })
+    const duplex = await host.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: pairingEndpoints(['10.9.9.9:1'], 'sameNetwork') })
+    expect(connected).toEqual([RUNTIME_ID])
+    expect(await ping(duplex, deviceKeys)).toBe('pong')
+  })
+
+  it('says why neither way reached the runtime', async () => {
+    const { host } = shell({
+      sameNetwork: async () => unreachable(),
+      cateConnect: () => Promise.reject(new CateConnectError('offline', 'The workspace is not online')),
+    })
+    const error = await host.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: [] }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(NetworkUnreachableError)
+    expect((error as NetworkUnreachableError).failure).toEqual({ sameNetwork: 'noAnswer', connect: 'offline' })
+    expect((error as Error).message).toBe('Its machine is asleep or off, or shares on its own network only.')
+  })
+
+  it('points a same-network code at "Anywhere" when the network keeps devices apart', async () => {
+    const { host } = shell({ sameNetwork: async () => { throw new SameNetworkUnreachableError('notFound', 'not found') } })
+    const error = await host.pair({ link: pairing.createSecret('sameNetwork').uri }).catch((e: unknown) => e)
+    expect((error as NetworkUnreachableError).failure).toEqual({ sameNetwork: 'notFound' })
+    expect((error as Error).message).toContain('share it "Anywhere" on its machine')
   })
 })

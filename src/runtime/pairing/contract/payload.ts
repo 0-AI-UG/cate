@@ -8,12 +8,15 @@ export const PAIRING_SECRET_BYTES = 10
 export const PAIRING_SECRET_TTL_MS = 10 * 60_000
 const RUNTIME_ID_CHARS = 16
 const SECRET_CHARS = 16
+/** A secret's id: says which live secret a pairing attempt is for. */
+export const SECRET_ID_CHARS = 4
 const FINGERPRINT_CHARS = 20
 
 export interface PairingPayload {
   runtimeId: string
   /** Fingerprint of the runtime's static key. */
   fingerprint: string
+  secretId: string
   secret: Uint8Array
   mode: PairingMode
   /** LAN addresses (`host:port`) for clients that cannot use mDNS. */
@@ -23,6 +26,7 @@ export interface PairingPayload {
 /** What a typed pairing code carries: no key fingerprint, no addresses. */
 export interface PairingCode {
   runtimeId: string
+  secretId: string
   secret: Uint8Array
 }
 
@@ -45,6 +49,7 @@ export function encodePairingUri(payload: PairingPayload): string {
     ['r', payload.runtimeId],
     ['k', payload.fingerprint],
     ['s', base32Encode(payload.secret)],
+    ['i', checkBase32(payload.secretId, SECRET_ID_CHARS, 'secret id')],
     ['m', payload.mode],
     ['a', payload.addresses.join(',')],
   ]
@@ -78,17 +83,19 @@ export function decodePairingUri(uri: string): PairingPayload {
   return {
     runtimeId: checkBase32(params.get('r'), RUNTIME_ID_CHARS, 'runtime id'),
     fingerprint: checkBase32(params.get('k'), FINGERPRINT_CHARS, 'key fingerprint'),
+    secretId: checkBase32(params.get('i'), SECRET_ID_CHARS, 'secret id'),
     secret,
     mode,
     addresses: (params.get('a') ?? '').split(',').filter((address) => address.length > 0),
   }
 }
 
-/** 32 base32 characters (runtimeId, then the secret) in dash-separated groups of four. */
+/** 36 base32 characters (runtimeId, secret id, then the secret) in dash-separated groups of four. */
 export function formatPairingCode(code: PairingCode): string {
   checkSecret(code.secret)
   checkBase32(code.runtimeId, RUNTIME_ID_CHARS, 'runtime id')
-  const chars = code.runtimeId + base32Encode(code.secret)
+  checkBase32(code.secretId, SECRET_ID_CHARS, 'secret id')
+  const chars = code.runtimeId + code.secretId + base32Encode(code.secret)
   return chars.match(/.{4}/g)!.join('-')
 }
 
@@ -100,9 +107,11 @@ export function parsePairingCode(text: string): PairingCode {
     .replace(/0/g, 'o')
     .replace(/1/g, 'l')
     .replace(/8/g, 'b')
-  checkBase32(chars, RUNTIME_ID_CHARS + SECRET_CHARS, 'pairing code')
+  checkBase32(chars, RUNTIME_ID_CHARS + SECRET_ID_CHARS + SECRET_CHARS, 'pairing code')
+  const secretAt = RUNTIME_ID_CHARS + SECRET_ID_CHARS
   return {
     runtimeId: chars.slice(0, RUNTIME_ID_CHARS),
-    secret: base32Decode(chars.slice(RUNTIME_ID_CHARS)),
+    secretId: chars.slice(RUNTIME_ID_CHARS, secretAt),
+    secret: base32Decode(chars.slice(secretAt)),
   }
 }

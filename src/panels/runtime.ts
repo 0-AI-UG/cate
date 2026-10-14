@@ -67,21 +67,14 @@ export interface PanelModule {
 export type PanelRuntime<K extends keyof PanelServices = never> = (services: Pick<PanelServices, K>) => PanelModule
 
 const terminal: PanelRuntime<'root' | 'terminal'> = (services) => {
-  let factory: PanelFactory | undefined
   const panels = createTerminalPanels({
     terminal: services.terminal,
     root: services.root,
-    open: (target, near) => target.kind === 'url'
-      ? factory?.createPanel('browser', { url: target.url, near })
-      : factory?.createPanel('editor', { filePath: target.path, near }),
   })
   return {
     definition: panels.definition,
     session: panels.session,
-    attach: ({ host, factory: panelFactory }) => {
-      factory = panelFactory
-      return { agentTerminals: panels.agentTerminals(panelFactory.kit, host) }
-    },
+    attach: ({ host, factory }) => ({ agentTerminals: panels.agentTerminals(factory.kit, host) }),
   }
 }
 

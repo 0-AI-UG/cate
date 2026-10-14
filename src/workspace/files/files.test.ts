@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { isRpcError } from '@kernel/rpc/contract'
+import { isRpcError, RpcError } from '@kernel/rpc/contract'
 import { contentHash, type FsChange } from './contract'
 import { createWatchManager } from './client'
 import { makeWorkspace, tick, until } from './testing.test-helpers'
@@ -241,6 +241,21 @@ describe('search capability', () => {
     const done = await search.done
     expect(done.stats).toEqual({ matches: 2, files: 1, truncated: false })
     expect(batches).toEqual(['a.txt'])
+  })
+
+  it('refuses content search while the workspace is untrusted', async () => {
+    await ws.dispose()
+    ws = await makeWorkspace({ trust: { isTrusted: () => false, requireTrusted: () => { throw new RpcError('untrusted') } } })
+    const { fs: client } = await ws.connect()
+    const done = client.searchContent({ query: 'needle' }, () => {}).done
+    await expect(done).rejects.toSatisfy((e: unknown) => isRpcError(e, 'untrusted'))
+  })
+
+  it.skipIf(process.platform === 'win32')('refuses a content search root that links out of the workspace', async () => {
+    const { fs: client } = await ws.connect()
+    await fs.symlink(ws.data, path.join(ws.root, 'out'))
+    const done = await client.searchContent({ query: 'needle' }, () => {}, path.join(ws.root, 'out')).done
+    expect(done.error).toMatch(/outside the workspace/)
   })
 
   it('ends an empty query at once', async () => {

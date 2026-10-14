@@ -124,8 +124,7 @@ export interface PanelDefinition<
   /** What generic "open" actions create this type for, with the create
    *  option each passes: `file` (`filePath`; the session takes
    *  `openFile {path, line?, column?}`), `directory` (`cwd`), `url` (`url`;
-   *  the session takes `newTab {url}`), `conversation` (`threadId`). The
-   *  first registered type wins. */
+   *  the session takes `newTab {url}`). The first registered type wins. */
   opens?: readonly PanelOpenKind[]
   /** A picker that becomes the type the user chooses (`replacePanel`): what
    *  "Split Right" creates. At most one type sets it. */

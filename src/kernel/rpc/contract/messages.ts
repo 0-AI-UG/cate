@@ -38,6 +38,8 @@ export interface HelloMessage {
   version: string
   /** Runtime only: the build it runs (version plus a source hash). */
   build?: string
+  /** Runtime only: new at every start. Ops are remembered only within one. */
+  epoch?: string
   client?: ClientHello
   caller?: CallerHello
   /** Runtime only: the connection was refused (bad token, device mismatch). */

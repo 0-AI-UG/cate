@@ -3,9 +3,9 @@
 // handler and revocation.
 
 import { randomBytes as nobleRandomBytes } from '@noble/hashes/utils.js'
-import type { DeviceInfo } from '@kernel/rpc/contract'
+import { RpcError, type DeviceInfo, type HelloMessage } from '@kernel/rpc/contract'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
-import { bytesToHex, fingerprint, hexToBytes, networkIdOf, type SecureChannel } from '../../security/contract'
+import { base32Encode, bytesToHex, fingerprint, hexToBytes, networkIdOf, type SecureChannel } from '../../security/contract'
 import type { PeerPolicy } from '../../security/runtime'
 import {
   cleanDeviceName,
@@ -16,6 +16,7 @@ import {
   formatPairingCode,
   PAIRING_SECRET_BYTES,
   PAIRING_SECRET_TTL_MS,
+  SECRET_ID_CHARS,
   proofFromWire,
   proofToWire,
   runtimeProof,
@@ -26,6 +27,7 @@ import {
   type pairingCapability,
   type WorkspaceDevice,
 } from '../contract'
+import type { SameNetworkProblem } from '../../transports/contract'
 import type { DevicesFile, DevicesStore } from './devicesFile'
 
 export interface PairingServiceOptions {
@@ -34,6 +36,8 @@ export interface PairingServiceOptions {
   store: DevicesStore
   /** LAN addresses (`host:port`) to put in the QR payload. */
   addresses?: () => string[]
+  /** Why devices could not reach this machine on the same network, if so. */
+  sameNetworkProblem?: () => SameNetworkProblem | null
   now?: () => number
   randomBytes?: (length: number) => Uint8Array
   /** How long an unknown key has to send `pair`. */
@@ -41,17 +45,13 @@ export interface PairingServiceOptions {
 }
 
 interface LiveSecret {
+  id: string
   secret: Uint8Array
   expiresAt: number
 }
 
-/** Wrong pairing proofs that burn every live secret. */
-const MAX_WRONG_PROOFS = 5
-
 export class PairingService implements PeerPolicy {
   private secrets: LiveSecret[] = []
-  /** Wrong proofs against the live secrets since they last burned. */
-  private wrongProofs = 0
   private readonly revokeListeners = new Set<(publicKey: string) => void>()
   private readonly listListeners = new Set<(devices: WorkspaceDevice[]) => void>()
   private readonly now: () => number
@@ -75,21 +75,28 @@ export class PairingService implements PeerPolicy {
   }
 
   createSecret(mode: PairingMode): CreatedSecret {
+    const live = this.liveSecrets()
+    let id: string
+    do id = base32Encode(this.random(3)).slice(0, SECRET_ID_CHARS)
+    while (live.some((entry) => entry.id === id))
     const secret = this.random(PAIRING_SECRET_BYTES)
     const expiresAt = this.now() + PAIRING_SECRET_TTL_MS
-    this.secrets = [...this.liveSecrets(), { secret, expiresAt }]
+    this.secrets = [...live, { id, secret, expiresAt }]
     const { runtimePublicKey } = this.options
     const runtimeId = networkIdOf(runtimePublicKey)
+    const problem = mode === 'sameNetwork' ? this.options.sameNetworkProblem?.() ?? null : null
     return {
       uri: encodePairingUri({
         runtimeId,
         fingerprint: fingerprint(runtimePublicKey),
+        secretId: id,
         secret,
         mode,
         addresses: this.options.addresses?.() ?? [],
       }),
-      code: formatPairingCode({ runtimeId, secret }),
+      code: formatPairingCode({ runtimeId, secretId: id, secret }),
       expiresAt,
+      ...(problem ? { sameNetworkProblem: problem } : {}),
     }
   }
 
@@ -161,10 +168,10 @@ export class PairingService implements PeerPolicy {
 
   /**
    * The one attempt an unknown key gets: read `pair`, check the proof against
-   * the live secrets, answer, store the device and burn the secret. Wrong
-   * proofs are counted, and the fifth burns every live secret (a request
-   * does not say which one it was for), so guessing ends while one stray
-   * attempt does not cost the person their code.
+   * the live secret it names, answer, store the device and burn the secret.
+   * A wrong proof burns that secret, so each one can be guessed once; an
+   * unknown id burns nothing, so nobody can spoil another person's code
+   * without knowing it.
    */
   async pairUnknown(channel: SecureChannel): Promise<boolean> {
     const frame = await firstFrame(channel, this.options.pairTimeoutMs ?? 10_000)
@@ -176,19 +183,13 @@ export class PairingService implements PeerPolicy {
     if (request.type !== 'pair') return this.answer(channel, { type: 'pair-rejected', reason: 'malformed' })
 
     const live = this.liveSecrets()
-    if (live.length === 0) return this.answer(channel, { type: 'pair-rejected', reason: 'no-secret' })
-    const proof = proofFromWire(request.proof)
-    const match = live.find((entry) => verifyClientProof(entry.secret, channel.handshakeHash, proof))
-    if (!match) {
-      this.wrongProofs++
-      if (this.wrongProofs >= MAX_WRONG_PROOFS) {
-        this.secrets = []
-        this.wrongProofs = 0
-      }
+    const match = live.find((entry) => entry.id === request.secretId)
+    if (!match) return this.answer(channel, { type: 'pair-rejected', reason: 'no-secret' })
+    this.secrets = live.filter((entry) => entry !== match)
+    if (!verifyClientProof(match.secret, channel.handshakeHash, proofFromWire(request.proof))) {
       return this.answer(channel, { type: 'pair-rejected', reason: 'invalid-proof' })
     }
 
-    this.secrets = live.filter((entry) => entry !== match)
     const hex = bytesToHex(channel.remoteStatic)
     const now = this.now()
     const name = cleanDeviceName(request.deviceName)
@@ -212,7 +213,12 @@ export class PairingService implements PeerPolicy {
 /** Handlers for the `pairing` capability. */
 export function pairingCapabilityImpl(service: PairingService): CapabilityImpl<typeof pairingCapability> {
   return {
-    createSecret: ({ mode }) => service.createSecret(mode),
+    createSecret: ({ mode, acknowledged }) => {
+      if (acknowledged !== true) {
+        throw new RpcError('rejected', 'The person sharing must confirm that whoever joins can use this computer as them')
+      }
+      return service.createSecret(mode)
+    },
     list: () => service.list(),
     watch: (_params, sink) => {
       let rev = 0

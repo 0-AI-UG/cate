@@ -85,6 +85,8 @@ private struct DisconnectDialog: ViewModifier {
 extension EnvironmentValues {
     /// Opens the join sheet (pairing again from a refused workspace).
     @Entry var joinWorkspace: () -> Void = {}
+    /// Opens a route's screen on the app's navigation stack.
+    @Entry var navigate: (any Hashable) -> Void = { _ in }
 }
 
 /// The actions the core offers for a connection state, main action first.

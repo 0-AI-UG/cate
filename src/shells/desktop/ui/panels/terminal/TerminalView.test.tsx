@@ -69,7 +69,6 @@ vi.mock('@xterm/xterm', () => ({
   },
 }))
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: class { findNext = vi.fn(); findPrevious = vi.fn(); clearDecorations = vi.fn() } }))
-vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }))
 // The host's chrome context is the host's concern; the view only claims a corner.
 vi.mock('../../client/host/panelChrome', () => ({ useClaimPanelCorner: () => {} }))
 const files = vi.hoisted(() => ({ localize: vi.fn(async (refs: Array<{ path: string }>) => refs.map((ref) => ref.path)) }))

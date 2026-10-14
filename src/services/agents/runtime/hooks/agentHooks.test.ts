@@ -18,7 +18,7 @@ import {
   type AgentHooks,
   type AgentHooksDeps,
 } from './agentHooks'
-import { CATE_HOOK_MARKER, agentHookFolder, type AgentApprovalDetection, type AgentHookEvent } from '../../contract'
+import { AGENT_HOOK_SPECS, CATE_HOOK_MARKER, agentHookFolder, type AgentApprovalDetection, type AgentHookEvent } from '../../contract'
 
 const posix = process.platform !== 'win32'
 
@@ -783,6 +783,17 @@ describe('agentHooks capability', () => {
     expect(byId.kiro).toMatchObject({ folderPresent: false, injected: false })
     // Every agent carries a display name for the UI.
     expect(states.every((s) => s.displayName.length > 0)).toBe(true)
+  })
+
+  test('inspectFolders reads only the config folders, never an external plugin\'s CLI', async () => {
+    const inspect = vi.fn(async () => true)
+    const cap = makeCap({ externalPlugins: { [AGENT_HOOK_SPECS.hermes.externalPlugin!.id]: { ensure: async () => {}, inspect } } })
+    const cwd = tmpDir('ws-folders')
+    mkdirSync(path.join(cwd, '.codex'))
+    const states = await cap.inspectFolders(cwd)
+    expect(states.filter((s) => s.folderPresent).map((s) => s.agentId)).toEqual(['codex'])
+    expect(await cap.inspectFolders(os.homedir())).toSatisfy((list: typeof states) => list.every((s) => !s.folderPresent))
+    expect(inspect).not.toHaveBeenCalled()
   })
 
   test('inspectWorkspace touches no files for a home / relative cwd', async () => {

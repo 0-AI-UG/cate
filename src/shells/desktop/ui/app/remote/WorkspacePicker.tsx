@@ -1,11 +1,12 @@
 // "Open…": one list of everywhere a workspace can come from: this device
 // (a folder picker), saved SSH machines, the hosts of the SSH config, WSL
 // distros and adding one by its ssh command; then joining a workspace on
-// another device with a code. Typing filters; arrows and Enter pick. The
-// Open dialog shows it.
+// another device with a code. Typing filters; arrows and Enter pick. A saved
+// machine is removed from its row. The Open dialog shows it.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { KeyRound, Monitor, Plus, Server } from 'lucide-react'
+import { KeyRound, Monitor, Plus, Server, X } from 'lucide-react'
+import { clientUi } from '@kernel/interaction'
 import { inputCls } from '../../kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import { formatSshTarget, parseSshCommand, type Machine, type SshConfigHost } from '@runtime/daemon/contract'
@@ -13,6 +14,7 @@ import { clientApp } from '../app'
 import { useDesktopPort } from '../desktop'
 import { openLocalFolder } from '../navigation'
 import { useUIStore } from '../state/uiStore'
+import { forgetMachine } from './machines'
 
 interface PickerItem {
   key: string
@@ -24,6 +26,8 @@ interface PickerItem {
   detail?: string
   hint?: string
   run(): void
+  /** Forgets it (saved machines). */
+  remove?: () => void
 }
 
 export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '' }: {
@@ -36,7 +40,6 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
   const app = clientApp()
   const port = useDesktopPort()
   const setup = app.machines
-  const thisMachine = port?.thisMachineName ?? 'This device'
   const saved = useClientSetting('sshMachines')
   const [hosts, setHosts] = useState<SshConfigHost[]>([])
   const [distros, setDistros] = useState<string[]>([])
@@ -65,20 +68,23 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
       onPicked?.()
       await openLocalFolder(root)
     }
+    const removeMachine = async (id: string, label: string) => {
+      if (await clientUi().confirm(`Remove ${label}? Its workspaces stay in the sidebar.`)) forgetMachine(id)
+    }
     const out: PickerItem[] = []
     const q = query.trim().toLowerCase()
     const matches = (...words: (string | undefined)[]) => !q || words.some((w) => w?.toLowerCase().includes(q))
 
 
-    if (port && matches(thisMachine, 'local folder')) {
-      out.push({ key: 'this', section: 'Machines', icon: <Monitor size={14} />, label: thisMachine, hint: 'Open workspace…', run: () => void pickFolder() })
+    if (port && matches('This device', 'local folder')) {
+      out.push({ key: 'this', section: 'Machines', icon: <Monitor size={14} />, label: 'This device', hint: 'Open workspace…', run: () => void pickFolder() })
     }
     if (setup) {
       const savedKeys = new Set(saved.map((m) => formatSshTarget(m.target)))
       for (const machine of saved) {
         const label = machine.target.destination
         if (matches(label, machine.lastPath)) {
-          out.push({ key: `ssh:${machine.id}`, section: 'Machines', icon: <Server size={14} />, label, detail: 'SSH', hint: 'Browse…', run: openOn({ kind: 'ssh', target: machine.target }) })
+          out.push({ key: `ssh:${machine.id}`, section: 'Machines', icon: <Server size={14} />, label, detail: 'SSH', hint: 'Browse…', run: openOn({ kind: 'ssh', target: machine.target }), remove: () => void removeMachine(machine.id, label) })
         }
       }
       for (const host of hosts) {
@@ -96,7 +102,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
       out.push({ key: 'join', section: 'Other devices', always: true, icon: <KeyRound size={14} />, label: 'Join with a code…', run: () => ui.openJoinDialog() })
     }
     return out
-  }, [hosts, distros, saved, query, port, setup, thisMachine, onPicked, app])
+  }, [hosts, distros, saved, query, port, setup, onPicked, app])
 
   useEffect(() => { setActive(0) }, [query])
   useEffect(() => {
@@ -130,7 +136,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
           const header = item.section !== lastSection ? item.section : null
           lastSection = item.section
           return (
-            <div key={item.key}>
+            <div key={item.key} className="relative group">
               {header && <div className="px-2 pt-3 pb-1 text-[11px] font-semibold text-muted">{header}</div>}
               {item.key === 'add-ssh' && adding !== null ? (
                 <form
@@ -162,12 +168,22 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
                   data-active={index === active}
                   onMouseMove={() => setActive(index)}
                   onClick={() => item.run()}
-                  className={`group w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${index === active ? 'bg-hover' : ''}`}
+                  className={`w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${index === active ? 'bg-hover' : ''}`}
                 >
                   <span className="shrink-0 text-muted">{item.icon}</span>
                   <span className={`text-[13px] truncate ${item.always ? 'text-secondary' : 'text-primary'}`}>{item.label}</span>
                   {item.detail && <span className="min-w-0 text-xs text-muted truncate">{item.detail}</span>}
-                  {item.hint && <span className={`ml-auto shrink-0 text-xs text-secondary ${index === active ? '' : 'opacity-0 group-hover:opacity-100'}`}>{item.hint}</span>}
+                  {item.hint && <span className={`ml-auto shrink-0 text-xs text-secondary ${item.remove ? 'mr-6' : ''} ${index === active ? '' : 'opacity-0 group-hover:opacity-100'}`}>{item.hint}</span>}
+                </button>
+              )}
+              {item.remove && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${item.label}`}
+                  onClick={item.remove}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-danger opacity-0 group-hover:opacity-100 focus:opacity-100"
+                >
+                  <X size={13} />
                 </button>
               )}
             </div>

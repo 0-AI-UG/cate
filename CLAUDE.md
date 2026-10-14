@@ -31,7 +31,7 @@ desktop shell and **esbuild** for the daemon and the CLI.
 
 ```bash
 npm install              # install dependencies
-npm run dev              # bundle the daemon, then start the app with hot reload
+npm run dev              # bundle the daemon, then start the app with hot reload (CDP on 9222; CATE_CDP_PORT=0 turns it off)
 npm run build            # production build of the desktop shell
 npm run build:runtime    # bundle the daemon to dist-runtime/runtime.cjs
 npm run build:mobile     # bundle the iOS app's client core to ios/Cate/Core/Web/core.js
@@ -146,7 +146,7 @@ Rules (enforced by `npm run lint:deps`, `.dependency-cruiser.cjs`):
   `src/shells/desktop/`.
 - A module imports only its own layer or lower. A lower layer that needs a
   higher one owns a slot the higher one fills (`runtimeFor` in `kernel/rpc`
-  filled by `client/connections`; `registerPanelCloseGuard` in `client/host`
+  filled by `client/core`; `registerPanelCloseGuard` in `client/host`
   filled by a shell's panel views).
 - Across modules, import a contract or a side's `index.ts`, never internals.
   `src/panels/{definitions,runtime,api,capabilities,settings}.ts` are public entries too.

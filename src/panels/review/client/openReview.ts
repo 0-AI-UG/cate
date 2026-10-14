@@ -104,5 +104,5 @@ export async function openAgentChanges(options: OpenAgentChangesOptions): Promis
     void revealPanel(workspaceId, target.id)
     return target.id
   }
-  return addReview(workspaceId, { repoPath: cwd, request, title: 'Agent changes', ...(options.at ? { at: options.at } : { near: panelId }) })
+  return addReview(workspaceId, { repoPath: cwd, request, title: 'Agent changes', near: panelId, ...(options.at ? { at: options.at } : {}) })
 }

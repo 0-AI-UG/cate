@@ -9,14 +9,18 @@ let dir: string
 let root: string
 // Through the `file.serveUrl` capability, as a client asks.
 let files: { serveUrl(p: string): Promise<string> }
+let trusted: boolean
 beforeEach(async () => {
-  ws = await makeWorkspace()
+  trusted = true
+  ws = await makeWorkspace({ trust: { isTrusted: () => trusted, requireTrusted: () => {} } })
   dir = ws.base
   root = ws.root
   await fs.mkdir(path.join(root, 'site', 'css'), { recursive: true })
   await fs.writeFile(path.join(root, 'site', 'index.html'), '<link href="css/a b.css">')
   await fs.writeFile(path.join(root, 'site', 'css', 'a b.css'), 'body{}')
   await fs.writeFile(path.join(dir, 'secret.txt'), 'nope')
+  await fs.writeFile(path.join(root, '.env'), 'KEY=1')
+  await fs.writeFile(path.join(root, 'site', 'logo.svg'), '<svg/>')
   files = (await ws.connect()).fs
 })
 afterEach(async () => {
@@ -57,9 +61,39 @@ describe('file server', () => {
     const page = new URL(await files.serveUrl(path.join(root, 'site', 'index.html')))
     const token = page.pathname.split('/')[1]
     const outside = `${page.origin}/${token}/${encodeServedPath(path.join(dir, 'secret.txt'))}`
-    expect((await fetch(outside)).status).toBe(403)
+    expect((await fetch(outside)).status).toBe(404)
     const dotted = `${page.origin}/${token}/${encodeServedPath(root)}/%2E%2E/secret.txt`
-    expect((await fetch(dotted)).status).toBe(403)
+    expect((await fetch(dotted)).status).toBe(404)
+  })
+
+  it('binds a token to the served file\'s folder', async () => {
+    const page = new URL(await files.serveUrl(path.join(root, 'site', 'index.html')))
+    const token = page.pathname.split('/')[1]
+    const at = (p: string) => `${page.origin}/${token}/${p}`
+    // A page cannot climb out of its folder to the rest of the workspace.
+    expect((await fetch(at(encodeServedPath(path.join(root, '.env'))))).status).toBe(404)
+    expect((await fetch(at(`${encodeServedPath(path.join(root, 'site'))}/%2E%2E/.env`))).status).toBe(404)
+    expect((await fetch(at(`${encodeServedPath(path.join(root, 'site'))}%2F..%2F.env`))).status).toBe(404)
+    expect((await fetch(at(`${encodeServedPath(path.join(root, 'site'))}-x/a`))).status).toBe(404)
+    // Nor through a symlink inside it.
+    await fs.symlink(path.join(root, '.env'), path.join(root, 'site', 'env.txt'))
+    expect((await fetch(new URL('env.txt', page))).status).toBe(404)
+    // The same folder reuses its token; another folder gets its own.
+    expect(new URL(await files.serveUrl(path.join(root, 'site', 'css', 'a b.css'))).pathname.split('/')[1]).not.toBe(token)
+    expect(new URL(await files.serveUrl(path.join(root, 'site', 'logo.svg'))).pathname.split('/')[1]).toBe(token)
+  })
+
+  it('serves pages that run script as plain text while the workspace is untrusted', async () => {
+    trusted = false
+    const page = await files.serveUrl(path.join(root, 'site', 'index.html'))
+    let res = await fetch(page)
+    expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    expect((await fetch(new URL('logo.svg', page))).headers.get('content-type')).toBe('text/plain; charset=utf-8')
+    expect((await fetch(new URL('css/a b.css', page))).headers.get('content-type')).toBe('text/css; charset=utf-8')
+    trusted = true
+    res = await fetch(page)
+    expect(res.headers.get('content-type')).toBe('text/html; charset=utf-8')
   })
 
   it('never serves the workspace data, which the file capability itself may read', async () => {
@@ -68,7 +102,7 @@ describe('file server', () => {
     const page = new URL(await files.serveUrl(path.join(root, 'site', 'index.html')))
     const token = page.pathname.split('/')[1]
     const res = await fetch(`${page.origin}/${token}/${encodeServedPath(path.join(ws.data, 'secrets.json'))}`)
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(404)
   })
 
   it('404s a missing file', async () => {

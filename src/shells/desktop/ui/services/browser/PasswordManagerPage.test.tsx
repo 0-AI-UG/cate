@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { installBrowserPageBridge } from '@services/browser/desktop/renderer'
+import { installClientApp } from '../../app/app'
 import { BrowserPasswordManagerPage } from './PasswordManagerPage'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -13,6 +14,8 @@ const savePassword = vi.fn(async () => ({
   action: 'created' as const,
   credential: { id: 'credential-2', origin: 'https://new.example', username: 'new@example.com' },
 }))
+const importPasswords = vi.fn(async () => ({ imported: 1, skipped: 0 }))
+const readChromePasswordCsv = vi.fn(async () => ({ canceled: false, credentials: [{ origin: 'https://a.example', username: 'a', password: 'p' }], skipped: 0 }))
 let host: HTMLDivElement
 let root: Root
 let restore: () => void
@@ -27,23 +30,37 @@ beforeEach(async () => {
       passwords: vi.fn(async () => [{ id: 'credential-1', origin: 'https://example.com', username: 'person@example.com' }]),
       removePassword,
       savePassword,
-      importPasswords: vi.fn(),
+      importPasswords,
       clearPasswords: vi.fn(),
     },
   } as unknown as RuntimeProxy
   restore = setRuntimeResolver((id) => (id === 'ws' ? runtime : null))
-  installBrowserPageBridge({ chromeProfiles: vi.fn(async () => ({ directImportSupported: false, profiles: [] })) } as never)
+  installBrowserPageBridge({ chromeProfiles: vi.fn(async () => ({ directImportSupported: false, profiles: [] })), readChromePasswordCsv } as never)
+  await render()
+})
+
+async function render(): Promise<void> {
   await act(async () => {
     root.render(<BrowserPasswordManagerPage workspaceId="ws" />)
     await Promise.resolve()
   })
-})
+}
+
+const button = (label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent?.includes(label)) as HTMLButtonElement
+
+async function click(label: string): Promise<void> {
+  await act(async () => {
+    button(label).click()
+    await new Promise((r) => setTimeout(r, 0))
+  })
+}
 
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
   restore()
   installBrowserPageBridge(null)
+  installClientApp(null)
 })
 
 describe('BrowserPasswordManagerPage', () => {
@@ -102,5 +119,26 @@ describe('BrowserPasswordManagerPage', () => {
       input: { origin: 'https://new.example/login', username: 'new@example.com', password: 'new secret' },
     })
     expect(host.textContent).toContain('Password saved.')
+  })
+
+  it('imports at once when the runtime is on this computer', async () => {
+    await click('advanced')
+    await click('Choose Chrome export')
+    expect(importPasswords).toHaveBeenCalledTimes(1)
+    expect(host.textContent).not.toContain('not on this computer')
+  })
+
+  it('asks before importing into a runtime on another machine', async () => {
+    installClientApp({ connections: { get: () => ({ reachesClientNetwork: false }) } } as never)
+    await render()
+    await click('advanced')
+    await click('Choose Chrome export')
+    expect(readChromePasswordCsv).not.toHaveBeenCalled()
+    expect(host.textContent).toContain('These passwords will be stored on the machine running this workspace, not on this computer.')
+    await click('Cancel')
+    expect(host.textContent).not.toContain('not on this computer')
+    await click('Choose Chrome export')
+    await click('Import anyway')
+    expect(importPasswords).toHaveBeenCalledWith({ credentials: [{ origin: 'https://a.example', username: 'a', password: 'p' }] })
   })
 })

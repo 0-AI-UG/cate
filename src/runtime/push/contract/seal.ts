@@ -9,7 +9,7 @@ import { utf8Encode } from '@runtime/security/contract'
 export const PUSH_KEY_BYTES = 32
 const NONCE_BYTES = 12
 
-/** One notification event (architecture 10.5), sealed: the device decides
+/** One notification event (architecture 10.4), sealed: the device decides
  *  how to show it. */
 export interface PushMessage {
   runtimeId: string

@@ -17,8 +17,6 @@ export interface TrustGate extends Trust {
 export interface TrustGateOptions {
   /** `dataPaths(dir).trust`. */
   file: string
-  /** `cate serve` trusts the workspace it serves. */
-  trustOnStart?: boolean
   now?: () => Date
   debounceMs?: number
 }
@@ -48,8 +46,6 @@ export function createTrustGate(options: TrustGateOptions): TrustGate {
     if (changed) for (const listener of [...listeners]) listener(next)
     return next
   }
-
-  if (options.trustOnStart && !file.get().trusted) set(true)
 
   return {
     isTrusted: () => file.get().trusted,

@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: '3.14'
       - run: npm ci
-      - name: Verify hook coverage and Cate approval state handling
+      - name: Verify hook coverage, Cate approval state handling and terminal links
         run: >-
           npx vitest run
           src/services/agents/runtime/live
@@ -49,10 +49,15 @@ jobs:
           src/services/agents/runtime/status.test.ts
           src/services/agents/runtime/status.integration.test.ts
           src/services/agents/runtime/terminal.test.ts
+          src/services/terminal/terminal.test.ts
+          src/services/terminal/runtime/links.test.ts
+          src/services/terminal/runtime/headlessScreen.test.ts
+          src/services/terminal/contract/links.test.ts
+          src/shells/desktop/ui/panels/terminal/parts/linkProvider.test.ts
           src/shells/desktop/ui/services/agents/AgentHooksSettings.test.tsx
       - name: Install current agent CLI
         run: bash scripts/install-agent-cli.sh "${{ matrix.agent }}"
-      - name: Verify installed terminal hooks against fake providers
+      - name: Verify installed terminal hooks and links against fake providers
         run: npm run test:agent-hooks:ci -- --reporter=default --reporter=junit --outputFile.junit=reports/agent-hooks.xml
         env:
           CATE_HOOK_SMOKE_AGENTS: ${{ matrix.agent }}

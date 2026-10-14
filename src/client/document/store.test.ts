@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { ConnectionClosedError, RpcError, createMemoryPortPair, type FramePort } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
@@ -13,6 +16,7 @@ import {
   type DocOp,
   type PanelRecord,
 } from '@workspace/document/contract'
+import { createDocumentService, documentCapabilityImpl } from '@workspace/document/runtime'
 import { createRng, randomChange } from '../../test/documentFuzz'
 import { createDocumentStore, type DocumentLink, type DocumentStore, type RefusedOp } from './store'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
@@ -45,7 +49,7 @@ function fakeRuntime(keep = 10_000) {
     subscribe: ({ sinceSeq } = {}, sink) => {
       const missed = typeof sinceSeq === 'number' ? sequencer.since(sinceSeq) : null
       if (missed) for (const { seq, op } of missed) sink.emit({ kind: 'op', seq, op })
-      else sink.emit({ kind: 'doc', seq: sequencer.seq, epoch: sequencer.epoch, doc: sequencer.doc })
+      else sink.emit({ kind: 'doc', seq: sequencer.seq, epoch: sequencer.epoch, startSeq: 0, doc: sequencer.doc })
       const listener = (event: DocumentEvent) => sink.emit(event)
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -196,7 +200,7 @@ describe('document store', () => {
             cancel: () => {},
             [Symbol.asyncIterator]: () => { throw new Error('unused') },
           }
-          queueMicrotask(() => emit!({ kind: 'doc', seq: 0, epoch: 'e', doc: createDocument() }))
+          queueMicrotask(() => emit!({ kind: 'doc', seq: 0, epoch: 'e', startSeq: 0, doc: createDocument() }))
           return sub
         },
       },
@@ -212,6 +216,52 @@ describe('document store', () => {
     expect(sent).toHaveLength(2)
     expect(sent[1].opId).toEqual(sent[0].opId)
     expect(store.pending).toHaveLength(0)
+  })
+
+  it('sends its confirmed ops again when the runtime restarts without them', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-store-'))
+    const file = path.join(dir, 'document.json')
+    // A runtime that writes document.json only when flushed: a crash loses the rest.
+    const start = () => {
+      const document = createDocumentService({ file, debounceMs: 1e9 })
+      const server = new RpcServer({ lifecycle: createLifecycleBus(), version: 'test' })
+      server.register(documentCapability, documentCapabilityImpl(document))
+      return { document, server }
+    }
+    const rpc = new RpcClient({ version: 'test', identity: { client: { clientId: 'a', device: { name: 'a', publicKey: 'FP' }, features: [] } } })
+    let counter = 0
+    const store = createDocumentStore({
+      clientId: 'a',
+      nextCounter: () => ++counter,
+      remote: createCapabilityProxy(rpc, documentCapability),
+      onReady: (listener) => rpc.onReady(listener),
+    })
+    const attach = (server: RpcServer) => {
+      const [mine, theirs] = createMemoryPortPair()
+      server.serve(theirs)
+      return { port: mine, ready: rpc.attach(mine) }
+    }
+    const first = start()
+    const conn = attach(first.server)
+    await conn.ready
+    await store.ready
+    store.propose(add('p1'))
+    await vi.waitFor(() => expect(store.pending).toHaveLength(0))
+    await first.document.flush()
+    store.propose(add('p2'))
+    await vi.waitFor(() => expect(store.pending).toHaveLength(0))
+    // The runtime dies before writing p2.
+    conn.port.close('crashed')
+    const second = start()
+    expect(Object.keys(second.document.get().panels)).toEqual(['p1'])
+    await attach(second.server).ready
+    await vi.waitFor(() => expect(Object.keys(second.document.get().panels).sort()).toEqual(['p1', 'p2']))
+    await vi.waitFor(() => expect(store.getSnapshot()).toEqual(second.document.get()))
+    store.dispose()
+    rpc.close()
+    first.document.dispose()
+    second.document.dispose()
+    fs.rmSync(dir, { recursive: true, force: true })
   })
 
   it('converges two mirrors sending random ops at the same time', async () => {
@@ -286,6 +336,22 @@ describe('undo', () => {
     await vi.waitFor(() => expect(rt.sequencer.doc.panels.p2.title).toBe('p2'))
     expect(a.refused).toEqual([])
     expect(a.store.getSnapshot()).toEqual(rt.sequencer.doc)
+  })
+
+  it('keeps a value another client set after the op', async () => {
+    const rt = fakeRuntime()
+    const a = await connected(rt, 'a')
+    const b = await connected(rt, 'b')
+    a.store.propose({ kind: 'batch', changes: [add('p1'), add('p2')] }, { undoable: false })
+    await vi.waitFor(() => expect(b.store.getSnapshot().panels.p2).toBeDefined())
+    a.store.propose({ kind: 'batch', changes: [title('p1', 'x'), title('p2', 'y')] })
+    await vi.waitFor(() => expect(b.store.getSnapshot().panels.p1.title).toBe('x'))
+    b.store.propose(title('p1', 'from b'))
+    await vi.waitFor(() => expect(a.store.getSnapshot().panels.p1.title).toBe('from b'))
+
+    expect(a.store.undo()).toBe(true)
+    await vi.waitFor(() => expect(rt.sequencer.doc.panels.p2.title).toBe('p2'))
+    expect(rt.sequencer.doc.panels.p1.title).toBe('from b')
   })
 
   it('does nothing when everything an entry names is gone', async () => {

@@ -29,7 +29,7 @@ export function openTestDocument(workspaceId: string, doc: WorkspaceDocument): (
         subscribe: () => ({
           onEvent(listener: (event: DocumentEvent) => void) {
             emit = listener
-            listener({ kind: 'doc', seq, epoch: 'e', doc: current })
+            listener({ kind: 'doc', seq, epoch: 'e', startSeq: 0, doc: current })
             return () => { emit = null }
           },
           done: new Promise<void>(() => {}),

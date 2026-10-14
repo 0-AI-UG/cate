@@ -92,6 +92,16 @@ describe('agent start', () => {
     })
   })
 
+  it('opens the interactive session at a picked spot without a prompt, titled by the agent', async () => {
+    const placement = { at: { to: 'canvas', canvasId: 'c', nodeId: 'n', stackId: 's', rect: { origin: { x: 0, y: 0 }, size: { width: 640, height: 400 } } } } as const
+    await starter().start(undefined, { agentId: 'codex', placement })
+    expect(ports.terminals.create).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Codex',
+      launch: { kind: 'agents.start', params: { agentId: 'codex' } },
+      placement,
+    }))
+  })
+
   it('marks a title the caller chose, so the agent never retitles the panel', async () => {
     await starter().start('supervisor', { prompt: 'Fix the login', title: '  Alpha ' })
     expect(ports.terminals.create).toHaveBeenCalledWith(expect.objectContaining({ title: 'Alpha', titleChosen: true }))

@@ -7,7 +7,7 @@ import { SettingRow, Toggle } from '../ui/kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { setClientSetting, useClientSetting } from '../ui/kernel/settings'
 import { defineActions, storedShortcut } from '@kernel/interaction/contract'
-import { registerActions } from '@client/host'
+import { pickNewPanelPlace, registerActions, revealPanel } from '@client/host'
 import { installFileDropHandler } from '../ui/client/layout/drag'
 import { installReviewOpener, openDroppedFiles, registerSettingsPage, registerWorkspaceViews } from '../ui/app'
 import { setAgentChangesOpener } from '../ui/services/agents'
@@ -107,7 +107,14 @@ export function registerDesktopRenderer(api: DesktopApi): () => void {
       reportIssue: native('reportIssue'),
     }),
     syncMenuModel(api),
-    setAgentChangesOpener(async (request) => (await openAgentChanges(request)) !== null),
+    setAgentChangesOpener(async (request) => {
+      const at = await pickNewPanelPlace(request.workspaceId, 'review', request.panelId)
+      // Cancelling the placement is not a failure.
+      if (!at) return true
+      const id = await openAgentChanges({ ...request, at })
+      if (id) void revealPanel(request.workspaceId, id)
+      return id !== null
+    }),
     registerSettingsPage({ id: 'general', title: 'General', scope: 'client', group: 'general', order: 0, component: GeneralPage }),
     registerSettingsPage({ id: 'updates', title: 'Updates', scope: 'client', group: 'general', order: 90, component: UpdatesPage }),
   ]

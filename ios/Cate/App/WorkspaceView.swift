@@ -19,10 +19,12 @@ struct WorkspaceView: View {
     @State private var center: CGPoint?
     /// A new panel's type, while it waits for its spot on the canvas.
     @State private var placing: PanelChoice?
-    @State private var showingAgents = false
-    @State private var startingAgent = false
+    /// Opens a screen on the app's stack (the title menu's agents).
+    @Environment(\.navigate) private var navigate
     /// The dock panels shown last, the one on screen last; they stay open.
     @State private var kept: [String] = []
+    /// A canvas waiting for its close to be confirmed: it takes its panels.
+    @State private var closingCanvas: Panel?
 
     /// How many dock panels stay open, the one on screen included.
     private static let keptCount = 3
@@ -75,8 +77,19 @@ struct WorkspaceView: View {
                 }
                 if connected, canvas == nil {
                     Section {
-                        Button("Agents", systemImage: "sparkles") { showingAgents = true }
-                        Button("New Agent", systemImage: "square.and.pencil") { startingAgent = true }
+                        Button("Agents", systemImage: "sparkles") { navigate(AgentsRoute(workspaceId: workspaceId)) }
+                        Button("New Agent", systemImage: "square.and.pencil") { navigate(NewAgentRoute(workspaceId: workspaceId)) }
+                    }
+                }
+                if connected, let panel {
+                    Section {
+                        Button("Close \(panel.title)", systemImage: "xmark", role: .destructive) {
+                            if panel.type == "canvas", panel.canvas?.nodes.isEmpty == false {
+                                closingCanvas = panel
+                            } else {
+                                Task { await core.removePanel(workspaceId, panelId: panel.id) }
+                            }
+                        }
                     }
                 }
             }
@@ -122,8 +135,6 @@ struct WorkspaceView: View {
                 }
             }
         }
-        .navigationDestination(isPresented: $showingAgents) { AgentsView(workspaceId: workspaceId) }
-        .navigationDestination(isPresented: $startingAgent) { AgentChatView(workspaceId: workspaceId, panelId: nil) }
         // The first canvas in the dock, else its first panel, until one is
         // picked; another when the one on screen closes.
         .onChange(of: docked.map(\.id), initial: true) { _, ids in
@@ -139,6 +150,13 @@ struct WorkspaceView: View {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             guard let selected else { return }
             kept = Array((kept.filter { $0 != selected } + [selected]).suffix(Self.keptCount))
+        }
+        .confirmationDialog("Close \(closingCanvas?.title ?? "")?", isPresented: Binding(get: { closingCanvas != nil }, set: { if !$0 { closingCanvas = nil } }), titleVisibility: .visible, presenting: closingCanvas) { canvas in
+            Button("Close Canvas and Its Panels", role: .destructive) {
+                Task { await core.removePanel(workspaceId, panelId: canvas.id) }
+            }
+        } message: { canvas in
+            Text("The \(canvas.canvas?.nodes.count ?? 0) panels on it close too.")
         }
         .task { await core.open(workspaceId) }
         // Each warm holds the sessions a while; renewed while the workspace is open.

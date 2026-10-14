@@ -1,1 +1,1 @@
-export { dialCateConnect, lookupRuntime, type CateConnectOptions } from './dial'
+export { dialCateConnect, type CateConnectOptions } from './dial'

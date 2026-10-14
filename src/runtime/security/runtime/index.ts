@@ -34,12 +34,16 @@ export class UnpairedPeerError extends SecureChannelError {}
  *  or a `hello`, raised to the default once the key is paired. */
 export const UNPAIRED_MAX_FRAME = 16 * 1024
 
+/** How long a peer gets to finish its handshake: Noise XX is one and a half
+ *  round trips, and an unproven peer holds a slot meanwhile. */
+export const PEER_HANDSHAKE_TIMEOUT_MS = 5_000
+
 /** Resolves with a channel from a paired device, or rejects after closing it. */
 export async function acceptPeer(port: MessagePortLike, options: AcceptOptions): Promise<SecureChannel> {
   const channel = await openSecureChannel(port, {
     role: 'responder',
     staticKeys: options.runtimeKeys,
-    handshakeTimeoutMs: options.handshakeTimeoutMs,
+    handshakeTimeoutMs: options.handshakeTimeoutMs ?? PEER_HANDSHAKE_TIMEOUT_MS,
     maxFrameBytes: UNPAIRED_MAX_FRAME,
   })
   if (await options.policy.isPaired(channel.remoteStatic)) {

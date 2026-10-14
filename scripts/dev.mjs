@@ -19,9 +19,16 @@ const builds = new Set([computeBuildId(repoRoot)])
 // Chromium DevTools Protocol on localhost, for local CDP clients
 // (chrome://inspect, Playwright connectOverCDP). CATE_CDP_PORT overrides the
 // port, 0 turns it off; an explicit --remoteDebuggingPort argument wins.
+// Arguments after `--` go to Electron, so the flag goes before them.
 const args = process.argv.slice(2)
-const cdpPort = process.env.CATE_CDP_PORT ?? '9222'
-if (cdpPort !== '0' && !args.includes('--remoteDebuggingPort')) args.push('--remoteDebuggingPort', cdpPort)
+const sep = args.indexOf('--') === -1 ? args.length : args.indexOf('--')
+const cdpPort = process.env.CATE_CDP_PORT || '9222'
+if (!/^\d+$/.test(cdpPort) || Number(cdpPort) > 65535) {
+  console.error(`[dev] CATE_CDP_PORT must be a port number or 0, got "${cdpPort}"`)
+  process.exit(1)
+}
+const explicit = args.slice(0, sep).some((a) => /^--remote(DebuggingPort|-debugging-port)(=|$)/.test(a))
+if (cdpPort !== '0' && !explicit) args.splice(sep, 0, '--remoteDebuggingPort', cdpPort)
 
 const child = spawn('electron-vite', ['dev', ...args], {
   stdio: 'inherit',

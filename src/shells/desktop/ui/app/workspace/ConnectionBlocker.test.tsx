@@ -105,7 +105,7 @@ describe('ConnectionBlocker', () => {
     act(() => connection.set({ kind: 'offline', lastSeen: null, retrying: false, error: 'connect ECONNREFUSED' }))
     expect(cover()).toBeNull()
     act(() => { vi.advanceTimersByTime(400) })
-    expect(cover()?.textContent).toContain('The workspace runtime did not start.')
+    expect(cover()?.textContent).toContain('The runtime did not start.')
     expect(cover()?.textContent).not.toContain('ECONNREFUSED')
     act(() => (cover()?.querySelector('button') as HTMLButtonElement).click())
     expect(connection.retryNow).toHaveBeenCalled()

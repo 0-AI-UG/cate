@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import WebSocket, { WebSocketServer } from 'ws'
 import { socketDuplex } from '@runtime/transports/node'
-import { createProxyCredentials, parseAuthority, startLoopbackProxy, type LoopbackProxy } from './loopbackProxy'
+import { canonicalHost, createProxyCredentials, parseAuthority, routeFor, startLoopbackProxy, type LoopbackProxy } from './loopbackProxy'
 
 // The target stands in for a dev server on the runtime's machine. The fake
 // dialLoopback reaches it with a plain TCP connect, as a local connection does.
@@ -17,6 +17,21 @@ const credentials = createProxyCredentials()
 const auth = `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`
 const loopbackDials: number[] = []
 const directDials: { host: string; port: number }[] = []
+let reaches = true
+// Stands in for DNS.
+const HOSTS: Record<string, string[]> = {
+  'example.test': ['93.184.216.34'],
+  'loopback.test': ['127.0.0.1'],
+  'mapped.test': ['::ffff:7f00:1'],
+  'lan.test': ['192.168.1.20'],
+  'ula.test': ['fd00::5'],
+  'mixed.test': ['93.184.216.34', '127.0.0.1'],
+}
+const lookup = async (host: string): Promise<string[]> => {
+  const found = HOSTS[host]
+  if (!found) throw new Error(`ENOTFOUND ${host}`)
+  return found
+}
 
 const tcp = (port: number) => new Promise<net.Socket>((resolve, reject) => {
   const socket = net.connect(port, '127.0.0.1')
@@ -35,6 +50,8 @@ beforeAll(async () => {
   targetPort = (target.address() as AddressInfo).port
   proxy = await startLoopbackProxy({
     credentials,
+    reachesClientNetwork: () => reaches,
+    lookup,
     dialLoopback: async (port) => {
       loopbackDials.push(port)
       return socketDuplex(await tcp(port))
@@ -55,6 +72,7 @@ afterAll(async () => {
 })
 
 beforeEach(() => {
+  reaches = true
   loopbackDials.length = 0
   directDials.length = 0
 })
@@ -111,8 +129,35 @@ describe('loopback web proxy', () => {
     const res = await viaProxy(`http://example.test:${targetPort}/direct`, { 'Proxy-Authorization': auth })
     expect(res.status).toBe(200)
     expect(res.body).toContain('GET /direct host=example.test')
-    expect(directDials).toEqual([{ host: 'example.test', port: targetPort }])
+    // To the address that was checked, not the name again.
+    expect(directDials).toEqual([{ host: '93.184.216.34', port: targetPort }])
     expect(loopbackDials).toEqual([])
+  })
+
+  it('sends a name that resolves to loopback to the runtime\'s machine', async () => {
+    const res = await viaProxy(`http://loopback.test:${targetPort}/x`, { 'Proxy-Authorization': auth })
+    expect(res.status).toBe(200)
+    expect(loopbackDials).toEqual([targetPort])
+    expect(directDials).toEqual([])
+  })
+
+  it('refuses the client\'s private ranges to a runtime off its network', async () => {
+    reaches = false
+    expect((await viaProxy(`http://lan.test:${targetPort}/`, { 'Proxy-Authorization': auth })).status).toBe(403)
+    const tunnel = await connectTunnel(`192.168.1.20:${targetPort}`, { 'Proxy-Authorization': auth })
+    expect(tunnel.status).toBe(403)
+    tunnel.socket.destroy()
+    expect(directDials).toEqual([])
+    // Loopback still goes to the runtime's machine.
+    expect((await viaProxy(`http://127.0.0.1:${targetPort}/`, { 'Proxy-Authorization': auth })).status).toBe(200)
+  })
+
+  it('tunnels CONNECT to a normalized loopback target', async () => {
+    const { status, socket } = await connectTunnel(`2130706433:${targetPort}`, { 'Proxy-Authorization': auth })
+    expect(status).toBe(200)
+    socket.destroy()
+    expect(loopbackDials).toEqual([targetPort])
+    expect(directDials).toEqual([])
   })
 
   it('tunnels CONNECT to a loopback port', async () => {
@@ -181,5 +226,42 @@ describe('loopback web proxy', () => {
     })
     const res = await viaProxy(`http://localhost:${closed}/`, { 'Proxy-Authorization': auth })
     expect(res.status).toBe(502)
+  })
+})
+
+describe('routeFor', () => {
+  const deps = (reachesClientNetwork: boolean, upstream = false) => ({ lookup, reachesClientNetwork, upstream })
+
+  it('normalizes hosts as URL parsing does', () => {
+    expect(canonicalHost('2130706433')).toBe('127.0.0.1')
+    expect(canonicalHost('0x7f.1')).toBe('127.0.0.1')
+    expect(canonicalHost('[::ffff:127.0.0.1]')).toBe('::ffff:7f00:1')
+    expect(canonicalHost('::1')).toBe('::1')
+    expect(canonicalHost('Example.TEST')).toBe('example.test')
+    expect(canonicalHost('a b')).toBeNull()
+  })
+
+  it('decides loopback on the resolved address', async () => {
+    for (const host of ['localhost', '2130706433', '0x7f.1', '::ffff:127.0.0.1', '[::ffff:7f00:1]', 'loopback.test', 'mapped.test', 'mixed.test']) {
+      expect(await routeFor(host, deps(false)), host).toEqual({ kind: 'loopback' })
+    }
+  })
+
+  it('refuses private, link-local and unique local addresses only off the client network', async () => {
+    for (const host of ['lan.test', 'ula.test', '10.0.0.1', '169.254.1.1', '[fe80::1]', '::ffff:c0a8:101', '100.64.0.1']) {
+      expect(await routeFor(host, deps(false)), host).toEqual({ kind: 'refused' })
+      expect((await routeFor(host, deps(true))).kind, host).toBe('direct')
+    }
+    expect(await routeFor('lan.test', deps(true))).toEqual({ kind: 'direct', host: '192.168.1.20' })
+    expect(await routeFor('example.test', deps(false))).toEqual({ kind: 'direct', host: '93.184.216.34' })
+  })
+
+  it('applies the same rules with an upstream proxy, which gets the name', async () => {
+    expect(await routeFor('lan.test', deps(false, true))).toEqual({ kind: 'refused' })
+    expect(await routeFor('loopback.test', deps(false, true))).toEqual({ kind: 'loopback' })
+    expect(await routeFor('example.test', deps(false, true))).toEqual({ kind: 'direct', host: 'example.test' })
+    // A name only the upstream can resolve goes there; without one it fails.
+    expect(await routeFor('intranet.test', deps(false, true))).toEqual({ kind: 'direct', host: 'intranet.test' })
+    await expect(routeFor('intranet.test', deps(false))).rejects.toThrow('ENOTFOUND')
   })
 })

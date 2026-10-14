@@ -22,6 +22,8 @@ export interface JsonStateStoreOptions<T> {
   debounceMs?: number
   onInvalid?(phase: 'load' | 'external'): void
   onError?(operation: 'read' | 'write' | 'watch' | 'writeSync', error: unknown): void
+  /** A value reached the backend (the file is on disk). */
+  onWritten?(value: T): void
 }
 
 export interface JsonStateStore<T> {
@@ -87,6 +89,10 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
     error: unknown,
   ): void => {
     options.onError?.(operation, error)
+  }
+
+  const written = (value: T): void => {
+    try { options.onWritten?.(value) } catch { /* isolate the callback */ }
   }
 
   const parse = (raw: string, phase: 'load' | 'external'): T | null => {
@@ -176,6 +182,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
           try {
             await backend.write(correctionValue, correctionContent)
             durableRevision = Math.max(durableRevision, correctionRevision)
+            written(correctionValue)
           } catch (error) {
             // The stale write succeeded but its corrective write failed. Mark
             // the state non-durable so a later flush retries it.
@@ -184,6 +191,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
           }
         } else {
           durableRevision = Math.max(durableRevision, revisionAtWrite)
+          written(value)
         }
       } catch (error) {
         lastWriteError = error ?? new Error('JSON state publication failed')
@@ -323,6 +331,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       wrote(content)
       durableRevision = revision
       lastWriteError = undefined
+      written(current)
     } catch (error) {
       report('writeSync', error)
     }

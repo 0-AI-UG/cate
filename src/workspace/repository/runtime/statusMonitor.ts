@@ -3,7 +3,8 @@
 // right after a change, doubling up to 30 s while nothing moves. A probe
 // change, a file change or a kick after a git write reads the full snapshot;
 // subscribers get it when it differs from the last one. File changes git
-// ignores (build output, caches) read nothing.
+// ignores (build output, caches) read nothing. While inactive (untrusted) a
+// monitor runs no git and starts no watcher.
 
 import type { Logger } from '@kernel/log/contract'
 import { checkoutPathKey, type RepoStatus } from '../contract'
@@ -60,6 +61,8 @@ interface Monitor {
 export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
   const monitors = new Map<string, Monitor>()
 
+  const inactive = (): boolean => !!deps.active && !deps.active()
+
   const schedule = (m: Monitor): void => {
     if (m.timer) clearTimeout(m.timer)
     m.timer = m.closed ? null : setTimeout(() => void tick(m, false), m.delay)
@@ -68,7 +71,8 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
   async function tick(m: Monitor, force: boolean): Promise<void> {
     if (m.timer) clearTimeout(m.timer)
     m.timer = null
-    if (m.closed || (deps.active && !deps.active())) return
+    if (m.closed || inactive()) return
+    if (!m.unwatch) watch(m)
     const epoch = ++m.epoch
     const stale = () => m.closed || m.epoch !== epoch
     let changed = false
@@ -110,6 +114,10 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
   async function flushFileChanges(m: Monitor): Promise<void> {
     const paths = m.fsPaths
     m.fsPaths = new Set()
+    if (inactive()) {
+      m.fsTimer = null
+      return
+    }
     if (paths && deps.allIgnored) {
       let ignored = false
       try { ignored = await deps.allIgnored(m.cwd, [...paths]) } catch { /* treat as a change */ }
@@ -122,6 +130,19 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
       m.fsTimer = null
     }
     if (!m.closed) kickMonitor(m)
+  }
+
+  /** Starts the checkout's watcher; the first active tick calls it. */
+  function watch(m: Monitor): void {
+    m.unwatch = deps.watch?.(m.cwd, (changedPath) => {
+      if (m.closed) return
+      if (m.fsPaths) {
+        m.fsPaths.add(changedPath)
+        if (m.fsPaths.size > FS_BATCH_MAX) m.fsPaths = null
+      }
+      if (m.fsTimer) return
+      m.fsTimer = setTimeout(() => void flushFileChanges(m), FS_DEBOUNCE_MS)
+    }) ?? null
   }
 
   function close(m: Monitor): void {
@@ -156,15 +177,6 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
           closed: false,
         }
         monitors.set(key, created)
-        created.unwatch = deps.watch?.(cwd, (changedPath) => {
-          if (created.closed) return
-          if (created.fsPaths) {
-            created.fsPaths.add(changedPath)
-            if (created.fsPaths.size > FS_BATCH_MAX) created.fsPaths = null
-          }
-          if (created.fsTimer) return
-          created.fsTimer = setTimeout(() => void flushFileChanges(created), FS_DEBOUNCE_MS)
-        }) ?? null
         m = created
         void tick(created, true)
       }

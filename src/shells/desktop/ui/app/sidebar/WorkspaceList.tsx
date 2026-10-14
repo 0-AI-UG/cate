@@ -10,7 +10,6 @@ import { Button, SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/
 import { groupByMachine, type MachineGroup } from '@client/workspaces'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
-import { useDesktopPort } from '../desktop'
 import { closeWorkspaces, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
 import { showMenu } from './menu'
@@ -192,9 +191,8 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
 
 /** A machine's header: its icon and name, grouping its workspaces. */
 function MachineHeader({ group }: { group: MachineGroup }): JSX.Element {
-  const port = useDesktopPort()
   const { machine } = group
-  const label = machine.kind === 'this' ? port?.thisMachineName ?? 'This device' : machine.label ?? 'Paired'
+  const label = machine.kind === 'this' ? 'This device' : machine.label ?? 'Paired'
   const Icon = machine.kind === 'this' ? Monitor : machine.kind === 'machine' ? Server : Link2
   return (
     <div

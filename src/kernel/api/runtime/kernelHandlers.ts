@@ -3,7 +3,7 @@
 import { CATE_API_VERSION, uiApi, versionApi } from '../contract'
 import type { ApiRouter } from './router'
 
-/** A notification event (architecture 10.5). Each client decides whether to show it. */
+/** A notification event (architecture 10.4). Each client decides whether to show it. */
 export interface ApiNotificationEvent {
   kind: 'cate.ui.notify'
   panelId?: string

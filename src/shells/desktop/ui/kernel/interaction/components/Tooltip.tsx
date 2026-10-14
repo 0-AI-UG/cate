@@ -14,10 +14,12 @@ interface TooltipProps {
   action?: ActionId
   label: string
   placement?: 'top' | 'bottom' | 'right' | 'left'
+  /** Hides the label while something else speaks for the element. */
+  suppressed?: boolean
   children: React.ReactElement<React.HTMLAttributes<HTMLElement>>
 }
 
-export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bottom', children }) => {
+export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bottom', suppressed = false, children }) => {
   const shortcuts = useResolvedShortcuts()
   const key = shortcutDisplay(shortcuts, action)
   const text = key ? `${label} (${key})` : label
@@ -85,7 +87,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bo
   }, [anchor, placement, text])
 
   if (!isValidElement(children)) return children
-  const describedBy = [children.props['aria-describedby'], anchor ? tooltipId : null]
+  const describedBy = [children.props['aria-describedby'], anchor && !suppressed ? tooltipId : null]
     .filter(Boolean)
     .join(' ') || undefined
   const child = cloneElement(children, {
@@ -115,7 +117,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bo
   return (
     <>
       {child}
-      {anchor &&
+      {anchor && !suppressed &&
         createPortal(
           <div
             ref={tooltipRef}

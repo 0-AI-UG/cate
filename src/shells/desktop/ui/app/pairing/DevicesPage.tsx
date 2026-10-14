@@ -5,12 +5,13 @@
 
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { QrCode, RefreshCw, Smartphone, Trash2 } from 'lucide-react'
+import { RefreshCw, ShieldAlert, Smartphone, Trash2 } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import { Button, SecondaryButton, SearchableBlock, SettingRow, Spinner } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSetting } from '../../kernel/settings'
 import type { CreatedSecret, PairingMode, WorkspaceDevice } from '@runtime/pairing/contract'
+import type { SameNetworkProblem } from '@runtime/transports/contract'
 import { clientIdentity, relativeTime } from '@client/connections'
 import { useOtherClients } from '../../client/document'
 import type { SettingsPageProps } from '../settings/registry'
@@ -51,12 +52,22 @@ export function formatCountdown(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-/** A one-time code (QR and typed) for another device to join with. Network
- *  access off: creating it turns on same-network access first. */
-export function PairingCode({ workspaceId }: { workspaceId: string }): JSX.Element {
+/** A one-time code (QR and typed) for another device to join with. Every
+ *  code, the first and each new one, waits for the person to confirm that
+ *  whoever joins can use this computer as them; the runtime refuses a code
+ *  without that answer. Network access off: confirming turns on same-network
+ *  access first. The code carries the access it was made for, so a new
+ *  choice asks again. */
+export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
+  workspaceId: string
+  /** Why devices could not reach this machine with the shown code, if so. */
+  onSameNetworkProblem?: (problem: SameNetworkProblem | null) => void
+  /** Shows Cancel next to the confirmation. */
+  onCancel?: () => void
+}): JSX.Element {
   const runtime = useRuntime(workspaceId)
   const network = useWorkspaceSetting(workspaceId, 'runtimeNetwork')
-  const [secret, setSecret] = useState<CreatedSecret | null>(null)
+  const [secret, setSecret] = useState<(CreatedSecret & { mode: PairingMode }) | null>(null)
   const [qrSvg, setQrSvg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -78,7 +89,7 @@ export function PairingCode({ workspaceId }: { workspaceId: string }): JSX.Eleme
     try {
       const mode: PairingMode = network === 'off' ? 'sameNetwork' : network
       if (network === 'off') await setWorkspaceSetting(workspaceId, 'runtimeNetwork', mode)
-      setSecret(await runtime.pairing.createSecret({ mode }))
+      setSecret({ ...(await runtime.pairing.createSecret({ mode, acknowledged: true })), mode })
     } catch (err) {
       setError(errorMessage(err, 'Could not create a pairing code.'))
     } finally {
@@ -86,24 +97,34 @@ export function PairingCode({ workspaceId }: { workspaceId: string }): JSX.Eleme
     }
   }
 
+  // Another access: that code is gone, and a new one is confirmed again.
+  const stale = secret !== null && secret.mode !== network
+  useEffect(() => { if (stale) setSecret(null) }, [stale])
+
+  const problem = secret?.sameNetworkProblem ?? null
+  useEffect(() => { onSameNetworkProblem?.(problem) }, [problem, onSameNetworkProblem])
+
   const howTo = 'On the other device, scan the QR code or type the code under "Join with a Code".'
 
   if (!secret) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-subtle bg-surface-0 px-6 py-6 text-center">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-hover text-secondary">
-          <QrCode size={18} />
+      <div role="group" aria-label="Confirm sharing" className="flex flex-col items-center gap-3 rounded-xl border border-warning bg-surface-0 px-6 py-6 text-center">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-warning-tint text-warning">
+          <ShieldAlert size={18} />
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-[14px] font-medium text-primary">Add a device</span>
-          <span className="max-w-[340px] text-xs leading-relaxed text-muted">
-            Show a one-time code here. {howTo}
+          <span className="text-[14px] font-medium text-primary">Anyone who joins can use this computer as you</span>
+          <span className="max-w-[360px] text-xs leading-relaxed text-muted">
+            They can run commands, read and change files, and reach local services in this workspace. Only share with people you trust.
             {network === 'off' && ' Turns on same-network access first.'}
           </span>
         </div>
-        <Button variant="primary" onClick={() => void create()} disabled={!runtime} loading={busy}>
-          Show pairing code
-        </Button>
+        <div className="flex items-center gap-2">
+          {onCancel && <SecondaryButton onClick={onCancel}>Cancel</SecondaryButton>}
+          <Button variant="primary" onClick={() => void create()} disabled={!runtime} loading={busy}>
+            I understand, show code
+          </Button>
+        </div>
         {error && <span role="alert" className="text-xs text-danger">{error}</span>}
       </div>
     )
@@ -127,7 +148,7 @@ export function PairingCode({ workspaceId }: { workspaceId: string }): JSX.Eleme
           <span className={`text-xs ${expired ? 'text-danger' : 'text-muted'}`}>
             {expired ? 'Expired.' : `Works once. Expires in ${formatCountdown(secondsLeft)}.`}
           </span>
-          <Button size="sm" variant={expired ? 'primary' : 'ghost'} onClick={() => void create()} disabled={!runtime} loading={busy}>
+          <Button size="sm" variant={expired ? 'primary' : 'ghost'} onClick={() => setSecret(null)} disabled={!runtime}>
             <RefreshCw size={11} />
             New code
           </Button>

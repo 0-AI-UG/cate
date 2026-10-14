@@ -10,6 +10,7 @@ import {
   MDNS_RUNTIME_ID_KEY,
   MDNS_SERVICE_TYPE,
   NETWORK_MAX_MESSAGE,
+  type SameNetworkProblem,
   type WebSocketFactory,
   type WebSocketLike,
 } from '../contract'
@@ -33,6 +34,16 @@ export function lanAddresses(port: number, interfaces: NodeJS.Dict<os.NetworkInt
     }
   }
   return v4.length > 0 ? v4 : v6
+}
+
+/** Whether devices can reach this machine on the same network, judged from
+ *  its interfaces. A public IPv4 address wins over private ones: those are
+ *  then usually a VM's or a container's bridge, not the network the devices
+ *  are on. */
+export function sameNetworkProblem(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): SameNetworkProblem | null {
+  const entries = Object.values(interfaces).flatMap((list) => list ?? [])
+  if (entries.some((entry) => !entry.internal && entry.family === 'IPv4' && !isPrivateAddress(entry.address))) return 'publicNetwork'
+  return lanAddresses(0, interfaces).length === 0 ? 'noPrivateAddress' : null
 }
 
 export interface Advertisement {

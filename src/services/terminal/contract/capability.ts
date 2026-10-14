@@ -1,4 +1,5 @@
 import { channelStream, defineCapability, method, stream } from '@kernel/rpc/contract'
+import type { TerminalLink, TerminalLinksParams } from './links'
 
 export type TerminalActivity =
   | { type: 'idle' }
@@ -119,6 +120,8 @@ export const processCapability = defineCapability('process', {
     /** Screen and scrollback as text, the last `lines` lines when given. */
     read: method<{ id: string; lines?: number }, ReadResult>(),
     snapshot: method<{ id: string }, ScreenSnapshot>(),
+    /** The links on a row of the screen (see `./links`). */
+    links: method<TerminalLinksParams, TerminalLink[]>(),
     list: method<void, TerminalStatus[]>(),
   },
   streams: {

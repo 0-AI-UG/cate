@@ -34,7 +34,12 @@ function fakePower() {
   }
 }
 
-it('opens duration choices, starts a timer, and shows remaining time', async () => {
+function hover(element: Element) {
+  element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }))
+  vi.advanceTimersByTime(200)
+}
+
+it('opens duration choices on hover, starts a timer, and shows remaining time', async () => {
   const originalMatchMedia = window.matchMedia
   const power = fakePower()
   h.power = power
@@ -48,21 +53,25 @@ it('opens duration choices, starts a timer, and shows remaining time', async () 
     const button = host.querySelector('button')!
     act(() => { button.focus(); vi.runAllTimers() })
     expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Keep awake: off')
-    await act(async () => button.click())
+    act(() => hover(button))
     expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(4)
     await act(async () => (document.querySelector('[aria-label="Keep awake for 30m"]') as HTMLButtonElement).click())
     expect(power.set).toHaveBeenCalledWith({ duration: 30 })
     expect(button.textContent).toContain('30m')
     act(() => vi.advanceTimersByTime(60_000))
     expect(button.textContent).toContain('29m')
-    await act(async () => button.click())
+    act(() => hover(button))
     await act(async () => (document.querySelector('[aria-label="Keep awake unlimited"]') as HTMLButtonElement).click())
     expect(power.set).toHaveBeenLastCalledWith({ duration: null })
     expect(button.textContent).toContain('∞')
-    await act(async () => button.click())
-    await act(async () => (Array.from(document.querySelectorAll('button')).find((item) => item.textContent === 'Turn off')!).click())
+    act(() => hover(button))
+    await act(async () => (document.querySelector('[aria-label="Turn off"]') as HTMLButtonElement).click())
     expect(power.set).toHaveBeenLastCalledWith({ duration: false })
     expect(button.textContent).not.toContain('∞')
+    await act(async () => button.click())
+    expect(power.set).toHaveBeenLastCalledWith({ duration: null })
+    await act(async () => button.click())
+    expect(power.set).toHaveBeenLastCalledWith({ duration: false })
   } finally {
     act(() => root.unmount())
     host.remove()

@@ -23,6 +23,7 @@ import type { KnownRuntimes } from './knownRuntimes'
 
 export interface PairTarget {
   runtimeId: string
+  secretId: string
   secret: Uint8Array
   /** From a QR payload; a typed code has none. */
   fingerprint?: string
@@ -55,10 +56,10 @@ export function pairingErrorMessage(err: unknown): string {
       case 'timeout': return 'The workspace did not answer in time.'
       case 'closed': return 'The workspace closed the connection.'
       case 'bad-runtime-proof': return 'The workspace could not prove it knows the code.'
-      default: return 'The code was refused. Codes work once and expire after 10 minutes; ask for a new one.'
+      default: return 'The code was refused or expired. Ask for a new one.'
     }
   }
-  return 'Could not reach the workspace. Check that it is served and that this device is on its network or online, then try again.'
+  return 'Could not reach the workspace.'
 }
 
 /** Pairs and returns the open channel, ready for the protocol `hello`. */
@@ -85,6 +86,7 @@ export async function pairWithRuntime(port: MessagePortLike, options: PairOption
     encodePairMessage({
       type: 'pair',
       deviceName: options.deviceName,
+      secretId: target.secretId,
       proof: proofToWire(clientProof(target.secret, channel.handshakeHash)),
     }),
   )

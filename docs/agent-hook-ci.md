@@ -63,6 +63,19 @@ input recovery. Cursor and Kiro do not expose permission-wait hooks. Cursor and
 Grok do not support Cate's native prompt-context injection. The suite does not
 invent vendor events for those missing interfaces.
 
+## Terminal links
+
+`terminalLinks.itest.ts` has every CLI print a reply from the fake provider
+with a URL and a `path:line:col`, in a PTY with the env Cate gives its
+terminals (`TERMINAL_LINK_ENV`), at 50 and 80 columns. It replays the output
+into a headless xterm and resolves a Cmd+click the way the terminal view
+does: the cell's OSC 8 hyperlink first, else the links the runtime finds on
+the row (`rowLinks`, behind `process.links`). Every cell of each occurrence
+the CLI kept on one row, and every cell it linked by OSC 8, must open the
+whole target, with the frame the CLI drew in the failure. A link the CLI
+broke over rows with its own newlines (grok and opencode break after `/`
+and `.`) is two pieces on the screen and is not checked.
+
 ## Provider fixtures
 
 | CLI | Fake service |
@@ -117,6 +130,12 @@ CATE_HOOK_SMOKE_AGENTS=cursor,kiro npm run test:agent-hooks:ci
 Every installed-CLI test runs against the fake provider, including the
 CLIs' sign-in (fake API keys, and the fake auth endpoints Cursor and Kiro
 call). No test uses a real account, key or model.
+
+For the terminal links alone:
+
+```sh
+CATE_LIVE_AGENT_CLIS=1 CATE_HOOK_SMOKE_AGENTS=grok npx vitest run --config vitest.live.config.ts terminalLinks.itest.ts
+```
 
 For focused lifecycle debugging, select cases without running the smoke file:
 

@@ -103,7 +103,7 @@ export async function startConnectStandIn(options: StandInOptions = {}): Promise
     }
     const registration: Registration = {
       channel,
-      send: (message) => { if (!channel.closed) channel.send(encodeConnectMessage(message)) },
+      send: (message) => { try { if (!channel.closed) channel.send(encodeConnectMessage(message)) } catch { /* gone */ } },
     }
     let runtimeId: string | null = null
     channel.onClose(() => {

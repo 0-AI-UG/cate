@@ -1,20 +1,23 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fsClient } from '@workspace/files/client'
+import type { LinkTarget } from '@client/host'
+import { openClickedLink } from '../../app/links'
 import MarkdownCodeBlock from './MarkdownCodeBlock'
 
-/** Where the previewed file lives: its images are workspace files. */
-const PreviewFile = createContext<{ workspaceId: string; filePath: string } | null>(null)
+/** Where the previewed file lives: its images and links are workspace files
+ *  relative to it; a link opens from its panel. */
+const PreviewFile = createContext<{ workspaceId: string; panelId: string; filePath: string } | null>(null)
 
 const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif',
 }
 
-/** The workspace path an image `src` names, relative to the markdown file;
- *  null for web and inline images, which load as they are. */
-export function markdownImagePath(src: string, filePath: string): string | null {
+/** The workspace path an image `src` or a link names, relative to the
+ *  markdown file; null for web and inline images, which load as they are. */
+export function markdownPath(src: string, filePath: string): string | null {
   if (/^(https?:|data:|blob:)/i.test(src)) return null
   let path = src.replace(/[?#].*$/, '')
   try { path = decodeURI(path) } catch { /* keep it as written */ }
@@ -32,7 +35,7 @@ export function markdownImagePath(src: string, filePath: string): string | null 
  *  runtime (never this device's disk), the same for every runtime. */
 function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   const file = useContext(PreviewFile)
-  const path = src && file ? markdownImagePath(src, file.filePath) : null
+  const path = src && file ? markdownPath(src, file.filePath) : null
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     if (!path || !file) return
@@ -54,6 +57,27 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   return shown ? <img src={shown} alt={alt ?? ''} className="max-w-full rounded-md my-2" /> : <span className="text-muted">{alt}</span>
 }
 
+/** What a clicked `href` opens: a web page, or a file relative to the
+ *  markdown file. Null for an in-page anchor and other schemes. */
+export function markdownLinkTarget(href: string, filePath: string): LinkTarget | null {
+  if (/^https?:/i.test(href)) return { kind: 'url', url: href }
+  if (href.startsWith('#') || (/^[a-z][a-z\d+.-]+:/i.test(href) && !/^file:/i.test(href))) return null
+  const path = markdownPath(href, filePath)
+  return path ? { kind: 'file', path } : null
+}
+
+/** A markdown link: it opens through the app's link handling, never by
+ *  navigating the app's own page. */
+function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
+  const file = useContext(PreviewFile)
+  const onClick = (event: MouseEvent) => {
+    event.preventDefault()
+    const target = href && file ? markdownLinkTarget(href, file.filePath) : null
+    if (target && file) void openClickedLink(file.workspaceId, target, { from: file.panelId })
+  }
+  return <a href={href} onClick={onClick} className="text-agent underline decoration-agent/30 hover:decoration-agent">{children}</a>
+}
+
 // Stable renderer identities: re-renders must not replace pressed buttons or
 // scroll containers, including code blocks nested inside lists and quotes.
 const markdownComponents: Components = {
@@ -65,9 +89,7 @@ const markdownComponents: Components = {
   ul: ({ children }) => <ul className="list-disc pl-5 space-y-1">{children}</ul>,
   ol: ({ children }) => <ol className="list-decimal pl-5 space-y-1">{children}</ol>,
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-agent underline decoration-agent/30 hover:decoration-agent">{children}</a>
-  ),
+  a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   blockquote: ({ children }) => <blockquote className="border-l-3 border-strong pl-3 text-secondary italic my-2">{children}</blockquote>,
   hr: () => <hr className="border-subtle my-4" />,
   strong: ({ children }) => <strong className="font-semibold text-primary">{children}</strong>,
@@ -84,8 +106,8 @@ const markdownComponents: Components = {
   img: ({ src, alt }) => <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
 }
 
-export function MarkdownPreview({ content, workspaceId, filePath }: { content: string; workspaceId: string; filePath: string }) {
-  const file = useMemo(() => ({ workspaceId, filePath }), [workspaceId, filePath])
+export function MarkdownPreview({ content, workspaceId, panelId, filePath }: { content: string; workspaceId: string; panelId: string; filePath: string }) {
+  const file = useMemo(() => ({ workspaceId, panelId, filePath }), [workspaceId, panelId, filePath])
   return (
     <div className="absolute inset-0 overflow-auto px-6 py-4" data-testid="markdown-preview">
       <div className="max-w-3xl mx-auto prose-markdown space-y-3 [&>:first-child]:mt-0 text-[13px] text-primary leading-relaxed">

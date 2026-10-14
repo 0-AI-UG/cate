@@ -22,8 +22,14 @@ export function documentCapabilityImpl(
       // Catch-up and registration happen in one turn, so no op falls between.
       const missed = typeof sinceSeq === 'number' && typeof epoch === 'string' ? document.since(sinceSeq, epoch) : null
       if (missed) for (const { seq, op } of missed) sink.emit({ kind: 'op', seq, op })
-      else sink.emit({ kind: 'doc', seq: document.seq, epoch: document.epoch, doc: document.get() })
-      return document.subscribe(({ seq, op }) => sink.emit({ kind: 'op', seq, op }))
+      else sink.emit({ kind: 'doc', seq: document.seq, epoch: document.epoch, startSeq: document.startSeq, doc: document.get() })
+      sink.emit({ kind: 'persisted', seq: document.persistedSeq })
+      const stopOps = document.subscribe(({ seq, op }) => sink.emit({ kind: 'op', seq, op }))
+      const stopPersisted = document.onPersisted((seq) => sink.emit({ kind: 'persisted', seq }))
+      return () => {
+        stopOps()
+        stopPersisted()
+      }
     },
   }
 }

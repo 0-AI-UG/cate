@@ -47,6 +47,7 @@ export async function makeWorkspace(overrides: Partial<FilesRuntimeDeps> = {}) {
     dataPaths: dataPaths(data),
     watcher: watcher.deps,
     buffers: { persistDelayMs: 0, settleMs: 0 },
+    trust: { isTrusted: () => true, requireTrusted: () => {} },
     ...overrides,
   }
   const files = createFilesRuntime(deps)

@@ -108,6 +108,7 @@ final class CoreHost {
             return workspace
         }
         if next.map(\.id) != workspaces.map(\.id) { workspaces = next }
+        loopback.keep(connected: Set(state.workspaces.filter { $0.connection.kind == .connected }.map(\.id)))
         remember(state.workspaces.map { RememberedWorkspace(id: $0.id, name: $0.name, runtimeId: $0.runtimeId) })
     }
 
@@ -209,6 +210,11 @@ final class CoreHost {
             await previous?.value
             await call("terminal.input", ["terminalId": terminalId, "data": data])
         }
+    }
+
+    /// A link tapped in the terminal: the core opens it where it belongs.
+    func openTerminalLink(_ terminalId: String, uri: String) {
+        Task { await call("terminal.openLink", ["terminalId": terminalId, "uri": uri]) }
     }
 
     func closeTerminal(_ terminalId: String) {

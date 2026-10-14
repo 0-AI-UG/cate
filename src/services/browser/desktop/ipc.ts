@@ -95,6 +95,9 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     if (!contents) throw new Error('no-guest')
     if (!drivers.isRegistered(contents.id)) throw new Error('browser-target-not-registered')
     if (typeof url !== 'string' || !url) throw new Error('url-required')
+    let protocol = ''
+    try { protocol = new URL(url).protocol } catch { /* not a URL */ }
+    if (!['http:', 'https:', 'data:', 'blob:'].includes(protocol)) throw new Error('unsupported-download-url')
     contents.downloadURL(url)
   })
 

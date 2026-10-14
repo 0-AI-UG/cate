@@ -1,20 +1,25 @@
 // Keeps the runtime's machine awake for a while or until turned off, over
 // the runtime `power` capability. The label counts down the request's time.
+// A click toggles it (unlimited or off); resting on it shows the durations.
 
-import { useEffect, useRef, useState } from 'react'
-import { Coffee, Infinity as InfinityIcon } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Coffee, Infinity as InfinityIcon, Power } from 'lucide-react'
 import { mirrorChannel } from '@kernel/rpc/client'
 import { useRuntime } from '../../../kernel/rpc'
-import { PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from '../../../kernel/interaction'
+import { Tooltip, useDismissableLayer } from '../../../kernel/interaction'
 import type { KeepAwakeDuration, PowerState } from '@runtime/power/contract/capability'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 
-const WIDTH = 210
 const durations = [
   { label: '30m', minutes: 30 },
   { label: '1h', minutes: 60 },
   { label: '5h', minutes: 300 },
 ] as const
+
+/** Hover intent, as on the new-terminal button's agent flyout. */
+const OPEN_MS = 140
+const CLOSE_MS = 180
 
 const OFF: PowerState = { requested: false, endsAt: null, busy: false, holding: false }
 
@@ -29,20 +34,38 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
   const [state, setState] = useState<PowerState>(OFF)
   const [pending, setPending] = useState(true)
   const [error, setError] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [anchor, setAnchor] = useState<DOMRect | null>(null)
+  const open = anchor !== null
   const [now, setNow] = useState(Date.now())
   const buttonRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
   const iconRef = useRef<HTMLSpanElement>(null)
-  const { pos, portalTarget } = useViewportPopoverPosition(buttonRef, open, (rect) => ({
-    left: Math.max(8, Math.min(rect.left + rect.width / 2 - WIDTH / 2, window.innerWidth - WIDTH - 8)),
-    gap: 10,
-    height: 62,
-  }), popoverRef)
-  const abovePos = pos && buttonRef.current
-    ? { left: pos.left, top: buttonRef.current.getBoundingClientRect().top - 10, placement: 'above' as const }
-    : null
-  useDismissableLayer({ open, contentRef: popoverRef, triggerRefs: [buttonRef], onDismiss: () => setOpen(false) })
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearHoverTimer = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+  }
+  const close = () => {
+    clearHoverTimer()
+    setAnchor(null)
+  }
+  const hoverIn = () => {
+    clearHoverTimer()
+    if (anchor) return
+    hoverTimer.current = setTimeout(() => {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (rect) setAnchor(rect)
+    }, OPEN_MS)
+  }
+  const hoverOut = () => {
+    clearHoverTimer()
+    hoverTimer.current = setTimeout(close, CLOSE_MS)
+  }
+  useEffect(() => clearHoverTimer, [])
+  // The same column as the agent spawn flyout: up from a horizontal bar,
+  // out to the left of a vertical one.
+  const side = tooltipPlacement === 'top' ? 'up' : 'left'
+  useDismissableLayer({ open, contentRef: popoverRef, triggerRefs: [buttonRef], onDismiss: close })
 
   useEffect(() => {
     if (!power) {
@@ -81,7 +104,7 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
     try {
       setState(await power.set({ duration }))
       setNow(Date.now())
-      setOpen(false)
+      close()
     } catch {
       setError(true)
     } finally {
@@ -91,7 +114,7 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
 
   const on = state.requested
   return (
-    <>
+    <div className="flex shrink-0" onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
       <CanvasToolbarButton
         ref={buttonRef}
         action="toggleKeepAwake"
@@ -100,8 +123,9 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
         aria-expanded={open}
         aria-haspopup="menu"
         disabled={pending}
-        onClick={() => setOpen(value => !value)}
+        onClick={() => { close(); void select(on ? false : null) }}
         tooltipPlacement={tooltipPlacement}
+        tooltipSuppressed={open}
         className="relative"
       >
         <span ref={iconRef} className="flex" aria-hidden="true">
@@ -109,14 +133,45 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
         </span>
         {on && <span className="absolute -top-1 -left-2 rounded-md border border-subtle bg-surface-3 px-1 text-[9px] font-semibold leading-4 text-primary whitespace-nowrap pointer-events-none" aria-hidden="true">{remainingLabel(state.endsAt, now)}</span>}
       </CanvasToolbarButton>
-      {open && <PopoverSurface popoverRef={popoverRef} pos={abovePos} portalTarget={portalTarget} width={WIDTH} className="p-2">
-        <div className="flex items-center gap-1" role="menu" aria-label="Keep awake duration">
-          {durations.map(({ label, minutes }) => <button key={minutes} type="button" role="menuitem" disabled={pending} onClick={() => void select(minutes)} className="flex-1 rounded-lg px-1.5 py-1.5 text-xs text-primary hover:bg-hover-strong" aria-label={`Keep awake for ${label}`}>{label}</button>)}
-          <button type="button" role="menuitem" disabled={pending} onClick={() => void select(null)} className="flex-1 flex justify-center rounded-lg px-1.5 py-1.5 text-primary hover:bg-hover-strong" aria-label="Keep awake unlimited" title="Unlimited"><InfinityIcon size={16} /></button>
-        </div>
-        {on && <button type="button" disabled={pending} onClick={() => void select(false)} className="mt-1 w-full rounded-lg py-1 text-[11px] text-secondary hover:bg-hover-strong">Turn off</button>}
-        {error && <p className="px-1 text-[11px] text-red-400">Couldn’t change keep awake.</p>}
-      </PopoverSurface>}
-    </>
+      {anchor && createPortal(
+        <div
+          ref={popoverRef}
+          className="fixed z-[90]"
+          onMouseEnter={clearHoverTimer}
+          onMouseLeave={hoverOut}
+          style={side === 'up'
+            ? { left: anchor.left + anchor.width / 2, bottom: window.innerHeight - anchor.top, transform: 'translateX(-50%)', paddingBottom: 10 }
+            : { right: window.innerWidth - anchor.left, bottom: window.innerHeight - anchor.bottom, paddingRight: 10 }}
+        >
+          <div
+            role="menu"
+            aria-label="Keep awake duration"
+            className="cate-spawn-flyout flex flex-col-reverse items-center gap-1 p-1 rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
+            style={{ transformOrigin: side === 'up' ? 'bottom center' : 'bottom right' }}
+          >
+            {[
+              ...durations.map(({ label, minutes }) => ({ key: label, duration: minutes as KeepAwakeDuration, tip: `Keep awake for ${label}`, content: label as React.ReactNode })),
+              { key: 'unlimited', duration: null as KeepAwakeDuration, tip: 'Keep awake unlimited', content: <InfinityIcon size={16} /> as React.ReactNode },
+              ...(on ? [{ key: 'off', duration: false as KeepAwakeDuration, tip: 'Turn off', content: <Power size={15} /> as React.ReactNode }] : []),
+            ].map((item, index) => (
+              <Tooltip key={item.key} label={item.tip} placement={side === 'up' ? 'right' : 'left'}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-label={item.tip}
+                  disabled={pending}
+                  onClick={() => void select(item.duration)}
+                  style={{ '--i': index, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}
+                  className="cate-spawn-flyout-item h-9 w-9 shrink-0 flex items-center justify-center rounded-full text-xs font-medium text-primary hover:bg-hover-strong hover:scale-110 active:scale-[0.92] transition-transform duration-100"
+                >
+                  {item.content}
+                </button>
+              </Tooltip>
+            ))}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
   )
 }

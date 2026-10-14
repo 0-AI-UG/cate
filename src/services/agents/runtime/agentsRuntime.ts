@@ -1,4 +1,4 @@
-// The agents service as the rest of the runtime sees it (architecture 10.4):
+// The agents service as the rest of the runtime sees it (architecture 10.3):
 // the only owner of agent state. It builds its core (with the terminal
 // agents) and the starter, and answers the few calls other modules make;
 // hooks and terminal agents stay private to this module.
@@ -58,7 +58,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     busy: () => core.busy(),
     changes: (cwd, knownRevision) => core.changes(cwd, knownRevision),
     async readiness(cwd) {
-      const states = await inspectAgentCliHooks((dir) => core.hooks.inspectWorkspace(dir), cwd)
+      const states = await inspectAgentCliHooks((dir) => core.hooks.inspectFolders(dir), cwd)
       const config = core.settings.agentHookInjection()
       return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
     },

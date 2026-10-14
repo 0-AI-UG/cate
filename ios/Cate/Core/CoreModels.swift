@@ -345,15 +345,8 @@ struct StartedAgent: Decodable {
     let message: String?
 }
 
-/// One visible turn of an agent's conversation.
-struct ConversationMessage: Decodable, Hashable {
-    let role: String
-    let text: String
-    let createdAt: String?
-}
-
 /// A tool call an agent completed, as its hooks reported it.
-struct AgentStep: Decodable, Hashable {
+struct AgentStep: Codable, Hashable, Sendable {
     /// The tool's name as the CLI calls it.
     let tool: String
     /// What it worked on (a command, a path), one line.
@@ -361,34 +354,38 @@ struct AgentStep: Decodable, Hashable {
     let at: String
 }
 
-/// Steps shown together before message `before` (the message count: at the
-/// end). A ghost stands for steps that ran before the runtime kept them.
-struct AgentStepGroup: Decodable, Hashable {
-    let before: Int
-    let steps: [AgentStep]
-    let ghost: Bool
-}
-
-/// Where a chat's steps show, and the step its running turn last completed.
-struct AgentSteps: Decodable, Hashable {
-    let groups: [AgentStepGroup]
-    let activity: AgentStep?
-}
-
-/// What changed in a followed agent chat (`agents.watch`'s `conversation`
-/// event): the agent's state, the prompt sent from it that the conversation
-/// does not show yet, the one queued until the agent can take it, the
-/// messages from index `from` on, and the steps when they changed.
-struct ConversationEvent: Decodable {
+/// A chat's item as the core lays it out (`MobileChatItem`): the person's
+/// prompt (`sent` false while the conversation does not show it yet), the
+/// agent's reply, or the steps it took (a ghost for steps from before the
+/// runtime kept them). Ids stay while the chat grows.
+struct ChatItemData: Codable, Hashable, Sendable {
     let kind: String
+    let id: String
+    let text: String?
+    let sent: Bool?
+    let steps: [AgentStep]?
+    let ghost: Bool?
+}
+
+/// The turn in progress and the step it last completed.
+struct ChatTurn: Decodable, Hashable, Sendable {
+    let step: AgentStep?
+}
+
+/// What changed in a followed agent chat (`agents.watch`'s `chat` event):
+/// its state, and its items from index `from` on.
+struct ChatEvent: Decodable, Sendable {
+    let kind: String
+    let from: Int
+    /// The conversation was read.
+    let loaded: Bool
     /// Nil while the panel hosts no agent.
     let status: String?
     let canReceivePrompt: Bool
-    let pending: String?
     let queued: String?
-    let from: Int
-    let messages: [ConversationMessage]
-    let steps: AgentSteps?
+    /// Nil between turns.
+    let turn: ChatTurn?
+    let items: [ChatItemData]
 }
 
 /// A file a search found (`files.search`).

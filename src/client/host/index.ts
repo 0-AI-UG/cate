@@ -1,7 +1,7 @@
 // client/host public entry: the panel side of the client core: definitions,
 // session handles, creating, closing, focusing and revealing panels, panel
-// targeting, creation menus and the action registry. No UI: each shell hosts
-// panels in its own UI.
+// targeting, opening links, creation menus and the action registry. No UI:
+// each shell hosts panels in its own UI.
 
 export {
   registerPanelDefinitions,
@@ -28,8 +28,8 @@ export {
 export { demandSurface, isSurfaceDemanded, demandedSurfaces, subscribeDemandedSurfaces } from './surfaceDemand'
 export { registerSurface, runSurfaceRequest, serveSurfaces, type SurfaceHandler } from './surfaces'
 export { keepMountedPanelIds, setEqual } from './keepMounted'
-export { createPanel, clientPanelKit, newId } from './createPanel'
-export { openUrlFor, openUrlInPanel } from './openUrl'
+export { createPanel, clientPanelKit, inheritedCheckout, newId } from './createPanel'
+export { openLink, panelShowingFile, type LinkTarget, type OpenLinkOptions } from './links'
 export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type ConfirmedClose } from './close'
 export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab } from './focus'
 export { revealPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
@@ -53,6 +53,8 @@ export { worktreeChoices, creationMenuItems, creationPick, type WorktreeChoice, 
 export {
   requestPanelTarget,
   pickPanelPlace,
+  pickNewPanelPlace,
+  createPanelFrom,
   installCanvasTargetPicker,
   type PanelPlace,
   type PanelTarget,

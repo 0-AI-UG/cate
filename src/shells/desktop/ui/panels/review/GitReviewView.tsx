@@ -30,7 +30,7 @@ import { ReviewToolbar } from './ReviewToolbar'
 import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { HunkView, collapsedHunkGaps, type NoteDraft } from './ReviewDiff'
 import { sendOrShow, useAgentPicker, useReviewDiffs, useReviewView, type ReviewSend } from './useReview'
-import { createPanel } from '@client/host'
+import { createPanelFrom } from '@client/host'
 
 function statusLabel(file: GitChangedFile): string {
   switch (file.status) {
@@ -281,7 +281,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
     })
   }
   const openFile = (file: GitChangedFile) => {
-    createPanel(workspaceId, 'editor', { filePath: reviewFilePath(review.repoPath, file.path), title: file.path.split('/').pop(), near: panelId })
+    void createPanelFrom(workspaceId, panelId, 'editor', { filePath: reviewFilePath(review.repoPath, file.path), title: file.path.split('/').pop() })
   }
   const copyApplyCommand = async () => {
     const command = await sendOrShow(send, { kind: 'applyCommand' }, 'Could not copy patch')

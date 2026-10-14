@@ -341,7 +341,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
           {textual && mode === 'merge' && conflict === 'changed' && filePath && (
             <MergeView workspaceId={workspaceId} filePath={filePath} text={text} font={font} />
           )}
-          {textual && mode === 'preview' && filePath && <MarkdownPreview content={markdown} workspaceId={workspaceId} filePath={filePath} />}
+          {textual && mode === 'preview' && filePath && <MarkdownPreview content={markdown} workspaceId={workspaceId} panelId={panelId} filePath={filePath} />}
           {textual && error && (
             <PanelCenteredState
               className="absolute inset-0 z-20 bg-surface-1 px-6"

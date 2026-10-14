@@ -11,8 +11,9 @@ import {
   type PanelType,
 } from '@workspace/document/contract'
 import { createPanelKit, placeTargetFor, type PanelCreateOptions, type PanelKit } from '@panels/framework/contract'
+import { inheritWorktree, type InheritedWorktree } from '@workspace/repository/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
-import { panelDefinition } from './definitions'
+import { panelCheckoutHooks, panelDefinition } from './definitions'
 
 export const newId = (): string => globalThis.crypto.randomUUID()
 
@@ -67,6 +68,14 @@ export function createPanel(
   }
   if (id) activateNewPanel(workspaceId, id)
   return id
+}
+
+/** The checkout a new panel made from `panelId` works in: its worktree, and
+ *  the folder it works in where its type follows its own checkout. */
+export function inheritedCheckout(workspaceId: string, panelId: PanelId | null | undefined): InheritedWorktree {
+  const doc = documentStoreFor(workspaceId)?.getSnapshot()
+  if (!doc || !panelId) return {}
+  return inheritWorktree(doc.panels[panelId], Object.values(doc.worktrees), panelCheckoutHooks)
 }
 
 function activateNewPanel(workspaceId: string, panelId: PanelId): void {

@@ -45,10 +45,13 @@ export function createWorkspaceSettingsStore<S extends object>(options: {
   }
 
   const listeners = new Set<(values: S, patch: Partial<S>) => void>()
-  let last = file.get()
+  const values = (): S => ({ ...file.get() })
+  let last = values()
   let unsubscribeFile: (() => void) | null = null
 
-  const onFileChange = (next: S): void => {
+  // Emits the keys that moved since the last call: a set or a hand edit.
+  const changed = (): void => {
+    const next = values()
     const patch: Record<string, unknown> = {}
     for (const key of table.keys) {
       if (!jsonEqual(next[key], last[key])) patch[key] = next[key]
@@ -60,20 +63,25 @@ export function createWorkspaceSettingsStore<S extends object>(options: {
     }
   }
 
+  const check = (key: string, value: unknown): void => {
+    if (!table.has(key)) throw new RpcError('rejected', `Unknown setting "${key}"`)
+    if (!table.validate(key, value)) throw new RpcError('rejected', `Invalid value for setting "${key}"`)
+  }
+
   return {
     path: file.path,
-    getAll: () => ({ ...file.get() }),
-    get: (key) => file.get()[key],
+    getAll: values,
+    get: (key) => values()[key],
     set(key, value) {
-      if (!table.has(key)) throw new RpcError('rejected', `Unknown setting "${key}"`)
-      if (!table.validate(key, value)) throw new RpcError('rejected', `Invalid value for setting "${key}"`)
+      check(key, value)
       file.update((current) => ({ ...current, [key]: value }))
+      changed()
     },
     subscribe(cb) {
       listeners.add(cb)
       if (!unsubscribeFile) {
-        last = file.get()
-        unsubscribeFile = file.subscribe(onFileChange)
+        last = values()
+        unsubscribeFile = file.subscribe(changed)
       }
       return () => {
         listeners.delete(cb)

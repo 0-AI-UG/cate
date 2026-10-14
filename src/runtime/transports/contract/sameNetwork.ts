@@ -66,6 +66,12 @@ export function isPrivateAddress(ip: string): boolean {
   return (hextet >= 0xfe80 && hextet <= 0xfebf) || (hextet >= 0xfc00 && hextet <= 0xfdff)
 }
 
+/** Why devices could not reach this machine on the same network, seen from
+ *  its own interfaces: it has a public IPv4 address (a network such as eduroam
+ *  hands those out, and the listener refuses peers there), or no private
+ *  address at all (a cloud VM). */
+export type SameNetworkProblem = 'publicNetwork' | 'noPrivateAddress'
+
 /** Where a paired runtime may be reached: a LAN WebSocket address (from the
  *  pairing payload or mDNS), or through Cate Connect. */
 export type NetworkEndpoint =

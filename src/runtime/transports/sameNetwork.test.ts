@@ -9,8 +9,9 @@ import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { generateKeyPair, networkIdOf } from '../security/contract'
 import { PairingService, type DevicesFile } from '../pairing/runtime'
+import { dialSameNetwork, SameNetworkUnreachableError } from './client'
 import { isPrivateAddress, sameNetworkUrl } from './contract'
-import { lanAddresses } from './node'
+import { lanAddresses, nodeWebSocketFactory, sameNetworkProblem } from './node'
 import { createNetworkPeers, serveSameNetwork, type SameNetworkListener } from './runtime'
 
 const RUNTIME_KEYS = generateKeyPair()
@@ -75,6 +76,44 @@ describe('lanAddresses', () => {
     expect(lanAddresses(5000, {
       eth0: [entry('203.0.113.7', 'IPv4'), entry('2a01:4f8::1', 'IPv6'), entry('fe80::1', 'IPv6')],
     })).toEqual([])
+  })
+})
+
+describe('sameNetworkProblem', () => {
+  const entry = (address: string, family: 'IPv4' | 'IPv6', internal = false) =>
+    ({ address, family, internal, netmask: '', mac: '', cidr: null }) as os.NetworkInterfaceInfo
+
+  it('has none on a private network, whatever global IPv6 it also has', () => {
+    expect(sameNetworkProblem({
+      en0: [entry('192.168.1.20', 'IPv4'), entry('2a01:4f8::1', 'IPv6')],
+      lo0: [entry('127.0.0.1', 'IPv4', true)],
+    })).toBeNull()
+  })
+
+  it('names a network that hands out public addresses, even beside a VM bridge', () => {
+    expect(sameNetworkProblem({
+      en0: [entry('131.159.219.240', 'IPv4')],
+      bridge100: [entry('192.168.139.3', 'IPv4')],
+    })).toBe('publicNetwork')
+  })
+
+  it('names a machine with no private address', () => {
+    expect(sameNetworkProblem({ en0: [entry('2a01:4f8::1', 'IPv6')] })).toBe('noPrivateAddress')
+  })
+})
+
+describe('dialSameNetwork failures', () => {
+  const reasonOf = (promise: Promise<unknown>) => promise.then(
+    () => 'connected',
+    (error: unknown) => (error instanceof SameNetworkUnreachableError ? error.reason : String(error)),
+  )
+
+  it('found nothing: no address known and none discovered', async () => {
+    expect(await reasonOf(dialSameNetwork({ runtimeId: RUNTIME_ID, discover: async () => [], webSocket: nodeWebSocketFactory }))).toBe('notFound')
+  })
+
+  it('no answer: the known addresses refuse', async () => {
+    expect(await reasonOf(dialSameNetwork({ runtimeId: RUNTIME_ID, addresses: ['127.0.0.1:1'], webSocket: nodeWebSocketFactory }))).toBe('noAnswer')
   })
 })
 

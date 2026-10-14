@@ -45,7 +45,7 @@ export function prepareWebviewPartitions(api: DesktopApi, connections: Workspace
       preparing = true
       connection.runtime.workspace.info()
         .then(async (info) => {
-          const partition = await api.web.partitionFor({ runtimeId: info.runtimeId })
+          const partition = await api.web.partitionFor({ runtimeId: info.runtimeId, reachesClientNetwork: connection.reachesClientNetwork })
           if (closed) return
           runtimeId = info.runtimeId
           runtimes.set(info.runtimeId, connection.workspaceId)

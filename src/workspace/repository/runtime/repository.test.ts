@@ -236,6 +236,57 @@ describe('worktree lifecycle', () => {
     stop?.()
   })
 
+  test.skipIf(process.platform === 'win32')('an untrusted workspace watches nothing and runs no git on a file change', async () => {
+    // A `git` on PATH that records every call.
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-fake-git-'))
+    const log = path.join(bin, 'calls')
+    await fs.writeFile(path.join(bin, 'git'), `#!/bin/sh\necho "$*" >> '${log}'\nexit 1\n`, { mode: 0o755 })
+    const gitCalls = async () => (await fs.readFile(log, 'utf-8').catch(() => '')).split('\n').filter(Boolean).length
+    const changes: Array<(changedPath: string) => void> = []
+    const watch = vi.fn((_dir: string, onChange: (changedPath: string) => void) => {
+      changes.push(onChange)
+      return () => {}
+    })
+    const spied = createRepositoryRuntime({
+      root,
+      env: () => ({ ...process.env, PATH: bin }),
+      trust: {
+        isTrusted: () => trusted,
+        requireTrusted: () => { if (!trusted) throw new RpcError('untrusted') },
+      },
+      paths: { resolveDir: (dir) => dir, addCheckout: () => {}, removeCheckout: () => {} },
+      document,
+      settings: { get: () => closePanels },
+      watch,
+    })
+    const ctx = { connection: { id: 1 }, signal: new AbortController().signal } as unknown as CallContext
+    const settle = () => new Promise((r) => setTimeout(r, 400))
+    try {
+      trusted = false
+      const stop = await vcsCapabilityImpl(spied).status({}, { emit: vi.fn() } as never, ctx)
+      await settle()
+      expect(watch).not.toHaveBeenCalled()
+      expect(await gitCalls()).toBe(0)
+
+      // Trusted: the monitor watches and reads. Revoked: a file change reads nothing.
+      trusted = true
+      spied.trustChanged()
+      await vi.waitFor(() => expect(watch).toHaveBeenCalledTimes(1))
+      trusted = false
+      spied.trustChanged()
+      await settle()
+      const before = await gitCalls()
+      expect(before).toBeGreaterThan(0)
+      for (const onChange of changes) onChange(path.join(root, 'README.md'))
+      await settle()
+      expect(await gitCalls()).toBe(before)
+      if (typeof stop === 'function') stop()
+    } finally {
+      spied.dispose()
+      await fs.rm(bin, { recursive: true, force: true })
+    }
+  })
+
   test('the status stream sends a snapshot and follows writes', async () => {
     const impl = vcsCapabilityImpl(repo)
     const ctx = { connection: { id: 1 }, signal: new AbortController().signal } as unknown as CallContext

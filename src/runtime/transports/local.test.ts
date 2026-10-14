@@ -22,7 +22,7 @@ it.skipIf(process.platform === 'win32')('holds connections that arrive before op
   const rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
   const listener = serveLocal(server, rpc)
 
-  const client = new RpcClient({ version: 'test', identity: { caller: { token: 't' } } })
+  const client = new RpcClient({ version: 'test', identity: { client: { clientId: 'c1', device: { name: 'test', publicKey: 'fp' }, features: [] } } })
   const ready = client.attach(framePortOver(await dialLocal(endpoint), 'stream'))
   await new Promise((r) => setTimeout(r, 50))
   rpc.register(pingCap, { ping: () => 'pong' })

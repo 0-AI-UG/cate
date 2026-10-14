@@ -64,11 +64,11 @@ export function createDesktopClientUi(api: DesktopApi, features: readonly Client
         type: 'question',
         message: 'Open link',
         detail: `${url}\n\nYou can change this later in Settings → Browser.`,
-        buttons: ['On Canvas', 'In System Browser', 'Cancel'],
+        buttons: ['In Cate', 'In System Browser', 'Cancel'],
         defaultId: 0,
         cancelId: 2,
       })
-      return response === 0 ? 'canvas' : response === 1 ? 'external' : 'cancel'
+      return response === 0 ? 'cate' : response === 1 ? 'external' : 'cancel'
     },
     async confirmCloseCanvas({ panelCount, canMove }) {
       const panels = plural(panelCount, 'open panel', 'open panels')

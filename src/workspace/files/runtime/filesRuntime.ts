@@ -1,7 +1,7 @@
 // The files runtime: path scope, file operations, watching, search and open
 // buffers of one workspace, plus the `file` and `search` capability
-// implementations. Files are served while the workspace is untrusted (9.2),
-// so nothing here asks for trust.
+// implementations. Files are served while the workspace is untrusted (9.2);
+// only content search, which runs ripgrep, asks for trust.
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -51,6 +51,10 @@ export interface FilesRuntimeDeps {
   exclusions?: readonly string[]
   /** ripgrep binary; defaults to the one beside the daemon's node. */
   rgPath?: string
+  /** Content search runs a process: it throws `RpcError('untrusted')` while
+   *  the workspace is untrusted. The file server serves no script-running
+   *  pages while it is. */
+  trust: { isTrusted(): boolean; requireTrusted(): void }
   /** Test seams. */
   watcher?: WatchPoolDeps
   trash?: (safePath: string) => Promise<boolean>
@@ -84,7 +88,8 @@ export interface FilesRuntime {
   serveUrl(p: string): Promise<string>
   /** The workspace file a `serveUrl` URL of this run serves, or null. */
   servedPath(url: string): string | null
-  /** Watches under `p`; `onChange` gets absolute paths. */
+  /** Watches under `p` once its real path is checked; `onChange` gets
+   *  absolute paths. */
   watch(p: string, onChange: (changedPath: string, type: FsChangeType) => void): () => void
   searchFiles(query: string, opts?: { root?: string; maxResults?: number }): Promise<FileSearchResult[]>
   searchContent(options: SearchOptions, callbacks: SearchCallbacks, root?: string): SearchHandle
@@ -133,6 +138,7 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
       if (pathHasPrefix(safe, paths.dataDir)) throw new RpcError('rejected', 'Not a workspace file')
       return safe
     },
+    isTrusted: () => deps.trust.isTrusted(),
   })
 
   const write: FilesRuntime['write'] = async (p, content, baseHash) => {
@@ -210,14 +216,37 @@ export function createFilesRuntime(deps: FilesRuntimeDeps): FilesRuntime {
     serveUrl: (p) => server.urlFor(p),
     servedPath: (url) => server.pathOf(url),
     watch(p, onChange) {
-      return pool.subscribe(paths.resolve(p), onChange)
+      // Checked on its real path (a link out of the workspace is refused) but
+      // watched under the path asked for, so changes come back as the caller
+      // named them.
+      const safe = paths.resolve(p)
+      let stop: (() => void) | null = null
+      let stopped = false
+      paths.strict(p).then(() => {
+        if (!stopped) stop = pool.subscribe(safe, onChange)
+      }, (err) => deps.log?.warn('watch refused', p, err))
+      return () => {
+        stopped = true
+        stop?.()
+      }
     },
     async searchFiles(query, opts = {}) {
       const root = await paths.strict(opts.root ?? paths.root)
       return searchFileNames(root, query, exclusions, opts.maxResults)
     },
     searchContent(options, callbacks, root) {
-      return runRipgrepSearch(rgPath, options, paths.resolve(root ?? paths.root), [...exclusions], callbacks)
+      deps.trust.requireTrusted()
+      let handle: SearchHandle | null = null
+      let cancelled = false
+      paths.strict(root ?? paths.root).then((dir) => {
+        if (!cancelled) handle = runRipgrepSearch(rgPath, options, dir, [...exclusions], callbacks)
+      }, (err: Error) => callbacks.onDone({ matches: 0, files: 0, truncated: false }, err.message))
+      return {
+        cancel: () => {
+          cancelled = true
+          handle?.cancel()
+        },
+      }
     },
     downloadsDir: () => deps.dataPaths.downloads,
     screenshotsDir: () => deps.dataPaths.screenshots,

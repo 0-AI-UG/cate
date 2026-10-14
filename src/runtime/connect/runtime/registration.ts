@@ -49,6 +49,9 @@ export interface ConnectRegistrationOptions {
   sessionTimeoutMs?: number
   /** How long a push waits for the service's answer. Default 15 s. */
   pushTimeoutMs?: number
+  /** Sessions in WebRTC setup at once; more are ignored until one settles.
+   *  Default 8. */
+  maxSettingUp?: number
 }
 
 export interface ConnectRegistration {
@@ -79,6 +82,11 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
   // Signals for a session; held until its peer connection listens, since the
   // offer can arrive while the WebRTC stack is still loading.
   const sessions = new Map<string, { listener: ((signal: SignalMessage) => void) | null; held: SignalMessage[] }>()
+  // Anyone can ask the service for a session, and each one costs a peer
+  // connection until it opens or times out: past the limit a new session is
+  // ignored (its client times out), so the ones in setup finish undisturbed.
+  const maxSettingUp = options.maxSettingUp ?? 8
+  let settingUp = 0
 
   const setState = (next: RegistrationState) => {
     state = next
@@ -97,6 +105,11 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
   }
 
   const acceptSession = (session: string, iceServers: IceServer[]) => {
+    if (settingUp >= maxSettingUp) {
+      options.log?.info('cate connect session %s ignored: too many in setup', session)
+      return
+    }
+    settingUp++
     const entry: { listener: ((signal: SignalMessage) => void) | null; held: SignalMessage[] } = { listener: null, held: [] }
     sessions.set(session, entry)
     let peer: PeerConnectionLike | null = null
@@ -118,7 +131,10 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
         (port) => options.onConnection(options.log && peer ? logSession(port, peer, session, options.log) : port),
         (error: Error) => options.log?.info('cate connect session %s failed: %s', session, error.message),
       )
-      .finally(() => sessions.delete(session))
+      .finally(() => {
+        settingUp--
+        sessions.delete(session)
+      })
   }
 
   const connect = async () => {

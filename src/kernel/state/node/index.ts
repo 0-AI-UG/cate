@@ -5,6 +5,7 @@ export {
   writeJsonAtomicSync,
   writeJsonExclusive,
   retryFilePublish,
+  removeStrayTemporaries,
   type AtomicWriteOptions,
   type WriteJsonOptions,
 } from './atomicFile'

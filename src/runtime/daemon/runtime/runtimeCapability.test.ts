@@ -40,6 +40,8 @@ it('validates the version and build', async () => {
   await expect(call({ version: 'latest' })).rejects.toMatchObject({ code: 'rejected' })
   await expect(call({ version: '2.0.5', build: '2.0.4+aaaaaaaaaaaa' })).rejects.toMatchObject({ code: 'rejected' })
   await expect(call({ version: '2.0.5', build: '2.0.5+nothex' })).rejects.toMatchObject({ code: 'rejected' })
+  await expect(call({ version: '2.0.3' })).rejects.toMatchObject({ code: 'rejected' })
+  await expect(call({ version: '2.0.4-beta.1' })).rejects.toMatchObject({ code: 'rejected' })
 })
 
 it('refuses an idle-only update while another client is connected or work runs', async () => {

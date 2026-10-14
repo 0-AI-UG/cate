@@ -7,7 +7,8 @@
 
 import { Terminal } from '@xterm/headless'
 import { SerializeAddon } from '@xterm/addon-serialize'
-import type { ReadResult } from '../contract'
+import type { ReadResult, TerminalLink, TerminalLinksParams } from '../contract'
+import { rowLinks } from './links'
 
 interface ScreenCapture {
   /** The serialized screen: text, styles, modes and the alternate buffer. */
@@ -88,6 +89,23 @@ export class HeadlessScreen {
     while (out.length > 0 && out[out.length - 1] === '') out.pop()
     const text = lines !== undefined && lines >= 0 ? out.slice(Math.max(0, out.length - lines)) : out
     return { alt: buffer.type === 'alternate', text: text.join('\n') }
+  }
+
+  /** The links on a row (counted up from the last line), when the row
+   *  shows `text`; relative paths resolve against `base`. Call after
+   *  `settled()`. */
+  async links({ row, text }: Omit<TerminalLinksParams, 'id'>, base: string, isFile: (path: string) => Promise<boolean>): Promise<TerminalLink[]> {
+    const buffer = this.term.buffer.active
+    // The rows as they are now: later output moves them, not the answer.
+    const last = buffer.length - 1
+    const y = last - row
+    if (this.disposed || !Number.isInteger(row) || y < 0 || buffer.getLine(y)?.translateToString(true) !== text) return []
+    const links = await rowLinks(buffer, this.term.cols, y, base, isFile)
+    return links.map(({ start, end, ...link }) => ({
+      ...link,
+      start: { x: start.x, row: last - start.y },
+      end: { x: end.x, row: last - end.y },
+    }))
   }
 
   dispose(): void {

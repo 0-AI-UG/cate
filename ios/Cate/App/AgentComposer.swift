@@ -184,9 +184,14 @@ struct AgentComposer: View {
                     .accessibilityLabel("Stop")
                 } else {
                     Button(action: send) {
-                        Image(systemName: sending ? "ellipsis" : "arrow.up")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 26, height: 26)
+                        Group {
+                            if sending {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "arrow.up").font(.body.weight(.semibold))
+                            }
+                        }
+                        .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.glassProminent)
                     .buttonBorderShape(.circle)
@@ -198,7 +203,13 @@ struct AgentComposer: View {
         .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 10)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 28))
+        // A tap anywhere in the box types in it, not only on the text line;
+        // its buttons still take their own taps.
+        .contentShape(.rect(cornerRadius: 28))
+        .onTapGesture { typing.wrappedValue = true }
+        // Not interactive: the box is not a button, and a press effect on a
+        // tap that does not focus the text reads as a dead tap.
+        .glassEffect(.regular, in: .rect(cornerRadius: 28))
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .onAppear { if options != nil { typing.wrappedValue = true } }
@@ -443,30 +454,39 @@ private struct AgentPicker: View {
 }
 
 /// A line that shimmers while the agent is busy, as chat apps show a reply
-/// on its way.
+/// on its way. The sweep is read off the clock, so no other animation or
+/// change of text can stop it; a new text crossfades.
 struct ShimmerText: View {
     let text: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sweeping = false
+
+    private static let period: TimeInterval = 1.5
 
     var body: some View {
+        ZStack(alignment: .leading) {
+            line.id(text).transition(.opacity)
+        }
+        .animation(.easeInOut(duration: 0.25), value: text)
+        .accessibilityLabel(text)
+    }
+
+    private var line: some View {
         Text(text)
             .foregroundStyle(.secondary)
             .overlay {
                 if !reduceMotion {
-                    GeometryReader { geometry in
-                        let band = max(geometry.size.width * 0.5, 40)
-                        LinearGradient(colors: [.clear, .primary, .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: band)
-                            .offset(x: sweeping ? geometry.size.width : -band)
+                    TimelineView(.animation) { timeline in
+                        let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
+                        GeometryReader { geometry in
+                            let band = max(geometry.size.width * 0.5, 40)
+                            LinearGradient(colors: [.clear, .primary, .clear], startPoint: .leading, endPoint: .trailing)
+                                .frame(width: band)
+                                .offset(x: -band + (geometry.size.width + band) * phase)
+                        }
                     }
                     .mask { Text(text) }
                     .allowsHitTesting(false)
                 }
             }
-            .onAppear {
-                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) { sweeping = true }
-            }
-            .accessibilityLabel(text)
     }
 }

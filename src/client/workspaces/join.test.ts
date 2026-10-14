@@ -36,7 +36,7 @@ function setup() {
     const channel = await pairWithRuntime(a, {
       deviceKeys,
       deviceName: 'Test phone',
-      target: { runtimeId: target.runtimeId, secret: target.secret, fingerprint: target.fingerprint },
+      target: { runtimeId: target.runtimeId, secretId: target.secretId, secret: target.secret, fingerprint: target.fingerprint },
       pins: workspaces.known,
     })
     channel.close()

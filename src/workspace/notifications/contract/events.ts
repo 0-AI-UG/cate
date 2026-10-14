@@ -1,4 +1,4 @@
-// Notification events (architecture 10.5): what the runtime tells every
+// Notification events (architecture 10.4): what the runtime tells every
 // client of the workspace. Agents, the terminal and `cate.ui.notify` publish;
 // each client decides whether to show one from its settings and focus.
 

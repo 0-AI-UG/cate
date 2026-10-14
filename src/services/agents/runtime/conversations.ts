@@ -4,7 +4,11 @@
 // when the panel's agent state changes (and twice shortly after, for a CLI
 // that writes its store just after its hook), every half second while the
 // agent works and every few seconds while it is there; a look reads the
-// session store only when its stamp moved. The steps (tool calls the hooks
+// session store only when its stamp moved. A turn's end waits for its reply:
+// the hooks often say a turn ended before the CLI wrote its last reply to
+// the store, so until the store shows one (or a moment passed) the
+// conversation still reads as running, and the reply and the end go out
+// together. The steps (tool calls the hooks
 // report) are kept for every panel that hosts an agent, watched or not, in
 // memory only, and go out as they come.
 
@@ -15,10 +19,12 @@ import type { AgentPanels } from './panels'
 export interface AgentConversationsDeps {
   panels: Pick<AgentPanels, 'state' | 'subscribe'>
   terminals: Pick<AgentTerminals, 'conversation' | 'conversationStamp' | 'onStep'>
-  /** Tests: the look cadence while working and otherwise, and the looks after a state change. */
+  /** Tests: the look cadence while working and otherwise, the looks after a
+   *  state change, and how long a turn's end waits for its reply. */
   workingMs?: number
   presentMs?: number
   settleMs?: readonly number[]
+  endMs?: number
 }
 
 export type AgentConversationListener = (conversation: AgentConversation, change: AgentConversationChange | null) => void
@@ -41,21 +47,36 @@ interface Watch {
   forced: boolean
   tick: ReturnType<typeof setTimeout> | null
   settles: Array<ReturnType<typeof setTimeout>>
+  /** When the agent's turn ended while its reply was not read yet. */
+  ending: number | null
 }
 
-const WORKING_MS = 500
+const WORKING_MS = 250
 const PRESENT_MS = 3_000
 const SETTLE_MS = [400, 1_500] as const
+/** How long a turn's end waits for its reply to show in the store. */
+const END_MS = 1_500
 /** The steps kept per panel, the latest; past it the oldest go
  *  `TRIM_STEPS` at a time, so the watchers get them all again only then. */
 const MAX_STEPS = 500
 const TRIM_STEPS = 100
+
+/** The conversation ends in a reply: an assistant message, and no step the
+ *  agent took after it (one would mean a later reply is still on its way). */
+function replied({ messages, steps }: AgentConversation): boolean {
+  const last = messages[messages.length - 1]
+  if (last?.role !== 'assistant') return false
+  const at = last.createdAt ? Date.parse(last.createdAt) : NaN
+  const step = steps[steps.length - 1]
+  return Number.isNaN(at) || !step || !(Date.parse(step.at) > at)
+}
 
 export function createAgentConversations(deps: AgentConversationsDeps): AgentConversations {
   const { panels, terminals } = deps
   const workingMs = deps.workingMs ?? WORKING_MS
   const presentMs = deps.presentMs ?? PRESENT_MS
   const settleMs = deps.settleMs ?? SETTLE_MS
+  const endMs = deps.endMs ?? END_MS
   const watches = new Map<string, Watch>()
   const steps = new Map<string, AgentStep[]>()
   const stepsSince = new Date().toISOString()
@@ -79,7 +100,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
     if (watch.tick) clearTimeout(watch.tick)
     watch.tick = null
     const state = panels.state(panelId)
-    const delay = state?.status === 'running' ? workingMs : state?.present ? presentMs : null
+    const delay = state?.status === 'running' || watch.ending !== null ? workingMs : state?.present ? presentMs : null
     if (delay === null || watches.get(panelId) !== watch) return
     watch.tick = setTimeout(() => { void look(panelId, watch, false) }, delay)
     watch.tick.unref?.()
@@ -98,7 +119,14 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
         }
       }
     }
-    return { status: state?.status ?? null, canReceivePrompt: state?.canReceivePrompt ?? false, messages, steps: stepsOf(panelId), stepsSince }
+    const next = { status: state?.status ?? null, canReceivePrompt: state?.canReceivePrompt ?? false, messages, steps: stepsOf(panelId), stepsSince }
+    // The turn ended and its reply is not read yet: it still runs.
+    if (watch.current.status === 'running' && next.status !== 'running' && !replied(next)) {
+      watch.ending ??= Date.now()
+      if (Date.now() - watch.ending < endMs) return { ...next, status: 'running', canReceivePrompt: false }
+    }
+    watch.ending = null
+    return next
   }
 
   const look = async (panelId: string, watch: Watch, forced: boolean): Promise<void> => {
@@ -167,6 +195,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
           forced: false,
           tick: null,
           settles: [],
+          ending: null,
         }
         watches.set(panelId, watch)
         void look(panelId, watch, true)

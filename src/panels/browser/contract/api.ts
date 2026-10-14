@@ -60,6 +60,8 @@ const tab = {
 const command = (word: string, summary: string): { summary: string; cli: CateApiCliSpec<any> } => ({ summary, cli: { command: ['browser', word] } })
 
 // Option bags pass through (click options, waitFor options, observation flags).
+// Page operations run alongside the panel's ops: the client reports the
+// page's navigation and the person's tab switches while one waits.
 function page<S extends Record<string, any>>(
   access: 'read' | 'control',
   args: S,
@@ -68,6 +70,7 @@ function page<S extends Record<string, any>>(
   return {
     access,
     handler: 'session',
+    concurrent: true,
     args: { ...tab, ...args },
     extraArgs: true,
     timeoutMs: BROWSER_PAGE_TIMEOUT_MS,
@@ -133,6 +136,7 @@ export const browserApi = defineCateApi(
     getTab: {
       access: 'control',
       handler: 'session',
+      concurrent: true,
       summary: 'Show a tab (default: the active one) and print its id, URL and title',
       args: { tabId: opt(str).pos('tab-id').help('Tab to show (from cate browser tabs)') },
       timeoutMs: BROWSER_PAGE_TIMEOUT_MS,
@@ -141,6 +145,7 @@ export const browserApi = defineCateApi(
     createTab: {
       access: 'control',
       handler: 'session',
+      concurrent: true,
       summary: 'Open a new tab and print its id, URL and title',
       args: { url: opt(str).pos('url').help('URL to load (default: the new tab page)') },
       timeoutMs: BROWSER_PAGE_TIMEOUT_MS,

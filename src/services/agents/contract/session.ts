@@ -1,4 +1,4 @@
-// Agent sessions and status (architecture 2, 10.4).
+// Agent sessions and status (architecture 2, 10.3).
 
 import { AGENT_DEFS, matchAgentDef, type AgentDef, type AgentId } from './registry'
 import type { NotificationEvent } from '@workspace/notifications/contract'
@@ -94,6 +94,7 @@ export function openTerminalAgent(
 
 /** Terminal launch intents the agents service resolves. */
 export const AGENT_LAUNCH = {
-  /** A started agent: `{ agentId, prompt }`, run in place of the shell. */
+  /** A started agent: `{ agentId, prompt? }`, run in place of the shell
+   *  (without a prompt: its interactive session). */
   start: 'agents.start',
 } as const

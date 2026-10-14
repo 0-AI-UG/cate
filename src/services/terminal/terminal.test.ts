@@ -252,6 +252,7 @@ describe('terminal service', () => {
     expect(env.CATE_TERMINAL_ID).toBe(id)
     expect(env.HOME).toBe('/home/u')
     expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined()
+    expect(env.FORCE_HYPERLINK).toBe('1')
     expect(minted).toEqual(['panel-1'])
   })
 
@@ -276,6 +277,29 @@ describe('terminal service', () => {
     ptys[0].emit('\x1b[?1049h\x1b[Hfull screen')
     await expect(proc.read({ id })).resolves.toMatchObject({ alt: true, text: 'full screen' })
     await expect(proc.read({ id: 'nope' })).rejects.toSatisfy((e: unknown) => isRpcError(e, 'gone'))
+  })
+
+  it('finds the links on a viewer\'s row, counted from the end, whatever scrollback the viewer keeps', async () => {
+    const { ptys, connect, dir } = setup()
+    fs.mkdirSync(path.join(dir, 'src'))
+    fs.writeFileSync(path.join(dir, 'src', 'a.ts'), '')
+    const proc = await connect()
+    const { id } = await proc.spawn({ cols: 30, rows: 4 })
+    ptys[0].emit(Array.from({ length: 40 }, (_, i) => `line${i}`).join('\r\n') + '\r\nsee src/a.ts:2 and src/b.ts\r\nok')
+    const term = new Terminal({ cols: 30, rows: 4, scrollback: 5, allowProposedApi: true })
+    const binding = bindTerminal({ terminal: term, process: proc, id, scrollback: 5 })
+    await until(() => screenText(term).endsWith('ok'))
+    await flushed(term)
+    const buffer = term.buffer.active
+    const y = Array.from({ length: buffer.length }, (_, i) => buffer.getLine(i)!.translateToString(true)).indexOf('see src/a.ts:2 and src/b.ts')
+    const row = buffer.length - 1 - y
+    await expect(proc.links({ id, row, text: 'see src/a.ts:2 and src/b.ts' })).resolves.toEqual([
+      { target: { kind: 'file', path: path.join(dir, 'src', 'a.ts'), line: 2 }, text: 'src/a.ts:2', start: { x: 4, row }, end: { x: 14, row } },
+    ])
+    // A view showing something else on that row gets nothing.
+    await expect(proc.links({ id, row, text: 'line39' })).resolves.toEqual([])
+    binding.dispose()
+    term.dispose()
   })
 
   it('runs launch intents at spawn', async () => {

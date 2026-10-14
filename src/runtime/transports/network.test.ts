@@ -11,7 +11,7 @@ import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { createMemoryPortPair, encodePublicKey, fingerprint, generateKeyPair, networkIdOf, type KeyPair, type MemoryPort } from '../security/contract'
 import { connectToRuntime } from '../security/client'
 import { decodePairingUri, parsePairingCode } from '../pairing/contract'
-import { KnownRuntimes, pairWithRuntime, PairingError } from '../pairing/client'
+import { KnownRuntimes, pairWithRuntime } from '../pairing/client'
 import { PairingService, type DevicesFile } from '../pairing/runtime'
 import { secureFramePort } from './contract'
 import { dialSameNetwork, openSecureConnection, SameNetworkUnreachableError } from './client'
@@ -85,7 +85,7 @@ async function pairByQr(dev: Device) {
     kind: 'pair',
     deviceKeys: dev.keys,
     deviceName: dev.name,
-    target: { runtimeId: payload.runtimeId, secret: payload.secret, fingerprint: payload.fingerprint },
+    target: { runtimeId: payload.runtimeId, secretId: payload.secretId, secret: payload.secret, fingerprint: payload.fingerprint },
     pins: dev.pins,
   })
 }
@@ -187,11 +187,11 @@ describe('same network', () => {
     }
   })
 
-  it('gives an unknown key one attempt: a wrong proof is refused and closes, and the fifth burns the secret', async () => {
+  it('gives an unknown key one attempt: a wrong proof is refused, closes and burns the secret it names', async () => {
     const { uri } = pairing.createSecret('sameNetwork')
     const payload = decodePairingUri(uri)
     const guesser = device('guesser')
-    const wrong = { runtimeId: RUNTIME_ID, secret: new Uint8Array(10).fill(7), fingerprint: payload.fingerprint }
+    const wrong = { runtimeId: RUNTIME_ID, secretId: payload.secretId, secret: new Uint8Array(10).fill(7), fingerprint: payload.fingerprint }
     const port = await dial()
     let portClosed = false
     port.onClose(() => { portClosed = true })
@@ -200,18 +200,13 @@ describe('same network', () => {
     })).rejects.toMatchObject({ reason: 'invalid-proof' })
     await new Promise((r) => setTimeout(r, 50))
     expect(portClosed).toBe(true)
-    for (let i = 0; i < 4; i++) {
-      await expect(pairWithRuntime(await dial(), {
-        deviceKeys: guesser.keys, deviceName: 'guesser', target: wrong, pins: guesser.pins,
-      })).rejects.toMatchObject({ reason: 'invalid-proof' })
-    }
 
-    // The real secret was burned by the wrong attempts.
+    // The real secret was burned by the wrong attempt.
     const phone = device()
     await expect(openSecureConnection(await dial(), {
       kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name,
-      target: { runtimeId: RUNTIME_ID, secret: payload.secret, fingerprint: payload.fingerprint }, pins: phone.pins,
-    })).rejects.toBeInstanceOf(PairingError)
+      target: { runtimeId: RUNTIME_ID, secretId: payload.secretId, secret: payload.secret, fingerprint: payload.fingerprint }, pins: phone.pins,
+    })).rejects.toMatchObject({ reason: 'no-secret' })
     expect(pairing.list()).toEqual([])
   })
 

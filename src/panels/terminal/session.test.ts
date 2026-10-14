@@ -93,13 +93,11 @@ const record = (fields: Record<string, Json> = {}, worktreeId?: string): PanelRe
 function setup(options: { fields?: Record<string, Json>; worktreeId?: string; saved?: Json } = {}) {
   const terminal = fakeTerminal()
   const k = fakeKit(record(options.fields, options.worktreeId), options.saved)
-  const open = vi.fn()
   const session = new TerminalSession(k.kit, record(options.fields, options.worktreeId), {
     terminal: terminal.service,
     root: '/repo',
-    open,
   })
-  return { terminal, session, open, ...k }
+  return { terminal, session, ...k }
 }
 
 const snap = (session: TerminalSession): TerminalSnapshot => session.snapshot()
@@ -215,13 +213,11 @@ describe('TerminalSession', () => {
     await expect(session.handleOp({ kind: 'switchWorktree', worktreeId: 'missing' }, opCtx)).rejects.toMatchObject({ code: 'gone' })
   })
 
-  it('terminates, opens links through its deps and rejects unknown ops', async () => {
-    const { session, terminal, open } = setup()
+  it('terminates and rejects unknown ops', async () => {
+    const { session, terminal } = setup()
     await session.start()
     await session.handleOp({ kind: 'terminate' }, opCtx)
     expect(terminal.killed).toEqual(['pty-1'])
-    await session.handleOp({ kind: 'openFile', path: '/repo/a.ts', line: 3 }, opCtx)
-    expect(open).toHaveBeenCalledWith({ kind: 'file', path: '/repo/a.ts', line: 3 }, 'p1')
     await expect(session.handleOp({ kind: 'nope' }, opCtx)).rejects.toMatchObject({ code: 'rejected' })
   })
 

@@ -1,5 +1,5 @@
 // When a panel's agent goes back to work, what it asked for is answered: a
-// shell withdraws the notification it showed for it (architecture 10.5).
+// shell withdraws the notification it showed for it (architecture 10.4).
 
 import { acquireAgentPanels } from './panelStates'
 

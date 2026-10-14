@@ -1,6 +1,7 @@
 export {
   createTerminalService,
   nodePtySpawn,
+  TERMINAL_LINK_ENV,
   type TerminalService,
   type TerminalServiceDeps,
   type TerminalSettingsReader,

@@ -334,6 +334,7 @@ struct CanvasPlace: View {
             .filter { node in visible.map { $0.intersects(CGRect(x: node.rect.x, y: node.rect.y, width: node.rect.width, height: node.rect.height)) } ?? true }
             .compactMap { $0.panels.first }
             .filter { panels[$0].map { $0.type != "canvas" } == true }
+        Group {
         if nodes.isEmpty {
             ContentUnavailableView("Empty canvas", systemImage: "square.grid.3x3", description: Text("Add a panel with +, or start an agent here."))
         } else {
@@ -439,7 +440,6 @@ struct CanvasPlace: View {
                 }
             }
             .animation(.snappy(duration: 0.25), value: placing)
-            .onChange(of: placing, initial: true) { suggest() }
             // The moved node now sits where the document has it.
             .onChange(of: nodes) { old, new in
                 guard let id = touch.movingNode else { return }
@@ -454,6 +454,9 @@ struct CanvasPlace: View {
                 }
             }
         }
+        }
+        // On the empty canvas too, which places the panel straight away.
+        .onChange(of: placing, initial: true) { suggest() }
     }
 
     /// The spots for the placing panel, and the map zoomed out to show them;

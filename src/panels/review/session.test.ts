@@ -46,6 +46,7 @@ function ctx(callerPanelId?: string): ApiSessionContext {
     defaultTarget: () => undefined,
     invoke: async () => undefined,
     panelId: 'review',
+    exclusive: true,
   }
 }
 

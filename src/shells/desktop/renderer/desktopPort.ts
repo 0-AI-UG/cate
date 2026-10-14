@@ -53,7 +53,6 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
       return picked?.[0] ?? null
     },
     pickImage: () => api.dialogs.pickCanvasBackground(),
-    thisMachineName: isMac ? 'This Mac' : 'This PC',
     onMachinePrompt: (listener) => api.machines.onPrompt(listener),
     onMachinePromptCancel: (listener) => api.machines.onPromptCancel(listener),
     answerMachinePrompt: (id, answer) => api.machines.answerPrompt(id, answer),

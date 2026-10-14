@@ -19,7 +19,6 @@ import {
   GitBranch,
   Laptop,
   LayoutDashboard,
-  Network,
   Search as MagnifyingGlass,
   RotateCcw,
   Server,
@@ -53,7 +52,6 @@ const GROUP_ICONS: Record<SettingsGroup, LucideIcon> = {
   tools: Wrench,
   sourceControl: GitBranch,
   agents: Sparkles,
-  connections: Network,
 }
 
 const NO_WORKSPACES: WorkspaceListSnapshot = { entries: [], open: [] }

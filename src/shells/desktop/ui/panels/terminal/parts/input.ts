@@ -1,11 +1,7 @@
-// Keyboard and link input of the terminal view: paste and copy chords, macOS
-// line-editing chords, CSI u for modified special keys, and where a clicked
-// URL opens.
+// Keyboard input of the terminal view: paste and copy chords, macOS
+// line-editing chords and CSI u for modified special keys.
 
-import { isLoopbackUrl } from '@runtime/tunnel/contract'
-import type { TerminalLinkOpenTarget } from '@services/terminal/contract'
 import { resolveTerminalKeySequence } from './keymap'
-import { resolveTerminalLinkTarget } from './links'
 
 /** Ctrl+V / Ctrl+Shift+V off Mac keyboards. xterm has no binding for it and
  *  would send a literal ^V; skipping the key without preventDefault lets the
@@ -66,50 +62,5 @@ export function makeTerminalKeyEventHandler(
     send(`\x1b[${keyCode};${mod}u`)
     event.preventDefault()
     return false
-  }
-}
-
-export interface LinkOpenPorts {
-  /** The `terminalLinkOpenTarget` client setting. */
-  target(): TerminalLinkOpenTarget
-  remember(target: 'canvas' | 'external'): void
-  ask(url: string): Promise<'canvas' | 'external' | 'cancel'>
-  openExternal(url: string): void
-  /** Opens inside Cate, next to the terminal. */
-  openInCate(url: string): void
-}
-
-/** Cmd/Ctrl+click opens a URL where the setting says (asking the first time
- *  and remembering the answer); adding Shift always opens it outside. A
- *  loopback URL names the runtime's machine (architecture D10), so it always
- *  opens inside Cate, with or without Shift, and is never asked about. */
-export function createTerminalLinkHandler(ports: LinkOpenPorts, isMac: boolean): (event: MouseEvent, url: string) => void {
-  const openPrimary = async (url: string) => {
-    let target = ports.target()
-    if (target === 'ask') {
-      const choice = await ports.ask(url)
-      if (choice === 'cancel') return
-      ports.remember(choice)
-      target = choice
-    }
-    if (target === 'canvas') ports.openInCate(url)
-    else ports.openExternal(url)
-  }
-  return (event, url) => {
-    const target = resolveTerminalLinkTarget(event, isMac)
-    if (target !== 'ignore' && isLoopbackUrl(url)) {
-      ports.openInCate(url)
-      return
-    }
-    switch (target) {
-      case 'panel':
-        void openPrimary(url).catch(() => {})
-        break
-      case 'external':
-        ports.openExternal(url)
-        break
-      case 'ignore':
-        break
-    }
   }
 }

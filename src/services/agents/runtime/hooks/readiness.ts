@@ -16,8 +16,10 @@ import {
 interface AgentCliHookState {
   agent: AgentDef
   folderPresent: boolean
-  injected: boolean
 }
+
+/** What readiness reads of a checkout: each agent's config folder. */
+type InspectFolders = (cwd: string) => Promise<Array<Pick<AgentHookAgentState, 'agentId' | 'folderPresent'>>>
 
 interface AgentCliHookEvaluation {
   mode: AgentHookMode
@@ -39,10 +41,10 @@ export class AgentCliHookError extends Error {
 
 /** Inspection results in canonical registry order. */
 export async function inspectAgentCliHooks(
-  inspect: (cwd: string) => Promise<AgentHookAgentState[]>,
+  inspect: InspectFolders,
   cwd: string,
 ): Promise<AgentCliHookState[]> {
-  let live: AgentHookAgentState[]
+  let live: Awaited<ReturnType<InspectFolders>>
   try {
     live = await inspect(cwd)
   } catch (cause) {
@@ -55,7 +57,6 @@ export async function inspectAgentCliHooks(
   return AGENTS.map((agent) => ({
     agent,
     folderPresent: byId.get(agent.id)?.folderPresent ?? false,
-    injected: byId.get(agent.id)?.injected ?? false,
   }))
 }
 
@@ -78,7 +79,7 @@ export function evaluateAgentCliHooks(
  * first hook-ready CLI in canonical registry order.
  */
 export async function resolveDriverAgent(
-  inspect: (cwd: string) => Promise<AgentHookAgentState[]>,
+  inspect: InspectFolders,
   cwd: string,
   preferredId: string,
   options: { fallbackCwd?: string; hookConfig?: AgentHookConfig } = {},

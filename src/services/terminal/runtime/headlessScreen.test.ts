@@ -28,3 +28,18 @@ describe('HeadlessScreen.capture', () => {
     screen.dispose()
   })
 })
+
+describe('HeadlessScreen.links', () => {
+  it('answers for a row counted up from the last line, when the view shows the same text', async () => {
+    const screen = new HeadlessScreen(30, 3, 100)
+    screen.write('a\r\nsee src/a.ts:2\r\nb')
+    await settle(screen)
+    const isFile = async () => true
+    expect(await screen.links({ row: 1, text: 'see src/a.ts:2' }, '/repo', isFile)).toEqual([
+      { target: { kind: 'file', path: '/repo/src/a.ts', line: 2 }, text: 'src/a.ts:2', start: { x: 4, row: 1 }, end: { x: 14, row: 1 } },
+    ])
+    expect(await screen.links({ row: 1, text: 'see src/b.ts:2' }, '/repo', isFile)).toEqual([])
+    expect(await screen.links({ row: 9, text: '' }, '/repo', isFile)).toEqual([])
+    screen.dispose()
+  })
+})

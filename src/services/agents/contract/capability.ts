@@ -4,17 +4,21 @@ import type { AgentHookAgentState } from './hooks'
 import type { PanelAgentState } from './session'
 import type { AgentId } from './registry'
 import type { AgentTypeInfo } from './launch'
+import type { PlaceTarget } from '@workspace/document/contract'
 
 /** Starting an agent from a client, as `cate agent start` does from a
- *  terminal: a new terminal panel, placed on a canvas when asked. */
+ *  terminal: a new terminal panel, placed on a canvas when asked. Without a
+ *  prompt the agent opens its interactive session. */
 export interface AgentStartRequest {
-  prompt: string
+  prompt?: string
   agentId?: AgentId
   title?: string
   worktreeId?: string
   newWorktree?: string
   canvasPanelId?: string
   position?: { x: number; y: number }
+  /** A spot the client already picked (the placement picker). */
+  at?: PlaceTarget
 }
 
 /** Every panel hosting an agent, keyed by panel id. */
@@ -31,7 +35,7 @@ export function applyAgentPanelStatesChange(states: AgentPanelStates, change: Ag
   return next
 }
 
-/** The agents service (architecture 10.4). Paths are absolute paths inside
+/** The agents service (architecture 10.3). Paths are absolute paths inside
  *  the workspace root or one of its worktree checkouts. */
 export const agentsCapability = defineCapability('agents', {
   methods: {

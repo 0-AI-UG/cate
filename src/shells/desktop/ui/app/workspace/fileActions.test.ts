@@ -2,12 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const op = vi.fn(async () => undefined)
 vi.mock('@kernel/rpc/client', () => ({ tryRuntimeFor: () => ({ session: { op } }) }))
-vi.mock('@client/document', () => ({ documentStoreFor: () => ({ getSnapshot: () => ({ panels: {} }) }) }))
 vi.mock('../../client/layout/canvas', () => ({ activeCanvasId: () => null, createPanelOnCanvas: vi.fn() }))
 vi.mock('@client/host', () => ({
   createPanel: vi.fn((_ws: string, _type: string, options: { filePath: string }) => `panel:${options.filePath}`),
   focusedPanelId: () => null,
-  panelDefinition: () => ({ checkoutPath: () => undefined }),
+  panelShowingFile: () => null,
   panelTypeOpening: () => 'editor',
   revealPanel: vi.fn(),
 }))

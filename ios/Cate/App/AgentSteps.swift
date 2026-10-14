@@ -6,13 +6,13 @@
 import SwiftUI
 
 struct AgentStepsRow: View {
-    let group: AgentStepGroup
+    let item: AgentConversation.Item
 
     var body: some View {
-        if group.ghost {
+        if item.ghost {
             GhostSteps()
         } else {
-            StepList(steps: group.steps)
+            StepList(steps: item.steps)
         }
     }
 }
@@ -32,10 +32,14 @@ private struct StepList: View {
                         .foregroundStyle(.secondary)
                     Text(steps.count == 1 ? "1 step" : "\(steps.count) steps")
                         .font(.subheadline.weight(.medium))
+                        .contentTransition(.numericText(value: Double(steps.count)))
+                        .animation(.snappy, value: steps.count)
                     Text(tools)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .contentTransition(.opacity)
+                        .animation(.easeInOut(duration: 0.2), value: tools)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))

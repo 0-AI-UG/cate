@@ -105,7 +105,6 @@ export function TerminalPage(): JSX.Element {
   const contrast = useClientSetting('terminalContrast')
   const cursorBlink = useClientSetting('terminalCursorBlink')
   const optionIsMeta = useClientSetting('terminalOptionIsMeta')
-  const linkTarget = useClientSetting('terminalLinkOpenTarget')
   return (
     <div className="flex flex-col gap-1">
       <SettingRow label="Font family override">
@@ -129,21 +128,6 @@ export function TerminalPage(): JSX.Element {
       </SettingRow>
       <SettingRow label="Use ⌥ Option as Meta" description="On: ⌥+key sends Meta/ESC (e.g. ⌥F / ⌥B word motion). Off: ⌥ types special characters.">
         <Toggle checked={optionIsMeta} onChange={(v) => setClientSetting('terminalOptionIsMeta', v)} />
-      </SettingRow>
-      <SettingRow
-        label="Open terminal links"
-        keywords="Ask each time On canvas In system browser"
-        description="Where Cmd/Ctrl+click on a terminal link opens. Cmd/Ctrl+Shift+click always uses the system browser."
-      >
-        <Select
-          value={linkTarget}
-          onChange={(v) => setClientSetting('terminalLinkOpenTarget', v as ClientSettings['terminalLinkOpenTarget'])}
-          options={[
-            { value: 'ask', label: 'Ask each time' },
-            { value: 'canvas', label: 'On canvas' },
-            { value: 'external', label: 'In system browser' },
-          ]}
-        />
       </SettingRow>
     </div>
   )
@@ -172,6 +156,7 @@ export function WorkspaceTerminalPage({ workspaceId }: SettingsPageProps): JSX.E
 
 export function BrowserPage(): JSX.Element {
   const proxyUrl = useClientSetting('browserProxyUrl')
+  const linkTarget = useClientSetting('linkOpenTarget')
   const [proxyDraft, setProxyDraft] = useState(proxyUrl)
 
   useEffect(() => { setProxyDraft(proxyUrl) }, [proxyUrl])
@@ -184,6 +169,21 @@ export function BrowserPage(): JSX.Element {
 
   return (
     <div className="flex flex-col gap-1">
+      <SettingRow
+        label="Open links"
+        keywords="Ask each time In Cate In system browser terminal markdown"
+        description="Where a web link opens when you click it in a terminal (Cmd/Ctrl+click) or a markdown preview. Cmd/Ctrl+Shift+click in a terminal always uses the system browser."
+      >
+        <Select
+          value={linkTarget}
+          onChange={(v) => setClientSetting('linkOpenTarget', v as ClientSettings['linkOpenTarget'])}
+          options={[
+            { value: 'ask', label: 'Ask each time' },
+            { value: 'cate', label: 'In Cate' },
+            { value: 'external', label: 'In system browser' },
+          ]}
+        />
+      </SettingRow>
       <SettingRow
         label="Proxy"
         description="The upstream proxy for every browser panel. Leave empty for a direct connection. Supports authenticated proxy URLs, PAC scripts, and ;bypass= lists."

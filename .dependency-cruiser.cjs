@@ -1,4 +1,4 @@
-const RUNTIME_MODULES = ['daemon', 'data', 'transports', 'security', 'pairing', 'connect', 'server', 'tunnel', 'power', 'push']
+const RUNTIME_MODULES = ['daemon', 'data', 'transports', 'security', 'pairing', 'connect', 'tunnel', 'power', 'push']
 
 const any = (parts) => `(?:${parts.join('|')})`
 
@@ -154,7 +154,7 @@ const publicEntries = forbid('public-entries', "across modules, import a module'
   { path: `^src/(${any(LAYERS.map(layerName))})/([^/]+)/`, pathNot: COMPOSITION_ROOT },
   { path: NEW, pathNot: ['^src/$1/$2/', ...PUBLIC_ENTRY] })
 
-// Dependencies between services point one way (architecture 10.4): agents
+// Dependencies between services point one way (architecture 10.3): agents
 // plugs into terminal's extension points, terminal never knows agents.
 const serviceRules = [
   forbid('terminal-no-agents', 'the terminal service never imports agents; agents plugs into its extension points',
@@ -166,7 +166,7 @@ module.exports = {
   forbidden: [...contractRules, ...sideRules, ...layerRules, publicEntries, ...serviceRules, ...cliRules],
   options: {
     doNotFollow: { path: ['node_modules'] },
-    exclude: { path: ['\\.test\\.tsx?$', '^src/test/'] },
+    exclude: { path: ['\\.i?test\\.tsx?$', '^src/test/'] },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: 'tsconfig.json' },
     enhancedResolveOptions: {

@@ -3,8 +3,7 @@
 
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
-import { WebLinksAddon } from '@xterm/addon-web-links'
-import { createFileLinkProvider, type FileLinkPorts } from './fileLinkProvider'
+import { createLinkProvider, createOsc8Handler, type LinkPorts } from './linkProvider'
 import { makeTerminalKeyEventHandler } from './input'
 import { registerOsc52ClipboardHandler, type ClipboardWriter } from './osc52'
 import type { TerminalOptionsFromSettings } from './settings'
@@ -18,8 +17,7 @@ export interface TerminalXtermOptions {
   options: TerminalOptionsFromSettings
   theme: ITheme
   isMac: boolean
-  onUrl(event: MouseEvent, url: string): void
-  fileLinks: FileLinkPorts
+  links: LinkPorts
   /** Present on clients with `clipboard`. */
   clipboard?: ClipboardWriter
 }
@@ -50,13 +48,13 @@ export function createTerminalXterm(config: TerminalXtermOptions): TerminalXterm
     allowProposedApi: true,
     scrollback: 5000,
     altClickMovesCursor: true,
+    linkHandler: createOsc8Handler(config.links, config.isMac),
   })
   const search = new SearchAddon()
   terminal.loadAddon(search)
-  terminal.loadAddon(new WebLinksAddon(config.onUrl))
   const cleanups: Array<() => void> = []
-  const fileLinks = terminal.registerLinkProvider(createFileLinkProvider(terminal, config.fileLinks, config.isMac))
-  cleanups.push(() => fileLinks.dispose())
+  const links = terminal.registerLinkProvider(createLinkProvider(terminal, config.links, config.isMac))
+  cleanups.push(() => links.dispose())
   // `input` fires onData, so these bytes reach the PTY through the binding.
   terminal.attachCustomKeyEventHandler(makeTerminalKeyEventHandler(terminal, (data) => terminal.input(data, true), config.isMac))
   if (config.clipboard) cleanups.push(registerOsc52ClipboardHandler(terminal, config.clipboard))

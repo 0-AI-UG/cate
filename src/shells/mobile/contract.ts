@@ -11,7 +11,7 @@
 
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
-import type { AgentConversationMessage, AgentId, AgentStatus, AgentStep, AgentStepGroup, AgentTypeInfo } from '@services/agents/contract'
+import type { AgentId, AgentStatus, AgentStep, AgentTypeInfo } from '@services/agents/contract'
 import type { RelationKind } from '@workspace/document/contract'
 import type { RelationContextMode } from '@workspace/relations/contract'
 
@@ -51,7 +51,7 @@ export interface MobileBridgeMethods {
   'stream.event': { params: MobileStreamEvent; result: null }
   /** Opens a URL outside the app (the system browser). */
   'app.openUrl': { params: { url: string }; result: null }
-  /** A notification event from a connected workspace (architecture 10.5).
+  /** A notification event from a connected workspace (architecture 10.4).
    *  The app decides how to show it; `id` is the one a push about the same
    *  panel carries (`pushCollapseId`), so one replaces the other. */
   'notification.show': { params: MobileNotification; result: null }
@@ -89,20 +89,9 @@ export type MobileViewEvent =
   | { kind: 'change'; from: number; to: number; delta: MobileTextDelta[] }
   /** `buffer.open`: the buffer could not be opened or its stream ended. */
   | { kind: 'error'; message: string }
-  /** `agents.watch`: the agent's state (null while the panel hosts none),
-   *  the prompt sent from this view that the conversation does not show yet,
-   *  the one queued until the agent can take it, the messages from index
-   *  `from` on, which replace the app's, and the steps (null: unchanged). */
-  | {
-    kind: 'conversation'
-    status: AgentStatus | null
-    canReceivePrompt: boolean
-    pending: string | null
-    queued: string | null
-    from: number
-    messages: AgentConversationMessage[]
-    steps: MobileAgentSteps | null
-  }
+  /** `agents.watch`: the chat (`MobileChat`) with its items from index
+   *  `from` on, which replace the app's from there; the items before stay. */
+  | ({ kind: 'chat'; from: number } & MobileChat)
 
 /** A loopback stream (`stream.open`): bytes from the runtime's machine
  *  (base64), or its end. */
@@ -301,12 +290,31 @@ export type MobileActionResult = { ok: true } | { ok: false; message: string }
  *  switching would stop what runs; the app asks, then sends `discard`. */
 export type MobileSwitchResult = MobileActionResult | { ok: false; message: string; dirty: true }
 
-/** Where an agent chat shows its steps (`agentStepGroups`), and the step
- *  its running turn last completed. */
-export interface MobileAgentSteps {
-  groups: AgentStepGroup[]
-  activity: AgentStep | null
+/** An agent chat as the app shows it (`chatTimeline.ts`). */
+export interface MobileChat {
+  /** The conversation was read: false while it is on its way. */
+  loaded: boolean
+  /** The agent's state; null while the panel hosts no agent. */
+  status: AgentStatus | null
+  canReceivePrompt: boolean
+  /** A prompt waiting for the agent to be at its prompt. */
+  queued: string | null
+  /** The turn in progress, from the prompt going out until the agent ended
+   *  it, with the step it last completed; null between turns. */
+  turn: { step: AgentStep | null } | null
+  items: MobileChatItem[]
 }
+
+/** A chat's item. Ids stay while the chat grows: a message's is its place,
+ *  a step group's the message it shows before. */
+export type MobileChatItem =
+  /** The person's prompt; `sent` false while the conversation does not
+   *  show it yet. */
+  | { kind: 'prompt'; id: string; text: string; sent: boolean }
+  | { kind: 'reply'; id: string; text: string }
+  /** Steps the agent took; a ghost stands for steps from before the runtime
+   *  kept them. */
+  | { kind: 'steps'; id: string; steps: AgentStep[]; ghost: boolean }
 
 /** A file a search found (`search.files`). */
 export interface MobileFileMatch {
@@ -370,6 +378,10 @@ export interface MobileCoreMethods {
   /** The grid the view holds changed. */
   'terminal.resize': { params: { terminalId: string; cols: number; rows: number }; result: null }
   'terminal.close': { params: { terminalId: string }; result: null }
+  /** A link the person tapped in the terminal (an OSC 8 hyperlink's URI): a
+   *  file opens in Cate, a web URL outside the app, except a loopback one,
+   *  which only Cate reaches. */
+  'terminal.openLink': { params: { terminalId: string; uri: string }; result: null }
 
   /** Follows a panel's session in a view the app names `viewId`: its
    *  snapshot as `snapshot` events until `panel.close`. */

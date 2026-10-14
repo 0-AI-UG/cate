@@ -24,6 +24,18 @@ describe('agentLaunchCommand', () => {
     expect(agentLaunchCommand({ agentId: 'codex', prompt: 'exec' }).args).toEqual(['Complete this coding task:\n\nexec'])
   })
 
+  it('opens the interactive session without a prompt', () => {
+    expect(AGENTS.map((agent) => ({ id: agent.id, command: agentLaunchCommand({ agentId: agent.id }) }))).toEqual([
+      { id: 'claude-code', command: { executable: 'claude', args: [] } },
+      { id: 'codex', command: { executable: 'codex', args: [] } },
+      { id: 'cursor', command: { executable: 'cursor-agent', args: [] } },
+      { id: 'grok', command: { executable: 'grok', args: [] } },
+      { id: 'opencode', command: { executable: 'opencode', args: [] } },
+      { id: 'hermes', command: { executable: 'hermes', args: ['chat'] } },
+      { id: 'kiro', command: { executable: 'kiro-cli', args: ['chat', '--v3'] } },
+    ])
+  })
+
   it('rejects blank prompts', () => {
     expect(() => agentLaunchCommand({ agentId: 'codex', prompt: '   ' })).toThrow('A prompt is required')
   })

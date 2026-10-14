@@ -109,6 +109,8 @@ export class RpcServer {
   private readonly conns = new Set<Connection>()
   private readonly ops = new Map<string, OpLog>()
   private nextConnId = 1
+  /** This run of the server, sent in `hello`: the op log above is in memory. */
+  readonly epoch = globalThis.crypto.randomUUID()
   readonly protocol: ProtocolVersion
   readonly lifecycle: LifecycleBus
 
@@ -153,14 +155,15 @@ export class RpcServer {
   }
 
   /** @internal */
-  lookup(capName: string, name: string): { kind: 'method' | 'stream'; crossMajor: boolean; fn: (...args: never[]) => unknown } | null {
+  lookup(capName: string, name: string): { kind: 'method' | 'stream'; crossMajor: boolean; callers: boolean; fn: (...args: never[]) => unknown } | null {
     const entry = this.caps.get(capName)
     if (!entry) return null
     const own = (o: object) => Object.prototype.hasOwnProperty.call(o, name)
     // Implementations may be class instances, so keep `this`.
     const fn = (...args: never[]) => entry.impl[name].call(entry.impl, ...args)
-    if (own(entry.cap.methods)) return { kind: 'method', crossMajor: entry.cap.methods[name].crossMajor, fn }
-    if (own(entry.cap.streams)) return { kind: 'stream', crossMajor: false, fn }
+    const callers = entry.cap.callers === true
+    if (own(entry.cap.methods)) return { kind: 'method', crossMajor: entry.cap.methods[name].crossMajor, callers, fn }
+    if (own(entry.cap.streams)) return { kind: 'stream', crossMajor: false, callers, fn }
     return null
   }
 
@@ -282,7 +285,7 @@ class Connection {
       caller: !clientValid && hello.caller ? { token: hello.caller.token } : null,
       has: (f) => featureSet.has(f),
     }
-    this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version, build: this.server.opts.build })
+    this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version, build: this.server.opts.build, epoch: this.server.epoch })
     if (clientConn && this.info.compatible) this.server.lifecycle.emitClientConnected(clientConn)
     for (const frame of held ?? []) this.onFrame(frame)
   }
@@ -298,6 +301,9 @@ class Connection {
     if (!info) return fail(new RpcError('rejected', 'hello first'))
     const target = this.server.lookup(req.cap, req.method)
     if (!target) return fail(new RpcError('unsupported', `${req.cap}.${req.method} is not supported by this runtime`))
+    // A caller (no client in its hello) reaches only capabilities declared
+    // with `callers`.
+    if (!info.client && !target.callers) return fail(new RpcError('rejected', `${req.cap} is for clients only`))
     if (!info.compatible && !target.crossMajor) {
       return fail(new RpcError('unsupported', 'Incompatible protocol version'))
     }

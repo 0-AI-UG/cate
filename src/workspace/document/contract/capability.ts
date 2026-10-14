@@ -9,10 +9,14 @@ import type { ClientId, PanelId, WorkspaceDocument } from './schema'
 export const RUNTIME_CLIENT_ID: ClientId = 'runtime'
 
 /** Events of `document.subscribe`: the full document or the missed ops
- *  first, then every applied op in order. */
+ *  first, then every applied op in order, and `persisted` with the seq of the
+ *  last document.json write after the first ones and after every write. A
+ *  `doc` carries `startSeq`, the seq its epoch loaded from document.json: ops
+ *  of an earlier epoch after it were lost with that run. */
 export type DocumentEvent =
-  | { kind: 'doc'; seq: number; epoch: string; doc: WorkspaceDocument }
+  | { kind: 'doc'; seq: number; epoch: string; startSeq: number; doc: WorkspaceDocument }
   | { kind: 'op'; seq: number; op: DocOp }
+  | { kind: 'persisted'; seq: number }
 
 /** A failed op rejects with its code (`gone`, `rejected`); a resent op that
  *  was already handled is `duplicate`. */
@@ -20,7 +24,7 @@ export type ApplyResult = { status: 'applied'; seq: number } | { status: 'duplic
 
 export const documentCapability = defineCapability('document', {
   methods: {
-    apply: method<{ op: DocOp }, ApplyResult>({ mutates: true }),
+    apply: method<{ op: DocOp }, ApplyResult>({ mutates: true, idempotent: true }),
   },
   streams: {
     /** With `sinceSeq` of the runtime's current `epoch` (from its last `doc`

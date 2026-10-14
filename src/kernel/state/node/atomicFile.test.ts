@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { writeJsonAtomic, writeJsonAtomicSync, writeJsonExclusive } from './atomicFile'
+import { removeStrayTemporaries, writeJsonAtomic, writeJsonAtomicSync, writeJsonExclusive } from './atomicFile'
 
 let directory: string
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
@@ -47,4 +47,11 @@ it('writes secret files with mode 0600 inside a 0700 directory', async () => {
     expect((await fs.stat(path.dirname(file))).mode & 0o777).toBe(0o700)
   }
   expect(await fs.readdir(path.dirname(file))).toEqual(['secrets.json'])
+})
+
+it('removes only the temporary files a killed writer left', async () => {
+  const stray = 'secrets.json.0f8fad5b-d9cb-469f-a165-70867728950e.tmp'
+  for (const name of [stray, 'secrets.json', 'notes.tmp', 'x.tmp.json']) await fs.writeFile(path.join(directory, name), '{}')
+  await removeStrayTemporaries([directory, path.join(directory, 'missing')])
+  expect((await fs.readdir(directory)).sort()).toEqual(['notes.tmp', 'secrets.json', 'x.tmp.json'])
 })

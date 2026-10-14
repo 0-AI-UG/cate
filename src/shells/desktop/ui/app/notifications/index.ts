@@ -1,4 +1,4 @@
-// The desktop's notification display (architecture 10.5): the events the
+// The desktop's notification display (architecture 10.4): the events the
 // shared consumer (`attachNotifications`) hands it, gated by the core's gate,
 // shown as OS notifications or in-app toasts.
 

@@ -2,7 +2,8 @@
 // (architecture 7.3, 15), so starting a local workspace never waits on it. A
 // packaged app ships the tarball in its resources; a dev checkout uses the one
 // `npm run runtime:tarball` built, and falls back to the release download.
-// Either must be this app's build: the client refuses a runtime of another.
+// Either must be this app's build: a local runtime of another build is
+// stale and is restarted into this one.
 
 import fs from 'node:fs'
 import path from 'node:path'

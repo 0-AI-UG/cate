@@ -1,5 +1,5 @@
 // The desktop's display for the shared notification consumer
-// (`attachNotifications`, architecture 10.5, 12.2 rule 7): through the core's
+// (`attachNotifications`, architecture 10.4, 12.2 rule 7): through the core's
 // gate (the client's notification settings and focus), each event becomes an
 // OS notification through `clientUi().notify` when the client has
 // `osNotifications`, else an in-app toast. Clicking one focuses its panel.

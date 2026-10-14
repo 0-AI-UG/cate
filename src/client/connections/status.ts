@@ -62,28 +62,29 @@ export function connectionStatus(state: ConnectionState, context: StatusContext)
     case 'offline': {
       const missing = missingFolderOf(state.error)
       if (missing) {
-        return { title: 'Folder not found', message: `${missing} is not there any more. If it moved, open it from its new place.`, remedies: ['close', 'retry'] }
+        return { title: 'Folder not found', message: `${missing} was moved or deleted.`, remedies: ['close', 'retry'] }
       }
       const reason = readableError(state.error)
       if (state.lastSeen) {
-        return { title: 'Offline', message: `Last connected ${relativeTime(state.lastSeen, now)}.${reason ? ` ${reason}.` : ''} Cate keeps trying.`, remedies: unreachable }
+        return { title: 'Offline', message: `Last connected ${relativeTime(state.lastSeen, now)}.${reason ? ` ${reason}.` : ''}`, remedies: unreachable }
       }
       return startsRuntime
-        ? { title: 'Could not start', message: `The workspace runtime did not start${reason ? `: ${reason}` : ''}. Cate keeps trying.`, remedies: unreachable }
-        : { title: 'Not reachable', message: `The workspace did not answer${reason ? `: ${reason}` : ''}. Its machine may be off or offline. Cate keeps trying.`, remedies: unreachable }
+        ? { title: 'Could not start', message: `The runtime did not start${reason ? `: ${reason}` : ''}.`, remedies: unreachable }
+        // A network dial explains itself (why each way failed, what to change).
+        : { title: 'Not reachable', message: reason ? `${reason}.` : 'Its machine may be off or offline.', remedies: unreachable }
     }
     case 'incompatible':
-      return { title: 'Runtime out of date', message: `The workspace runtime (${state.runtimeVersion}) needs an update.`, remedies: ['resolve'] }
+      return { title: 'Runtime out of date', message: `Runtime ${state.runtimeVersion} needs an update.`, remedies: ['resolve'] }
     case 'refused':
       if (state.nestedIn) return { title: 'Already open', message: state.message, remedies: ['openNested', 'retry', 'close'] }
       if (state.unpaired) {
-        return { title: 'Not paired', message: 'This device is not paired with the workspace any more. Pair it again with a new code, or close the workspace.', remedies: ['pair', 'close'] }
+        return { title: 'Not paired', message: 'Pair again with a new code.', remedies: ['pair', 'close'] }
       }
       return { title: 'Connection refused', message: state.message, remedies: ['retry'] }
     case 'stopped':
       return startsRuntime
-        ? { title: 'Runtime stopped', message: 'The workspace runtime was stopped. Its terminals and agents have ended.', remedies: ['start'] }
-        : { title: 'Runtime stopped', message: 'The workspace runtime was stopped on its machine. It runs again once someone opens the workspace there.', remedies: ['retry', 'close'] }
+        ? { title: 'Runtime stopped', message: 'Its terminals and agents have ended.', remedies: ['start'] }
+        : { title: 'Runtime stopped', message: 'It runs again when opened on its machine.', remedies: ['retry', 'close'] }
     default:
       return null
   }

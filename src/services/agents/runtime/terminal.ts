@@ -201,7 +201,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
 
   offs.push(terminal.registerLaunchIntent(AGENT_LAUNCH.start, (params) => {
     const { agentId, prompt } = (params ?? {}) as { agentId?: unknown; prompt?: unknown }
-    if (!isAgentId(agentId) || typeof prompt !== 'string') throw new Error('Invalid agent launch')
+    if (!isAgentId(agentId) || (prompt !== undefined && typeof prompt !== 'string')) throw new Error('Invalid agent launch')
     return { command: agentLaunchCommand({ agentId, prompt }) }
   }))
 

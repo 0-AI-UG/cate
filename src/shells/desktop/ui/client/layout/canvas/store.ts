@@ -1002,11 +1002,13 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
         const s = get()
         const size = request.size ?? panelDefaultSize(request.panelType)
         // An empty canvas has nothing to choose between: place at the centre.
-        if (request.place && request.availability === 'new' && liveNodes().length === 0) {
+        if (request.availability === 'new' && liveNodes().length === 0) {
           const cs = s.containerSize
           const center = cs.width > 0 && cs.height > 0 ? get().viewToCanvas({ x: cs.width / 2, y: cs.height / 2 }) : null
           const origin = center ? { x: center.x - size.width / 2, y: center.y - size.height / 2 } : undefined
-          return request.place(origin, size) !== null
+          if (request.place) return request.place(origin, size) !== null
+          request.onSelected?.({ kind: 'new', point: origin ?? get().placeTarget(size).rect.origin, size })
+          return true
         }
         return beginTarget({ ...request, size })
       },

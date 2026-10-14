@@ -18,7 +18,16 @@ export interface SameNetworkDialOptions<T = MessagePortLike> {
   verify?: { check(port: MessagePortLike): Promise<T>; release(value: T): void }
 }
 
-export class SameNetworkUnreachableError extends Error {}
+/** Why the same network did not reach the runtime: no address to dial (none
+ *  known, none discovered), addresses that did not answer, or only answers
+ *  that failed the check (another machine or runtime at a known address). */
+export type SameNetworkFailure = 'notFound' | 'noAnswer' | 'otherRuntime'
+
+export class SameNetworkUnreachableError extends Error {
+  constructor(readonly reason: SameNetworkFailure, message: string) {
+    super(message)
+  }
+}
 
 /**
  * Dials every known address and every discovered one at once; the first to
@@ -33,6 +42,8 @@ export function dialSameNetwork<T>(options: SameNetworkDialOptions<T>): Promise<
     const abort = new AbortController()
     const tried = new Set<string>()
     const errors: string[] = []
+    let dialed = 0
+    let opened = 0
     let inFlight = 0
     let discovering = false
     let settled = false
@@ -52,9 +63,11 @@ export function dialSameNetwork<T>(options: SameNetworkDialOptions<T>): Promise<
       if (value instanceof Error) reject(value)
       else resolve(value)
     }
+    const reason = (): SameNetworkFailure => (opened > 0 ? 'otherRuntime' : dialed > 0 ? 'noAnswer' : 'notFound')
     const giveUpIfDone = () => {
       if (inFlight === 0 && !discovering) {
         settle(new SameNetworkUnreachableError(
+          reason(),
           errors.length > 0
             ? `could not reach the workspace on this network (${errors.join('; ')})`
             : 'could not find the workspace on this network',
@@ -71,9 +84,11 @@ export function dialSameNetwork<T>(options: SameNetworkDialOptions<T>): Promise<
       tried.add(address)
       const url = sameNetworkUrl(address, options.runtimeId)
       if (!url) return
+      dialed++
       inFlight++
       openWebSocket(options.webSocket, url, timeoutMs).then(
         (port) => {
+          opened++
           if (!verify) return settle(port)
           if (settled) return port.close()
           verify.check(port).then(
@@ -87,7 +102,7 @@ export function dialSameNetwork<T>(options: SameNetworkDialOptions<T>): Promise<
         failed,
       )
     }
-    const timer = setTimeout(() => settle(new SameNetworkUnreachableError('timed out looking for the workspace on this network')), timeoutMs)
+    const timer = setTimeout(() => settle(new SameNetworkUnreachableError(reason(), 'timed out looking for the workspace on this network')), timeoutMs)
 
     for (const address of options.addresses ?? []) dial(address)
     if (options.discover) {

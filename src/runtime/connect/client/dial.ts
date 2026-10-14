@@ -11,7 +11,6 @@ import {
   DataChannelError,
   offerDataChannel,
   openWebSocket,
-  type IceServer,
   type PeerConnectionFactory,
   type SignalMessage,
   type WebSocketFactory,
@@ -93,19 +92,6 @@ async function openService(options: CateConnectOptions): Promise<ServiceLink> {
     close: () => port.close(),
   }
   return link
-}
-
-/** Whether the runtime is registered right now, and the ICE servers to use. */
-export async function lookupRuntime(options: Omit<CateConnectOptions, 'createPeer'>): Promise<{ online: boolean; iceServers: IceServer[] }> {
-  const link = await openService(options as CateConnectOptions)
-  try {
-    const answer = link.next('lookup')
-    link.send({ t: 'lookup', runtimeId: options.runtimeId })
-    const { online, iceServers } = await answer
-    return { online, iceServers }
-  } finally {
-    link.close()
-  }
 }
 
 /** Opens a data channel to the runtime through Cate Connect signaling. */

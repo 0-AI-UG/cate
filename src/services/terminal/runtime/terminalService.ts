@@ -7,6 +7,7 @@
 // runs a process asks `trust.requireTrusted()` first (9.2).
 
 import { randomUUID } from 'node:crypto'
+import { stat } from 'node:fs/promises'
 import { RpcError } from '@kernel/rpc/contract'
 import type { Logger } from '@kernel/log/contract'
 import type { SliceValues } from '@kernel/settings/contract'
@@ -20,6 +21,8 @@ import type {
   SpawnParams,
   SpawnResult,
   TerminalActivity,
+  TerminalLink,
+  TerminalLinksParams,
   TerminalStatus,
   TerminalStatusChange,
   TerminalStatuses,
@@ -51,6 +54,9 @@ import { TerminalLog, isSafeLogKey, readSavedScreen, removeLogFiles } from './te
 const SHUTDOWN_GRACE_MS = 1_000
 /** The exit code observers get for a terminal closed or never spawned. */
 const CLOSED_EXIT_CODE = -1
+/** Cate's terminal opens OSC 8 hyperlinks: this tells programs that check
+ *  (supports-hyperlinks). The person's own env overrides it. */
+export const TERMINAL_LINK_ENV: Readonly<Record<string, string>> = { FORCE_HYPERLINK: '1' }
 
 export interface PtyProcess {
   readonly pid: number
@@ -107,6 +113,8 @@ export interface TerminalServiceDeps {
   countPerf?: (name: string) => void
   /** Signals a PTY's process group (POSIX). */
   signalGroup?: (pid: number, signal: NodeJS.Signals) => void
+  /** A path in the output names a file: only then is it a link. */
+  isFile?: (path: string) => Promise<boolean>
 }
 
 /** Where attach output goes; a kernel/rpc StreamSink fits. */
@@ -130,6 +138,7 @@ export interface TerminalService {
   cwd(id: string): Promise<string | null>
   read(id: string, lines?: number): Promise<ReadResult>
   snapshot(id: string): Promise<ScreenSnapshot>
+  links(params: TerminalLinksParams): Promise<TerminalLink[]>
   list(): TerminalStatus[]
   statuses(): TerminalStatuses
   onStatusChange(listener: (change: TerminalStatusChange) => void): () => void
@@ -212,6 +221,10 @@ function defaultResolveShell(requested?: string): ResolvedShell {
   const resolved = resolveHostShell(requested)
   const notice = resolved.fallback && requested ? `Shell "${requested}" unavailable; using ${resolved.path}\r\n` : undefined
   return { path: resolved.path, args: [], ...(notice ? { notice } : {}) }
+}
+
+async function defaultIsFile(path: string): Promise<boolean> {
+  return (await stat(path).catch(() => null))?.isFile() ?? false
 }
 
 function defaultSignalGroup(pid: number, signal: NodeJS.Signals): void {
@@ -559,7 +572,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     executable: string,
     args: readonly string[],
   ): Promise<PtyProcess> => {
-    let env = sanitizeEnv(deps.env())
+    let env = { ...TERMINAL_LINK_ENV, ...sanitizeEnv(deps.env()) }
     for (const contribute of envContributors) {
       const info: SpawnInfo = { terminalId: id, panelId, cwd, launch: params.launch ?? null, executable, args, env }
       try {
@@ -753,6 +766,12 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       await term.screen.settled()
       const capture = term.screen.capture()
       return { data: capture.screen + capture.pending.join(''), cols: capture.cols, rows: capture.rows }
+    },
+
+    async links({ id, row, text }) {
+      const term = get(id)
+      await term.screen.settled()
+      return term.screen.links({ row, text }, term.cwd ?? deps.root, deps.isFile ?? defaultIsFile)
     },
 
     list: () => [...terms.values()].map(statusOf),

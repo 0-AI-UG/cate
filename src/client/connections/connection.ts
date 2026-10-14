@@ -192,6 +192,11 @@ export class WorkspaceConnection {
     if (!answered && !this.closed && this.rpc.state === 'ready') this.rpc.detach('The runtime stopped answering')
   }
 
+  /** Whether the runtime is on this client's own network, so its pages may
+   *  reach the client's private ranges (12.3): only over the local socket.
+   *  A machine's runtime is on that machine's network, not this one's. */
+  get reachesClientNetwork(): boolean { return this.kind === 'local' }
+
   /** A pipe to `port` on the runtime's machine (12.3): a TCP connection on
    *  this machine, through the runtime's tunnel otherwise. */
   dialLoopback(port: number): Promise<ByteDuplex> {

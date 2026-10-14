@@ -174,7 +174,7 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
     probe: (cwd) => raw.probe({ cwd }),
     snapshot,
     watch: deps.watch,
-    allIgnored: (cwd, paths) => raw.allIgnored({ cwd, paths }),
+    allIgnored: gated((cwd: string, paths: string[]) => raw.allIgnored({ cwd, paths })),
     active: () => trust.isTrusted(),
     log: deps.log,
     onSnapshot: (cwd, status) => {

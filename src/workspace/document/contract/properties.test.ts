@@ -94,6 +94,7 @@ describe('random changes', () => {
         expect(withoutTrees(undone.doc), JSON.stringify(change)).toEqual(withoutTrees(before))
         expect(placements(undone.doc), JSON.stringify(change)).toEqual(placements(before))
         expect(applicable(after, inverse)).toEqual(inverse)
+        expect(applicable(after, inverse, after)).toEqual(inverse)
         if (JSON.stringify(sorted(undone.doc)) === JSON.stringify(sorted(before))) exact++
         checked++
       })

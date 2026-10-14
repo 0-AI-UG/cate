@@ -34,7 +34,7 @@ struct JoinView: View {
                         }
                     }
                     Section {
-                        TextField("XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX", text: $code, axis: .vertical)
+                        TextField("XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX", text: $code, axis: .vertical)
                             .font(.body.monospaced())
                             .textInputAutocapitalization(.characters)
                             .autocorrectionDisabled()

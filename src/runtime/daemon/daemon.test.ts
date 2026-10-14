@@ -7,12 +7,12 @@ import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink } from '@kernel/log/contract'
 import { RUNTIME_STOP_DEADLINE_MS } from '@runtime/data/contract'
+import { encodePublicKey, generateKeyPair } from '@runtime/security/contract'
 import { runtimeIdFor } from '@runtime/data/node'
 import { socketAnswers } from '@runtime/data/runtime'
 import { dialLocal } from '@runtime/transports/node'
 import { runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
-import { pairOverLocal } from './compose/pairOverLocal'
 
 // Short paths: a Unix socket path must fit in ~104 bytes.
 let tmp: string
@@ -188,20 +188,6 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     expect(exitedAt).toBeGreaterThan(0)
   })
 
-  it('cate serve on a workspace already running trusts it', async () => {
-    const result = await serveWorkspace({ root, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
-    if (result.kind !== 'serving') throw new Error('expected to serve')
-    expect(result.daemon.workspace.trust.isTrusted()).toBe(false)
-    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
-    try {
-      await pairOverLocal(result.daemon.endpoint, 'sameNetwork', root, true)
-    } finally {
-      write.mockRestore()
-    }
-    expect(result.daemon.workspace.trust.isTrusted()).toBe(true)
-    await result.daemon.stop({ kind: 'signal' })
-  })
-
   it('binds the socket before a slow process preparation finishes', async () => {
     let release!: () => void
     const started = Date.now()
@@ -231,6 +217,35 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     const saved = JSON.parse(fs.readFileSync(path.join(result.daemon.paths.dir, 'document.json'), 'utf8')) as { document: { worktrees: Record<string, unknown> } }
     expect(Object.keys(saved.document.worktrees)).toContain('wt-last')
   }, RUNTIME_STOP_DEADLINE_MS + 10_000)
+
+  it('writes devices and settings before the shutdown steps that can stall', async () => {
+    let release!: () => void
+    const lifecycle = createLifecycleBus()
+    lifecycle.onShutdown(() => new Promise<void>((resolve) => { release = resolve }))
+    const result = await serveWorkspace({ root, home, lifecycle, log: createLogger('test') })
+    if (result.kind !== 'serving') throw new Error('expected to serve')
+    const publicKey = encodePublicKey(generateKeyPair().publicKey)
+    result.daemon.pairing.connected({ name: 'phone', publicKey })
+    void result.daemon.stop({ kind: 'signal' })
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    // Shutdown is held: the deadline could cut the stop off from here on.
+    const saved = JSON.parse(fs.readFileSync(path.join(result.daemon.paths.dir, 'devices.json'), 'utf8')) as { devices: { publicKey: string }[] }
+    expect(saved.devices.map((d) => d.publicKey)).toContain(publicKey)
+    release()
+    await result.daemon.stopped
+  })
+
+  it('removes temporary files a forced exit left in the data dir', async () => {
+    const first = await start()
+    if (first.kind !== 'serving') throw new Error('expected to serve')
+    await first.daemon.stop({ kind: 'signal' })
+    daemons.splice(0)
+    const stray = path.join(first.daemon.paths.dir, 'devices.json.0f8fad5b-d9cb-469f-a165-70867728950e.tmp')
+    fs.writeFileSync(stray, '{')
+    const second = await start()
+    expect(second.kind).toBe('serving')
+    expect(fs.existsSync(stray)).toBe(false)
+  })
 
   it('a stuck shutdown still resolves stopped once the stop deadline passes', async () => {
     const lifecycle = createLifecycleBus()

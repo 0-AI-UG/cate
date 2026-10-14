@@ -1,12 +1,12 @@
 // Agent chats in the app (`agents.watch`): each follows a panel's agent
-// conversation (`watchAgentChat`) and tells the app what changed as
-// `conversation` view events: the agent's state, the pending and queued
-// prompts, the messages from the first one that changed, so the app redraws
-// only those, and where the steps show (`agentStepGroups`).
+// conversation (`watchAgentChat`), lays it out as the app shows it
+// (`chatTimeline.ts`) and tells the app what changed as `chat` view events:
+// the chat's state and its items from the first one that changed, so the
+// app redraws only those.
 
-import { watchAgentChat, type AgentChat, type AgentChatHandle } from '@services/agents/client'
-import { agentActivity, agentStepGroups, diffAgentConversation } from '@services/agents/contract'
-import type { MobileBridge, MobileViewEvent } from '../contract'
+import { watchAgentChat, type AgentChatHandle } from '@services/agents/client'
+import type { MobileBridge, MobileChat, MobileViewEvent } from '../contract'
+import { createChatTimeline } from './chatTimeline'
 
 export interface MobileConversations {
   watch(params: { viewId: string; workspaceId: string; panelId: string; pending?: string }): void
@@ -20,59 +20,56 @@ export interface MobileConversations {
 }
 
 export function createMobileConversations(bridge: MobileBridge): MobileConversations {
-  const watches = new Map<string, AgentChatHandle>()
+  const watches = new Map<string, { handle: AgentChatHandle; stop(): void }>()
 
   return {
     watch({ viewId, workspaceId, panelId, pending }) {
-      watches.get(viewId)?.release()
+      watches.get(viewId)?.stop()
       const handle = watchAgentChat(workspaceId, panelId)
-      watches.set(viewId, handle)
-      let shown: AgentChat = { conversation: null, pending: null, queued: null }
-      let shownSteps = ''
+      const timeline = createChatTimeline()
+      let shown: MobileChat | null = null
+      let shownItems: string[] = []
+      let recheck: ReturnType<typeof setTimeout> | null = null
       const emit = (event: MobileViewEvent) => {
         void bridge('view.event', { viewId, json: JSON.stringify(event) }).catch(() => {})
       }
-      handle.subscribe(() => {
-        const next = handle.get()
+      const update = () => {
+        if (recheck) clearTimeout(recheck)
+        recheck = null
+        const now = Date.now()
+        const { chat, recheckAt } = timeline.update(handle.get(), now)
+        if (recheckAt !== null) recheck = setTimeout(update, Math.max(0, recheckAt - now))
+        const items = chat.items.map((item) => JSON.stringify(item))
+        let from = 0
+        while (from < items.length && from < shownItems.length && items[from] === shownItems[from]) from++
         const before = shown
-        shown = next
-        const prompts = next.pending !== before.pending || next.queued !== before.queued
-        if (!next.conversation) {
-          if (prompts) {
-            emit({
-              kind: 'conversation', status: null, canReceivePrompt: false, pending: next.pending, queued: next.queued,
-              from: 0, messages: [], steps: null,
-            })
-          }
-          return
-        }
-        const steps = { groups: agentStepGroups(next.conversation), activity: agentActivity(next.conversation) }
-        const stepsJson = JSON.stringify(steps)
-        const stepsChanged = stepsJson !== shownSteps
-        shownSteps = stepsJson
-        const change = before.conversation ? diffAgentConversation(before.conversation, next.conversation) : null
-        if (before.conversation && !change && !prompts && !stepsChanged) return
-        const from = before.conversation ? change?.from ?? next.conversation.messages.length : 0
-        emit({
-          kind: 'conversation',
-          status: next.conversation.status,
-          canReceivePrompt: next.conversation.canReceivePrompt,
-          pending: next.pending,
-          queued: next.queued,
-          from,
-          messages: next.conversation.messages.slice(from),
-          steps: stepsChanged ? steps : null,
-        })
+        const same = before !== null && from === items.length && from === shownItems.length
+          && before.loaded === chat.loaded && before.status === chat.status && before.canReceivePrompt === chat.canReceivePrompt
+          && before.queued === chat.queued && JSON.stringify(before.turn) === JSON.stringify(chat.turn)
+        shown = chat
+        shownItems = items
+        if (same) return
+        emit({ kind: 'chat', ...chat, from, items: chat.items.slice(from) })
+      }
+      const off = handle.subscribe(update)
+      watches.set(viewId, {
+        handle,
+        stop() {
+          off()
+          if (recheck) clearTimeout(recheck)
+          handle.release()
+        },
       })
       if (pending) handle.sent(pending)
+      update()
     },
     unwatch(viewId) {
-      watches.get(viewId)?.release()
+      watches.get(viewId)?.stop()
       watches.delete(viewId)
     },
-    sent: (viewId, prompt) => watches.get(viewId)?.sent(prompt),
-    unsent: (viewId) => watches.get(viewId)?.unsent(),
-    queue: (viewId, prompt) => watches.get(viewId)?.queue(prompt),
-    unqueue: (viewId) => watches.get(viewId)?.unqueue() ?? null,
+    sent: (viewId, prompt) => watches.get(viewId)?.handle.sent(prompt),
+    unsent: (viewId) => watches.get(viewId)?.handle.unsent(),
+    queue: (viewId, prompt) => watches.get(viewId)?.handle.queue(prompt),
+    unqueue: (viewId) => watches.get(viewId)?.handle.unqueue() ?? null,
   }
 }

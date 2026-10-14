@@ -26,8 +26,9 @@ export function prependPath(env: Readonly<Record<string, string>>, dir: string):
 
 export interface CateCliEnvOptions {
   socketPath: string
-  /** Mints a CLI token naming the panel (the api router's token registry). */
-  mintToken: (panelId: string) => string | Promise<string>
+  /** Mints a CLI token naming the panel for the terminal's PTY (the api
+   *  router's token registry). */
+  mintToken: (panelId: string, terminalId: string) => string | Promise<string>
   /** Defaults to the bundled launchers; left off PATH when the directory is
    *  missing (a daemon run from source). */
   binDir?: string
@@ -42,7 +43,7 @@ export function cateCliEnvContributor(options: CateCliEnvOptions): EnvContributo
       ...(present ? prependPath(spawn.env, binDir) : {}),
       CATE_SOCKET: options.socketPath,
     }
-    if (spawn.panelId) env.CATE_TOKEN = await options.mintToken(spawn.panelId)
+    if (spawn.panelId) env.CATE_TOKEN = await options.mintToken(spawn.panelId, spawn.terminalId)
     return env
   }
 }

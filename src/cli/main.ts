@@ -27,7 +27,7 @@ const stderr = (text: string) => { process.stderr.write(`${text}\n`) }
 const EXTRA_COMMANDS: CliDeps['extraCommands'] = {
   serve: {
     summary: SERVE_SUMMARY,
-    run: serveCommand({ cwd: process.cwd(), execPath: process.execPath, platform: process.platform, stdout, stderr }),
+    run: serveCommand({ cwd: process.cwd(), env: process.env, execPath: process.execPath, platform: process.platform, stdout, stderr }),
   },
 }
 

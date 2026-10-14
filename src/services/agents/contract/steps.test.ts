@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentConversation, AgentStep } from './conversation'
-import { agentActivity, agentStepGroups } from './steps'
+import { agentStepGroups } from './steps'
 
 const at = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString()
 const step = (tool: string, second: number): AgentStep => ({ tool, at: at(second) })
@@ -26,11 +26,17 @@ describe('agent step groups', () => {
     ])
   })
 
+  it('puts steps between the replies they came between', () => {
+    const groups = agentStepGroups(conversation({ messages, steps: [step('Read', 10), step('Grep', 10), step('Edit', 13)] }))
+    expect(groups).toEqual([
+      { before: 1, steps: [step('Read', 10), step('Grep', 10)], ghost: false },
+      { before: 2, steps: [step('Edit', 13)], ghost: false },
+    ])
+  })
+
   it('puts the running turn\'s steps at its end and names its last one', () => {
     const running = conversation({ status: 'running', messages: messages.slice(0, 4), steps: [step('Read', 21), step('Bash', 22)] })
     expect(agentStepGroups(running)).toEqual([{ before: 4, steps: [step('Read', 21), step('Bash', 22)], ghost: false }])
-    expect(agentActivity(running)).toEqual(step('Bash', 22))
-    expect(agentActivity({ ...running, status: 'waitingForInput' })).toBeNull()
   })
 
   it('shows a ghost for an answered turn from before steps were kept', () => {

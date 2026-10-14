@@ -1,4 +1,5 @@
 import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
+import type { SameNetworkProblem } from '../../transports/contract'
 import type { PairingMode } from './payload'
 
 /** How a device got in the first time: it paired with a one-time code over
@@ -29,11 +30,23 @@ export interface CreatedSecret {
   /** The typed form, groups of four. */
   code: string
   expiresAt: number
+  /** A code for the same network only, on a machine that devices on its
+   *  network could not reach: say so before anyone scans it. */
+  sameNetworkProblem?: SameNetworkProblem
+}
+
+/** What to tell the person about a same-network code that will not work. */
+export function sameNetworkProblemMessage(problem: SameNetworkProblem): string {
+  return problem === 'publicNetwork'
+    ? 'This network keeps devices apart.'
+    : 'This machine has no local network address.'
 }
 
 export const pairingCapability = defineCapability('pairing', {
   methods: {
-    createSecret: method<{ mode: PairingMode }, CreatedSecret>({ mutates: true }),
+    /** `acknowledged`: the person confirmed, this time, that whoever joins
+     *  can use this computer as them. Refused without it. */
+    createSecret: method<{ mode: PairingMode; acknowledged: true }, CreatedSecret>({ mutates: true }),
     list: method<void, WorkspaceDevice[]>(),
     revoke: method<{ deviceKey: string }, { removed: boolean }>({ mutates: true }),
   },

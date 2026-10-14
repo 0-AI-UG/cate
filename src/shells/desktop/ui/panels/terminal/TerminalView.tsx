@@ -17,16 +17,15 @@ import { useClientState, useDocument } from '../../client/document'
 import { useClaimPanelCorner } from '../../client/host/panelChrome'
 import { type PanelViewProps } from '../../client/host/views'
 import { dropFilesInto, isFileDrag } from '../../client/layout/drag'
+import { openClickedLink } from '../../app/links'
 import { isCanvasDock, placementOf } from '@workspace/document/contract'
-import { fsClient } from '@workspace/files/client'
 import type { TerminalOp, TerminalSnapshot } from '@panels/terminal/contract/types'
 import { shouldAdjustTerminalCoords } from './parts/coordAdjust'
 import { formatTerminalPaste } from './parts/drop'
 import { snapRenderScale } from './parts/renderScale'
-import { createTerminalLinkHandler } from './parts/input'
 import { holdFocus } from './parts/holdFocus'
 import { isMacKeyboard } from './parts/platform'
-import { setTerminalViewSetting, terminalOptions, terminalViewSettings, useTerminalOptions } from './parts/settings'
+import { terminalOptions, terminalViewSettings, useTerminalOptions } from './parts/settings'
 import { useTerminalGrid } from './parts/grid'
 import { createTerminalXterm, type TerminalXterm } from './parts/xterm'
 import { registerTerminalView } from './tabMenu'
@@ -42,6 +41,8 @@ export default function TerminalView({
 }: PanelViewProps<TerminalSnapshot, TerminalOp>) {
   const runtime = useRuntime(workspaceId)
   const processProxy = runtime?.process ?? null
+  const processRef = useRef(processProxy)
+  processRef.current = processProxy
   const options = useTerminalOptions()
   const containerRef = useRef<HTMLDivElement>(null)
   const renderBoxRef = useRef<HTMLDivElement>(null)
@@ -49,8 +50,6 @@ export default function TerminalView({
   const bindingRef = useRef<TerminalBinding | null>(null)
   const snapshotRef = useRef(snapshot)
   snapshotRef.current = snapshot
-  const sendRef = useRef(send)
-  sendRef.current = send
   const [ready, setReady] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [query, setQuery] = useState('')
@@ -75,24 +74,12 @@ export default function TerminalView({
       options: terminalOptions(terminalViewSettings()),
       theme: getActiveTheme().terminal,
       isMac,
-      onUrl: createTerminalLinkHandler({
-        target: () => terminalViewSettings().terminalLinkOpenTarget,
-        remember: (target) => setTerminalViewSetting('terminalLinkOpenTarget', target),
-        ask: (url) => clientUi().promptLinkOpen(url),
-        openExternal: (url) => clientUi().openExternal(url),
-        openInCate: (url) => { void sendRef.current({ kind: 'openUrl', url }).catch(() => {}) },
-      }, isMac),
-      fileLinks: {
-        base: () => snapshotRef.current?.cwd ?? '',
-        isFile: async (path) => (await fsClient(workspaceId).stat(path)).isFile,
-        open: (path, line, column) => {
-          void sendRef.current({
-            kind: 'openFile',
-            path,
-            ...(line !== undefined ? { line } : {}),
-            ...(column !== undefined ? { column } : {}),
-          }).catch(() => {})
+      links: {
+        links: async (row, text) => {
+          const id = snapshotRef.current?.ptyId
+          return id && processRef.current ? processRef.current.links({ id, row, text }) : []
         },
+        open: (target, external) => { void openClickedLink(workspaceId, target, { from: panelId, external }) },
       },
       ...(writeClipboard ? { clipboard: { writeText: (text: string) => writeClipboard(text) } } : {}),
     })

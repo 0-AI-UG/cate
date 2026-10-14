@@ -1,6 +1,8 @@
 // The one atomic write primitive: write a uniquely named temporary file next to
 // the target, then rename it over the target (atomic on one filesystem). Both
 // sync and async variants exist because quit-time flushes must be synchronous.
+// A file with a mode (secrets, devices, push) is fsynced before the rename, so
+// a crash right after cannot leave it empty.
 
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
@@ -56,6 +58,20 @@ function temporaryPath(file: string): string {
   return `${file}.${randomUUID()}.tmp`
 }
 
+const TEMPORARY = /\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/
+
+/** Removes the temporary files a killed writer left in `dirs` (not
+ *  recursive). Only for directories no other process writes in. */
+export async function removeStrayTemporaries(dirs: readonly string[]): Promise<void> {
+  for (const dir of dirs) {
+    let names: string[]
+    try { names = await fsp.readdir(dir) } catch { continue }
+    for (const name of names) {
+      if (TEMPORARY.test(name)) await fsp.rm(path.join(dir, name), { force: true }).catch(() => {})
+    }
+  }
+}
+
 function dirOptions(mode: number | undefined): fs.MakeDirectoryOptions {
   return mode !== undefined ? { recursive: true, mode: 0o700 } : { recursive: true }
 }
@@ -70,8 +86,16 @@ export async function writeFileAtomic(file: string, data: string | Uint8Array, o
   await fsp.mkdir(path.dirname(file), dirOptions(mode))
   const temporary = temporaryPath(file)
   try {
-    await fsp.writeFile(temporary, data, mode !== undefined ? { mode } : {})
-    if (mode !== undefined) {
+    if (mode === undefined) {
+      await fsp.writeFile(temporary, data)
+    } else {
+      const handle = await fsp.open(temporary, 'w', mode)
+      try {
+        await handle.writeFile(data)
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
       await fsp.chmod(temporary, mode).catch(() => { /* filesystems without POSIX modes */ })
     }
     await retryFilePublish(() => fsp.rename(temporary, file))
@@ -85,8 +109,16 @@ export function writeFileAtomicSync(file: string, data: string | Uint8Array, opt
   fs.mkdirSync(path.dirname(file), dirOptions(mode))
   const temporary = temporaryPath(file)
   try {
-    fs.writeFileSync(temporary, data, mode !== undefined ? { mode } : {})
-    if (mode !== undefined) {
+    if (mode === undefined) {
+      fs.writeFileSync(temporary, data)
+    } else {
+      const fd = fs.openSync(temporary, 'w', mode)
+      try {
+        fs.writeFileSync(fd, data)
+        fs.fsyncSync(fd)
+      } finally {
+        fs.closeSync(fd)
+      }
       try { fs.chmodSync(temporary, mode) } catch { /* filesystems without POSIX modes */ }
     }
     renameWithRetrySync(temporary, file)

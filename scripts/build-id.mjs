@@ -1,9 +1,9 @@
 // The build id baked into the daemon bundle and the desktop app as
 // `__CATE_BUILD__`: the package version plus a hash of everything the runtime
 // install is made from: the source tree, the bundled skills and the
-// lockfile. Both sides compute it from the same files, so a client
-// refuses a runtime built from other inputs (a stale daemon) even when the
-// versions are equal. Shell code (src/shells, apart from settings slices) is
+// lockfile. Both sides compute it from the same files, so a client sees a
+// runtime built from other inputs as `stale` even when the versions are
+// equal. Shell code (src/shells, apart from settings slices) is
 // not in the runtime and is left out.
 
 import { createHash } from 'node:crypto'

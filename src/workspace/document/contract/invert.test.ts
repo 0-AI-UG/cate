@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { rect } from '@workspace/canvas/contract'
 import { applyOp } from './apply'
 import { applicable, invertOp } from './invert'
-import type { DocChange, DockRef, PlaceTarget } from './ops'
+import type { DocBatch, DocChange, DockRef, PlaceTarget } from './ops'
 import { createDocument, MAIN_WINDOW, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
 
 type Doc = WorkspaceDocument
@@ -120,5 +120,45 @@ describe('applicable', () => {
     const later = applyOp(after, { kind: 'removePanels', ids: ['c', 'a'] }).doc
     expect(applicable(later, inverse)).toEqual([])
     expect(applicable(after, inverse)).toEqual(inverse)
+  })
+
+  it('leaves what someone changed after the op, and restores the rest', () => {
+    const before = sample()
+    const change: DocBatch = {
+      kind: 'batch',
+      changes: [
+        { kind: 'updatePanel', id: 'c', patch: { title: 'T', fields: { k: 1, j: 2 } } },
+        { kind: 'setNodeRects', canvasId: 'canvas-cv', rects: [{ nodeId: 'n1', rect: rect(1, 1, 10, 10) }, { nodeId: 'n2', rect: rect(2, 2, 10, 10) }] },
+        { kind: 'updateRelation', id: 'r1', patch: { label: 'M' } },
+      ],
+    }
+    const after = applyOp(before, change).doc
+    const inverse = invertOp(before, change, newId)
+    expect(applyOp(after, { kind: 'batch', changes: applicable(after, inverse, after) }).doc).toEqual(before)
+
+    const later = applyOp(after, {
+      kind: 'batch',
+      changes: [
+        { kind: 'updatePanel', id: 'c', patch: { title: 'B', fields: { k: 9 } } },
+        { kind: 'setNodeRects', canvasId: 'canvas-cv', rects: [{ nodeId: 'n2', rect: rect(3, 3, 10, 10) }] },
+        { kind: 'updateRelation', id: 'r1', patch: { label: 'B' } },
+      ],
+    }).doc
+    const undone = applyOp(later, { kind: 'batch', changes: applicable(later, inverse, after) }).doc
+    expect(undone.panels.c.title).toBe('B')
+    expect(undone.panels.c.fields).toEqual({ k: 9 })
+    expect(undone.canvases['canvas-cv'].nodes.n1.rect).toEqual(R)
+    expect(undone.canvases['canvas-cv'].nodes.n2.rect).toEqual(rect(3, 3, 10, 10))
+    expect(undone.relations.r1.label).toBe('B')
+  })
+
+  it('does not put back a replaced record that changed since', () => {
+    const before = sample()
+    const change: DocChange = { kind: 'replacePanel', record: { ...record('c'), type: 'editor', fields: { path: '/a' } } }
+    const after = applyOp(before, change).doc
+    const inverse = invertOp(before, change, newId)
+    expect(applicable(after, inverse, after)).toEqual(inverse)
+    const later = applyOp(after, { kind: 'updatePanel', id: 'c', patch: { title: 'B' } }).doc
+    expect(applicable(later, inverse, after)).toEqual([])
   })
 })

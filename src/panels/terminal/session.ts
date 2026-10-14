@@ -21,7 +21,6 @@ import { terminalApi } from './contract/api'
 import { sequenceForKeys } from './contract/keys'
 import type {
   TerminalOp,
-  TerminalOpenTarget,
   TerminalPersisted,
   TerminalSnapshot,
 } from './contract/types'
@@ -36,8 +35,6 @@ export interface TerminalSessionDeps {
   terminal: SessionTerminalService
   /** Canonical workspace root: the cwd of a terminal bound to no checkout. */
   root: string
-  /** Opens a clicked link inside Cate (a browser or editor panel near this one). */
-  open?(target: TerminalOpenTarget, fromPanelId: string): unknown
   /** A one-shot launch for the panel's first spawn (a started agent). */
   takeLaunch?(panelId: string): LaunchIntent | undefined
 }
@@ -127,13 +124,6 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       this.bind(worktreeId, path)
       await this.respawn({ cwd: path })
     },
-    openUrl: ({ url }) => this.open({ kind: 'url', url }),
-    openFile: ({ path, line, column }) => this.open({
-      kind: 'file',
-      path,
-      ...(line !== undefined ? { line } : {}),
-      ...(column !== undefined ? { column } : {}),
-    }),
   }
 
   override handleApi = sessionApi(terminalApi, {
@@ -181,11 +171,6 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
     const id = this.state.ptyId
     if (!id || this.state.status !== 'running') throw new RpcError('rejected', 'terminal-not-ready')
     this.deps.terminal.write(id, data)
-  }
-
-  private open(target: TerminalOpenTarget): unknown {
-    if (!this.deps.open) throw new RpcError('unsupported', 'links cannot open inside Cate here')
-    return this.deps.open(target, this.panelId)
   }
 
   /** The checkout this panel works in: its worktree, its opening cwd, the root. */

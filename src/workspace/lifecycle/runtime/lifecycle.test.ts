@@ -41,12 +41,6 @@ describe('trust gate', () => {
     reopened.dispose()
   })
 
-  it('trusts on start for cate serve', () => {
-    const gate = createTrustGate({ file: path.join(dir, 'trust.json'), trustOnStart: true })
-    expect(gate.isTrusted()).toBe(true)
-    gate.dispose()
-  })
-
   it('serves the workspace capability', async () => {
     const gate = createTrustGate({ file: path.join(dir, 'trust.json') })
     const impl = workspaceCapabilityImpl({ trust: gate, info: workspaceInfo('rt1', '/home/me/proj') })

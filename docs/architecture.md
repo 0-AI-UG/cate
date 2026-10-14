@@ -3,7 +3,9 @@
 This document is the model Cate is built on. It says what every system is,
 where it lives, what it owns, and how the pieces talk. Where the code
 disagrees with it, the document wins: fix the code, or change the document
-first.
+first. It describes the architecture: what each piece owns and the rules
+between them. Exact method lists, fields and constants live in the
+contracts it names (a module's `contract/`), not here.
 
 Three ideas shape everything below:
 
@@ -36,10 +38,10 @@ The choices this document is built on.
 | D1 | One daemon per workspace, on every machine. No shared local daemon. |
 | D2 | Everything that is not rendering, input or a native OS primitive runs in the daemon. |
 | D3 | Every client is the same to the runtime. No roles, no per-client permissions. |
-| D4 | Every network connection runs inside a Noise handshake with pinned keys; only known devices connect (section 7.6). The local transport is protected by the OS user (a `0600` socket). Every client is a device of the workspace, whatever let it in. |
+| D4 | Every network connection runs inside a Noise handshake with pinned keys; only known devices connect (section 7.6). The local transport is protected by the OS user (a `0600` socket); a caller there (the CLI, by its token) reaches only the `api` capability. Every client is a device of the workspace, whatever let it in. |
 | D5 | All workspace state lives in the workspace data directory on the runtime's machine. The repository's `.cate/` holds only skills, temporary files and worktree checkouts. |
 | D6 | Nothing is shared between workspaces. A new workspace starts from defaults. |
-| D7 | Native OS primitives stay in the client's shell (the desktop shell): windows, webviews and the page driver, the loopback web proxy, passkeys, native dialogs, notification display, drag ghost, screenshot capture, the updater. |
+| D7 | Native OS primitives stay on the client's desktop side (the desktop shell, and a module's `desktop/` side such as the page driver and passkeys in `services/browser/desktop`): windows, webviews and the page driver, the loopback web proxy, passkeys, native dialogs, notification display, drag ghost, screenshot capture, the updater. |
 | D8 | Clean cuts: no migration code, no old formats read, no shims (section 18). |
 | D9 | Clients share one core, not a UI. Every client runs the same client core (connections, the document mirror, client state, panel and action logic; no UI), and each shell draws it with its own UI: the desktop shell in React, the iOS app in SwiftUI. Shared code never draws and never asks for a platform; where the runtime or the core must know what a client can do, it asks for a client feature (section 12.2). |
 | D10 | In the browser panel, `localhost` always means the runtime's machine, on every client, routed through the workspace connection (section 12.3). A loopback URL opened from anywhere else (terminal links, a URL opened with the app) opens in a browser panel of the workspace, never in the client's system browser. |
@@ -84,7 +86,7 @@ No UI is shared between shells.
 | **Machine** | A computer that runs runtimes. Runtimes on one machine share only the installed daemon program. |
 | **Workspace** | A project (a root path) with its worktrees, panels and layout, served by one runtime. |
 | **Workspace data** | A workspace's own state directory on the runtime's machine (section 7.2). |
-| **Transport** | How a client reaches a runtime: `local` (a socket on the same machine) or `network` (same network, or Cate Connect). A transport never changes what the runtime is or does. |
+| **Transport** | How a client reaches a runtime: `local` (a socket on the same machine), `machine` (the local socket carried over a command the client runs on the runtime's machine: SSH, WSL) or `network` (same network, or Cate Connect). A transport never changes what the runtime is or does. |
 | **Cate Connect** | A coordination service we host. It passes connection setup messages so a client and a runtime connect directly, and runs a TURN relay for when they cannot. It never sees workspace traffic in the clear and is never trusted with it. |
 | **Pairing** | Connecting a device to a workspace for the first time with a QR code or pairing code. Afterwards both sides know each other's key. |
 | **Capability** | A typed group of runtime methods and streams (`file`, `vcs`, `process`, `tunnel`, `power`, ...), declared once with `defineCapability`. |
@@ -161,14 +163,16 @@ Code is organised along two axes: the **layer** (above) and the **side**
   (reaching the current workspace's runtime, a shell's UI asking before a
   panel closes), the lower layer owns a slot and the higher layer registers
   into it. `kernel/rpc` owns the "runtime for this workspace" slot;
-  `client/connections` fills it. `client/host` owns the close guard slot
-  (`registerPanelCloseGuard`); a shell's panel views fill it.
+  `client/core` fills it. `client/host` owns the slots a shell's UI fills:
+  close guards (`registerPanelCloseGuard`), page operation handlers
+  (`registerSurface`), reveal hooks and the canvas target picker.
 - **Public entries only.** Across modules, import a module's contract (its
   `contract.ts` or a file of its `contract/` folder) or a side's `index.ts`,
   never its internals. A desktop side split by Electron process exports
-  from `desktop/{main,preload,renderer}/index.ts`; the client layer's modules
-  and `kernel/interaction`, client core as a whole with no side folders,
-  export from their module's `index.ts`. The panel index files
+  from `desktop/{main,preload,renderer}/index.ts`; the client layer's modules,
+  client core as a whole with no side folders, export from their module's
+  `index.ts`, and so does `kernel/interaction` for its client core part
+  beside its `contract/`. The panel index files
   `src/panels/definitions.ts`, `src/panels/runtime.ts`, `src/panels/api.ts`,
   `src/panels/capabilities.ts` and `src/panels/settings.ts` are public
   entries too.
@@ -179,13 +183,15 @@ Code is organised along two axes: the **layer** (above) and the **side**
 - **Every file is on a side.** A panel's `definition.ts` is a contract; its
   `session.ts` and `runtime.ts` are its runtime side; its `parts/` are split
   into side folders. The `cate` CLI (`src/cli`) imports only contracts,
-  `kernel/rpc/client` and the panel index files.
+  `kernel/rpc/client`, `src/panels/definitions.ts` and `src/panels/api.ts`.
 - **Services point one way.** `services/terminal` never imports
   `services/agents` (nor does its desktop UI import its UI); agents plugs
   into its extension points (section 10.3).
 - dependency-cruiser enforces these rules in CI (`.dependency-cruiser.cjs` at
   the root, run by `npm run lint:deps`); `src/test/depcruise.test.ts` proves
-  each rule rejects a fixture that breaks it (`test/depcruise-fixtures/`).
+  the main rules (runtime sides, contract purity, layers, the CLI zone,
+  services one way) reject a fixture that breaks them
+  (`test/depcruise-fixtures/`).
 
 **The client test.** If it is not rendering, input, or a native OS primitive,
 it runs in the runtime. A phone has no Electron main and no Node, so anything
@@ -258,7 +264,7 @@ The split follows the client test (section 3).
 | Terminal logs, shell env |
 | Agents: hook ingestion, pid presence, change history, session stores, conversation reads, Hermes |
 | Agents: status state machine, resume stamps, driver selection |
-| Starting agents: a new terminal panel on a prompt |
+| Starting agents in a terminal panel |
 | Browser data: history, bookmarks, passwords, downloads |
 | Browser session: tabs, URLs, navigation state, titles |
 | The document: panel records, docks, canvases, detached windows, relations, worktree metadata |
@@ -283,17 +289,19 @@ shell's native side.
 |---|---|
 | Rendering the document: docks, canvas view, nodes, minimap, territory layer, relation drawing | shell UI |
 | Panel views: xterm, Monaco, diff views (desktop); native views (iOS) | shell UI |
-| Input, drag and drop, drag ghost | shell UI |
+| Input, drag and drop | shell UI |
 | Dialogs, confirmations, notification display, clipboard (`ClientUi`, including the in-app save-path dialog over the workspace's files) | shell UI |
 | Webviews, browser partitions, the page driver (CDP), code-cell and guest preloads | shell native |
 | Passkeys (macOS `ASAuthorizationController`, needs the signed app and a window) | shell native |
 | The upstream browser proxy (`browserProxyUrl`) and the loopback web proxy (section 12.3) | shell native |
-| Windows, menus, updater, crash reporting, analytics | shell native |
+| Windows, menus, the drag ghost, updater, crash reporting, analytics | shell native |
 | Client features (section 12.2) | declared by the shell |
 | Client state: viewport, zoom, active tabs, maximize, focus, selection, per-panel view state, undo history, one-shot intents | core |
 | Document mirror with optimistic ops | core |
-| Connections: finding, starting and pairing runtimes, the security layer, reconnect, loopback routing | core |
-| Workspace list, known runtimes, onboarding progress | core (stored through the shell's `DeviceStore`) |
+| Transports: finding and starting local runtimes, machine bridges, dialing the network, the security layer and pairing, with the device key (`ShellTransports`, over shared `runtime/*/client` code, 7.5) | shell native (desktop main; the iOS core) |
+| Connections: one per open workspace, reconnect, status, the typed proxies, loopback routing | core |
+| Workspace list, known runtimes | core (stored through the shell's `DeviceStore`) |
+| Onboarding | shell UI |
 | Where each window sits on screen (main and detached) | shell native (stored in the device's `boot.json`) |
 | Client settings (section 8) | core |
 | Panel creation and placement, close guards, actions and shortcuts (section 12.4) | core |
@@ -370,7 +378,8 @@ Generic machinery. The kernel knows no feature.
 - **`kernel/rpc`**: the runtime protocol (section 7.8).
   - `defineCapability(name, { methods, streams })` declares a capability once,
     with typed named parameters. The daemon serves declared capabilities
-    generically; the client side is a generic typed proxy that queues calls
+    generically, to clients only unless the declaration says `callers`
+    (only `api` does: a caller hello reaches nothing else); the client side is a generic typed proxy that queues calls
     until connected. There are no hand-written method tables, switch
     statements or per-capability client classes.
   - **Session channels**: the generic mechanism for one subscription that
@@ -381,9 +390,10 @@ Generic machinery. The kernel knows no feature.
     RPC surface. A stream that already has its own capability is not copied
     into the channel: a terminal view reads its PTY through `process.attach`
     and an editor view its buffer through `file.buffer` (sections 10.1, 9.4).
-  - **The runtime slot**: `useRuntime(workspaceId)` / `runtimeFor(workspaceId)`
-    returns the typed proxy of a connected workspace. `client/connections`
-    fills it.
+  - **The runtime slot**: `runtimeFor(workspaceId)` returns the typed proxy
+    of an open workspace, whose calls wait until it connects
+    (`tryRuntimeFor` when it may not be open). `startClientCore` fills it;
+    the desktop UI reads it through its `useRuntime` hook.
   - Framing, version negotiation and error codes (section 7.8).
 - **`kernel/api`**: `defineCateApi`, the router and targeting (section 14).
 - **`kernel/settings`**: `defineSettings` for a module's settings slice (keys,
@@ -400,11 +410,16 @@ Generic machinery. The kernel knows no feature.
   core code never touches files: it reads and writes device state through
   the `DeviceStore` port, which each shell implements (the desktop shell with
   these files).
-- **`kernel/log`**: structured logging for every process, with the vitest stub.
+- **`kernel/log`**: structured logging for every process: the logger in its
+  contract, a rotating file sink (`node/`) and Electron sinks (`desktop/`).
+  Tests replace electron-log with a stub (`src/test/electronLogStub.ts`).
 - **`kernel/interaction`**: the client core's side of interaction, with no UI in it:
   the `ClientUi` port (what the core and a shell's views ask the user), the
   theme schema, the action catalog and the shortcut registry (section 12.4).
-  The daemon never imports it. The React components that draw these (buttons,
+  Its `contract/` (the theme schema and built-in themes, action and shortcut
+  declarations, the appearance and shortcut settings slices) is pure, so the
+  daemon reads it through panel definitions and the settings composition;
+  the daemon never imports the rest. The React components that draw these (buttons,
   modal, popover, tooltip, error boundaries, the theme manager) are the
   desktop UI's (`shells/desktop/ui/kernel/interaction`).
 
@@ -439,25 +454,31 @@ the pieces that make it reachable and secure.
   runtime whose key is lost (`secrets.json` deleted) gets a new network id,
   and devices pair again.
 - **Install.** One layout everywhere: `~/.cate/runtime/<build>/` holds the
-  daemon, its Node, the `cate` CLI, bundled skills and native addons;
-  `<build>` is the build id (section 7.10), which the tarball carries in its
-  `BUILD` file. An install is never replaced, so two builds of
-  one version (a checkout and the packaged app) install side by side and a
-  daemon keeps the tree it started in. `~/.cate/runtime/current` names the
-  last install made or updated to. The desktop app ships this tarball and
-  installs it there on start. On any other machine one command installs it
-  (`curl -fsSL <install url> | sh`, checked against the `.sha256` published
-  beside the tarball) with a `cate` launcher that runs the current install,
-  and `cate serve [path] [--connect]`
-  starts the workspace's runtime with network access on (`sameNetwork`, or
-  `cateConnect` with `--connect`), marks it trusted, and prints a pairing QR
-  code and pairing code. `serve` is a command of the installed runtime, not a
-  `cate` API method.
+  daemon, its Node, ripgrep, the `cate` CLI, bundled skills and native
+  addons; `<build>` is the build id (section 7.10), which the tarball
+  carries in its `BUILD` file. An install is complete once its `.ok` marker
+  is written, last. An install is never replaced in place, and a daemon
+  keeps the tree it started in. `~/.cate/runtime/current` names the last
+  install made or updated to. The desktop app ships this tarball and
+  installs it there on start (again if it is gone). On any other machine
+  one command installs it (`curl -fsSL <install url> | sh`, checked against
+  the `.sha256` published beside the tarball) with a `cate` launcher that
+  runs the current install.
+- **`cate serve [path] [--connect]`** shares a workspace of the machine it
+  runs on. It runs the install's `runtime.cjs bridge <root>` (7.3), which
+  starts the runtime when nothing answers, and over it, as a local client,
+  does what Share does in the app: trusts the workspace, sets
+  `runtimeNetwork` (`sameNetwork`, or `cateConnect` with `--connect`) and
+  prints a pairing QR code and pairing code (one JSON line with `--json`).
+  The setting is saved like any other. It refuses to run inside a Cate
+  terminal (7.7). `serve` is a command of the CLI, not a `cate` API
+  method; the daemon program itself has only `serve <root> [--detach]` and
+  `bridge <root>`.
 - **Machines (SSH, WSL).** The desktop app opens folders on machines it runs
   commands on, picked in "Open…" (12.5): SSH machines (saved in the client
   setting `sshMachines` once they answer, offered from the hosts of
-  `~/.ssh/config` and its includes, or added by an ssh command; the client
-  settings page "Machines" lists, adds and removes them), and on Windows the
+  `~/.ssh/config` and its includes, or added by an ssh command; the Open
+  picker adds and removes them), and on Windows the
   WSL distros (`wsl.exe --list`). A machine is `{kind: 'ssh', target}` or
   `{kind: 'wsl', distro}` (`runtime/daemon/contract/machine.ts`). The main
   process runs the system `ssh` without a tty (`StrictHostKeyChecking=accept-new`;
@@ -470,8 +491,8 @@ the pieces that make it reachable and secure.
   not per command, and dials to one machine run one at a time so the first
   signs in for the rest; a prompt ssh stops waiting for is withdrawn. On
   Windows, whose OpenSSH shares no connections, ssh runs with `BatchMode`
-  (keys and the agent only) or `wsl.exe -d <distro>`, and pipes
-  small scripts to the machine's `sh -s` (`runtime/daemon/contract/ssh.ts`):
+  (keys and the agent only) or `wsl.exe -d <distro>`, and runs
+  small scripts with the machine's `sh` (`runtime/daemon/contract/ssh.ts`):
   `ensureRuntime` looks for this app's build in `~/.cate/runtime/<build>/` and
   only when it is missing streams this build's runtime tarball for the
   machine's target into its `tar` (glibc Linux and macOS, x64 or arm64), so
@@ -487,11 +508,14 @@ the pieces that make it reachable and secure.
   for the local socket. The command line is built in main from validated
   fields (destination, port, identity file, jump host, distro), never from
   text the renderer passes.
-- **Pruning.** A daemon started from an install removes installs nothing
-  uses: not its own, not the current one, not one a live daemon runs (the
-  `build` in its `runtime.json`). Clients never prune. Only release bundles
-  prune (built with `CATE_RELEASE=1`, the release workflow); a checkout's
-  bundle leaves every install alone.
+- **Pruning.** A daemon started from a release install (built with
+  `CATE_RELEASE=1`, the release workflow) removes installs nothing uses:
+  not its own, not the current one, not one a live daemon runs (the `build`
+  in its `runtime.json`, or an `in-use/<pid>` marker its spawner wrote).
+  Clients never prune. In a checkout, `npm run runtime:dev` installs the
+  checkout's build and removes the other installs of the same version that
+  no live daemon runs, so a checkout and the packaged app of one version do
+  not keep both; the app installs its own again when it starts.
 - **Paths.** Inside the runtime every path is a plain absolute path on its
   machine. Clients know which runtime a path belongs to from the connection it
   came through.
@@ -531,8 +555,9 @@ persisted session and document file. It is created with mode `0700`.
   agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps)
   terminal-logs/
   screenshots/
-  logs/                 the daemon's log; daemon.out.log, the detached
-                        daemon's stdout and stderr
+  logs/                 daemon.log (the daemon's log, rotated) and
+                        daemon.out.log (the detached daemon's stdout and
+                        stderr)
 ```
 
 - **Outside the repository.** A repository controls everything it commits: a
@@ -560,8 +585,11 @@ persisted session and document file. It is created with mode `0700`.
   files, so before removing a stale socket a starting daemon waits for the
   daemon that last owned it (the pid in `runtime.json`) to exit. Every daemon
   exits within 5 s of starting to stop, even when a shutdown step is stuck;
-  one still alive after that is killed (a reused pid running another program
-  is left alone).
+  off Windows, one still alive after that is killed (a reused pid running
+  another program is left alone); on Windows the start waits for the pipe to
+  come free and gives up when it does not. So a stop writes the state files (settings, devices, push,
+  secrets, document) first, before any step that can stall, and a starting
+  daemon removes the temporary files a killed writer left in its data dir.
 - **Workspaces never nest.** After binding, a daemon whose root contains, or
   lies inside, the root of a live runtime on the machine (its `runtime.json`
   pid alive and its socket answering; a `runtime.json` left by a killed
@@ -586,7 +614,7 @@ persisted session and document file. It is created with mode `0700`.
   workspace opens, as a local one does.
 - **A client on another machine** that cannot run commands there (a phone, a
   teammate's device) finds the runtime through the network transport (7.5)
-  using the network id it paired with (7.2).
+  using the network id it paired with (7.1).
 
 ### 7.4 Lifetime
 
@@ -598,8 +626,8 @@ How long a runtime runs is the workspace setting `runtimeLifetime`:
 | `keepRunning` | Never stops on its own. |
 
 A workspace with network access on always keeps running, so it stays
-reachable. `cate serve` turns network access on. A stopped workspace is started
-by a client on its machine when it opens or restores the workspace.
+reachable. A stopped workspace is started by a client on its machine when
+it opens or restores the workspace.
 
 "Stop workspace runtime" lists the running terminals and agents, asks for
 confirmation in the view, and then sends `runtime.stop`. Before its connections
@@ -617,8 +645,8 @@ PTYs.
 
 **The transport decides who is admitted, never how a client is served.**
 Each transport has its own door (the OS user, SSH, Noise with a paired key);
-behind it every client is the same `ClientInfo` (`clientId`, device,
-features) with no transport in it, and nothing in the runtime branches on how
+behind it every client is the same client connection (`clientId`, device,
+features; `ClientConnection` in `kernel/lifecycle`) with no transport in it, and nothing in the runtime branches on how
 a client arrived. A client asks for what differs between clients through
 client features (12.2). A test runs one scenario over the local socket, a
 machine's bridge and the network and requires the same result
@@ -628,8 +656,10 @@ machine's bridge and the network and requires the same result
   pipe `\\.\pipe\cate-<user key>-<runtimeId>` on Windows. Access is the OS
   user: the directory is `0700` and the socket `0600`. Node cannot set a
   pipe's ACL, so the pipe name carries a random key kept in
-  `~/.cate/pipe-key`, which only the user can read: another user can neither
-  find the pipe nor take its name first. No handshake beyond the protocol
+  `~/.cate/pipe-key`, which only the user can read: another user cannot
+  guess the name to take it first, but can see it once the pipe exists
+  (Windows lists pipe names to every user), so the name is not a secret.
+  No handshake beyond the protocol
   `hello`. Used by clients on the same machine and by the `cate` CLI in
   terminals the runtime spawned. Anything running as
   the same OS user can connect; that is the trust boundary (D4).
@@ -659,9 +689,15 @@ machine's bridge and the network and requires the same result
     their public address. Client and runtime then talk over a WebRTC data
     channel. The service hands both sides the session's ICE servers: STUN
     and its TURN relay, with credentials of their own per session (below).
-- The client side of every transport is in the client core (`client/`
-  side), except the raw socket, which each shell provides (the desktop shell
-  through Node, the iOS app through its platform).
+- **The client side** of every transport is shared, pure code
+  (`runtime/{transports,security,pairing,connect}/client`) that each shell
+  runs behind one port, `ShellTransports` (`dialLocal`, `dialMachine`,
+  `dialNetwork`, `pair`), next to its device key. The desktop runs it in
+  main (Node sockets, ssh and wsl.exe, WebSocket, mDNS, and WebRTC through
+  `node-datachannel`) and hands the renderer each connection as a finished,
+  already secured pipe; the iOS core runs it in its web view (WebSocket and
+  `RTCPeerConnection`, mDNS from the app). The client core above it sees
+  only frames.
 - **Relay.** ICE prefers a direct path and falls back to the TURN relay on
   its own when none works (typical on mobile data behind carrier NAT); there
   is no Cate logic choosing between them. The relay forwards only the
@@ -671,9 +707,29 @@ machine's bridge and the network and requires the same result
   secret the service and the relay share. The runtime logs each session's
   path (`direct` or `relay`) and, when it ends, the bytes it carried. Only
   when ICE finds no path at all, relay included, does the client say it
-  could not connect and suggest same network.
-- The runtime's WebRTC (`node-datachannel`, libjuice) uses TURN over UDP
-  only; the iOS web view also uses TURN over TCP.
+  could not connect (a firewall in the way, 7.5 failures).
+- **Dialing a paired runtime** tries the same network (its stored
+  addresses and mDNS), then Cate Connect, whatever endpoints the device
+  stored: a device paired on the same network still reaches a runtime that
+  turned Cate Connect on later. The pinned key keeps that as safe as a LAN
+  dial; a runtime not on Cate Connect just answers `offline`. Pairing tries
+  Cate Connect unless the code is for the same network only.
+- **Failures explain themselves.** A dial that fails says what each way
+  found, in words (`networkFailureMessage` in
+  `runtime/transports/client`): on the same network nothing found, no
+  answer, or another machine at the address; from Cate Connect the workspace
+  not online, the service unreachable, or no path. Each points at what to
+  change, such as choosing "Anywhere" for a network that keeps devices apart
+  (eduroam, guest and public Wi-Fi). A failed join and the status of a
+  paired workspace show it as it is.
+- **The runtime's machine checks itself.** A same-network pairing code from
+  a machine with a public IPv4 address (its network refuses same-network
+  peers) or no private address carries `sameNetworkProblem`
+  (`sameNetworkProblem` in `runtime/transports/node`), and Share warns and
+  offers "Anywhere" before anyone scans it. A shown code carries the access
+  it was made for, so Share makes a new one when the access changes.
+- `node-datachannel` (libjuice), the WebRTC of the runtime and the desktop,
+  uses TURN over UDP only; the iOS web view also uses TURN over TCP.
 - **Paired endpoints follow the runtime.** `runtime.info` carries the
   runtime's current network endpoints; on every connect a client stores them
   with the paired workspace and dials them next time, since a machine's
@@ -692,8 +748,9 @@ machine's bridge and the network and requires the same result
 ### 7.6 Security
 
 **`runtime/security`** is one layer used by both network transports. Its
-client side is in the client core (a `client/` and a `runtime/` side over one
-pure-JS Noise implementation), so the iOS app uses the same code.
+`client/` and `runtime/` sides share one pure-JS Noise implementation, and
+each shell's transports run the client side (7.5), so the desktop and the
+iOS app use the same code.
 
 - **Keys.** Each runtime has a long-lived X25519 static key pair, created on
   first start and stored in `secrets.json`. Each device has one, created on
@@ -718,10 +775,16 @@ pure-JS Noise implementation), so the iOS app uses the same code.
 - **Before a key is known.** Until a connection's key is proven paired
   (or pairs), the runtime accepts frames of at most 16 KiB, enough for
   `pair` or a `hello`, and raises the limit to the default (64 MiB)
-  afterwards. It holds at most 32 such connections, and at most 4 from one
-  remote address on the same-network listener; more are closed at once. An
+  afterwards. It holds at most 32 such connections per transport (so the
+  peers anyone can send through Cate Connect never lock out the same
+  network), and at most 4 from one remote address on the same-network
+  listener; more are closed at once. A connection has 5 s to finish its
+  handshake, and leaves the count as soon as the handshake shows a paired
+  key; an unknown key keeps its place while it has its one attempt. An
   unknown key has 10 s to send `pair`. The refusal to an unpaired device
-  names no version.
+  names no version. Each Cate Connect session costs a WebRTC peer
+  connection before any handshake, so the runtime keeps at most 8 in setup
+  at once and ignores more until one opens or times out.
 - **Every client is a device.** The workspace's devices are every device
   that has opened it, whatever let it in: one that paired over the network
   (`admittedBy: pairing`), and one that connected as a user of the runtime's
@@ -751,24 +814,30 @@ pure-JS Noise implementation), so the iOS app uses the same code.
 `runtimeNetwork` (`off`, `sameNetwork`, `cateConnect`). `cateConnect` means
 the LAN listener plus the Cate Connect registration; `off` closes the
 listeners and drops every network connection. Turning it on is done from a
-connected client or by `cate serve`.
+connected client or by `cate serve`, which refuses to run inside a Cate
+terminal (`CATE_TOKEN` or `CATE_SOCKET` set): there, whatever drives the
+terminal could share the computer.
 
 - **Pairing payload.** With network access on, "Share" (12.5) creates a one-time
-  pairing secret (10 random bytes, 80 bits, valid for 10 minutes, single use) and shows
-  it as:
+  pairing secret (10 random bytes, 80 bits, valid for 10 minutes, single use)
+  with a random id of 4 base32 characters (which live secret an attempt is
+  for; no secret itself) and shows it as:
   - a QR code encoding
-    `cate://pair?r=<network id>&k=<runtime key fingerprint>&s=<secret>&m=<mode>&a=<lan addresses>`;
-  - a pairing code of 32 base32 characters in groups of four (the network
-    id and the secret), for typing on a desktop. A typed code has no key
+    `cate://pair?r=<network id>&k=<runtime key fingerprint>&s=<secret>&i=<secret id>&m=<mode>&a=<lan addresses>`;
+  - a pairing code of 36 base32 characters in groups of four (the network
+    id, the secret id and the secret), for typing on a desktop. A typed code has no key
     fingerprint and no addresses: the client finds the runtime by network id
     over mDNS or Cate Connect and refuses a key that does not derive that
     id; the proofs below bind the handshake, and 80 bits keep a captured
     proof safe from offline guessing.
-- **The `pairing` capability**: `createSecret {mode}` (for "Share"),
-  `list`, `revoke {deviceKey}`. `pair` itself is the one message a runtime
-  accepts from an unknown key.
+- **The `pairing` capability**: `createSecret {mode, acknowledged: true}`
+  (for "Share"; refused without `acknowledged`, the person's confirmation
+  that whoever joins can use this computer as them; running `cate serve` by
+  hand is that confirmation),
+  `list`, the `watch` stream, `revoke {deviceKey}`. `pair` itself is the one
+  message a runtime accepts from an unknown key.
 - **Pair message.** The joining client connects (7.5), completes the Noise
-  handshake, and sends `pair { deviceName, proof }` where
+  handshake, and sends `pair { deviceName, secretId, proof }` where
   `proof = HMAC-SHA256(secret, "cate-pair-client" || handshakeHash)`. The
   runtime answers with `HMAC-SHA256(secret, "cate-pair-runtime" ||
   handshakeHash)`. Each side verifies the other's proof, which binds the
@@ -776,8 +845,11 @@ connected client or by `cate serve`.
   nothing usable. The runtime then stores the device key in `devices.json`
   and burns the secret; the client checks that the runtime key derives the
   network id it paired with and pins the key under it in
-  `known-runtimes.json`, refusing another key for an id already pinned. A
-  wrong proof burns the secret too.
+  `known-runtimes.json`, refusing another key for an id already pinned. The
+  runtime checks the proof only against the secret `secretId` names: a wrong
+  proof burns that secret (each secret can be guessed once), and an unknown
+  id is refused (`no-secret`) without burning anything, so nobody who does
+  not hold a code can spoil another one.
 - **Afterwards** both sides reconnect by key; no code is needed again.
 - **No pairing for the machine's user.** A client that reaches the runtime
   over the local socket or a machine's bridge does not pair: it is added to
@@ -790,10 +862,11 @@ connected client or by `cate serve`.
   refuses an id its static key does not derive and keeps no bindings. Even
   if that failed, clients would refuse any key but the one they pinned. Tests run against a
   local stand-in for the service.
-- **Pushes.** A service with an APNs key says so in `registered`
-  (`push: true`). A registered runtime then sends `push {target, sealed,
-  collapseId}` for a paired device and gets `pushed {result}` back (`sent`,
-  `unavailable`, `bad-target`, `rate-limited`, `failed`). The target is the
+- **Pushes.** A service with an APNs key says so when the runtime
+  registers. A registered runtime then sends a push (target, sealed payload,
+  collapse id) for a paired device and gets its result back (`sent`,
+  `unavailable`, `bad-target`, `rate-limited`, or `failed`, also for no
+  answer in time). The target is the
   one the device registered (section 7.9, `push`) and only the service reads
   it (`apns:<sandbox|production>:<token>` today); the payload is sealed for
   the device. The service adds only a generic alert and delivers it, at most
@@ -825,7 +898,8 @@ connected client or by `cate serve`.
   client also sends its `clientId`, `device {name, publicKey}` (checked
   against the handshake on network transports) and `features`
   (section 12.2), fixed for the life of the connection. A caller (the CLI)
-  sends its token instead (section 14). Same major is
+  sends its token instead (section 14). The runtime also sends its `epoch`,
+  new at every daemon start. Same major is
   compatible; a method or stream the other side does not have fails with
   `unsupported`, so additions are always optional. A different major is
   incompatible (7.10).
@@ -833,15 +907,20 @@ connected client or by `cate serve`.
   starts and keeps it across reconnects. Every call that changes something
   carries an `opId = clientId:counter`, and the runtime ignores an `opId` it
   has already applied (it keeps the highest counter per `clientId`), so a
-  resent call is never applied twice. The counter belongs to the identity,
-  not to a connection or a document mirror: reopening a workspace continues
-  it. A resent op whose outcome the runtime no longer keeps fails with
-  `duplicate`.
+  resent call is never applied twice within one runtime run. The counter
+  belongs to the identity, not to a connection or a document mirror:
+  reopening a workspace continues it. A resent op whose outcome the runtime
+  no longer keeps fails with `duplicate`. The runtime keeps opIds in memory
+  only: a call unanswered when it restarted (a new `epoch`) fails with
+  `interrupted` instead of going again, except a method declared
+  `idempotent` that dedupes itself across restarts (document ops, whose
+  counters are in `document.json`).
 - **Error codes.** `gone` (the panel or thing no longer exists), `conflict`
   (the write's base is stale), `dirty` (unsaved work; retry with an explicit
   choice), `rejected` (invalid op), `untrusted` (section 9.2), `unsupported`,
   `no-renderer` (section 10.2), `timeout`, `duplicate` (an op already
-  handled whose outcome is no longer kept).
+  handled whose outcome is no longer kept), `interrupted` (the runtime
+  restarted while the op was in flight; it may or may not have run).
 
 ### 7.9 Host capabilities
 
@@ -849,17 +928,19 @@ Capabilities not owned by a feature module, in `runtime/`:
 
 - `tunnel`: `tunnel.connect {port}` opens a TCP connection to a loopback port
   (`127.0.0.1` or `::1`) of the runtime's machine as a flow-controlled byte
-  stream. It backs loopback routing (section 12.3) and is the only way a
-  client reaches a port on the runtime's machine. It never connects to other
-  hosts.
-- `power`: keep the machine awake while the workspace's work runs, through a
-  platform helper process (`caffeinate -i -w <pid>` on macOS,
+  stream. It backs loopback routing (section 12.3): every connection but
+  the local one reaches a port on the runtime's machine only through it (a
+  local client is on that machine). It never connects to other hosts.
+- `power`: keep the machine awake while the workspace's work runs, or for a
+  time a person asks for (`set {duration}`, watched through `subscribe`),
+  through a platform helper process (`caffeinate -i -w <pid>` on macOS,
   `systemd-inhibit` on Linux, `SetThreadExecutionState` through PowerShell on
   Windows).
 - `push` (`runtime/push`): a paired device registers where its pushes go
   (`target`, opaque to the runtime) and a 32-byte key (`register`,
   `unregister`, `status`; the device is the caller's key fingerprint). Every
-  notification event (section 10.4) is sealed, as it is, for each registered
+  notification event (section 10.4), with the workspace's name and its
+  title and body cut to size, is sealed for each registered
   device with ChaCha20-Poly1305 under its key and handed to the Cate Connect
   registration (section 7.7); only the device opens it and decides how to
   show it. One collapse id per panel (`pushCollapseId`, in the contract),
@@ -946,7 +1027,10 @@ or that changes shared state, is a **workspace** setting.
   `settings.json`. The `settings` capability serves them to every client and
   edits them one key at a time (last write wins), so a change by one person
   applies for everyone. A new workspace starts from defaults.
-- Secrets never live in a settings file.
+- Secrets never live in a workspace settings file, which every client of
+  the workspace reads. A client setting never leaves its device, so the
+  client's own upstream proxy (`browserProxyUrl`) may carry its
+  credentials.
 - **Composition.** `src/panels/settings.ts` composes the slices every client
   and the runtime share into `WorkspaceSettings` and the shared client
   settings; each shell adds its own client slices (the desktop's in
@@ -965,8 +1049,9 @@ or that changes shared state, is a **workspace** setting.
 | Editor (`panels/editor`) | `editorFontSize`, `editorFontFamily`, `filesTreeOnOpen`, `filesTreeOpenFileIn` | |
 | Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
-| Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta`, `terminalLinkOpenTarget` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
-| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
+| Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
+| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
+| Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines`, `reviewFullFiles`, `reviewImagePreviews` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
 | Machines (`shells/desktop`) | `sshMachines` | |
@@ -1020,9 +1105,9 @@ interface DocWindow {
 
 | Group | Ops |
 |---|---|
-| Records | `addPanel(record, at)`, `replacePanel(record)` (a surface becoming the picked type: same id, the old session is disposed and the new one started), `updatePanel(id, patch)`, `removePanels(ids)` |
+| Records | `addPanel(record, at)`, `replacePanel(record, discard?)` (a surface becoming the picked type: same id, the old session is disposed and the new one started), `updatePanel(id, patch)`, `removePanels(ids, discard?)` |
 | Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node (`{to: 'canvas', canvasId, nodeId, stackId, rect}`) or a new detached window (`{to: 'window', windowId, stackId}`). `dock` is a window's dock or a canvas node's mini dock. Placing an already placed panel moves it. |
-| Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `closeWindow(windowId)` (removes its panels; the view asks first) |
+| Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `closeWindow(windowId, discard?)` (removes its panels; the view asks first) |
 | Relations | `addRelation`, `updateRelation`, `removeRelation` |
 | Worktrees | `setWorktree(meta)`, `removeWorktree(id)` (metadata only; the repository service does the resource work and writes these) |
 
@@ -1035,6 +1120,8 @@ interface DocWindow {
   stacks, splits, nodes and detached windows are removed by the runtime as
   part of the op that emptied them.
 - Unknown panel types are rejected with `rejected`.
+- A removal or replacement that would lose a session's unsaved work fails
+  with `dirty` unless `discard` names the panel (section 11.2, rule 6).
 - Container values (split ratios, rects, record fields) are last write
   wins.
 
@@ -1043,9 +1130,10 @@ interface DocWindow {
 applied op a sequence number, keeps the last 10 000 applied ops for
 reconnects, and broadcasts every applied op to every client.
 
-**Presence** (the `presence` capability): the connected clients (device name,
-key fingerprint, `clientId`, declared features) and the panel each one views
-and focuses, and whether the client's app has the user's attention (the
+**Presence** (the `presence` capability): the connected clients (device name
+and key, `clientId`, declared features), the panel each one views and
+focuses, which client was active last (the `cate` API's targeting reads it,
+section 14), and whether the client's app has the user's attention (the
 terminal service scans at a background cadence when no client does). Clients
 report their own view, focus and attention; presence is never persisted.
 The client core watches the other clients of each open workspace
@@ -1062,14 +1150,15 @@ here" row in the workspace.
   the runtime follows `runtimeLifetime`.
 - **Trust** is one decision per workspace, stored in `trust.json`. Until the
   workspace is trusted, the runtime serves the document and files, but runs
-  no process at all (terminals, agents, hooks, and git, whose config and
-  hooks a repository controls) and applies nothing from `<project>/.cate/`
+  no process at all (terminals, agents, hooks, content search, and git,
+  whose config and hooks a repository controls) and applies nothing from `<project>/.cate/`
   (skills); those calls fail with `untrusted`. The gate sits inside each
   runtime that runs processes, not at its capability: the repository runtime
   hands out only a `git` and `gh` that refuse while untrusted, and its status
-  monitors read nothing until trust is granted, so an in-process caller (a
-  panel session) cannot skip it. Revoking trust ends what runs: every
-  terminal's process and the git monitors' polling. The
+  monitors read nothing and watch nothing until trust is granted, so an
+  in-process caller (a panel session) cannot skip it. Revoking trust ends
+  what runs: every terminal's process (and its `CATE_TOKEN`) and the git
+  monitors' polling. The
   first client to open an
   untrusted workspace shows the trust dialog once it is connected (an
   incompatible runtime is updated first, 7.10); the answer is
@@ -1084,40 +1173,49 @@ here" row in the workspace.
 placement (finding a rect for a new node), arrangement, and the curves
 between two rects that relations draw. It imports nothing. The canvas model
 itself (`CanvasModel`, `CanvasNode`: nodes with a rect and a mini dock) is
-part of the document schema; the reducer and the client's optimistic mirror
-run this geometry over it, and treat a record that carries a `canvasId` as
-one that shows a canvas, never testing the type name. Each shell draws it
+part of the document schema; the reducer only checks its rects, and
+placement code (panel creation in the core, each shell's canvas) runs this
+geometry over it, snapping to the grid where the shell asks. All of it
+treats a record that carries a `canvasId` as one that shows a canvas, never
+testing the type name. Each shell draws it
 (the desktop: `shells/desktop/ui/client/layout/canvas`).
 
 ### 9.4 Files
 
 **`workspace/files`**:
 
-- **runtime**: the `file` capability (read, write, stat, list, watch, import
-  dropped entries, the `buffer` stream of an open file, and the
+- **runtime**: the `file` capability (reading, writing and managing files
+  and folders, watching, granting a path outside the root, importing
+  dropped entries, the `buffer` stream of an open file with its save and
+  conflict resolution, and the
   `storeDownload` and `storeScreenshot` byte streams that write a client's
   finished browser download to `browser/downloads/` and an annotated
   screenshot to `screenshots/` in the workspace data, `tempDir`, the
   checkout's `.cate/tmp`, and `serveUrl`, which serves a workspace file over
   HTTP on a random `127.0.0.1` port of the runtime's machine behind a random
-  per-start token, every request checked against the path scope, so a
-  browser panel loads it through loopback routing, 12.3) and `search` (ripgrep
-  on the host); path validation against the root, worktree checkouts,
+  token bound to the served file's folder, every request checked against
+  that folder (after symlinks) and the path scope, so a browser panel loads
+  it through loopback routing, 12.3, and a page reaches only its own folder;
+  while the workspace is untrusted, HTML, XHTML, XML and SVG are served as
+  plain text, so a page of an untrusted repo runs no script) and the
+  `search` capability (file names in the runtime's own process; content
+  through ripgrep on the host, which needs trust); path validation against the root, worktree checkouts,
   grants and, read-only, the two folders of the workspace data clients are
   handed (`screenshots/`, `browser/downloads/`, which only the runtime writes,
   through `storeScreenshot` / `storeDownload`); the rest of the workspace data
   (secrets, pairings, ...) is outside the scope; exclusions.
 - **Open buffers**: one Yjs document per open file, however many editor
-  panels show it. Loaded on first open, saved on `save` with the hash of the
-  content it was loaded from (a stale hash fails with `conflict`), persisted
+  panels show it. Loaded on first open, saved (`file.saveBuffer`) with the
+  hash of the content it was loaded from (a stale hash fails with `conflict`), persisted
   to `buffers/` while it has unsaved edits, dropped when no editor shows it
   and it is clean.
 - **External changes**: the watcher reloads a clean buffer, and marks a dirty
-  buffer as conflicting; any viewer resolves it (three-way merge in the
-  editor view).
+  buffer as conflicting; any viewer resolves it with `file.resolveBuffer`
+  (reload, keep, or a three-way merge the runtime runs; the editor view
+  shows the result).
 - **client**: the fs client, the refcounted watch manager, `attachBuffer`,
-  which binds a `file.buffer` stream to a local Yjs document, and the
-  file-ref resolver (below).
+  which binds a `file.buffer` stream to a local Yjs document, the file tree
+  and search models, recent files, and the file-ref resolver (below).
 - **Desktop UI** (`shells/desktop/ui/workspace/files`): the file explorer, the search view, the save-path dialog and the
   drop helpers (`takeFileDrop`, `resolveFileDrop`).
 - **File refs.** A file handed from one view to another is a `FileRef`
@@ -1147,11 +1245,18 @@ one that shows a canvas, never testing the type name. Each shell draws it
 - **runtime**: the `vcs` capability (git, `gh` on the host, file web URLs for Open on GitHub, worktrees, PRs,
   merge), git status (one monitor per checkout; clients subscribe), and the
   worktree lifecycle: create and remove as runtime operations that write
-  `WorktreeMeta` status ops, move or close bound panels
-  (`closeWorktreePanelsOnDelete`), and inherit worktrees for new panels.
-  Checkouts live under `<repo>/.cate/worktrees/<slug>`; panels bind by
+  `WorktreeMeta` status ops, and move or close bound panels
+  (`closeWorktreePanelsOnDelete`). Once the workspace is trusted it
+  reconciles: git worktrees made outside Cate are adopted, and interrupted
+  creates and removes finish. Checkouts live under `<repo>/.cate/worktrees/<slug>`; panels bind by
   `worktreeId`.
-- **client**: git status store, worktree hooks.
+- **client**: the git status store, the repository flows (worktrees, pull
+  requests, branches, switching a panel's checkout) and worktree status
+  and pull request fetches. A new panel takes its checkout from the panel
+  it is made from, in the client core: `createPanel` takes the worktree of
+  the panel it goes `near`, and `inheritedCheckout` (`client/host`, over the
+  pure `inheritWorktree`) gives a shell the checkout of the panel it creates
+  from.
 - **Desktop UI** (`shells/desktop/ui/workspace/repository`): source control view, repository and PR overviews, worktree menus and
   forms, GitHub settings.
 - A second identical create or remove joins the running one.
@@ -1166,7 +1271,8 @@ one that shows a canvas, never testing the type name. Each shell draws it
   (`<checkout>/.cate/skills-mirror.json`), the workspace's skill sources
   (`skills/sources.json`), the curated registry and GitHub crawl, and bundled
   skills (`cate-cli`, `cate-theme`) installed from the runtime tarball like any
-  other source.
+  other source (once trusted and with `cliSkillInstallEnabled`, into the
+  agent directories that exist, never over an edited copy).
 - **Desktop UI** (`shells/desktop/ui/workspace/skills`): the skills dialog, the workspace skills tree, skills settings.
 
 ### 9.7 Relations
@@ -1174,12 +1280,16 @@ one that shows a canvas, never testing the type name. Each shell draws it
 **`workspace/relations`**:
 
 - **contract**: the typed relation graph between panels (`use`, `context`,
-  `verify`, `trigger`), `compileRelationContext`, which the agents service
+  `verify`, `trigger`; each panel type's role in it comes from its
+  definition), `relationReach` (the flow from an execution surface up to the
+  next ones), `compileRelationContext` over it, which the agents service
   uses for prompt context, and the relation context mode (`once`, `always`,
-  `off`: a record field with its one parser). It imports only the document.
+  `off`: a record field with its one parser). It imports only contracts.
   What a prompt would take is the runtime's own preview
-  (`agents.previewContext`); clients never compile it themselves.
-- **runtime**: **connected editors**: an editor connected to a terminal panel
+  (`agents.previewContext`); clients never compile it themselves, and count
+  connected panels with `relationReach`.
+- **runtime**: **connected editors**: an editor connected to an execution
+  panel (a terminal)
   shares a working file with the agent (an untitled editor gets
   `.cate/tmp/<id>.md`), autosaves, and is flushed before a prompt is
   submitted (`docs/connected-editors.md`).
@@ -1214,10 +1324,19 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   font, in the corner of its frame when the frame holds more.
 - **Extension points** (so terminal never imports agents): PTY env
   contributors (the `cate` CLI on PATH with `CATE_SOCKET` and `CATE_TOKEN`,
-  agent hook env), output and activity observers, launch intents.
+  agent hook env), output, input, activity and exit observers, launch
+  intents (including the restore launch of a restored panel).
+- **Links**: `process.links` gives the links on a row of the headless
+  screen (web URLs, and paths that name an existing file, resolved against
+  the PTY's cwd), so every client finds the same ones. A view names the row
+  counted up from the buffer's last line, with the text it shows there:
+  views keep different scrollbacks of the same output, and a view behind or
+  ahead of the runtime's screen gets nothing for that row (section 12.3).
 - **client**: the xterm binding: it writes the serialized screen, then the
-  stream, and forwards keystrokes and resizes. Links, search, OSC 52 clipboard
-  and keymaps are view concerns.
+  stream, and forwards keystrokes and resizes; and the status store of every
+  PTY (ports, cwd, activity; `process.statuses`). Drawing and clicking links,
+  OSC 8 hyperlinks (the view's terminal holds them), search, OSC 52
+  clipboard and keymaps are view concerns.
 - **Consumers**: the terminal panel, the agents service's terminal agents, `cate.terminal.*`.
 
 ### 10.2 Browser
@@ -1242,7 +1361,8 @@ in the runtime.
 - **Every client loads the page itself.** `localhost` pages come from the
   runtime's machine through loopback routing, a typed path or `file://` URL
   is a workspace file the session turns into its `file.serveUrl` URL (never
-  the client's disk), everything else from the
+  the client's disk; the page reaches only its own folder, and shows as
+  text while the workspace is untrusted, 9.4), everything else from the
   client's own network, so a URL means the same page on every client.
   Navigating in any client changes the session's URL, and every client
   follows. What lives inside the page (scroll, form input, login cookies) is
@@ -1255,6 +1375,9 @@ in the runtime.
   driving client shows the active tab while a page operation runs.
 - **Shared passwords, own sessions.** The runtime remembers passwords, so any
   client can autofill them; each client keeps its own logged-in session.
+  Importing Chrome passwords into a runtime the client's connection does not
+  put on its own network (`reachesClientNetwork`) asks first: they are stored
+  on that machine.
 - **The driving client.** Each panel definition lists its page operations
   and the client feature each needs (`surface.ops`: browser `page.*` and
   `code.*` need `pageDriver`). An op
@@ -1274,9 +1397,10 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
 - **contract**: the `AGENTS` registry. Each `AgentDef` declares its CLI
   (`command`, `resume`, `sessionStore`, `promptArgs`, `interruptKeys`), its
   skills targets, process matching and prompt-context hooks; its hook spec is
-  `AGENT_HOOK_SPECS`. Every per-agent table is a total
-  `Record<AgentId, …>` (an agent without an entry says so with `null`), so a
-  new agent is a compile error until every table has it. Also the session,
+  `AGENT_HOOK_SPECS`. Per-agent tables are total `Record<AgentId, …>` (an
+  agent without an entry says so with `null`), so a new agent is a compile
+  error until every table has it; a reader only some agents need (their
+  approval config) is the exception. Also the session,
   the start launch command, and the `cate.agent.*` API specs.
   `PanelAgentState` carries what views show (`label`, `contextPolicy`),
   computed in the runtime. Recorded changes reach consumers
@@ -1284,13 +1408,21 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   see terminals.
 - **runtime**: one entry, `createAgentsRuntime`, the only owner of agent
   state. It builds the core (with the terminal agents) and the starter; other modules
-  call only `start`, `send`, `busy`, `changes`, `readiness`,
-  `onSessionEnded` and notifications.
+  call only `start`, `send`, `busy`, `changes`, `readiness` and
+  `onSessionEnded`, and the composition root takes its capability and
+  `cate.agent.*` handlers. It publishes notification events through a port
+  it is given.
   Inside:
   - hook bridges and repo hook files (per `agentHookInjection`), hook
     ingestion and normalization, pid presence;
-  - the **status** state machine, driven only by hook events and pid presence
-    (there is no screen scraping);
+  - the **status** state machine, driven by hook events, pid presence (or
+    the process alone for a CLI without hooks), the input the runtime sends
+    to the PTY (for a CLI with no hook for an approval reply), and the
+    transcript where a CLI pushes no hook for a user's interrupt; there is
+    no screen scraping;
+  - approval detection per agent (whether it is asking for a permission),
+    and the tool steps its hooks report, kept in memory and sent with the
+    conversation;
   - change history per checkout (from terminal hooks) in
     `agents/changes/`;
   - session store readers per agent, conversation reads, Hermes
@@ -1307,8 +1439,9 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   - the panel states (`panels.ts`): what each terminal panel hosts, with
     when relation context last went with its prompt, published as changes;
   - prompt context from relations, and agent notification events.
-- **Starting an agent** (`cate.agent.start`): its CLI in a new terminal
-  panel (a hook-ready agent, launched in place of the shell), in the
+- **Starting an agent** (`cate.agent.start`): its CLI, with or without a
+  first prompt, in a new terminal panel (a hook-ready agent, launched in
+  place of the shell) or an idle one the caller names, in the
   caller's checkout, an existing worktree or a new one, next to the calling
   panel or where the call places it. Panels and worktrees come through ports
   the composition root fills. Once
@@ -1320,8 +1453,9 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).
 - **client**: the agent panel states mirror and an agent chat
-  (`watchAgentChat`: the conversation channel, and a prompt sent from the
-  client pending until the conversation shows it).
+  (`watchAgentChat`: the conversation channel, a prompt sent from the
+  client pending until the conversation shows it, and a prompt sent while
+  the agent works queued until it is back at its prompt).
 - **Desktop UI** (`shells/desktop/ui/services/agents`): the changes pill, activity title, logos, hook settings, the
   relation context transport (`useAgentContextTransport`).
 - **Consumers**: the terminal panel, review (changes), sidebar and dock
@@ -1332,11 +1466,12 @@ agents.
 
 ### 10.4 Notifications
 
-`workspace/notifications` owns notification events
-(`{kind, panelId, title, body}`: an agent needs attention, `cate.ui.notify`,
-a warning). Agents, the terminal and the `cate` API publish through the
-runtime side (`publish`, or `keep` for a warning raised before any client
-was there, such as a state file `kernel/state` quarantined); clients follow
+`workspace/notifications` owns notification events (a kind, the panel,
+a title and a body: an agent needs input or a permission, or a
+`cate.ui.notify` with its level; a warning is one at level `warning`).
+Agents and `cate.ui.notify` publish through the runtime side (`publish`),
+and the composition root keeps (`keep`) a warning raised before any client
+was there, such as a state file `kernel/state` quarantined; clients follow
 the `notifications` capability's stream, and the composition root hands
 every event to push delivery for devices that are away (section 7.9).
 
@@ -1372,9 +1507,11 @@ Each panel type is one folder, `panels/<type>/`:
   session op to send, with the features it `requires`), `creation` (how
   people create one: its order in every creation menu, the default key of
   its "New" action, a canvas toolbar button, whether it is created in a
-  checkout), `describe`, `chrome` (dock chrome flags), `relation` (its role
-  in the relation graph, section 9.7), plus the `surface` and
-  `switchesWorktree` flags.
+  checkout), `opens` (what generic "open" actions create it for: a file, a
+  folder, a URL), `describe`, `chrome` (dock chrome flags), `relation` (its
+  role in the relation graph, section 9.7), plus flags such as `surface`,
+  `placeholder` (the surface picker), `navigable`, `canLiveOnCanvas` and
+  `switchesWorktree`.
   The daemon imports definitions, so they hold no components and no functions
   that touch a session object.
 - `contract.ts` and `contract/`: the snapshot and op types, the API spec
@@ -1387,6 +1524,8 @@ Each panel type is one folder, `panels/<type>/`:
   `cate` handlers or capability of its own.
 - `client/`, where the type has client core logic of its own (what a shell
   needs to drive it beyond its session channel).
+- `desktop/`, where the type has desktop-only code that is not UI (the
+  browser's page host).
 - `parts/`: supporting modules, split by side (`parts/runtime/`, pure files
   at the top). No UI.
 
@@ -1399,8 +1538,9 @@ view and maps each type to its view. The iOS app draws every type with its
 own SwiftUI views over the core's panel API (`panel.*` and the type's own
 calls in `shells/mobile/contract.ts`).
 
-Three index files at the top of `src/panels/` list the types, so no generic
-code names one:
+Three of the index files at the top of `src/panels/` list the types, so no
+generic code names one (`capabilities.ts` and `settings.ts` list
+capabilities and settings slices):
 
 - `definitions.ts`: `PANEL_DEFINITIONS` (every definition, pure; clients read
   it for actions and creation menus (12.4), the surface picker and fresh
@@ -1471,7 +1611,7 @@ Every panel type meets the same contract.
 
 | Panel | Session built on | Session state (snapshot) | View | Notes |
 |---|---|---|---|---|
-| terminal | services/terminal, services/agents | pty status, title, cwd, activity, agent session and status; screen as serialized stream | xterm | shows agent sessions |
+| terminal | services/terminal, services/agents | pty status, title, cwd, activity, exit; screen as serialized stream | xterm | shows agent sessions (their state comes from the agents service's panel states, not the snapshot) |
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
 | review | workspace/repository, services/agents | source (git diff or agent changes), file list, notes, agent review, status, reveal | diff views | filter, focused file, collapsed and expanded files and context lines are per client |
@@ -1492,14 +1632,14 @@ headless.
 - **`client/core`**: the one entry every shell calls, `startClientCore`, with
   its transports, device, declared features, device store and the panel and
   capability lists. It registers the panel definitions and the client
-  identity, opens the connections, and attaches documents, sessions
-  (`attachSessions`) and page operations (`serveSurfaces`) itself, so a shell
-  fills none of the client layer's slots.
-- **`client/connections`**: one connection per open workspace runtime: finding
-  it (the local socket, a machine's bridge, mDNS, Cate Connect), starting a
-  local one, pairing,
-  the security layer, the typed capability proxies (filling the
-  `kernel/rpc` slot), session channel subscriptions, reconnect with backoff,
+  identity, fills the runtime slot, opens the connections, and attaches
+  documents, sessions (`attachSessions`) and page operations
+  (`serveSurfaces`) itself. A shell fills only the UI slots of `client/host`
+  (section 3).
+- **`client/connections`**: one connection per open workspace runtime over
+  the shell's transports (`ShellTransports`, section 7.5): the typed
+  capability proxies, session channel subscriptions, reconnect with backoff
+  (also when the machine wakes),
   the "offline" state (last-seen time, retrying in the background) and the
   "stopped" state (stopped on purpose, no retrying until started again);
   `eachConnection` runs something per open connection.
@@ -1519,18 +1659,24 @@ headless.
   disconnects it and drops it (a paired one with its pinned key); the machine
   each workspace lives on (`machineOf`, `groupByMachine`) for lists grouped
   by machine;
-  and the trust question (`trustStore`, `ensureOpenedTrusted`): opening an
-  untrusted workspace queues one question, every shell shows its head, and
+  joining with a code (`joinWorkspace`); and the trust question
+  (`trustStore`, `openTrusted`): opening an untrusted workspace queues one
+  question, every shell shows its head, and
   the answer is `workspace.setTrust` for everyone.
 - **`client/document`**: the client's mirror of each open workspace's
-  document, with optimistic ops (section 13.5) and subscriptions. The stores
-  that show records, docks and canvases are selectors over it.
+  document, with optimistic ops (section 13.5) and subscriptions, the client
+  state store of each workspace (section 5), and presence: what this client
+  reports and the other clients it sees. The stores that show records, docks
+  and canvases are selectors over it.
 - **`client/host`**: the panel side of the core: `createPanel`, panel
-  targeting (`pickPanelPlace`), session handles (`acquireSession`), closing
+  targeting (`pickPanelPlace`, `createPanelFrom`), opening links
+  (`openLink`, 12.3), session handles (`acquireSession`), closing
   (`registerPanelCloseGuard` and `closePanels`, which asks every guard before
   one `removePanels` op), focus and reveal, the checkout hooks derived from
-  the definitions (`panelCheckoutHooks`), the action registry with each
-  panel type's actions, and the creation menus (12.4).
+  the definitions (`panelCheckoutHooks`) and the checkout a new panel
+  inherits (`inheritedCheckout`), page operation handlers
+  (`registerSurface`), the action registry and the panel types' actions
+  (`registerPanelActions`), and the creation menus (12.4).
 
 Logic a view needs that every shell's view would need too sits in the
 `client/` side of its module, never in a view: the browser tab follower (`panels/browser/client`),
@@ -1545,7 +1691,8 @@ is its UI: the desktop's is `shells/desktop/ui/client/layout` (section 15).
 
 Clients do not all support the same things. A phone has no windows, may have
 no page driver and no passkeys. The contract that says what a client can do is
-one closed list of features, `ClientFeature` in `kernel/rpc/contract.ts`.
+one closed list of features, `ClientFeature` in
+`kernel/rpc/contract/features.ts`.
 Features are for the runtime and the core, which serve every kind of client;
 a shell's UI knows its own platform and draws what it supports:
 
@@ -1553,14 +1700,14 @@ a shell's UI knows its own platform and draws what it supports:
 |---|---|---|
 | `webview` | host web pages in a native surface, with loopback routing (12.3) | the runtime, which serves surface operations only to clients with `webview` or `pageDriver`; the core, which subscribes to them only then |
 | `pageDriver` | run page operations on its webviews: accessibility snapshots, actions, screenshots, waits, code cells | the runtime, choosing the driving client (10.2); the desktop boot, which serves browser code cells only with it |
-| `passkeys` | answer WebAuthn requests through the OS | nobody yet: the desktop shell declares it only on macOS, where the OS answers |
+| `passkeys` | answer WebAuthn requests through the OS | nobody yet: the desktop shell declares it only on macOS with its native bridge loaded, where the OS answers |
 | `windows` | open detached windows | presence; the desktop boot, which installs its window port only with it |
 | `canvas` | render and edit canvases | presence |
 | `fileDrop` | take files dragged in from the OS | presence |
 | `osNotifications` | show OS notifications | the desktop shell, which installs `ClientUi.notify` only with it; the core hands every notification event to the shell's display (10.4) |
 | `screenCapture` | capture its own window | the desktop boot, which installs the screenshot port only with it |
 | `clipboard` | read and write the system clipboard | the desktop shell, which installs the `ClientUi` clipboard methods only with it |
-| `camera` | scan a QR code | the pairing flow (without it, the pairing code is typed) |
+| `camera` | scan a QR code | nobody yet: the iOS app declares it where it can scan, and its join screen offers the scanner on its own (without one, the pairing code is typed) |
 
 Rules:
 
@@ -1592,8 +1739,9 @@ Rules:
    else the runtime sends to every client, and each client handles it within
    its features (a notification event is an OS notification with
    `osNotifications`, an in-app toast without).
-8. **Tested.** A contract test checks that every feature a command or action
-   `requires` names a known feature.
+8. **Checked.** A test checks that every feature a panel command `requires`
+   names a known feature; an action binding's `requires` is typed by
+   `ClientFeature`.
 
 ### 12.3 Loopback routing
 
@@ -1604,20 +1752,48 @@ everyone.
 A dev server therefore never needs to listen on `0.0.0.0`: `localhost` is
 the runtime's machine on every client.
 
-- **Which hosts.** `localhost`, `*.localhost`, `127.0.0.0/8`, `0.0.0.0`,
-  `[::1]` and `[::]`, any port (`isLoopbackHostname` in
-  `runtime/tunnel/contract`).
-- **Opening links.** `openUrlFor` (`client/host`) opens a loopback URL in a
-  panel that opens URLs, and any other URL through `ClientUi.openExternal`.
+- **Which hosts.** `localhost`, `*.localhost`, `127.0.0.0/8` (also
+  IPv4-mapped, `[::ffff:127.0.0.1]`), `0.0.0.0`, `[::1]` and `[::]`, any port
+  (`isLoopbackHostname` in `runtime/tunnel/contract`). The web proxy decides
+  on the resolved address: it reads a host as URL parsing does (`2130706433`
+  is `127.0.0.1`) and resolves a name first, so a name that resolves to
+  loopback is the runtime's machine too, and connects to the address it
+  checked.
+- **Opening links.** Every clicked link (a terminal's URL, file path or OSC 8
+  hyperlink, a markdown preview's link, a URL opened with the app) goes
+  through one `openLink` (`client/host`). A web URL opens in a panel that
+  opens URLs, or through `ClientUi.openExternal` when the shell asks for it
+  (the desktop decides from its `linkOpenTarget` setting, asking where it
+  says so, or Cmd/Ctrl+Shift in a terminal); a loopback URL always opens in
+  a panel. A file opens in the panel already
+  showing it, else in a new one, at its line. A new panel is placed from
+  the panel the link was clicked in through `createPanelFrom`, the one
+  placement path for a panel another panel opens: on that panel's canvas a
+  spot through the canvas's placement picker, in a dock a tab beside it.
+  The runtime finds a terminal's links (`process.links`, section 10.1).
+  A link runs over rows only where the terminal soft-wrapped it: a newline
+  the program wrote ends it, since nothing on the screen tells it from a
+  program wrapping its own text (agent TUIs do; a link they break is two
+  pieces, as in any terminal). A URL cut short with `…` is not a link.
+  Programs that name their links (OSC 8) get them exactly, in the view's
+  own terminal (`osc8Target` reads the target); PTYs get
+  `FORCE_HYPERLINK=1` so programs that check send them. The iOS app's
+  terminal hands its taps to the core (`terminal.openLink`), which opens a
+  web URL outside the app, except a loopback one.
 - **The web proxy.** Each client with `webview` runs one web proxy per open
   workspace and routes that workspace's webviews through it. It supports
   plain HTTP, `CONNECT` (HTTPS) and upgrades (WebSocket, for hot reload). For
   a loopback host it calls `connection.dialLoopback(port)`; for every other
-  host it connects directly, or through the client's `browserProxyUrl`.
+  host it connects directly, or through the client's `browserProxyUrl`. A
+  connection whose `reachesClientNetwork` is false (every one but the local
+  socket: a machine's runtime is on that machine's network) never reaches
+  the client's private ranges: a private, link-local or unique local address
+  is refused with `403`, with or without an upstream proxy.
 - **The connection decides how.** A local connection's `dialLoopback` opens a
-  TCP socket to the port on this machine (it is the runtime's machine). A
-  network connection's opens `tunnel.connect {port}` on the runtime (7.9),
-  inside the encrypted workspace connection. The proxy is the same code for
+  TCP socket to the port on this machine (it is the runtime's machine).
+  Every other connection's (a machine's bridge, the network) opens
+  `tunnel.connect {port}` on the runtime (7.9), inside the workspace
+  connection. The proxy is the same code for
   both; nothing branches on the transport.
 - **Pages are not rewritten.** The URL stays `http://localhost:3000`, so
   origins, cookies and absolute links behave as they do on the runtime's
@@ -1635,7 +1811,10 @@ the runtime's machine on every client.
   that port (IPv4 and IPv6) and forwards each connection to the same port on
   the runtime's machine through `dialLoopback` (the core decides which URLs
   are loopback, `loopback.port`; the listener is the native primitive). The
-  workspace that asked last owns a port. Pages are not rewritten either. A
+  workspace that asked last owns a port, and its listener closes when that
+  workspace closes or disconnects; a listener that failed is tried again on
+  the next load. While a listener is open, other apps on the phone can reach
+  that port of the runtime's machine too. Pages are not rewritten either. A
   page reaching a loopback port no frame loaded first is not routed.
 
 ### 12.4 Actions and menus
@@ -1653,10 +1832,10 @@ a panel type in a menu by hand.
   the palette or the welcome page lists it. `registerActions(specs,
   bindings)` (`client/host`) declares them in the catalog (`kernel/interaction`) and
   binds what each does (`run`, the client features it `requires`, `enabled`
-  for a context); every declared action has a binding. Core modules declare
-  the actions every shell can run (panel creation, panel commands); a shell's
-  UI declares its own (the desktop UI: palette, sidebar, canvas and window
-  actions).
+  for a context); every declared action has a binding. The core turns the
+  panel definitions into actions (`registerPanelActions`), which a shell
+  with keys and menus registers; a shell's UI declares its own (the desktop
+  UI: palette, sidebar, canvas and window actions).
 - **Panel types bring theirs.** For every definition with `creation` the
   host declares `panel.new.<type>` ("New <label>", its default key, File >
   New); for every `command`, `panel.<type>.<id>`, run against the focused
@@ -1666,7 +1845,8 @@ a panel type in a menu by hand.
 - **Creation menus** (the canvas menu, the canvas toolbar, a dock's new-tab
   and tab-bar menus, the empty dock, a surface's picker, the relation
   handle, the worktree menu, the palette) list `creatableDefinitions()`:
-  the types with `creation` this client can show, in creation order. A type
+  the types with `creation` (on a canvas, those that can live on one), in
+  creation order. A type
   with `creation.inWorktree` is offered once per ready worktree
   (`creationMenuItems`, `creationPick`); each surface decides only where the
   panel goes.
@@ -1694,23 +1874,23 @@ a code).
 - **Open.** One picker (desktop: "Open Workspace…") lists the machines: this device
   (a folder picker), the
   saved SSH machines, the SSH config's hosts and the WSL distros, with adding
-  an SSH machine by its command and joining with a code. A
-  machine opens its folder dialog wherever it was picked from; the client
-  settings page "Machines" lists the saved SSH machines to open a folder
-  on, add or remove.
+  an SSH machine by its command, forgetting a saved one, and joining with a
+  code. A machine opens its folder dialog wherever it was picked from.
 - **Join.** "Join with a Code" takes the typed code or the `cate://pair`
   link (opening such a link with the app fills it in; joining stays the
   person's click). Pairing again with a known machine names it.
 - **Share.** One place sets network access ("who can join": only its
   machine, the same network, anywhere through Cate Connect), creates the
   code (turning on same-network access when it is off) and lists the
-  devices. Wider access is the person's choice in that place; narrower access
+  devices. Before every code, the first and each new one (after the access
+  changes too), the person confirms inline that anyone who joins can use
+  this computer as them; nothing is remembered. Wider access is the person's choice in that place; narrower access
   asks first, since it cuts devices off. The workspace's settings keep the
   same setting and the device list with revoke.
 - **Where it lives.** Lists of workspaces group them by machine
   (`groupByMachine`, machine by machine in list order: the sidebar, moving
-  to the next workspace); a machine's header opens another folder there and
-  reconnects its open workspaces. Rows reorder within their machine.
+  to the next workspace) under a header naming the machine. Rows reorder
+  within their machine.
 - **What a window shows.** One rule (`windowContent` in
   `client/workspaces`): the selected workspace while it is listed, else the
   welcome screen (no workspace at all, or none selected). On every change of
@@ -1718,7 +1898,8 @@ a code).
   can show (a selection that left gives way to the next open workspace or
   none; a dialog about it closes), and the list closes the connection of a
   workspace removed elsewhere. The welcome screen is one view: the Open
-  picker and what is new in this version.
+  picker, joining with a code, the actions declared for it and what is new
+  in this version.
 
 ## 13. Several clients
 
@@ -1780,6 +1961,11 @@ so the runtime orders it and no client ever holds a lock.
   a runtime restarted from a `document.json` older than what the client saw
   (a crash inside the write debounce) answers with the full document. Then
   the client resends its unconfirmed ops; their `opId`s make that safe.
+- **Persisted ops.** The runtime also sends the seq of its last
+  `document.json` write, and a full document carries `startSeq`, the seq its
+  run loaded. A client keeps its confirmed ops until a write covers them;
+  when a new epoch's `startSeq` is older than some of them, the restart lost
+  them and the client sends them again as new ops.
 
 ### 13.5 Optimistic updates
 
@@ -1797,10 +1983,13 @@ so the runtime orders it and no client ever holds a lock.
 
 ### 13.6 Undo
 
-Each client keeps an undo stack of its own confirmed document ops with their
-inverse, computed against the document the op applied to. Undo sends the
-inverse as a new op. If the inverse names something that is gone, that part is
-skipped. Undo never covers session or resource work.
+Each client keeps an undo stack (up to 200 entries) of its own confirmed
+document ops with their inverse, computed against the document the op
+applied to (`invertOp` in `workspace/document/contract`), and a redo stack
+that a new op clears. Undo sends the inverse as a new op. If the inverse names something that is gone or changed
+since, that part is skipped: a field, rect or ratio someone else set after the
+op keeps their value, and a replaced record that changed since is not put
+back. Undo never covers session or resource work.
 
 ## 14. Access: the `cate` API
 
@@ -1810,19 +1999,26 @@ Everything outside the UI that drives Cate goes through one router.
   target panel from the document (explicit id or unique id prefix, the
   caller's sticky target, its placement group, the active panel of the most
   recently active client, the only panel of the type) and calls
-  the target's session or the owning service. Timeouts come from the spec;
-  the CLI reads them from the spec too.
+  the target's session or the owning service. Each method's `target` says
+  how far down that list it goes: `explicit`, `sticky` (terminal input and
+  review stop at the caller's sticky target) or `auto`. Timeouts come from
+  the spec; the CLI reads them from the spec too.
 - **Callers and how they reach it**:
   - the `cate` CLI in a terminal: over the local socket (`CATE_SOCKET`),
     authenticated by `CATE_TOKEN`, a per-PTY token that also names the calling
-    panel. Terminals run in the runtime, so this is local on every machine.
+    panel and is revoked when its process exits. Terminals run in the runtime, so this is local on every machine.
   - a browser code cell: the cell runs on the driving client, which passes
     each `cua.*` call back through the `browserCode` capability as the cell's
     original caller, through the same gates.
   - a client: the `api` capability.
+
+  A caller connection (a hello with a token, no client) reaches only the
+  `api` capability; settings, pairing, files, trust and the rest serve
+  clients only.
 - **Access classes**: each method declares `read` or `control`. The workspace
   settings enable each class per area (the `cli*Enabled` keys; each module
-  declares its area with its methods, `defineCliArea`), behind the
+  declares its area with its methods, `defineCliArea`; review shares the
+  agents' area), behind the
   `cliEnabled` master switch; they apply to CLI callers. Client
   callers are not gated (D3). These settings keep agents to what the user
   allows through the CLI; they are not a security boundary against programs
@@ -1851,8 +2047,8 @@ Everything outside the UI that drives Cate goes through one router.
   `panel.target.set` is `cate panel set`). Help is a short reference: the
   namespace `summary`, each method's `summary`, and each argument's `help`
   and default; explanations live in the `cate-cli` skill. `cate help
-  <command>` is the engine's own. The only command that is not an API method
-  is `cate serve` (section 7.1).
+  <command>` and `cate --version` are the engine's own. The only other
+  command that is not an API method is `cate serve` (section 7.1).
 
 | Namespace | Methods | Owner | Handler |
 |---|---|---|---|
@@ -1883,10 +2079,13 @@ accessibility observation. The rest (`drag`, `selectText`, `setViewport`,
     crash reporting, open path and URL handling, screenshot capture, web
     security hardening and dev feature flags, the webview host, browser
     partitions and the loopback web proxy (12.3), passkeys, window crash
-    recovery, theme boot cache, the raw sockets for the client's transports
-    (local runtimes are found and started here, section 7.3; each connection
-    is a pipe handed to the renderer), the device files behind `DeviceStore`
-    and the device key, and the declaration of the client features (12.2).
+    recovery, theme boot cache, the shell's transports (section 7.5: local
+    runtimes found and started, section 7.3, machine bridges, the network
+    dialer with Noise and pairing; each connection is a pipe handed to the
+    renderer), the device files behind `DeviceStore` and the device key,
+    cross-window drags and the drag ghost, a WebGL context budget for
+    terminals, the `CATE_PERF` profiler, and the declaration of the client
+    features (12.2).
   - **preload**: the desktop IPC for the above only (`window.cateDesktop`,
     typed by `DesktopApi` in `shells/desktop/contract`). No workspace work
     crosses it. Each preload entry bundles self-contained (a
@@ -1894,14 +2093,17 @@ accessibility observation. The rest (`drag`, `selectText`, `setViewport`,
   - **renderer**: boots the client core, installs the desktop `ClientUi`
     and the shell's ports, imports every panel view and maps each type to
     its view, calls `registerWorkspaceViews()`, fills the review and
-    agent-changes openers, and mounts the desktop UI. Nothing else: logic
-    lives in the client core.
+    agent-changes openers, and mounts the desktop UI. It also runs the
+    desktop's own boot concerns: restarting a stale runtime into the app's
+    build (7.10), the menu bar model, quit blockers, the splash and the perf
+    HUD. Logic another shell would need lives in the client core.
   - **ui**: the desktop UI, all of it, in React, mirroring where each piece
     belongs: the kernel components and theme manager (`ui/kernel/interaction`), panel
     hosting and native surfaces (`ui/client/host`), the dock, the canvas
     view (its view store, nodes, minimap, territory layer), dragging and
     detached windows (`ui/client/layout`), the app frame: sidebar, palette,
-    settings, pairing, onboarding and dialogs (`ui/app`), every module's
+    settings, pairing, onboarding, dialogs and the e2e harness
+    (`window.__cateE2E`) (`ui/app`), every module's
     views (`ui/<layer>/<module>`) and every panel's view
     (`ui/panels/<type>`). It
     is the only place React, the DOM, xterm, Monaco and the icon sets are
@@ -1912,10 +2114,13 @@ accessibility observation. The rest (`drag`, `selectText`, `setViewport`,
   (`shells/mobile/core`, bundled to `ios/Cate/Core/Web/core.js` by
   `npm run build:mobile`). Two directions cross between them: the bridge
   (`shells/mobile/contract.ts`: what the core asks the app for, native
-  primitives only: device storage, the Keychain, mDNS, the declared
-  features) and the core API (what the app asks the core to do, plus one
-  state snapshot pushed on every change). The core side follows the client
-  core's rules: no Node, no Electron, no React. It starts the client core
+  primitives only: device storage, the Keychain, mDNS, opening a URL,
+  banners and the declared features, plus the core's own lifecycle, its
+  state snapshot pushed on every change and stream output with back
+  pressure) and the core API (what the app asks the core to do). The core
+  side follows the client core's rules: no Node, no Electron, no React; it
+  dials with the web view's WebSocket and `RTCPeerConnection`, and the app
+  serves it from a `cate-app://` scheme. It starts the client core
   with `startClientCore` like the desktop renderer, and drives the same
   core pieces the desktop views do (the browser
   tab follower, `acquireSession`, the trust question, shown as an alert). Its state carries each
@@ -1923,14 +2128,13 @@ accessibility observation. The rest (`drag`, `selectText`, `setViewport`,
   keep-awake state and this device's push status, and its relations (each
   with its words for its pair) with the `panelRelationsEnabled` setting. The
   app shows a workspace the way Cate lays it out: one place at a time, the
-  dock (its panels as cards) or a canvas (a map of its nodes where they sit,
-  its relations drawn between them). On the map a card moves by its top strip
-  (`canvas.moveNode`, one `setNodeRects` op), a relation is dragged out of a
-  card's handle onto another card and given its meaning there, and a
-  relation's label changes its meaning or removes it. A card zooms into its
-  panel, and every panel shows its relations one tap away (connect, change
-  the meaning, remove, the context mode and its preview), all through the
-  core's `relations.*` methods over the shared relation edits. The app
+  dock (one of its panels at a time) or a canvas (a map of its nodes where
+  they sit, its relations drawn between them). On the map a tile moves with
+  one `setNodeRects` op (`canvas.moveNode`) and relations are made, given
+  their meaning, set to a context mode and removed, all through the core's
+  `relations.*` methods over the shared relation edits. Every panel type
+  has a native view (terminal, editor, browser with loopback routing,
+  review, the surface picker), and worktrees can be switched. The app
   shows each agent of a workspace as a chat (the conversation pushed as it
   changes through `agents.watch`, replies, what it is doing while it works,
   stopping its turn; permissions are answered in the
@@ -1954,10 +2158,12 @@ client-local work (a file drop still importing).
 |---|---|
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
 | Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/` |
-| Machine, `~/.cate/runtime/<build>/` | the installed daemon (the program, not state) |
-| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (minimap corner, onboarding progress), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
+| Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
+| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
-Every JSON state file above is written through `kernel/state`, except the
+Every JSON state file above is written through `kernel/state` (a temporary
+file renamed over the old one, fsynced first for the `0600` files: secrets,
+devices, push), except the
 project's skill manifests: `workspace/skills` publishes `skills.json` and
 `skills-mirror.json` once per change with an atomic write of its own, since
 they live in a checkout and are never held as live state. The others
@@ -1970,20 +2176,23 @@ data) are written by their owner directly.
 src/
   kernel/
     rpc/  api/  settings/  lifecycle/  state/  log/
-    interaction/            client core as a whole (no side folders): ClientUi,
-                            actions, shortcuts
+    interaction/            contract/ (themes, shortcuts, actions, settings)
+                            and the client core's ClientUi, catalog and
+                            registry
   runtime/
     daemon/                 main.ts (the program), entry.ts and compose/ (the
                             composition root), release, install layout,
-                            lifetime, update; node/ desktop/ sides
+                            lifetime, update; contract/ runtime/ node/
+                            desktop/ sides
     data/                   workspace data directory, runtime.json, secrets
     transports/             local socket, same-network WebSocket, WebRTC data
                             channel; client, node and runtime sides
-    security/               Noise handshake, keys, fingerprints
+    security/               Noise handshake, keys, fingerprints; client and
+                            runtime sides
     pairing/                the pairing capability, secrets, codes, QR payload,
-                            devices.json
+                            devices.json; client side: pair, pinned keys
     connect/                Cate Connect client (registration, signaling,
-                            pushes)
+                            pushes); testing/: a stand-in for the service
     push/                   the push capability, sealing, push.json
     tunnel/  power/  generic host capabilities
   workspace/
@@ -2017,8 +2226,26 @@ src/
                             kernel/interaction/, client/{host,layout}/,
                             <layer>/<module>/, panels/<type>/
     mobile/                 contract.ts, core/ (the headless core of ios/)
-  cli/                      generic engine; commands from API specs
-  test/                     test support (the vitest log stub, mock ClientUi)
+  cli/                      generic engine (commands from API specs),
+                            `cate serve`, the bin/ launchers
+  test/                     test support: shared/ (multi-client suites over a
+                            real daemon and every transport), the shared
+                            workspace harness, fakes (desktop, ClientUi),
+                            the vitest log stub, the depcruise test
+
+scripts/                    builds (runtime, tarball, mobile core, build id,
+                            skills index), packaging and signing, the
+                            install script, agent CLI installs, e2e and perf
+                            runners
+skills/                     bundled skills (cate-cli, cate-theme)
+registry/                   the curated skills index and its sources
+native/passkeys/            the passkeys native addon
+ios/                        the iOS app: Cate/ (App, Core), Notifications/
+                            (the push service extension), Shared/
+e2e/                        Playwright end-to-end tests
+test/depcruise-fixtures/    files that break a dependency rule, for the
+                            depcruise test
+docs/                       this document and the design notes it links
 ```
 
 Each process has one entry: the daemon (`runtime/daemon`), desktop main, the
