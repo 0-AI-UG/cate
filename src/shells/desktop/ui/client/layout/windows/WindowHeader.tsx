@@ -7,7 +7,7 @@
 // window, never a panel.
 
 import React, { useEffect, useRef } from 'react'
-import { Columns2 as Columns, RectangleHorizontal, X } from 'lucide-react'
+import { Columns2 as Columns, X } from 'lucide-react'
 import { dockPanels, type DockLayout, type DocWindow, type LayoutId, type PanelRecord } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
 import { activeTabOf, closePanel, createPanel, panelDefinition, revealOnce, switchLayout } from '@client/host'
@@ -27,6 +27,7 @@ import { useDragStore } from '../drag/store'
 import { useDragOp } from '../drag/useDragOp'
 import { useDragSettled } from '../drag/settled'
 import { closeLayout } from './closeLayout'
+import { LayoutGlyph } from './LayoutGlyph'
 import { showLayoutMenu } from './layoutMenu'
 import { useLayoutRename } from './useLayoutRename'
 import { buildStripModel, type GapSpot, type StripItemGeom, type StripModel, type StripSource } from './stripModel'
@@ -295,7 +296,7 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
         }}
         onContextMenu={(e) => { void onContextMenu(e, layout, ids.length > 0) }}
       >
-        <span className="shrink-0 text-muted"><RectangleHorizontal size={13} /></span>
+        <span className="shrink-0 text-muted"><LayoutGlyph dock={layout.dock} shown={layoutActive} focused={focused} /></span>
         {rename.renameId === layout.id ? (
           rename.input(layout.id, 'truncate flex-1 min-w-0 px-0')
         ) : ids.length === 0 ? (
