@@ -60,7 +60,7 @@ export interface PanelRecord {
  *  layout can move to another host. */
 export interface DockLayout {
   id: LayoutId
-  name?: string
+  name: string
   /** Null for an empty layout. A layout that empties stays, empty: its window
    *  shows the creation menu there. */
   dock: DockNode | null

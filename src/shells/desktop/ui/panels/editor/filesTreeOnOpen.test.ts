@@ -16,7 +16,7 @@ const open = (panels: PanelRecord[], dock: DockNode | null) => {
   detach = openTestDocument('ws', {
     ...createDocument(),
     panels: Object.fromEntries(panels.map((p) => [p.id, p])),
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock }] } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', name: 'Layout 1', dock }] } },
   })
 }
 const doc = () => documentStoreFor('ws')!.getSnapshot()
@@ -60,7 +60,7 @@ describe('besideTree', () => {
   const docWith = (dock: DockNode): WorkspaceDocument => ({
     ...createDocument(),
     panels: { tree, a: panel('a') },
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock }] } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', name: 'Layout 1', dock }] } },
   })
 
   it('uses the stack next to the tree', () => {

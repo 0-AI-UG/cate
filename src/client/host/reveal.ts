@@ -25,7 +25,7 @@ export function installRevealHooks(next: RevealHooks): () => void {
   return () => { hooks = previous }
 }
 
-function revealOnce(workspaceId: string, panelId: PanelId): boolean {
+export function revealOnce(workspaceId: string, panelId: PanelId): boolean {
   const doc = documentStoreFor(workspaceId)?.getSnapshot()
   const state = clientStateFor(workspaceId)
   if (!doc || !state) return false

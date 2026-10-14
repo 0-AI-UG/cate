@@ -29,7 +29,7 @@ import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
 import { itemKey, layoutKey, layoutRows } from './sidebarDrag'
 import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
-import { closeLayout, layoutMoveItems, runLayoutMove } from '../../client/layout/windows'
+import { showLayoutMenu } from '../../client/layout/windows'
 import { DragFloat, GhostBlock, type RowLook } from './GhostBlock'
 import { takesCanvasDrop, useSidebarTree, type Float } from './useSidebarTree'
 
@@ -234,8 +234,8 @@ export function WorkspaceRow({
     if (panelId) beginDrag({ button: e.button, clientX: e.clientX, clientY: e.clientY, currentTarget: box }, { kind: 'layout', workspaceId, host: { windowId: w.windowId }, layoutId: layout.layoutId, panelId, from: 'sidebar' })
   }
   /** A layout is dragged as one ghost named like the window's strip names it: its name, else its position. */
-  const layoutLook = (name: string | undefined, index: number) => ({
-    label: name || `Layout ${index + 1}`,
+  const layoutLook = (name: string) => ({
+    label: name,
     icon: <PanelsTopLeft size={11} className="opacity-70" />,
   })
 
@@ -252,11 +252,8 @@ export function WorkspaceRow({
     if (liftedPanel || liftedLayout || !dragSource) return null
     const origin = dragSource.origin
     if (origin.kind === 'layout') {
-      for (const w of Object.values(doc.windows)) {
-        const index = w.layouts.findIndex((l) => l.id === origin.layoutId)
-        if (index >= 0) return layoutLook(w.layouts[index].name, index)
-      }
-      return null
+      const layout = Object.values(doc.windows).flatMap((w) => w.layouts).find((l) => l.id === origin.layoutId)
+      return layout ? layoutLook(layout.name) : null
     }
     const record = doc.panels[dragSource.panelId]
     return record ? { label: panelRowLabel(record), icon: <Icon name={panelIcon(record.type)} size={11} style={{ opacity: 0.6 }} /> } : null
@@ -280,19 +277,6 @@ export function WorkspaceRow({
     return first && first.items.length > 0 ? activeTabOf(activeTabs, { kind: 'stack', id: first.stackId, panels: first.items.map((item) => item.record.id) }) : undefined
   }
 
-  const handleLayoutMenu = async (e: React.MouseEvent, w: WindowTree, layoutId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const moves = layoutMoveItems(doc, layoutId)
-    const id = await showMenu([
-      ...moves,
-      ...(moves.length > 0 ? [{ type: 'separator' as const }] : []),
-      { id: 'close', label: 'Close Layout', enabled: w.layouts.length > 1 },
-    ])
-    if (id === 'close') void closeLayout(workspaceId, layoutId)
-    else if (id) runLayoutMove(workspaceId, layoutId, id)
-  }
-
   /** A layout with several panels is a group: its rows are regular rows, told apart as
    *  members by a thick strip floating at their left (the handle of the layout: click shows
    *  it, drag moves it, right-click opens its menu) and by their background while the layout
@@ -307,7 +291,7 @@ export function WorkspaceRow({
     if (rows.length === 0) return null
     // A lifted layout leaves the list while the tree takes the drop; a drag that began on the tree leaves its spot one dashed block its group's size.
     if (liftedLayout === layout.layoutId && (view || own)) {
-      return view ? null : <div key="__ghost__" className="mx-1.5 my-0.5" data-sidebar-drag-ghost><GhostBlock look={layoutLook(layout.name, w.layouts.indexOf(layout))} height={(ghostSize?.height ?? 0) - 4} /></div>
+      return view ? null : <div key="__ghost__" className="mx-1.5 my-0.5" data-sidebar-drag-ghost><GhostBlock look={layoutLook(layout.name)} height={(ghostSize?.height ?? 0) - 4} /></div>
     }
     const shown = shownPanelOf(layout)
     const style: React.CSSProperties = {
@@ -331,7 +315,7 @@ export function WorkspaceRow({
           onPointerLeave={() => setStripHover(null)}
           onMouseDown={(e) => pressLayout(e, w, layout)}
           onClick={(e) => { e.stopPropagation(); if (!wasDragged.current) switchLayout(workspaceId, { windowId: w.windowId }, layout.layoutId) }}
-          onContextMenu={(e) => void handleLayoutMenu(e, w, layout.layoutId)}
+          onContextMenu={(e) => void showLayoutMenu(e, workspaceId, layout.layoutId, { closable: w.layouts.length > 1 })}
         >
           {/* Rounded by clipping, not by a border radius: a radius as wide as the strip paints stray pixels just outside its left edge. */}
           <span
@@ -495,7 +479,7 @@ export function WorkspaceRow({
             </>
           )}
           {view && foreignLook && <DragFloat look={foreignLook} float={view.float} />}
-          {view && liftedLayout && treeWindows.flatMap((w) => w.layouts.filter((l) => l.layoutId === liftedLayout).map((l) => <DragFloat key={l.layoutId} look={layoutLook(l.name, w.layouts.indexOf(l))} float={view.float} />))}
+          {view && liftedLayout && treeWindows.flatMap((w) => w.layouts.filter((l) => l.layoutId === liftedLayout).map((l) => <DragFloat key={l.layoutId} look={layoutLook(l.name)} float={view.float} />))}
           <WorkspaceSkillsTree
             workspaceId={workspaceId}
             enabled={showSkills}

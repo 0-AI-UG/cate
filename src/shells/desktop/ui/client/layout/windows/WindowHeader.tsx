@@ -6,13 +6,11 @@
 // focused; the + opens a new tab. It switches what this client shows of the
 // window, never a panel.
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Columns2 as Columns, RectangleHorizontal, X } from 'lucide-react'
 import { dockPanels, type DockLayout, type DocWindow, type LayoutId, type PanelRecord } from '@workspace/document/contract'
-import { clientStateFor, documentStoreFor } from '@client/document'
-import { clientUi } from '@kernel/interaction'
-import type { ContextMenuItem } from '@kernel/interaction/contract'
-import { activeTabOf, closePanel, createPanel, panelDefinition, renameLayout, switchLayout } from '@client/host'
+import { documentStoreFor } from '@client/document'
+import { activeTabOf, closePanel, createPanel, panelDefinition, revealOnce, switchLayout } from '@client/host'
 import { placementOf } from '@workspace/document/contract'
 import { Tooltip } from '../../../kernel/interaction'
 import { useClientState, useDocument } from '../../document'
@@ -29,18 +27,9 @@ import { useDragStore } from '../drag/store'
 import { useDragOp } from '../drag/useDragOp'
 import { useDragSettled } from '../drag/settled'
 import { closeLayout } from './closeLayout'
-import { layoutMoveItems, runLayoutMove } from './layoutMenu'
+import { showLayoutMenu } from './layoutMenu'
+import { useLayoutRename } from './useLayoutRename'
 import { buildStripModel, type GapSpot, type StripItemGeom, type StripModel, type StripSource } from './stripModel'
-
-/** What a layout's anchor chip shows: its name, else its position. */
-export function layoutLabel(window: DocWindow, index: number): string {
-  return window.layouts[index].name || `Layout ${index + 1}`
-}
-
-function showMenu(items: ContextMenuItem[]): Promise<string | null> {
-  const ui = clientUi()
-  return ui.showContextMenu ? ui.showContextMenu(items) : Promise.resolve(null)
-}
 
 const CHIP = 'group relative flex items-center gap-1.5 whitespace-nowrap cursor-pointer select-none min-w-0 shrink rounded-[var(--node-tab-radius,10px)] h-6 max-w-[200px] pl-2.5 pr-1 text-[12px] transition-colors'
 /** A member of a group: a flat segment, the group's capsule clips the ends. */
@@ -71,10 +60,7 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   /** Space the chips leave at the left for window chrome (traffic lights). */
   leadingInset?: number
 }) {
-  const [renameId, setRenameId] = useState<LayoutId | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const seedRef = useRef('')
+  const rename = useLayoutRename(workspaceId)
   const windowId = window.id
   const host = { windowId }
   const panels = useDocument(workspaceId, (doc) => doc.panels)
@@ -102,7 +88,7 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   const liftedLayoutId = dragLayoutId && window.layouts.some((l) => l.id === dragLayoutId) ? dragLayoutId : null
   // A dragged layout shows its own name, not its first panel's title.
   const dragLayoutIndex = window.layouts.findIndex((l) => l.id === dragLayoutId)
-  const dragLabel = dragLayoutIndex >= 0 ? layoutLabel(window, dragLayoutIndex) : dragTitle
+  const dragLabel = dragLayoutIndex >= 0 ? window.layouts[dragLayoutIndex].name : dragTitle
   // The cursor is over this strip: the dragged chip floats along it and the strip makes a gap.
   const stripTarget = dragTarget ? stripTargetOf(dragTarget) : null
   // A tree's target (`via: 'tree'`) is not the strip's, though it is a tab slot of this window.
@@ -195,7 +181,7 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   }
   const RADIUS = 'var(--node-tab-radius, 10px)'
   /** A dragged panel's chip is the ghost itself, restyled: floating along the strip over the cursor. */
-  const liftedChip = (id: string, inGroup: boolean): { style: React.CSSProperties; attrs: Record<string, string> } | null => {
+  const liftedChip = (id: string): { style: React.CSSProperties; attrs: Record<string, string> } | null => {
     if (dragPanelId !== id) return null
     if (model) {
       return {
@@ -215,45 +201,11 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   }
   const hiddenStyle = (hidden: boolean): React.CSSProperties => (hidden ? { display: 'none' } : {})
 
-  useEffect(() => {
-    if (renameId && inputRef.current) {
-      inputRef.current.focus()
-      inputRef.current.select()
-    }
-  }, [renameId])
-
-  const beginRename = (layoutId: LayoutId) => {
-    const index = window.layouts.findIndex((l) => l.id === layoutId)
-    const label = index >= 0 ? layoutLabel(window, index) : ''
-    seedRef.current = label
-    setRenameValue(label)
-    setRenameId(layoutId)
-  }
-  const commitRename = (layoutId: LayoutId) => {
-    const trimmed = renameValue.trim()
-    // The default label is not a name: committing it unchanged keeps the layout unnamed.
-    if (trimmed && trimmed !== seedRef.current) renameLayout(workspaceId, layoutId, trimmed)
-    setRenameId(null)
-  }
-
   const closable = window.layouts.length > 1
   const doClose = (layoutId: LayoutId) => { void closeLayout(workspaceId, layoutId) }
 
-  const onContextMenu = async (e: React.MouseEvent, layoutId: LayoutId, group: boolean) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const doc = documentStoreFor(workspaceId)?.getSnapshot()
-    const moves = doc ? layoutMoveItems(doc, layoutId) : []
-    const id = await showMenu([
-      ...(group ? [{ id: 'rename', label: 'Rename' }, ...(moves.length > 0 ? [{ type: 'separator' as const }] : [])] : []),
-      ...moves,
-      { type: 'separator' },
-      { id: 'close', label: 'Close Layout', enabled: closable },
-    ])
-    if (id === 'rename') beginRename(layoutId)
-    else if (id === 'close') doClose(layoutId)
-    else if (id) runLayoutMove(workspaceId, layoutId, id)
-  }
+  const onContextMenu = (e: React.MouseEvent, layout: DockLayout, group: boolean) =>
+    showLayoutMenu(e, workspaceId, layout.id, { closable, ...(group ? { onRename: () => rename.begin(layout) } : {}) })
 
   /** Splits the shown panel: a new pane to the right of its stack. */
   const splitShown = () => {
@@ -271,19 +223,8 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
     splitStackRight(workspaceId, placement.dock, placement.stackId, panelId)
   }
 
-  /** Shows a panel: its layout, its tab in its stack, and focuses it. */
-  const showPanel = (panelId: string) => {
-    const doc = documentStoreFor(workspaceId)?.getSnapshot()
-    const placement = doc && placementOf(doc, panelId)
-    if (!placement) return
-    switchLayout(workspaceId, host, placement.dock.layoutId)
-    const state = clientStateFor(workspaceId)
-    state?.setActiveTab(placement.stackId, panelId)
-    state?.focus(panelId)
-  }
-
   const panelChip = (layout: DockLayout, record: PanelRecord, active: boolean, inGroup = false) => {
-    const lifted = liftedChip(record.id, inGroup)
+    const lifted = liftedChip(record.id)
     const decoration = decorations[record.id]
     const definition = panelDefinition(record.type)
     const recordTitle = record.title || definition?.label || record.type
@@ -308,14 +249,14 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
           : { ...gapStyle((spot) => spot.at === 'item' && spot.layoutId === layout.id, 'Left'), ...gapStyle((spot) => spot.at === 'row-end' && spot.layoutId === layout.id, 'Right') }),
         ...lifted?.style,
       }}
-      onClick={() => { if (!wasDragged.current) showPanel(record.id) }}
+      onClick={() => { if (!wasDragged.current) revealOnce(workspaceId, record.id) }}
       onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault(); else startPanelDrag(e, record.id) }}
       onAuxClick={(e) => {
         if (!isMiddleClick(e)) return
         e.preventDefault()
         void closePanel(workspaceId, record.id)
       }}
-      onContextMenu={(e) => { void onContextMenu(e, layout.id, false) }}
+      onContextMenu={(e) => { void onContextMenu(e, layout, false) }}
     >
       <span className={`shrink-0 ${active ? definition?.tint ?? 'text-secondary' : 'text-muted'}`}>
         <TabIcon type={record.type} size={13} logo={decoration?.logo} logoAlt={decoration?.logoAlt} />
@@ -329,21 +270,21 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
     )
   }
 
-  const items = window.layouts.map((layout, index) => {
+  const items = window.layouts.map((layout) => {
     const layoutActive = layout.id === activeLayoutId
     const ids = dockPanels(layout.dock)
     if (ids.length === 1) {
       const record = panels[ids[0]]
       return record && <React.Fragment key={layout.id}>{panelChip(layout, record, layoutActive)}</React.Fragment>
     }
-    const label = ids.length === 0 ? 'New tab' : layoutLabel(window, index)
+    const label = ids.length === 0 ? 'New tab' : layout.name
     const anchor = (
       <div
         ref={(el) => { if (ids.length === 0) { if (el) itemRefs.current.set(layout.id, el); else itemRefs.current.delete(layout.id) } }}
         data-layout-id={layout.id}
         data-active={layoutActive || undefined}
         title={label}
-        className={`${ids.length === 0 ? CHIP : SEGMENT} ${ids.length === 0 ? chipTone(layoutActive) : `${layoutActive ? 'text-primary' : 'text-muted'} hover:text-primary hover:bg-surface-5`} ${ids.length > 0 && renameId !== layout.id ? 'pr-2.5' : ''}`}
+        className={`${ids.length === 0 ? CHIP : SEGMENT} ${ids.length === 0 ? chipTone(layoutActive) : `${layoutActive ? 'text-primary' : 'text-muted'} hover:text-primary hover:bg-surface-5`} ${ids.length > 0 && rename.renameId !== layout.id ? 'pr-2.5' : ''}`}
         style={NO_DRAG}
         onClick={() => { if (!wasDragged.current) switchLayout(workspaceId, host, layout.id) }}
         onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault(); else if (ids.length > 0) startLayoutDrag(e, layout) }}
@@ -352,25 +293,11 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
           e.preventDefault()
           doClose(layout.id)
         }}
-        onContextMenu={(e) => { void onContextMenu(e, layout.id, ids.length > 0) }}
+        onContextMenu={(e) => { void onContextMenu(e, layout, ids.length > 0) }}
       >
         <span className="shrink-0 text-muted"><RectangleHorizontal size={13} /></span>
-        {renameId === layout.id ? (
-          <input
-            ref={inputRef}
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={() => commitRename(layout.id)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); commitRename(layout.id) }
-              else if (e.key === 'Escape') { e.preventDefault(); setRenameId(null) }
-              e.stopPropagation()
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            className="truncate flex-1 min-w-0 bg-transparent outline-none border-b border-focus text-primary px-0"
-            style={{ font: 'inherit' }}
-          />
+        {rename.renameId === layout.id ? (
+          rename.input(layout.id, 'truncate flex-1 min-w-0 px-0')
         ) : ids.length === 0 ? (
           <span className="min-w-0 flex-1 truncate">{label}</span>
         ) : null}

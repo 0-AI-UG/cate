@@ -38,7 +38,7 @@ export interface StackGroup {
 /** One layout of a window: its canvases and top-level panels. */
 export interface LayoutTree {
   layoutId: LayoutId
-  name?: string
+  name: string
   canvases: CanvasGroup[]
   topLevel: PanelRecord[]
   /** The same panels in dock order, a group per stack: what the sidebar draws
@@ -129,7 +129,7 @@ function windowTree(
       }),
     }))
     const group = stacks.reduce((n, stack) => n + stack.items.length, 0) > 1
-    return { layoutId: layout.id, ...(layout.name ? { name: layout.name } : {}), canvases, topLevel: sort(topLevel), stacks, group }
+    return { layoutId: layout.id, name: layout.name, canvases, topLevel: sort(topLevel), stacks, group }
   })
   return {
     windowId,

@@ -124,9 +124,8 @@ function canvasOrDock(canvas: ActionBinding, dock: (workspaceId: string, context
   }
 }
 
-const SIDES = { up: 'top', down: 'bottom', left: 'left', right: 'right' } as const satisfies Record<string, SplitSide>
-const navigateOrPane = (dir: 'up' | 'down' | 'left' | 'right'): ActionBinding =>
-  canvasOrDock(navigate(dir), (workspaceId) => { focusPaneBeside(workspaceId, SIDES[dir]) }, inDock)
+const navigateOrPane = (dir: 'up' | 'down' | 'left' | 'right', side: SplitSide): ActionBinding =>
+  canvasOrDock(navigate(dir), (workspaceId) => { focusPaneBeside(workspaceId, side) }, inDock)
 const stepOrPanel = (canvasStep: ActionBinding, delta: number): ActionBinding =>
   canvasOrDock(canvasStep, (workspaceId, context) => { stepPanel(workspaceId, context.windowId ?? MAIN_WINDOW, delta) }, inDock)
 
@@ -162,10 +161,10 @@ export function canvasActionBindings(): { [K in keyof typeof CANVAS_ACTIONS]: Ac
     focusPrevious: stepOrPanel(onCanvas(({ store }) => { const s = store.getState(); const prev = s.previousNode(); if (prev) s.focusNode(prev) }), -1),
     autoLayout: onCanvas(({ store }) => store.getState().autoLayout()),
     tidyGrid: onCanvas(({ store }) => store.getState().tidyGridSelected()),
-    navigateUp: navigateOrPane('up'),
-    navigateDown: navigateOrPane('down'),
-    navigateLeft: navigateOrPane('left'),
-    navigateRight: navigateOrPane('right'),
+    navigateUp: navigateOrPane('up', 'top'),
+    navigateDown: navigateOrPane('down', 'bottom'),
+    navigateLeft: navigateOrPane('left', 'left'),
+    navigateRight: navigateOrPane('right', 'right'),
     panUp: pan('up'),
     panDown: pan('down'),
     panLeft: pan('left'),
