@@ -2,7 +2,7 @@
 // workspace runtimes of this checkout's build. Without this a dev runtime
 // outlives the session (one with network access on never stops on its own,
 // architecture 7.4). Runtimes of other builds (the installed app's) are left
-// alone.
+// alone. It also opens a local CDP port (default 9222, see below).
 
 import { execFileSync, spawn } from 'node:child_process'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -16,7 +16,14 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 // gives runtimes started after it a new one, so check both.
 const builds = new Set([computeBuildId(repoRoot)])
 
-const child = spawn('electron-vite', ['dev', ...process.argv.slice(2)], {
+// Chromium DevTools Protocol on localhost, for local CDP clients
+// (chrome://inspect, Playwright connectOverCDP). CATE_CDP_PORT overrides the
+// port, 0 turns it off; an explicit --remoteDebuggingPort argument wins.
+const args = process.argv.slice(2)
+const cdpPort = process.env.CATE_CDP_PORT ?? '9222'
+if (cdpPort !== '0' && !args.includes('--remoteDebuggingPort')) args.push('--remoteDebuggingPort', cdpPort)
+
+const child = spawn('electron-vite', ['dev', ...args], {
   stdio: 'inherit',
   shell: process.platform === 'win32',
 })
