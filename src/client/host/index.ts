@@ -25,13 +25,25 @@ export {
   subscribeSessions,
   type ConnectionLookup,
 } from './sessions'
+export {
+  activeLayoutOf,
+  activeLayoutId,
+  switchLayout,
+  stepLayout,
+  selectLayoutAt,
+  addLayout,
+  removeLayout,
+  moveLayout,
+  renameLayout,
+  showLayoutsOf,
+} from './layouts'
 export { demandSurface, isSurfaceDemanded, demandedSurfaces, subscribeDemandedSurfaces } from './surfaceDemand'
 export { registerSurface, runSurfaceRequest, serveSurfaces, type SurfaceHandler } from './surfaces'
 export { keepMountedPanelIds, setEqual } from './keepMounted'
 export { createPanel, clientPanelKit, inheritedCheckout, newId } from './createPanel'
 export { openLink, panelShowingFile, type LinkTarget, type OpenLinkOptions } from './links'
 export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type ConfirmedClose } from './close'
-export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab } from './focus'
+export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab, selectTabAt } from './focus'
 export { revealPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
 export {
   registerActions,

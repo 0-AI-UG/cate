@@ -6,7 +6,7 @@ import type { DocBatch, DocChange, DockRef, PlaceTarget } from './ops'
 import { createDocument, MAIN_WINDOW, type PanelRecord, type PanelType, type WorkspaceDocument } from './schema'
 
 type Doc = WorkspaceDocument
-const MAIN: DockRef = { windowId: MAIN_WINDOW }
+const MAIN: DockRef = { layoutId: 'main' }
 const R = rect(0, 0, 400, 300)
 
 const record = (id: string, type: PanelType = 'terminal'): PanelRecord =>
@@ -44,10 +44,10 @@ function sample(): Doc {
     { kind: 'setSplitRatio', splitId: 'p1', ratios: [0.7, 0.3] },
     { kind: 'setSplitRatio', splitId: 'p2', ratios: [0.2, 0.8] },
     add('cv', tab('s1'), 'canvas'),
-    add('x', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n1', stackId: 'sn1', rect: R }),
-    add('y', tab('sn1', { canvasId: 'canvas-cv', nodeId: 'n1' })),
-    add('z', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n2', stackId: 'sn2', rect: rect(500, 0, 300, 200) }),
-    add('w', { to: 'window', windowId: 'w1', stackId: 'sw' }),
+    add('x', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n1', layoutId: 'L-n1', stackId: 'sn1', rect: R }),
+    add('y', tab('sn1', { layoutId: 'L-n1' })),
+    add('z', { to: 'canvas', canvasId: 'canvas-cv', nodeId: 'n2', layoutId: 'L-n2', stackId: 'sn2', rect: rect(500, 0, 300, 200) }),
+    add('w', { to: 'window', windowId: 'w1', layoutId: 'w1-main', stackId: 'sw' }),
     { kind: 'addRelation', relation: { id: 'r1', fromPanelId: 'a', toPanelId: 'x', kind: 'context', label: 'L' } },
     { kind: 'setWorktree', worktree: { id: 'wt', path: '/r/wt', color: '#fff', status: 'ready' } },
   )
@@ -75,7 +75,7 @@ describe('invertOp', () => {
     roundTrip(doc, { kind: 'placePanel', id: 'b', at: { to: 'stack', dock: MAIN, stackId: 's1', after: null } })
     roundTrip(doc, { kind: 'placePanel', id: 'z', at: tab('s3') })
     roundTrip(doc, { kind: 'placePanel', id: 'w', at: tab('s2') })
-    roundTrip(doc, { kind: 'placePanel', id: 'd', at: { to: 'window', windowId: 'w2', stackId: 'sw2' } })
+    roundTrip(doc, { kind: 'placePanel', id: 'd', at: { to: 'window', windowId: 'w2', layoutId: 'w2-main', stackId: 'sw2' } })
     roundTrip(doc, { kind: 'placePanel', id: 'a', at: { to: 'split', dock: MAIN, beside: 'p1', side: 'bottom', stackId: 's9', splitId: 'p9' } })
   })
 

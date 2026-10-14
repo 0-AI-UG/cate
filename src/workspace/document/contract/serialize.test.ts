@@ -10,12 +10,12 @@ const R = rect(0, 0, 400, 300)
 
 function sample(): WorkspaceDocument {
   const changes: DocChange[] = [
-    { kind: 'addPanel', record: { id: 'a', type: 'terminal', title: 'a', fields: { n: 1 } }, at: { to: 'stack', dock: { windowId: 'main' }, stackId: 's1' } },
-    { kind: 'addPanel', record: { id: 'cv', type: 'canvas', title: 'cv', canvasId: 'c1', fields: {} }, at: { to: 'split', dock: { windowId: 'main' }, beside: 's1', side: 'right', stackId: 's2', splitId: 'p1' } },
-    { kind: 'addPanel', record: { id: 'x', type: 'editor', title: 'x', fields: {} }, at: { to: 'canvas', canvasId: 'c1', nodeId: 'n1', stackId: 'sn1', rect: R } },
-    { kind: 'addPanel', record: { id: 'w', type: 'browser', title: 'w', fields: {} }, at: { to: 'window', windowId: 'w1', stackId: 'sw' } },
-    { kind: 'addPanel', record: { id: 'cv2', type: 'canvas', title: 'cv2', canvasId: 'c2', fields: {} }, at: { to: 'stack', dock: { windowId: 'w1' }, stackId: 'sw' } },
-    { kind: 'addPanel', record: { id: 'y', type: 'review', title: 'y', fields: {} }, at: { to: 'canvas', canvasId: 'c2', nodeId: 'n2', stackId: 'sn2', rect: R } },
+    { kind: 'addPanel', record: { id: 'a', type: 'terminal', title: 'a', fields: { n: 1 } }, at: { to: 'stack', dock: { layoutId: 'main' }, stackId: 's1' } },
+    { kind: 'addPanel', record: { id: 'cv', type: 'canvas', title: 'cv', canvasId: 'c1', fields: {} }, at: { to: 'split', dock: { layoutId: 'main' }, beside: 's1', side: 'right', stackId: 's2', splitId: 'p1' } },
+    { kind: 'addPanel', record: { id: 'x', type: 'editor', title: 'x', fields: {} }, at: { to: 'canvas', canvasId: 'c1', nodeId: 'n1', layoutId: 'L-n1', stackId: 'sn1', rect: R } },
+    { kind: 'addPanel', record: { id: 'w', type: 'browser', title: 'w', fields: {} }, at: { to: 'window', windowId: 'w1', layoutId: 'w1-main', stackId: 'sw' } },
+    { kind: 'addPanel', record: { id: 'cv2', type: 'canvas', title: 'cv2', canvasId: 'c2', fields: {} }, at: { to: 'stack', dock: { layoutId: 'w1-main' }, stackId: 'sw' } },
+    { kind: 'addPanel', record: { id: 'y', type: 'review', title: 'y', fields: {} }, at: { to: 'canvas', canvasId: 'c2', nodeId: 'n2', layoutId: 'L-n2', stackId: 'sn2', rect: R } },
     { kind: 'addRelation', relation: { id: 'r1', fromPanelId: 'a', toPanelId: 'x', kind: 'use' } },
     { kind: 'setWorktree', worktree: { id: 'wt', path: '/r', color: '#fff', status: 'ready' } },
   ]
@@ -28,10 +28,10 @@ const file = (document: unknown) => JSON.stringify({ version: DOCUMENT_FILE_VERS
 
 describe('document.json', () => {
 
-  it('rejects anything that is not a version 1 document file', () => {
+  it('rejects anything that is not a version 2 document file', () => {
     expect(parseDocument('{').ok).toBe(false)
     expect(parseDocument(JSON.stringify(sample())).ok).toBe(false)
-    expect(parseDocument(JSON.stringify({ version: 2, document: sample() })).ok).toBe(false)
+    expect(parseDocument(JSON.stringify({ version: 3, document: sample() })).ok).toBe(false)
   })
 
   it('rejects documents that break an invariant', () => {
@@ -72,7 +72,7 @@ describe('selectors', () => {
 
   it('list stacks and the document order', () => {
     const doc = sample()
-    expect(stacksIn(doc, { windowId: 'main' }).map((s) => s.id)).toEqual(['s1', 's2'])
+    expect(stacksIn(doc, { layoutId: 'main' }).map((s) => s.id)).toEqual(['s1', 's2'])
     expect(allStacks(doc).map((s) => s.stack.id)).toEqual(['s1', 's2', 'sw', 'sn1', 'sn2'])
     expect(documentOrder(doc)).toEqual(['a', 'cv', 'w', 'cv2', 'x', 'y'])
   })

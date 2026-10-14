@@ -2,8 +2,9 @@
 // on a canvas also the canvas panel's tab and the node; show its window; focus
 // it. The canvas view centres the node when it takes the reveal intent.
 
-import { canvasPanelOf, isCanvasDock, placementOf, windowOf, type PanelId } from '@workspace/document/contract'
+import { canvasPanelOf, nodeOfPanel, placementOf, windowOf, type PanelId } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
+import { showLayoutsOf } from './layouts'
 
 /** Intent kind pushed on a canvas panel: `data` is `{ nodeId, panelId }`. */
 export const CANVAS_REVEAL_INTENT = 'canvas.reveal'
@@ -30,9 +31,12 @@ function revealOnce(workspaceId: string, panelId: PanelId): boolean {
   if (!doc || !state) return false
   const placement = placementOf(doc, panelId)
   if (!placement) return false
+  // A panel in another layout: show that layout first.
+  showLayoutsOf(state, doc, panelId)
   state.setActiveTab(placement.stackId, panelId)
-  if (isCanvasDock(placement.dock)) {
-    const { canvasId, nodeId } = placement.dock
+  const node = nodeOfPanel(doc, panelId)
+  if (node) {
+    const { canvasId, nodeId } = node
     const host = canvasPanelOf(doc, canvasId)
     const hostPlacement = host ? placementOf(doc, host.id) : null
     if (host && hostPlacement) state.setActiveTab(hostPlacement.stackId, host.id)

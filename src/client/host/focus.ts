@@ -2,8 +2,9 @@
 // and which tab each stack shows. Placement for new panels and routing of
 // shortcuts derive from these.
 
-import { placementOf, dockOf, dockStacks, type DockStack, type PanelId, type WorkspaceDocument } from '@workspace/document/contract'
+import { placementOf, dockOf, dockStacks, findStack, type DockStack, type PanelId, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor, type ClientState } from '@client/document'
+import { activeLayoutOf } from './layouts'
 
 /** The tab a stack shows: the client's choice while it is still in the
  *  stack, else the first tab. */
@@ -30,6 +31,20 @@ export function selectTab(workspaceId: string, panelId: PanelId): boolean {
   return true
 }
 
+/** Shows and focuses the n-th tab (0-based) of the stack the focused leaf sits
+ *  in: the split group, or the tabs of a canvas node. False when there is none. */
+export function selectTabAt(workspaceId: string, index: number): boolean {
+  const doc = documentStoreFor(workspaceId)?.getSnapshot()
+  const state = clientStateFor(workspaceId)
+  const leaf = focusedLeafPanelId(workspaceId)
+  const placement = doc && leaf ? placementOf(doc, leaf) : null
+  const target = doc && placement ? findStack(dockOf(doc, placement.dock), placement.stackId)?.panels[index] : undefined
+  if (!state || !placement || !target) return false
+  state.setActiveTab(placement.stackId, target)
+  state.focus(target)
+  return true
+}
+
 /** The leaf that owns attention. Focus on a canvas panel descends into its
  *  active node's shown tab (a selection without one leaves the canvas the
  *  leaf); any other focused panel is the leaf. */
@@ -40,7 +55,8 @@ export function focusedLeafIn(doc: WorkspaceDocument, state: ClientState): Panel
   if (!canvasId) return doc.panels[focused] ? focused : null
   const nodeId = state.selection[canvasId]?.active
   if (!nodeId) return focused
-  const stacks = dockStacks(dockOf(doc, { canvasId, nodeId }))
+  const node = doc.canvases[canvasId]?.nodes[nodeId]
+  const stacks = dockStacks(node && dockOf(doc, { layoutId: activeLayoutOf(doc, state.activeLayouts, { canvasId, nodeId }) }))
   return stacks[0] ? activeTabOf(state.activeTabs, stacks[0]) : focused
 }
 

@@ -25,6 +25,9 @@ export interface PanelPlacementOptions {
   position?: Point
   /** Its size when it lands on a canvas, in place of the type's default. */
   size?: Size
+  /** The main window layout a panel with no better place goes to (the
+   *  creating client's active one). Defaults to the first. */
+  layoutId?: string
 }
 
 /** What every create accepts; a type's own options extend it. */
@@ -159,8 +162,11 @@ export interface PanelDefinition<
   /** Dock chrome: `flushTabBar` drops the tab bar divider; `worktreeChip`
    *  shows the checkout chip; `floatingTabBar` floats the tab bar over the
    *  view (a canvas, whose grid shows behind it; its tab also springs open
-   *  sooner during a drag, since it is a drop surface). */
-  chrome?: { flushTabBar?: boolean; worktreeChip?: boolean; floatingTabBar?: boolean }
+   *  sooner during a drag, since it is a drop surface); `hoverPaneControls`
+   *  fades the controls of a one-panel split pane (maximize, grip, close)
+   *  unless the pane is focused or hovered (a view that fills its pane, like
+   *  the terminal; the others keep them visible). */
+  chrome?: { flushTabBar?: boolean; worktreeChip?: boolean; floatingTabBar?: boolean; hoverPaneControls?: boolean }
   /** How the type takes part in relation flows (prompt context, connected
    *  editors, the intents offered when connecting panels). */
   relation?: RelationRole

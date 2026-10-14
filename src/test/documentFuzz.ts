@@ -7,10 +7,14 @@
 import { rect, type Rect } from '@workspace/canvas/contract'
 import {
   allStacks,
-  MAIN_WINDOW,
+  dockOf,
+  isCanvasDock,
   PANEL_TYPES,
   visitDock,
   type DocChange,
+  type DockLayout,
+  type HostRef,
+  type LayoutTarget,
   type PanelRecord,
   type PanelType,
   type PlaceTarget,
@@ -50,7 +54,7 @@ function randomRect(rng: Rng): Rect {
 }
 
 function randomTarget(doc: WorkspaceDocument, rng: Rng, newId: () => string, canvasPanel: boolean): PlaceTarget {
-  const stacks = allStacks(doc).filter(({ dock }) => !canvasPanel || !('canvasId' in dock))
+  const stacks = allStacks(doc).filter(({ dock }) => !canvasPanel || !isCanvasDock(doc, dock))
   const canvases = Object.keys(doc.canvases)
   const roll = rng.int(10)
   if (roll < 4 && stacks.length) {
@@ -60,20 +64,34 @@ function randomTarget(doc: WorkspaceDocument, rng: Rng, newId: () => string, can
   }
   if (roll < 6 && stacks.length) {
     const { dock } = rng.pick(stacks)
-    const tree = 'canvasId' in dock
-      ? doc.canvases[dock.canvasId].nodes[dock.nodeId].dock
-      : doc.windows[dock.windowId].dock
+    const tree = dockOf(doc, dock)
     const ids: string[] = []
     visitDock(tree, (n) => { ids.push(n.id) })
     return { to: 'split', dock, beside: rng.pick(ids), side: rng.pick(SIDES), stackId: newId(), splitId: newId() }
   }
   if (roll < 8 && canvases.length && !canvasPanel) {
-    return { to: 'canvas', canvasId: rng.pick(canvases), nodeId: newId(), stackId: newId(), rect: randomRect(rng) }
+    return { to: 'canvas', canvasId: rng.pick(canvases), nodeId: newId(), layoutId: newId(), stackId: newId(), rect: randomRect(rng) }
   }
-  if (!doc.windows[MAIN_WINDOW].dock && rng.chance(0.7)) {
-    return { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: newId() }
-  }
-  return { to: 'window', windowId: newId(), stackId: newId() }
+  // An empty layout takes a first stack.
+  const empty = hostsOf(doc).flatMap(({ layouts }) => layouts.filter((l) => !l.dock).map((l) => ({ layoutId: l.id })))
+  if (empty.length && rng.chance(0.7)) return { to: 'stack', dock: rng.pick(empty), stackId: newId() }
+  return { to: 'window', windowId: newId(), layoutId: rng.pick(['main', newId()]), stackId: newId() }
+}
+
+/** Every host (window or canvas node) with its layouts. */
+function hostsOf(doc: WorkspaceDocument): { host: HostRef; layouts: DockLayout[] }[] {
+  return [
+    ...Object.values(doc.windows).map((w) => ({ host: { windowId: w.id }, layouts: w.layouts })),
+    ...Object.values(doc.canvases).flatMap((c) => Object.values(c.nodes).map((n) => ({ host: { canvasId: c.id, nodeId: n.id }, layouts: n.layouts }))),
+  ]
+}
+
+function randomLayoutTarget(doc: WorkspaceDocument, rng: Rng, newId: () => string): LayoutTarget {
+  const roll = rng.int(6)
+  const canvases = Object.keys(doc.canvases)
+  if (roll === 0) return { to: 'window', windowId: newId() }
+  if (roll === 1 && canvases.length) return { to: 'canvas', canvasId: rng.pick(canvases), nodeId: newId(), rect: randomRect(rng) }
+  return { to: 'host', host: rng.pick(hostsOf(doc)).host, index: rng.chance(0.3) ? undefined : rng.int(4) }
 }
 
 function randomRecord(rng: Rng, newId: () => string, type: PanelType): PanelRecord {
@@ -89,9 +107,11 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   const panelIds = panels.map((p) => p.id)
   const someId = () => (panelIds.length && !rng.chance(0.05) ? rng.pick(panelIds) : 'no-such-panel')
   const splits: string[] = []
-  for (const w of Object.values(doc.windows)) visitDock(w.dock, (n) => { if (n.kind === 'split') splits.push(n.id) })
+  for (const w of Object.values(doc.windows)) {
+    for (const l of w.layouts) visitDock(l.dock, (n) => { if (n.kind === 'split') splits.push(n.id) })
+  }
   for (const c of Object.values(doc.canvases)) {
-    for (const n of Object.values(c.nodes)) visitDock(n.dock, (d) => { if (d.kind === 'split') splits.push(d.id) })
+    for (const n of Object.values(c.nodes)) for (const l of n.layouts) visitDock(l.dock, (d) => { if (d.kind === 'split') splits.push(d.id) })
   }
   const detached = Object.values(doc.windows).filter((w) => w.kind === 'detached')
   const canvases = Object.values(doc.canvases).filter((c) => Object.keys(c.nodes).length > 0)
@@ -139,6 +159,15 @@ export function randomChange(doc: WorkspaceDocument, rng: Rng, newId: () => stri
   }
   if (roll < 83 && detached.length) {
     return { kind: 'closeWindow', windowId: rng.pick(detached).id }
+  }
+  if (roll < 86) {
+    const { host, layouts } = rng.pick(hostsOf(doc))
+    const layout = rng.pick(layouts)
+    const pick = rng.int(4)
+    if (pick === 3) return { kind: 'moveLayout', layoutId: layout.id, to: randomLayoutTarget(doc, rng, newId) }
+    if (pick === 0) return { kind: 'addLayout', host, layoutId: rng.chance(0.1) ? layout.id : newId(), name: rng.chance(0.5) ? `L${rng.int(9)}` : undefined }
+    if (pick === 1) return { kind: 'removeLayout', layoutId: layout.id }
+    return { kind: 'renameLayout', layoutId: layout.id, name: `n${rng.int(9)}` }
   }
   if (roll < 88) {
     return {

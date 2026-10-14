@@ -8,7 +8,7 @@ import { documentStoreFor, otherClientsOf, subscribeDocumentStores } from '@clie
 import { trustStore, type PairedWorkspace } from '@client/workspaces'
 import { panelCheckoutHooks } from '@client/host'
 import { panelDefinition } from '@panels/definitions'
-import { canvasOf, dockPanels, type WorkspaceDocument, type WorktreeMeta } from '@workspace/document/contract'
+import { canvasOf, nodePanels, type WorkspaceDocument, type WorktreeMeta } from '@workspace/document/contract'
 import { panelCheckout } from '@workspace/repository/contract'
 import type { MobileCanvas, MobileConnection, MobileConnectionAction, MobileCoreState, MobilePanel, MobileWorkspace, MobileWorktree } from '../contract'
 import type { MobileClient } from './boot'
@@ -34,7 +34,7 @@ function canvasOfDoc(doc: WorkspaceDocument, canvasId: string | undefined): Mobi
   if (!canvas) return null
   return {
     id: canvas.id,
-    nodes: Object.values(canvas.nodes).map((node) => ({ id: node.id, rect: { x: node.rect.origin.x, y: node.rect.origin.y, width: node.rect.size.width, height: node.rect.size.height }, panels: dockPanels(node.dock) })),
+    nodes: Object.values(canvas.nodes).map((node) => ({ id: node.id, rect: { x: node.rect.origin.x, y: node.rect.origin.y, width: node.rect.size.width, height: node.rect.size.height }, panels: nodePanels(node) })),
   }
 }
 
