@@ -2,15 +2,19 @@
 // shows only a ghost while it runs, and the release sends the placement.
 
 import {
+  canvasOf,
   dockOf,
+  dockPanels,
   dockStacks,
   findStack,
+  layoutsIn,
   placementOf,
+  sameDockRef,
   type DocChange,
   type WorkspaceDocument,
 } from '@workspace/document/contract'
-import type { Point, Rect, Size } from '@workspace/canvas/contract'
-import { canLiveOnCanvas } from '@client/host'
+import { findFreePosition, type Point, type Rect, type Size } from '@workspace/canvas/contract'
+import { canLiveOnCanvas, panelDropSize } from '@client/host'
 import type { DragPanel, DragSource, DropTarget } from './types'
 
 export interface DropContext {
@@ -52,7 +56,7 @@ export function dropChanges(
       return [{
         kind: 'placePanel',
         id: panel.id,
-        at: { to: 'canvas', canvasId: target.canvasId, nodeId: ctx.newId(), stackId: ctx.newId(), rect: { origin: target.origin, size: target.size } },
+        at: { to: 'canvas', canvasId: target.canvasId, nodeId: ctx.newId(), layoutId: ctx.newId(), stackId: ctx.newId(), rect: { origin: target.origin, size: target.size } },
       }]
     }
 
@@ -90,6 +94,65 @@ export function dropChanges(
       return [change]
     }
 
+    case 'tab-slot': {
+      const layouts = layoutsIn(doc, target.host)
+      if (!layouts) return null
+      // Slots count the layouts as they stand; the dragged one leaves its
+      // place first, which shifts every slot after it.
+      if (source.origin.kind === 'layout') {
+        const from = layouts.findIndex((l) => l.id === (source.origin as { layoutId: string }).layoutId)
+        if (from < 0) return null
+        const index = target.index > from ? target.index - 1 : target.index
+        return index === from ? null : [{ kind: 'moveLayout', layoutId: layouts[from].id, to: { to: 'host', host: target.host, index } }]
+      }
+      const current = placementOf(doc, panel.id)
+      const from = current ? layouts.findIndex((l) => l.id === current.dock.layoutId) : -1
+      let index = target.index
+      // A tab on its own is a layout: it moves as one, keeping its id.
+      if (from >= 0 && dockPanels(layouts[from].dock).length === 1) {
+        if (index > from) index--
+        return index === from ? null : [{ kind: 'moveLayout', layoutId: layouts[from].id, to: { to: 'host', host: target.host, index } }]
+      }
+      return [{ kind: 'placePanel', id: panel.id, at: { to: 'tab', host: target.host, layoutId: ctx.newId(), stackId: ctx.newId(), index } }]
+    }
+
+    case 'group-home':
+      return null
+
+    case 'group-slot': {
+      const dock = { layoutId: target.layoutId }
+      const tree = dockOf(doc, dock)
+      const beside = tree && findStack(tree, target.beside)
+      if (!beside) return null
+      // Beside its own lone pane is where it already is.
+      if (placementOf(doc, panel.id)?.stackId === target.beside && beside.panels.length <= 1) return null
+      return [{ kind: 'placePanel', id: panel.id, at: { to: 'split', dock, beside: target.beside, side: target.side, stackId: ctx.newId(), splitId: ctx.newId() } }]
+    }
+
+    case 'stack-slot': {
+      const placement = placementOf(doc, panel.id)
+      if (!placement) return null
+      const dock = { layoutId: target.layoutId }
+      // Its own spot is where it already is.
+      if (target.stackId !== null && placement.stackId === target.stackId && sameDockRef(placement.dock, dock)) {
+        const panels = findStack(dockOf(doc, dock), target.stackId)?.panels ?? []
+        if ((panels[panels.indexOf(panel.id) - 1] ?? null) === target.after) return null
+      }
+      return [{ kind: 'placePanel', id: panel.id, at: { to: 'stack', dock, stackId: target.stackId ?? ctx.newId(), after: target.after } }]
+    }
+
+    case 'canvas-slot': {
+      const canvasId = doc.panels[target.canvasPanelId]?.canvasId
+      const canvas = canvasId ? doc.canvases[canvasId] : undefined
+      if (!canvasId || !canvas || !placementOf(doc, panel.id)) return null
+      // Within its own canvas the order of nodes is nothing the canvas keeps.
+      if (canvasOf(doc, panel.id) === canvasId) return null
+      if (!canLiveOnCanvas(panel.type)) return null
+      const size = panelDropSize(panel.type)
+      const origin = findFreePosition(canvas.nodes, null, size)
+      return [{ kind: 'placePanel', id: panel.id, at: { to: 'canvas', canvasId, nodeId: ctx.newId(), layoutId: ctx.newId(), stackId: ctx.newId(), rect: { origin, size } } }]
+    }
+
     case 'detach':
       return null
   }
@@ -97,7 +160,7 @@ export function dropChanges(
 
 /** The op that detaches a panel into the new window `windowId`. */
 export function detachChange(panel: DragPanel, windowId: string, newId: () => string): DocChange {
-  return { kind: 'placePanel', id: panel.id, at: { to: 'window', windowId, stackId: newId() } }
+  return { kind: 'placePanel', id: panel.id, at: { to: 'window', windowId, layoutId: newId(), stackId: newId() } }
 }
 
 /** Where the detached window opens on this device: at the drop point. */

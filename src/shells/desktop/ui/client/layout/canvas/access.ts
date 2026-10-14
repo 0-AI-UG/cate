@@ -12,13 +12,14 @@ import {
   type PanelId,
   type WindowId,
   type WorkspaceDocument,
+  windowDockPanels,
 } from '@workspace/document/contract'
 import { canvasViewFor } from './registry'
 
 /** The first canvas whose canvas panel sits in the window's dock (tree
  *  order), else any canvas. */
 export function primaryCanvasId(doc: WorkspaceDocument, windowId: WindowId = MAIN_WINDOW): CanvasId | null {
-  for (const id of dockPanels(doc.windows[windowId]?.dock)) {
+  for (const id of windowDockPanels(doc.windows[windowId])) {
     const canvasId = doc.panels[id]?.canvasId
     if (canvasId && doc.canvases[canvasId]) return canvasId
   }

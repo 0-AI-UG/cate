@@ -2,7 +2,7 @@
 // lookups come in through a DropEnvironment so tests can pass a fake.
 
 import { snapToGrid, CANVAS_GRID_SIZE, type Point, type Size } from '@workspace/canvas/contract'
-import { isCanvasDock } from '@workspace/document/contract'
+import { isNodeHost } from '@workspace/document/contract'
 import { canLiveOnCanvas } from '@client/host'
 import { canvasSurfaceAt, getDropZoneEntries, resolveDropEdge, type DropZoneEntry } from './registry'
 import { cursorToCanvasOrigin, snappedGhostScreenRect } from './geometry'
@@ -59,6 +59,8 @@ export function resolveDrop(
     const target = resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
     return target?.kind === 'canvas-reposition' ? target : null
   }
+  // A layout only moves along a tab strip: no dock, canvas or other window.
+  if (source.origin.kind === 'layout') return cursor.insideWindow ? resolveDockHit(cursor.client, source, panelType, env) : null
   if (!cursor.insideWindow) return env.canDetach() ? { kind: 'detach', screen: cursor.screen } : null
   return resolveDockHit(cursor.client, source, panelType, env)
     ?? resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
@@ -72,10 +74,11 @@ function resolveDockHit(client: Point, source: DragSource, panelType: string, en
   for (const entry of env.dropZones) {
     if (entry.workspaceId !== source.workspaceId) continue
     if (entry.acceptsPanel && !entry.acceptsPanel(panelType)) continue
-    if (isCanvasDock(entry.dock)) {
+    if (source.origin.kind === 'layout' && !entry.strip && !entry.tree) continue
+    if (isNodeHost(entry.host)) {
       // A canvas panel never goes onto a canvas; a dragged node never drops
       // into its own mini dock (the drop would remove the node under it).
-      if (!onCanvas || entry.dock.nodeId === ownNode) continue
+      if (!onCanvas || entry.host.nodeId === ownNode) continue
     }
     const rect = entry.getRect()
     if (!rect) continue
@@ -85,18 +88,29 @@ function resolveDockHit(client: Point, source: DragSource, panelType: string, en
   }
   if (hits.length === 0) return null
 
-  // Stacks before whole docks and edges; the tightest fit first.
+  // Stacks and tab strips before whole docks and edges (a window's left edge
+  // zone reaches under its strip); the tightest fit first.
   hits.sort((a, b) => {
-    const specA = a.entry.stackId ? 0 : 1
-    const specB = b.entry.stackId ? 0 : 1
+    const specA = a.entry.stackId || a.entry.strip || a.entry.tree ? 0 : 1
+    const specB = b.entry.stackId || b.entry.strip || b.entry.tree ? 0 : 1
     if (specA !== specB) return specA - specB
     return a.area - b.area
   })
   const { entry, rect } = hits[0]
   const workspaceId = entry.workspaceId
+  if (entry.strip) {
+    const target = entry.strip.resolve(client.x, source)
+    if (!target) return null
+    return target.kind === 'tab-slot' ? { ...target, workspaceId, host: entry.host } : { ...target, workspaceId }
+  }
+
+  if (entry.tree) {
+    const target = entry.tree.resolve(client.y, source)
+    return target && { ...target, workspaceId }
+  }
 
   if (entry.stackId) {
-    const edge = resolveDropEdge(client.x, client.y, rect)
+    const edge = resolveDropEdge(client.x, client.y, rect, entry.hasTabBar?.() ?? true)
     if (edge === null) return null
     const selfStack = source.origin.kind === 'dock-tab' && source.origin.stackId === entry.stackId
     // A lone tab cannot split against its own stack (the other half would be

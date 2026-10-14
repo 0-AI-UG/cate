@@ -21,7 +21,7 @@ export function inheritedCheckout(workspaceId: string, store: CanvasViewStore): 
   const state = store.getState()
   const nodeId = focusedNodeId(state)
   if (!nodeId) return {}
-  return checkoutOfPanel(workspaceId, activeNodePanelId(state.nodes[nodeId]?.dock, clientStateFor(workspaceId)?.getSnapshot().activeTabs))
+  return checkoutOfPanel(workspaceId, activeNodePanelId(state.nodes[nodeId], clientStateFor(workspaceId)?.getSnapshot()))
 }
 
 export interface CanvasCreateOptions {

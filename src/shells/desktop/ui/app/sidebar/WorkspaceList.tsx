@@ -40,6 +40,10 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [insertIndex, setInsertIndex] = useState<number | null>(null)
+  // The workspace whose own row was pressed last: only that row drags the
+  // workspace. A press in its panel tree (rows and layout headings drag there)
+  // must not start the native drag of the entry around it.
+  const [armedId, setArmedId] = useState<string | null>(null)
   const anchorRef = useRef<number | null>(null)
   /** The machine of the row being dragged: rows move within their machine. */
   const draggingFrom = useRef<string | null>(null)
@@ -145,7 +149,8 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
                 <div
                   key={entry.id}
                   className="relative"
-                  draggable={multiSelected.size === 0}
+                  draggable={multiSelected.size === 0 && armedId === entry.id}
+                  onMouseDown={(e) => setArmedId((e.target as Element).closest('[role="group"]') ? null : entry.id)}
                   onDragStart={(e) => {
                     draggingFrom.current = group.machine.key
                     e.dataTransfer.setData('text/plain', String(index))

@@ -30,6 +30,7 @@ function Minimap({ workspaceId }: { workspaceId: string }) {
   )
   const panels = useDocument(workspaceId, selectPanels)
   const activeTabs = useClientState(workspaceId, (s) => s.activeTabs)
+  const activeLayouts = useClientState(workspaceId, (s) => s.activeLayouts)
   const decorations = useTabDecorations(workspaceId)
   // The same membership the territory draws, so the two never disagree.
   const { groups } = useWorktreeMembership(workspaceId)
@@ -160,7 +161,7 @@ function Minimap({ workspaceId }: { workspaceId: string }) {
     >
       {/* Node rectangles */}
       {nodeList.map((node) => {
-        const panelId = activeNodePanelId(node.dock, activeTabs)
+        const panelId = activeNodePanelId(node, { activeTabs, activeLayouts })
         const panel = panelId ? panels[panelId] : undefined
         const type = panel?.type
         const rectW = Math.max(node.size.width * scale, 2)

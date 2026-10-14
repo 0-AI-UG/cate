@@ -3,15 +3,15 @@
 // panels, top-level panels, the panels of its other windows, and its skills.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, Server } from 'lucide-react'
+import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, PanelsTopLeft, Server } from 'lucide-react'
 import { Icon, Tooltip } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
-import { useDocument } from '../../client/document'
-import { focusedLeafPanelId, panelRowLabel } from '@client/host'
+import { useClientState, useDocument } from '../../client/document'
+import { activeLayoutOf, activeTabOf, focusedLeafPanelId, panelRowLabel, switchLayout } from '@client/host'
 import type { WorkspaceEntry } from '@client/workspaces'
-import type { PanelRecord } from '@workspace/document/contract'
+import { hostOf, placementOf, type PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
 import { useWorktreeColor, worktreeTitleStyle } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
@@ -26,9 +26,32 @@ import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
 import { PresenceAvatars } from './PresenceAvatars'
 import { showMenu, type MenuItem } from './menu'
-import { workspacePanelTree, type WindowTree } from './panelTree'
+import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
+import { itemKey, layoutKey, layoutRows } from './sidebarDrag'
+import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
+import { closeLayout, layoutMoveItems, runLayoutMove } from '../../client/layout/windows'
+import { DragFloat, GhostBlock, type RowLook } from './GhostBlock'
+import { takesCanvasDrop, useSidebarTree, type Float } from './useSidebarTree'
 
 const isMiddleClick = (e: React.MouseEvent): boolean => e.button === 1
+
+/** Where a group's rows start: the strip (at x 8 to 22 with its hit zone) ends before them. A
+ *  member's content stays where a plain row's is, so only its chip moves. */
+const GROUP_INDENT = 16
+
+/** The strip of any other layout: the text color, dim. A color change only, so a hover never
+ *  passes through a bright flash (an opacity jump over a color transition would). */
+const DIM_STRIP = 'color-mix(in srgb, currentColor 8%, transparent)'
+
+/** The background of the non-shown panels of the shown layout: the capsule's color, subdued. */
+const MEMBER_BG = 'bg-[color-mix(in_srgb,var(--surface-2)_55%,transparent)]'
+
+/** The strip of the shown or hovered layout: the accent the focused split's border has. */
+const ACTIVE_ACCENT = 'color-mix(in srgb, var(--focus-blue, #3b82f6) 50%, transparent)'
+
+/** The group's strip: as thick as its rounding is wide, on its left corners only (a pill's edge). */
+const STRIP_THICKNESS = 4
+
 
 interface WorkspaceRowProps {
   entry: WorkspaceEntry
@@ -64,7 +87,20 @@ export function WorkspaceRow({
   const windowId = useWindowId()
   const doc = useDocument(isOpen ? workspaceId : null, (d) => d)
   const rootPath = useWorkspaceRoot(isOpen ? workspaceId : null) || undefined
-  const tree = useMemo(() => workspacePanelTree(doc, { windowId, rootPath }), [doc, windowId, rootPath])
+  const panelViews = useClientState(isOpen ? workspaceId : null, (s) => s.panelViews)
+  const tree = useMemo(
+    () => workspacePanelTree(doc, { windowId, rootPath, canvasOrder: (id) => panelViews[id]?.[CANVAS_ORDER_KEY] as string[] | undefined }),
+    [doc, windowId, rootPath, panelViews],
+  )
+  const treeWindows = [tree.primary, ...tree.others]
+  // The tree is a drop zone of the shared drag system; its rows start drags of it too.
+  const sidebarTree = useSidebarTree(workspaceId, treeWindows)
+  const view = sidebarTree.view
+  const settled = useDragSettled()
+  const { wasDragged } = useDragOp()
+  // The drag of a panel or layout of this workspace, wherever it began (one object per drag).
+  const dragSource = useDragStore((s) => (s.isDragging && s.source?.workspaceId === workspaceId ? s.source : null))
+  const ghostSize = useDragStore((s) => (s.isDragging && s.source?.workspaceId === workspaceId ? s.ghostSize : null))
   const statuses = useTerminalStatuses(isOpen ? workspaceId : null)
   const ports = panelsWithPorts(statuses)
   const agents = useAgentInfoByPanel(isOpen ? workspaceId : null)
@@ -75,6 +111,8 @@ export function WorkspaceRow({
   const [renamingWorkspace, setRenamingWorkspace] = useState<string | null>(null)
   const [rename, setRename] = useState<RenameState | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  // The group whose strip the cursor is on: its panels show as members, like the shown layout's.
+  const [stripHover, setStripHover] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   // Focus and select once when renaming starts, not on every keystroke.
@@ -153,15 +191,20 @@ export function WorkspaceRow({
     setRename(null)
   }
 
-  const renderPanel = (record: PanelRecord, indent: boolean) => (
+  const renderPanel = (record: PanelRecord, depth: number, active: boolean, member: boolean, indented: boolean, ghost: RowGhost | null = null) => (
     <WorkspacePanelRow
       key={record.id}
+      ghost={ghost}
       record={record}
-      indent={indent}
+      depth={depth}
+      active={active}
+      member={member}
+      indented={indented}
       agent={agents[record.id]}
       hasPorts={ports.has(record.id)}
       worktreeKey={Object.keys(doc.worktrees).length >= 2 && record.worktreeId ? doc.worktrees[record.worktreeId]?.color : undefined}
-      onClick={(e) => { e.stopPropagation(); void revealPanel(workspaceId, record.id) }}
+      onClick={(e) => { e.stopPropagation(); if (!wasDragged.current) void revealPanel(workspaceId, record.id) }}
+      onPress={rename?.panelId !== record.id ? (e) => pressPanel(e, record.id) : undefined}
       onClose={() => void closePanels(workspaceId, [record.id])}
       onContextMenu={(e) => void handlePanelMenu(e, record)}
       rename={rename?.panelId === record.id ? {
@@ -174,27 +217,204 @@ export function WorkspaceRow({
     />
   )
 
-  const renderWindow = (w: WindowTree) => (
-    <React.Fragment key={w.windowId}>
-      {w.canvases.map(({ record, children }) => {
-        const isCollapsed = collapsed.has(canvasKey(workspaceId, record.id))
-        return (
-          <React.Fragment key={record.id}>
+  const activeLayouts = useClientState(isOpen ? workspaceId : null, (s) => s.activeLayouts)
+  const focusedPanelId = useClientState(isOpen ? workspaceId : null, (s) => s.focusedPanelId)
+  const activeTabs = useClientState(isOpen ? workspaceId : null, (s) => s.activeTabs)
+
+  /** A press on a panel row: a drag of its tab, from where it is placed. */
+  const pressPanel = (e: React.MouseEvent<HTMLElement>, panelId: string) => {
+    const placement = placementOf(doc, panelId)
+    const host = placement ? hostOf(doc, placement.dock.layoutId) : undefined
+    if (placement && host) beginDrag(e, { kind: 'dock-tab', workspaceId, dock: placement.dock, host, stackId: placement.stackId, panelId, from: 'sidebar' })
+  }
+  /** A press on a layout's handle: a drag of the whole layout, measured on its group. */
+  const pressLayout = (e: React.MouseEvent<HTMLElement>, w: WindowTree, layout: LayoutTree) => {
+    const panelId = layoutRows(layout)[0]?.record.id
+    const box = e.currentTarget.closest('[data-layout-group]') ?? e.currentTarget
+    if (panelId) beginDrag({ button: e.button, clientX: e.clientX, clientY: e.clientY, currentTarget: box }, { kind: 'layout', workspaceId, host: { windowId: w.windowId }, layoutId: layout.layoutId, panelId, from: 'sidebar' })
+  }
+  /** A layout is dragged as one ghost named like the window's strip names it: its name, else its position. */
+  const layoutLook = (name: string | undefined, index: number) => ({
+    label: name || `Layout ${index + 1}`,
+    icon: <PanelsTopLeft size={11} className="opacity-70" />,
+  })
+
+  // The row of the dragged panel (the group of the dragged layout) is the ghost, wherever the drag began: it
+  // floats over the cursor while the tree takes the drop. A panel or layout with no row here floats as a look-alike.
+  const own = dragSource?.from === 'sidebar' ? dragSource : null
+  const rowOf = (id: string) => treeWindows.some((w) => w.layouts.some((l) => layoutRows(l).some((r) => r.record.id === id || (!collapsed.has(canvasKey(workspaceId, r.record.id)) && r.children.some((c) => c.id === id)))))
+  const liftedPanel = dragSource?.origin.kind === 'dock-tab' && rowOf(dragSource.panelId) ? dragSource.panelId : null
+  const draggedLayout = dragSource?.origin.kind === 'layout' ? dragSource.origin.layoutId : null
+  const liftedLayout = draggedLayout && treeWindows.some((w) => w.layouts.some((l) => l.layoutId === draggedLayout)) ? draggedLayout : null
+  /** A drag whose panel or layout has no row here floats in the tree as a look-alike. A
+   *  layout is named as its window's strip names it (it may be another window's than the tree's). */
+  const foreignLook = ((): RowLook | null => {
+    if (liftedPanel || liftedLayout || !dragSource) return null
+    const origin = dragSource.origin
+    if (origin.kind === 'layout') {
+      for (const w of Object.values(doc.windows)) {
+        const index = w.layouts.findIndex((l) => l.id === origin.layoutId)
+        if (index >= 0) return layoutLook(w.layouts[index].name, index)
+      }
+      return null
+    }
+    const record = doc.panels[dragSource.panelId]
+    return record ? { label: panelRowLabel(record), icon: <Icon name={panelIcon(record.type)} size={11} style={{ opacity: 0.6 }} /> } : null
+  })()
+  /** A dragged tab (from the tree, a strip or a split) that can live on a canvas: every canvas shows its container. */
+  const canvasDrop = !!dragSource && takesCanvasDrop(dragSource, doc.panels[dragSource.panelId]?.type)
+  const canvasTarget = view?.target.kind === 'canvas-slot' ? view.target.canvasPanelId : null
+  /** A lifted panel row is the ghost itself, restyled: floating over the cursor while the tree takes the drop. When the drag is off-zone, no ghost. */
+  const rowGhost = (id: string): RowGhost | null => (liftedPanel === id && view ? { rect: view.float } : null)
+  /** The margin that opens the gap on the row at `side` of the gap spot. */
+  const gapStyle = (here: (spot: GapSpot) => boolean, side: 'Top' | 'Bottom'): React.CSSProperties => {
+    const transition = settled ? 'margin 140ms ease' : undefined
+    return view?.gap && here(view.gap) ? { [`margin${side}`]: view.size, transition } : { transition }
+  }
+
+  /** The panel a layout shows: the focused one when it is in it, else the shown tab of its first stack. */
+  const shownPanelOf = (layout: LayoutTree): string | undefined => {
+    const rows = layoutRows(layout)
+    if (focusedPanelId && rows.some((row) => row.record.id === focusedPanelId)) return focusedPanelId
+    const first = layout.stacks[0]
+    return first && first.items.length > 0 ? activeTabOf(activeTabs, { kind: 'stack', id: first.stackId, panels: first.items.map((item) => item.record.id) }) : undefined
+  }
+
+  const handleLayoutMenu = async (e: React.MouseEvent, w: WindowTree, layoutId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const moves = layoutMoveItems(doc, layoutId)
+    const id = await showMenu([
+      ...moves,
+      ...(moves.length > 0 ? [{ type: 'separator' as const }] : []),
+      { id: 'close', label: 'Close Layout', enabled: w.layouts.length > 1 },
+    ])
+    if (id === 'close') void closeLayout(workspaceId, layoutId)
+    else if (id) runLayoutMove(workspaceId, layoutId, id)
+  }
+
+  /** A layout with several panels is a group: its rows are regular rows, told apart as
+   *  members by a thick strip floating at their left (the handle of the layout: click shows
+   *  it, drag moves it, right-click opens its menu) and by their background while the layout
+   *  is shown. A layout with one panel is a plain row; an empty one draws nothing. */
+  const renderWindow = (w: WindowTree) => {
+    const active = activeLayoutOf(doc, activeLayouts, { windowId: w.windowId })
+    return <React.Fragment key={w.windowId}>{w.layouts.map((layout) => renderLayout(w, layout, layout.layoutId === active))}</React.Fragment>
+  }
+
+  const renderLayout = (w: WindowTree, layout: LayoutTree, layoutActive: boolean) => {
+    const rows = layoutRows(layout)
+    if (rows.length === 0) return null
+    // A lifted layout leaves the list while the tree takes the drop; a drag that began on the tree leaves its spot one dashed block its group's size.
+    if (liftedLayout === layout.layoutId && (view || own)) {
+      return view ? null : <div key="__ghost__" className="mx-1.5 my-0.5" data-sidebar-drag-ghost><GhostBlock look={layoutLook(layout.name, w.layouts.indexOf(layout))} height={(ghostSize?.height ?? 0) - 4} /></div>
+    }
+    const shown = shownPanelOf(layout)
+    const style: React.CSSProperties = {
+      ...gapStyle((spot) => spot.at === 'item' && spot.layoutId === layout.layoutId, 'Top'),
+      ...gapStyle((spot) => spot.at === 'row-end' && spot.layoutId === layout.layoutId, 'Bottom'),
+    }
+    const member = layout.group && (layoutActive || stripHover === layout.layoutId)
+    const content = rows.map((row) => renderRow(row, layoutActive && row.record.id === shown, member, layout.group))
+    if (!layout.group) {
+      return <div key={layout.layoutId} data-sb-key={layoutKey(w.windowId, layout.layoutId)} style={style}>{content}</div>
+    }
+    return (
+      <div key={layout.layoutId} data-layout-group={layout.layoutId} data-sb-key={layoutKey(w.windowId, layout.layoutId)} className="relative" style={style}>
+        <div
+          role="button"
+          aria-label="Layout"
+          data-layout-gutter={layout.layoutId}
+          className="group/strip absolute z-10 cursor-grab"
+          style={{ left: 8, top: 4, bottom: 4, width: 14 }}
+          onPointerEnter={() => setStripHover(layout.layoutId)}
+          onPointerLeave={() => setStripHover(null)}
+          onMouseDown={(e) => pressLayout(e, w, layout)}
+          onClick={(e) => { e.stopPropagation(); if (!wasDragged.current) switchLayout(workspaceId, { windowId: w.windowId }, layout.layoutId) }}
+          onContextMenu={(e) => void handleLayoutMenu(e, w, layout.layoutId)}
+        >
+          {/* Rounded by clipping, not by a border radius: a radius as wide as the strip paints stray pixels just outside its left edge. */}
+          <span
+            aria-hidden
+            data-layout-strip
+            className="pointer-events-none absolute inset-y-0 left-1 transition-colors"
+            style={{
+              width: STRIP_THICKNESS,
+              clipPath: `inset(0 round ${STRIP_THICKNESS}px 0 0 ${STRIP_THICKNESS}px)`,
+              backgroundColor: layoutActive || stripHover === layout.layoutId ? ACTIVE_ACCENT : DIM_STRIP,
+            }}
+          />
+        </div>
+        {content}
+      </div>
+    )
+  }
+
+  const renderRow = (
+    { record, children, stackId }: ReturnType<typeof layoutRows>[number],
+    active: boolean,
+    member: boolean,
+    indented: boolean,
+  ) => {
+    const ghost = rowGhost(record.id)
+    const isCollapsed = collapsed.has(canvasKey(workspaceId, record.id))
+    // A lifted canvas takes its children with it; a lifted child stays in the list, as the ghost.
+    const kids = ghost ? [] : children
+    const container = record.canvasId !== undefined && canvasDrop
+    const endGap = view?.gap?.at === 'canvas-end' && view.gap.canvasPanelId === record.id
+    return (
+      <div
+        key={record.id}
+        data-sb-key={itemKey(record.id)}
+        data-sb-stack={stackId}
+        // A block formatting context: the row's margins stay inside it, so rows touch and measure as they look.
+        className="relative flow-root"
+        style={{
+          ...(indented ? { paddingLeft: GROUP_INDENT } : null),
+          ...gapStyle((spot) => spot.at === 'member' && spot.panelId === record.id, 'Top'),
+          ...gapStyle((spot) => spot.at === 'group-end' && spot.panelId === record.id, 'Bottom'),
+        }}
+      >
+        {record.canvasId ? (
+          <>
+            {container && (
+              // The canvas's container, drawn while a drag could drop into it: its bottom edge is a slot of its own.
+              <div
+                aria-hidden
+                data-canvas-container={record.id}
+                className="pointer-events-none absolute inset-y-0.5 rounded-lg border transition-colors"
+                style={{ left: 6 + (indented ? GROUP_INDENT : 0), right: 6, borderColor: canvasTarget === record.id ? ACTIVE_ACCENT : DIM_STRIP }}
+              />
+            )}
             <CanvasRow
               record={record}
+              active={active}
+              member={member}
+              indented={indented}
+              ghost={ghost}
               hasChildren={children.length > 0}
               collapsed={isCollapsed}
               onToggle={() => toggleCollapsed(canvasKey(workspaceId, record.id))}
-              onClick={(e) => { e.stopPropagation(); void revealPanel(workspaceId, record.id) }}
+              onClick={(e) => { e.stopPropagation(); if (!wasDragged.current) void revealPanel(workspaceId, record.id) }}
+              onPress={(e) => pressPanel(e, record.id)}
               onContextMenu={(e) => void handlePanelMenu(e, record)}
             />
-            {!isCollapsed && children.map((child) => renderPanel(child, true))}
-          </React.Fragment>
-        )
-      })}
-      {w.topLevel.map((record) => renderPanel(record, false))}
-    </React.Fragment>
-  )
+            {!isCollapsed && kids.map((child) => (
+              <div
+                key={child.id}
+                data-sb-key={itemKey(child.id)}
+                className="flow-root"
+                style={gapStyle((spot) => spot.at === 'canvas-child' && spot.canvasPanelId === record.id && spot.panelId === child.id, 'Top')}
+              >
+                {renderPanel(child, 1, false, false, indented, rowGhost(child.id))}
+              </div>
+            ))}
+            {container && <div aria-hidden data-canvas-end style={{ height: endGap ? view!.size : 0, transition: settled ? 'height 140ms ease' : undefined }} />}
+          </>
+        ) : renderPanel(record, 0, active, member, indented, ghost)}
+      </div>
+    )
+  }
 
   const displayTitle = entry.name
   const FolderIcon = isExpanded ? FolderOpen : Folder
@@ -264,7 +484,7 @@ export function WorkspaceRow({
         </Tooltip>
       </div>
       {isExpanded && canExpand && (
-        <div className="flex flex-col" role="group">
+        <div ref={sidebarTree.containerRef} className={`flex flex-col ${dragSource ? 'select-none' : ''}`} role="group">
           {renderWindow(tree.primary)}
           {tree.others.length > 0 && (
             <>
@@ -274,6 +494,8 @@ export function WorkspaceRow({
               {tree.others.map(renderWindow)}
             </>
           )}
+          {view && foreignLook && <DragFloat look={foreignLook} float={view.float} />}
+          {view && liftedLayout && treeWindows.flatMap((w) => w.layouts.filter((l) => l.layoutId === liftedLayout).map((l) => <DragFloat key={l.layoutId} look={layoutLook(l.name, w.layouts.indexOf(l))} float={view.float} />))}
           <WorkspaceSkillsTree
             workspaceId={workspaceId}
             enabled={showSkills}
@@ -295,14 +517,40 @@ interface PanelRowRename {
   onCancel: () => void
 }
 
+/** A lifted row, drawn as the ghost: `rect` is where it floats (fixed over the cursor), null in its own place. */
+interface RowGhost {
+  rect: Float | null
+}
+
+/** The restyle that turns a row into its ghost: the shared look, and out of the flow while it floats. */
+function ghostStyle(ghost: RowGhost): React.CSSProperties {
+  return {
+    ...GHOST_LOOK,
+    ...(ghost.rect ? { position: 'fixed', margin: 0, zIndex: 10000, pointerEvents: 'none', left: ghost.rect.left, top: ghost.rect.top, width: ghost.rect.width, height: ghost.rect.height } : null),
+  }
+}
+
+const ghostAttrs = (ghost: RowGhost | null) => (ghost ? (ghost.rect ? { 'data-sidebar-drag-float': '' } : { 'data-sidebar-drag-ghost': '' }) : {})
+
 interface WorkspacePanelRowProps {
   record: PanelRecord
-  indent: boolean
+  /** 0 for a tab of a stack, 1 for a panel on a canvas. */
+  depth: number
+  /** The panel its layout shows. */
+  active?: boolean
+  /** A panel of a group while the group shows: a faint background. */
+  member?: boolean
+  /** A panel of a group: its chip starts past the group's strip. */
+  indented?: boolean
+  /** Lifted by a drag: this row, restyled as the ghost. */
+  ghost?: RowGhost | null
   agent?: AgentPanelInfo
   hasPorts?: boolean
   /** The panel's worktree palette key, when worktrees are told apart. */
   worktreeKey?: string
   onClick: (e: React.MouseEvent) => void
+  /** A press that may start a drag of the row. */
+  onPress?: (e: React.MouseEvent<HTMLElement>) => void
   /** Middle-click closes. */
   onClose?: () => void
   onContextMenu?: (e: React.MouseEvent) => void
@@ -312,11 +560,16 @@ interface WorkspacePanelRowProps {
 
 export function WorkspacePanelRow({
   record,
-  indent,
+  depth,
+  active = false,
+  member = false,
+  indented = false,
+  ghost = null,
   agent,
   hasPorts = false,
   worktreeKey,
   onClick,
+  onPress,
   onClose,
   onContextMenu,
   rename,
@@ -334,12 +587,15 @@ export function WorkspacePanelRow({
 
   return (
     <button
-      className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
-        indent ? 'pl-10' : 'pl-7'
-      } ${awaiting ? 'text-primary' : 'text-muted hover:text-primary'}`}
+      className={`group/panel mx-1.5 my-0.5 w-[calc(100%-12px)] rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:bg-hover text-left min-w-0 focus:outline-none ${
+        // As in the window's strip: the shown layout's group has the capsule color, its shown
+        // panel the stronger one, and a plain row's shown state is the tab's.
+        active ? `${indented ? 'bg-hover' : 'bg-surface-2'} text-primary` : `${member ? MEMBER_BG : ''} ${awaiting ? 'text-primary' : member ? 'text-secondary hover:text-primary' : 'text-muted hover:text-primary'}`}`}
+      style={{ paddingLeft: (depth > 0 ? 40 : 28) - (indented ? GROUP_INDENT : 0), ...(ghost ? ghostStyle(ghost) : null) }}
+      {...ghostAttrs(ghost)}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault() }}
+      onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault(); else onPress?.(e) }}
       onAuxClick={(e) => {
         if (isMiddleClick(e) && onClose) {
           e.preventDefault()
@@ -384,12 +640,17 @@ export function WorkspacePanelRow({
   )
 }
 
-function CanvasRow({ record, hasChildren, collapsed, onToggle, onClick, onContextMenu }: {
+function CanvasRow({ record, active = false, member = false, indented = false, ghost = null, hasChildren, collapsed, onToggle, onClick, onPress, onContextMenu }: {
   record: PanelRecord
+  active?: boolean
+  member?: boolean
+  indented?: boolean
+  ghost?: RowGhost | null
   hasChildren: boolean
   collapsed: boolean
   onToggle: () => void
   onClick: (e: React.MouseEvent) => void
+  onPress?: (e: React.MouseEvent<HTMLElement>) => void
   onContextMenu: (e: React.MouseEvent) => void
 }): JSX.Element {
   const label = panelRowLabel(record)
@@ -397,8 +658,12 @@ function CanvasRow({ record, hasChildren, collapsed, onToggle, onClick, onContex
     <div
       role="button"
       tabIndex={0}
-      className="group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pl-3 pr-2 text-[13px] text-muted hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none"
+      className={`group/panel mx-1.5 my-0.5 rounded-lg flex items-center gap-1.5 h-7 pr-2 text-[13px] hover:text-primary hover:bg-hover text-left min-w-0 cursor-pointer focus:outline-none ${
+        active ? `${indented ? 'bg-hover' : 'bg-surface-2'} text-primary` : `${member ? `${MEMBER_BG} text-secondary` : 'text-muted'}`}`}
+      style={{ paddingLeft: indented ? 0 : 12, ...(ghost ? ghostStyle(ghost) : null) }}
+      {...ghostAttrs(ghost)}
       onClick={onClick}
+      onMouseDown={onPress}
       onContextMenu={onContextMenu}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {

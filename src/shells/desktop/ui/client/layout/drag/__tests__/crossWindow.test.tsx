@@ -5,14 +5,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import type { Point } from '@workspace/canvas/contract'
-import { MAIN_WINDOW, dockPanels, dockOf, placementOf } from '@workspace/document/contract'
+import { MAIN_WINDOW, canvasOf, dockPanels, dockOf, placementOf } from '@workspace/document/contract'
 import { add, buildDocument } from '../../../../../../../test/clientWorkspace'
 import { setupCrossWindowDrops, shouldIgnoreDragEnd } from '../crossWindow'
 import type { CrossWindowDrag, CrossWindowPort } from '../ports'
 import { domDropEnvironment } from '../resolve'
 import { WS, renderScene, type Scene } from './harness'
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 
 function relay(claim = true) {
   let pointer: ((drag: CrossWindowDrag, screen: Point) => void) | null = null
@@ -36,8 +36,9 @@ function relay(claim = true) {
 function fixture() {
   return buildDocument([
     add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+    add('p1b', { to: 'stack', dock: main, stackId: 's1' }),
     add('cv', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }, 'canvas', { canvasId: 'C' }),
-    add('far', { to: 'window', windowId: 'W1', stackId: 'ws1' }),
+    add('far', { to: 'window', windowId: 'W1', layoutId: 'W1-main', stackId: 'ws1' }),
   ])
 }
 
@@ -89,7 +90,7 @@ describe('a relayed drag', () => {
     r.move(drag(), { x: 700, y: 300 })
     expect(scene!.drag().target?.kind).toBe('canvas-add')
     r.end('d1')
-    await vi.waitFor(() => expect(placementOf(scene!.doc(), 'far')?.dock).toMatchObject({ canvasId: 'C' }))
+    await vi.waitFor(() => expect(canvasOf(scene!.doc(), 'far')).toBe('C'))
   })
 
   it('a refused claim sends nothing', async () => {
@@ -100,7 +101,7 @@ describe('a relayed drag', () => {
     await vi.waitFor(() => expect(r.port.claim).toHaveBeenCalled())
     await Promise.resolve()
     expect(scene!.workspace.document.seq).toBe(seq)
-    expect(dockPanels(dockOf(scene!.doc(), { windowId: 'W1' }))).toEqual(['far'])
+    expect(dockPanels(dockOf(scene!.doc(), { layoutId: 'W1-main' }))).toEqual(['far'])
   })
 
   it('no target: no claim, state cleared', () => {

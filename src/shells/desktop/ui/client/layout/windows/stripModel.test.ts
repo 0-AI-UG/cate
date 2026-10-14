@@ -106,8 +106,8 @@ describe('stripModel', () => {
     const model = buildStripModel(strip(), panel('t2'), 390, { left: 0, right: 520 })
     expect(model.ghostLeft(390)).toBe(340)
     expect(model.ghostLeft(-200)).toBe(0)
-    // Right edge of the ghost (100 wide) against the 520 wall.
-    expect(model.ghostLeft(2000)).toBe(420)
+    // The wall gives half a chip (50) of room: the ghost's right edge stops at 570.
+    expect(model.ghostLeft(2000)).toBe(470)
     expect(model.solve(2000).target).toEqual({ kind: 'tab-slot', index: 2 })
     expect(model.solve(-200).target).toEqual({ kind: 'tab-slot', index: 0 })
     // Without a right wall the ghost goes wherever the cursor does.

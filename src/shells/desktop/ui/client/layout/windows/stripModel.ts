@@ -40,6 +40,9 @@ export interface StripModel {
   width: number
   grabX: number
   top: number
+  /** How far the + button steps right to stay clear of the room the right wall gives (a chip of the strip is lifted
+   *  out of the row, so nothing else opens that room; 0 otherwise). */
+  plusShift: number
   /** Where the ghost's left edge is drawn for a cursor: it follows it, stopped
    *  by the strip's walls. */
   ghostLeft(cursorX: number): number
@@ -68,13 +71,16 @@ export function buildStripModel(items: readonly StripItemGeom[], source: StripSo
     chips: item.chips.map((chip) => ({ panelId: chip.panelId, stackId: chip.stackId, start: chip.left, end: chip.right })),
   }))
   const axis = (end: number | undefined) => buildAxisModel(axisItems, source, cursorX, bounds && { start: bounds.left, end }, { separator: SEPARATOR, rowGap: ROW_GAP })
+  // The right wall gives room past the last chip to reach the last slot: a drag from elsewhere a whole chip (the gap it
+  // opens there is room the wall gives), a chip of the strip half a chip.
   let model = axis(bounds?.right)
-  // Nothing of the strip leaves (a drag from elsewhere): the gap it opens past the last chip is room the right wall gives.
-  if (model.removed === 0 && bounds?.right !== undefined) model = axis(bounds.right + model.size)
+  const room = model.removed === 0 ? model.size : model.size / 2
+  if (bounds?.right !== undefined) model = axis(bounds.right + room)
   return {
     width: model.size,
     grabX: model.grab,
     top: items[0]?.top ?? 0,
+    plusShift: model.removed > 0 ? room : 0,
     ghostLeft: model.ghostStart,
     // The strip's tab bars take same-stack tabs: its targets are the strip's own.
     solve: (x) => model.solve(x) as { target: StripTarget; gap: GapSpot | null },

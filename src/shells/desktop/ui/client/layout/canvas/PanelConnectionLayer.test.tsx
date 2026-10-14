@@ -28,7 +28,7 @@ function docWith(panels: PanelRecord[], nodes: WorkspaceDocument['canvases'][str
   return {
     ...doc,
     panels: Object.fromEntries([canvas, ...panels].map((p) => [p.id, p])),
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } }]} },
     canvases: { c: { id: 'c', nodes } },
     relations,
   }
@@ -42,8 +42,8 @@ function standardDocument(): WorkspaceDocument {
       panel('browser', 'browser'),
     ],
     {
-      source: { id: 'source', rect: { origin: { x: 0, y: 0 }, size: { width: 200, height: 120 } }, dock: { kind: 'stack', id: 'source-tabs', panels: ['agent'] } },
-      target: { id: 'target', rect: { origin: { x: 400, y: 0 }, size: { width: 200, height: 120 } }, dock: { kind: 'stack', id: 'target-tabs', panels: ['worker', 'browser'] } },
+      source: { id: 'source', rect: { origin: { x: 0, y: 0 }, size: { width: 200, height: 120 } }, layouts: [{ id: 'L-source-tabs', name: 'Layout 1', dock: { kind: 'stack', id: 'source-tabs', panels: ['agent'] } }] },
+      target: { id: 'target', rect: { origin: { x: 400, y: 0 }, size: { width: 200, height: 120 } }, layouts: [{ id: 'L-target-tabs', name: 'Layout 1', dock: { kind: 'stack', id: 'target-tabs', panels: ['worker', 'browser'] } }] },
     },
   )
 }
@@ -164,7 +164,7 @@ describe('PanelConnectionLayer', () => {
       Object.fromEntries(ids.map((id, index) => [id, {
         id,
         rect: { origin: { x: index * 240, y: index < 3 ? 0 : 240 }, size: { width: 180, height: 100 } },
-        dock: { kind: 'stack' as const, id: `${id}-tabs`, panels: [id] },
+        layouts: [{ id: `L-${id}-tabs`, name: 'Layout 1', dock: { kind: 'stack' as const, id: `${id}-tabs`, panels: [id] } }],
       }])),
       {
         'flow-one-a': { id: 'flow-one-a', fromPanelId: 'a', toPanelId: 'b', kind: 'use' },

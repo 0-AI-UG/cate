@@ -37,7 +37,8 @@ import {
   dockStacks,
   type DocBatch,
   type DocChange,
-  type DockNode,
+  type DockLayout,
+  type LayoutId,
   type NodeId,
   type PanelId,
   type PlaceTarget,
@@ -60,7 +61,8 @@ export interface ViewNode {
   rect: Rect
   origin: Point
   size: Size
-  dock: DockNode
+  /** Every layout of the node; `shownDock` picks the one this client shows. */
+  layouts: readonly DockLayout[]
   /** Stacking order on this client; higher is in front. */
   zOrder: number
   /** Position in the document's record order (creation order). */
@@ -261,18 +263,35 @@ export interface CanvasViewOptions {
 
 // --- Helpers --------------------------------------------------------------------
 
-const EMPTY_TABS: Readonly<Record<string, PanelId>> = {}
 
-/** The panel a node shows first: the active tab of its first stack. */
-export function activeNodePanelId(dock: DockNode | null | undefined, activeTabs: Readonly<Record<string, PanelId>> = EMPTY_TABS): PanelId | null {
-  const stack = dockStacks(dock)[0]
+const EMPTY_LAYOUTS: Readonly<Record<string, LayoutId>> = {}
+
+/** The layout a node shows on this client: its choice while it still exists,
+ *  else the node's first. */
+export function shownLayout(node: { id: NodeId; layouts: readonly DockLayout[] }, activeLayouts: Readonly<Record<string, LayoutId>> = EMPTY_LAYOUTS): DockLayout {
+  return node.layouts.find((l) => l.id === activeLayouts[node.id]) ?? node.layouts[0]
+}
+
+/** Every panel of a node, in all its layouts. */
+export function nodePanelIds(node: { layouts: readonly DockLayout[] }): PanelId[] {
+  return node.layouts.flatMap((layout) => dockPanels(layout.dock))
+}
+
+/** The panel a node shows first: the active tab of the first stack of the
+ *  layout this client shows. */
+export function activeNodePanelId(
+  node: { id: NodeId; layouts: readonly DockLayout[] } | null | undefined,
+  state: Pick<ClientState, 'activeTabs' | 'activeLayouts'> | null | undefined,
+): PanelId | null {
+  if (!node) return null
+  const stack = dockStacks(shownLayout(node, state?.activeLayouts).dock)[0]
   if (!stack) return null
-  const active = activeTabs[stack.id]
+  const active = state?.activeTabs[stack.id]
   return active && stack.panels.includes(active) ? active : stack.panels[0] ?? null
 }
 
-function viewNode(id: NodeId, rect: Rect, dock: DockNode, zOrder: number, creationIndex: number, isPinned: boolean, animationState: NodeAnimation): ViewNode {
-  return { id, rect, origin: rect.origin, size: rect.size, dock, zOrder, creationIndex, isPinned, animationState }
+function viewNode(id: NodeId, rect: Rect, layouts: readonly DockLayout[], zOrder: number, creationIndex: number, isPinned: boolean, animationState: NodeAnimation): ViewNode {
+  return { id, rect, origin: rect.origin, size: rect.size, layouts, zOrder, creationIndex, isPinned, animationState }
 }
 
 function fitRects(rects: readonly Rect[], container: Size, padding: number, maxZoom: number, capAt?: number): { zoom: number; offset: Point } | null {
@@ -351,13 +370,13 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
           : (synced && animate ? 'entering' : 'idle')
         const isPinned = pinned.has(id)
         if (
-          old && old.dock === node.dock && old.zOrder === z && old.creationIndex === index
+          old && old.layouts === node.layouts && old.zOrder === z && old.creationIndex === index
           && old.isPinned === isPinned && old.animationState === animation
           && (old.rect === rect || sameRect(old.rect, rect))
         ) {
           next[id] = old
         } else {
-          next[id] = viewNode(id, rect, node.dock, z, index, isPinned, animation)
+          next[id] = viewNode(id, rect, node.layouts, z, index, isPinned, animation)
           changed = true
         }
         index++
@@ -366,7 +385,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
       // elsewhere (dragged into another node) goes at once.
       for (const [id, old] of Object.entries(prev)) {
         if (next[id]) continue
-        const closed = animate && dockPanels(old.dock).every((panelId) => !doc.panels[panelId])
+        const closed = animate && nodePanelIds(old).every((panelId) => !doc.panels[panelId])
         if (closed) {
           next[id] = old.animationState === 'exiting' ? old : { ...old, animationState: 'exiting' }
           if (old.animationState !== 'exiting') {
@@ -416,7 +435,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
     const activePanelOf = (nodeId: NodeId): PanelId | null => {
       const node = get().nodes[nodeId]
       if (!node) return null
-      return activeNodePanelId(node.dock, clientState?.getSnapshot().activeTabs)
+      return activeNodePanelId(node, clientState?.getSnapshot())
     }
 
     const raise = (nodeId: NodeId): Partial<CanvasViewState> | null => {
@@ -493,7 +512,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
       const nodes = liveNodes()
       const existing = request.availability !== 'new'
         ? request.existing.flatMap((c) => {
-          const node = nodes.find((n) => dockPanels(n.dock).includes(c.panelId))
+          const node = nodes.find((n) => nodePanelIds(n).includes(c.panelId))
           return node ? [{ ...c, nodeId: node.id }] : []
         })
         : []
@@ -809,7 +828,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
       },
 
       nodeForPanel(panelId) {
-        return liveNodes().find((n) => dockPanels(n.dock).includes(panelId))?.id ?? null
+        return liveNodes().find((n) => nodePanelIds(n).includes(panelId))?.id ?? null
       },
 
       sortedNodesByCreationOrder() {
@@ -858,7 +877,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
 
       async deleteSelection() {
         const panelIds = new Set<PanelId>()
-        for (const node of selectedNodes()) for (const id of dockPanels(node.dock)) panelIds.add(id)
+        for (const node of selectedNodes()) for (const id of nodePanelIds(node)) panelIds.add(id)
         if (panelIds.size === 0) return
         const closed = await canvasHost().closePanels(workspaceId, [...panelIds]).catch(() => false)
         if (closed) set({ selectionActive: false })
@@ -938,7 +957,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
           : position
             ? nudgeToFree(nodes, size, position)
             : findFreePosition(nodes, focusedNodeId(get()), size)
-        return { to: 'canvas', canvasId, nodeId: newId(), stackId: newId(), rect: { origin, size } }
+        return { to: 'canvas', canvasId, nodeId: newId(), layoutId: newId(), stackId: newId(), rect: { origin, size } }
       },
 
       placePanel(panelId, placeOptions = {}) {

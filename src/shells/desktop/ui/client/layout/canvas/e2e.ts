@@ -37,9 +37,9 @@ export function createCanvasE2E(): CanvasE2E {
     const active = activeCanvas()
     return active ? canvasViewFor(active.workspaceId, active.canvasId) : null
   }
-  const activeTabs = () => {
+  const clientSnapshot = () => {
     const active = activeCanvas()
-    return active ? clientStateFor(active.workspaceId)?.getSnapshot().activeTabs : undefined
+    return active ? clientStateFor(active.workspaceId)?.getSnapshot() : undefined
   }
 
   return {
@@ -49,7 +49,7 @@ export function createCanvasE2E(): CanvasE2E {
       if (!s) return []
       return Object.values(s.getState().nodes).map((n) => ({
         id: n.id,
-        panelId: activeNodePanelId(n.dock, activeTabs()) ?? '',
+        panelId: activeNodePanelId(n, clientSnapshot()) ?? '',
         origin: { x: n.origin.x, y: n.origin.y },
         size: { width: n.size.width, height: n.size.height },
       }))
@@ -83,7 +83,7 @@ export function createCanvasE2E(): CanvasE2E {
     tagNodeWorktree(nodeId, worktreeId) {
       const active = activeCanvas()
       const node = store()?.getState().nodes[nodeId]
-      const panelId = node ? activeNodePanelId(node.dock, activeTabs()) : null
+      const panelId = node ? activeNodePanelId(node, clientSnapshot()) : null
       const doc = active ? documentStoreFor(active.workspaceId) : null
       if (!panelId || !doc) return false
       return doc.propose({ kind: 'updatePanel', id: panelId, patch: { worktreeId } }).ok

@@ -3,7 +3,7 @@
 // come from client/host. Tests swap them. Install once at startup: a hook slot must not change while mounted.
 
 import React from 'react'
-import type { DockNode, NodeId } from '@workspace/document/contract'
+import type { DockNode, LayoutId, NodeId } from '@workspace/document/contract'
 import { PanelHost } from '../../host/PanelHost'
 import { syncPanelSurfaces } from '../../host/surfaceRegistry'
 import { DockView } from '../dock'
@@ -12,8 +12,9 @@ export interface NodeDockProps {
   workspaceId: string
   canvasId: string
   nodeId: NodeId
-  /** The node's mini dock tree. */
-  dock: DockNode
+  /** The layout the node shows on this client, and its dock tree. */
+  layoutId: LayoutId
+  dock: DockNode | null
   /** Mouse-down on the root stack's tab bar: `panelId` when on a tab, absent
    *  on the empty bar. The canvas starts a node drag or a tab detach. */
   onTabBarMouseDown?: (event: React.MouseEvent, panelId?: string) => void
@@ -34,11 +35,12 @@ export interface CanvasSlots {
   PanelHost?: React.ComponentType<{ workspaceId: string; panelId: string }>
 }
 
-function ClientNodeDock({ workspaceId, canvasId, nodeId, onTabBarMouseDown, trailingControls, dropDisabled }: NodeDockProps): React.ReactElement {
+function ClientNodeDock({ workspaceId, canvasId, nodeId, layoutId, onTabBarMouseDown, trailingControls, dropDisabled }: NodeDockProps): React.ReactElement {
   return (
     <DockView
       workspaceId={workspaceId}
-      dock={{ canvasId, nodeId }}
+      dock={{ layoutId }}
+      host={{ canvasId, nodeId }}
       compact
       onTabBarMouseDown={onTabBarMouseDown}
       trailingControls={trailingControls}

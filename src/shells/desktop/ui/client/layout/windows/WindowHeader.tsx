@@ -429,7 +429,10 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
           <DropGhostChip data-strip-ghost="float" style={{ width: '100%', minWidth: 0 }}>{dragLabel}</DropGhostChip>
         </div>
       )}
-      <NewTabButton items={newTabItems()} onPick={(type) => { createPanel(workspaceId, type) }} />
+      {/* While a chip of this strip is dragged, the + steps aside to just past the room the right wall gives. */}
+      <div data-new-tab-slot className="flex self-center" style={{ marginLeft: model?.plusShift ?? 0, transition: armed ? 'margin 140ms ease' : undefined }}>
+        <NewTabButton items={newTabItems()} onPick={(type) => { createPanel(workspaceId, type) }} />
+      </div>
       {/* Fills the row, so Split sits at the far right; drags the window. */}
       <div className="flex-1 self-stretch min-w-[8px]" />
       <Tooltip label="Split right">

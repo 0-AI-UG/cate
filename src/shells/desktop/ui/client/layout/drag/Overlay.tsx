@@ -62,13 +62,16 @@ export function DragOverlay() {
 
   return createPortal(
     <div data-drag-overlay="true" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10000 }}>
-      <GhostWindow
-        left={rect.left}
-        top={rect.top}
-        width={rect.width}
-        height={rect.height}
-        title={panel.title}
-      />
+      {target?.kind === 'tab-slot' || target?.kind === 'group-slot' || target?.kind === 'group-home' || target?.kind === 'stack-slot' || target?.kind === 'canvas-slot' ? null : (
+        // Over a tab strip or the sidebar's tree the zone draws its own feedback (WindowHeader, WorkspaceRow).
+        <GhostWindow
+          left={rect.left}
+          top={rect.top}
+          width={rect.width}
+          height={rect.height}
+          title={panel.title}
+        />
+      )}
       {memberGhosts.map((m) => (
         <GhostWindow key={m.key} left={m.left} top={m.top} width={m.width} height={m.height} title="" />
       ))}

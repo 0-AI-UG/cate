@@ -70,6 +70,8 @@ export interface CanvasTabDragSource {
   workspaceId: string
   canvasId: string
   nodeId: NodeId
+  /** The layout the tab sits in. */
+  layoutId: string
   stackId: string
   panelId: PanelId
 }
@@ -136,7 +138,8 @@ const CLIENT_DRAG: CanvasDragPort = {
     beginDrag(event, {
       kind: 'dock-tab',
       workspaceId: source.workspaceId,
-      dock: { canvasId: source.canvasId, nodeId: source.nodeId },
+      dock: { layoutId: source.layoutId },
+      host: { canvasId: source.canvasId, nodeId: source.nodeId },
       stackId: source.stackId,
       panelId: source.panelId,
     })

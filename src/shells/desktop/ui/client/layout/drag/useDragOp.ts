@@ -5,9 +5,9 @@
 import type React from 'react'
 import { useCallback } from 'react'
 import { viewToCanvas, type Point, type Size } from '@workspace/canvas/contract'
-import { isCanvasDock, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
+import { isNodeHost, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
-import { newId, panelDefaultSize, panelDropSize } from '@client/host'
+import { newId, panelDefaultSize, panelDropSize, showLayoutsOf } from '@client/host'
 import { windowsPort } from '../windows/ports'
 import { openWindowAt } from '../windows/windowSync'
 import { detachBounds, detachChange, dropChanges } from './commit'
@@ -19,6 +19,7 @@ import { domDropEnvironment, resolveDrop, type DropEnvironment } from './resolve
 import { reduce, initial as runtimeInitial } from './runtime'
 import { useDragStore } from './store'
 import {
+  CANVAS_ORDER_KEY,
   type DragEffect,
   type DragEvent,
   type DragOpSourceSpec,
@@ -108,7 +109,9 @@ function specToSource(spec: DragOpSourceSpec): DragSource {
       origin: { kind: 'canvas-node', canvasId: spec.canvasId, nodeId: spec.nodeId, startOrigin: spec.startOrigin, members: spec.members },
     }
   }
-  return { workspaceId: spec.workspaceId, panelId: spec.panelId, origin: { kind: 'dock-tab', dock: spec.dock, stackId: spec.stackId } }
+  const from = spec.from ? { from: spec.from } : {}
+  if (spec.kind === 'layout') return { workspaceId: spec.workspaceId, panelId: spec.panelId, ...from, origin: { kind: 'layout', host: spec.host, layoutId: spec.layoutId } }
+  return { workspaceId: spec.workspaceId, panelId: spec.panelId, ...from, origin: { kind: 'dock-tab', dock: spec.dock, host: spec.host, stackId: spec.stackId } }
 }
 
 /** Grab and ghost of a whole node: the cursor's canvas point against the
@@ -134,7 +137,15 @@ function measureNode(
 
 function measure(spec: DragOpSourceSpec, panelType: string, cursorClient: Point, sourceRect: DOMRect | null) {
   if (spec.kind === 'canvas-node') return measureNode(spec.workspaceId, spec.canvasId, spec.nodeId, cursorClient, panelType)
-  if (isCanvasDock(spec.dock)) return measureNode(spec.workspaceId, spec.dock.canvasId, spec.dock.nodeId, cursorClient, panelType)
+  if (spec.from === 'sidebar') {
+    // Held where the row (or the layout's group) was pressed: the tree reads that offset. A
+    // panel's ghost is the node a canvas drop makes; a layout's is its group, which its
+    // placeholder in the tree keeps the height of.
+    const grab = sourceRect ? { x: cursorClient.x - sourceRect.left, y: cursorClient.y - sourceRect.top } : { x: 0, y: 0 }
+    const ghostSize = spec.kind === 'layout' && sourceRect ? { width: sourceRect.width, height: sourceRect.height } : { ...panelDropSize(panelType) }
+    return { grab, ghostSize, ghostZoom: 1 }
+  }
+  if (isNodeHost(spec.host)) return measureNode(spec.workspaceId, spec.host.canvasId, spec.host.nodeId, cursorClient, panelType)
   // A window dock tab previews the compact canvas-drop footprint.
   const ghostSize: Size = { ...panelDropSize(panelType) }
   if (sourceRect) return { grab: dockTabGrabOffset({ cursorClient, sourceRect, ghostSize }), ghostSize, ghostZoom: 1 }
@@ -164,6 +175,9 @@ export function proposeDrop(workspaceId: string, changes: DocChange[], panelId: 
   const placement = placementOf(store.getSnapshot(), panelId)
   const state = clientStateFor(workspaceId)
   if (placement && state) {
+    // The layout it landed in shows, so a drop onto another layout (or a new
+    // one) ends with the panel on screen.
+    showLayoutsOf(state, store.getSnapshot(), panelId)
     state.setActiveTab(placement.stackId, panelId)
     state.focus(panelId)
   }
@@ -180,6 +194,7 @@ export async function commitDrop(
 ): Promise<void> {
   const workspaceId = source.workspaceId
   if (target.kind !== 'detach') {
+    if (target.kind === 'canvas-slot') clientStateFor(workspaceId)?.setPanelView(target.canvasPanelId, CANVAS_ORDER_KEY, target.order)
     const doc = documentOf(workspaceId)
     const changes = doc && dropChanges(doc, source, target, panel, { newId })
     if (changes) proposeDrop(workspaceId, changes, panel.id, target.kind !== 'canvas-reposition')
@@ -196,7 +211,7 @@ export async function commitDrop(
       await movedOrTimeout(workspaceId, before, panel.id)
       return
     }
-    if (!canDetach()) return
+    if (!canDetach() || source.from === 'sidebar') return
     const grab = { x: geometry.grab.x * geometry.ghostZoom, y: geometry.grab.y * geometry.ghostZoom }
     const windowId = newId()
     openWindowAt(workspaceId, windowId, detachBounds(target.screen, grab, geometry.ghostSize))
@@ -284,7 +299,7 @@ function onMouseMove(ev: MouseEvent): void {
 
   const inside = cursorInsideWindow(client)
   // A group never leaves its canvas, so it never shows the native ghost.
-  const grouped = dispatch.spec.kind === 'canvas-node' && !!dispatch.spec.members?.length
+  const grouped = (dispatch.spec.kind === 'canvas-node' && !!dispatch.spec.members?.length) || dispatch.spec.kind === 'layout'
   const wasInside = dispatch.runtime.state.cursor?.insideWindow ?? true
   const shell = dragShell()
   const crossing = !grouped && wasInside && !inside && !dispatch.runtime.crossWindowActive && (!!shell.ghost || !!shell.crossWindow)
@@ -340,7 +355,7 @@ export function beginDrag(e: Pick<MouseEvent, 'button' | 'clientX' | 'clientY'> 
   const cursorClient: Point = { x: e.clientX, y: e.clientY }
   let sourceRect: DOMRect | null = e.currentTarget instanceof Element ? e.currentTarget.getBoundingClientRect() : null
   // A ghost that stands for a whole node measures against the node element.
-  const nodeId = spec.kind === 'canvas-node' ? spec.nodeId : isCanvasDock(spec.dock) ? spec.dock.nodeId : null
+  const nodeId = spec.kind === 'canvas-node' ? spec.nodeId : spec.from === 'sidebar' ? null : isNodeHost(spec.host) ? spec.host.nodeId : null
   if (nodeId) {
     const nodeEl = document.querySelector<HTMLElement>(`[data-node-id="${cssEscape(nodeId)}"]`)
     if (nodeEl) sourceRect = nodeEl.getBoundingClientRect()

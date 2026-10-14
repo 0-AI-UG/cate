@@ -159,13 +159,25 @@ describe('tab strip dragging', () => {
     fire(chip('p3'), 'mousedown', 280)
     fire(window, 'mousemove', 285)
     fire(window, 'mousemove', 790)
-    // The + button's left edge (500) less the row's 4px gap, less its own 100px.
-    expect(float()!.style.left).toBe('396px')
+    // The + button's left edge (500) less the row's 4px gap, plus half a chip (50) of room, less its own 100px.
+    expect(float()!.style.left).toBe('446px')
     expect(target()).toMatchObject({ kind: 'tab-slot', index: 3 })
     fire(window, 'mousemove', 0)
     expect(float()!.style.left).toBe('0px')
     expect(target()).toMatchObject({ kind: 'tab-slot', index: 0 })
     fire(window, 'mouseup', 0)
+  })
+
+  it('the + steps aside by half the dragged chip\'s width while a chip of the strip is dragged, and returns on release', () => {
+    const plus = () => container.querySelector<HTMLElement>('[data-new-tab-slot]')!
+    const shift = () => parseFloat(plus().style.marginLeft || '0')
+    expect(shift()).toBe(0)
+    fire(chip('p3'), 'mousedown', 280)
+    fire(window, 'mousemove', 285)
+    // Half the dragged chip's width: the room the right wall gives.
+    expect(shift()).toBe(parseFloat(float()!.style.width) / 2)
+    fire(window, 'mouseup', 285)
+    expect(shift()).toBe(0)
   })
 
   it('a group dragged by its anchor chip moves as a whole', () => {
