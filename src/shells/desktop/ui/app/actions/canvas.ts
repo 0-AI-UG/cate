@@ -6,7 +6,7 @@
 import { defineActions, storedShortcut } from '@kernel/interaction/contract'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { clientStateFor, documentStoreFor } from '@client/document'
-import { closePanel, focusPanel, registerActions, type ActionBinding, type ActionContext } from '@client/host'
+import { closePanel, focusPaneBeside, focusPanel, focusedLeafPanelId, registerActions, stepPanel, type ActionBinding, type ActionContext } from '@client/host'
 import {
   activeCanvasId,
   activeNodePanelId,
@@ -17,7 +17,7 @@ import {
   type CanvasToolbarAction,
   type CanvasViewStore,
 } from '../../client/layout/canvas'
-import { canvasPanelOf } from '@workspace/document/contract'
+import { MAIN_WINDOW, canvasPanelOf, nodeOfPanel, type SplitSide } from '@workspace/document/contract'
 import { useUIStore } from '../state/uiStore'
 import { registerKeyHandler, type KeyContext } from './useShortcuts'
 
@@ -36,10 +36,10 @@ export const CANVAS_ACTIONS = defineActions({
   focusPrevious: { title: 'Previous Panel', key: key('\t', { shift: true, control: true }), menu: { bar: 'go', group: 'panels', order: 1 } },
   autoLayout: { title: 'Auto Layout Canvas', key: key('l', { command: true, shift: true }), contextMenus: ['canvas'] },
   tidyGrid: { title: 'Tidy Selected Panels into Grid', key: key('g', { command: true }), keys: { yieldToText: true, yieldToKeyboardOwner: true, yieldToOverlay: true, windowOnly: true } },
-  navigateUp: { title: 'Navigate to Panel Above', key: key('↑', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
-  navigateDown: { title: 'Navigate to Panel Below', key: key('↓', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
-  navigateLeft: { title: 'Navigate to Panel Left', key: key('←', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
-  navigateRight: { title: 'Navigate to Panel Right', key: key('→', { command: true }), palette: false, keys: { ...arrows, fromGuests: true } },
+  navigateUp: { title: 'Navigate to Panel Above', key: key('↑', { command: true }), menu: { bar: 'go', group: 'panels', order: 2 }, keys: { ...arrows, fromGuests: true } },
+  navigateDown: { title: 'Navigate to Panel Below', key: key('↓', { command: true }), menu: { bar: 'go', group: 'panels', order: 3 }, keys: { ...arrows, fromGuests: true } },
+  navigateLeft: { title: 'Navigate to Panel Left', key: key('←', { command: true }), menu: { bar: 'go', group: 'panels', order: 4 }, keys: { ...arrows, fromGuests: true } },
+  navigateRight: { title: 'Navigate to Panel Right', key: key('→', { command: true }), menu: { bar: 'go', group: 'panels', order: 5 }, keys: { ...arrows, fromGuests: true } },
   panUp: { title: 'Pan Canvas Up', key: key('↑', { shift: true }), palette: false, keys: pans },
   panDown: { title: 'Pan Canvas Down', key: key('↓', { shift: true }), palette: false, keys: pans },
   panLeft: { title: 'Pan Canvas Left', key: key('←', { shift: true }), palette: false, keys: pans },
@@ -102,6 +102,34 @@ const navigate = (dir: 'up' | 'down' | 'left' | 'right'): ActionBinding => onCan
   canvas.store.getState().navigateSelect(dir)
 })
 
+/** Focus is on a split pane of a dock (not a canvas, nor a panel on one): the dock's keys apply there, the canvas's
+ *  elsewhere. One key is one action, so the canvas's navigation actions fall through to the dock's. */
+function inDock(context: ActionContext): boolean {
+  const workspaceId = context.workspaceId ?? useUIStore.getState().selectedWorkspaceId
+  const doc = workspaceId ? documentStoreFor(workspaceId)?.getSnapshot() : null
+  const leaf = workspaceId ? focusedLeafPanelId(workspaceId) : null
+  const record = doc && leaf ? doc.panels[leaf] : null
+  return !!doc && !!leaf && !!record && !record.canvasId && !nodeOfPanel(doc, leaf)
+}
+
+/** The canvas binding, or `dock` when focus is in a dock. */
+function canvasOrDock(canvas: ActionBinding, dock: (workspaceId: string, context: ActionContext) => void, dockEnabled: (context: ActionContext) => boolean): ActionBinding {
+  return {
+    run: (context) => {
+      const workspaceId = context.workspaceId ?? useUIStore.getState().selectedWorkspaceId
+      if (workspaceId && dockEnabled(context)) return dock(workspaceId, context)
+      return canvas.run(context)
+    },
+    enabled: (context) => dockEnabled(context) || (canvas.enabled?.(context) ?? true),
+  }
+}
+
+const SIDES = { up: 'top', down: 'bottom', left: 'left', right: 'right' } as const satisfies Record<string, SplitSide>
+const navigateOrPane = (dir: 'up' | 'down' | 'left' | 'right'): ActionBinding =>
+  canvasOrDock(navigate(dir), (workspaceId) => { focusPaneBeside(workspaceId, SIDES[dir]) }, inDock)
+const stepOrPanel = (canvasStep: ActionBinding, delta: number): ActionBinding =>
+  canvasOrDock(canvasStep, (workspaceId, context) => { stepPanel(workspaceId, context.windowId ?? MAIN_WINDOW, delta) }, inDock)
+
 const pan = (dir: 'up' | 'down' | 'left' | 'right'): ActionBinding =>
   onCanvas((canvas) => canvas.store.getState().panViewport(dir))
 
@@ -130,14 +158,14 @@ export function canvasActionBindings(): { [K in keyof typeof CANVAS_ACTIONS]: Ac
     zoomReset: onCanvas(({ store }) => store.getState().animateZoomTo(1)),
     zoomToFit: onCanvas(({ store }) => store.getState().zoomToFit()),
     zoomToSelection: onCanvas(({ store }) => store.getState().zoomToSelection()),
-    focusNext: onCanvas(({ store }) => { const s = store.getState(); const next = s.nextNode(); if (next) s.focusNode(next) }),
-    focusPrevious: onCanvas(({ store }) => { const s = store.getState(); const prev = s.previousNode(); if (prev) s.focusNode(prev) }),
+    focusNext: stepOrPanel(onCanvas(({ store }) => { const s = store.getState(); const next = s.nextNode(); if (next) s.focusNode(next) }), 1),
+    focusPrevious: stepOrPanel(onCanvas(({ store }) => { const s = store.getState(); const prev = s.previousNode(); if (prev) s.focusNode(prev) }), -1),
     autoLayout: onCanvas(({ store }) => store.getState().autoLayout()),
     tidyGrid: onCanvas(({ store }) => store.getState().tidyGridSelected()),
-    navigateUp: navigate('up'),
-    navigateDown: navigate('down'),
-    navigateLeft: navigate('left'),
-    navigateRight: navigate('right'),
+    navigateUp: navigateOrPane('up'),
+    navigateDown: navigateOrPane('down'),
+    navigateLeft: navigateOrPane('left'),
+    navigateRight: navigateOrPane('right'),
     panUp: pan('up'),
     panDown: pan('down'),
     panLeft: pan('left'),

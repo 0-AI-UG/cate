@@ -15,7 +15,7 @@ import {
   type WorkspaceDocument,
 } from '@workspace/document/contract'
 import type { PanelPlacementOptions } from '@panels/framework/contract'
-import { documentStoreFor } from '@client/document'
+import { clientStateFor, documentStoreFor } from '@client/document'
 import { useClientState, useDocument } from '../../document'
 import { PanelHost } from '../../host/PanelHost'
 import { registerDropZone } from '../drag/registry'
@@ -73,7 +73,16 @@ export function DockView({
   const tree = useDocument(workspaceId, selector, sameDockTree)
   const onCanvas = isNodeHost(host)
   const soloStackId = useClientState(workspaceId, (s) => (isNodeHost(host) ? null : s.maximizedStacks[host.windowId] ?? null))
+  const focusedPanelId = useClientState(workspaceId, (s) => s.focusedPanelId)
   const rootRef = useRef<HTMLDivElement>(null)
+
+  // Focus landing on another pane of the window collapses the expanded pane, which would hide it.
+  useEffect(() => {
+    if (!soloStackId || !focusedPanelId || isNodeHost(host) || !tree) return
+    const stacks = dockStacks(tree)
+    const owner = stacks.find((stack) => stack.panels.includes(focusedPanelId))
+    if (owner && owner.id !== soloStackId) clientStateFor(workspaceId)?.setMaximizedStack(host.windowId, null)
+  }, [soloStackId, focusedPanelId, tree, host, workspaceId])
 
   const typeOf = useCallback((panelId: string) => documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]?.type, [workspaceId])
   const onRatios = useCallback((splitId: string, ratios: number[]) => {

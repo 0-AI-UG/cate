@@ -247,3 +247,36 @@ export function sameDockStructure(a: DockNode | null, b: DockNode | null): boole
   }
   return false
 }
+
+/** The stack beside `stackId` on `side`, by the tree's ratios: the nearest stack past that edge that shares
+ *  part of it, the one sharing most of it on a tie. Null at the dock's edge. */
+export function stackBeside(root: DockNode | null | undefined, stackId: StackId, side: SplitSide): DockStack | null {
+  if (!root) return null
+  type Box = { stack: DockStack; x0: number; x1: number; y0: number; y1: number }
+  const boxes: Box[] = []
+  const place = (node: DockNode, x0: number, y0: number, x1: number, y1: number): void => {
+    if (node.kind === 'stack') { boxes.push({ stack: node, x0, x1, y0, y1 }); return }
+    let at = 0
+    node.children.forEach((child, i) => {
+      const from = at
+      at += node.ratios[i]
+      if (node.direction === 'horizontal') place(child, x0 + (x1 - x0) * from, y0, x0 + (x1 - x0) * at, y1)
+      else place(child, x0, y0 + (y1 - y0) * from, x1, y0 + (y1 - y0) * at)
+    })
+  }
+  place(root, 0, 0, 1, 1)
+  const from = boxes.find((b) => b.stack.id === stackId)
+  if (!from) return null
+  const horizontal = side === 'left' || side === 'right'
+  const [a0, a1, b0, b1] = horizontal ? [from.y0, from.y1, 'y0', 'y1'] as const : [from.x0, from.x1, 'x0', 'x1'] as const
+  const EPS = 1e-9
+  let best: { box: Box; gap: number; shared: number } | null = null
+  for (const box of boxes) {
+    if (box === from) continue
+    const gap = side === 'right' ? box.x0 - from.x1 : side === 'left' ? from.x0 - box.x1 : side === 'bottom' ? box.y0 - from.y1 : from.y0 - box.y1
+    const shared = Math.min(a1, box[b1]) - Math.max(a0, box[b0])
+    if (gap < -EPS || shared <= EPS) continue
+    if (!best || gap < best.gap - EPS || (Math.abs(gap - best.gap) <= EPS && shared > best.shared)) best = { box, gap, shared }
+  }
+  return best?.box.stack ?? null
+}

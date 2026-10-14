@@ -3,7 +3,7 @@ import { MAIN_WINDOW, placementOf } from '@workspace/document/contract'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../test/clientWorkspace'
 import { createPanel } from './createPanel'
 import { registerPanelDefinitions } from './definitions'
-import { activeLayoutId, addLayout, moveLayout, removeLayout, renameLayout, selectLayoutAt, stepLayout, switchLayout } from './layouts'
+import { activeLayoutId, addLayout, moveLayout, removeLayout, renameLayout, switchLayout } from './layouts'
 import { revealPanel } from './reveal'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
@@ -31,17 +31,6 @@ describe('layouts on the client', () => {
     expect(ws.confirmed()).toBe(before)
     expect(activeLayoutId('w', MAIN)).toBe('main')
     expect(switchLayout('w', MAIN, 'nope')).toBe(false)
-  })
-
-  it('stepLayout wraps around, and selectLayoutAt picks by position', () => {
-    ws = attachTestWorkspace('w', fixture())
-    const second = addLayout('w', MAIN)!
-    expect(stepLayout('w', MAIN, 1)).toBe(true)
-    expect(activeLayoutId('w', MAIN)).toBe('main')
-    stepLayout('w', MAIN, -1)
-    expect(activeLayoutId('w', MAIN)).toBe(second)
-    expect(selectLayoutAt('w', MAIN, 0)).toBe(true)
-    expect(selectLayoutAt('w', MAIN, 5)).toBe(false)
   })
 
   it('a new panel lands in the layout this client shows', () => {
@@ -86,7 +75,7 @@ describe('layouts on the client', () => {
     expect(activeLayoutId('w', node)).toBe(extra)
     expect(activeLayoutId('w', MAIN)).toBe('main')
     expect(switchLayout('w', node, 'ln1')).toBe(true)
-    expect(stepLayout('w', node, 1)).toBe(true)
+    expect(switchLayout('w', node, extra)).toBe(true)
     expect(activeLayoutId('w', node)).toBe(extra)
 
     expect(moveLayout('w', 'ln1', { to: 'window', windowId: 'W' })).toBe(true)

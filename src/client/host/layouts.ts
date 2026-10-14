@@ -65,25 +65,6 @@ export function switchLayout(workspaceId: string, host: HostRef, layoutId: Layou
   return true
 }
 
-/** Switches `delta` layouts along the host's switcher, wrapping. */
-export function stepLayout(workspaceId: string, host: HostRef, delta: number): boolean {
-  const doc = documentStoreFor(workspaceId)?.getSnapshot()
-  const state = clientStateFor(workspaceId)
-  const layouts = doc && layoutsIn(doc, host)
-  if (!doc || !state || !layouts || layouts.length < 2) return false
-  const at = layouts.findIndex((l) => l.id === activeLayoutOf(doc, state.getSnapshot().activeLayouts, host))
-  const next = layouts[(at + delta + layouts.length) % layouts.length]
-  state.setActiveLayout(hostKey(host), next.id)
-  return true
-}
-
-/** Switches to the n-th layout (0-based); false when there is none. */
-export function selectLayoutAt(workspaceId: string, host: HostRef, index: number): boolean {
-  const doc = documentStoreFor(workspaceId)?.getSnapshot()
-  const layout = doc && layoutsIn(doc, host)?.[index]
-  return layout ? switchLayout(workspaceId, host, layout.id) : false
-}
-
 /** Adds an empty layout and shows it. */
 export function addLayout(workspaceId: string, host: HostRef, name?: string): LayoutId | null {
   const store = documentStoreFor(workspaceId)

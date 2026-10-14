@@ -17,9 +17,9 @@ import {
   registerPanelActions,
   requestPanelRename,
   requestPanelShortcut,
-  selectLayoutAt,
+  selectPanelAt,
+  toggleExpandedPane,
   selectTabAt,
-  stepLayout,
   type ActionBinding,
 } from '@client/host'
 import { tryClientApp } from '../app'
@@ -31,10 +31,10 @@ import { useUIStore } from '../state/uiStore'
 
 const key = storedShortcut
 
-/** Shows the n-th layout (0-based) of the window the shortcut came from. */
-const selectLayoutAction = (index: number) => ({
+/** Shows and focuses the n-th panel (0-based) of the window the shortcut came from. */
+const selectPanelAction = (index: number) => ({
   run: ({ workspaceId, windowId }: { workspaceId?: string | null; windowId?: string }) => {
-    if (workspaceId) selectLayoutAt(workspaceId, { windowId: windowId ?? MAIN_WINDOW }, index)
+    if (workspaceId) selectPanelAt(workspaceId, windowId ?? MAIN_WINDOW, index)
   },
   enabled: ({ workspaceId }: { workspaceId?: string | null }) => !!workspaceId,
 })
@@ -54,17 +54,17 @@ export const BUILTIN_ACTIONS = defineActions({
   nextWorkspace: { title: 'Next Workspace', key: key('→', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 1 } },
   previousWorkspace: { title: 'Previous Workspace', key: key('←', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 0 } },
   newLayout: { title: 'New Layout', key: key('t', { command: true, option: true }), menu: { bar: 'go', group: 'layouts', order: 0 } },
-  nextLayout: { title: 'Next Layout', key: key(']', { command: true, shift: true }), menu: { bar: 'go', group: 'layouts', order: 1 } },
-  previousLayout: { title: 'Previous Layout', key: key('[', { command: true, shift: true }), menu: { bar: 'go', group: 'layouts', order: 2 } },
-  selectLayout1: { title: 'Select Layout 1', key: key('1', { option: true }), palette: false },
-  selectLayout2: { title: 'Select Layout 2', key: key('2', { option: true }), palette: false },
-  selectLayout3: { title: 'Select Layout 3', key: key('3', { option: true }), palette: false },
-  selectLayout4: { title: 'Select Layout 4', key: key('4', { option: true }), palette: false },
-  selectLayout5: { title: 'Select Layout 5', key: key('5', { option: true }), palette: false },
-  selectLayout6: { title: 'Select Layout 6', key: key('6', { option: true }), palette: false },
-  selectLayout7: { title: 'Select Layout 7', key: key('7', { option: true }), palette: false },
-  selectLayout8: { title: 'Select Layout 8', key: key('8', { option: true }), palette: false },
-  selectLayout9: { title: 'Select Layout 9', key: key('9', { option: true }), palette: false },
+  expandPane: { title: 'Expand Active Panel', key: key('Escape', { shift: true }), menu: { bar: 'view', group: 'panes' } },
+  selectPanel1: { title: 'Panel 1', key: key('1', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 11, submenu: 'Select Panel' } },
+  selectPanel2: { title: 'Panel 2', key: key('2', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 12, submenu: 'Select Panel' } },
+  selectPanel3: { title: 'Panel 3', key: key('3', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 13, submenu: 'Select Panel' } },
+  selectPanel4: { title: 'Panel 4', key: key('4', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 14, submenu: 'Select Panel' } },
+  selectPanel5: { title: 'Panel 5', key: key('5', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 15, submenu: 'Select Panel' } },
+  selectPanel6: { title: 'Panel 6', key: key('6', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 16, submenu: 'Select Panel' } },
+  selectPanel7: { title: 'Panel 7', key: key('7', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 17, submenu: 'Select Panel' } },
+  selectPanel8: { title: 'Panel 8', key: key('8', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 18, submenu: 'Select Panel' } },
+  selectPanel9: { title: 'Panel 9', key: key('9', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 19, submenu: 'Select Panel' } },
+  selectPanel10: { title: 'Panel 10', key: key('0', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 20, submenu: 'Select Panel' } },
   selectTab1: { title: 'Select Tab 1 of Split', key: key('1', { control: true, option: true }), palette: false },
   selectTab2: { title: 'Select Tab 2 of Split', key: key('2', { control: true, option: true }), palette: false },
   selectTab3: { title: 'Select Tab 3 of Split', key: key('3', { control: true, option: true }), palette: false },
@@ -151,17 +151,17 @@ export function registerBuiltinActions(): () => void {
       previousWorkspace: { run: () => cycleWorkspace(-1) },
       // The layouts of the window the shortcut came from.
       newLayout: { run: ({ workspaceId, windowId }) => { if (workspaceId) addLayout(workspaceId, { windowId: windowId ?? MAIN_WINDOW }) }, enabled: ({ workspaceId }) => !!workspaceId },
-      nextLayout: { run: ({ workspaceId, windowId }) => { if (workspaceId) stepLayout(workspaceId, { windowId: windowId ?? MAIN_WINDOW }, 1) }, enabled: ({ workspaceId }) => !!workspaceId },
-      previousLayout: { run: ({ workspaceId, windowId }) => { if (workspaceId) stepLayout(workspaceId, { windowId: windowId ?? MAIN_WINDOW }, -1) }, enabled: ({ workspaceId }) => !!workspaceId },
-      selectLayout1: selectLayoutAction(0),
-      selectLayout2: selectLayoutAction(1),
-      selectLayout3: selectLayoutAction(2),
-      selectLayout4: selectLayoutAction(3),
-      selectLayout5: selectLayoutAction(4),
-      selectLayout6: selectLayoutAction(5),
-      selectLayout7: selectLayoutAction(6),
-      selectLayout8: selectLayoutAction(7),
-      selectLayout9: selectLayoutAction(8),
+      expandPane: { run: ({ workspaceId }) => { if (workspaceId) toggleExpandedPane(workspaceId) }, enabled: ({ workspaceId }) => !!workspaceId },
+      selectPanel1: selectPanelAction(0),
+      selectPanel2: selectPanelAction(1),
+      selectPanel3: selectPanelAction(2),
+      selectPanel4: selectPanelAction(3),
+      selectPanel5: selectPanelAction(4),
+      selectPanel6: selectPanelAction(5),
+      selectPanel7: selectPanelAction(6),
+      selectPanel8: selectPanelAction(7),
+      selectPanel9: selectPanelAction(8),
+      selectPanel10: selectPanelAction(9),
       selectTab1: { run: ({ workspaceId }) => { if (workspaceId) selectTabAt(workspaceId, 0) }, enabled: ({ workspaceId }) => !!workspaceId },
       selectTab2: { run: ({ workspaceId }) => { if (workspaceId) selectTabAt(workspaceId, 1) }, enabled: ({ workspaceId }) => !!workspaceId },
       selectTab3: { run: ({ workspaceId }) => { if (workspaceId) selectTabAt(workspaceId, 2) }, enabled: ({ workspaceId }) => !!workspaceId },
