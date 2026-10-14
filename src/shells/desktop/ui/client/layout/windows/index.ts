@@ -5,6 +5,8 @@
 export { WindowView, MainWindowView, installWindowReveal, type WindowViewProps } from './WindowView'
 export { syncDetachedWindows, openWindowAt } from './windowSync'
 export { closeDetachedWindow } from './closeWindow'
+export { closeLayout } from './closeLayout'
+export { layoutMoveItems, runLayoutMove } from './layoutMenu'
 export { clampToScreens, type ScreenArea } from './bounds'
 export { installWindowsPort, windowsPort, type WindowsPort, type WindowRef } from './ports'
 export {

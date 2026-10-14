@@ -35,7 +35,7 @@ function openDocument(panels: PanelRecord[], nodes: WorkspaceDocument['canvases'
   detach = openTestDocument('ws', {
     ...createDocument(),
     panels: Object.fromEntries([canvas, ...panels].map((p) => [p.id, p])),
-    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } } },
+    windows: { [MAIN_WINDOW]: { id: MAIN_WINDOW, kind: 'main', layouts: [{ id: 'main', dock: { kind: 'stack', id: 'main', panels: ['canvas'] } }]} },
     canvases: { c: { id: 'c', nodes } },
   })
 }
@@ -120,7 +120,7 @@ describe('PanelRelationHandle', () => {
   it('opens the panel picker in the relation portal and links the created panel', async () => {
     openDocument(
       [{ id: 'source', type: 'terminal', title: 'Terminal', fields: {} }],
-      { sourceNode: { id: 'sourceNode', rect: { origin: { x: 0, y: 0 }, size: { width: 100, height: 100 } }, dock: { kind: 'stack', id: 's', panels: ['source'] } } },
+      { sourceNode: { id: 'sourceNode', rect: { origin: { x: 0, y: 0 }, size: { width: 100, height: 100 } }, layouts: [{ id: 'L-s', name: 'Layout 1', dock: { kind: 'stack', id: 's', panels: ['source'] } }] } },
     )
     view = createCanvasView({ workspaceId: 'ws', canvasId: 'c', document: documentStoreFor('ws')!, clientState: clientStateFor('ws'), animate: false })
     view.setState({ zoomLevel: 2, viewportOffset: { x: 20, y: 40 }, containerSize: { width: 800, height: 600 } })

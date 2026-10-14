@@ -6,7 +6,7 @@ import { clientUi } from '@kernel/interaction'
 import type { CloseGuard } from '@client/host'
 import { documentStoreFor } from '@client/document'
 import { placePanelOnCanvas } from '../../client/layout/canvas'
-import { dockPanels, panelsOnCanvas } from '@workspace/document/contract'
+import { nodePanels, panelsOnCanvas } from '@workspace/document/contract'
 
 export type CanvasCloseChoice = 'move' | 'delete' | 'close' | 'cancel'
 
@@ -40,7 +40,7 @@ export const canvasCloseGuard: CloseGuard = async ({ workspaceId, record, closin
   // Each panel lands as its own node where its node was; the close then takes
   // only the canvas, and the moved panels' own guards no longer run.
   for (const node of Object.values(doc.canvases[canvasId]?.nodes ?? {})) {
-    for (const panelId of dockPanels(node.dock)) {
+    for (const panelId of nodePanels(node)) {
       placePanelOnCanvas(workspaceId, target, panelId, { position: node.rect.origin, size: node.rect.size, focus: false })
     }
   }

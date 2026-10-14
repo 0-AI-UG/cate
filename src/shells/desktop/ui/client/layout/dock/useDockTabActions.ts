@@ -4,11 +4,12 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  dockPanels,
-  isCanvasDock,
+  isNodeHost,
+  nodePanels,
   renamePanelChange,
   type DocChange,
   type DockRef,
+  type HostRef,
   type DockStack,
   type PanelId,
   type PlaceTarget,
@@ -17,6 +18,7 @@ import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { clientUi } from '@kernel/interaction'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import {
+  addLayout,
   closePanel,
   closePanels,
   createPanel,
@@ -31,6 +33,7 @@ import {
   panelDefinitions,
 } from '@client/host'
 import { openWindowAt } from '../windows/windowSync'
+import { layoutMoveItems, runLayoutMove } from '../windows/layoutMenu'
 import { tabMenuContributions } from './decorations'
 
 /** The type a "Split Right" creates: the placeholder picker, when one is
@@ -39,9 +42,22 @@ function splitPlaceholderType(): string | undefined {
   return panelDefinitions().find((definition) => definition.placeholder)?.type
 }
 
+/** A new pane to the right of a stack: the placeholder picker, else a panel
+ *  of the active panel's type in its checkout. */
+export function splitStackRight(workspaceId: string, dock: DockRef, stackId: string, activePanelId: string | undefined): void {
+  const origin = activePanelId ? documentStoreFor(workspaceId)?.getSnapshot().panels[activePanelId] : undefined
+  const type = splitPlaceholderType() ?? origin?.type
+  if (!type) return
+  createPanel(workspaceId, type, {
+    at: { to: 'split', dock, beside: stackId, side: 'right', stackId: newId(), splitId: newId() },
+    worktreeId: origin?.worktreeId,
+  })
+}
+
 export interface DockTabActionsParams {
   workspaceId: string
   dock: DockRef
+  host: HostRef
   stack: DockStack
   activePanelId: PanelId | undefined
   canSplit?: () => boolean
@@ -49,15 +65,15 @@ export interface DockTabActionsParams {
 
 /** Panels of the canvas nodes selected with the one this dock belongs to;
  *  null unless several nodes are selected. */
-function multiSelectionPanels(workspaceId: string, dock: DockRef): PanelId[] | null {
-  if (!isCanvasDock(dock)) return null
-  const selection = clientStateFor(workspaceId)?.getSnapshot().selection[dock.canvasId]?.nodes ?? []
-  if (selection.length < 2 || !selection.includes(dock.nodeId)) return null
-  const canvas = documentStoreFor(workspaceId)?.getSnapshot().canvases[dock.canvasId]
-  return selection.flatMap((nodeId) => dockPanels(canvas?.nodes[nodeId]?.dock))
+function multiSelectionPanels(workspaceId: string, host: HostRef): PanelId[] | null {
+  if (!isNodeHost(host)) return null
+  const selection = clientStateFor(workspaceId)?.getSnapshot().selection[host.canvasId]?.nodes ?? []
+  if (selection.length < 2 || !selection.includes(host.nodeId)) return null
+  const canvas = documentStoreFor(workspaceId)?.getSnapshot().canvases[host.canvasId]
+  return selection.flatMap((nodeId) => (canvas?.nodes[nodeId] ? nodePanels(canvas.nodes[nodeId]) : []))
 }
 
-export function useDockTabActions({ workspaceId, dock, stack, activePanelId, canSplit }: DockTabActionsParams) {
+export function useDockTabActions({ workspaceId, dock, host, stack, activePanelId, canSplit }: DockTabActionsParams) {
   const setActiveTab = useCallback((panelId: PanelId) => {
     clientStateFor(workspaceId)?.setActiveTab(stack.id, panelId)
   }, [workspaceId, stack.id])
@@ -125,7 +141,7 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
     if (!store || !record) return
     const windowId = newId()
     openWindowAt(workspaceId, windowId, { origin: { x: window.screenX + 60, y: window.screenY + 60 }, size: panelDefaultSize(record.type) })
-    const change: DocChange = { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: newId() } }
+    const change: DocChange = { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, layoutId: newId(), stackId: newId() } }
     store.propose(change)
   }, [workspaceId])
 
@@ -134,14 +150,14 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
 
   /** Several canvas nodes selected: every menu collapses to the bulk close. */
   const showMultiSelectionMenu = useCallback(async (): Promise<boolean> => {
-    const panels = multiSelectionPanels(workspaceId, dock)
+    const panels = multiSelectionPanels(workspaceId, host)
     if (!panels) return false
     const id = await showMenu([{ id: 'close-all', label: 'Close All' }])
     if (id === 'close-all') await closeMany(panels)
     return true
-  }, [workspaceId, dock, closeMany])
+  }, [workspaceId, host, closeMany])
 
-  const showCloseAll = !isCanvasDock(dock)
+  const showCloseAll = !isNodeHost(host)
 
   const handleTabContextMenu = useCallback(async (e: React.MouseEvent, panelId: string) => {
     e.preventDefault()
@@ -186,20 +202,26 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
     e.preventDefault()
     if (await showMultiSelectionMenu()) return
     const worktrees = worktreeChoices(doc(workspaceId)?.worktrees)
-    const creatable = creatableDefinitions({ onCanvas: isCanvasDock(dock) })
+    const creatable = creatableDefinitions({ onCanvas: isNodeHost(host) })
     const groups: ContextMenuItem[][] = [
       [{ label: 'New Tab', submenu: creationMenuItems(creatable, worktrees, (definition) => definition.label) }],
       [{ id: 'split', label: 'Split Right', enabled: canSplit?.() ?? true }],
     ]
+    if (isNodeHost(host)) {
+      const snapshot = doc(workspaceId)
+      groups.push([{ id: 'new-layout', label: 'New Layout' }, ...(snapshot ? layoutMoveItems(snapshot, dock.layoutId) : [])])
+    }
     if (showCloseAll) groups.push([{ id: 'close-all', label: 'Close All', enabled: stack.panels.length > 0 }])
     const menu = groups.flatMap((group, i) => (i === 0 ? group : [{ type: 'separator' } as ContextMenuItem, ...group]))
     const id = await showMenu(menu)
     if (!id) return
     if (id === 'split') { splitPanel(); return }
     if (id === 'close-all') { await closeMany([...stack.panels]); return }
+    if (id === 'new-layout') { addLayout(workspaceId, host); return }
+    if (runLayoutMove(workspaceId, dock.layoutId, id)) return
     const pick = creationPick(id, worktrees)
     if (pick) createPanelOfType(pick.type, 'tab', pick.options)
-  }, [showMultiSelectionMenu, workspaceId, dock, canSplit, showCloseAll, stack.panels, splitPanel, closeMany, createPanelOfType])
+  }, [showMultiSelectionMenu, workspaceId, host, dock.layoutId, canSplit, showCloseAll, stack.panels, splitPanel, closeMany, createPanelOfType])
 
   return {
     renameId,

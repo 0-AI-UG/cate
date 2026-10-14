@@ -160,7 +160,7 @@ export function detachPanel(workspaceId: string, panelId: PanelId): boolean {
   const id = () => globalThis.crypto.randomUUID()
   const windowId = id()
   openWindowAt(workspaceId, windowId, { origin: { x: 120, y: 120 }, size: { width: 900, height: 640 } })
-  return store.propose({ kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: id() } }).ok
+  return store.propose({ kind: 'placePanel', id: panelId, at: { to: 'window', windowId, layoutId: id(), stackId: id() } }).ok
 }
 
 /** Files open where a panel type opens them; without one the palette lists

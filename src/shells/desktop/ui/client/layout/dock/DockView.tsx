@@ -1,5 +1,5 @@
-// The view of one dock of the document: a window's dock, or a canvas node's
-// mini dock (same tree shape). It draws the tree, commits divider moves as
+// The view of one dock of the document: a layout of a window, or of a canvas
+// node (same tree shape). It draws the tree, commits divider moves as
 // `setSplitRatio`, and opens files dropped on it as tabs. A window's dock
 // shows only the stack this client maximized there, if any.
 
@@ -7,9 +7,10 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   dockOf,
   dockStacks,
-  isCanvasDock,
+  isNodeHost,
   type DockNode,
   type DockRef,
+  type HostRef,
   type DockStack,
   type WorkspaceDocument,
 } from '@workspace/document/contract'
@@ -39,6 +40,8 @@ export function sameDockTree(a: DockNode | null, b: DockNode | null): boolean {
 export interface DockViewProps {
   workspaceId: string
   dock: DockRef
+  /** The window or canvas node holding the dock. */
+  host: HostRef
   /** Renders a panel; PanelHost by default. */
   renderPanel?: (panelId: string) => React.ReactNode
   /** Shown while the dock is empty (an empty main window). */
@@ -55,11 +58,11 @@ export interface DockViewProps {
 }
 
 export function dockKey(dock: DockRef): string {
-  return isCanvasDock(dock) ? `node:${dock.canvasId}:${dock.nodeId}` : `window:${dock.windowId}`
+  return dock.layoutId
 }
 
 export function DockView({
-  workspaceId, dock: dockProp, renderPanel, emptyContent, compact, trailingControls, newTabControl,
+  workspaceId, dock: dockProp, host, renderPanel, emptyContent, compact, trailingControls, newTabControl,
   onTabBarMouseDown, dropDisabled, className, leadingInset,
 }: DockViewProps) {
   // Callers may pass a fresh object each render; the dock's identity is its key.
@@ -68,8 +71,8 @@ export function DockView({
   const dock = useMemo(() => dockProp, [key])
   const selector = useMemo(() => (doc: WorkspaceDocument) => dockOf(doc, dock) ?? null, [dock])
   const tree = useDocument(workspaceId, selector, sameDockTree)
-  const onCanvas = isCanvasDock(dock)
-  const soloStackId = useClientState(workspaceId, (s) => (isCanvasDock(dock) ? null : s.maximizedStacks[dock.windowId] ?? null))
+  const onCanvas = isNodeHost(host)
+  const soloStackId = useClientState(workspaceId, (s) => (isNodeHost(host) ? null : s.maximizedStacks[host.windowId] ?? null))
   const rootRef = useRef<HTMLDivElement>(null)
 
   const typeOf = useCallback((panelId: string) => documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]?.type, [workspaceId])
@@ -86,13 +89,14 @@ export function DockView({
   useEffect(() => {
     if (onCanvas) return
     return registerDropZone({
-      id: `dock-${workspaceId}-${'windowId' in dock ? dock.windowId : ''}`,
+      id: `dock-${workspaceId}-${dock.layoutId}`,
       workspaceId,
       dock,
+      host,
       getRect: () => rootRef.current?.getBoundingClientRect() ?? null,
       getElement: () => rootRef.current,
     })
-  }, [workspaceId, dock, onCanvas])
+  }, [workspaceId, dock, host, onCanvas])
 
   const firstStack = tree ? dockStacks(tree)[0] : undefined
   const filePlacement = useCallback((): PanelPlacementOptions => (
@@ -105,6 +109,7 @@ export function DockView({
       key={stack.id}
       workspaceId={workspaceId}
       dock={dock}
+      host={host}
       stack={stack}
       layout={tree}
       renderPanel={panelRenderer}
@@ -115,7 +120,7 @@ export function DockView({
       dropDisabled={dropDisabled}
       leadingInset={stack.id === firstStack?.id ? leadingInset : undefined}
     />
-  ), [tree, workspaceId, dock, panelRenderer, trailingControls, newTabControl, onTabBarMouseDown, compact, dropDisabled, firstStack, leadingInset])
+  ), [tree, workspaceId, dock, host, panelRenderer, trailingControls, newTabControl, onTabBarMouseDown, compact, dropDisabled, firstStack, leadingInset])
 
   if (onCanvas) {
     return tree ? <DockLayout layout={tree} renderStack={renderStack} typeOf={typeOf} onRatios={onRatios} /> : null
@@ -123,7 +128,7 @@ export function DockView({
   return (
     <div
       ref={rootRef}
-      data-dock-window={'windowId' in dock ? dock.windowId : undefined}
+      data-dock-window={isNodeHost(host) ? undefined : host.windowId}
       data-filedrop="dock"
       data-filedrop-label="Drop to open here"
       className={`flex flex-col overflow-hidden relative bg-canvas-bg ${className ?? ''}`}

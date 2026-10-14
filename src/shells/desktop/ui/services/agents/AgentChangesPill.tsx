@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { GitCompareArrows as GitDiff } from 'lucide-react'
 import { errorMessage } from '@kernel/interaction'
+import { Tooltip } from '../../kernel/interaction'
 import { agentChangesOpener } from './changesOpener'
 
 const FAILED = 'Could not open agent changes'
@@ -9,22 +10,23 @@ export function AgentChangesPill({ workspaceId, panelId }: { workspaceId: string
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   return <>
-    <button type="button" aria-label="Open agent changes" title={error || 'Changes from this panel'} disabled={busy}
-      className="group inline-flex h-[18px] items-center gap-0 rounded-full bg-surface-3 px-1 text-secondary transition-[gap] hover:gap-1 hover:text-primary disabled:opacity-50"
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={async (event) => {
-        event.stopPropagation()
-        const open = agentChangesOpener()
-        if (busy || !open) return
-        setBusy(true); setError('')
-        try {
-          if (!(await open({ workspaceId, panelId }))) setError(FAILED)
-        } catch (cause) { setError(errorMessage(cause, FAILED)) }
-        finally { setBusy(false) }
-      }}>
-      <GitDiff size={11} />
-      <span className="max-w-0 overflow-hidden text-[10px] transition-all group-hover:max-w-20">Changes</span>
-    </button>
+    <Tooltip label={error || 'Changes from this panel'}>
+      <button type="button" aria-label="Open agent changes" disabled={busy}
+        className="flex h-6 w-6 items-center justify-center rounded-[10px] text-muted hover:bg-hover hover:text-primary disabled:opacity-50"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={async (event) => {
+          event.stopPropagation()
+          const open = agentChangesOpener()
+          if (busy || !open) return
+          setBusy(true); setError('')
+          try {
+            if (!(await open({ workspaceId, panelId }))) setError(FAILED)
+          } catch (cause) { setError(errorMessage(cause, FAILED)) }
+          finally { setBusy(false) }
+        }}>
+        <GitDiff size={14} />
+      </button>
+    </Tooltip>
     {error && <span role="alert" className="max-w-48 rounded bg-surface-2 px-2 text-[10px] text-red-400">{error}</span>}
   </>
 }

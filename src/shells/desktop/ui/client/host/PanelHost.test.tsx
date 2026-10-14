@@ -29,7 +29,7 @@ beforeAll(() => {
   registerPanelView('browser', async () => ({ default: BrowserView as React.ComponentType<PanelViewProps> }))
 })
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 let ws: TestWorkspace
 let sessions: FakeSessions
 let detachSessions = () => {}

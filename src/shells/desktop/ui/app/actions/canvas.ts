@@ -111,7 +111,7 @@ function focusedNodePanel(canvas: ActiveCanvas): string | null {
   const nodeId = focusedNodeId(state)
   const node = nodeId ? state.nodes[nodeId] : undefined
   if (!node) return null
-  return activeNodePanelId(node.dock, clientStateFor(canvas.workspaceId)?.getSnapshot().activeTabs) ?? null
+  return activeNodePanelId(node, clientStateFor(canvas.workspaceId)?.getSnapshot()) ?? null
 }
 
 async function toggleKeepAwake(workspaceId: string | null): Promise<void> {
