@@ -29,8 +29,8 @@ export interface ShortcutSettings {
 
 export interface ShortcutRegistry {
   resolved(): ResolvedShortcuts
-  /** The first declared action bound to this key press. */
-  match(event: ShortcutKeyEvent): ActionId | null
+  /** The first declared action bound to this key press (`mac`: see `shortcutMatches`). */
+  match(event: ShortcutKeyEvent, mac?: boolean): ActionId | null
   set(action: ActionId, shortcut: StoredShortcut): void
   /** Disables the binding (an empty key never matches). */
   clear(action: ActionId): void
@@ -65,9 +65,9 @@ export function createShortcutRegistry(settings: ShortcutSettings): ShortcutRegi
   }
   return {
     resolved,
-    match(event) {
+    match(event, mac) {
       const table = resolved()
-      return declaredActions().find(({ id }) => table[id] && shortcutMatches(event, table[id]))?.id ?? null
+      return declaredActions().find(({ id }) => table[id] && shortcutMatches(event, table[id], mac))?.id ?? null
     },
     set: (action, shortcut) => persist(action, shortcut),
     clear: (action) => persist(action, UNBOUND),

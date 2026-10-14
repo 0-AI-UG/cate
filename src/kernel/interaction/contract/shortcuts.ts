@@ -98,12 +98,11 @@ export interface ShortcutKeyEvent {
 }
 
 /** The key press triggers this binding. A disabled binding (empty key)
- *  never matches. */
-export function shortcutMatches(event: ShortcutKeyEvent, stored: StoredShortcut): boolean {
-  return !!stored.key &&
-    stored.key === normaliseShortcutKey(event.key) &&
-    stored.command === event.metaKey &&
-    stored.shift === event.shiftKey &&
-    stored.option === event.altKey &&
-    stored.control === event.ctrlKey
+ *  never matches. Off a Mac keyboard ("command" and "control" are both the
+ *  Ctrl key, so a binding stored with either answers it) `mac` is false. */
+export function shortcutMatches(event: ShortcutKeyEvent, stored: StoredShortcut, mac = true): boolean {
+  if (!stored.key || stored.key !== normaliseShortcutKey(event.key) || stored.shift !== event.shiftKey || stored.option !== event.altKey) return false
+  return mac
+    ? stored.command === event.metaKey && stored.control === event.ctrlKey
+    : (stored.command || stored.control) === (event.metaKey || event.ctrlKey)
 }

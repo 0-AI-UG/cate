@@ -62,6 +62,18 @@ describe('keyboard dispatch', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 
+  it('off a Mac keyboard the primary key is Ctrl: a bound Ctrl chord runs, an unbound one is left to the focused terminal', () => {
+    const run = vi.fn()
+    stops.push(registerActions({ 'test.run': { title: 'Run', key: storedShortcut('j', { command: true }) } }, { 'test.run': { run } }))
+    const bound = new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, cancelable: true })
+    handleShortcutKey(bound)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(bound.defaultPrevented).toBe(true)
+    const unbound = new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, cancelable: true })
+    handleShortcutKey(unbound)
+    expect(unbound.defaultPrevented).toBe(false)
+  })
+
   it('leaves unbound keys alone and lets key handlers go first', () => {
     const handler = vi.fn(() => true)
     stops.push(registerKeyHandler(handler))
