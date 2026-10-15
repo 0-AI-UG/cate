@@ -134,8 +134,16 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   const measureNow = useRef(measureStrip)
   measureNow.current = measureStrip
   const pressedRef = useRef<StripItemGeom[] | null>(null)
+  // The + as it stood then too: the lifted chip leaves the strip, and the + with it.
+  const pressedPlusRef = useRef<number | null>(null)
+  const plusLeft = () => {
+    const plus = headerRef.current?.querySelector('[aria-label="New Tab"]')?.getBoundingClientRect()
+    return plus && plus.width > 0 ? plus.left : null
+  }
+  const plusLeftNow = useRef(plusLeft)
+  plusLeftNow.current = plusLeft
   useEffect(() => {
-    const press = () => { pressedRef.current = measureNow.current() }
+    const press = () => { pressedRef.current = measureNow.current(); pressedPlusRef.current = plusLeftNow.current() }
     globalThis.addEventListener('mousedown', press, true)
     return () => globalThis.removeEventListener('mousedown', press, true)
   }, [])
@@ -151,8 +159,8 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
         : panelHere ? { kind: 'panel', panelId: source.panelId } : { kind: 'none' }
       const geometry = stripSource.kind !== 'none' ? pressedRef.current ?? measureStrip() : measureStrip()
       // Walls: the first chip's left edge, and the + button on the right.
-      const plus = headerRef.current?.querySelector('[aria-label="New Tab"]')?.getBoundingClientRect()
-      const bounds = { left: geometry[0]?.left ?? 0, ...(plus && plus.width > 0 ? { right: plus.left - 4 } : {}) }
+      const plus = stripSource.kind !== 'none' ? pressedPlusRef.current ?? plusLeft() : plusLeft()
+      const bounds = { left: geometry[0]?.left ?? 0, ...(plus !== null ? { right: plus - 4 } : {}) }
       modelRef.current = { source, model: buildStripModel(geometry, stripSource, cursorX, bounds) }
     }
     return modelRef.current.model.solve(cursorX).target
