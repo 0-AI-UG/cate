@@ -2,7 +2,7 @@
 // focused it (a tab, a node's title bar) finishes after the focus call and
 // can move DOM focus to the element it landed on, and a freshly shown xterm
 // may not be attached yet; so focus is re-asserted for a short while, as long
-// as the terminal still owns focus.
+// as the terminal still owns focus and no text field has taken it.
 
 export interface HoldFocusOptions {
   /** Ticks to wait for the element to be attached. */
@@ -30,7 +30,10 @@ export function holdFocus(
       if (waited++ < waitTicks) timer = setTimeout(tick, intervalMs)
       return
     }
-    if (el.ownerDocument.activeElement !== el) el.focus({ preventScroll: true })
+    // Focus that went to a text field (an inline rename the click opened) is the user's: stop.
+    const active = el.ownerDocument.activeElement
+    if (active instanceof HTMLInputElement) return
+    if (active !== el) el.focus({ preventScroll: true })
     if (held++ < holdTicks) timer = setTimeout(tick, intervalMs)
   }
   tick()
