@@ -142,6 +142,13 @@ describe('TerminalSession', () => {
     expect(snap(session)).toMatchObject({ status: 'exited', exitCode: 3, title: 'zsh' })
   })
 
+  it('closes its panel when the PTY exits', async () => {
+    const { session, terminal, applied } = setup()
+    await session.start()
+    terminal.update('pty-1', { alive: false, exitCode: 0, activity: { type: 'idle' } })
+    expect(applied).toContainEqual({ kind: 'removePanels', ids: ['p1'] })
+  })
+
   it('refuses to close with dirty while a program runs, unless discarded', async () => {
     const { session, terminal } = setup()
     await session.start()

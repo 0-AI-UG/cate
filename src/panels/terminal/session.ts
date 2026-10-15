@@ -257,6 +257,8 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       ...(status.alive ? {} : { status: 'exited' as const, exitCode: status.exitCode, activity: { type: 'idle' as const } }),
     })
     if (status.cwd) this.rememberCwd(status.cwd)
+    // The shell ended (`exit`): nothing is left to show, so the panel closes.
+    if (!status.alive) this.kit.document.apply({ kind: 'removePanels', ids: [this.panelId] })
   }
 
   private rememberCwd(cwd: string): void {
