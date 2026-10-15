@@ -7,6 +7,8 @@ export { syncDetachedWindows, openWindowAt } from './windowSync'
 export { closeDetachedWindow } from './closeWindow'
 export { closeLayout } from './closeLayout'
 export { showLayoutMenu } from './layoutMenu'
+export { showPanelMenu } from './panelMenu'
+export { useLayoutRename } from './useLayoutRename'
 export { clampToScreens, type ScreenArea } from './bounds'
 export { installWindowsPort, windowsPort, type WindowsPort, type WindowRef } from './ports'
 export {

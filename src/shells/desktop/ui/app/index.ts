@@ -55,7 +55,6 @@ export {
   revealPanel,
   closePanels,
   renamePanel,
-  detachPanel,
   openUrl,
   installNavigationHooks,
 } from './navigation'

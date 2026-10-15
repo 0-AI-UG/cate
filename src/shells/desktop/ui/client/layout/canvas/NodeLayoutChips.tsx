@@ -32,7 +32,7 @@ export function NodeLayoutChips({ workspaceId, canvasId, nodeId, layouts, active
             title={layout.name}
             className={`flex items-center gap-1 h-[18px] px-1.5 max-w-[140px] rounded-md text-[11px] cursor-pointer select-none ${
               active ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover'}`}
-            onClick={(e) => { e.stopPropagation(); switchLayout(workspaceId, host, layout.id) }}
+            onClick={(e) => { e.stopPropagation(); if (e.detail < 2) switchLayout(workspaceId, host, layout.id) }}
             onDoubleClick={(e) => { e.stopPropagation(); rename.begin(layout) }}
             onContextMenu={(e) => { void showLayoutMenu(e, workspaceId, layout.id, { onRename: () => rename.begin(layout), closable: layouts.length > 1 }) }}
           >

@@ -17,7 +17,7 @@ import { useWorktreeColor, worktreeTitleStyle } from '../../workspace/repository
 import { WorkspaceSkillsTree } from '../../workspace/skills'
 import { AwaitingIndicator, RunningIndicator, agentInfoTitle, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
 import { clientApp } from '../app'
-import { closePanels, closeWorkspace, detachPanel, renamePanel, revealPanel, selectWorkspace } from '../navigation'
+import { closePanels, closeWorkspace, renamePanel, revealPanel, selectWorkspace } from '../navigation'
 import { panelIcon } from '../panels'
 import { panelsWithPorts, terminalCwd } from '@services/terminal/client'
 import { useTerminalStatuses } from '../state/statusStore'
@@ -29,7 +29,7 @@ import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
 import { itemKey, layoutKey, layoutRows } from './sidebarDrag'
 import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
-import { showLayoutMenu } from '../../client/layout/windows'
+import { showLayoutMenu, showPanelMenu, useLayoutRename } from '../../client/layout/windows'
 import { DragFloat, GhostBlock, type RowLook } from './GhostBlock'
 import { takesCanvasDrop, useSidebarTree, type Float } from './useSidebarTree'
 
@@ -110,6 +110,7 @@ export function WorkspaceRow({
 
   const [renamingWorkspace, setRenamingWorkspace] = useState<string | null>(null)
   const [rename, setRename] = useState<RenameState | null>(null)
+  const layoutRename = useLayoutRename(workspaceId)
   const [menuOpen, setMenuOpen] = useState(false)
   // The group whose strip the cursor is on: its panels show as members, like the shown layout's.
   const [stripHover, setStripHover] = useState<string | null>(null)
@@ -168,20 +169,9 @@ export function WorkspaceRow({
     }
   }
 
-  const handlePanelMenu = async (e: React.MouseEvent, record: PanelRecord) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const label = panelRowLabel(record)
-    const id = await showMenu([
-      { id: 'rename', label: 'Rename' },
-      { id: 'move-window', label: 'Move into New Window' },
-      { type: 'separator' },
-      { id: 'close', label: 'Close' },
-    ])
-    if (id === 'rename') setRename({ panelId: record.id, value: label, seed: label })
-    else if (id === 'move-window') detachPanel(workspaceId, record.id)
-    else if (id === 'close') void closePanels(workspaceId, [record.id])
-  }
+  const beginPanelRename = (record: PanelRecord) => { const label = panelRowLabel(record); setRename({ panelId: record.id, value: label, seed: label }) }
+  const handlePanelMenu = (e: React.MouseEvent, record: PanelRecord) =>
+    showPanelMenu(e, workspaceId, record.id, { onRename: () => beginPanelRename(record) })
 
   const submitPanelRename = () => {
     if (!rename) return
@@ -213,7 +203,7 @@ export function WorkspaceRow({
         onSubmit: submitPanelRename,
         onCancel: () => setRename(null),
       } : null}
-      onBeginRename={() => { const label = panelRowLabel(record); setRename({ panelId: record.id, value: label, seed: label }) }}
+      onBeginRename={() => beginPanelRename(record)}
     />
   )
 
@@ -314,8 +304,9 @@ export function WorkspaceRow({
           onPointerEnter={() => setStripHover(layout.layoutId)}
           onPointerLeave={() => setStripHover(null)}
           onMouseDown={(e) => pressLayout(e, w, layout)}
-          onClick={(e) => { e.stopPropagation(); if (!wasDragged.current) switchLayout(workspaceId, { windowId: w.windowId }, layout.layoutId) }}
-          onContextMenu={(e) => void showLayoutMenu(e, workspaceId, layout.layoutId, { closable: w.layouts.length > 1 })}
+          onClick={(e) => { e.stopPropagation(); if (!wasDragged.current && e.detail < 2) switchLayout(workspaceId, { windowId: w.windowId }, layout.layoutId) }}
+          onDoubleClick={(e) => { e.stopPropagation(); layoutRename.begin({ id: layout.layoutId, name: layout.name }) }}
+          onContextMenu={(e) => void showLayoutMenu(e, workspaceId, layout.layoutId, { onRename: () => layoutRename.begin({ id: layout.layoutId, name: layout.name }), closable: w.layouts.length > 1 })}
         >
           {/* Rounded by clipping, not by a border radius: a radius as wide as the strip paints stray pixels just outside its left edge. */}
           <span
@@ -329,6 +320,11 @@ export function WorkspaceRow({
             }}
           />
         </div>
+        {layoutRename.renameId === layout.layoutId && (
+          <div className="mx-1.5 my-0.5 h-7 flex items-center" style={{ paddingLeft: 28 }}>
+            {layoutRename.input(layout.layoutId, 'flex-1 min-w-0 text-[13px] px-1')}
+          </div>
+        )}
         {content}
       </div>
     )
@@ -577,9 +573,10 @@ export function WorkspacePanelRow({
         active ? `${indented ? 'bg-hover' : 'bg-surface-2'} text-primary` : `${member ? MEMBER_BG : ''} ${awaiting ? 'text-primary' : member ? 'text-secondary hover:text-primary' : 'text-muted hover:text-primary'}`}`}
       style={{ paddingLeft: (depth > 0 ? 40 : 28) - (indented ? GROUP_INDENT : 0), ...(ghost ? ghostStyle(ghost) : null) }}
       {...ghostAttrs(ghost)}
-      onClick={onClick}
+      onClick={(e) => { if (e.detail < 2) onClick?.(e) }}
       onContextMenu={onContextMenu}
       onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault(); else onPress?.(e) }}
+      onDoubleClick={onBeginRename}
       onAuxClick={(e) => {
         if (isMiddleClick(e) && onClose) {
           e.preventDefault()
@@ -608,7 +605,6 @@ export function WorkspacePanelRow({
         <span
           className="min-w-0 flex-1 truncate"
           style={worktreeTitleStyle(worktreeColor)}
-          onDoubleClick={(e) => { e.stopPropagation(); onBeginRename?.() }}
         >
           {label}
         </span>

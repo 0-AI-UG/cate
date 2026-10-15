@@ -151,18 +151,6 @@ export function renamePanel(workspaceId: string, panelId: PanelId, title: string
   return store.propose(renamePanelChange(panelId, title)).ok
 }
 
-/** Moves a panel into a new detached window (a placement op every client
- *  sees; a client without `windows` shows it as a stack). Its position is
- *  this device's. */
-export function detachPanel(workspaceId: string, panelId: PanelId): boolean {
-  const store = documentStoreFor(workspaceId)
-  if (!store) return false
-  const id = () => globalThis.crypto.randomUUID()
-  const windowId = id()
-  openWindowAt(workspaceId, windowId, { origin: { x: 120, y: 120 }, size: { width: 900, height: 640 } })
-  return store.propose({ kind: 'placePanel', id: panelId, at: { to: 'window', windowId, layoutId: id(), stackId: id() } }).ok
-}
-
 /** Files open where a panel type opens them; without one the palette lists
  *  no files. */
 export function canOpenFiles(): boolean {

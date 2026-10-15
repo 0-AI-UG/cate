@@ -7,7 +7,6 @@ import {
   isNodeHost,
   nodePanels,
   renamePanelChange,
-  type DocChange,
   type DockRef,
   type HostRef,
   type DockStack,
@@ -29,10 +28,9 @@ import {
   worktreeChoices,
   type CreationPick,
   onPanelRenameRequest,
-  panelDefaultSize,
   panelDefinitions,
 } from '@client/host'
-import { openWindowAt } from '../windows/windowSync'
+import { moveToNewWindow } from '../windows/panelMenu'
 import { layoutMoveItems, runLayoutMove } from '../windows/layoutMenu'
 import { tabMenuContributions } from './decorations'
 
@@ -135,15 +133,7 @@ export function useDockTabActions({ workspaceId, dock, host, stack, activePanelI
   }, [createPanelOfType, canSplit, workspaceId, activePanelId])
 
   // --- Move and close -----------------------------------------------------------
-  const moveTabToNewWindow = useCallback((panelId: string) => {
-    const store = documentStoreFor(workspaceId)
-    const record = store?.getSnapshot().panels[panelId]
-    if (!store || !record) return
-    const windowId = newId()
-    openWindowAt(workspaceId, windowId, { origin: { x: window.screenX + 60, y: window.screenY + 60 }, size: panelDefaultSize(record.type) })
-    const change: DocChange = { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, layoutId: newId(), stackId: newId() } }
-    store.propose(change)
-  }, [workspaceId])
+  const moveTabToNewWindow = useCallback((panelId: string) => moveToNewWindow(workspaceId, panelId), [workspaceId])
 
   const closeOne = useCallback((panelId: string) => { void closePanel(workspaceId, panelId) }, [workspaceId])
   const closeMany = useCallback((ids: string[]) => closePanels(workspaceId, ids), [workspaceId])

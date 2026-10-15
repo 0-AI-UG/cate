@@ -29,7 +29,8 @@ import { useDragSettled } from '../drag/settled'
 import { closeLayout } from './closeLayout'
 import { LayoutGlyph } from './LayoutGlyph'
 import { showLayoutMenu } from './layoutMenu'
-import { useLayoutRename } from './useLayoutRename'
+import { useLayoutRename, usePanelRename } from './useLayoutRename'
+import { showPanelMenu } from './panelMenu'
 import { buildStripModel, type GapSpot, type StripItemGeom, type StripModel, type StripSource } from './stripModel'
 
 const CHIP = 'group relative flex items-center gap-1.5 whitespace-nowrap cursor-pointer select-none min-w-0 shrink rounded-[var(--node-tab-radius,10px)] h-6 max-w-[200px] pl-2.5 pr-1 text-[12px] transition-colors'
@@ -62,6 +63,7 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   leadingInset?: number
 }) {
   const rename = useLayoutRename(workspaceId)
+  const panelRename = usePanelRename(workspaceId)
   const windowId = window.id
   const host = { windowId }
   const panels = useDocument(workspaceId, (doc) => doc.panels)
@@ -250,21 +252,27 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
           : { ...gapStyle((spot) => spot.at === 'item' && spot.layoutId === layout.id, 'Left'), ...gapStyle((spot) => spot.at === 'row-end' && spot.layoutId === layout.id, 'Right') }),
         ...lifted?.style,
       }}
-      onClick={() => { if (!wasDragged.current) revealOnce(workspaceId, record.id) }}
+      // The second click of a double-click must not refocus the panel: that would blur the rename it opens.
+      onClick={(e) => { if (!wasDragged.current && e.detail < 2) revealOnce(workspaceId, record.id) }}
+      onDoubleClick={() => panelRename.begin(record.id, record.title || recordTitle)}
       onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault(); else startPanelDrag(e, record.id) }}
       onAuxClick={(e) => {
         if (!isMiddleClick(e)) return
         e.preventDefault()
         void closePanel(workspaceId, record.id)
       }}
-      onContextMenu={(e) => { void onContextMenu(e, layout, false) }}
+      onContextMenu={(e) => { void showPanelMenu(e, workspaceId, record.id, { onRename: () => panelRename.begin(record.id, record.title || recordTitle) }) }}
     >
       <span className={`shrink-0 ${active ? definition?.tint ?? 'text-secondary' : 'text-muted'}`}>
         <TabIcon type={record.type} size={13} logo={decoration?.logo} logoAlt={decoration?.logoAlt} />
       </span>
-      <TabTitle record={record} worktree={tintWorktrees && record.worktreeId ? worktrees[record.worktreeId] : undefined}>
-        {title}{decoration?.dirty ? ' •' : ''}
-      </TabTitle>
+      {panelRename.renameId === record.id ? (
+        panelRename.input(record.id, 'w-24 min-w-0 px-0')
+      ) : (
+        <TabTitle record={record} worktree={tintWorktrees && record.worktreeId ? worktrees[record.worktreeId] : undefined}>
+          {title}{decoration?.dirty ? ' •' : ''}
+        </TabTitle>
+      )}
       {decoration?.status}
       <CloseButton label="Close tab" active={active} hidden={!!lifted} onClose={() => { void closePanel(workspaceId, record.id) }} />
     </div>
@@ -287,7 +295,9 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
         title={label}
         className={`${ids.length === 0 ? CHIP : SEGMENT} ${ids.length === 0 ? chipTone(layoutActive) : `${layoutActive ? 'text-primary' : 'text-muted'} hover:text-primary hover:bg-surface-5`} ${ids.length > 0 && rename.renameId !== layout.id ? 'pr-2.5' : ''}`}
         style={NO_DRAG}
-        onClick={() => { if (!wasDragged.current) switchLayout(workspaceId, host, layout.id) }}
+        // The second click of a double-click must not switch again: that would steal the focus from the rename it opens.
+        onClick={(e) => { if (!wasDragged.current && e.detail < 2) switchLayout(workspaceId, host, layout.id) }}
+        onDoubleClick={() => { if (ids.length > 0) rename.begin(layout) }}
         onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault(); else if (ids.length > 0) startLayoutDrag(e, layout) }}
         onAuxClick={(e) => {
           if (!isMiddleClick(e) || !closable) return
@@ -298,7 +308,7 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
       >
         <span className="shrink-0 text-muted"><LayoutGlyph dock={layout.dock} shown={layoutActive} focused={focused} /></span>
         {rename.renameId === layout.id ? (
-          rename.input(layout.id, 'truncate flex-1 min-w-0 px-0')
+          rename.input(layout.id, 'w-20 min-w-0 px-0')
         ) : ids.length === 0 ? (
           <span className="min-w-0 flex-1 truncate">{label}</span>
         ) : null}

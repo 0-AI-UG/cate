@@ -33,7 +33,7 @@ export function layoutMoveItems(doc: WorkspaceDocument, layoutId: LayoutId): Con
   const canMoveOut = layout.dock !== null
   return [
     ...(inMain ? [] : [{ id: 'move-main', label: 'Move to Main Window' }]),
-    ...(clientHas('windows') && canMoveOut ? [{ id: 'move-window', label: 'Move to New Window' }] : []),
+    ...(clientHas('windows') && canMoveOut ? [{ id: 'move-window', label: 'Move into New Window' }] : []),
   ]
 }
 
@@ -59,8 +59,7 @@ export async function showLayoutMenu(
   e.stopPropagation()
   const doc = documentStoreFor(workspaceId)?.getSnapshot()
   const groups: ContextMenuItem[][] = [
-    onRename ? [{ id: 'rename', label: 'Rename' }] : [],
-    doc ? layoutMoveItems(doc, layoutId) : [],
+    [...(onRename ? [{ id: 'rename', label: 'Rename' }] : []), ...(doc ? layoutMoveItems(doc, layoutId) : [])],
     [{ id: 'close', label: 'Close Layout', enabled: closable }],
   ].filter((group) => group.length > 0)
   const ui = clientUi()
