@@ -29,7 +29,7 @@ import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
 import { itemKey, layoutKey, layoutRows } from './sidebarDrag'
 import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
-import { showLayoutMenu, showPanelMenu, useLayoutRename } from '../../client/layout/windows'
+import { closeLayout, showLayoutMenu, showPanelMenu, useLayoutRename } from '../../client/layout/windows'
 import { DragFloat, GhostBlock, type RowLook } from './GhostBlock'
 import { takesCanvasDrop, useSidebarTree, type Float } from './useSidebarTree'
 
@@ -303,7 +303,13 @@ export function WorkspaceRow({
           style={{ left: 8, top: 4, bottom: 4, width: 14 }}
           onPointerEnter={() => setStripHover(layout.layoutId)}
           onPointerLeave={() => setStripHover(null)}
-          onMouseDown={(e) => pressLayout(e, w, layout)}
+          onMouseDown={(e) => { if (isMiddleClick(e)) e.preventDefault(); else pressLayout(e, w, layout) }}
+          onAuxClick={(e) => {
+            if (!isMiddleClick(e) || w.layouts.length < 2) return
+            e.preventDefault()
+            e.stopPropagation()
+            void closeLayout(workspaceId, layout.layoutId)
+          }}
           onClick={(e) => { e.stopPropagation(); if (!wasDragged.current && e.detail < 2) switchLayout(workspaceId, { windowId: w.windowId }, layout.layoutId) }}
           onDoubleClick={(e) => { e.stopPropagation(); layoutRename.begin({ id: layout.layoutId, name: layout.name }) }}
           onContextMenu={(e) => void showLayoutMenu(e, workspaceId, layout.layoutId, { onRename: () => layoutRename.begin({ id: layout.layoutId, name: layout.name }), closable: w.layouts.length > 1 })}
