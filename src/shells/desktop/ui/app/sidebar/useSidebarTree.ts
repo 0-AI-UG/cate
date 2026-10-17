@@ -43,6 +43,8 @@ const OPTIONS = { separator: 0, rowGap: ROW_GAP, stackTabs: true, groupLead: GRO
 const ROW_SIZE = 32
 
 interface Scope {
+  /** The dragged panel or layout stands in this window's rows. */
+  lifted: boolean
   windowId: WindowId
   model: AxisModel
   /** The windows's layouts span `start` to `end` without the lifted row. */
@@ -109,7 +111,10 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
     // A one-panel canvas-node drag has no row in the tree (it stands on a canvas): a standing source (has: false).
     const standing: AxisSource = layout !== null ? { kind: 'layout', layoutId: '' } : { kind: 'none' }
     let removed = 0
-    let size = childRect ? childRect.bottom - childRect.top : ROW_SIZE
+    // A layout with no group in the tree (a node's, another window's) is as tall as the group it becomes:
+    // a row for each of its panels and the group's edges. Sized as one row, its last slot is out of reach.
+    const groupSize = layout === null || !doc ? 0 : dockPanels(layoutById(doc, layout)?.dock).length * ROW_SIZE + 2 * GROUP_EDGE
+    let size = childRect ? childRect.bottom - childRect.top : groupSize || ROW_SIZE
     let grab = childRect ? pressY - childRect.top : size / 2
     const wall = { start: 0, end: 0 }
     const scopes = all.map((w, k): Scope => {
@@ -121,13 +126,14 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
       if (k === 0) wall.start = rows[0]?.start ?? 0
       wall.end = rows[rows.length - 1]?.end ?? wall.end
       const items = rows.map((item) => moveItem(shiftPast(item, childGone), (v) => v - removed))
-      const model = buildAxisModel(items, has ? (layout !== null ? { kind: 'layout', layoutId: layout } : { kind: 'panel', panelId: source.panelId }) : standing, pressY, undefined, OPTIONS)
+      const model = buildAxisModel(items, has ? (layout !== null ? { kind: 'layout', layoutId: layout } : { kind: 'panel', panelId: source.panelId }) : standing, pressY, undefined, { ...OPTIONS, sourceSize: size })
       if (has) { removed += model.removed; size = model.size; grab = model.grab }
-      return { windowId: w.windowId, model, start: items[0]?.start ?? 0, end: (items[items.length - 1]?.end ?? 0) - (has ? model.removed : 0) }
+      return { lifted: has, windowId: w.windowId, model, start: items[0]?.start ?? 0, end: (items[items.length - 1]?.end ?? 0) - (has ? model.removed : 0) }
     })
-    // The walls give half a row more room, less the margin before the next workspace: the ghost may go a little
-    // past the last row to reach its end slot, never over the workspace below.
-    wall.end += size / 2 - WORKSPACE_MARGIN
+    // The walls give room past the last row, less the margin before the next workspace, so the ghost reaches
+    // its end slot: its middle must pass the end of the last row. A lifted row is part of the rows (half
+    // its size is room enough); a drag from outside has no room of its own in them, so it gets all of it.
+    wall.end += (scopes.some((s) => s.lifted) ? size / 2 : size) - WORKSPACE_MARGIN
     const bounds = box ?? container.getBoundingClientRect()
     return { source, scopes, active: -1, wall, size, grab, left: bounds.left, width: bounds.width, gap: null, ghostTop: 0 }
   }

@@ -98,6 +98,9 @@ export interface AxisBounds {
 }
 
 export interface AxisOptions {
+  /** The size of a dragged item the row has no entry for (one dragged in from
+   *  outside); a default when unset. */
+  sourceSize?: number
   /** Room between two items of a group (a separator), and between layouts. */
   separator: number
   rowGap: number
@@ -134,7 +137,7 @@ export function buildAxisModel(
   bounds?: AxisBounds,
   options: AxisOptions = { separator: 0, rowGap: 0 },
 ): AxisModel {
-  const { separator, rowGap, stackTabs = false, groupLead = 0, groupTail = 0, canvasTail = 0 } = options
+  const { separator, rowGap, sourceSize, stackTabs = false, groupLead = 0, groupTail = 0, canvasTail = 0 } = options
   // --- The dragged item ----------------------------------------------------------------
   let srcItem = -1
   let srcChip = -1
@@ -146,7 +149,7 @@ export function buildAxisModel(
     if (j >= 0) { srcItem = i; srcChip = j }
   })
   const dragged = srcChip >= 0 ? items[srcItem].chips[srcChip] : srcItem >= 0 ? items[srcItem] : null
-  const size = dragged ? dragged.end - dragged.start : DEFAULT_SIZE
+  const size = dragged ? dragged.end - dragged.start : sourceSize ?? DEFAULT_SIZE
   // Grabbed on the item itself, the ghost keeps the grab; dragged from elsewhere
   // (a pane's grip, far from the chip) it is held by its middle.
   const onItem = !!dragged && cursor >= dragged.start && cursor <= dragged.end

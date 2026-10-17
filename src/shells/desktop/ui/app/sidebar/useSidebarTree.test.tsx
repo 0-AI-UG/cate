@@ -211,6 +211,24 @@ describe('the tree as a drop zone', () => {
     }
   })
 
+  it('a group node, as tall as the group it becomes, still reaches the last slot at the foot of the tree', () => {
+    addCanvas('t')
+    act(() => {
+      ws.document.propose(add('u', { to: 'stack', dock: { layoutId: 'L-n0' }, stackId: 'ns0' }))
+      ws.document.propose(add('v', { to: 'split', dock: { layoutId: 'L-n0' }, beside: 'ns0', side: 'right', stackId: 'ns1b', splitId: 'spn' }))
+    })
+    mountTree()
+    const layouts = ws.confirmed().windows[MAIN_WINDOW].layouts.length
+    const node: DragSource = { workspaceId: 'w', panelId: 't', origin: { kind: 'canvas-node', canvasId: 'cvs', nodeId: 'n0' } }
+    const groupEnv = { ...env, nodeIsGroup: () => true }
+    for (const y of [100, 130, 160, 200, 230, 260, 300, 395]) console.log('DBG', y, JSON.stringify(resolveDrop(cursorAt(y), node, { x: 0, y: 0 }, { width: 100, height: 30 }, typeOf('t'), { env: groupEnv })), JSON.stringify(drop(foreign('d'), y)))
+    // The rows end near 260 (the canvas row, its three nodes, four more panels, 32px each); the zone runs to 400.
+    for (const y of [300, 350, 395]) {
+      expect(resolveDrop(cursorAt(y), node, { x: 0, y: 0 }, { width: 100, height: 30 }, typeOf('t'), { env: groupEnv }))
+        .toMatchObject({ kind: 'tab-slot', index: layouts })
+    }
+  })
+
   it('a layout dragged from the strip takes tab slots only', () => {
     mountTree()
     const source: DragSource = { workspaceId: 'w', panelId: 'd', origin: { kind: 'layout', host: { windowId: MAIN_WINDOW }, layoutId: 'two' } }
