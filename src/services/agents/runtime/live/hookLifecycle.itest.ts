@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, readFile, symlink, writeFile } from 'node:fs/promises'
 import os, { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -34,7 +35,8 @@ function relocatedStore(agentId: AgentId, env: Record<string, string>): [string,
     // the fake provider does not: its reader is pinned by unit fixtures.
     case 'cursor': return ['.cursor/projects', path.join(env.CURSOR_DATA_DIR, 'projects')]
     case 'grok': return ['.grok/sessions', path.join(env.GROK_HOME, 'sessions')]
-    case 'kiro': return ['.kiro/sessions', path.join(env.HOME, '.kiro', 'sessions')]
+    // Kiro V3 keeps them under KIRO_HOME; earlier versions under HOME.
+    case 'kiro': return ['.kiro/sessions', existsSync(path.join(env.KIRO_HOME, 'sessions')) ? path.join(env.KIRO_HOME, 'sessions') : path.join(env.HOME, '.kiro', 'sessions')]
     case 'opencode': return ['.local/share/opencode', path.join(env.XDG_DATA_HOME, 'opencode')]
     case 'hermes': return null
   }
@@ -49,6 +51,8 @@ async function readSession(agentId: AgentId, env: Record<string, string>, direct
   if (relocated) {
     homeDir = path.join(directory, 'store-home')
     const target = path.join(homeDir, relocated[0])
+    // Linked once the store exists, so the link points at the one the CLI writes.
+    if (!existsSync(relocated[1])) return null
     await mkdir(path.dirname(target), { recursive: true })
     await symlink(relocated[1], target).catch(() => {})
   }

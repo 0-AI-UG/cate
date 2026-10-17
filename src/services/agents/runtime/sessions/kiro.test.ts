@@ -117,6 +117,20 @@ describe('Kiro session conversation', () => {
     expect(messages?.map((message) => message.text)).toEqual(['Reply with exactly: ok', 'ok'])
   })
 
+  it('joins the Say records of one execution into one reply (Kiro CLI V3)', async () => {
+    await writeMessages(WORKSPACE_KEY, [
+      { id: 'b', timestamp: '2026-10-17T10:32:45.392Z', payload: { type: 'user', content: 'go' } },
+      { id: 'c', timestamp: '2026-10-17T10:32:47.366Z', payload: { type: 'assistant', content: 'one', operationType: 'Say', executionId: 'x1' } },
+      { id: 'd', timestamp: '2026-10-17T10:32:48.566Z', payload: { type: 'assistant', content: 'two', operationType: 'Say', executionId: 'x1' } },
+      { id: 'e', timestamp: '2026-10-17T10:33:00.000Z', payload: { type: 'assistant', content: 'three', operationType: 'Say', executionId: 'x2' } },
+    ])
+    await expect(kiroSessionStore.conversation(context(SESSION_ID, '/elsewhere'))).resolves.toEqual([
+      { role: 'user', text: 'go', createdAt: '2026-10-17T10:32:45.392Z' },
+      { role: 'assistant', text: 'onetwo', createdAt: '2026-10-17T10:32:47.366Z' },
+      { role: 'assistant', text: 'three', createdAt: '2026-10-17T10:33:00.000Z' },
+    ])
+  })
+
   it('returns null for a missing or unsafe session', async () => {
     await expect(kiroSessionStore.conversation(context())).resolves.toBeNull()
     await expect(kiroSessionStore.conversation(context('../session'))).resolves.toBeNull()

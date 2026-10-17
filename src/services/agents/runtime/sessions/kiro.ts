@@ -56,23 +56,32 @@ async function messagesFile({ session, homeDir }: AgentSessionContext): Promise<
  * Kiro CLI 2.19 `messages.jsonl` records are `{ id, timestamp, payload }`.
  * User turns are `payload.type: 'user'` with string content; the assistant's
  * visible reply is `payload.type: 'assistant'` with `operationType: 'Say'`
- * (one complete record per execution). Reasoning, tool calls, turn markers and
- * session metadata are skipped. File order is authoritative (timestamps can
- * invert slightly around turn boundaries).
+ * (one complete record per execution). Kiro CLI V3 (2.32) can write several
+ * Say records for one execution (a retried, continued reply) and shows them as
+ * one reply: they are joined, keeping the first one's time. Reasoning, tool
+ * calls, turn markers and session metadata are skipped. File order is
+ * authoritative (timestamps can invert slightly around turn boundaries).
  */
 async function conversation(context: AgentSessionContext): Promise<AgentConversationMessage[] | null> {
   const file = await messagesFile(context)
   if (!file) return null
   const messages: AgentConversationMessage[] = []
+  let replyExecution: unknown
   const ok = await forEachJsonlRecord(file, (record) => {
     const payload = record.payload
     if (!payload || typeof payload !== 'object') return
-    const { type, content, operationType } = payload as Record<string, unknown>
+    const { type, content, operationType, executionId } = payload as Record<string, unknown>
     if (typeof content !== 'string' || !content.trim()) return
     let role: AgentConversationMessage['role']
     if (type === 'user') role = 'user'
     else if (type === 'assistant' && operationType === 'Say') role = 'assistant'
     else return
+    const last = messages.at(-1)
+    if (role === 'assistant' && last?.role === 'assistant' && executionId !== undefined && executionId === replyExecution) {
+      last.text += content
+      return
+    }
+    replyExecution = role === 'assistant' ? executionId : undefined
     const createdAt = isoTimestamp(record.timestamp)
     messages.push({ role, text: content, ...(createdAt ? { createdAt } : {}) })
   })
