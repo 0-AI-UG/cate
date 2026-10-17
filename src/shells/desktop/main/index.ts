@@ -131,7 +131,6 @@ process.on('unhandledRejection', (reason) => {
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
 const paths = shellPaths(__dirname)
 const guestPreload = path.join(__dirname, '../preload/shellGuest.js')
-const codeCellPreload = path.join(__dirname, '../preload/shellCodeCell.js')
 
 let started = false
 const focusWindow = (win: BrowserWindow) => {
@@ -224,7 +223,6 @@ app.whenReady().then(() => {
   device.deviceKeys()
 
   const browser = createBrowserDesktop({
-    codeCellPreload,
     downloadDir: () => app.getPath('downloads'),
     tempDir: () => path.join(app.getPath('temp'), 'cate-browser'),
     passkeys: process.platform === 'darwin',

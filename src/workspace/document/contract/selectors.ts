@@ -1,7 +1,7 @@
 // Read-side queries the client mirror and the layout views use.
 
 import { dockPanels, dockStacks, type DockStack } from './dock'
-import type { DockRef } from './ops'
+import type { DockRef, PlaceTarget } from './ops'
 import { docIndex, dockOf, isCanvasDock, placementOf } from './placement'
 import type { CanvasId, PanelId, PanelRecord, WindowId, WorkspaceDocument } from './schema'
 
@@ -38,6 +38,17 @@ export function canvasPanelOf(doc: Doc, canvasId: CanvasId): PanelRecord | null 
 export function canvasOf(doc: Doc, panelId: PanelId): CanvasId | null {
   const dock = placementOf(doc, panelId)?.dock
   return dock && isCanvasDock(dock) ? dock.canvasId : null
+}
+
+/** Where a panel on a canvas goes into the dock: a tab right after the
+ *  canvas panel showing its canvas, in that panel's stack. Null for a panel
+ *  that is not on a canvas. */
+export function dockTargetOf(doc: Doc, panelId: PanelId): PlaceTarget | null {
+  const canvasId = canvasOf(doc, panelId)
+  const canvasPanel = canvasId ? canvasPanelOf(doc, canvasId) : null
+  const home = canvasPanel ? placementOf(doc, canvasPanel.id) : null
+  if (!canvasPanel || !home || isCanvasDock(home.dock)) return null
+  return { to: 'stack', dock: home.dock, stackId: home.stackId, after: canvasPanel.id }
 }
 
 /** The window a panel shows in: its own window, or the window of the canvas

@@ -5,6 +5,7 @@
 export * from './components/Button'
 export * from './components/ErrorBoundary'
 export * from './components/InlineNotice'
+export * from './components/CateLogo'
 export * from './components/Modal'
 export * from './components/PaletteTextInput'
 export * from './components/PanelCenteredState'

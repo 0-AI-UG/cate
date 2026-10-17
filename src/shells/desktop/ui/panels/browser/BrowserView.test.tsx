@@ -1,4 +1,4 @@
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
@@ -22,7 +22,7 @@ import { runSurfaceRequest } from '@client/host'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'cate://newtab', title: '', favicon: null, pinned: false, nav: 0, navSource: null, ...patch })
+const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'cate://newtab', title: '', favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null, ...patch })
 const snapshotOf = (tabs: BrowserTab[], patch: Partial<BrowserSnapshot> = {}): BrowserSnapshot => ({
   tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' },
   canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
@@ -39,11 +39,12 @@ const session = {} as SessionHandle<BrowserSnapshot>
 let preparing = new Set<string>()
 const partitionListeners = new Set<() => void>()
 
-function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean } = {}) {
-  act(() => root.render(
+function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean; strict?: boolean } = {}) {
+  const view = (
     <BrowserView workspaceId="ws" panelId="p1" record={record} session={session} send={send}
-      snapshot={snapshot} visible focused={props.focused ?? false} />,
-  ))
+      snapshot={snapshot} visible focused={props.focused ?? false} />
+  )
+  act(() => root.render(props.strict ? <StrictMode>{view}</StrictMode> : view))
 }
 
 beforeEach(() => {
@@ -60,7 +61,7 @@ beforeEach(() => {
     },
   })
   installBrowserPageBridge({
-    attach: vi.fn(async () => {}), onDialog: () => () => {},
+    attach: vi.fn(async () => {}), restartIfHung: vi.fn(async () => false), onDialog: () => () => {},
     onOpenTab: () => () => {},
     onShortcut: () => () => {},
     onDownloads: () => () => {},
@@ -183,5 +184,18 @@ describe('BrowserView', () => {
     render(snapshotOf([tab()], { agentCursor }))
     act(() => { host.querySelector('[data-browser-toolbar]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })) })
     expect(send).toHaveBeenCalledWith({ kind: 'releaseAgentCursor' })
+  })
+
+  it('loads a navigation under StrictMode, whose first mount is disposed', async () => {
+    render(snapshotOf([tab()]), { strict: true })
+    const loadURL = vi.fn()
+    const webview = Object.assign(host.querySelector('webview')!, {
+      loadURL, getWebContentsId: () => 1, getURL: () => 'about:blank',
+      setZoomFactor: () => {}, insertCSS: async () => {},
+    })
+    act(() => { webview.dispatchEvent(new Event('dom-ready')) })
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })]), { strict: true })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(loadURL).toHaveBeenCalledWith('https://a.test/')
   })
 })

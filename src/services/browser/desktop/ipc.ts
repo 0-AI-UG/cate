@@ -12,13 +12,11 @@ import {
   BROWSER_GUEST_CHANNELS,
   BROWSER_PAGE_CHANNELS,
   type BrowserChromeImport,
-  type BrowserCodeCall,
   type BrowserDownloadAction,
   type BrowserGuestRef,
   type BrowserShortcutAction,
 } from '../contract'
 import { listChromePasswordProfiles, readChromePasswordCsv, readChromePasswords } from './chromeImport'
-import type { BrowserCodeSessions } from './codeSessions'
 import { registerGuestDialogs, type GuestDialogs } from './dialogs'
 import type { GuestDownloads } from './downloads'
 import type { PageDriverRegistry } from './pageDriver'
@@ -29,7 +27,6 @@ const MAX_UPLOAD_BYTES = 512 * 1024 * 1024
 
 export interface BrowserIpcDeps {
   drivers: PageDriverRegistry
-  codeSessions: BrowserCodeSessions
   downloads: GuestDownloads
   dialogs: GuestDialogs
   /** A private directory for staged uploads. */
@@ -63,13 +60,12 @@ export function sendBrowserShortcut(host: WebContents, action: BrowserShortcutAc
 
 /** Registers the page bridge IPC. Returns an unregister function. */
 export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
-  const { drivers, codeSessions, downloads, dialogs } = deps
+  const { drivers, downloads, dialogs } = deps
   const handled: string[] = []
   const handle = (channel: string, handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown) => {
     ipcMain.handle(channel, handler)
     handled.push(channel)
   }
-  const pendingCalls = new Map<string, { host: number; resolve(value: unknown): void; reject(error: Error): void }>()
 
   // Native user input wins over an in-flight agent action for this guest. The
   // guest preload sends no page data, only this signal.
@@ -150,31 +146,6 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     return { dataUrl: `data:image/png;base64,${png.toString('base64')}` }
   })
 
-  handle(BROWSER_PAGE_CHANNELS.runCode, (event, request: { key: string; cellId: string; code: string; deadlineMs: number }) => {
-    const host = event.sender
-    // Each cua call goes to the hosting renderer, which passes it to the runtime.
-    const invoke = (method: string, args: Record<string, unknown>) => new Promise<unknown>((resolve, reject) => {
-      if (host.isDestroyed()) return reject(new Error('The window running this cell closed'))
-      const requestId = randomUUID()
-      pendingCalls.set(requestId, { host: host.id, resolve, reject })
-      const call: BrowserCodeCall = { cellId: request.cellId, method: method.replace(/^cate\.browser\./, ''), args }
-      host.send(BROWSER_PAGE_CHANNELS.codeCall, { requestId, call })
-    })
-    return codeSessions.run(`${host.id}:${request.key}`, request.code, invoke, { cellId: request.cellId, deadlineMs: request.deadlineMs })
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.codeCallReply, (event, reply: { requestId: string; result?: unknown; error?: string }) => {
-    const pending = pendingCalls.get(reply?.requestId)
-    if (!pending || pending.host !== event.sender.id) return
-    pendingCalls.delete(reply.requestId)
-    if (reply.error !== undefined) pending.reject(new Error(reply.error))
-    else pending.resolve(reply.result)
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.resetCode, (event, key: string) => {
-    codeSessions.reset(`${event.sender.id}:${key}`)
-  })
-
   handle(BROWSER_PAGE_CHANNELS.chromeProfiles, async () => ({
     directImportSupported: process.platform === 'darwin',
     profiles: await listChromePasswordProfiles(),
@@ -198,8 +169,5 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     for (const channel of handled) ipcMain.removeHandler(channel)
     ipcMain.removeListener(BROWSER_GUEST_CHANNELS.userInput, onUserInput)
     unregisterDialogs()
-    for (const pending of pendingCalls.values()) pending.reject(new Error('browser-ipc-closed'))
-    pendingCalls.clear()
-    codeSessions.dispose()
   }
 }

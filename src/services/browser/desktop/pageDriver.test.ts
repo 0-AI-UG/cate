@@ -35,10 +35,10 @@ it('reads attributes from grounded AX elements', async () => {
   })
   const observation = await observe()
   const base = { target: observation.elements[0].id, observationId: observation.observationId }
-  expect(await execute('getAttribute', { ...base, name: 'src' })).toEqual({ result: '/image.png' })
-  expect(await execute('getAttribute', { ...base, name: 'missing' })).toEqual({ result: null })
-  expect(await execute('getAttribute', { ...base, name: '' })).toMatchObject({ error: 'browser-attribute-name-required' })
-  expect(await execute('getAttribute', { ...base, target: 999, name: 'src' })).toMatchObject({ error: 'browser-unknown-element' })
+  expect(await execute('getAttribute', { ...base, attribute: 'src' })).toEqual({ result: '/image.png' })
+  expect(await execute('getAttribute', { ...base, attribute: 'missing' })).toEqual({ result: null })
+  expect(await execute('getAttribute', { ...base, attribute: '' })).toMatchObject({ error: 'browser-attribute-name-required' })
+  expect(await execute('getAttribute', { ...base, target: 999, attribute: 'src' })).toMatchObject({ error: 'browser-unknown-element' })
 })
 
 it('returns a new observation after a dispatched action, without claiming business success', async () => {
@@ -67,7 +67,7 @@ it('keeps cross-origin frame IDs bound to their CDP session', async () => {
   events.emit('message', {}, 'Target.attachedToTarget', { sessionId: 'cross-session', targetInfo: { type: 'iframe', targetId: 'cross' } })
   const observation = await observe()
   expect(await execute('setChecked', { target: observation.elements[0].id, checked: false, observationId: observation.observationId })).toMatchObject({ result: { action: { status: 'verified' } } })
-  expect(await execute('getAttribute', { target: observation.elements[0].id, name: 'src', observationId: observation.observationId })).toEqual({ result: '/cross.png' })
+  expect(await execute('getAttribute', { target: observation.elements[0].id, attribute: 'src', observationId: observation.observationId })).toEqual({ result: '/cross.png' })
   expect(contents.debugger.sendCommand).toHaveBeenCalledWith('DOM.resolveNode', expect.objectContaining({ backendNodeId: 9 }), 'cross-session')
 })
 

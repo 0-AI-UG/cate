@@ -3,7 +3,7 @@
 // session URL, see `pageHost.ts`), and when this client drives the panel,
 // answers the runtime's page operations through its `BrowserPageHost`.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,14 +51,15 @@ function browserViewportScale(viewport: BrowserViewport, container: { width: num
 }
 
 // Guests are isolated documents: the view's scrollbar styles do not reach them.
-function guestScrollbarCss(): string {
-  const vars = getComputedStyle(document.documentElement)
-  const thumb = vars.getPropertyValue('--scrollbar-thumb').trim() || 'rgba(255,255,255,0.15)'
-  const hover = vars.getPropertyValue('--scrollbar-thumb-hover').trim() || 'rgba(255,255,255,0.25)'
-  return '::-webkit-scrollbar{width:13.52px;height:13.52px}::-webkit-scrollbar-track{background:transparent}'
-    + `::-webkit-scrollbar-thumb{background:${thumb};border-radius:9999px}::-webkit-scrollbar-thumb:hover{background:${hover}}`
-    + '::-webkit-scrollbar-corner{background:transparent}'
-}
+// The thumb is a neutral gray, not the theme's, because the page behind it can
+// be light or dark (the theme's white-on-dark thumb vanishes on a white page).
+// Same pill shape as the app's scrollbars.
+const GUEST_SCROLLBAR_CSS = '::-webkit-scrollbar{width:13.52px;height:13.52px}::-webkit-scrollbar-track{background:transparent}'
+  + '::-webkit-scrollbar-thumb{background-color:rgba(128,128,128,0.55);border-radius:9999px;'
+  + 'border:2px solid transparent;border-left-width:3px;border-right-width:1px;background-clip:padding-box}'
+  + '::-webkit-scrollbar-thumb:hover{background-color:rgba(128,128,128,0.8)}'
+  + '::-webkit-scrollbar-corner{background:transparent}'
+const guestScrollbarCss = () => GUEST_SCROLLBAR_CSS
 
 function shortcutFor(event: React.KeyboardEvent): BrowserShortcutAction | null {
   if (!(event.metaKey || event.ctrlKey)) return null
@@ -169,9 +170,11 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   }, [snapshot, setShown])
 
   // The host outlives re-renders: it owns the mounted pages. Changing inputs
-  // are read through refs.
+  // are read through refs. An effect that runs again after its cleanup
+  // (StrictMode in dev) finds the host disposed and makes a new one.
   const live = useRef({ send, runtime, setShown })
   live.current = { send, runtime, setShown }
+  const [generation, renewHost] = useReducer((count: number) => count + 1, 0)
   const host = useMemo(() => new BrowserPageHost({
     panelId,
     clientId: clientIdentity().clientId,
@@ -186,7 +189,9 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
       saveDisposition: async (input) => (await live.current.runtime?.browserData.passwordSaveDisposition({ input })) ?? 'unchanged',
       save: async (input) => live.current.runtime?.browserData.savePassword({ input }),
     },
-  }), [panelId, bridge])
+    // `generation` replaces a disposed host.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [panelId, bridge, generation])
   // Page operations run on the host's ready pages; uploads come from the runtime.
   const ops = useMemo(() => bridge && createPageOps({
     bridge,
@@ -205,7 +210,10 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
       return { name, bytes }
     },
   }), [bridge])
-  useEffect(() => () => host.dispose(), [host])
+  useEffect(() => {
+    if (host.isDisposed) return renewHost()
+    return () => host.dispose()
+  }, [host])
   useEffect(() => {
     if (!ops) return
     return registerSurface(workspaceId, panelId, (request) => runPageOp({ host, ops, confirm: (message) => clientUi().confirm(message) }, request))
@@ -257,7 +265,8 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
 
   // New windows a page opens become tabs of its panel.
   useEffect(() => bridge?.onOpenTab(({ openerWebContentsId, url }) => {
-    if (host.tabForGuest(openerWebContentsId)) quietly({ kind: 'newTab', url })
+    const openerTabId = host.tabForGuest(openerWebContentsId)
+    if (openerTabId) quietly({ kind: 'newTab', url, openerTabId })
   }), [bridge, host, quietly])
 
   // ---- Address bar ------------------------------------------------------------

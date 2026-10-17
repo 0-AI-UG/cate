@@ -79,6 +79,8 @@ export interface LaunchOptions {
   /** Terminals render with xterm's DOM renderer, so their text is in the DOM. */
   domTerminals?: boolean
   env?: Record<string, string>
+  /** Runs on the main window as soon as it exists, before the client boots. */
+  onWindow?: (page: Page) => Promise<void>
 }
 
 /** A bin dir under `home` whose `hermes` reports that it is not installed. */
@@ -129,6 +131,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
   })
   if (!opts.home) homes.set(electronApp, home)
   const mainWindow = await electronApp.firstWindow()
+  if (opts.onWindow) await opts.onWindow(mainWindow)
   await mainWindow.waitForLoadState('domcontentloaded')
   await mainWindow.waitForFunction(() => window.__cateE2E?.ready === true, null, { timeout: 45_000 })
   await dismissFirstRun(mainWindow)

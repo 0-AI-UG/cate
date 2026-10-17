@@ -194,6 +194,13 @@ it('Open joins a workspace on another device with a code', async () => {
   expect(useUIStore.getState().joinDialog).toEqual({})
 })
 
+it('Open Workspace… shows the welcome page with the picker over it', () => {
+  useUIStore.setState({ selectedWorkspaceId: 'local:/code/app', overlay: { view: 'settings' } })
+  useUIStore.getState().openWorkspacePicker()
+  expect(useUIStore.getState()).toMatchObject({ selectedWorkspaceId: null, openDialogOpen: true, overlay: null })
+  useUIStore.setState({ openDialogOpen: false })
+})
+
 it('the Open dialog stays when the native folder dialog is cancelled, and closes on a pick', async () => {
   const pickFolder = vi.fn<() => Promise<string | null>>(async () => null)
   installDesktopPort({ pickFolder } as unknown as DesktopPort)

@@ -11,7 +11,7 @@ import type { FilesRuntime } from '@workspace/files/runtime'
 import type { RepositoryRuntime } from '@workspace/repository/runtime'
 import type { ConnectedEditors } from '@workspace/relations/runtime'
 import type { TerminalService } from '@services/terminal/runtime'
-import { BrowserCodeCells, browserCodeCapabilityImpl, type BrowserDataRuntime } from '@services/browser/runtime'
+import type { BrowserDataRuntime } from '@services/browser/runtime'
 import type { AgentStartPorts, AgentsRuntime } from '@services/agents/runtime'
 import type { AnyPanelDefinition } from './framework/contract'
 import type { PanelFactory, PanelSessionClass, SessionHost, SurfaceBroker } from './framework/runtime'
@@ -19,7 +19,7 @@ import { createTerminalPanels } from './terminal/runtime'
 import { editorPanel, registerEditorApi } from './editor/runtime'
 import { reviewPanel } from './review/runtime'
 import { browserPanel, browserServiceHandlers } from './browser/runtime'
-import { browserApi, browserCodeCapability } from '@services/browser/contract'
+import { browserApi } from '@services/browser/contract'
 import { surfacePanel } from './surface/runtime'
 import { canvasPanel } from './canvas/runtime'
 
@@ -135,10 +135,8 @@ const browser: PanelRuntime<'browserData' | 'settings' | 'files' | 'document'> =
     settings: { get: (key) => services.settings.get(key as never) },
     files: { serveUrl: (p) => services.files.serveUrl(p), servedPath: (url) => services.files.servedPath(url) },
   }),
-  attach: ({ host, router, surfaces, rpc }) => {
-    const cells = new BrowserCodeCells()
-    router.registerService(browserApi, browserServiceHandlers({ surfaces, sessions: host, document: services.document, cells }))
-    rpc.register(browserCodeCapability, browserCodeCapabilityImpl(cells))
+  attach: ({ host, router }) => {
+    router.registerService(browserApi, browserServiceHandlers({ sessions: host, document: services.document }))
   },
 })
 

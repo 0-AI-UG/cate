@@ -1,9 +1,9 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
-import { RpcError, channel } from '@kernel/rpc/contract'
+import { channel } from '@kernel/rpc/contract'
 import type { ApiSessionContext } from '@kernel/api/contract'
 import { definePanel, definitionProblems } from '@panels/framework/contract'
 import browserDefinition from './definition'
@@ -19,7 +19,6 @@ import {
 import { createDocumentService, createPresence, type DocumentService } from '@workspace/document/runtime'
 import type { BrowserCredentialSuggestion, BrowserDownloadEntry } from '@services/browser/contract'
 import type { BrowserSnapshot } from './contract'
-import { BrowserCodeCells } from '@services/browser/runtime'
 import { browserPanel, browserServiceHandlers } from './runtime'
 import type { BrowserSessionDeps } from './session'
 
@@ -52,7 +51,8 @@ interface World {
   create(options?: Record<string, unknown>): string
   snapshot(panelId: string): BrowserSnapshot
   op(panelId: string, op: unknown, clientId?: string | null): Promise<unknown>
-  api(panelId: string, method: string, args?: Record<string, unknown>): Promise<unknown>
+  /** A `cate.browser.*` call by `caller` (default `agent-1`). */
+  api(panelId: string, method: string, args?: Record<string, unknown>, caller?: string): Promise<unknown>
   visits: Array<[string, string]>
   downloads: Map<string, (entries: BrowserDownloadEntry[]) => void>
   settings: Record<string, unknown>
@@ -85,7 +85,6 @@ function world(surface?: Surface): World {
     },
     settings: { get: (key) => settings[key] },
     files: { serveUrl: async (p) => `http://127.0.0.1:4000/token/${p.replace(/^\//, '')}`, servedPath: () => null },
-    newId: () => `n${++ids}`,
   }
   const entry = browserPanel(deps)
   const registry = createPanelRegistry([entry, { definition: canvasDef }])
@@ -111,7 +110,7 @@ function world(surface?: Surface): World {
     create: (options = {}) => factory.createPanel('browser', options)!,
     snapshot: (panelId) => host.session(panelId)!.snapshot() as BrowserSnapshot,
     op: (panelId, op, clientId = 'client-a') => host.op(panelId, op, context(clientId)),
-    api: (panelId, method, args = {}) => host.handleApi(panelId, method, args, { panelId } as ApiSessionContext),
+    api: (panelId, method, args = {}, caller = 'agent-1') => host.handleApi(panelId, method, args, { panelId, caller: { kind: 'cli', id: caller } } as ApiSessionContext),
     dispose() {
       host.dispose()
       broker.dispose()
@@ -254,7 +253,7 @@ describe('browser session', () => {
     await w.host.restore()
     const tabId = w.snapshot(id).activeTabId
     const abort = new AbortController()
-    await w.host.handleApi(id, 'click', { tabId, target: 3 }, { panelId: id, signal: abort.signal } as ApiSessionContext)
+    await w.host.handleApi(id, 'click', { tabId, target: 3 }, { panelId: id, signal: abort.signal, caller: { kind: 'cli', id: 'agent-1' } } as ApiSessionContext)
     // The broker's own 30 s timer is off; the API's signal ends the request.
     expect(seen).toEqual([{ timeoutMs: 0, signal: abort.signal, feature: 'pageDriver' }])
   })
@@ -288,7 +287,7 @@ describe('browser session', () => {
     expect(calls[0][1]).toEqual({ tabId, nav: 1 })
     expect(calls[1][1]).toMatchObject({ method: 'getAXState', args: { disableDiffing: true } })
 
-    await expect(w.api(id, 'getTab', {})).resolves.toEqual({ panelId: id, tabId, url: 'https://a.test/', title: 'A' })
+    await expect(w.api(id, 'selectTab', { tabId })).resolves.toEqual({ panelId: id, tabId, url: 'https://a.test/', title: 'A' })
     w.dispose()
   })
 
@@ -357,55 +356,104 @@ describe('browser session', () => {
   })
 })
 
-describe('browser service handlers', () => {
-  it('runs a cell on the driving client and passes its calls back as the caller', async () => {
-    const cells = new BrowserCodeCells()
-    const requests: Array<[string | null, string, any, any]> = []
-    let cellId = ''
-    const invoke = vi.fn(async () => ({ ok: true, panelId: 'p1', observation: { panelId: 'p1', tabId: 't' } }))
-    const handlers = browserServiceHandlers({
-      surfaces: {
-        request: async (panelId: string | null, op: string, args: any, options: any) => {
-          requests.push([panelId, op, args, options])
-          cellId = args.cellId
-          // A cell knows tabs, not panels: the runtime adds its panel and
-          // takes the panel id off what comes back.
-          await expect(cells.call(cellId, 'click', { tabId: 't', target: 1 })).resolves.toEqual({ ok: true, observation: { tabId: 't' } })
-          // The desktop code session tags every call; a service or session
-          // method that takes no cell id must not see it.
-          await cells.call(cellId, 'getTab', { _codeCellId: cellId })
-          await expect(cells.call(cellId, 'getTab', { panelId: 'p2' })).rejects.toThrow(/browser-code-panel/)
-          return { content: [{ type: 'text', text: 'done' }] }
-        },
-      },
-      sessions: { session: () => undefined },
-      document: { get: () => ({ panels: {} }) as never },
-      cells,
-      newId: () => 'cell-1',
-    })
-    const ctx = { caller: { kind: 'cli', id: 'caller-1' }, defaultTarget: () => 'p1', invoke, signal: new AbortController().signal } as never
-    await expect(handlers.run({ code: '1', panelId: undefined }, ctx)).resolves.toEqual({ content: [{ type: 'text', text: 'done' }] })
-    // A cell is panel-less (the client's code session), run by the client driving the caller's browser.
-    expect(requests[0]).toEqual([null, 'code.run', { key: 'caller-1', cellId: 'cell-1', code: '1', deadlineMs: 30_000 }, expect.objectContaining({ near: 'p1' })])
-    expect(invoke).toHaveBeenNthCalledWith(1, 'cate.browser.click', { tabId: 't', target: 1, _codeCellId: 'cell-1', panelId: 'p1' })
-    expect(invoke).toHaveBeenNthCalledWith(2, 'cate.browser.getTab', { panelId: 'p1' })
-    expect(invoke).toHaveBeenCalledTimes(2)
-    await expect(cells.call(cellId, 'click', {})).rejects.toBeInstanceOf(RpcError)
+describe('browser tabs for agents', () => {
+  const driving = () => world(async (_panelId, op, args) => {
+    if (op === 'page.ready') return { url: 'https://a.test/', title: 'A' }
+    if (op === 'page.execute') return { result: { observationId: 'o1', tabId: args.tabId } }
+    return undefined
   })
 
-  it('reports no-renderer as a cell error and lists tabs of browser sessions', async () => {
-    const snapshot = { tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, nav: 2, navSource: null }], activeTabId: 't1' }
+  it('names tabs with short handles that survive a restart', async () => {
+    const w = driving()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    expect(w.snapshot(id).activeTabId).toBe('t1')
+    expect(await w.op(id, { kind: 'newTab', url: 'https://b.test/' })).toBe('t2')
+    await w.op(id, { kind: 'closeTab', tabId: 't2' })
+    expect(await w.op(id, { kind: 'newTab' })).toBe('t3')
+    w.dispose()
+    const again = driving()
+    await again.host.restore()
+    expect(await again.op(id, { kind: 'newTab' })).toBe('t4')
+    again.dispose()
+  })
+
+  it('tells the agent what happened to the tabs since its last call', async () => {
+    const w = driving()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await w.api(id, 'getAXState')
+    // A page opens a popup, which the panel shows.
+    await w.op(id, { kind: 'newTab', url: 'https://login.test/', openerTabId: 't1' })
+    expect(await w.api(id, 'getAXState')).toEqual({
+      observationId: 'o1',
+      tabId: 't2',
+      notices: ['The page in t1 opened tab t2 (https://login.test/); the panel shows it now, so commands act on it.'],
+    })
+    // Told once.
+    expect(await w.api(id, 'getAXState')).not.toHaveProperty('notices')
+    // The person switches back and closes the popup.
+    await w.op(id, { kind: 'selectTab', tabId: 't1' })
+    await w.op(id, { kind: 'closeTab', tabId: 't2' })
+    expect((await w.api(id, 'getAXState') as { notices: string[] }).notices).toEqual([
+      'Closed: tab t2.',
+      'The panel shows tab t1 (https://a.test/) now, not t2; commands act on it (cate browser tab select t2 switches back).',
+    ])
+    w.dispose()
+  })
+
+  it('opens, lists and closes an agent\'s own tabs without telling it about them', async () => {
+    const w = driving()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await expect(w.api(id, 'createTab', { url: 'https://b.test/' })).resolves.toEqual({ panelId: id, tabId: 't2', url: 'https://a.test/', title: 'A' })
+    await w.api(id, 'createTab', {}, 'agent-2')
+    expect(w.snapshot(id).tabs.map((tab) => tab.openedBy)).toEqual([null, { caller: 'agent-1' }, { caller: 'agent-2' }])
+    expect((await w.api(id, 'getAXState') as { notices: string[] }).notices).toEqual(['Another agent opened tab t3 (new tab); the panel shows it now, so commands act on it.'])
+    const listed = browserServiceHandlers({ sessions: w.host, document: w.document }).listTabs({ panelId: id }, { caller: { kind: 'cli', id: 'agent-1' } } as never) as { tabs: Array<Record<string, unknown>> }
+    expect(listed.tabs.map(({ tabId, opener, active }) => ({ tabId, opener, active }))).toEqual([
+      { tabId: 't1', opener: 'person', active: false },
+      { tabId: 't2', opener: 'you', active: false },
+      { tabId: 't3', opener: 'agent', active: true },
+    ])
+    await expect(w.api(id, 'closeTab', { mine: true })).resolves.toEqual({ closed: ['t2'], activeTabId: 't3' })
+    await expect(w.api(id, 'closeTab', { tabId: 't9' })).rejects.toThrow('no-such-tab: the panel has no tab t9')
+    await expect(w.api(id, 'closeTab', { tabId: 't1', mine: true })).rejects.toThrow('browser-close-tab-or-mine')
+    w.dispose()
+  })
+
+  it('says why a call\'s tab is no longer the active one', async () => {
+    const w = driving()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await w.op(id, { kind: 'newTab', url: 'https://b.test/' })
+    await expect(w.api(id, 'click', { tabId: 't1', target: 3 })).rejects.toThrow(
+      'browser-tab-changed: the panel now shows tab t2, not t1 (the person opened it). Run the command again to act on t2, or switch back with cate browser tab select t1',
+    )
+    w.dispose()
+  })
+
+  it('sizes the fixed viewport presets', async () => {
+    const w = driving()
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await expect(w.api(id, 'setViewport', { preset: 'mobile' })).resolves.toMatchObject({ preset: 'mobile', width: 390, height: 844 })
+    expect(w.snapshot(id).viewport).toEqual({ preset: 'mobile', width: 390, height: 844 })
+    await expect(w.api(id, 'setViewport', { preset: 'custom' })).rejects.toThrow('invalid-browser-viewport')
+    w.dispose()
+  })
+})
+
+describe('browser service handlers', () => {
+  it('lists tabs of browser sessions', () => {
+    const snapshot = { tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, nav: 2, navSource: null, openedBy: { page: 't0' } }], activeTabId: 't1' }
     const handlers = browserServiceHandlers({
-      surfaces: { request: async () => { throw new RpcError('no-renderer') } },
       sessions: { session: (id) => (id === 'p1' ? { snapshot: () => snapshot } as never : undefined) },
       document: { get: () => ({ panels: { p1: { id: 'p1', type: 'browser' }, t: { id: 't', type: 'terminal' } } }) as never },
-      cells: new BrowserCodeCells(),
     })
-    const ctx = { caller: { kind: 'cli', id: 'c' }, defaultTarget: () => undefined, invoke: vi.fn(), signal: new AbortController().signal } as never
-    await expect(handlers.run({ code: '1', panelId: undefined }, ctx)).resolves.toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/^No browser panel/) }] })
-    await expect(handlers.run({ code: '1', panelId: 'p1' }, ctx)).resolves.toMatchObject({ isError: true, content: [{ text: 'No connected client can run browser code' }] })
+    const ctx = { caller: { kind: 'cli', id: 'c' }, signal: new AbortController().signal } as never
     expect(handlers.listTabs({ panelId: undefined }, ctx)).toEqual({
-      tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, panelId: 'p1', tabId: 't1', active: true }],
+      tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, panelId: 'p1', tabId: 't1', active: true, opener: 'page in t0' }],
     })
   })
 })

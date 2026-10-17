@@ -36,11 +36,9 @@ export interface ClientState {
   viewing: readonly PanelId[]
   selection: Readonly<Record<CanvasId, CanvasSelection>>
   viewports: Readonly<Record<CanvasId, Viewport>>
-  /** Maximize: the stack this client shows alone in a window, and the node
-   *  it shows filling a canvas. An id that no longer exists shows the
-   *  layout as it is. */
+  /** Maximize: the stack this client shows alone in a window. An id that
+   *  no longer exists shows the layout as it is. */
   maximizedStacks: Readonly<Record<WindowId, StackId>>
-  maximizedNodes: Readonly<Record<CanvasId, NodeId>>
   /** What this client shows of each panel (the browser tab it shows, the
    *  review files it collapsed), by panel and name. */
   panelViews: Readonly<Record<PanelId, Readonly<Record<string, unknown>>>>
@@ -57,7 +55,6 @@ export interface ClientStateStore {
   setViewport(canvasId: CanvasId, viewport: Viewport): void
   /** Null restores. */
   setMaximizedStack(windowId: WindowId, stackId: StackId | null): void
-  setMaximizedNode(canvasId: CanvasId, nodeId: NodeId | null): void
   setPanelView(panelId: PanelId, key: string, value: unknown): void
   /** Queues an intent; returns its id. */
   pushIntent(intent: Omit<Intent, 'id'>): number
@@ -79,7 +76,6 @@ export function createClientStateStore(): ClientStateStore {
     selection: {},
     viewports: {},
     maximizedStacks: {},
-    maximizedNodes: {},
     panelViews: {},
     intents: [],
   }
@@ -119,10 +115,6 @@ export function createClientStateStore(): ClientStateStore {
     setMaximizedStack(windowId, stackId) {
       if ((state.maximizedStacks[windowId] ?? null) === stackId) return
       update({ maximizedStacks: withEntry(state.maximizedStacks, windowId, stackId) })
-    },
-    setMaximizedNode(canvasId, nodeId) {
-      if ((state.maximizedNodes[canvasId] ?? null) === nodeId) return
-      update({ maximizedNodes: withEntry(state.maximizedNodes, canvasId, nodeId) })
     },
     setPanelView(panelId, key, value) {
       const view = state.panelViews[panelId]

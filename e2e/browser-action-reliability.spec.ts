@@ -47,10 +47,10 @@ test.beforeEach(async () => {
 test.afterEach(async () => { if (app) await closeApp(app) })
 
 test('typing replaces input selection and preserves rich text outside the selection', async () => {
-  expect(await act(page, browser, 'selectText', 'Name', { text: 'cd', selectionType: 'text' })).toMatchObject({ ok: true })
+  expect(await act(page, browser, 'selectText', 'Name', { text: 'cd' })).toMatchObject({ ok: true })
   expect(await activeAction(page, browser, 'typeText', { text: 'XY' })).toMatchObject({ ok: true })
   expect(await evaluate(`document.querySelector('#name').value`)).toBe('abXYef')
-  expect(await act(page, browser, 'selectText', 'Editor', { text: 'tail', selectionType: 'text' })).toMatchObject({ ok: true })
+  expect(await act(page, browser, 'selectText', 'Editor', { text: 'tail' })).toMatchObject({ ok: true })
   expect(await activeAction(page, browser, 'typeText', { text: 'new' })).toMatchObject({ ok: true })
   expect(await evaluate(`document.querySelector('#editor').innerHTML`)).toBe('<b>bold</b> new')
 })
@@ -112,7 +112,7 @@ test('paired observations and native screenshots preserve scroll and renderer fo
 })
 
 test('Return inserts a newline at the textarea selection', async () => {
-  expect(await act(page, browser, 'selectText', 'Multiline', { text: 'second', selectionType: 'cursor_before' })).toMatchObject({ ok: true })
+  expect(await act(page, browser, 'selectText', 'Multiline', { text: 'second', cursor: 'before' })).toMatchObject({ ok: true })
   expect(await activeAction(page, browser, 'pressKey', { key: 'Return' })).toMatchObject({ ok: true })
   expect(await evaluate(`document.querySelector('#multiline').value`)).toBe('first\nsecond')
 })
@@ -166,7 +166,7 @@ test('paired screenshots stay fresh across alternating zoom and page generations
 
 test('coordinate actions reject observations made before the viewport changes', async () => {
   const observation = await observe(page, browser, true)
-  expect(await browserInvoke(page, browser, 'setViewport', { width: 390, height: 844 })).toMatchObject({ ok: true })
+  expect(await browserInvoke(page, browser, 'setViewport', { preset: 'custom', width: 390, height: 844 })).toMatchObject({ ok: true })
   expect(await browserInvoke(page, browser, 'click', { observationId: observation.observationId, target: [40, 40] })).toMatchObject({ ok: false })
   expect(await evaluate(`document.body.dataset.wrongClick ?? null`)).toBeNull()
 })

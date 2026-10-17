@@ -7,9 +7,9 @@ mini dock of the same shape. Placement is shared: a drop is one document op
 sees it. Which tab of a stack is active is client state.
 
 Maximize is client state, so it changes only what this client draws: a
-maximized window stack is drawn alone in its window, and a maximized canvas
-node fills its canvas's area. The document, and every other client's layout,
-stay as they are.
+maximized window stack is drawn alone in its window. The document, and every
+other client's layout, stay as they are. Canvas nodes have no maximize; a
+node's tab moves into the dock instead (a document op, below).
 
 ## Drag and placement rules
 
@@ -45,16 +45,17 @@ that op.
 
 Coverage: `src/client/document/clientState.test.ts` (the state),
 `src/client/layout/dock/DockView.test.tsx` (window stacks) and
-`src/client/layout/canvas/CanvasView.test.tsx` (canvas nodes).
+`src/client/layout/canvas/CanvasView.test.tsx` (canvas nodes have none;
+their Move into Dock).
 
 | Starting state | Action | Defined result |
 |---|---|---|
 | Window dock with a split tree | Maximize a stack | Only that stack is drawn, filling the window; the other stacks stay mounted, hidden |
 | Window dock with a single stack | Maximize | Nothing to maximize; no button |
-| Canvas node | Maximize (from any of its stacks) | The node's mini dock fills the canvas's area; the canvas stays mounted underneath |
-| Maximized stack or node | Restore | The layout is drawn as the document has it |
-| Maximized stack or node | Any document change, from any client | Applies; the maximize stays while its stack or node exists |
-| Maximized stack or node | Its stack or node is removed | The layout is drawn as it is; nothing to restore |
+| Canvas node | Maximize | Not offered; no button. Move into Dock (its tab bar, tab menu, the `moveIntoDock` action) sends one `placePanel`: the shown tab goes right after the canvas panel, in its stack, shown and focused; an emptied node goes |
+| Maximized stack | Restore | The layout is drawn as the document has it |
+| Maximized stack | Any document change, from any client | Applies; the maximize stays while its stack exists |
+| Maximized stack | Its stack is removed | The layout is drawn as it is; nothing to restore |
 
-One stack per window and one node per canvas can be maximized. Maximize is
+One stack per window can be maximized. Maximize is
 not undoable: it never was a document change.

@@ -8,7 +8,7 @@
 // and the update dialogs.
 
 import { useSyncExternalStore, type ComponentType } from 'react'
-import { WorkspaceTrustDialog } from '../workspace/lifecycle'
+import { WorkspaceTrustDialog } from './workspace/opening'
 import { CommandPalette } from './palette/CommandPalette'
 import { JoinWorkspaceDialog } from './pairing/JoinWorkspaceDialog'
 import { ShareDialog } from './pairing/ShareDialog'

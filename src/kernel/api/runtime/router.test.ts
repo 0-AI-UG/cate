@@ -151,17 +151,6 @@ describe('ApiRouter dispatch', () => {
     expect(sessionCalls[0].ctx.method).toBe('cate.terminal.read')
   })
 
-  it('lets handlers call other methods as the same caller', async () => {
-    const { router, settings, cli } = setup([{ id: 'term-1', type: 'terminal' }])
-    router.registerService(panelLike, {
-      close: (_args, ctx) => ctx.invoke('cate.terminal.type', { panelId: 'term-1', text: 'x' }),
-      'target.set': () => null,
-      watch: () => null,
-    })
-    settings.cliTerminalInputEnabled = false
-    await expect(router.call(cli.caller, 'cate.panel.close', { panelId: 'term-1' })).rejects.toThrow(/terminal-input-disabled/)
-  })
-
   it('refuses a second handler for the same method', () => {
     const { router } = setup()
     router.registerService(versionApi, { version: () => 1 })

@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import config from '../../../../electron.vite.config'
 
 const root = path.resolve(__dirname, '../../../..')
-const SHELL_ENTRIES = ['shell', 'shellGuest', 'shellCodeCell'] as const
+const SHELL_ENTRIES = ['shell', 'shellGuest'] as const
 /** What the sandboxed preload `require` offers. */
 const SANDBOX_MODULES = new Set(['electron', 'events', 'timers', 'url'])
 
@@ -37,7 +37,6 @@ describe('desktop preloads', () => {
   it('are build entries of the preload bundle', () => {
     expect(inputs.shell).toBe(path.join(root, 'src/shells/desktop/preload/index.ts'))
     expect(inputs.shellGuest).toBe(path.join(root, 'src/services/browser/desktop/preload/guest.ts'))
-    expect(inputs.shellCodeCell).toBe(path.join(root, 'src/services/browser/desktop/preload/codeCell.ts'))
   })
 
   it.each(SHELL_ENTRIES)('%s requires only sandbox modules', async (name) => {

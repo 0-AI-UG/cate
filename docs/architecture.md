@@ -100,7 +100,7 @@ No UI is shared between shells.
 | **Shell** | A platform app around the client core, with its own UI and native primitives: desktop (Electron and React) or iOS (SwiftUI). |
 | **Service** | Infrastructure more than one panel or caller uses: terminal, browser, agents. |
 | **Panel** | A session in the runtime, drawn by each shell's own view: terminal, editor, browser, review, canvas, surface. |
-| **Caller** | Whoever calls the `cate` API: the CLI in a terminal, a browser code cell, a client. |
+| **Caller** | Whoever calls the `cate` API: the CLI in a terminal, a client. |
 
 ### Agents
 
@@ -291,7 +291,7 @@ shell's native side.
 | Panel views: xterm, Monaco, diff views (desktop); native views (iOS) | shell UI |
 | Input, drag and drop | shell UI |
 | Dialogs, confirmations, notification display, clipboard (`ClientUi`, including the in-app save-path dialog over the workspace's files) | shell UI |
-| Webviews, browser partitions, the page driver (CDP), code-cell and guest preloads | shell native |
+| Webviews, browser partitions, the page driver (CDP), guest preloads | shell native |
 | Passkeys (macOS `ASAuthorizationController`, needs the signed app and a window) | shell native |
 | The upstream browser proxy (`browserProxyUrl`) and the loopback web proxy (section 12.3) | shell native |
 | Windows, menus, the drag ghost, updater, crash reporting, analytics | shell native |
@@ -339,7 +339,7 @@ Every piece of state belongs to exactly one class.
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes | through the runtime |
 | **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), browser history and bookmarks, skill sources, trust, granted paths, devices | every client of the workspace |
 | **Device** | one client device | client settings, workspace list, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
-| **Client** | one running client, in memory | viewport, zoom, active tab per stack, the maximized stack of a window and node of a canvas, the tab a browser panel shows and its page zoom, an editor's source or preview, a review's file filter, focused file, collapsed and expanded files and context lines, focus, selection, undo history, open overlays, a drag in progress, one-shot intents (reveal a line), mounted webviews | never |
+| **Client** | one running client, in memory | viewport, zoom, active tab per stack, the maximized stack of a window, the tab a browser panel shows and its page zoom, an editor's source or preview, a review's file filter, focused file, collapsed and expanded files and context lines, focus, selection, undo history, open overlays, a drag in progress, one-shot intents (reveal a line), mounted webviews | never |
 
 Rules:
 
@@ -959,9 +959,7 @@ implemented in its `runtime/` folder and registered by the composition root:
 `workspace` (workspace/lifecycle: info and trust), `file` and `search`
 (workspace/files), `vcs` (workspace/repository), `skills`
 (workspace/skills), `notifications` (workspace/notifications: the `events`
-stream, section 10.4), `process` (services/terminal), `browserData` and
-`browserCode` (services/browser; through `browserCode` a client running a
-browser code cell passes the cell's `cua.*` calls back), `agents`
+stream, section 10.4), `process` (services/terminal), `browserData` (services/browser), `agents`
 (services/agents), and `session` and `surface` (panels/framework: session
 channels, and page operations sent to the driving client, section 10.2). A client lists every capability it proxies
 in `RUNTIME_CAPABILITIES` (`src/panels/capabilities.ts`, an index file next
@@ -1350,10 +1348,10 @@ downloads list and its views, and hands page work to it.
 
 - **contract**: the `cate.browser.*` spec (`contract/api.ts`; its page
   methods are session methods of the browser panel), the page operations a
-  session sends its driving client (`contract/surface.ts`: `page.*` and
-  `code.*`), the page protocol (observations, actions, results), the agent
-  cursor, the text the CLI prints for observations and the `browserCode`
-  capability.
+  session sends its driving client (`contract/surface.ts`: `page.*`), the
+  page protocol (observations, actions, results), locators (finding an
+  element by the role and name a snapshot shows), the agent cursor and the
+  text the CLI prints for observations.
 - **runtime**: the `browserData` capability used by the browser panel's
   session (which holds tabs, URLs, navigation state and titles): history,
   bookmarks, saved
@@ -1363,8 +1361,7 @@ downloads list and its views, and hands page work to it.
   **Page control** (`createPageControl`): the `cate.browser.*` page methods
   of one panel, built by its session over a port (its tabs, `withSurface`,
   the agent cursor); it binds each call to the active tab and picks the
-  saved login for `login`. **Code cells**: `run`, `reset` and the live
-  cells `browserCode.call` checks.
+  saved login for `login`.
 - **desktop**: the webview, one partition per workspace
   (`persist:ws-<runtimeId>`, cookies are per device) routed through loopback
   routing (section 12.3), the **page ops** (`desktop/renderer`: a `page.*`
@@ -1372,8 +1369,8 @@ downloads list and its views, and hands page work to it.
   file input's uploads on this client and returning the person's focus),
   the **page driver** (the CDP engine: accessibility
   snapshots, actions, screenshots, waits, file choosers and uploads, the
-  page's console and network log, code cells), guest and code-cell
-  preloads, the password autofill bridge, JavaScript dialogs, and **passkeys**.
+  page's console and network log, locators), the guest preload, the password
+  autofill bridge, JavaScript dialogs, and **passkeys**.
   A page whose script never yields answers no CDP command: after 10 s its
   calls fail with `browser-page-unresponsive`, and reloading or navigating
   the tab restarts its renderer.
@@ -1404,17 +1401,25 @@ downloads list and its views, and hands page work to it.
   person picking another tab cancels page work bound to it. A client follows
   only its own selections and callers' ones, never another client's; the
   driving client shows the active tab while a page operation runs.
+- **Tabs for agents.** Tabs have short handles unique in their panel (`t1`,
+  `t2`, never reused) and remember who opened them: the person, a page of
+  another tab (`window.open`, target=_blank, which becomes a new tab of the
+  same panel and is shown), or a `cate` caller. Each `cate.browser.*`
+  session result carries `notices`: what happened to the tabs since the
+  caller's last call (a page opened a tab, the person switched or closed
+  one), so an agent learns of a popup from the call that caused it, and of
+  a person's tab switch before it acts. A call bound to a tab that stopped
+  being the active one fails with `browser-tab-changed`, which says why.
 - **Shared passwords, own sessions.** The runtime remembers passwords, so any
   client can autofill them; each client keeps its own logged-in session.
   Importing Chrome passwords into a runtime the client's connection does not
   put on its own network (`reachesClientNetwork`) asks first: they are stored
   on that machine.
 - **The driving client.** Each panel definition lists its page operations
-  and the client feature each needs (`surface.ops`: browser `page.*` and
-  `code.*` need `pageDriver`). An op
+  and the client feature each needs (`surface.ops`: browser `page.*` needs
+  `pageDriver`). An op
   runs on the connected client with that feature that most recently showed
-  or used the panel, or else the most recently active client with it; an op
-  of no panel (a code cell) goes to any such client. The runtime never asks
+  or used the panel, or else the most recently active client with it. The runtime never asks
   what kind of client it is, only which features it declared. On the client,
   one registry in `client/host` (`registerSurface`) holds every view's
   handler and mounts a panel on demand while an operation waits. With no
@@ -1693,7 +1698,11 @@ headless.
   joining with a code (`joinWorkspace`); and the trust question
   (`trustStore`, `openTrusted`): opening an untrusted workspace queues one
   question, every shell shows its head, and
-  the answer is `workspace.setTrust` for everyone.
+  the answer is `workspace.setTrust` for everyone. Opening is one flow
+  (`opening.ts`): connect, receive the first document, settle trust; until
+  then the workspace is `opening` (`workspacePhase`), and a shell shows its
+  windows only once it is `ready`, never an empty document or a layout the
+  trust answer takes away.
 - **`client/document`**: the client's mirror of each open workspace's
   document, with optimistic ops (section 13.5) and subscriptions, the client
   state store of each workspace (section 5), and presence: what this client
@@ -1730,7 +1739,7 @@ a shell's UI knows its own platform and draws what it supports:
 | Feature | The client can | Asked by |
 |---|---|---|
 | `webview` | host web pages in a native surface, with loopback routing (12.3) | the runtime, which serves surface operations only to clients with `webview` or `pageDriver`; the core, which subscribes to them only then |
-| `pageDriver` | run page operations on its webviews: accessibility snapshots, actions, screenshots, waits, code cells | the runtime, choosing the driving client (10.2); the desktop boot, which serves browser code cells only with it |
+| `pageDriver` | run page operations on its webviews: accessibility snapshots, actions, screenshots, waits | the runtime, choosing the driving client (10.2) |
 | `passkeys` | answer WebAuthn requests through the OS | nobody yet: the desktop shell declares it only on macOS with its native bridge loaded, where the OS answers |
 | `windows` | open detached windows | presence; the desktop boot, which installs its window port only with it |
 | `canvas` | render and edit canvases | presence |
@@ -2038,9 +2047,6 @@ Everything outside the UI that drives Cate goes through one router.
   - the `cate` CLI in a terminal: over the local socket (`CATE_SOCKET`),
     authenticated by `CATE_TOKEN`, a per-PTY token that also names the calling
     panel and is revoked when its process exits. Terminals run in the runtime, so this is local on every machine.
-  - a browser code cell: the cell runs on the driving client, which passes
-    each `cua.*` call back through the `browserCode` capability as the cell's
-    original caller, through the same gates.
   - a client: the `api` capability.
 
   A caller connection (a hello with a token, no client) reaches only the
@@ -2088,18 +2094,21 @@ Everything outside the UI that drives Cate goes through one router.
 | `cate.canvas.*` | `createPanel` | workspace/document | service |
 | `cate.ui.*` | `notify` | kernel/api (publishes a notification event) | service |
 | `cate.terminal.*` | `read`, `type`, `press` | terminal panel | session |
-| `cate.browser.*` | `run` and `reset` (the caller's code session), `listTabs`; page operations (`getTab`, `createTab`, `getAXState`, `getScreenshot`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`run`, `reset`, `listTabs`) / session (the browser panel's, page methods through page control) |
+| `cate.browser.*` | `listTabs`; tabs (`selectTab`, `createTab`, `closeTab`); page operations (`getAXState`, `getScreenshot`, `find`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, `setViewport`, `download`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`listTabs`) / session (the browser panel's, page methods through page control) |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
 | `cate.review.*` | `inspect`, `complete`, `note.add`, `note.resolve` | review panel | session |
 | `cate.agent.*` | `start`, `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
 
-There is no `cate.panel.focus`: focus is client state. The common page
-operations are also CLI commands (`cate browser snapshot`, `click`, `hover`,
-`fill`, `type`, `press`, `upload`, `login`, `dialog`, `console`, `network`,
-`goto`, `wait`, ...): without a `tabId` they act on the
-panel's active tab, and without an `observationId` on the page driver's latest
-accessibility observation. The rest (`drag`, `selectText`, `setViewport`,
-...) stay with code cells (`cli: {command: false}`).
+There is no `cate.panel.focus`: focus is client state. Every browser method
+is a CLI command (`cate browser snapshot`, `find`, `click`, `fill`, `type`,
+`press`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`,
+`wait`, `viewport`, `tab list|new|select|close`, ...). They act on the
+panel's active tab (`--tab` asserts which) and name an element by the id
+of the page driver's latest accessibility snapshot, or by `--role` and
+`--name`, which must match exactly one element of a fresh snapshot (the
+driver waits for it to appear, as a click waits for its element). There is
+no code mode and no page evaluation: an agent scripts the commands from its
+shell, with `--json` when it parses results.
 
 ## 15. Shells
 

@@ -12,12 +12,17 @@ import {
   BROWSER_OBSERVATION_METHODS,
   BROWSER_WAIT_MAX_MS,
   browserDialogNotice,
+  browserLocatorOf,
+  describeBrowserElement,
+  describeBrowserLocator,
+  matchBrowserElements,
   browserRecovery,
   diffBrowserState,
   type BrowserActionOutcome,
   type BrowserDriverResult,
   type BrowserElement,
   type BrowserImage,
+  type BrowserLocator,
   type BrowserObservation,
   type BrowserObservationPerformance,
   type BrowserPageIdentity,
@@ -36,8 +41,6 @@ type BrowserArgs = Record<string, unknown>
 export type { BrowserPageIdentity }
 
 export interface PageDriverOptions {
-  /** Throws once the code cell that issued a call has ended (see `codeCells.ts`). */
-  checkCell?: (codeCellId: unknown) => void
   /** The guests' JavaScript dialogs: a call a dialog interrupts returns it,
    *  and `dialog` answers it. */
   dialogs?: Pick<GuestDialogs, 'current' | 'subscribe' | 'answer'>
@@ -58,6 +61,9 @@ interface RefTarget {
   frameId?: string
   sessionId?: string
 }
+
+/** An observation's screenshot, or why it has none. */
+interface Pixels { image?: BrowserImage; screenshotError?: string }
 
 interface CdpEvent {
   method: string
@@ -80,6 +86,10 @@ const PAGE_UNRESPONSIVE = 'browser-page-unresponsive'
 const RESTART_TIMEOUT_MS = 5_000
 /** How long an action waits for its element to become actionable. */
 const ACTIONABLE_TIMEOUT_MS = 5_000
+/** How often a locator looks for its element in a fresh snapshot. */
+const LOCATOR_POLL_MS = 250
+/** The most matches an ambiguous locator lists. */
+const LOCATOR_LISTED = 10
 /** Where a covered element is scrolled to on each retry. */
 const OBSCURED_SCROLL_ALIGNMENTS = ['center', 'start', 'end'] as const
 /** Errors an element can grow out of while the page settles. */
@@ -89,6 +99,17 @@ const SETTLE_REQUEST_TYPES = new Set(['Document', 'XHR', 'Fetch'])
 /** Requests older than this no longer count for settling (it looks back 2.5 s)
  *  and are forgotten, so a long-lived page's unfinished streams do not pile up. */
 const REQUEST_MEMORY_MS = 10_000
+
+/** Agent screenshots are JPEG where they can be: PNG encoding took most of
+ *  a screenshot, blocking this process, at two to four times the size. */
+const SCREENSHOT_QUALITY = 85
+
+/** Whether every pixel of `image` is opaque. */
+function opaque(image: Electron.NativeImage): boolean {
+  const bitmap = image.toBitmap()
+  for (let alpha = 3; alpha < bitmap.length; alpha += 4) if (bitmap[alpha] !== 255) return false
+  return true
+}
 
 /** How long `upload` waits for the element it clicks to open a file chooser. */
 const FILE_CHOOSER_TIMEOUT_MS = 3_000
@@ -105,6 +126,12 @@ function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
+function ambiguous(locator: BrowserLocator, matches: BrowserElement[]): Error {
+  const listed = matches.slice(0, LOCATOR_LISTED).map(describeBrowserElement)
+  if (matches.length > LOCATOR_LISTED) listed.push(`... and ${matches.length - LOCATOR_LISTED} more`)
+  return new Error(`browser-ambiguous-element: ${matches.length} elements match ${describeBrowserLocator(locator)}:\n${listed.join('\n')}`)
+}
+
 function globMatches(value: string, pattern: string): boolean {
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*')
   return new RegExp(`^${escaped}$`).test(value)
@@ -113,7 +140,6 @@ function globMatches(value: string, pattern: string): boolean {
 export class PageDriver {
   readonly contents: WebContents
   identity: BrowserPageIdentity
-  private readonly checkCell: (codeCellId: unknown) => void
   private refs = new Map<number, RefTarget>()
   private stableIds = new Map<string, number>()
   private elementCounter = 0
@@ -159,7 +185,6 @@ export class PageDriver {
   constructor(contents: WebContents, identity: BrowserPageIdentity, options: PageDriverOptions = {}) {
     this.contents = contents
     this.identity = identity
-    this.checkCell = options.checkCell ?? (() => {})
     this.dialogs = options.dialogs
     contents.once('destroyed', () => this.dispose())
   }
@@ -246,7 +271,7 @@ export class PageDriver {
     const run = this.enqueue(() => {
       this.inputSent = false
       return this.executeBound(method, args)
-    }, args._codeCellId, args._userInputEpoch).catch((error) => {
+    }).catch((error) => {
       const message = error instanceof Error ? error.message : 'browser-command-failed'
       const recovery = browserRecovery(message, this.inputSent)
       return { error: message, ...(recovery ? { recovery } : {}) }
@@ -263,17 +288,15 @@ export class PageDriver {
     const dialog = this.dialogs?.answer(this.contents.id, { accept: args.action === 'accept', ...(typeof args.text === 'string' ? { text: args.text } : {}) })
     if (!dialog) return { error: 'browser-no-dialog', recovery: browserRecovery('browser-no-dialog', false) }
     const action: BrowserActionOutcome = { method: 'dialog', status: 'verified', notices: [`${args.action === 'accept' ? 'Accepted' : 'Dismissed'} the ${dialog.type} dialog "${dialog.message}".`] }
-    const after = await this.execute('getAXState', { _codeCellId: args._codeCellId })
+    const after = await this.execute('getAXState', {})
     if (after.dialog) return { result: { action: { ...action, notices: [...action.notices!, ...(objectValue(objectValue(after.result).action).notices as string[] ?? [])] } }, dialog: after.dialog }
     return { result: { action, ...(after.result ? { observation: after.result } : {}) } }
   }
 
-  private enqueue<T>(operation: () => Promise<T>, codeCellId?: unknown, expectedEpoch?: unknown): Promise<T> {
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     // Capture takeover at submission, so input also invalidates waiting work.
     const epoch = this.userInputEpoch
     const guard = (): void => {
-      this.checkCell(codeCellId)
-      if (expectedEpoch !== undefined && expectedEpoch !== this.userInputEpoch) throw new Error('browser-action-preempted-by-user')
       if (this.contents.isDestroyed()) throw new Error('browser-target-destroyed')
       if (this.userInputEpoch !== epoch) throw new Error('browser-action-preempted-by-user')
     }
@@ -299,7 +322,7 @@ export class PageDriver {
     return run
   }
 
-  /** Throws once the running call must stop (its cell ended, the user took over). */
+  /** Throws once the running call must stop (the user took over). */
   private check(): void {
     this.activeGuard?.()
   }
@@ -785,7 +808,7 @@ export class PageDriver {
     for (let attempt = 0; ; attempt++) {
       try {
         const box = await this.box(target)
-        await sleep(50)
+        await this.nextFrames()
         this.check()
         const settled = await this.box(target, false)
         if (Object.keys(box).some((key) => Math.abs(box[key as keyof typeof box] - settled[key as keyof typeof settled]) > 0.5)) {
@@ -828,6 +851,14 @@ export class PageDriver {
         await sleep(Math.min(100 * 2 ** attempt, 500))
       }
     }
+  }
+
+  /** Two rendered frames, or 50 ms when the page renders none (hidden). */
+  private async nextFrames(): Promise<void> {
+    await within(this.evaluate(`new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), 50);
+      requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); resolve(true); }));
+    })`), 1000, 'element-not-stable')
   }
 
   private async clickElement(target: ElementTarget, count = 1, button = 'left', timeoutMs?: number): Promise<ReturnType<PageDriver['cursor']>> {
@@ -1055,12 +1086,16 @@ export class PageDriver {
         const resized = capture.resize({ width: Math.round(viewport.width), height: Math.round(viewport.height) })
         if (profile) profile.resizeMs += performance.now() - started
         started = performance.now()
-        const data = resized.toPNG()
-        if (profile) { profile.pngMs += performance.now() - started; profile.imageBytes = data.length }
+        const size = resized.getSize()
+        // JPEG has no alpha: a page that leaves its background transparent
+        // stays PNG (flattening it onto white drops the display's colour profile).
+        const jpeg = opaque(resized)
+        const data = jpeg ? resized.toJPEG(SCREENSHOT_QUALITY) : resized.toPNG()
+        if (profile) { profile.encodeMs += performance.now() - started; profile.imageBytes = data.length }
         started = performance.now()
         const encoded = data.toString('base64')
         if (profile) profile.base64Ms += performance.now() - started
-        return { mimeType: 'image/png', data: encoded, width: data.readUInt32BE(16), height: data.readUInt32BE(20) }
+        return { mimeType: jpeg ? 'image/jpeg' : 'image/png', data: encoded, width: size.width, height: size.height }
       } catch (error) {
         if (attempt === 1) throw error
         // Navigation can leave the old execution context or compositor frame
@@ -1075,58 +1110,68 @@ export class PageDriver {
   /** After an action: waits for the navigation or requests it started and
    *  for the DOM to go quiet, so the returned state shows its effect. */
   private async settle(epoch: number, startedAt: number, url: string): Promise<void> {
-    await sleep(50)
     const deadline = Date.now() + 5000
     const busy = () => this.contents.isLoading()
       || [...this.requests.values()].some(at => at >= startedAt - 50 && Date.now() - at < 2500)
-    while (!this.contents.isDestroyed() && busy() && Date.now() < deadline) {
+    const routedNow = () => epoch === this.documentEpoch && this.contents.getURL() !== url
+    // The quiet wait starts at once. Requests, a navigation or a route change
+    // the action started meanwhile get another round after it.
+    let routeWaited = false
+    for (;;) {
+      while (!this.contents.isDestroyed() && busy() && Date.now() < deadline) {
+        this.check()
+        await sleep(50)
+      }
       this.check()
-      await sleep(50)
+      if (this.contents.isDestroyed() || (epoch !== this.documentEpoch && this.contents.isLoading())) return
+      // A client-side route change (same document, new URL) often renders a
+      // moment later: wait for its first change before waiting for quiet.
+      const routed: boolean = !routeWaited && routedNow()
+      routeWaited ||= routed
+      await within(this.evaluate(`new Promise(resolve => {
+        let quiet;
+        const done = () => { observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); resolve(true); };
+        const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 100); });
+        observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+        if (!${routed}) quiet = setTimeout(done, 100);
+        const cap = setTimeout(done, 1000);
+      })`), 1500, 'settle-timeout').catch(() => { /* a busy or navigating page still gets observed */ })
+      this.check()
+      if (this.contents.isDestroyed() || Date.now() >= deadline || (!busy() && (routeWaited || !routedNow()))) return
     }
-    this.check()
-    if (this.contents.isDestroyed() || (epoch !== this.documentEpoch && this.contents.isLoading())) return
-    // A client-side route change (same document, new URL) often renders a
-    // moment later: wait for its first change before waiting for quiet.
-    const routed = epoch === this.documentEpoch && this.contents.getURL() !== url
-    await within(this.evaluate(`new Promise(resolve => {
-      let quiet;
-      const done = () => { observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); resolve(true); };
-      const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(done, 100); });
-      observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-      if (!${routed}) quiet = setTimeout(done, 100);
-      const cap = setTimeout(done, 1000);
-    })`), 1500, 'settle-timeout').catch(() => { /* a busy or navigating page still gets observed */ })
   }
 
   private async observe(args: BrowserArgs = {}, screenshot = false, imageOnly = false): Promise<BrowserObservation> {
     const started = performance.now()
     const profile: BrowserObservationPerformance | undefined = args.profile === true ? {
-      axMs: 0, frameWaitMs: 0, captureMs: 0, resizeMs: 0, pngMs: 0, base64Ms: 0,
+      axMs: 0, frameWaitMs: 0, captureMs: 0, resizeMs: 0, encodeMs: 0, base64Ms: 0,
       totalMs: 0, imageBytes: 0, cacheEntries: 0, cacheEstimatedBytes: 0,
     } : undefined
     const baseline = typeof args.observationId === 'string' ? this.observations.get(args.observationId) : undefined
     for (let attempt = 0; attempt < 2; attempt++) {
       const documentId = this.documentId
       const before = await this.viewport()
+      // The tree and the pixels are read at once: the page builds its tree
+      // while this process encodes the image.
       const axStarted = performance.now()
-      const ax = imageOnly ? { state: '', elements: [] } : await this.readAXState(before)
-      if (profile && !imageOnly) profile.axMs += performance.now() - axStarted
-      let image: BrowserImage | undefined
-      let screenshotError: string | undefined
-      try {
-        image = screenshot ? await this.captureViewport(before, profile, args._hidden === true) : undefined
-      } catch (error) {
-        // The tree is still worth returning when only the pixels are missing.
-        if (imageOnly || !(error instanceof Error) || !/^browser-(page-hidden|render-frame-timeout|screenshot-timeout)/.test(error.message)) throw error
-        screenshotError = error.message
-      }
+      const [ax, { image, screenshotError }] = await Promise.all([
+        imageOnly ? { state: '', elements: [] } : this.readAXState(before).finally(() => {
+          if (profile) profile.axMs += performance.now() - axStarted
+        }),
+        screenshot
+          ? this.captureViewport(before, profile, args._hidden === true).then((image): Pixels => ({ image }), (error: unknown): Pixels => {
+            // The tree is still worth returning when only the pixels are missing.
+            if (imageOnly || !(error instanceof Error) || !/^browser-(page-hidden|render-frame-timeout|screenshot-timeout)/.test(error.message)) throw error
+            return { screenshotError: error.message }
+          })
+          : {} as Pixels,
+      ])
       const after = await this.viewport()
       if (documentId !== this.documentId || !this.sameViewport(before, after)) continue
       let state = ax.state
       const diff = !imageOnly && args.disableDiffing !== true && baseline?.kind === 'ax' && baseline.documentId === documentId
       if (diff) state = diffBrowserState(baseline.state, state)
       const observation: BrowserObservation = {
-        userInputEpoch: this.userInputEpoch,
         kind: imageOnly ? 'image' : 'ax',
         panelId: this.identity.panelId, tabId: this.identity.tabId, observationId: `${documentId}:o${++this.observationCounter}`,
         documentId, url: this.contents.getURL(), title: this.contents.getTitle(), viewport: after,
@@ -1157,7 +1202,6 @@ export class PageDriver {
     // Ids and points belong to their observation's document; a call without
     // them (a key, text, a text wait) may follow the page wherever it went.
     const targeted = args.target !== undefined || args.from !== undefined || args.element !== undefined
-      || objectValue(args.condition).element !== undefined
     const named = typeof args.observationId === 'string' ? this.observations.get(args.observationId) : undefined
     if (args.observationId !== undefined && (targeted || named?.documentId === this.documentId)) return this.requireObservation(args)
     const latest = this.latestAx ? this.observations.get(this.latestAx) : undefined
@@ -1166,6 +1210,7 @@ export class PageDriver {
   }
 
   private element(id: unknown, observation: CachedBrowserObservation): ElementTarget {
+    if (id === undefined) throw new Error('browser-target-required')
     if (observation.kind !== 'ax') throw new Error('browser-ax-observation-required')
     // Ids stay the same for an element while its document lives, so any id
     // this driver issued for the current document will do.
@@ -1201,12 +1246,11 @@ export class PageDriver {
   }
 
   private async waitCondition(args: BrowserArgs, observation: CachedBrowserObservation): Promise<void> {
-    // `{condition:{text}}` from code, or flat `text`/`url`/`element`/`state` from the CLI.
-    const condition = args.condition !== undefined
-      ? objectValue(args.condition)
-      : { text: args.text, url: args.url, element: args.element, state: args.state }
-    const keys = ['text', 'url', 'element'].filter(key => condition[key] !== undefined)
+    const condition = { text: args.text, url: args.url, element: args.element, state: args.state, locator: browserLocatorOf(args) }
+    const keys = ['text', 'url', 'element', 'locator'].filter(key => condition[key as keyof typeof condition] !== undefined)
     if (keys.length !== 1) throw new Error('browser-wait-requires-one-condition')
+    const state = condition.state ?? 'visible'
+    if (!['visible', 'hidden', 'checked', 'unchecked', 'enabled', 'disabled'].includes(String(state))) throw new Error('unsupported-browser-wait-state')
     const timeout = args.timeoutMs === undefined ? 5000 : Number(args.timeoutMs)
     if (!Number.isFinite(timeout) || timeout <= 0 || timeout > BROWSER_WAIT_MAX_MS) throw new Error('invalid-browser-timeout')
     const deadline = Date.now() + timeout
@@ -1214,11 +1258,11 @@ export class PageDriver {
       this.check()
       if (observation.documentId !== this.documentId && condition.element !== undefined) throw new Error('stale-browser-observation')
       let ready = false
-      if (typeof condition.text === 'string') ready = String(await this.evaluate('document.body?.innerText ?? ""')).includes(condition.text)
+      // Only the answer crosses CDP, not the page's text every 50 ms.
+      if (typeof condition.text === 'string') ready = await this.evaluate(`(document.body?.innerText ?? "").includes(${JSON.stringify(condition.text)})`) === true
       else if (typeof condition.url === 'string') ready = globMatches(this.contents.getURL(), condition.url)
+      else if (condition.locator) ready = this.locatedState(condition.locator, (await this.observe()).elements, String(state))
       else if (condition.element !== undefined) {
-        const state = condition.state ?? 'visible'
-        if (!['visible', 'hidden', 'checked', 'unchecked', 'enabled', 'disabled'].includes(String(state))) throw new Error('unsupported-browser-wait-state')
         try {
           const target = this.element(condition.element, observation)
           const result = objectValue((await this.callOn(target, `function () {
@@ -1234,13 +1278,47 @@ export class PageDriver {
       this.check()
       if (ready) return
       if (Date.now() >= deadline) throw new Error('browser-wait-timeout')
-      await new Promise(resolve => setTimeout(resolve, 50))
+      // A locator reads the whole tree; the other conditions are cheap.
+      await new Promise(resolve => setTimeout(resolve, condition.locator ? LOCATOR_POLL_MS : 50))
+    }
+  }
+
+  /** Whether the element `locator` finds is in `state`; `hidden` holds when none matches. */
+  private locatedState(locator: BrowserLocator, elements: BrowserElement[], state: string): boolean {
+    const matches = matchBrowserElements(elements, locator)
+    if (state === 'visible' || state === 'hidden') return (matches.length > 0) === (state === 'visible')
+    if (matches.length === 0) return false
+    if (matches.length > 1) throw ambiguous(locator, matches)
+    const states = matches[0].states ?? {}
+    const on = (key: string) => states[key] === true || states[key] === 'true'
+    if (state === 'checked' || state === 'unchecked') return on('checked') === (state === 'checked')
+    return on('disabled') === (state === 'disabled')
+  }
+
+  /** The one element of a fresh snapshot `locator` matches, waiting up to
+   *  `timeoutMs` for it to appear; the action then diffs against that snapshot. */
+  private async locateElement(locator: BrowserLocator, timeoutMs = ACTIONABLE_TIMEOUT_MS): Promise<{ id: number; observation: CachedBrowserObservation }> {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      this.check()
+      const fresh = await this.observe()
+      const matches = matchBrowserElements(fresh.elements, locator)
+      if (matches.length === 1) return { id: matches[0].id, observation: this.requireObservation({ observationId: fresh.observationId }) }
+      if (matches.length > 1) throw ambiguous(locator, matches)
+      if (Date.now() >= deadline) throw new Error(`browser-no-matching-element: nothing on the page matches ${describeBrowserLocator(locator)}`)
+      await sleep(LOCATOR_POLL_MS)
     }
   }
 
   private async executeBound(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
     if (BROWSER_OBSERVATION_METHODS.has(method)) return { result: await this.observe(args, method !== 'getAXState', method === 'getScreenshot') }
     if (BROWSER_LOG_METHODS.has(method)) return { result: this.log.read(method, args) }
+    if (method === 'find') {
+      const locator = browserLocatorOf(args)
+      if (!locator) throw new Error('browser-locator-required')
+      const { url, title, elements } = await this.observe()
+      return { result: { url, title, elements: matchBrowserElements(elements, locator) } }
+    }
     if (!BROWSER_ELEMENT_READ_METHODS.has(method) && !BROWSER_ACTION_METHODS.has(method) && method !== 'waitFor') throw new Error('unsupported-browser-method')
     // A click or a key can open a file chooser: the agent answers it with
     // `upload`, so the chooser is reported rather than shown.
@@ -1253,7 +1331,7 @@ export class PageDriver {
       if (!this.fileChooser) return outcome
       const result = objectValue(outcome.result)
       const action = objectValue(result.action) as unknown as BrowserActionOutcome
-      const notice = 'The action opened a file chooser. Answer it with cate browser upload chooser <file>..., or tab.upload(null, files) in code.'
+      const notice = 'The action opened a file chooser. Answer it with cate browser upload chooser <file>...'
       return { ...outcome, result: { ...result, action: { ...action, notices: [...(action.notices ?? []), notice] } } }
     } finally {
       await this.interceptFileChooser(false)
@@ -1261,15 +1339,24 @@ export class PageDriver {
   }
 
   private async runAction(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
-    const observation = await this.baseline(args)
+    let observation = await this.baseline(args)
+    // `--role`/`--name` name the target instead of an id; a wait polls for it itself.
+    const locator = method === 'waitFor' ? undefined : browserLocatorOf(args)
+    if (locator) {
+      if (args.target !== undefined && args.target !== null) throw new Error('browser-target-or-locator')
+      const timeout = typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined
+      const located = await this.locateElement(locator, timeout)
+      observation = located.observation
+      args = { ...args, target: located.id }
+    }
     const epoch = this.documentEpoch
     const startedAt = Date.now()
     const url = this.contents.getURL()
     if (method === 'getAttribute') {
-      if (typeof args.name !== 'string' || !args.name) throw new Error('browser-attribute-name-required')
+      if (typeof args.attribute !== 'string' || !args.attribute) throw new Error('browser-attribute-name-required')
       const result = objectValue((await this.callOn(this.element(args.target, observation), `function () {
         if (!(this instanceof Element)) return { element:false };
-        return { element:true, value:this.getAttribute(${JSON.stringify(args.name)}) };
+        return { element:true, value:this.getAttribute(${JSON.stringify(args.attribute)}) };
       }`)).value)
       if (result.element !== true) throw new Error('browser-attribute-target-required')
       return { result: typeof result.value === 'string' ? result.value : null }
@@ -1396,8 +1483,8 @@ export class PageDriver {
     } else if (method === 'selectText') {
       if (typeof args.text !== 'string') throw new Error('browser-text-required')
       if ((args.prefix !== undefined && typeof args.prefix !== 'string') || (args.suffix !== undefined && typeof args.suffix !== 'string')) throw new Error('invalid-browser-selection-context')
-      const selectionType = args.selectionType ?? 'text'
-      if (!['text', 'cursor_before', 'cursor_after'].includes(String(selectionType))) throw new Error('invalid-browser-selection-type')
+      if (args.cursor !== undefined && args.cursor !== 'before' && args.cursor !== 'after') throw new Error('invalid-browser-selection-cursor')
+      const selectionType = args.cursor === undefined ? 'text' : `cursor_${args.cursor}`
       const target = this.element(args.target, observation)
       await this.focusElement(target)
       const result = await this.callOn(target, `function () {

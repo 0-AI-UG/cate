@@ -66,58 +66,48 @@ test.fixme('@public-network controls public sites from a real Cate terminal', as
     { timeout: 60_000 },
   ).not.toBeNull()
 
-  const run = (code: string) => runCate(terminalNodeId, 'browser', 'run', code, '--panel', createdPanel)
+  const browser = (...args: string[]) => runCate(terminalNodeId, 'browser', ...args, '--panel', createdPanel)
   const shortPanelId = await runCate(terminalNodeId, 'panel', 'create', 'browser', 'https://httpbin.org/forms/post')
   const createdPanel = await expect.poll(() => page.evaluate(
     (prefix) => window.__cateE2E!.panels().find((panel) => panel.id.startsWith(prefix))?.id ?? '', shortPanelId,
   ), { timeout: 15_000 }).not.toBe('').then(() => page.evaluate(
     (prefix) => window.__cateE2E!.panels().find((panel) => panel.id.startsWith(prefix))!.id, shortPanelId,
   ))
-  await run('await tab.getAXState();')
-  await expect.poll(() => page.evaluate(
-    (panelId) => window.__cateE2E!.panels().some((panel) => panel.id === panelId), createdPanel,
-  ), { timeout: 15_000 }).toBe(true)
+  await browser('snapshot')
 
-  // Resolve only IDs present in the observed accessibility tree. This helper
-  // deliberately fails on ambiguity instead of guessing a page selector.
-  await run(`var id = async function(name,role){
-    var state=await tab.getAXState({emit:false,disableDiffing:true});
-    var matches=state.elements.filter(e=>e.name.trim().replace(/:$/,"").trim()===name&&(!role||e.role===role));
-    if(matches.length!==1)throw Error("Expected unique accessible target: "+name+"; observed "+JSON.stringify(state.elements.filter(e=>e.role===role).map(e=>e.name)));
-    return matches[0].id;
-  };`)
-  await run(`await tab.setValue(await id("Customer name","textbox"),"Cate Terminal Test");
-    await tab.setValue(await id("Telephone","textbox"),"+49 30 123456");
-    await tab.setValue(await id("E-mail address","textbox"),"terminal-test@example.com");
-    await tab.setChecked(await id("Large","radio"),true);
-    await tab.setChecked(await id("Extra Cheese","checkbox"),true);
-    await tab.setValue(await id("Delivery instructions","textbox"),"Leave at reception");
-    await tab.click(await id("Submit order","button"));
-    await tab.waitFor({text:"Cate Terminal Test"},{timeoutMs:30000});`)
-  const responseBody = await run('await tab.getAXState({disableDiffing:true});')
+  // Elements by the role and name the snapshot shows; an ambiguous name fails
+  // instead of guessing.
+  await browser('fill', '--role', 'textbox', '--name', 'Customer name', 'Cate Terminal Test')
+  await browser('fill', '--role', 'textbox', '--name', 'Telephone', '+49 30 123456')
+  await browser('fill', '--role', 'textbox', '--name', 'E-mail address', 'terminal-test@example.com')
+  await browser('check', '--role', 'radio', '--name', 'Large')
+  await browser('check', '--role', 'checkbox', '--name', 'Extra Cheese')
+  await browser('fill', '--role', 'textbox', '--name', 'Delivery instructions', 'Leave at reception')
+  await browser('click', '--role', 'button', '--name', 'Submit order')
+  await browser('wait', '--text', 'Cate Terminal Test', '--timeout', '30000')
+  const responseBody = await browser('snapshot')
   for (const text of ['Cate Terminal Test', 'terminal-test@example.com', 'Leave at reception', 'large', 'cheese']) expect(responseBody).toContain(text)
 
-  await run('tab = await cua.createBrowserTab("https://example.com"); await tab.waitFor({text:"Example Domain"},{timeoutMs:30000});')
-  const heading = await run('await tab.getAXState({disableDiffing:true});')
+  await browser('tab', 'new', 'https://example.com')
+  await browser('wait', '--text', 'Example Domain', '--timeout', '30000')
+  const heading = await browser('snapshot')
   expect(heading).toContain('https://example.com/')
   expect(heading).toContain('Example Domain')
 
   // Production document: CSP, client hints, deep AX tree, sticky chrome.
-  await run('tab = await cua.createBrowserTab("https://en.wikipedia.org/wiki/Electron_(software_framework)"); await tab.waitFor({text:"Electron"},{timeoutMs:30000});')
-  const wikipediaState = await run('await tab.getAXState({disableDiffing:true});')
+  await browser('tab', 'new', 'https://en.wikipedia.org/wiki/Electron_(software_framework)')
+  await browser('wait', '--text', 'Electron', '--timeout', '30000')
+  const wikipediaState = await browser('snapshot')
   expect(wikipediaState).toContain('Electron')
   expect(wikipediaState).toContain('link')
   expect(wikipediaState.length).toBeGreaterThan(5_000)
 
   // Reactive application: hydration, keyboard submission, stateful controls.
-  await run('tab = await cua.createBrowserTab("https://demo.playwright.dev/todomvc/");')
-  await run(`var state=await tab.getAXState({emit:false,disableDiffing:true});
-    var input=state.elements.filter(e=>e.role==="textbox");
-    if(input.length!==1)throw Error("Expected one todo input");
-    await tab.setValue(input[0].id,"Verify Cate public SPA control");
-    await tab.pressKey("Return");
-    await tab.waitFor({text:"Verify Cate public SPA control"},{timeoutMs:30000});`)
-  expect(await run('await tab.getAXState({disableDiffing:true});')).toContain('Verify Cate public SPA control')
+  await browser('tab', 'new', 'https://demo.playwright.dev/todomvc/')
+  await browser('fill', '--role', 'textbox', 'Verify Cate public SPA control')
+  await browser('press', 'Enter')
+  await browser('wait', '--text', 'Verify Cate public SPA control', '--timeout', '30000')
+  expect(await browser('snapshot')).toContain('Verify Cate public SPA control')
   // TodoMVC hides its native checkbox (opacity:0) and paints the control on
   // the label. Exercise visual input: only screenshot coordinates cross the
   // browser tool; the independent fixture oracle supplies/verifies the hit point.
@@ -126,6 +116,9 @@ test.fixme('@public-network controls public sites from a real Cate terminal', as
     const box=document.querySelector('.todo-list .toggle').getBoundingClientRect();
     return [box.x+box.width/2,box.y+box.height/2];
   })()`) as [number, number]
-  await run(`await tab.getAXStateAndScreenshot(); await tab.click(${JSON.stringify(point)}); await tab.waitFor({text:"Clear completed"});`)
+  await browser('screenshot')
+  await browser('click', JSON.stringify(point))
+  await browser('wait', '--text', 'Clear completed')
+  await browser('tab', 'close', '--mine')
   expect(await fixtureEvaluate(app, page, todoBrowser, "document.querySelector('.todo-list .toggle').checked")).toBe(true)
 })

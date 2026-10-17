@@ -17,20 +17,22 @@ import { desktopPort } from './desktop'
 import { useUIStore } from './state/uiStore'
 import { openFile } from './workspace/fileActions'
 
-/** Opens (when needed) and shows a workspace in this window. */
+/** Shows a workspace in this window at once (its opening surface while it
+ *  opens, WorkspaceGate) and opens it when needed. */
 export async function selectWorkspace(workspaceId: string): Promise<boolean> {
   const { workspaces } = clientApp()
   const entry = workspaces.get(workspaceId)
   if (!entry) return false
-  let opened: { trusted: Promise<boolean> }
+  // Before opening, in the same tick: the first frame that shows the
+  // workspace already sees it opening.
+  const opening = openTrusted({ workspaces, connections: clientApp().connections }, workspaceId)
+  useUIStore.getState().setSelectedWorkspace(workspaceId)
   try {
-    opened = await openTrusted({ workspaces, connections: clientApp().connections }, workspaceId)
+    return await (await opening).trusted
   } catch (err) {
     clientUi().showError(errorMessage(err, `Could not open ${entry.name}`))
     return false
   }
-  useUIStore.getState().setSelectedWorkspace(workspaceId)
-  return opened.trusted
 }
 
 /** Adds a folder on this device to the list and opens it. */

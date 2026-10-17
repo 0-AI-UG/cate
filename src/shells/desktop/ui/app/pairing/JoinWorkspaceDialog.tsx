@@ -31,7 +31,7 @@ function OpenJoinDialog({ request }: { request: JoinRequest }): JSX.Element {
     try {
       const entry = await joinWorkspace(input, { pair, workspaces: app.workspaces })
       close()
-      useUIStore.getState().setOpenDialogOpen(false)
+      useUIStore.getState().closeWorkspacePicker()
       // It takes the runtime's folder name once it connects (nameJoinedWorkspaces).
       await selectWorkspace(entry.id)
     } catch (err) {

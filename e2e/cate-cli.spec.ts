@@ -105,42 +105,40 @@ test('the core cate CLI workflow works from a real Cate terminal', async () => {
   for (const id of [workerId, browserId, editorId]) expect(finalPanels).not.toContain(id)
 })
 
-test('cate browser run drives a real browser panel webview', async () => {
+test('cate browser commands drive a real browser panel webview', async () => {
   test.setTimeout(180_000)
   const control = (await seedOnCanvas(page, 'terminal', { x: 120, y: 120 })).panelId
   const runCate = (...args: string[]) => runCateIn(page, control, ...args)
-  const runBrowser = (code: string) => runCate('browser', 'run', code)
   const browserId = await runCate('panel', 'create', 'browser')
-  const created = JSON.parse(await runCate('browser', 'run', `await cua.createBrowserTab(${JSON.stringify(baseUrl)}); await nodeRepl.write({testBinding:{tabId:tab.tabId}});`, '--panel', browserId, '--json')) as { content: { type: string; text?: string }[] }
-  expect(created.content.some((item) => item.text?.includes('testBinding'))).toBe(true)
+  const browser = (...args: string[]) => runCate('browser', ...args, '--panel', browserId)
   const oracle = (expression: string) => guestEvaluate(app, baseUrl, expression)
 
-  const state = await runBrowser('await tab.getAXStateAndScreenshot({disableDiffing:true});')
+  // Tabs: short handles, the agent's own marked as such.
+  expect(await browser('tab', 'new', baseUrl)).toMatch(/tabId\s+t2/)
+  expect(await browser('tab', 'list')).toMatch(/\*\s+\S+\s+t2\s+you\s/)
+
+  const state = await browser('snapshot', '--screenshot')
   expect(state).toContain('Form Ready')
   expect(state).toContain('••••••••')
   expect(state).not.toContain('never-expose-me')
-  await runBrowser(`var id = async function(name,role){
-    var state=await tab.getAXState({disableDiffing:true,emit:false});
-    var matches=state.elements.filter(e=>e.name.trim()===name&&(!role||e.role===role));
-    if(matches.length!==1)throw Error("Expected unique accessible target: "+name);
-    return matches[0].id;
-  }; var query = await id("Query","searchbox"); var click = await id("Click me","button");`)
-  await runBrowser('await tab.setValue(query,"hello"); await tab.typeText(" cate");')
+  const imagePath = state.split('\n').find((line) => line.startsWith('Screenshot: '))?.replace(/^Screenshot: /, '').trim()
+  expect(imagePath && existsSync(imagePath)).toBeTruthy()
+
+  // Elements by role and name instead of ids.
+  expect(await browser('find', '--role', 'searchbox')).toMatch(/^- searchbox "Query" \[id=\d+\]$/)
+  await browser('fill', '--role', 'searchbox', '--name', 'Query', 'hello')
+  await browser('type', ' cate')
   expect(await oracle('document.querySelector("#query").value')).toBe('hello cate')
-  await runBrowser('await tab.click(click); await tab.waitFor({text:"Saved"},{timeoutMs:3000});')
-  await runBrowser('await tab.selectText(query,"hello cate",{selectionType:"cursor_after"}); await tab.pressKey("Return");')
+  await browser('click', '--role', 'button', '--name', 'Click me', '--exact')
+  await browser('wait', '--text', 'Saved', '--timeout', '3000')
+  await browser('select-text', '--role', 'searchbox', '--name', 'Query', 'hello cate', '--cursor', 'after')
+  await browser('press', 'Enter')
   expect(await oracle('document.title')).toBe('Submitted:hello cate')
 
-  const screenshots = await runBrowser('await tab.getAXStateAndScreenshot();')
-  const imagePath = screenshots.split('\n').find((line) => line.trim().endsWith('.png'))?.trim().replace(/^Screenshot: /, '')
-  expect(imagePath && existsSync(imagePath)).toBeTruthy()
-  expect(readFileSync(imagePath!).subarray(1, 4).toString()).toBe('PNG')
-
-  // Arbitrary page evaluation is not offered, and rejection keeps the session usable.
-  const noDom = await runInTerminal(page, control, cate('browser', 'run', 'await nodeRepl.write({pageEvaluation:typeof tab.evaluate,node:typeof require});'))
-  expect(noDom.output).toContain('undefined')
-  // A reset drops the cell variables; every cell still starts with `tab`.
-  await runBrowser('var kept = 1;')
-  await runCate('browser', 'reset')
-  expect(await runBrowser('await nodeRepl.write([typeof kept, typeof tab].join(" "));')).toContain('undefined object')
+  // The agent closes what it opened; the panel's first tab stays.
+  expect(await browser('tab', 'close', '--mine')).toMatch(/closed\s+t2/)
+  expect(await browser('tab', 'list')).not.toMatch(/\st2\s/)
+  // There is no code mode.
+  const noRun = await runInTerminal(page, control, cate('browser', 'run', '1'))
+  expect(noRun.output).toContain('unknown command: browser run')
 })

@@ -1,1 +1,0 @@
-export { WorkspaceTrustDialog } from './WorkspaceTrustDialog'

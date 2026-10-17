@@ -18,4 +18,5 @@ export { reconcileWindow, selectionAfter, windowContent, type WindowContent, typ
 export { byMachine, groupByMachine, machineOf, type MachineGroup, type WorkspaceMachine } from './machines'
 export { joinWorkspace, joinErrorMessage, parsePairingInput, type JoinDeps, type PairingTarget } from './join'
 export { nameJoinedWorkspaces, placeholderName } from './naming'
-export { createTrustStore, openTrusted, trustStore, type TrustApi, type TrustPrompt, type TrustStore } from './trust'
+export { createTrustStore, trustStore, type TrustApi, type TrustPrompt, type TrustStore } from './trust'
+export { openTrusted, subscribeWorkspacePhase, workspacePhase, workspacePhaseOf, type WorkspacePhase } from './opening'

@@ -63,7 +63,7 @@ describe('mobile panel views', () => {
 })
 
 const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({
-  id: 't1', url: 'http://localhost:3000/', title: '', favicon: null, pinned: false, nav: 1, navSource: null, ...patch,
+  id: 't1', url: 'http://localhost:3000/', title: '', favicon: null, pinned: false, nav: 1, navSource: null, openedBy: null, ...patch,
 })
 const browserSnapshot = (tabs: BrowserTab[]): BrowserSnapshot => ({
   tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' } as never,

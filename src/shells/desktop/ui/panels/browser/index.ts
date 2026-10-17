@@ -6,4 +6,3 @@ import { registerPanelView } from '../../client/host/views'
 
 registerPanelView('browser', () => import('./BrowserView'))
 
-export { serveBrowserCode } from './surfaces'

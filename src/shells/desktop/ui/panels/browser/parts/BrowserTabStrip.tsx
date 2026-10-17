@@ -51,7 +51,6 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
       startScrollLeft: event.currentTarget.scrollLeft,
       moved: false,
     }
-    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
   }
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
@@ -63,6 +62,9 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
       if (Math.abs(deltaX) < 4 || Math.abs(deltaX) <= Math.abs(deltaY)) return
       drag.moved = true
       setIsDragging(true)
+      // Captured only once it is a drag: a captured press clicks the strip,
+      // never the tab under it.
+      try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* unsupported */ }
     }
     event.preventDefault()
     event.currentTarget.scrollLeft = drag.startScrollLeft - deltaX

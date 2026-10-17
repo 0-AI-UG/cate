@@ -50,7 +50,6 @@ const EMPTY_CLIENT_STATE: ClientState = {
   selection: {},
   viewports: {},
   maximizedStacks: {},
-  maximizedNodes: {},
   panelViews: {},
   intents: [],
 }

@@ -5,14 +5,13 @@
 // changelog scrolls.
 
 import { FolderOpen, KeyRound } from 'lucide-react'
-import { Button, useDeclaredActions, useResolvedShortcuts } from '../../kernel/interaction'
+import { CateLogo, Button, useDeclaredActions, useResolvedShortcuts } from '../../kernel/interaction'
 import { canRunAction } from '@client/host'
 import { useActionsVersion } from '../../client/host/hooks'
 import { displayString } from '@kernel/interaction/contract'
 import { CANVAS_GRID_SIZE } from '@workspace/canvas/contract'
 import { useCanvasSetting } from '../../client/layout/canvas'
 import { useUIStore } from '../state/uiStore'
-import { CateLogo } from './CateLogo'
 import { WhatsNew } from './WhatsNew'
 
 /** The canvas grid (CanvasGrid) at zoom 1, in the user's grid style. */
@@ -43,7 +42,7 @@ export function WelcomePage(): JSX.Element {
           <p className="mt-3 shrink-0 text-[15px] text-secondary">An infinite canvas for your terminals, editors and browsers.</p>
 
           <div data-onboarding="welcome-actions" className="mt-7 flex shrink-0 items-center gap-2">
-            <Button variant="primary" className="h-10 gap-2 rounded-lg px-4 text-[14px]" onClick={() => useUIStore.getState().setOpenDialogOpen(true)}>
+            <Button variant="primary" className="h-10 gap-2 rounded-lg px-4 text-[14px]" onClick={() => useUIStore.getState().openWorkspacePicker()}>
               <FolderOpen size={15} />
               Open a workspace
               {openKey && <kbd className="ml-1 font-sans text-[12px] opacity-70">{openKey}</kbd>}

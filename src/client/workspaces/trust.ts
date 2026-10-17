@@ -4,14 +4,13 @@
 // remembered: the caller just does not keep the workspace open.
 //
 // Questions queue: only the head is on screen, so a launch that reopens
-// several untrusted workspaces asks about them one at a time.
+// several untrusted workspaces asks about them one at a time. Opening a
+// workspace and asking on the way is `openTrusted` (opening.ts).
 
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import type { CapabilityProxy } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
 import type { workspaceCapability } from '@workspace/lifecycle/contract'
-import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
-import { workspaceLocation, type WorkspaceList } from './workspaceList'
 
 const log = createLogger('trust')
 
@@ -96,55 +95,3 @@ export function createTrustStore(api: (workspaceId: string) => TrustApi | null):
 /** The client's trust store over the runtime slot: every shell asks
  *  through it and shows its head question. */
 export const trustStore: TrustStore = createTrustStore((workspaceId) => tryRuntimeFor(workspaceId)?.workspace ?? null)
-
-/** Resolves true once the connection is connected, false when it closes.
- *  Trust is asked only of a runtime that answers: an incompatible one
- *  answers nothing but its update, so the mismatch is resolved first. */
-function whenConnected(connection: WorkspaceConnection | undefined): Promise<boolean> {
-  if (!connection) return Promise.resolve(false)
-  return new Promise((resolve) => {
-    const check = () => {
-      const { kind } = connection.state
-      if (kind !== 'connected' && kind !== 'closed') return
-      off()
-      resolve(kind === 'connected')
-    }
-    const off = connection.subscribe(check)
-    check()
-  })
-}
-
-/** After a workspace was opened: waits for its runtime and makes sure the
- *  workspace is trusted, asking through `store` when it is not. `declined`:
- *  the person said no; `closed`: the connection closed first. */
-async function ensureOpenedTrusted(
-  deps: { workspaces: Pick<WorkspaceList, 'get'>; connections: Pick<WorkspaceConnections, 'get'>; store?: TrustStore },
-  workspaceId: string,
-): Promise<'trusted' | 'declined' | 'closed'> {
-  const entry = deps.workspaces.get(workspaceId)
-  if (!entry || !(await whenConnected(deps.connections.get(workspaceId)))) return 'closed'
-  const label = workspaceLocation(entry) ?? entry.name
-  return (await (deps.store ?? trustStore).ensureTrusted(workspaceId, label)) ? 'trusted' : 'declined'
-}
-
-/** Opens a workspace (when it is not open) the way every client does: the
- *  connection first, then the trust question once its runtime answers; a
- *  declined workspace is disconnected again but stays in the list (closing
- *  it would drop a paired one's pinned key). Rejects when opening fails;
- *  `trusted` settles once the question is answered. */
-export async function openTrusted(
-  deps: {
-    workspaces: Pick<WorkspaceList, 'get' | 'getSnapshot' | 'open' | 'disconnect'>
-    connections: Pick<WorkspaceConnections, 'get'>
-    store?: TrustStore
-  },
-  workspaceId: string,
-): Promise<{ trusted: Promise<boolean> }> {
-  if (deps.workspaces.getSnapshot().open.includes(workspaceId)) return { trusted: Promise.resolve(true) }
-  await deps.workspaces.open(workspaceId)
-  const trusted = ensureOpenedTrusted(deps, workspaceId).then((answer) => {
-    if (answer === 'declined') deps.workspaces.disconnect(workspaceId)
-    return answer === 'trusted'
-  })
-  return { trusted }
-}

@@ -1,10 +1,10 @@
 // The desktop page bridge: what the desktop shell's preload hands the renderer
 // for browser views. Webviews live in the renderer, but their webContents, the
-// page driver, code cells, downloads and the Chrome password import live in
+// page driver, downloads and the Chrome password import live in
 // desktop main. No workspace work crosses it: passwords come from the runtime
 // through `browserData`, and the view hands main only what one page needs.
 
-import type { BrowserCodeResult, BrowserDialog, BrowserDriverResult, BrowserPageIdentity } from './automation'
+import type { BrowserDialog, BrowserDriverResult, BrowserPageIdentity } from './automation'
 import type { BrowserCredentialImport, BrowserDownloadEntry } from './types'
 
 /** A guest webContents this window hosts, bound to its panel tab. */
@@ -31,13 +31,6 @@ export interface BrowserChromeImport {
   skipped: number
 }
 
-/** A `cua.*` call of a running code cell, for the renderer to pass to the
- *  runtime (`browserCode.call`). */
-export interface BrowserCodeCall {
-  cellId: string
-  method: string
-  args: Record<string, unknown>
-}
 
 /** A guest's JavaScript dialog opened (`dialog`) or closed (null). */
 export interface BrowserDialogEvent {
@@ -75,12 +68,6 @@ export interface BrowserPageBridge {
    *  workspace with `file.storeScreenshot`). */
   screenshot(webContentsId: number): Promise<{ dataUrl: string } | null>
 
-  /** Runs a cell in this client's isolated code session for `key`. */
-  runCode(request: { key: string; cellId: string; code: string; deadlineMs: number }): Promise<BrowserCodeResult>
-  resetCode(key: string): Promise<void>
-  /** Main forwards each `cua.*` call of a running cell; the handler answers it. */
-  onCodeCall(handler: (call: BrowserCodeCall) => Promise<unknown>): () => void
-
   /** Downloads of the guests this window hosts. */
   onDownloads(listener: (event: { webContentsId: number; downloads: BrowserDownloadEntry[] }) => void): () => void
   /** A page asked for a new window (`window.open`, target=_blank). */
@@ -107,10 +94,6 @@ export const BROWSER_PAGE_CHANNELS = {
   answerDialog: 'cate:browser-page:answer-dialog',
   dialog: 'cate:browser-page:dialog',
   screenshot: 'cate:browser-page:screenshot',
-  runCode: 'cate:browser-page:run-code',
-  resetCode: 'cate:browser-page:reset-code',
-  codeCall: 'cate:browser-page:code-call',
-  codeCallReply: 'cate:browser-page:code-call-reply',
   downloads: 'cate:browser-page:downloads',
   openTab: 'cate:browser-page:open-tab',
   shortcut: 'cate:browser-page:shortcut',

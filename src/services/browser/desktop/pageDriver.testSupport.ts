@@ -1,10 +1,7 @@
 import { EventEmitter } from 'events'
 import { vi } from 'vitest'
 import { PageDriverRegistry, type PageDriverOptions } from './pageDriver'
-import { CodeCellRegistry } from './codeCells'
 import type { BrowserObservation } from '../contract'
-
-export const testCells = new CodeCellRegistry()
 
 export const identity = { panelId: 'browser', tabId: 'tab' }
 
@@ -37,8 +34,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
     checked: false, text: 'Busy', value: '',
     dom: {} as Parameters<typeof domSnapshot>[1],
   }
-  const png = Buffer.alloc(24); png.writeUInt32BE(800, 16); png.writeUInt32BE(600, 20)
-  const nativeImage = { toPNG: () => png, resize: vi.fn() }; nativeImage.resize.mockReturnValue(nativeImage)
+  const nativeImage = { toJPEG: () => Buffer.alloc(24), getSize: () => ({ width: 800, height: 600 }), resize: vi.fn() }; nativeImage.resize.mockReturnValue(nativeImage)
   const contents = {
     id: 80, once: vi.fn(), isDestroyed: () => false, isLoading: () => false, getURL: () => 'https://example.test/', getTitle: () => 'Example', getZoomFactor: () => 1,
     send: vi.fn(), sendInputEvent: vi.fn(), capturePage: vi.fn(async () => nativeImage), forcefullyCrashRenderer: vi.fn(), reload: vi.fn(),
@@ -76,9 +72,9 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
       }),
     },
   }
-  const runtime = new PageDriverRegistry({ checkCell: testCells.assert, ...options })
+  const runtime = new PageDriverRegistry(options)
   await runtime.attach(contents as never, identity)
   const execute = (method: string, args: Record<string, unknown> = {}) => runtime.execute(contents.id, identity, method, args)
   const observe = async (args: Record<string, unknown> = {}) => (await execute('getAXState', args)).result as BrowserObservation
-  return { runtime, contents, events, state, png, nativeImage, execute, observe }
+  return { runtime, contents, events, state, nativeImage, execute, observe }
 }

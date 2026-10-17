@@ -4,7 +4,7 @@ import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/con
 import { BrowserPageHost, type BrowserGuest } from '@panels/browser/desktop'
 import { registerSurface, runSurfaceRequest, subscribeDemandedSurfaces, demandedSurfaces } from '@client/host'
 import { createPageOps, type PageOpsDeps } from '@services/browser/desktop/renderer'
-import { runCodeOp, runPageOp } from './surfaces'
+import { runPageOp } from './surfaces'
 
 /** One `page.*` request on a host, through this client's page ops. */
 function pageOp(host: BrowserPageHost, op: string, args: unknown, deps: PageOpsDeps & { confirm?(message: string): Promise<boolean> }): Promise<unknown> {
@@ -32,7 +32,7 @@ function guest(id = 7): BrowserGuest & { url: string; loading: boolean; fire(typ
   return element
 }
 
-const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'https://a.test/', title: '', favicon: null, pinned: false, nav: 0, navSource: null, ...patch })
+const tab = (patch: Partial<BrowserTab> = {}): BrowserTab => ({ id: 't1', url: 'https://a.test/', title: '', favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null, ...patch })
 const snapshot = (tabs: BrowserTab[]): BrowserSnapshot => ({
   tabs, activeTabId: tabs[0].id, activeSource: null, viewport: { preset: 'compact' },
   canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false, downloads: [], agentCursor: null,
@@ -274,21 +274,5 @@ describe('browser surface requests', () => {
     const settled = expect(pending).rejects.toMatchObject({ code: 'no-renderer' })
     await vi.advanceTimersByTimeAsync(5_000)
     await settled
-  })
-
-  it('send a running cell\'s calls to the runtime that started it', async () => {
-    let handler: ((call: { cellId: string; method: string; args: Record<string, unknown> }) => Promise<unknown>) | undefined
-    const call = vi.fn(async () => 'answer')
-    const bridge = {
-      onCodeCall: (next: typeof handler) => { handler = next; return () => {} },
-      runCode: vi.fn(async ({ cellId }: { cellId: string }) => ({ content: [{ type: 'text', text: String(await handler!({ cellId, method: 'listTabs', args: {} })) }] })),
-    }
-    const result = await runCodeOp(
-      { bridge: bridge as never, browserCode: { call } as never },
-      { requestId: 3, panelId: null, op: 'code.run', args: { key: 'k', cellId: 'c1', code: '1', deadlineMs: 1000 } },
-    )
-    expect(result).toEqual({ content: [{ type: 'text', text: 'answer' }] })
-    expect(call).toHaveBeenCalledWith({ cellId: 'c1', method: 'listTabs', args: {} })
-    await expect(handler!({ cellId: 'c1', method: 'listTabs', args: {} })).rejects.toThrow('browser-code-cell-cancelled')
   })
 })

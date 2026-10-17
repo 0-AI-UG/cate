@@ -25,17 +25,6 @@ export function createBrowserPageBridge(): BrowserPageBridge {
     answerDialog: (webContentsId, dialogId, answer) => ipcRenderer.invoke(C.answerDialog, webContentsId, dialogId, answer),
     onDialog: (listener) => listen(C.dialog, listener),
     screenshot: (webContentsId) => ipcRenderer.invoke(C.screenshot, webContentsId),
-    runCode: (request) => ipcRenderer.invoke(C.runCode, request),
-    resetCode: (key) => ipcRenderer.invoke(C.resetCode, key),
-    onCodeCall: (handler) => listen<{ requestId: string; call: Parameters<typeof handler>[0] }>(C.codeCall, ({ requestId, call }) => {
-      void Promise.resolve()
-        .then(() => handler(call))
-        .then(
-          (result) => ipcRenderer.invoke(C.codeCallReply, { requestId, result }),
-          (error) => ipcRenderer.invoke(C.codeCallReply, { requestId, error: error instanceof Error ? error.message : String(error) }),
-        )
-        .catch(() => { /* main is gone */ })
-    }),
     onDownloads: (listener) => listen(C.downloads, listener),
     onOpenTab: (listener) => listen(C.openTab, listener),
     onShortcut: (listener) => listen(C.shortcut, listener),

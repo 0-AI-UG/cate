@@ -7,7 +7,7 @@ const observation = (id: string): BrowserObservation => ({
   url: 'https://example.test', title: 'Example', state: 'diff', diff: true,
   viewport: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 },
   elements: [{ id: 7, role: 'textbox', name: 'Name', value: 'large value', states: { focused: true } }],
-  screenshot: { mimeType: 'image/png', data: 'large image', width: 800, height: 600 },
+  screenshot: { mimeType: 'image/jpeg', data: 'large image', width: 800, height: 600 },
 })
 
 it('retains only full diff state and element authority, independent of returned objects', () => {

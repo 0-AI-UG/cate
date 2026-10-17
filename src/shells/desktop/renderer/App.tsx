@@ -7,7 +7,7 @@ import { MAIN_WINDOW } from '@workspace/document/contract'
 import { PersistentPanelHost } from '../ui/client/host/PersistentPanelHost'
 import { FileDropOverlay, useFileDropTracker } from '../ui/client/layout/drag'
 import { MainWindowView, WindowView } from '../ui/client/layout/windows'
-import { ClientOverlays, ConnectionBlocker, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useShownWorkspaceId, useUIStore, useWindowControlsInset, useWorkspaceBlock } from '../ui/app'
+import { ClientOverlays, FileViewsHost, LeftSidebarReopen, Sidebar, WelcomePage, WindowIdContext, WorkspaceScope, useLeftChromeInset, useShortcuts, useShownWorkspaceId, useUIStore, useWindowControlsInset, useWorkspaceBlock, WorkspaceGate } from '../ui/app'
 import { useWorkspaceList } from '../ui/client/workspaces'
 import type { DesktopClient } from './boot'
 import { PerfHud } from './perf/PerfHud'
@@ -67,7 +67,7 @@ function MainApp({ client }: { client: DesktopClient }) {
               <div className="relative flex-1 min-h-0 min-w-0 bg-canvas-bg" data-app-content>
                 <div className="h-full" hidden={!!overlay}>
                   {workspaceId
-                    ? <ConnectionBlocker key={workspaceId} workspaceId={workspaceId}><MainWindowView workspaceId={workspaceId} leadingInset={leftInset} /></ConnectionBlocker>
+                    ? <WorkspaceGate key={workspaceId} workspaceId={workspaceId}><MainWindowView workspaceId={workspaceId} leadingInset={leftInset} /></WorkspaceGate>
                     : <WelcomePage />}
                 </div>
                 <div id="settings-content-slot" className="absolute inset-0 z-[100001] pointer-events-none empty:hidden" />
@@ -104,7 +104,7 @@ function DetachedApp({ client, workspaceId, windowId }: { client: DesktopClient;
         <div className="h-screen w-screen flex flex-col bg-canvas-bg">
           <TitleBar api={client.api} platform={client.info.platform} />
           <div className="relative flex-1 min-h-0 min-w-0" data-app-content>
-            <ConnectionBlocker workspaceId={workspaceId}><WindowView workspaceId={workspaceId} windowId={windowId} leadingInset={controlsInset} /></ConnectionBlocker>
+            <WorkspaceGate workspaceId={workspaceId}><WindowView workspaceId={workspaceId} windowId={windowId} leadingInset={controlsInset} /></WorkspaceGate>
             <div id="settings-content-slot" className="absolute inset-0 z-[100001] pointer-events-none empty:hidden" />
             <FileDropOverlay />
             <ClientOverlays firstRun={false} />

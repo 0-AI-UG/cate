@@ -44,8 +44,6 @@ const ctx = (overrides: Partial<ApiHandlerContext['caller']> = {}, signal = new 
   method: 'cate.agent.x',
   signal,
   sticky: { get: () => undefined, set: () => {}, clear: () => {} },
-  defaultTarget: () => undefined,
-  invoke: async () => undefined,
 })
 
 const panels: PanelRecord[] = [

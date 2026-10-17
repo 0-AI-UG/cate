@@ -267,9 +267,33 @@ function parseCall(
 
   if (globals.help) return { kind: 'help', text: commandHelp(command, style) }
 
+  const restArg = args.find((arg) => arg.rest)
+  const open = args.filter((arg) => arg.positional && !fromFlag.has(arg.key))
+  // Words left for optional positionals once the required ones (and a
+  // required rest) have theirs: `fill --name Email x` gives `x` to the text,
+  // not to the optional element id before it.
+  let spare = positionals.length - open.filter((arg) => arg.required).length
+    - (restArg?.required && !fromFlag.has(restArg.key) ? 1 : 0)
   let cursor = 0
-  for (const arg of args) {
-    if (!arg.positional || fromFlag.has(arg.key)) continue
+  for (const [index, arg] of open.entries()) {
+    if (!arg.required) {
+      if (spare <= 0) continue
+      // A word that is no value of an optional positional (a file name where
+      // an element id may stand) is the next argument's.
+      const later = open.length > index + 1 || (restArg !== undefined && !fromFlag.has(restArg.key))
+      if (later && cursor < positionals.length) {
+        try {
+          values[arg.key] = convert(arg, positionals[cursor], cwd)
+        } catch (err) {
+          if (!(err instanceof UsageError || err instanceof ArgError)) throw err
+          continue
+        }
+        spare -= 1
+        cursor += 1
+        continue
+      }
+      spare -= 1
+    }
     if (cursor < positionals.length) {
       values[arg.key] = convert(arg, positionals[cursor], cwd)
       cursor += 1
@@ -277,7 +301,6 @@ function parseCall(
       throw new UsageError(`missing <${arg.valueName}>`)
     }
   }
-  const restArg = args.find((arg) => arg.rest)
   if (restArg && !fromFlag.has(restArg.key)) {
     const words = positionals.slice(cursor)
     cursor = positionals.length
@@ -547,7 +570,7 @@ export interface CliDeps {
   /** Opens the socket named by `CATE_SOCKET`, authenticated by `CATE_TOKEN`. */
   connect: (socketPath: string, token: string) => ApiCallPort
   /** Saves a base64 PNG and returns its path, for human browser output. */
-  writeImage?: (base64: string) => Promise<string>
+  writeImage?: (base64: string, mimeType: unknown) => Promise<string>
   /** Saves long text and returns its path, for human browser output. */
   writeText?: (text: string) => Promise<string>
   /** Commands that are not API methods, by first word (`serve`). */
@@ -623,10 +646,10 @@ export async function runCli(
       await prepareOutput(method.format, value, { image: deps.writeImage, text: deps.writeText })
       deps.stdout(formatOutput(method.format, value))
     }
-    // A result can fail without an error: a tool result's isError, or a wait
-    // that timed out (its states are still printed).
-    const outcome = value && typeof value === 'object' ? value as { isError?: unknown; timedOut?: unknown } : {}
-    return outcome.isError === true || outcome.timedOut === true ? EXIT_API_ERROR : EXIT_OK
+    // A result can fail without an error: a wait that timed out (its states
+    // are still printed).
+    const outcome = value && typeof value === 'object' ? value as { timedOut?: unknown } : {}
+    return outcome.timedOut === true ? EXIT_API_ERROR : EXIT_OK
   } catch (err) {
     if (err instanceof RpcError) {
       deps.stderr(`cate: ${method.method}: ${err.message}`)

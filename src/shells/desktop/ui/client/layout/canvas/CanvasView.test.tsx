@@ -59,19 +59,17 @@ describe('CanvasView', () => {
     expect(world.style.transform).toBe('scale(2) translate(5px, 10px)')
   })
 
-  it('a maximized node fills the canvas for this client only; the document stays', async () => {
+  it('a node offers Move into Dock instead of maximize: its tab goes after the canvas panel', async () => {
     act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
     await frames()
-    const before = documentStoreFor('ws')!.getSnapshot()
-    act(() => clientStateFor('ws')!.setMaximizedNode('c1', 'n1'))
+    const node = container.querySelector('[data-node-id="n1"]')!
+    expect(node.querySelector('[aria-label="Maximize"]')).toBeNull()
+    act(() => node.querySelector<HTMLButtonElement>('[aria-label="Move into Dock"]')!.click())
     await frames()
-    expect(container.querySelector('[data-maximized-node="n1"] [data-dock-stack-id]')).not.toBeNull()
-    expect([...container.querySelectorAll('[data-node-id]')].map((n) => n.getAttribute('data-node-id'))).toEqual(['n2'])
-    expect(documentStoreFor('ws')!.getSnapshot()).toBe(before)
-    act(() => clientStateFor('ws')!.setMaximizedNode('c1', null))
-    await frames()
-    expect(container.querySelector('[data-maximized-node]')).toBeNull()
-    expect(container.querySelectorAll('[data-node-id]')).toHaveLength(2)
+    const doc = documentStoreFor('ws')!.getSnapshot()
+    expect(doc.windows.main.dock).toMatchObject({ kind: 'stack', id: 'main-stack', panels: ['canvas-panel', 'p1'] })
+    expect(doc.canvases.c1.nodes.n1).toBeUndefined()
+    expect(clientStateFor('ws')!.getSnapshot().focusedPanelId).toBe('p1')
   })
 
   it('e2e moves and worktree seeding are document ops', async () => {

@@ -5,10 +5,9 @@
 // mounted pages.
 
 import { useSyncExternalStore } from 'react'
-import { eachConnection, type WorkspaceConnection, type WorkspaceConnections } from '@client/connections'
+import { eachConnection, type WorkspaceConnections } from '@client/connections'
 import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/desktop/renderer'
 import type { BrowserPageBridge } from '@services/browser/contract'
-import { serveBrowserCode } from '../ui/panels/browser'
 import { createLogger } from '@kernel/log/contract'
 import type { DesktopApi } from '../contract'
 
@@ -97,11 +96,4 @@ export function installWebviewHosts(partitions: WebviewPartitions, bridge: Brows
     installBrowserPartitions(null)
     installBrowserPageBridge(null)
   }
-}
-
-/** Runs each workspace's browser code cells on the page bridge (the views
- *  register their own panels' page operations with the client host). */
-export function serveBrowserCodeCells(connections: WorkspaceConnections, bridge: BrowserPageBridge): () => void {
-  return eachConnection(connections, (connection: WorkspaceConnection) =>
-    serveBrowserCode(connection.workspaceId, { browserCode: connection.runtime.browserCode, bridge }))
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { rect } from '@workspace/canvas/contract'
 import { applyOp } from './apply'
 import type { DocChange } from './ops'
-import { allStacks, canvasOf, canvasPanelOf, documentOrder, panelsInWindow, panelsOnCanvas, stacksIn, windowOf } from './selectors'
+import { allStacks, canvasOf, canvasPanelOf, documentOrder, dockTargetOf, panelsInWindow, panelsOnCanvas, stacksIn, windowOf } from './selectors'
 import { createDocument, type WorkspaceDocument } from './schema'
 import { DOCUMENT_FILE_VERSION, parseDocument, validateDocument } from './serialize'
 
@@ -68,6 +68,12 @@ describe('selectors', () => {
     expect(windowOf(doc, 'y')).toBe('w1')
     expect(windowOf(doc, 'a')).toBe('main')
     expect(windowOf(doc, 'nope')).toBeNull()
+  })
+
+  it('places a canvas panel\'s tab beside its canvas panel in the dock', () => {
+    const doc = sample()
+    expect(dockTargetOf(doc, 'y')).toEqual({ to: 'stack', dock: { windowId: 'w1' }, stackId: 'sw', after: 'cv2' })
+    expect(dockTargetOf(doc, 'a')).toBeNull()
   })
 
   it('list stacks and the document order', () => {

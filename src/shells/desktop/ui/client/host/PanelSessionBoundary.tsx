@@ -10,6 +10,9 @@ import { LoadingState } from '../../kernel/interaction'
 import type { PanelViewProps } from './views'
 import { acquireSession, sessionOwner, subscribeSessions } from '@client/host'
 
+/** A panel's loading label shows only when the wait is long enough to notice. */
+export const PANEL_LOADING_DELAY_MS = 300
+
 /** Whether the panel is on screen: its tab is active, its canvas node is in
  *  view. Hosts that hide a mounted panel provide false. */
 export const PanelVisibilityContext = createContext(true)
@@ -49,7 +52,7 @@ export function PanelSessionBoundary({
     handle ? handle.subscribe : noSubscribe,
     handle ? () => handle.getSnapshot()?.snapshot ?? null : noSnapshot,
   )
-  if (!handle) return <LoadingState label="Connecting" className="h-full w-full bg-surface-4 text-sm" />
+  if (!handle) return <LoadingState label="Connecting" className="h-full w-full bg-surface-4 text-sm" delayMs={PANEL_LOADING_DELAY_MS} />
   return <>{children({
     workspaceId,
     panelId: record.id,
