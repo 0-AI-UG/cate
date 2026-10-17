@@ -106,8 +106,8 @@ export type DocChange =
   | { kind: 'closeWindow'; windowId: WindowId; discard?: PanelId[] }
   /** A new empty layout at `index` in the host's switcher (last by default). */
   | { kind: 'addLayout'; host: HostRef; layoutId: LayoutId; name?: string; index?: number }
-  /** Removes a layout with its panels. A host keeps at least one layout. */
-  | { kind: 'removeLayout'; layoutId: LayoutId }
+  /** Removes a layout with its panels (`discard` as for `removePanels`). A host keeps at least one layout. */
+  | { kind: 'removeLayout'; layoutId: LayoutId; discard?: PanelId[] }
   /** Moves a layout to another host or within its own switcher. The main
    *  window keeps at least one layout, a layout with a canvas panel cannot go
    *  to a canvas node, and a new host needs a layout with panels. A host left

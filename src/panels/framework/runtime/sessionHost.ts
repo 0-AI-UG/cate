@@ -138,7 +138,7 @@ export function createSessionHost(deps: SessionHostDeps): SessionHost {
         replaced.add(change.record.id)
         if (change.discard) discarded.add(change.record.id)
       }
-      if (change.kind === 'removePanels' || change.kind === 'closeWindow') for (const id of change.discard ?? []) discarded.add(id)
+      if (change.kind === 'removePanels' || change.kind === 'closeWindow' || change.kind === 'removeLayout') for (const id of change.discard ?? []) discarded.add(id)
     }
     for (const id of Object.keys(before.panels)) if (!doc.panels[id]) drop(id, 'removed', discarded.has(id))
     for (const record of Object.values(doc.panels)) {

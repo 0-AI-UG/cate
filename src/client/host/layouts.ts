@@ -78,8 +78,8 @@ export function addLayout(workspaceId: string, host: HostRef, name?: string): La
 }
 
 /** Removes a layout with its panels. The caller confirms when it has panels. */
-export function removeLayout(workspaceId: string, layoutId: LayoutId): boolean {
-  return documentStoreFor(workspaceId)?.propose({ kind: 'removeLayout', layoutId }).ok ?? false
+export function removeLayout(workspaceId: string, layoutId: LayoutId, discard: readonly PanelId[] = []): boolean {
+  return documentStoreFor(workspaceId)?.propose({ kind: 'removeLayout', layoutId, ...(discard.length ? { discard: [...discard] } : {}) }).ok ?? false
 }
 
 /** Moves a layout to another host, or to another place in its own switcher.

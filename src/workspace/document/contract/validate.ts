@@ -202,7 +202,9 @@ export function checkChange(v: unknown): Problem {
     case 'addLayout':
       return checkHostRef(c.host) ?? (isId(c.layoutId) && (c.name === undefined || typeof c.name === 'string')
         && (c.index === undefined || Number.isInteger(c.index)) ? null : 'bad layout')
-    case 'removeLayout': return isId(c.layoutId) ? null : 'bad layout'
+    case 'removeLayout':
+      if (!isId(c.layoutId)) return 'bad layout'
+      return c.discard === undefined || (Array.isArray(c.discard) && c.discard.every(isId)) ? null : 'bad discard ids'
     case 'moveLayout': return isId(c.layoutId) ? checkLayoutTarget(c.to) : 'bad layout'
     case 'renameLayout': return isId(c.layoutId) && typeof c.name === 'string' ? null : 'bad layout'
     case 'addRelation': return checkRelation(c.relation)

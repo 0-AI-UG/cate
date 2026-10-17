@@ -91,6 +91,8 @@ export function parseStoredShortcut(value: unknown): StoredShortcut | null {
 /** The key fields of a DOM KeyboardEvent, so matching stays pure. */
 export interface ShortcutKeyEvent {
   key: string
+  /** The physical key (`Digit1`): Option+digit types `¡` on a Mac, so digits match by it. */
+  code?: string
   metaKey: boolean
   shiftKey: boolean
   altKey: boolean
@@ -101,7 +103,8 @@ export interface ShortcutKeyEvent {
  *  never matches. Off a Mac keyboard ("command" and "control" are both the
  *  Ctrl key, so a binding stored with either answers it) `mac` is false. */
 export function shortcutMatches(event: ShortcutKeyEvent, stored: StoredShortcut, mac = true): boolean {
-  if (!stored.key || stored.key !== normaliseShortcutKey(event.key) || stored.shift !== event.shiftKey || stored.option !== event.altKey) return false
+  const digit = event.altKey ? /^Digit(\d)$/.exec(event.code ?? '')?.[1] : undefined
+  if (!stored.key || stored.key !== (digit ?? normaliseShortcutKey(event.key)) || stored.shift !== event.shiftKey || stored.option !== event.altKey) return false
   return mac
     ? stored.command === event.metaKey && stored.control === event.ctrlKey
     : (stored.command || stored.control) === (event.metaKey || event.ctrlKey)
