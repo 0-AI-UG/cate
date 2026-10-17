@@ -7,7 +7,7 @@
 import { useEffect, useRef, type MutableRefObject } from 'react'
 import { documentStoreFor } from '@client/document'
 import { canLiveOnCanvas } from '@client/host'
-import type { PanelId, WindowId } from '@workspace/document/contract'
+import { dockPanels, layoutById, placementOf, type PanelId, type WindowId } from '@workspace/document/contract'
 import {
   buildAxisModel,
   registerDropZone,
@@ -84,7 +84,11 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
     const rectOf: RectOf = (key) => rects.get(key) ?? null
     const all = windowsRef.current
     const origin = source.origin
-    const layout = origin.kind === 'layout' ? origin.layoutId : null
+    // A canvas node of 2+ panels drags as its layout (a group): the same tab-slot-only source.
+    const doc = documentStoreFor(workspaceId)?.getSnapshot()
+    const groupLayout = origin.kind === 'canvas-node' && doc ? placementOf(doc, source.panelId)?.dock.layoutId ?? null : null
+    const groupHoldsPanels = !!doc && groupLayout !== null && dockPanels(layoutById(doc, groupLayout)?.dock).length > 1
+    const layout = origin.kind === 'layout' ? origin.layoutId : groupHoldsPanels ? groupLayout : null
     const panel = layout === null ? source.panelId : null
     const inLayouts = (w: WindowTree, id: PanelId) => w.layouts.some((l) => layoutRows(l).some((r) => r.record.id === id))
     // The row (or layout) of the dragged panel is lifted, wherever the drag began: it floats as the ghost.
@@ -99,10 +103,10 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
     // A lifted canvas child is no chip of the model: the rows below it move up over its room itself.
     const childRect = own && panel !== null && !all.some((w) => inLayouts(w, panel)) ? rectOf(itemKey(panel)) : null
     const childGone = childRect ? { at: childRect.bottom, by: childRect.bottom - childRect.top } : null
-    const type = documentStoreFor(workspaceId)?.getSnapshot().panels[source.panelId]?.type
+    const type = doc?.panels[source.panelId]?.type
     const canvases = takesCanvasDrop(source, type) ? { lifted: own ? panel : null } : undefined
     // A layout drag takes tab slots only; where its layout stands (or in another window) nothing is lifted ('' is no layout).
-    // A canvas-node drag has no row in the tree (it stands on a canvas), so treat it like a standing source (has: false).
+    // A one-panel canvas-node drag has no row in the tree (it stands on a canvas): a standing source (has: false).
     const standing: AxisSource = layout !== null ? { kind: 'layout', layoutId: '' } : { kind: 'none' }
     let removed = 0
     let size = childRect ? childRect.bottom - childRect.top : ROW_SIZE

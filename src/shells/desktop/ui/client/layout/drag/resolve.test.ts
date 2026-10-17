@@ -215,3 +215,33 @@ describe('resolveDrop on a tree zone', () => {
     expect(seen.at(-1)).toEqual({ y: 150, from: undefined })
   })
 })
+
+describe('a group node (2+ panels) drags as a layout', () => {
+  const groupEnv = (dropZones: DropZoneEntry[], canvas: CanvasHit | null = null): DropEnvironment => ({ ...env(dropZones, canvas), nodeIsGroup: () => true })
+  const strip: DropZoneEntry = {
+    id: 'strip', workspaceId: 'ws', dock: { layoutId: '' }, host: { windowId: 'main' }, getRect: () => rect(0, 0, 600, 40),
+    strip: { resolve: () => ({ kind: 'tab-slot', index: 1 }) },
+  }
+
+  it('over a tab strip it is a tab slot', () => {
+    expect(resolveDrop(cursor(100, 10), nodeSource(), grab, size, 'terminal', { env: groupEnv([strip]) }))
+      .toMatchObject({ kind: 'tab-slot', workspaceId: 'ws', index: 1 })
+  })
+
+  it('over a stack zone it does not dock, and off its own canvas it does nothing', () => {
+    const stack = stackEntry('s1', rect(0, 0, 400, 400))
+    expect(resolveDrop(cursor(200, 10), nodeSource(), grab, size, 'terminal', { env: groupEnv([stack]) })).toBeNull()
+    expect(resolveDrop(cursor(200, 10), nodeSource(), grab, size, 'terminal', { env: groupEnv([stack], canvasHit) })).toMatchObject({ kind: 'canvas-reposition' })
+    expect(resolveDrop(cursor(200, 10), nodeSource(), grab, size, 'terminal', { env: groupEnv([], { ...canvasHit, canvasId: 'D' }) })).toBeNull()
+  })
+
+  it('outside the window it does not detach', () => {
+    expect(resolveDrop(cursor(-5, 10, false), nodeSource(), grab, size, 'terminal', { env: groupEnv([strip]) })).toBeNull()
+  })
+
+  it('a one-panel node keeps its docks and canvas', () => {
+    const stack = stackEntry('s1', rect(0, 0, 400, 400))
+    const e = { ...env([stack]), nodeIsGroup: () => false }
+    expect(resolveDrop(cursor(200, 10), nodeSource(), grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'dock-tab', stackId: 's1' })
+  })
+})

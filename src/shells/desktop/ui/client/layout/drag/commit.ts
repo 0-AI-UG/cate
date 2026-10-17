@@ -20,6 +20,28 @@ import type { DragPanel, DragSource, DropTarget } from './types'
 
 export interface DropContext {
   newId(): string
+  /** The active tab of a stack (client state); the first panel by default. */
+  activeOf?(stack: { id: string; panels: string[] }): string
+}
+
+/** The panels of a moved layout that are hidden behind a stack's active tab,
+ *  each as its own pane beside the stack (or the pane before it). Computed from
+ *  the document before the move; stack ids do not change on move. */
+export function expandHiddenTabs(doc: WorkspaceDocument, layoutId: string, ctx: DropContext): DocChange[] {
+  const layout = layoutById(doc, layoutId)
+  if (!layout) return []
+  const out: DocChange[] = []
+  for (const stack of dockStacks(layout.dock)) {
+    const active = ctx.activeOf?.(stack) ?? stack.panels[0]
+    let beside = stack.id
+    for (const panelId of stack.panels) {
+      if (panelId === active) continue
+      const stackId = ctx.newId()
+      out.push({ kind: 'placePanel', id: panelId, at: { to: 'split', dock: { layoutId }, beside, side: 'right', stackId, splitId: ctx.newId() } })
+      beside = stackId
+    }
+  }
+  return out
 }
 
 /** The changes a drop makes, in order; null for a no-op or a refused drop.
@@ -103,16 +125,20 @@ export function dropChanges(
       const layouts = layoutsIn(doc, target.host)
       if (!layouts) return null
       // A layout (dragged whole, or a tab on its own) moves keeping its id and
-      // name, within this host or from another window. A canvas-node's layout also
-      // moves whole if it holds only one panel.
+      // name, within this host or from another window. A canvas node's layout
+      // moves whole too (a group move only if it holds one panel), and its
+      // hidden tabs become panes beside their stacks.
       const layoutId = source.origin.kind === 'layout' ? source.origin.layoutId : placementOf(doc, panel.id)?.dock.layoutId
       const moved = layoutId ? layoutById(doc, layoutId) : undefined
-      if (layoutId && moved && (source.origin.kind === 'layout' || dockPanels(moved.dock).length === 1)) {
+      const wholeNode = source.origin.kind === 'canvas-node' && !source.origin.members?.length
+      if (layoutId && moved && (source.origin.kind === 'layout' || wholeNode || dockPanels(moved.dock).length === 1)) {
         const from = layouts.findIndex((l) => l.id === layoutId)
         // Slots count the layouts as they stand; the dragged one leaves its
         // place first, which shifts every slot after it.
         const index = from >= 0 && target.index > from ? target.index - 1 : target.index
-        return index === from ? null : [{ kind: 'moveLayout', layoutId, to: { to: 'host', host: target.host, index } }]
+        if (index === from) return null
+        const move: DocChange = { kind: 'moveLayout', layoutId, to: { to: 'host', host: target.host, index } }
+        return wholeNode ? [move, ...expandHiddenTabs(doc, layoutId, ctx)] : [move]
       }
       return [{ kind: 'placePanel', id: panel.id, at: { to: 'tab', host: target.host, layoutId: ctx.newId(), stackId: ctx.newId(), index: target.index } }]
     }

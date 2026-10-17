@@ -5,6 +5,8 @@ import {
   canvasOf,
   dockOf,
   dockPanels,
+  dockStacks,
+  layoutById,
   nodeOfPanel,
   placementOf,
   type DocChange,
@@ -13,7 +15,7 @@ import {
 } from '@workspace/document/contract'
 import { registerPanelDefinitions } from '@client/host'
 import { add, buildDocument, testPanelDefinitions } from '../../../../../../test/clientWorkspace'
-import { detachBounds, detachChange, dropChanges } from './commit'
+import { detachBounds, detachChange, dropChanges, expandHiddenTabs } from './commit'
 import type { DragPanel, DragSource, DropTarget } from './types'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
@@ -309,15 +311,65 @@ describe('canvas-node drops on tree slots', () => {
     expect(next.windows.main.layouts.map((l) => l.id)).toContain('L-N1')
   })
 
-  it('a canvas node with multiple panels dropped on a tab-slot creates a new tab', () => {
+  it('a canvas node with several panels dropped on a tab-slot moves its whole layout', () => {
     const doc = fixture()
     const host = { windowId: 'main' }
-    // Add another panel to the node's layout so it's not a lone panel
+    // p1 joins the node's stack behind `a`, so the node holds two panels.
     const docWithExtra = run(doc, [{ kind: 'placePanel', id: 'p1', at: { to: 'stack', dock: { layoutId: 'L-N1' }, stackId: 'ns1' } }])
-    const next = run(docWithExtra, dropChanges(docWithExtra, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 2 }, panel(docWithExtra, 'a'), ctx))
-    // The node layout should still exist
-    expect(next.canvases.C.nodes.N1).toBeDefined()
-    // 'a' should be in the new tab
-    expect(placementOf(next, 'a')?.dock.layoutId).not.toBe('L-N1')
+    const next = run(docWithExtra, dropChanges(docWithExtra, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 1 }, panel(docWithExtra, 'a'), ctx))
+    expect(next.canvases.C.nodes.N1).toBeUndefined()
+    expect(next.windows.main.layouts.map((l) => l.id)).toEqual(['main', 'L-N1'])
+    expect(placementOf(next, 'a')?.dock.layoutId).toBe('L-N1')
+    expect(placementOf(next, 'p1')?.dock.layoutId).toBe('L-N1')
+    // The hidden p1 becomes its own pane beside a.
+    expect(dockStacks(dockOf(next, { layoutId: 'L-N1' }))).toHaveLength(2)
+  })
+})
+
+describe('canvas node layouts with hidden tabs', () => {
+  const host = { windowId: 'main' }
+  // Node N3 holds a split: stack ns3a [a3, b3, c3] | stack ns3b [d3].
+  const doc = (): WorkspaceDocument => buildDocument([
+    add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+    add('a3', { to: 'canvas', canvasId: 'C', nodeId: 'N3', layoutId: 'L-N3', stackId: 'ns3a', rect: rect(0, 0) }),
+    add('b3', { to: 'stack', dock: { layoutId: 'L-N3' }, stackId: 'ns3a' }),
+    add('c3', { to: 'stack', dock: { layoutId: 'L-N3' }, stackId: 'ns3a' }),
+    add('d3', { to: 'split', dock: { layoutId: 'L-N3' }, beside: 'ns3a', side: 'right', stackId: 'ns3b', splitId: 'sp3' }),
+  ])
+
+  it('a node dropped on a window strip moves its whole layout; hidden tabs become panes beside their stack', () => {
+    const d = doc()
+    const before = layoutById(d, 'L-N3')
+    const next = run(d, dropChanges(d, nodeSource('N3', 'a3'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 1 }, panel(d, 'a3'), ctx))
+    expect(next.canvases.C.nodes.N3).toBeUndefined()
+    expect(next.windows.main.layouts.map((l) => l.id)).toEqual(['main', 'L-N3'])
+    expect(next.windows.main.layouts[1]).toMatchObject({ id: 'L-N3', name: before?.name })
+    const tree = dockOf(next, { layoutId: 'L-N3' })
+    expect(dockPanels(tree).sort()).toEqual(['a3', 'b3', 'c3', 'd3'])
+    // ns3a keeps the active a3; b3 and c3 are their own panes; d3 keeps its pane.
+    expect(dockStacks(tree)).toHaveLength(4)
+    expect(placementOf(next, 'a3')?.stackId).toBe('ns3a')
+    expect(placementOf(next, 'd3')?.stackId).toBe('ns3b')
+    expect(placementOf(next, 'b3')?.stackId).not.toBe('ns3a')
+    expect(placementOf(next, 'c3')?.stackId).not.toBe('ns3a')
+  })
+
+  it('a one-panel node moves as a plain tab with no additions', () => {
+    const d = fixture()
+    const changes = dropChanges(d, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 1 }, panel(d, 'a'), ctx)
+    expect(changes).toEqual([{ kind: 'moveLayout', layoutId: 'L-N1', to: { to: 'host', host, index: 1 } }])
+    const next = run(d, changes)
+    expect(next.windows.main.layouts.map((l) => l.id)).toEqual(['main', 'L-N1'])
+    expect(dockPanels(dockOf(next, { layoutId: 'L-N1' }))).toEqual(['a'])
+  })
+
+  it('expandHiddenTabs keeps the active tab of each stack, chosen by activeOf', () => {
+    const d = doc()
+    const activeCtx = { newId: ctx.newId, activeOf: (stack: { id: string; panels: string[] }) => (stack.id === 'ns3a' ? 'b3' : stack.panels[0]) }
+    const changes = expandHiddenTabs(d, 'L-N3', activeCtx)
+    expect(changes.map((c) => (c.kind === 'placePanel' ? c.id : null))).toEqual(['a3', 'c3'])
+    const next = run(d, changes)
+    expect(placementOf(next, 'b3')?.stackId).toBe('ns3a')
+    expect(dockStacks(dockOf(next, { layoutId: 'L-N3' }))).toHaveLength(4)
   })
 })

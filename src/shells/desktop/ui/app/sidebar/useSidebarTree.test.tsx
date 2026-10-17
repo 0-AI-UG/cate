@@ -199,6 +199,18 @@ describe('the tree as a drop zone', () => {
     expect(container()).toBeNull()
   })
 
+  it('a group node (a layout of 2+ panels) takes tab slots only, like a layout', () => {
+    addCanvas('t')
+    act(() => { ws.document.propose(add('u', { to: 'stack', dock: { layoutId: 'L-n0' }, stackId: 'ns0' })) })
+    mountTree()
+    const node: DragSource = { workspaceId: 'w', panelId: 't', origin: { kind: 'canvas-node', canvasId: 'cvs', nodeId: 'n0' } }
+    const groupEnv = { ...env, nodeIsGroup: (_w: string, _c: string, n: string) => n === 'n0' }
+    for (const y of [10, 80, 112, 140]) {
+      expect(resolveDrop(cursorAt(y), node, { x: 0, y: 0 }, { width: 100, height: 30 }, typeOf('t'), { env: groupEnv }))
+        .toMatchObject({ kind: 'tab-slot', workspaceId: 'w', via: 'tree' })
+    }
+  })
+
   it('a layout dragged from the strip takes tab slots only', () => {
     mountTree()
     const source: DragSource = { workspaceId: 'w', panelId: 'd', origin: { kind: 'layout', host: { windowId: MAIN_WINDOW }, layoutId: 'two' } }

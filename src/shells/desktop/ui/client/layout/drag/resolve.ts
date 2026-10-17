@@ -23,6 +23,8 @@ export interface DropEnvironment {
   canDetach(): boolean
   /** Whether the layout holds a canvas panel (it never goes onto a canvas). */
   layoutHoldsCanvas?(workspaceId: string, host: HostRef, layoutId: LayoutId): boolean
+  /** Whether the canvas node holds a group (its layout has 2+ panels): it drags as a layout does. */
+  nodeIsGroup?(workspaceId: string, canvasId: string, nodeId: string): boolean
 }
 
 interface ResolveOptions {
@@ -61,6 +63,15 @@ export function resolveDrop(
     const target = resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
     return target?.kind === 'canvas-reposition' ? target : null
   }
+  // A group node moves like a layout along a tab strip or the tree, or on its
+  // own canvas; never into a dock, another window or another canvas.
+  if (isGroupNode(source, env)) {
+    if (!cursor.insideWindow) return null
+    const dock = resolveDockHit(cursor.client, source, panelType, env)
+    if (dock) return dock
+    const onCanvas = resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
+    return onCanvas?.kind === 'canvas-reposition' ? onCanvas : null
+  }
   // A layout moves along a tab strip or onto a canvas, never into a dock or
   // another window.
   if (source.origin.kind === 'layout') {
@@ -73,15 +84,20 @@ export function resolveDrop(
     ?? resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
 }
 
+function isGroupNode(source: DragSource, env: DropEnvironment): boolean {
+  return source.origin.kind === 'canvas-node' && !!env.nodeIsGroup?.(source.workspaceId, source.origin.canvasId, source.origin.nodeId)
+}
+
 function resolveDockHit(client: Point, source: DragSource, panelType: string, env: DropEnvironment): DropTarget | null {
   type Hit = { entry: DropZoneEntry; rect: DOMRect; area: number }
   const hits: Hit[] = []
   const ownNode = source.origin.kind === 'canvas-node' ? source.origin.nodeId : null
   const onCanvas = canLiveOnCanvas(panelType)
+  const layoutLike = source.origin.kind === 'layout' || isGroupNode(source, env)
   for (const entry of env.dropZones) {
     if (entry.workspaceId !== source.workspaceId) continue
     if (entry.acceptsPanel && !entry.acceptsPanel(panelType)) continue
-    if (source.origin.kind === 'layout' && !entry.strip && !entry.tree) continue
+    if (layoutLike && !entry.strip && !entry.tree) continue
     if (isNodeHost(entry.host)) {
       // A canvas panel never goes onto a canvas; a dragged node never drops
       // into its own mini dock (the drop would remove the node under it).
@@ -160,9 +176,14 @@ function resolveCanvasHit(
 }
 
 /** The environment of the real DOM and registries. */
-export function domDropEnvironment(canDetach: () => boolean, layoutHoldsCanvas?: DropEnvironment['layoutHoldsCanvas']): DropEnvironment {
+export function domDropEnvironment(
+  canDetach: () => boolean,
+  layoutHoldsCanvas?: DropEnvironment['layoutHoldsCanvas'],
+  nodeIsGroup?: DropEnvironment['nodeIsGroup'],
+): DropEnvironment {
   return {
     layoutHoldsCanvas,
+    nodeIsGroup,
     canvasAtCursor: defaultCanvasAtCursor,
     get dropZones() { return getDropZoneEntries() },
     canDetach,
