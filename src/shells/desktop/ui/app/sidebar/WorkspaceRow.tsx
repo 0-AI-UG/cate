@@ -30,7 +30,7 @@ import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTre
 import { itemKey, layoutKey, layoutRows } from './sidebarDrag'
 import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
 import { closeLayout, showLayoutMenu, showPanelMenu, useLayoutRename } from '../../client/layout/windows'
-import { DragFloat, GhostBlock, type RowLook } from './GhostBlock'
+import { DragFloat, type RowLook } from './GhostBlock'
 import { takesCanvasDrop, useSidebarTree, type Float } from './useSidebarTree'
 
 const isMiddleClick = (e: React.MouseEvent): boolean => e.button === 1
@@ -100,7 +100,6 @@ export function WorkspaceRow({
   const { wasDragged } = useDragOp()
   // The drag of a panel or layout of this workspace, wherever it began (one object per drag).
   const dragSource = useDragStore((s) => (s.isDragging && s.source?.workspaceId === workspaceId ? s.source : null))
-  const ghostSize = useDragStore((s) => (s.isDragging && s.source?.workspaceId === workspaceId ? s.ghostSize : null))
   const statuses = useTerminalStatuses(isOpen ? workspaceId : null)
   const ports = panelsWithPorts(statuses)
   const agents = useAgentInfoByPanel(isOpen ? workspaceId : null)
@@ -284,10 +283,9 @@ export function WorkspaceRow({
   const renderLayout = (w: WindowTree, layout: LayoutTree, layoutActive: boolean) => {
     const rows = layoutRows(layout)
     if (rows.length === 0) return null
-    // A lifted layout leaves the list while the tree takes the drop; a drag that began on the tree leaves its spot one dashed block its group's size.
-    if (liftedLayout === layout.layoutId && (view || own)) {
-      return view ? null : <div key="__ghost__" className="mx-1.5 my-0.5" data-sidebar-drag-ghost><GhostBlock look={layoutLook(layout.name)} height={(ghostSize?.height ?? 0) - 4} /></div>
-    }
+    // A lifted layout leaves the list: under the cursor while the tree takes the drop, and off the tree the
+    // zone that owns the drop shows the ghost (a dock's chip, a canvas's node), so nothing stays in its spot.
+    if (liftedLayout === layout.layoutId && (view || own)) return null
     const shown = shownPanelOf(layout)
     const style: React.CSSProperties = {
       ...gapStyle((spot) => spot.at === 'item' && spot.layoutId === layout.layoutId, 'Top'),

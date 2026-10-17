@@ -218,10 +218,11 @@ describe('the workspace tree', () => {
     expect(float()!.getAttribute('style')).toContain('height: 92px')
     expect(float()!.getAttribute('style')).toContain('top: 6px')
     expect(host.querySelector('[data-layout-group="main"]')).toBeNull()
-    // Off the tree it stands in its place as one dashed block its group's size.
+    // Off the tree nothing of it stays in the sidebar: no group, no dashed block (the zone it is over draws the ghost).
     fire(globalThis, 'mousemove', 500, 44)
     expect(float()).toBeNull()
-    expect(host.querySelector<HTMLElement>('[data-sidebar-drag-ghost] > div')!.style.height).toBe('92px')
+    expect(host.querySelector('[data-sidebar-drag-ghost]')).toBeNull()
+    expect(host.querySelector('[data-layout-group="main"]')).toBeNull()
     fire(globalThis, 'mousemove', 10, 80)
     expect(float()!.getAttribute('style')).toContain('top: 42px')
     fire(globalThis, 'mousemove', 10, 120)
