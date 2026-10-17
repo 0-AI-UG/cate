@@ -1,0 +1,91 @@
+// The workspace panel tree the sidebar shows, from the document: for each
+// window, its canvases (canvas panels, with the panels on each canvas nested)
+// and its top-level panels (every other tab of its dock). Detached windows
+// follow the main window. Within a group, panels bound to the same worktree
+// stay together: the primary checkout first, then the others in document
+// order; otherwise document order is kept.
+
+import {
+  MAIN_WINDOW,
+  dockPanels,
+  panelsOnCanvas,
+  type PanelRecord,
+  type WindowId,
+  type WorkspaceDocument,
+  type WorktreeMeta,
+} from '@workspace/document/contract'
+
+export interface CanvasGroup {
+  record: PanelRecord
+  children: PanelRecord[]
+}
+
+export interface WindowTree {
+  windowId: WindowId
+  canvases: CanvasGroup[]
+  topLevel: PanelRecord[]
+}
+
+export interface WorkspacePanelTree {
+  /** The window this client renders first. */
+  primary: WindowTree
+  /** Every other window of the workspace. */
+  others: WindowTree[]
+  /** Rows the tree renders. */
+  count: number
+}
+
+/** Orders records by worktree: untagged and primary-checkout panels first,
+ *  then each other worktree in document order, unknown tags last. Stable. */
+export function sortByWorktree<P extends Pick<PanelRecord, 'worktreeId'>>(
+  panels: readonly P[],
+  worktrees: readonly Pick<WorktreeMeta, 'id' | 'path'>[],
+  rootPath?: string,
+): P[] {
+  const others = worktrees.filter((w) => w.path !== rootPath)
+  const rank = new Map(others.map((w, i) => [w.id, i + 1]))
+  const primary = worktrees.find((w) => w.path === rootPath)
+  const rankOf = (p: P): number => {
+    if (!p.worktreeId || p.worktreeId === primary?.id) return 0
+    return rank.get(p.worktreeId) ?? others.length + 1
+  }
+  return panels
+    .map((panel, index) => ({ panel, index, rank: rankOf(panel) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((e) => e.panel)
+}
+
+function windowTree(doc: WorkspaceDocument, windowId: WindowId, sort: (p: PanelRecord[]) => PanelRecord[]): WindowTree {
+  const canvases: CanvasGroup[] = []
+  const topLevel: PanelRecord[] = []
+  for (const id of dockPanels(doc.windows[windowId]?.dock)) {
+    const record = doc.panels[id]
+    if (!record) continue
+    if (record.canvasId) {
+      const children = panelsOnCanvas(doc, record.canvasId).map((c) => doc.panels[c]).filter((c): c is PanelRecord => !!c)
+      canvases.push({ record, children: sort(children) })
+    } else {
+      topLevel.push(record)
+    }
+  }
+  return { windowId, canvases, topLevel: sort(topLevel) }
+}
+
+const rows = (tree: WindowTree): number =>
+  tree.topLevel.length + tree.canvases.reduce((n, c) => n + 1 + c.children.length, 0)
+
+export function workspacePanelTree(
+  doc: WorkspaceDocument,
+  options: { windowId?: WindowId; rootPath?: string } = {},
+): WorkspacePanelTree {
+  const windowId = options.windowId && doc.windows[options.windowId] ? options.windowId : MAIN_WINDOW
+  const worktrees = Object.values(doc.worktrees)
+  const sort = (panels: PanelRecord[]) => sortByWorktree(panels, worktrees, options.rootPath)
+  const primary = windowTree(doc, windowId, sort)
+  const others = Object.keys(doc.windows)
+    .filter((id) => id !== windowId)
+    .sort((a, b) => (a === MAIN_WINDOW ? -1 : b === MAIN_WINDOW ? 1 : 0))
+    .map((id) => windowTree(doc, id, sort))
+    .filter((tree) => tree.canvases.length > 0 || tree.topLevel.length > 0)
+  return { primary, others, count: rows(primary) + others.reduce((n, t) => n + rows(t), 0) }
+}

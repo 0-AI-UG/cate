@@ -11,7 +11,7 @@
 // Bug 2 (placement routing): an unpinned panel create (keyboard shortcut,
 // programmatic create) routed to the workspace's PRIMARY canvas (first canvas
 // tab) instead of the ACTIVE one, so with a secondary canvas tab active the new
-// panel landed on a hidden canvas.
+// panel landed on a hidden canvas. (Driven by Cmd+T now.)
 import { test, expect } from '@playwright/test'
 import { launchApp, closeApp } from './fixtures/electron-app'
 import type { ElectronApplication, Page } from 'playwright'
@@ -27,7 +27,7 @@ test.beforeEach(async () => {
   // Seed: 6 extra canvas tabs beside the default one. Each create activates
   // the new tab, so the LAST canvas ends up active/mounted.
   for (let i = 0; i < EXTRA_CANVASES; i++) {
-    await page.evaluate(() => void window.__cateE2E!.createCanvasPanel({ x: 100, y: 100 }))
+    await page.evaluate(() => void window.__cateE2E!.createPanel('canvas'))
   }
   await page.waitForTimeout(200)
 })
@@ -68,23 +68,14 @@ test('exactly one canvas is mounted and it is the last-created tab', async () =>
   expect(mountedIds).toEqual([tabs[tabs.length - 1]])
 })
 
-test('unpinned create lands on the ACTIVE canvas, not the hidden primary one', async () => {
-  const result = await page.evaluate(async () => {
-    const mountedId = document
-      .querySelector('[data-canvas-panel-id]')!
-      .getAttribute('data-canvas-panel-id')!
-    const nodeId = window.__cateE2E!.createTerminal({ x: 300, y: 300 })
-    await new Promise((r) => setTimeout(r, 200))
-    return {
-      mountedId,
-      nodeId,
-      nodesOnMounted: window.__cateE2E!.nodes().length,
-      nodeInDom: !!document.querySelector(`[data-node-id="${nodeId}"]`),
-    }
-  })
-  // The node must exist on the canvas the user is looking at AND be rendered.
-  expect(result.nodesOnMounted).toBe(1)
-  expect(result.nodeInDom).toBe(true)
+test('unpinned create (Cmd+T) lands on the ACTIVE canvas, not the hidden primary one', async () => {
+  const mountedId = await page.evaluate(() => document.querySelector('[data-canvas-panel-id]')!.getAttribute('data-canvas-panel-id'))
+  await page.locator('[data-canvas-container]').click({ position: { x: 400, y: 300 } })
+  await page.keyboard.press('Meta+t')
+  await expect.poll(() => page.evaluate(() => window.__cateE2E!.nodes().length)).toBe(1)
+  // The node is on the canvas the user is looking at, and rendered.
+  const nodeId = await page.evaluate(() => window.__cateE2E!.nodes()[0]!.id)
+  await expect(page.locator(`[data-canvas-panel-id="${mountedId}"] [data-node-id="${nodeId}"]`)).toHaveCount(1)
 })
 
 test('zoom drives the mounted canvas: store and world transform stay in lock-step', async () => {
@@ -170,8 +161,8 @@ test('panels created across several canvas tabs land on their own canvas', async
       const mountedId = document
         .querySelector('[data-canvas-panel-id]')!
         .getAttribute('data-canvas-panel-id')!
-      const nodeId = window.__cateE2E!.createTerminal({ x: 200, y: 200 })
-      await new Promise((r) => setTimeout(r, 150))
+      const nodeId = window.__cateE2E!.createOnCanvas('terminal', { x: 200, y: 200 })!.nodeId
+      await new Promise((r) => setTimeout(r, 300))
       return {
         mountedOk: mountedId === expected,
         nodes: window.__cateE2E!.nodes().length,

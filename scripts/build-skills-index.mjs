@@ -1,9 +1,9 @@
-import { parseFrontmatter } from '../src/shared/skillFrontmatter.mjs'
+import { parseFrontmatter } from './skillFrontmatter.mjs'
 // =============================================================================
 // build-skills-index.mjs - crawl registry/sources.json and emit the curated
 // skills-index.json that the Cate app fetches. Run by the skills-index GitHub
 // Action (with GITHUB_TOKEN for a 5000/hr rate limit). Mirrors the discovery
-// logic in src/skills/main/githubCrawl.ts (kept standalone so it runs as plain
+// logic in src/workspace/skills/runtime/githubCrawl.ts (kept standalone so it runs as plain
 // node with no build step).
 // =============================================================================
 

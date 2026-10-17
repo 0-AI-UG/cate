@@ -59,7 +59,6 @@ brew install --cask cate
 
 ## Ce qu'il contient
 
-- **Chats d'agents intégrés :** T3 Code exécute Codex, Claude Code, Cursor, Grok, OpenCode et Antigravity dans un panneau de chat complet avec sortie en continu, appels d'outils et autorisations.
 - **Terminaux conscients des agents :** les CLI d'agents prises en charge signalent le début et la fin d'un tour ainsi que les demandes d'autorisation. C'est ce qui alimente l'état du panneau (en cours, en attente, terminé) et la notification quand un agent attend votre réponse. Un agent qui n'envoie aucun hook n'affiche aucun état.
 - **Les sessions d'agent survivent aux redémarrages :** le flux de hooks transporte l'identifiant de session de chaque CLI. Rouvrez le projet : les terminaux reviennent avec leur historique et l'agent est rattaché via sa propre commande de reprise. Un identifiant périmé retombe sur un simple shell plutôt que de reprendre la mauvaise conversation.
 - **Worktrees pour branches parallèles :** décrivez ce sur quoi vous travaillez et Cate crée un worktree et une branche, à partir d'une branche locale ou distante ou d'une PR ouverte. Chacun reçoit une couleur qui le suit dans la barre latérale, les onglets du dock et un territoire dessiné derrière ses panneaux sur le canevas.
@@ -142,7 +141,7 @@ src/
 
 Cate fait passer toute l'IPC par un pont preload à isolation de contexte. L'accès au système de fichiers est limité aux racines d'espace de travail enregistrées, les panneaux navigateur désactivent l'intégration Node, et les terminaux ne peuvent pas s'ouvrir hors des répertoires approuvés.
 
-**Stack :** Electron 41, React 18, Zustand 5, Monaco 0.52, xterm.js 5.5 + node-pty 1.1, Tailwind 3.4, electron-vite, electron-builder, electron-updater, Sentry. PDF et DOCX via pdf.js et mammoth, git via simple-git, surveillance des fichiers via `@parcel/watcher` et chokidar. T3 Code fournit le moteur d'agents, les processus des fournisseurs et l'interface de chat, livrés avec le runtime Cate.
+**Stack :** Electron 41, React 18, Zustand 5, Monaco 0.52, xterm.js 5.5 + node-pty 1.1, Tailwind 3.4, electron-vite, electron-builder, electron-updater, Sentry. PDF et DOCX via pdf.js et mammoth, git via simple-git, surveillance des fichiers via `@parcel/watcher` et chokidar.
 
 ## Contribuer
 

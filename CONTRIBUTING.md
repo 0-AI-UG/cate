@@ -63,13 +63,14 @@ bun run setup
 bun run dev          # dev server with hot reload
 bun run typecheck
 bun run lint
+bun run lint:deps    # architecture rules (dependency-cruiser)
 bun run test         # unit tests (vitest)
 bun run test:e2e     # Playwright integration tests
 bun run build        # production build
 bun run package      # package for distribution (:mac, :win, :linux)
 ```
 
-Packaged binaries land in `release/`. The runtime daemon is rebuilt by `bun run runtime:tarball` (re-run it after changing anything under `src/runtime/`).
+Packaged binaries land in `release/`. Each workspace is served by its own runtime daemon, a detached process that outlives the app. The app installs the runtime tarball of its version into `~/.cate/runtime/<version>/` once (`bun run runtime:tarball` builds it into `dist-runtime/`). To iterate on runtime-side code (any module's `runtime/` or `node/` side, `src/cli/`), start the app with `CATE_RUNTIME_BUNDLE=dist-runtime/runtime.cjs`, rebuild with `bun run build:runtime`, and stop the running workspace runtime so the next open starts the new build.
 
 ## Making Changes
 
@@ -82,6 +83,7 @@ Packaged binaries land in `release/`. The runtime daemon is rebuilt by `bun run 
    ```bash
    bun run typecheck
    bun run lint
+   bun run lint:deps
    bun run test
    bun run build
    ```
@@ -97,7 +99,7 @@ Packaged binaries land in `release/`. The runtime daemon is rebuilt by `bun run 
 - **Link the issue** the PR resolves (`Closes #123`).
 - **Describe what changed and why.** The "why" matters more than the "what".
 - **Include screenshots or a short clip for any UI change.**
-- **Make sure `bun run typecheck`, `bun run lint`, `bun run test`, and `bun run build` all pass.**
+- **Make sure `bun run typecheck`, `bun run lint`, `bun run lint:deps`, `bun run test`, and `bun run build` all pass.**
 - **Add or update tests** when you change behavior.
 - **Don't bundle unrelated changes.** No drive-by reformatting, dependency bumps, or refactors mixed into a feature PR.
 - Expect review feedback. A few rounds of back and forth is normal and is not a sign anything is wrong.
@@ -110,13 +112,13 @@ Packaged binaries land in `release/`. The runtime daemon is rebuilt by `bun run 
 
 ## Project Structure
 
-See [`CLAUDE.md`](CLAUDE.md) for detailed guidance on the codebase.
+See [`docs/architecture.md`](docs/architecture.md) for the model (layers, sides, the runtime daemon, panels, the `cate` API) and [`CLAUDE.md`](CLAUDE.md) for a working summary.
 
 ## Code Style
 
 - TypeScript with strict mode
 - Functional React with hooks
-- Zustand for state (no Redux/Context)
+- Workspace state lives in the runtime; client-side stores use Zustand (no Redux)
 - Tailwind CSS for styling
 - Match the style of the surrounding code
 - No unnecessary abstractions, keep it simple

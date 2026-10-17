@@ -1,0 +1,199 @@
+// Stamping rules for hook-pushed agent session identity: per-agent
+// resumability gating (Claude and Kiro stamp once a turn proves the session
+// is persisted), the /clear rotation (clear on session-end, re-stamp only after
+// the next turn), the cwd fallback for cwd-less payloads, and dedup.
+
+import { describe, it, expect, beforeEach } from 'vitest'
+import type { AgentHookEvent, AgentHookEventKind, AgentId, TerminalResumeStamp } from '../contract'
+import { createResumeStamps, type ResumeStamps } from './stamps'
+
+let nextCwd: string | null = '/runtime-cwd'
+let getCwdCalls = 0
+let pendingCwd: Array<(cwd: string | null) => void> = []
+let sent: Array<{ terminalId: string; session: TerminalResumeStamp | null }> = []
+let stampsUnderTest: ResumeStamps
+const ingestAgentSessionStamp = (_runtime: unknown, event: AgentHookEvent): void => stampsUnderTest.ingest(event)
+const clearAgentSessionStamp = (terminalId: string, endedAgentPid?: number, endedAgentStartedAt?: string): void =>
+  stampsUnderTest.clear(terminalId, endedAgentPid, endedAgentStartedAt)
+const runtime = null
+
+/** Resolve every in-flight getCwd and let the .then() callbacks run. */
+async function resolveCwds(): Promise<void> {
+  for (const resolve of pendingCwd.splice(0)) resolve(nextCwd)
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+function ev(
+  terminalId: string,
+  agentId: AgentId,
+  kind: AgentHookEventKind,
+  sessionId: string | null,
+  cwd?: string,
+): AgentHookEvent {
+  return { terminalId, agentId, kind, sessionId, cwd, raw: {} }
+}
+
+const stamps = (terminalId: string) => sent.filter((s) => s.terminalId === terminalId).map((s) => s.session)
+
+let n = 0
+let tid: string
+
+beforeEach(() => {
+  sent = []
+  stampsUnderTest = createResumeStamps({
+    getCwd: () => {
+      getCwdCalls++
+      return new Promise<string | null>((resolve) => pendingCwd.push(resolve))
+    },
+    emit: (terminalId, session) => { sent.push({ terminalId, session }) },
+  })
+  nextCwd = '/runtime-cwd'
+  getCwdCalls = 0
+  pendingCwd = []
+  tid = `term-${++n}` // fresh terminal per test — module state is per-terminal
+})
+
+describe('claude resumability gating', () => {
+  it('does not stamp on session-start (no transcript exists yet — resume would fail)', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-start', 'id-1', '/w'))
+    expect(stamps(tid)).toEqual([])
+  })
+
+  it.each(['turn-start', 'turn-end', 'permission-wait'] as const)('stamps on %s', (kind) => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-start', 'id-1', '/w'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', kind, 'id-1', '/w'))
+    expect(stamps(tid)).toEqual([{ agentId: 'claude-code', sessionId: 'id-1', cwd: '/w' }])
+  })
+
+  it('/clear: clears on session-end, stays cleared through the rotated session-start, re-stamps on next turn', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'turn-start', 'id-1', '/w'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-end', 'id-1', '/w'))
+    // Rotation follow-up carries the NEW id but is not yet resumable.
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-start', 'id-2', '/w'))
+    expect(stamps(tid)).toEqual([
+      { agentId: 'claude-code', sessionId: 'id-1', cwd: '/w' },
+      null, // a /clear'd-but-never-prompted session leaves the stamp CLEARED
+    ])
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'turn-start', 'id-2', '/w'))
+    expect(stamps(tid).at(-1)).toEqual({ agentId: 'claude-code', sessionId: 'id-2', cwd: '/w' })
+  })
+})
+
+describe('kiro resumability gating', () => {
+  it('waits for the first prompt before stamping the session', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'kiro', 'session-start', 'id-1', '/w'))
+    expect(stamps(tid)).toEqual([])
+
+    ingestAgentSessionStamp(runtime, ev(tid, 'kiro', 'turn-start', 'id-1', '/w'))
+    expect(stamps(tid)).toEqual([{ agentId: 'kiro', sessionId: 'id-1', cwd: '/w' }])
+  })
+})
+
+describe('hermes profile-aware resumability', () => {
+  it('waits for the first turn and persists the exact profile', () => {
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-start', 'id-1', '/w'), profile: 'work' })
+    expect(stamps(tid)).toEqual([])
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'id-1', '/w'), profile: 'work' })
+    expect(stamps(tid)).toEqual([{ agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' }])
+  })
+
+  it('does not let an older finalize clear a newer profile session', () => {
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'new', '/w'), profile: 'work', sourcePid: 22 })
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-end', 'old', '/w'), profile: 'default', sourcePid: 11 })
+    expect(stamps(tid)).toEqual([{ agentId: 'hermes', sessionId: 'new', cwd: '/w', profile: 'work' }])
+  })
+
+  it('clears the old stamp when a replacement session starts, then rejects the old finalize', () => {
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'old', '/w'), profile: 'default', sourcePid: 11 })
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-start', 'new', '/w'), profile: 'work', sourcePid: 22 })
+    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-end', 'old', '/w'), profile: 'default', sourcePid: 11 })
+    expect(stamps(tid)).toEqual([
+      { agentId: 'hermes', sessionId: 'old', cwd: '/w', profile: 'default' },
+      null,
+    ])
+  })
+
+  it('does not let an old presence falling edge clear a newer process stamp', () => {
+    ingestAgentSessionStamp(runtime, {
+      ...ev(tid, 'hermes', 'turn-start', 'old', '/w'),
+      profile: 'default', sourcePid: 11, sourceStartedAt: '100',
+    })
+    ingestAgentSessionStamp(runtime, {
+      ...ev(tid, 'hermes', 'turn-start', 'new', '/w'),
+      profile: 'work', sourcePid: 22, sourceStartedAt: '200',
+    })
+    clearAgentSessionStamp(tid, 11, '100')
+    expect(stamps(tid).at(-1)).toEqual({
+      agentId: 'hermes', sessionId: 'new', cwd: '/w', profile: 'work',
+    })
+  })
+})
+
+describe('agents whose first sessionId-bearing event is already persisted', () => {
+  it.each(['codex', 'cursor', 'opencode'] as const)('%s stamps on session-start', (agentId) => {
+    ingestAgentSessionStamp(runtime, ev(tid, agentId, 'session-start', 'id-1', '/w'))
+    expect(stamps(tid)).toEqual([{ agentId, sessionId: 'id-1', cwd: '/w' }])
+  })
+
+})
+
+describe('cwd fallback (payloads that carry no cwd)', () => {
+  it('stamps with the terminal cwd fetched from the runtime', async () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1'))
+    expect(stamps(tid)).toEqual([]) // async — nothing until getCwd resolves
+    await resolveCwds()
+    expect(stamps(tid)).toEqual([{ agentId: 'codex', sessionId: 'id-1', cwd: '/runtime-cwd' }])
+  })
+
+  it('stamps with empty cwd when the runtime cannot resolve one', async () => {
+    nextCwd = null
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-end', 'id-1'))
+    await resolveCwds()
+    expect(stamps(tid)).toEqual([{ agentId: 'codex', sessionId: 'id-1', cwd: '' }])
+  })
+
+  it('drops an in-flight cwd lookup superseded by a clear (no resurrection)', async () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1'))
+    clearAgentSessionStamp(tid) // agent exited while getCwd was in flight
+    await resolveCwds()
+    // Only the clear went out — the late cwd result must not resurrect a stamp.
+    expect(stamps(tid)).toEqual([null])
+  })
+
+  it('does not call getCwd when the event carries a cwd', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1', '/w'))
+    expect(getCwdCalls).toBe(0)
+  })
+})
+
+describe('emit mechanics', () => {
+  it.each(['session-title', 'input-submit'] as const)('ignores %s because it does not change resume identity', (kind) => {
+    ingestAgentSessionStamp(runtime, {
+      ...ev(tid, 'codex', kind, 'id-1', '/w'),
+      title: 'Fix terminal titles',
+    })
+    expect(stamps(tid)).toEqual([])
+    expect(getCwdCalls).toBe(0)
+  })
+
+  it('ignores events with a null sessionId', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', null))
+    expect(stamps(tid)).toEqual([])
+    expect(getCwdCalls).toBe(0)
+  })
+
+  it('dedupes an unchanged stamp', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1', '/w'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-end', 'id-1', '/w'))
+    expect(stamps(tid)).toHaveLength(1)
+  })
+
+  it('falling-edge clear emits null; the next run re-stamps from fresh events', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'turn-start', 'id-1', '/w'))
+    clearAgentSessionStamp(tid)
+    expect(stamps(tid)).toEqual([{ agentId: 'codex', sessionId: 'id-1', cwd: '/w' }, null])
+    ingestAgentSessionStamp(runtime, ev(tid, 'codex', 'session-start', 'id-2', '/w'))
+    expect(stamps(tid).at(-1)).toEqual({ agentId: 'codex', sessionId: 'id-2', cwd: '/w' })
+  })
+})

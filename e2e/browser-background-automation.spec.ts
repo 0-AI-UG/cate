@@ -1,13 +1,14 @@
-import { browserInvoke, observe, target, act, activeAction, inspectFixture } from './fixtures/browser-control'
+import { browserInvoke, browserWebContentsId, createBrowser, observe, act, activeAction, fixtureEvaluate, inspectFixture } from './fixtures/browser-control'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
-import { closeApp, launchApp } from './fixtures/electron-app'
+import { closeApp, launchApp, makeProject, openWorkspace } from './fixtures/electron-app'
 
 let app: ElectronApplication
 let page: Page
+let home: string
 
 test.beforeEach(async () => {
-  ;({ electronApp: app, mainWindow: page } = await launchApp())
+  ;({ electronApp: app, mainWindow: page, home } = await launchApp())
 })
 
 test.afterEach(async () => {
@@ -19,10 +20,10 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   const url = `data:text/html,${encodeURIComponent(
     '<title>Background Automation</title><label for="name">Name</label><input id="name" aria-label="Name"><button id="ready">Ready</button>',
   )}`
-  const browser = await page.evaluate((fixtureUrl) => window.__cateE2E!.createBrowser(fixtureUrl, { x: 120, y: 120 }), url)
+  const browser = await createBrowser(page, url, { x: 120, y: 120 })
 
   await expect.poll(
-    () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
+    () => browserWebContentsId(page, browser.panelId),
     { timeout: 20_000 },
   ).not.toBeNull()
   const initialSnapshot = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true })
@@ -42,8 +43,17 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   if (!firstFill.ok) throw new Error(`browser fill failed: ${firstFill.error}`)
   await expect(rendererFocusTarget).toBeFocused()
 
-  const otherWorkspace = await page.evaluate(() => window.__cateE2E!.addWorkspace('Other workspace'))
-  await page.evaluate((workspaceId) => window.__cateE2E!.selectWorkspace(workspaceId), otherWorkspace)
+  // A click and a key press focus the guest while they run, then hand focus
+  // back, so a user typing elsewhere keeps typing there.
+  await expect(act(page, browser, 'click', 'Name')).resolves.toMatchObject({ ok: true })
+  await expect(rendererFocusTarget).toBeFocused()
+  await expect(activeAction(page, browser, 'pressKey', { key: '!' })).resolves.toMatchObject({ ok: true })
+  await expect(rendererFocusTarget).toBeFocused()
+  await expect(activeAction(page, browser, 'pressKey', { key: '?' })).resolves.toMatchObject({ ok: true })
+  await expect(rendererFocusTarget).toBeFocused()
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value")).resolves.toMatchObject({ ok: true, result: { value: expect.stringContaining('!?') } })
+
+  const otherWorkspace = await openWorkspace(page, makeProject(home, { name: 'other' }))
   await expect(act(page, browser, 'setValue', "Name", { value: 'Filled from another workspace' })).resolves.toMatchObject({ ok: true })
   // Browser control is target-bound: it must not switch back to the browser's
   // workspace or invent a canvas in this intentionally empty destination.
@@ -53,10 +63,45 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value")).resolves.toMatchObject({ ok: true, result: { value: 'Filled from another workspace' } })
 })
 
+test('agents typing in two browsers at once reach their own pages and leave focus alone', async () => {
+  test.setTimeout(60_000)
+  const html = (title: string) => `data:text/html,${encodeURIComponent(`<title>${title}</title><input id="name" aria-label="Name">`)}`
+  const left = await createBrowser(page, html('Left'), { x: 60, y: 60 })
+  const right = await createBrowser(page, html('Right'), { x: 900, y: 60 })
+  for (const browser of [left, right]) {
+    await expect.poll(() => browserWebContentsId(page, browser.panelId), { timeout: 20_000 }).not.toBeNull()
+    await expect(act(page, browser, 'click', 'Name')).resolves.toMatchObject({ ok: true })
+  }
+  const rendererFocusTarget = page.getByRole('button', { name: /Select tool/ })
+  await rendererFocusTarget.focus()
+
+  // Each click moves the window's focused guest; keys must not follow it.
+  const type = async (browser: typeof left, keys: string) => {
+    for (const key of keys) {
+      await expect(browserInvoke(page, browser, 'pressKey', { key })).resolves.toMatchObject({ ok: true })
+      await expect(act(page, browser, 'click', 'Name')).resolves.toMatchObject({ ok: true })
+    }
+  }
+  await Promise.all([type(left, 'abcde'), type(right, 'VWXYZ')])
+  await expect(rendererFocusTarget).toBeFocused()
+  const value = (browser: typeof left) => inspectFixture(app!, page, browser, 'document.querySelector("#name").value.split("").sort().join("")')
+  await expect(value(left)).resolves.toMatchObject({ ok: true, result: { value: 'abcde' } })
+  await expect(value(right)).resolves.toMatchObject({ ok: true, result: { value: 'VWXYZ' } })
+})
+
+test('the browser guest survives switching to another workspace and back', async () => {
+  const browser = await createBrowser(page, `data:text/html,${encodeURIComponent('<title>Survivor</title>')}`, { x: 120, y: 120 })
+  await fixtureEvaluate(app, page, browser, `window.__survival = 'same guest'`)
+  const guest = await browserWebContentsId(page, browser.panelId)
+  const first = await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())
+  await openWorkspace(page, makeProject(home, { name: 'other' }))
+  await page.evaluate((id) => window.__cateE2E!.selectWorkspace(id!), first)
+  expect(await browserWebContentsId(page, browser.panelId)).toBe(guest)
+  expect(await fixtureEvaluate(app, page, browser, 'window.__survival')).toBe('same guest')
+})
+
 test('browser is always a normal canvas card across zoom and pan', async () => {
-  const browser = await page.evaluate(() => window.__cateE2E!.createBrowser(
-    'data:text/html,<title>Stable canvas card</title><h1>Browser page</h1>', { x: 120, y: 120 },
-  ))
+  const browser = await createBrowser(page, 'data:text/html,<title>Stable canvas card</title><h1>Browser page</h1>', { x: 120, y: 120 })
   const nodeId = await expect.poll(() => page.evaluate(
     (panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId,
   )).not.toBeNull().then(() => page.evaluate((panelId) => window.__cateE2E!.nodeForPanel(panelId), browser.panelId))
@@ -66,16 +111,16 @@ test('browser is always a normal canvas card across zoom and pan', async () => {
   await expect(surface).toHaveAttribute('data-browser-surface-visible', 'true')
   await expect(surface.locator('webview')).toHaveCount(1)
   const guestId = await expect.poll(
-    () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
+    () => browserWebContentsId(page, browser.panelId),
     { timeout: 20_000 },
-  ).not.toBeNull().then(() => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId))
+  ).not.toBeNull().then(() => browserWebContentsId(page, browser.panelId))
 
   await page.evaluate(() => {
     window.__cateE2E!.setZoom(0.45)
     window.__cateE2E!.setViewport({ x: 260, y: 140 })
   })
   await expect(surface).toHaveAttribute('data-browser-surface-visible', 'true')
-  expect(await page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId)).toBe(guestId)
+  expect(await browserWebContentsId(page, browser.panelId)).toBe(guestId)
 })
 
 test('user clicks and types directly in the live webview at non-default zoom', async () => {
@@ -84,15 +129,13 @@ test('user clicks and types directly in the live webview at non-default zoom', a
     <style>html,body{margin:0}#name{position:absolute;left:16px;top:16px;width:240px;height:40px}#save{position:absolute;left:16px;top:80px;width:160px;height:40px}</style>
     <input id="name" aria-label="Name"><button id="save" onclick="document.body.dataset.saved=document.querySelector('#name').value">Save</button>
   `)}`
-  const browser = await page.evaluate((fixtureUrl) => window.__cateE2E!.createBrowser(
-    fixtureUrl, { x: 120, y: 120 },
-  ), url)
+  const browser = await createBrowser(page, url, { x: 120, y: 120 })
   const webview = page.locator(`[data-browser-surface="${browser.panelId}"] webview`).first()
   await expect(webview).toBeVisible({ timeout: 20_000 })
   const guestId = await expect.poll(
-    () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
+    () => browserWebContentsId(page, browser.panelId),
     { timeout: 20_000 },
-  ).not.toBeNull().then(() => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId))
+  ).not.toBeNull().then(() => browserWebContentsId(page, browser.panelId))
   await page.evaluate(() => window.__cateE2E!.setZoom(0.65))
 
   const guestClick = (x: number, y: number) => app.evaluate(({ webContents }, input) => {
@@ -130,9 +173,9 @@ test('snapshots omit hidden and boxless links while keeping off-screen links cli
     <a href="#" style="display:block;width:0;height:0;overflow:hidden">Zero size link</a>
     <a href="#" style="position:absolute;top:3000px" onclick="event.preventDefault();document.body.dataset.clicked='offscreen'">Offscreen link</a>
   `)}`
-  const browser = await page.evaluate((fixtureUrl) => window.__cateE2E!.createBrowser(fixtureUrl, { x: 120, y: 120 }), url)
+  const browser = await createBrowser(page, url, { x: 120, y: 120 })
   await expect.poll(
-    () => page.evaluate((panelId) => window.__cateE2E!.browserWebContentsId(panelId), browser.panelId),
+    () => browserWebContentsId(page, browser.panelId),
     { timeout: 20_000 },
   ).not.toBeNull()
   for (const visual of [false, true]) {

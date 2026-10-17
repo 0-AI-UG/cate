@@ -1,56 +1,60 @@
 # Dock behavior and test matrix
 
-This document defines the supported dock state transitions. “Maximize” means a
-reversible presentation: a main-dock split is merged into tabs, or one pane of a
-canvas node is promoted beside its containing canvas. “Minimize” means restoring
-the previous dock arrangement. A presentation is restorable only while both its
-destination and, for a promoted canvas pane, its source topology remain unchanged.
+This document defines the supported dock transitions. Every window has one
+dock tree in the workspace document (architecture 9.1); a canvas node holds a
+mini dock of the same shape. Placement is shared: a drop is one document op
+(`placePanel`, `setNodeRects`, or a batch), and every client of the workspace
+sees it. Which tab of a stack is active is client state.
+
+Maximize is client state, so it changes only what this client draws: a
+maximized window stack is drawn alone in its window, and a maximized canvas
+node fills its canvas's area. The document, and every other client's layout,
+stay as they are.
 
 ## Drag and placement rules
 
+Drop resolution is `src/client/layout/drag/resolve.ts`; the op each drop sends
+is `src/client/layout/drag/commit.ts`.
+
 | Source | Drop target | Result | Automated coverage |
 |---|---|---|---|
-| Dock tab | Same stack tab bar | Reorder tabs; a one-tab self-drop is a no-op | `dockStore.rules.test.ts`, `drag/resolve.test.ts`, `drag/commit.test.ts` |
-| Dock tab | Another dock stack tab bar | Move into that stack as a tab | `dockStore.presentation.test.ts`, `drag/commit.test.ts` |
-| Dock tab | Left/right dock edge | Horizontal split, before/after the target | `dockStore.rules.test.ts`, `three-way-split.spec.ts` |
-| Dock tab | Top/bottom dock edge | Vertical split, before/after the target | `dockStore.rules.test.ts`, `drag/commit.test.ts` |
-| Dock tab | Empty canvas | Create a canvas node containing the panel | `dock-rules.spec.ts` |
-| Dock tab | Canvas-node tab bar | Add the panel as a tab and remove it from the main dock | `drag/commit.test.ts` |
-| Dock tab | Canvas-node edge | Add the panel as a split pane and remove it from the main dock | `drag/commit.test.ts` |
-| Canvas node/pane | Empty area of the same canvas | Reposition the node; preserve its tabs/splits | `drag-move.spec.ts`, `drag-split.spec.ts` |
-| Canvas node/pane | Another canvas-node tab bar | Merge into the target as tabs; remove an emptied source node | `drag-split.spec.ts` |
-| Canvas node/pane | Another canvas-node edge | Split the target; remove an emptied source node | `drag-split.spec.ts` |
-| Canvas node/pane | Main-dock tab bar | Move into the dock as a tab | `dock-rules.spec.ts` |
-| Canvas node/pane | Main-dock edge | Move into the dock as a split | `drag/commit.test.ts` |
-| Canvas node/pane | Outside the application window | Detach into a new dock window | `drag-detach.spec.ts` |
-| Canvas panel | A canvas node | Reject recursive canvas nesting | `drag-canvas-into-canvas.spec.ts` |
-| Detached-window panel | Main dock or canvas | Commit only after receiver acknowledgement; otherwise recover in the detached session | `detached-panels.spec.ts`, `existing-window-drop.test.ts`, `windowPanelSync.test.ts` |
+| Dock tab | Same stack tab bar | Reorder tabs; a lone tab dropped on its own tab bar is a no-op | `drag/commit.test.ts`, `drag/resolve.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Dock tab | Another dock stack tab bar | Move into that stack as a tab | `drag/commit.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Dock tab | Left/right stack edge | Horizontal split, before/after the target | `drag/commit.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Dock tab | Top/bottom stack edge | Vertical split, before/after the target | `drag/commit.test.ts` |
+| Dock tab | Window edge strip | Split the whole window dock on that side | `drag/commit.test.ts` |
+| Dock tab | Empty canvas | Create a canvas node containing the panel | `drag/commit.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Dock tab | Canvas-node tab bar | Add the panel as a tab of the node | `drag/commit.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Dock tab | Canvas-node edge | Add the panel as a split pane of the node | `drag/commit.test.ts` |
+| Canvas node | Empty area of the same canvas | Reposition the node (one `setNodeRects`, size kept); a selected group moves together | `drag/commit.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Canvas node/pane | Another canvas-node tab bar | Merge into the target as tabs; the emptied source node is removed | `drag/commit.test.ts` |
+| Canvas node/pane | Another canvas | Move there; the emptied source node is removed | `drag/__tests__/scenarios.test.tsx` |
+| Canvas node/pane | Main-dock tab bar or edge | Move into the dock as a tab or split | `drag/commit.test.ts` |
+| Any panel | Outside the application window | A new detached window at the drop point (only on clients with the `windows` feature; a selected group never leaves the window) | `drag/commit.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Any panel | Another window of the same workspace | That window claims the drop; the placement op is sent once, from the source window | `drag/__tests__/crossWindow.test.tsx`, `drag/__tests__/scenarios.test.tsx` |
+| Canvas panel | A canvas or a canvas-node mini dock | Refused: canvases never nest | `drag/commit.test.ts`, `drag/resolve.test.ts`, `drag/__tests__/scenarios.test.tsx` |
+| Any panel | Another workspace | Never a target | `drag/resolve.test.ts` |
 
 For every split edge, placement order is fixed: left/top inserts before the
 target and right/bottom inserts after it. Same-direction splits gain an equal
-sibling instead of creating an unnecessary nested split.
+sibling instead of creating an unnecessary nested split. Stacks, splits, nodes
+and detached windows emptied by an op are removed by the runtime as part of
+that op.
 
-## Split, maximize, minimize, and invalidation rules
+## Maximize and restore
 
-| Starting state | Action | Defined result | Restore status | Automated coverage |
-|---|---|---|---|---|
-| One dock stack | Split right | A new surface in a horizontal sibling | Not applicable | `three-way-split.spec.ts`, `dock-rules.spec.ts` |
-| Main dock with any split tree | Maximize a leaf | Flatten the zone into one tab stack, keeping deterministic tree order and the selected leaf active | Valid | `dockStore.presentation.test.ts`, `dock-rules.spec.ts` |
-| Maximized main dock | Select a merged tab | Only active selection changes | Remains valid | `dockStore.rules.test.ts` |
-| Maximized main dock | Resize/toggle another zone, add a panel to another zone, or take a snapshot | Presented topology is unchanged | Remains valid | `dockStore.rules.test.ts` |
-| Maximized main dock | Add/remove/reorder/move a presented tab, split/collapse its stack, or restore a snapshot | Keep the user’s new topology | Permanently invalidated | `dockStore.rules.test.ts`, `dock-rules.spec.ts` |
-| Maximized main dock, unchanged | Minimize | Restore the exact pre-merge split tree | Consumed | `dockStore.presentation.test.ts`, `dock-rules.spec.ts` |
-| Singleton canvas node | Maximize | Remove the empty node and promote its panel beside the canvas | Valid | `CanvasNode.groupDrag.test.tsx` |
-| Tabbed or split canvas node | Maximize one pane | Promote only the active pane; preserve the remaining node | Valid | `CanvasNode.groupDrag.test.tsx`, `dock-rules.spec.ts` |
-| Promoted canvas pane | Select canvas/promoted tab, resize surrounding split, resize/toggle an unrelated zone, add to another zone, or take a snapshot | No structural change to either saved topology | Remains valid | `dockStore.presentation.test.ts` |
-| Promoted canvas pane | Structurally change the source canvas node | Keep both the promoted pane and the edited source | Permanently invalidated | `CanvasNode.groupDrag.test.tsx`, `dock-rules.spec.ts` |
-| Promoted canvas pane | Add/remove/reorder/move/split/collapse in the destination, including moving away and back | Keep the user’s new destination | Permanently invalidated | `dockStore.presentation.test.ts`, `dock-rules.spec.ts` |
-| Promoted canvas pane, both sides unchanged | Minimize | Restore the exact node id, position, size, tabs, split tree, and active pane | Consumed | `CanvasNode.groupDrag.test.tsx`, `dock-rules.spec.ts` |
-| One or more promoted canvas panes | Maximize another canvas pane | Promote it as another dock tab with its own restore target | Every unchanged promotion remains independently restorable | `CanvasNode.groupDrag.test.tsx` |
-| Active merged-dock presentation | Maximize another stack/pane | Ignore the second request; merged presentations never nest | Existing presentation remains valid | `dockStore.presentation.test.ts` |
-| Invalidated presentation | Minimize | No-op; the restore control is removed | Unavailable | `dockStore.presentation.test.ts`, `dock-rules.spec.ts` |
+Coverage: `src/client/document/clientState.test.ts` (the state),
+`src/client/layout/dock/DockView.test.tsx` (window stacks) and
+`src/client/layout/canvas/CanvasView.test.tsx` (canvas nodes).
 
-The invalidation rule is intentionally structural. Tab selection and split
-ratios are presentation details and are safe; panel identity, order, tree shape,
-and source-node existence are ownership/topology and cannot be overwritten by a
-later restore.
+| Starting state | Action | Defined result |
+|---|---|---|
+| Window dock with a split tree | Maximize a stack | Only that stack is drawn, filling the window; the other stacks stay mounted, hidden |
+| Window dock with a single stack | Maximize | Nothing to maximize; no button |
+| Canvas node | Maximize (from any of its stacks) | The node's mini dock fills the canvas's area; the canvas stays mounted underneath |
+| Maximized stack or node | Restore | The layout is drawn as the document has it |
+| Maximized stack or node | Any document change, from any client | Applies; the maximize stays while its stack or node exists |
+| Maximized stack or node | Its stack or node is removed | The layout is drawn as it is; nothing to restore |
+
+One stack per window and one node per canvas can be maximized. Maximize is
+not undoable: it never was a document change.

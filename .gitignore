@@ -11,11 +11,6 @@ dist-runtime/
 build/*
 !build/entitlements.mac.plist
 !build/entitlements.runtime.plist
-# src/runtime/build/ is hand-authored source (the runtime esbuild config used
-# by `build:runtime` and the tarball build), NOT a build-output dir — re-include
-# it so a clean checkout / CI can build the runtime daemon + its ripgrep.
-!src/runtime/build/
-!src/runtime/build/**
 release/
 dist-native/
 test-results/

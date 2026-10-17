@@ -1,0 +1,11 @@
+// Signing of the shipped app: the team its App IDs are registered on, the
+// bundle id the extension, the keychain group and the APNs topic follow, and
+// the app's entitlements (with push). A Mac that builds for its own team
+// overrides these in Local.xcconfig (not checked in; see Local.xcconfig.example).
+
+DEVELOPMENT_TEAM = F7PH54XQ6J
+CODE_SIGN_STYLE = Automatic
+CATE_BUNDLE_ID = com.0ai.cate.ios
+CATE_APP_ENTITLEMENTS = Cate/Cate.entitlements
+
+#include? "Local.xcconfig"

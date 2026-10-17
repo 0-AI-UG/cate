@@ -8,6 +8,7 @@ import {
   getNodeRect,
   dragMouse,
 } from './fixtures/electron-app'
+import { whereIs } from './fixtures/canvas-helpers'
 import type { ElectronApplication, Page } from 'playwright'
 
 let app: ElectronApplication
@@ -42,10 +43,9 @@ test('canvas panel cannot be docked into a canvas-node mini-dock', async () => {
     y: sourceTab.y + sourceTab.height / 2,
   }, dropPoint, { steps: 20, pauseAtEnd: 50 })
 
-  await expect.poll(() => page.evaluate((id) => ({
-    docked: window.__cateE2E!.dockDebug().zones.center.panelIds.includes(id),
-    nested: window.__cateE2E!.canvasDebug().some((node) => node.panelIds.includes(id)),
-  }), source)).toEqual({ docked: true, nested: false })
+  // It stays in the window's dock; it never becomes a canvas node.
+  await page.waitForTimeout(200)
+  expect((await whereIs(page, source!))?.kind).toBe('window')
 })
 
 test('non-canvas tab is accepted into a canvas-node mini-dock', async () => {

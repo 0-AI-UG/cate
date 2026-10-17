@@ -3,8 +3,6 @@
 # Restore exec bit on node-pty's spawn-helper — npm sometimes strips it on
 # extraction, causing posix_spawnp to fail at runtime.
 chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true
-# Same for the bundled ripgrep binary used by the Search view.
-chmod +x node_modules/@vscode/ripgrep*/bin/rg 2>/dev/null || true
 
 # Ensure Electron's binary is present before we try to launch it. pnpm (used for
 # git worktrees) blocks dependency build scripts by default, so a fresh worktree

@@ -17,7 +17,7 @@ test.beforeEach(async () => {
   // Keep the left sidebar EXPANDED (default) so it occupies real width and the
   // canvas container starts to its right — that left strip is the region the
   // drop indicator must not paint over.
-  await page.evaluate(() => window.__cateE2E!.openNavigationView('explorer'))
+  await page.evaluate(() => window.__cateE2E!.setSidebarHidden(false))
   await page.waitForTimeout(300) // 200ms width transition + margin
   await resetViewport(page)
 })
@@ -53,7 +53,6 @@ test('dock-split indicator is clamped to the canvas, never over the sidebar', as
     const sb = document.querySelector('[data-app-sidebar="left"]')!.getBoundingClientRect()
     const r = ind?.getBoundingClientRect() ?? null
     return {
-      targetKind: window.__cateE2E!.dragSnapshot().targetKind,
       attr: ind?.getAttribute('data-drag-indicator') ?? null,
       indicatorLeft: r ? r.left : null,
       sidebarRight: sb.right,
@@ -62,7 +61,6 @@ test('dock-split indicator is clamped to the canvas, never over the sidebar', as
   await page.mouse.up()
   await page.waitForTimeout(50)
 
-  expect(diag.targetKind).toBe('dock-split')
   expect(diag.attr).toBe('split-left')
   // The fix: the indicator's left edge is clamped to the canvas edge (= the
   // sidebar's right edge), so it never paints over the sidebar.
@@ -91,9 +89,14 @@ test('image drop indicator stays behind the sidebar covering its terminal', asyn
   await page.evaluate(({ visible }) => {
     const dataTransfer = new DataTransfer()
     dataTransfer.items.add(new File(['image'], 'example.png', { type: 'image/png' }))
-    document.elementFromPoint(visible.x, visible.y)!.dispatchEvent(new DragEvent('dragover', {
-      bubbles: true, cancelable: true, clientX: visible.x, clientY: visible.y, dataTransfer,
-    }))
+    // A real drag enters first: that lifts an unfocused node's dim overlay
+    // out of hit-testing so the terminal host is under the cursor.
+    const init = { bubbles: true, cancelable: true, clientX: visible.x, clientY: visible.y, dataTransfer }
+    document.elementFromPoint(visible.x, visible.y)!.dispatchEvent(new DragEvent('dragenter', init))
+    return new Promise<void>((resolve) => setTimeout(() => {
+      document.elementFromPoint(visible.x, visible.y)!.dispatchEvent(new DragEvent('dragover', init))
+      resolve()
+    }, 250))
   }, points)
   const indicator = page.locator('[data-file-drop-indicator="terminal"]')
   await expect(indicator).toBeVisible()

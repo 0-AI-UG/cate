@@ -12,12 +12,12 @@ let directory: string
 test.beforeEach(async () => {
   directory = await mkdtemp(path.join(tmpdir(), 'cate-code-e2e-'))
   const output = path.join(directory, 'runner.cjs')
-  await build({ entryPoints: ['src/main/browser/browserCodeSession.ts'], outfile: output, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], define: { __dirname: JSON.stringify(path.resolve('dist/main')) } })
-  ;({ electronApp: app } = await launchApp())
-  await app.evaluate(async (_electron, output) => {
+  await build({ entryPoints: ['src/services/browser/desktop/codeSessions.ts'], outfile: output, bundle: true, platform: 'node', format: 'cjs', external: ['electron'] })
+  ;({ electronApp: app } = await launchApp({ workspace: false }))
+  await app.evaluate(async (_electron, { output, preloadPath }) => {
     const { BrowserCodeSessions } = (process as any).mainModule.require(output)
-    ;(globalThis as any).__codeSessions = new BrowserCodeSessions(1500)
-  }, output)
+    ;(globalThis as any).__codeSessions = new BrowserCodeSessions({ deadlineMs: 1500, preloadPath })
+  }, { output, preloadPath: path.resolve('dist/preload/shellCodeCell.js') })
 })
 
 test.afterEach(async () => {
@@ -37,7 +37,7 @@ async function cell(code: string, key = 'test') {
 }
 
 test('real sandbox supports persistent bindings and emits native images', async () => {
-  const first = await cell('var tab = await cua.getTab({panelId:"p1"}); var answer = 41;')
+  const first = await cell('await cua.getTab(); var answer = 41;')
   expect(first.isError, JSON.stringify(first)).toBeUndefined()
   expect(first.content[0].text).toContain('Save')
   const second = await cell('await nodeRepl.write(answer + 1); await tab.getAXStateAndScreenshot();')

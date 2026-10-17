@@ -1,0 +1,285 @@
+// Small pages: ui/app's own slices (Sidebar, Notifications) and the pages
+// of slices whose owners have no page of their own yet (Editor from
+// panels/editor, Terminal from services/terminal, Browser from
+// services/browser). Terminal and Browser have a device page and a
+// workspace page each, so no page mixes the two.
+
+import { useEffect, useState } from 'react'
+import { NumberInput, SecondaryButton, Select, SettingRow, Slider, TextInput, Toggle } from '../../../kernel/interaction'
+import { errorMessage } from '@kernel/interaction'
+import type { WorkspaceSettingKey, WorkspaceSettings } from '@panels/settings'
+import type { ClientSettings } from '../../../../settings'
+import {
+  setClientSetting,
+  setWorkspaceSetting,
+  useClientSetting,
+  useWorkspaceSettings,
+} from '../../../kernel/settings'
+import { tryRuntimeFor } from '@kernel/rpc/client'
+import type { SettingsPageProps } from '../registry'
+
+function setWs<K extends WorkspaceSettingKey>(workspaceId: string, key: K, value: WorkspaceSettings[K]): void {
+  void setWorkspaceSetting(workspaceId, key, value).catch(() => { /* the mirror reverts */ })
+}
+
+export function SidebarPage(): JSX.Element {
+  const skills = useClientSetting('showSkillsInWorkspaceOverview')
+  const tint = useClientSetting('sidebarTintOpacity')
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow label="Show skills in workspace overview" description="List installed agent skills beneath expanded workspaces.">
+        <Toggle checked={skills} onChange={(v) => setClientSetting('showSkillsInWorkspaceOverview', v)} />
+      </SettingRow>
+      <SettingRow label="Sidebar background opacity" description={`${Math.round(tint * 100)}%`}>
+        <Slider value={tint} onChange={(v) => setClientSetting('sidebarTintOpacity', v)} min={0.3} max={1.0} step={0.05} />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function NotificationsPage(): JSX.Element {
+  const enabled = useClientSetting('notificationsEnabled')
+  const unfocusedOnly = useClientSetting('notifyOnlyWhenUnfocused')
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow label="Enable notifications" description="Show a notification when an agent finishes or needs input">
+        <Toggle checked={enabled} onChange={(v) => setClientSetting('notificationsEnabled', v)} />
+      </SettingRow>
+      <SettingRow label="Only when window unfocused" description="Skip notifications while Cate is in focus">
+        <Toggle checked={unfocusedOnly} onChange={(v) => setClientSetting('notifyOnlyWhenUnfocused', v)} disabled={!enabled} />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function EditorPage(): JSX.Element {
+  const fontSize = useClientSetting('editorFontSize')
+  const fontFamily = useClientSetting('editorFontFamily')
+  const treeOnOpen = useClientSetting('filesTreeOnOpen')
+  const treeOpenFileIn = useClientSetting('filesTreeOpenFileIn')
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow label="Editor font size">
+        <NumberInput value={fontSize} onChange={(v) => setClientSetting('editorFontSize', v)} min={8} max={32} step={1} />
+      </SettingRow>
+      <SettingRow label="Editor font family" description="Blank = default (Menlo, Monaco)">
+        <TextInput value={fontFamily} onChange={(v) => setClientSetting('editorFontFamily', v)} placeholder="e.g., JetBrains Mono" />
+      </SettingRow>
+      <SettingRow
+        label="Open file tree with workspace"
+        keywords="Files panel tree only sidebar left right"
+        description="Docks a tree-only Files panel in the main window when a workspace opens without one."
+      >
+        <Select
+          value={treeOnOpen}
+          onChange={(v) => setClientSetting('filesTreeOnOpen', v as ClientSettings['filesTreeOnOpen'])}
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'left', label: 'On the left' },
+            { value: 'right', label: 'On the right' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Open files from a tree-only panel"
+        keywords="Files panel tree only click same beside"
+        description="Where a file clicked in a Files panel that shows only its tree opens."
+      >
+        <Select
+          value={treeOpenFileIn}
+          onChange={(v) => setClientSetting('filesTreeOpenFileIn', v as ClientSettings['filesTreeOpenFileIn'])}
+          options={[
+            { value: 'panel', label: 'In the same panel' },
+            { value: 'beside', label: 'In a panel beside it' },
+          ]}
+        />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function TerminalPage(): JSX.Element {
+  const fontFamily = useClientSetting('terminalFontFamily')
+  const fontSize = useClientSetting('terminalFontSize')
+  const scrollSpeed = useClientSetting('terminalScrollSpeed')
+  const contrast = useClientSetting('terminalContrast')
+  const cursorBlink = useClientSetting('terminalCursorBlink')
+  const optionIsMeta = useClientSetting('terminalOptionIsMeta')
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow label="Font family override">
+        <TextInput value={fontFamily} onChange={(v) => setClientSetting('terminalFontFamily', v)} placeholder="e.g., Menlo, Monaco" />
+      </SettingRow>
+      <SettingRow label="Font size override" description="0 = use default">
+        <NumberInput value={fontSize} onChange={(v) => setClientSetting('terminalFontSize', v)} min={0} max={32} step={1} />
+      </SettingRow>
+      <SettingRow label="Scroll speed" description={`${scrollSpeed.toFixed(2)}x`}>
+        <Slider value={scrollSpeed} onChange={(v) => setClientSetting('terminalScrollSpeed', v)} min={0.25} max={3.0} step={0.25} />
+      </SettingRow>
+      <SettingRow
+        label="Text contrast"
+        description={contrast <= 1 ? 'Off. Theme colors shown exactly.' : `${contrast.toFixed(1)}:1. Lifts dim text (4.5 = WCAG AA).`}
+      >
+        {/* Above ~7:1 nearly all text is already forced to black or white. */}
+        <Slider value={contrast} onChange={(v) => setClientSetting('terminalContrast', v)} min={1} max={7} step={0.1} />
+      </SettingRow>
+      <SettingRow label="Blink cursor" description="A steady cursor avoids a compositor redraw on every blink, saving power when idle.">
+        <Toggle checked={cursorBlink} onChange={(v) => setClientSetting('terminalCursorBlink', v)} />
+      </SettingRow>
+      <SettingRow label="Use ⌥ Option as Meta" description="On: ⌥+key sends Meta/ESC (e.g. ⌥F / ⌥B word motion). Off: ⌥ types special characters.">
+        <Toggle checked={optionIsMeta} onChange={(v) => setClientSetting('terminalOptionIsMeta', v)} />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function WorkspaceTerminalPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
+  const ws = useWorkspaceSettings(workspaceId)
+  if (!workspaceId) return null
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow label="Default shell path" description="Leave blank to auto-detect ($SHELL, then a platform default).">
+        <TextInput value={ws.defaultShellPath} onChange={(v) => setWs(workspaceId, 'defaultShellPath', v)} placeholder="Auto-detect" />
+      </SettingRow>
+      <SettingRow label="Scrollback" description="Lines each terminal keeps.">
+        <NumberInput value={ws.terminalScrollback} onChange={(v) => setWs(workspaceId, 'terminalScrollback', v)} min={100} max={10000} step={100} />
+      </SettingRow>
+      <SettingRow
+        label="Auto-suspend idle background terminals"
+        description="Pause terminals idle and offscreen for 2 minutes to free memory. Resumes instantly on focus."
+      >
+        <Toggle checked={ws.autoSuspendIdleTerminals} onChange={(v) => setWs(workspaceId, 'autoSuspendIdleTerminals', v)} />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function BrowserPage(): JSX.Element {
+  const proxyUrl = useClientSetting('browserProxyUrl')
+  const linkTarget = useClientSetting('linkOpenTarget')
+  const [proxyDraft, setProxyDraft] = useState(proxyUrl)
+
+  useEffect(() => { setProxyDraft(proxyUrl) }, [proxyUrl])
+
+  const saveProxy = () => {
+    const value = proxyDraft.trim()
+    setProxyDraft(value)
+    if (value !== proxyUrl) setClientSetting('browserProxyUrl', value)
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow
+        label="Open links"
+        keywords="Ask each time In Cate In system browser terminal markdown"
+        description="Where a web link opens when you click it in a terminal (Cmd/Ctrl+click) or a markdown preview. Cmd/Ctrl+Shift+click in a terminal always uses the system browser."
+      >
+        <Select
+          value={linkTarget}
+          onChange={(v) => setClientSetting('linkOpenTarget', v as ClientSettings['linkOpenTarget'])}
+          options={[
+            { value: 'ask', label: 'Ask each time' },
+            { value: 'cate', label: 'In Cate' },
+            { value: 'external', label: 'In system browser' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Proxy"
+        description="The upstream proxy for every browser panel. Leave empty for a direct connection. Supports authenticated proxy URLs, PAC scripts, and ;bypass= lists."
+      >
+        <TextInput
+          value={proxyDraft}
+          onChange={setProxyDraft}
+          onBlur={saveProxy}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+          placeholder="http://proxy.company.com:8080"
+          layoutClassName="w-72 px-2"
+          className="font-mono"
+        />
+      </SettingRow>
+    </div>
+  )
+}
+
+export function WorkspaceBrowserPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
+  const ws = useWorkspaceSettings(workspaceId)
+  const [confirmingClear, setConfirmingClear] = useState(false)
+  const [message, setMessage] = useState('')
+
+  const clearHistory = async () => {
+    if (!workspaceId) return
+    if (!confirmingClear) {
+      setConfirmingClear(true)
+      setMessage('')
+      return
+    }
+    try {
+      await tryRuntimeFor(workspaceId)?.browserData.clearHistory()
+      setMessage('History cleared.')
+    } catch (err) {
+      setMessage(errorMessage(err, 'Could not clear history.'))
+    }
+    setConfirmingClear(false)
+  }
+
+  if (!workspaceId) return null
+  return (
+    <div className="flex flex-col gap-1">
+      <SettingRow label="Homepage">
+        <TextInput
+          value={ws.browserHomepage}
+          onChange={(v) => setWs(workspaceId, 'browserHomepage', v)}
+          placeholder="about:blank"
+          disabled={ws.browserNewTabBehavior !== 'homepage'}
+        />
+      </SettingRow>
+      <SettingRow label="Search engine" keywords="Google DuckDuckGo Bing Brave">
+        <Select
+          value={ws.browserSearchEngine}
+          onChange={(v) => setWs(workspaceId, 'browserSearchEngine', v as WorkspaceSettings['browserSearchEngine'])}
+          options={[
+            { value: 'google', label: 'Google' },
+            { value: 'duckDuckGo', label: 'DuckDuckGo' },
+            { value: 'bing', label: 'Bing' },
+            { value: 'brave', label: 'Brave' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow label="New tab opens" keywords="Start page Homepage">
+        <Select
+          value={ws.browserNewTabBehavior}
+          onChange={(v) => setWs(workspaceId, 'browserNewTabBehavior', v as WorkspaceSettings['browserNewTabBehavior'])}
+          options={[
+            { value: 'startPage', label: 'Start page' },
+            { value: 'homepage', label: 'Homepage' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Agents may use saved passwords"
+        keywords="login sign in cate browser login agent password"
+        description="Lets an agent fill a saved login into a sign-in form (cate browser login). The agent never sees the password, but it can sign in with it."
+      >
+        <Select
+          value={ws.browserAgentPasswords}
+          onChange={(v) => setWs(workspaceId, 'browserAgentPasswords', v as WorkspaceSettings['browserAgentPasswords'])}
+          options={[
+            { value: 'off', label: 'Never' },
+            { value: 'ask', label: 'Ask each time' },
+            { value: 'allow', label: 'Always' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Clear browsing history"
+        description="The history the browser panels share."
+        hint={message ? <span className="text-xs text-muted">{message}</span> : undefined}
+      >
+        <SecondaryButton onClick={() => void clearHistory()}>
+          {confirmingClear ? 'Confirm clear' : 'Clear…'}
+        </SecondaryButton>
+      </SettingRow>
+    </div>
+  )
+}

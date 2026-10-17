@@ -1,0 +1,182 @@
+// The network dialer end to end over real WebSockets: pair from a link or a
+// typed code, then dial by key and get a message pipe that is already inside
+// the security layer (what a client's connection frames).
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createLifecycleBus } from '@kernel/lifecycle/contract'
+import { createCapabilityProxy, RpcClient } from '@kernel/rpc/client'
+import { defineCapability, framePortOver, method } from '@kernel/rpc/contract'
+import { RpcServer } from '@kernel/rpc/runtime'
+import { createMemoryDeviceStore } from '@kernel/state/contract'
+import { KnownRuntimes } from '@runtime/pairing/client'
+import { PairingService, type DevicesFile } from '@runtime/pairing/runtime'
+import { encodePublicKey, generateKeyPair, networkIdOf, type KeyPair } from '@runtime/security/contract'
+import { CateConnectError } from '@runtime/connect/contract'
+import { createNetworkDialer, dialSameNetwork, NetworkUnreachableError, SameNetworkUnreachableError, type NetworkDialer, type NetworkDialerDeps } from './client'
+import { nodeWebSocketFactory } from './node'
+import { openWebSocket, pairingEndpoints, sameNetworkUrl } from './contract'
+import { createNetworkPeers, serveSameNetwork, type NetworkPeers, type SameNetworkListener } from './runtime'
+
+const RUNTIME_KEYS = generateKeyPair()
+const RUNTIME_ID = networkIdOf(RUNTIME_KEYS.publicKey)
+const pingCap = defineCapability('ping', { methods: { ping: method<void, string>() } })
+
+let runtimeKeys: KeyPair
+let pairing: PairingService
+let peers: NetworkPeers
+let lan: SameNetworkListener
+const clients: RpcClient[] = []
+
+beforeEach(async () => {
+  runtimeKeys = RUNTIME_KEYS
+  let file: DevicesFile = { devices: [] }
+  pairing = new PairingService({
+    runtimePublicKey: runtimeKeys.publicKey,
+    store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
+    addresses: () => lan.addresses(),
+    pairTimeoutMs: 2_000,
+  })
+  const rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
+  rpc.register(pingCap, { ping: () => 'pong' })
+  peers = createNetworkPeers({ rpc, runtimeKeys, pairing, handshakeTimeoutMs: 2_000 })
+  lan = await serveSameNetwork({ runtimeId: RUNTIME_ID, peers, host: '127.0.0.1', port: 0, advertise: false, addresses: (port) => [`127.0.0.1:${port}`] })
+})
+
+afterEach(async () => {
+  for (const client of clients.splice(0)) client.close()
+  peers.dispose()
+  await lan.close()
+})
+
+function shell(overrides: Partial<NetworkDialerDeps> = {}) {
+  const deviceKeys = generateKeyPair()
+  const pins = new KnownRuntimes(createMemoryDeviceStore())
+  const host = createNetworkDialer({
+    deviceKeys: () => deviceKeys,
+    deviceName: () => 'laptop',
+    pins,
+    webSocket: nodeWebSocketFactory,
+    // Discovery stands in for mDNS, which the transports' own test covers.
+    sameNetwork: (options) => dialSameNetwork({ ...options, discover: async (id) => (id === RUNTIME_ID ? lan.addresses() : []) }),
+    createPeer: () => { throw new Error('Cate Connect is not part of this test') },
+    cateConnect: () => Promise.reject(new Error('Cate Connect is not part of this test')),
+    ...overrides,
+  })
+  return { host, pins, deviceKeys }
+}
+
+async function ping(duplex: Awaited<ReturnType<NetworkDialer['dialNetwork']>>, keys: KeyPair) {
+  const client = new RpcClient({
+    version: 'test',
+    identity: { client: { clientId: 'c1', device: { name: 'laptop', publicKey: encodePublicKey(keys.publicKey) }, features: [] } },
+  })
+  clients.push(client)
+  await client.attach(framePortOver(duplex, 'message'))
+  return createCapabilityProxy(client, pingCap).ping()
+}
+
+describe('network dialer', () => {
+  it('pairs from a link, pins the runtime key, then dials by key into the security layer', async () => {
+    const { host, pins, deviceKeys } = shell()
+    const { uri } = pairing.createSecret('sameNetwork')
+    const paired = await host.pair({ link: uri })
+    expect(paired).toEqual({ runtimeId: RUNTIME_ID, endpoints: pairingEndpoints(lan.addresses(), 'sameNetwork'), publicKey: runtimeKeys.publicKey })
+    expect(await pins.get(RUNTIME_ID)).toEqual(runtimeKeys.publicKey)
+    expect(pairing.list()).toMatchObject([{ name: 'laptop' }])
+
+    const [address, port] = lan.addresses()[0].split(':')
+    const duplex = await host.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: [{ kind: 'lan', address, port: Number(port) }] })
+    expect(await ping(duplex, deviceKeys)).toBe('pong')
+  })
+
+  it('pairs from a typed code found by discovery', async () => {
+    const { host, pins } = shell()
+    const { code } = pairing.createSecret('sameNetwork')
+    const paired = await host.pair({ link: code, deviceName: 'work laptop' })
+    expect(paired.endpoints.every((endpoint) => endpoint.kind === 'lan')).toBe(true)
+    expect(await pins.get(RUNTIME_ID)).toEqual(runtimeKeys.publicKey)
+    expect(pairing.list()).toMatchObject([{ name: 'work laptop' }])
+  })
+
+  it('refuses to dial a runtime it never paired with', async () => {
+    const { host } = shell()
+    await expect(host.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: [] })).rejects.toThrow()
+  })
+})
+
+describe('network dialer and a stranger on a known address', () => {
+  it('tries the other endpoints when one answers with another key', async () => {
+    // Another machine now answers at the address the device remembers.
+    const strangerRpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
+    const strangerKeys = generateKeyPair()
+    const strangerPeers = createNetworkPeers({ rpc: strangerRpc, runtimeKeys: strangerKeys, pairing, handshakeTimeoutMs: 2_000 })
+    const stranger = await serveSameNetwork({ runtimeId: RUNTIME_ID, peers: strangerPeers, host: '127.0.0.1', port: 0, advertise: false, addresses: (port) => [`127.0.0.1:${port}`] })
+    try {
+      const { host, deviceKeys, pins } = shell()
+      await host.pair({ link: pairing.createSecret('sameNetwork').uri })
+      const dialer = createNetworkDialer({
+        deviceKeys: () => deviceKeys,
+        deviceName: () => 'laptop',
+        pins,
+        webSocket: nodeWebSocketFactory,
+        // The runtime itself is found a moment later, by discovery.
+        sameNetwork: (options) => dialSameNetwork({
+          ...options,
+          discover: async () => { await new Promise((r) => setTimeout(r, 200)); return lan.addresses() },
+        }),
+        createPeer: () => { throw new Error('Cate Connect is not part of this test') },
+        cateConnect: () => Promise.reject(new Error('Cate Connect is not part of this test')),
+      })
+      const [address, port] = stranger.addresses()[0].split(':')
+      const duplex = await dialer.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: [{ kind: 'lan', address, port: Number(port) }] })
+      expect(await ping(duplex, deviceKeys)).toBe('pong')
+    } finally {
+      strangerPeers.dispose()
+      await stranger.close()
+    }
+  })
+})
+
+describe('network dialer when the same network fails', () => {
+  const unreachable = (): never => { throw new SameNetworkUnreachableError('noAnswer', 'no answer') }
+
+  it('tries Cate Connect for a runtime paired on the same network only', async () => {
+    const { host: pairer, deviceKeys, pins } = shell()
+    await pairer.pair({ link: pairing.createSecret('sameNetwork').uri })
+    const connected: string[] = []
+    // Cate Connect stands in as a raw port to the same runtime.
+    const host = createNetworkDialer({
+      deviceKeys: () => deviceKeys,
+      deviceName: () => 'phone',
+      pins,
+      webSocket: nodeWebSocketFactory,
+      sameNetwork: async () => unreachable(),
+      createPeer: () => { throw new Error('unused') },
+      cateConnect: (runtimeId) => {
+        connected.push(runtimeId)
+        return openWebSocket(nodeWebSocketFactory, sameNetworkUrl(lan.addresses()[0], RUNTIME_ID)!)
+      },
+    })
+    const duplex = await host.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: pairingEndpoints(['10.9.9.9:1'], 'sameNetwork') })
+    expect(connected).toEqual([RUNTIME_ID])
+    expect(await ping(duplex, deviceKeys)).toBe('pong')
+  })
+
+  it('says why neither way reached the runtime', async () => {
+    const { host } = shell({
+      sameNetwork: async () => unreachable(),
+      cateConnect: () => Promise.reject(new CateConnectError('offline', 'The workspace is not online')),
+    })
+    const error = await host.dialNetwork({ runtimeId: RUNTIME_ID, endpoints: [] }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(NetworkUnreachableError)
+    expect((error as NetworkUnreachableError).failure).toEqual({ sameNetwork: 'noAnswer', connect: 'offline' })
+    expect((error as Error).message).toBe('Its machine is asleep or off, or shares on its own network only.')
+  })
+
+  it('points a same-network code at "Anywhere" when the network keeps devices apart', async () => {
+    const { host } = shell({ sameNetwork: async () => { throw new SameNetworkUnreachableError('notFound', 'not found') } })
+    const error = await host.pair({ link: pairing.createSecret('sameNetwork').uri }).catch((e: unknown) => e)
+    expect((error as NetworkUnreachableError).failure).toEqual({ sameNetwork: 'notFound' })
+    expect((error as Error).message).toContain('share it "Anywhere" on its machine')
+  })
+})

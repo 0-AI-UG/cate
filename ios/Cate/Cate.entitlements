@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Agent alerts while the app is closed (Cate Connect, APNs). -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- The push key, shared with the notification extension. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(CATE_BUNDLE_ID).shared</string>
+	</array>
+</dict>
+</plist>

@@ -6,6 +6,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const playwright = path.join(root, 'node_modules', '@playwright', 'test', 'cli.js')
 const defaultSpecs = [
   'e2e/startup-performance.spec.ts',
+  'e2e/runtime-startup-performance.spec.ts',
   'e2e/panel-creation-performance.spec.ts',
   'e2e/canvas-scale-perf.spec.ts',
   'e2e/workspace-transition-perf.spec.ts',
@@ -47,6 +48,8 @@ function processTable() {
   })
 }
 
+// Workspace runtimes are detached daemons (they outlive the app), so they are
+// not descendants and are not counted against the cap.
 async function descendantRssKB(rootPid) {
   const rows = await processTable()
   const descendants = new Set([rootPid])

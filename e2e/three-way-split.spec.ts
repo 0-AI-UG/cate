@@ -7,12 +7,12 @@ let page: Page
 let firstPanel: string
 
 test.beforeEach(async () => {
-  ;({ electronApp: app, mainWindow: page } = await launchApp())
+  // No canvas: the main window's dock starts empty.
+  ;({ electronApp: app, mainWindow: page } = await launchApp({ canvas: false }))
   const window = await app.browserWindow(page)
   await window.evaluate(window => window.setContentSize(1040, 700))
   firstPanel = await page.evaluate(() => {
     window.__cateE2E!.setSidebarHidden(true)
-    window.__cateE2E!.clearCanvas()
     return window.__cateE2E!.createPanel('surface')
   })
   await expect(page.locator(`[data-tab-panel-id="${firstPanel}"]`)).toBeVisible()
@@ -59,6 +59,8 @@ test('dropping a third tab on the left edge of the second half keeps every pane 
   const third = await page.evaluate(() => window.__cateE2E!.createPanel('surface'))
   const tab = page.locator(`[data-tab-panel-id="${third}"]`)
   await expect(tab).toBeVisible()
+  // Let the new tab settle into place before grabbing it.
+  await page.waitForTimeout(300)
   const source = (await tab.boundingBox())!
   const target = (await page.locator(`[data-dock-stack-id="${targetId}"]`).boundingBox())!
   const windowWidth = await page.evaluate(() => window.innerWidth)

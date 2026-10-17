@@ -1,30 +1,31 @@
 import { test, expect } from '@playwright/test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { realpathSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { launchApp, closeApp } from './fixtures/electron-app'
-import { openTrustedWorkspace } from './fixtures/workspace'
+import { closeApp, launchApp, makeHome, makeProject, seedOnCanvas } from './fixtures/electron-app'
 
 for (const container of ['plain', 'list', 'quote'] as const) {
   test(`Markdown code in ${container} keeps pointer interactions and copies to the native clipboard`, async () => {
-    const root = mkdtempSync(path.join(tmpdir(), 'cate-markdown-'))
+    const home = makeHome()
+    const root = realpathSync(makeProject(home))
     const source = 'cate panel list ' + 'long-command-argument '.repeat(30)
     const fence = '```sh\n' + source + '\n```\n'
     const markdown = container === 'list' ? '1. Commands\n\n' + fence.split('\n').map(line => '   ' + line).join('\n')
       : container === 'quote' ? fence.split('\n').map(line => '> ' + line).join('\n') : fence
-    writeFileSync(path.join(root, 'preview.md'), '# Markdown\n\n' + markdown)
-    const app = await launchApp({ empty: true })
+    const file = path.join(root, 'preview.md')
+    writeFileSync(file, '# Markdown\n\n' + markdown)
+    const app = await launchApp({ home, workspace: root })
     try {
       const page = app.mainWindow
-      await openTrustedWorkspace(page, root)
-      await page.evaluate(() => window.__cateE2E!.createPanel('canvas'))
-      await page.locator('[data-canvas-panel-id]').waitFor()
-      const nodeId = await page.evaluate(() => window.__cateE2E!.createEditor({ x: 40, y: 40 }))
+      const { nodeId } = await seedOnCanvas(page, 'editor', { x: 40, y: 40 }, { filePath: file })
       const node = page.locator(`[data-node-id="${nodeId}"]`)
-      await node.getByText('preview.md', { exact: true }).click()
+      // Markdown opens in preview; the toggle then reads "Source".
+      await expect(node.getByRole('button', { name: 'Source', exact: true })).toBeVisible({ timeout: 15_000 })
       const pre = node.locator('pre')
       await expect(pre).toContainText(source)
       const copy = node.getByRole('button', { name: 'Copy code', exact: true })
+      // An unfocused node is dimmed by an overlay that takes the first click.
+      const overlay = node.locator('[data-unfocused-overlay]')
+      if (await overlay.count()) await overlay.click()
       await pre.hover()
       await copy.click()
       await expect.poll(() => app.electronApp.evaluate(({ clipboard }) => clipboard.readText())).toBe(source + '\n')
@@ -33,6 +34,7 @@ for (const container of ['plain', 'list', 'quote'] as const) {
       await page.addStyleTag({ content: 'pre::-webkit-scrollbar { height: 14px; } pre::-webkit-scrollbar-thumb { background: #888; }' })
       for (const zoom of [1, 0.65, 1.8]) {
         await page.evaluate(zoom => window.__cateE2E!.setZoom(zoom), zoom)
+        await page.waitForTimeout(100)
         await pre.evaluate(el => { el.scrollLeft = 0 })
         const box = await pre.boundingBox()
         if (!box) throw new Error('Missing code block')
@@ -43,8 +45,7 @@ for (const container of ['plain', 'list', 'quote'] as const) {
         await expect.poll(() => pre.evaluate(el => el.scrollLeft), { message: `Scrollbar drag at zoom ${zoom}` }).toBeGreaterThan(0)
       }
     } finally {
-      await closeApp(app.electronApp)
-      rmSync(root, { recursive: true, force: true })
+      await closeApp(app.electronApp, { home })
     }
   })
 }

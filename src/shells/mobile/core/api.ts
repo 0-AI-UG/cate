@@ -1,0 +1,241 @@
+// The core API the app calls (`MobileCoreMethods`).
+
+import { runtimeFor } from '@kernel/rpc/client'
+import { isRpcError } from '@kernel/rpc/contract'
+import { openTrusted, joinErrorMessage, joinWorkspace, trustStore } from '@client/workspaces'
+import { acquireSession, closePanel, createPanel, creatableDefinitions } from '@client/host'
+import { documentStoreFor } from '@client/document'
+import { surfaceChoices, surfaceReplacement } from '@panels/definitions'
+import type { AnyPanelDefinition } from '@panels/framework/contract'
+import { isPanelType } from '@workspace/document/contract'
+import type { MobileCoreMethod, MobileCoreMethods, MobilePanelChoice } from '../contract'
+import type { MobileClient } from './boot'
+import { createActionHandlers, wordsFor } from './actions'
+import type { MobileAgents } from './agents'
+import type { MobileBrowsers } from './browser'
+import type { MobileBuffers } from './buffers'
+import type { MobileConversations } from './conversations'
+import { placementOptions, suggestPlacements } from './placement'
+import { createRelationHandlers } from './relations'
+import { createReviewHandlers } from './review'
+import { loopbackPort, type MobileStreams } from './streams'
+import type { MobileTerminals } from './terminals'
+import type { MobileViews } from './views'
+
+/** How many sessions one `panel.warm` opens. */
+const WARM_LIMIT = 8
+
+type Handlers = { [M in MobileCoreMethod]: (params: MobileCoreMethods[M]['params']) => Promise<MobileCoreMethods[M]['result']> }
+
+export interface CoreParts {
+  terminals: MobileTerminals
+  views: MobileViews
+  browsers: MobileBrowsers
+  buffers: MobileBuffers
+  streams: MobileStreams
+  agents: MobileAgents
+  conversations: MobileConversations
+}
+
+const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
+  type: definition.type,
+  label: definition.label,
+  icon: definition.icon,
+  canvas: definition.canLiveOnCanvas,
+})
+
+export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers {
+  const { workspaces, connections } = client
+  const open = (workspaceId: string) => openTrusted({ workspaces, connections }, workspaceId)
+  const { terminals, views, browsers, buffers, streams, agents, conversations } = parts
+  return {
+    ...createActionHandlers(agents, conversations),
+    ...createRelationHandlers(),
+    ...createReviewHandlers(views),
+    async 'app.setActive'({ active }) {
+      client.setActive(active)
+      // Back in front: a connection may have died while the app was away.
+      if (active) connections.checkAll()
+      return null
+    },
+    async 'workspaces.join'({ input }) {
+      try {
+        const entry = await joinWorkspace(input, { pair: client.pair, workspaces })
+        await open(entry.id)
+        return { ok: true, workspaceId: entry.id }
+      } catch (error) {
+        return { ok: false, message: joinErrorMessage(error) }
+      }
+    },
+    async 'workspaces.open'({ workspaceId }) {
+      await open(workspaceId)
+      return null
+    },
+    async 'workspaces.answerTrust'({ trusted }) {
+      try {
+        await trustStore.answer(trusted)
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'Could not trust the workspace.' }
+      }
+    },
+    async 'workspaces.close'({ workspaceId }) {
+      workspaces.disconnect(workspaceId)
+      return null
+    },
+    async 'workspaces.stop'({ workspaceId }) {
+      try {
+        await runtimeFor(workspaceId).runtime.stop()
+      } finally {
+        workspaces.disconnect(workspaceId)
+      }
+      return null
+    },
+    async 'workspaces.retry'({ workspaceId }) {
+      connections.get(workspaceId)?.retryNow()
+      return null
+    },
+    async 'workspaces.forget'({ workspaceId }) {
+      await workspaces.close(workspaceId)
+      return null
+    },
+    async 'terminal.open'(params) {
+      terminals.open(params)
+      return null
+    },
+    async 'terminal.input'({ terminalId, data }) {
+      terminals.get(terminalId)?.input(data)
+      return null
+    },
+    async 'terminal.resize'({ terminalId, cols, rows }) {
+      terminals.get(terminalId)?.resize(cols, rows)
+      return null
+    },
+    async 'terminal.close'({ terminalId }) {
+      terminals.get(terminalId)?.close()
+      return null
+    },
+    async 'terminal.openLink'({ terminalId, uri }) {
+      terminals.get(terminalId)?.openLink(uri)
+      return null
+    },
+
+    async 'panel.open'(params) {
+      views.open(params)
+      return null
+    },
+    'panel.op': ({ viewId, op }) => views.op(viewId, op),
+    async 'panel.close'({ viewId }) {
+      views.get(viewId)?.close()
+      return null
+    },
+    async 'panel.warm'({ workspaceId, panelIds }) {
+      for (const panelId of panelIds.slice(0, WARM_LIMIT)) acquireSession(workspaceId, panelId)?.release()
+      return null
+    },
+    async 'panel.creatable'() {
+      return creatableDefinitions().map(choice)
+    },
+    async 'panel.create'({ workspaceId, type, placement }) {
+      return isPanelType(type) ? createPanel(workspaceId, type, { ...placementOptions(type, placement) }) : null
+    },
+    'panel.remove': ({ workspaceId, panelId }) => closePanel(workspaceId, panelId),
+    async 'canvas.moveNode'({ workspaceId, canvasId, nodeId, origin }) {
+      const store = documentStoreFor(workspaceId)
+      const node = store?.getSnapshot().canvases[canvasId]?.nodes[nodeId]
+      if (!store || !node) return false
+      return store.propose({ kind: 'setNodeRects', canvasId, rects: [{ nodeId, rect: { origin, size: node.rect.size } }] }).ok
+    },
+    async 'canvas.suggest'({ workspaceId, canvasPanelId, type, visible }) {
+      const doc = documentStoreFor(workspaceId)?.getSnapshot()
+      return doc ? suggestPlacements(doc, canvasPanelId, type, visible) : []
+    },
+    async 'panel.setWorktree'({ workspaceId, panelId, worktreeId, discard }) {
+      try {
+        await runtimeFor(workspaceId).session.op({ panelId, op: { kind: 'switchWorktree', worktreeId, ...(discard ? { discard } : {}) } })
+        return { ok: true }
+      } catch (error) {
+        if (isRpcError(error, 'dirty')) return { ok: false, message: `${error.message}. Stop it and switch the worktree?`, dirty: true }
+        return { ok: false, message: wordsFor(error) }
+      }
+    },
+    async 'surface.choices'({ workspaceId, panelId }) {
+      const doc = documentStoreFor(workspaceId)?.getSnapshot()
+      return doc ? surfaceChoices(doc, panelId).map(choice) : []
+    },
+    async 'surface.pick'({ workspaceId, panelId, type }) {
+      const store = documentStoreFor(workspaceId)
+      const record = store && isPanelType(type) ? surfaceReplacement(store.getSnapshot(), panelId, type) : null
+      return !!record && store!.propose({ kind: 'replacePanel', record }).ok
+    },
+
+    async 'buffer.open'(params) {
+      buffers.open(params)
+      return null
+    },
+    async 'buffer.edit'({ viewId, from, length, text }) {
+      const buffer = buffers.get(viewId)
+      if (!buffer) throw new Error('The file is not open.')
+      return { version: buffer.edit(from, length, text) }
+    },
+    async 'buffer.text'({ viewId }) {
+      const buffer = buffers.get(viewId)
+      if (!buffer) throw new Error('The file is not open.')
+      return buffer.text()
+    },
+    async 'buffer.close'({ viewId }) {
+      buffers.get(viewId)?.close()
+      return null
+    },
+    async 'buffer.warm'(params) {
+      buffers.warm(params)
+      return null
+    },
+    async 'files.list'({ workspaceId, path }) {
+      const entries = await runtimeFor(workspaceId).file.readDir({ path })
+      return entries
+        .map(({ name, path, isDirectory }) => ({ name, path, isDirectory }))
+        .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name))
+    },
+    async 'files.search'({ workspaceId, query, root }) {
+      const found = await runtimeFor(workspaceId).search.files({ query, maxResults: 20, ...(root ? { root } : {}) })
+      return found.map(({ name, path, relativePath, isDirectory }) => ({ name, path, relativePath, isDirectory }))
+    },
+    async 'files.url'({ workspaceId, path }) {
+      return (await runtimeFor(workspaceId).file.serveUrl({ path })).url
+    },
+
+    async 'browser.open'(params) {
+      browsers.open(params)
+      return null
+    },
+    async 'browser.navigated'(params) {
+      browsers.navigated(params)
+      return null
+    },
+    async 'browser.loading'(params) {
+      browsers.loading(params)
+      return null
+    },
+    async 'browser.title'(params) {
+      browsers.title(params)
+      return null
+    },
+
+    async 'loopback.port'({ url }) {
+      return loopbackPort(url)
+    },
+    async 'stream.open'(params) {
+      await streams.open(params)
+      return null
+    },
+    async 'stream.write'({ streamId, data }) {
+      streams.get(streamId)?.write(data)
+      return null
+    },
+    async 'stream.close'({ streamId }) {
+      streams.get(streamId)?.close()
+      return null
+    },
+  }
+}

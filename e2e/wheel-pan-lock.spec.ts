@@ -6,24 +6,19 @@
 // interleaved with a panel drag, and a workspace switch mid-scroll — and asserts
 // the lock never strands.
 //
-// The watchdog's warning is the detector: if it fires, a stranded
-// `canvas-interacting` hold just happened and the message names the owner.
+// The detector is the body class itself after everything settles (the old
+// gestureLockWatchdog and its warning were not ported to the new client).
 // =============================================================================
 import { test, expect } from '@playwright/test'
-import { launchApp, closeApp, seedTerminal, getNodeRect } from './fixtures/electron-app'
+import { launchApp, closeApp, seedOnCanvas, getNodeRect, makeProject, openWorkspace } from './fixtures/electron-app'
 import type { ElectronApplication, Page } from 'playwright'
 
 let app: ElectronApplication
 let page: Page
-let warnings: string[] = []
+let home: string
 
 test.beforeEach(async () => {
-  ;({ electronApp: app, mainWindow: page } = await launchApp())
-  warnings = []
-  page.on('console', (m) => {
-    const t = m.text()
-    if (t.includes('gestureLockWatchdog')) warnings.push(t)
-  })
+  ;({ electronApp: app, mainWindow: page, home } = await launchApp())
 })
 test.afterEach(async () => closeApp(app))
 
@@ -31,7 +26,7 @@ const lockHeld = (p: Page) =>
   p.evaluate(() => document.body.classList.contains('canvas-interacting'))
 
 /** Fill the terminal's scrollback with a lot of lines. */
-async function flood(p: Page, nodeId: string, lines: number) {
+async function flood(p: Page, panelId: string, lines: number) {
   // Run a real command so the output flows through the PTY at full rate — a
   // direct write() is swallowed by the shell's line discipline.
   const ok = await p.evaluate(
@@ -40,13 +35,13 @@ async function flood(p: Page, nodeId: string, lines: number) {
         id,
         `for i in $(seq 1 ${n}); do printf 'line %s ${'y'.repeat(150)}\\n' "$i"; done\r`,
       ),
-    { id: nodeId, n: lines },
+    { id: panelId, n: lines },
   )
   // Wait for the buffer to stop growing.
   let last = -1
   for (let i = 0; i < 40; i++) {
     await p.waitForTimeout(1000)
-    const len = await p.evaluate((x) => window.__cateE2E!.terminalText(x)?.length ?? 0, nodeId)
+    const len = await p.evaluate(async (x) => (await window.__cateE2E!.terminalText(x))?.length ?? 0, panelId)
     if (len === last) break
     last = len
   }
@@ -54,11 +49,11 @@ async function flood(p: Page, nodeId: string, lines: number) {
 }
 
 test('scrolling a terminal with a huge scrollback does not strand the gesture lock', async () => {
-  const nodeId = await seedTerminal(page, { x: 200, y: 200 })
+  const { nodeId, panelId } = await seedOnCanvas(page, 'terminal', { x: 200, y: 200 })
   await page.waitForTimeout(2500) // let the PTY spawn
 
-  const wrote = await flood(page, nodeId, 8000)
-  const len = await page.evaluate((id) => window.__cateE2E!.terminalText(id)?.length ?? 0, nodeId)
+  const wrote = await flood(page, panelId, 8000)
+  const len = await page.evaluate(async (id) => (await window.__cateE2E!.terminalText(id))?.length ?? 0, panelId)
   console.log('flood accepted:', wrote, '| buffer chars:', len)
 
   const r = (await getNodeRect(page, nodeId))!
@@ -98,14 +93,15 @@ test('scrolling a terminal with a huge scrollback does not strand the gesture lo
   console.log('after scroll+drag rounds  | lock:', await lockHeld(page))
 
   // --- scroll, then switch workspace mid-flight ---
-  const wsB = await page.evaluate(() => window.__cateE2E!.addWorkspace('B'))
+  const wsA = await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId()!)
+  const wsB = await openWorkspace(page, makeProject(home, { name: 'b' }))
+  await page.evaluate((id) => window.__cateE2E!.selectWorkspace(id), wsA)
+  await page.waitForTimeout(500)
   for (let i = 0; i < 20; i++) await page.mouse.wheel(0, -200)
   await page.evaluate((id) => window.__cateE2E!.selectWorkspace(id), wsB)
   await page.waitForTimeout(1500)
   console.log('after scroll+ws switch    | lock:', await lockHeld(page))
 
-  await page.waitForTimeout(2000) // give the watchdog room to report a leak
-  console.log('watchdog warnings:', warnings.length ? warnings : 'none')
-  expect(warnings, `watchdog fired — a leak occurred:\n${warnings.join('\n')}`).toEqual([])
+  await page.waitForTimeout(2000)
   expect(await lockHeld(page)).toBe(false)
 })

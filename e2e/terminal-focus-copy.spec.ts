@@ -12,7 +12,8 @@ import { test, expect } from '@playwright/test'
 import {
   launchApp,
   closeApp,
-  seedTerminal,
+  seedOnCanvas,
+  expectTerminalText,
   resetViewport,
   titleBarCentre,
   getNodeRect,
@@ -39,15 +40,13 @@ interface Pane {
 /** Print a marker line in a node's terminal. Written straight to the PTY via the
  *  harness (not typed) so seeding never depends on the focus behaviour under
  *  test — at this point each node still holds exactly one terminal. */
-async function seedMarker(p: Page, nodeId: string, marker: string): Promise<void> {
-  await p.waitForFunction((id) => window.__cateE2E!.terminalPtyId(id) !== null, nodeId, {
-    timeout: 15_000,
-  })
+async function seedMarker(p: Page, panelId: string, marker: string): Promise<void> {
   await p.evaluate(
     ([id, m]) => window.__cateE2E!.writeTerminal(id!, `echo ${m}\r`),
-    [nodeId, marker],
+    [panelId, marker],
   )
-  await p.waitForTimeout(900)
+  await expectTerminalText(p, panelId, new RegExp(`\n${marker}`))
+  await p.waitForTimeout(300)
 }
 
 /**
@@ -63,14 +62,16 @@ async function splitTerminalNode(p: Page): Promise<string> {
   await setZoom(p, 0.6)
   await resetViewport(p)
 
-  const a = await seedTerminal(p, { x: 300, y: 100 })
-  const b = await seedTerminal(p, { x: 1000, y: 100 })
+  const ta = await seedOnCanvas(p, 'terminal', { x: 300, y: 100 })
+  const tb = await seedOnCanvas(p, 'terminal', { x: 1000, y: 100 })
+  const a = ta.nodeId
+  const b = tb.nodeId
   await setZoom(p, 0.6)
   await resetViewport(p)
   await p.waitForTimeout(300)
 
-  await seedMarker(p, a, 'LEFTMARK')
-  await seedMarker(p, b, 'RIGHTMARK')
+  await seedMarker(p, ta.panelId, 'LEFTMARK')
+  await seedMarker(p, tb.panelId, 'RIGHTMARK')
 
   const aGrab = await titleBarCentre(p, a)
   const bRect = (await getNodeRect(p, b))!
@@ -166,6 +167,14 @@ async function nativeCopy(
   }
 }
 
+/** A point on the split node's grab strip: dragging or clicking it moves or
+ *  re-focuses the whole node (a tab would drag that pane out). */
+async function nodeGrab(p: Page, nodeId: string): Promise<{ x: number; y: number }> {
+  const box = await p.locator(`[data-node-id="${nodeId}"] [data-node-grab-strip]`).boundingBox()
+  if (!box) throw new Error('split node has no grab strip')
+  return { x: box.x + 40, y: box.y + box.height / 2 }
+}
+
 async function clickPane(p: Page, pane: Pane): Promise<void> {
   await p.mouse.click(pane.rect.x + pane.rect.width / 2, pane.rect.y + pane.rect.height / 2)
 }
@@ -209,13 +218,13 @@ test('rearranging the node keeps copy on the pane holding the selection', async 
   // Step 5 of the issue: rearrange, then come back to the node. Clicking away and
   // re-focusing the node re-arms BOTH split panes' focus loops (focusEpoch bump),
   // and they race for DOM focus for ~500ms.
-  const grab = await titleBarCentre(page, nodeId)
-  await dragMouse(page, grab!, { x: grab!.x + 90, y: grab!.y + 40 }, { steps: 15, pauseAtEnd: 80 })
+  const grab = await nodeGrab(page, nodeId)
+  await dragMouse(page, grab, { x: grab.x + 90, y: grab.y + 40 }, { steps: 15, pauseAtEnd: 80 })
   await page.waitForTimeout(300)
   await page.mouse.click(60, 700) // empty canvas — drops node focus
   await page.waitForTimeout(300)
-  const grab2 = await titleBarCentre(page, nodeId)
-  await page.mouse.click(grab2!.x, grab2!.y) // re-focus the node
+  const grab2 = await nodeGrab(page, nodeId)
+  await page.mouse.click(grab2.x, grab2.y) // re-focus the node
   await page.waitForTimeout(1000)
 
   const state = await focusState(page, nodeId)
@@ -287,13 +296,13 @@ test('copy does not return a stale selection from the other pane', async () => {
   await selectAll(left)
 
   // Rearrange + come back, per steps 5-6 of the issue.
-  const grab = await titleBarCentre(page, nodeId)
-  await dragMouse(page, grab!, { x: grab!.x + 90, y: grab!.y + 40 }, { steps: 15, pauseAtEnd: 80 })
+  const grab = await nodeGrab(page, nodeId)
+  await dragMouse(page, grab, { x: grab.x + 90, y: grab.y + 40 }, { steps: 15, pauseAtEnd: 80 })
   await page.waitForTimeout(300)
   await page.mouse.click(60, 700)
   await page.waitForTimeout(300)
-  const grab2 = await titleBarCentre(page, nodeId)
-  await page.mouse.click(grab2!.x, grab2!.y)
+  const grab2 = await nodeGrab(page, nodeId)
+  await page.mouse.click(grab2.x, grab2.y)
   await page.waitForTimeout(1000)
 
   const { copyTarget, clipboard } = await nativeCopy(page, app, nodeId)

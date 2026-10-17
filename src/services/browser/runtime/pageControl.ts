@@ -1,0 +1,244 @@
+// Agent control of one browser panel's pages (architecture 10.2): the
+// `cate.browser.*` page methods. Each runs on the panel's active tab, through
+// page operations on the driving client (`page.*`), and fails fast when a
+// person picks another tab meanwhile. The panel's session holds the tabs and
+// hands this its port; the methods about tabs and the panel itself (`getTab`,
+// `close`, `setViewport`, ...) stay the session's.
+
+import type { ApiSessionContext, CateSessionHandlers } from '@kernel/api/contract'
+import { RpcError } from '@kernel/rpc/contract'
+import type { AgentCursorEvent, AgentCursorKind } from '../contract/agentCursor'
+import type { browserApi } from '../contract/api'
+import { BROWSER_ACTION_METHODS, type BrowserDriverResult } from '../contract/automation'
+import type { BrowserSurfaceArgs, BrowserSurfaceOp, BrowserSurfaceResult } from '../contract/surface'
+import { BROWSER_NEW_TAB_URL } from '../contract/types'
+import type { PasswordStore } from './passwords'
+
+/** A page operation's deadline and cancellation. */
+export interface PageCall {
+  timeoutMs?: number
+  signal?: AbortSignal
+}
+
+/** A tab as page control sees it. `internal`: a page the view draws itself
+ *  (history, passwords), which has no web page to act on. */
+export interface PageControlTab {
+  id: string
+  url: string
+  nav: number
+  internal: boolean
+}
+
+/** What the panel's session hands page control. */
+export interface PageControlPanel {
+  readonly panelId: string
+  activeTabId(): string
+  /** Throws `gone` for an unknown tab. */
+  tab(tabId: string): PageControlTab
+  isDisposed(): boolean
+  /** Sets a tab's URL for every client to load; returns its new `nav`. */
+  navigateTab(tabId: string, input: string): Promise<number>
+  /** Runs a page operation on the panel's driving client. */
+  surface<Op extends BrowserSurfaceOp>(op: Op, args: BrowserSurfaceArgs<Op>, call?: PageCall): Promise<BrowserSurfaceResult<Op>>
+  /** Shows what the agent does in the panel's agent cursor. */
+  showCursor(event: AgentCursorEvent): void
+}
+
+export interface PageControlDeps {
+  /** Workspace settings: `browserAgentPasswords`. */
+  settings: { get(key: string): unknown }
+  /** The workspace's saved passwords, for an agent's `login`. */
+  passwords: Pick<PasswordStore, 'suggestions' | 'forFill'>
+}
+
+/** The session methods of `cate.browser.*` that page control answers. */
+export type PageControlHandlers = Omit<CateSessionHandlers<typeof browserApi>, 'getTab' | 'createTab' | 'downloads' | 'close' | 'setViewport' | 'resize'>
+
+export interface PageControl {
+  handlers: PageControlHandlers
+  /** The active tab `tabId` (the active tab when the call names none), with a
+   *  web page or the start page. */
+  boundTab(tabId: unknown): PageControlTab
+  /** Throws once the panel is gone or `tabId` is no longer its active tab. */
+  still(tabId: string): void
+  /** One page-driver method on the tab; `settle` waits for layout first. */
+  execute(tabId: string, method: string, args: Record<string, unknown>, settle: boolean, call?: PageCall): Promise<unknown>
+  /** The tab's page once it followed the tab's navigation. */
+  pageInfo(tabId: string, call: PageCall): Promise<{ panelId: string; tabId: string; url: string; title: string }>
+}
+
+/** A page operation for a `cate` API call: the call's deadline and
+ *  cancellation (its signal) govern, not the broker's default timeout. */
+export const pageCall = (ctx: ApiSessionContext): PageCall => ({ timeoutMs: 0, signal: ctx.signal })
+
+function cursorKind(method: string): AgentCursorKind {
+  if (method === 'setValue' || method === 'typeText' || method === 'login') return 'type'
+  if (method === 'hover') return 'hover'
+  if (method === 'pressKey') return 'press'
+  if (method === 'scroll') return 'scroll'
+  return 'move'
+}
+
+const hasPage = (tab: PageControlTab) => !tab.internal && tab.url !== BROWSER_NEW_TAB_URL
+
+export function createPageControl(panel: PageControlPanel, deps: PageControlDeps): PageControl {
+  /** A bound tab that is no longer the panel's active one. */
+  const tabChanged = (tabId: string): RpcError => {
+    const active = panel.activeTabId()
+    return new RpcError('rejected', `browser-tab-changed: the panel now shows tab ${active}, not ${tabId}. `
+      + `Act on the active tab (omit --tab, or a new cell's \`tab\` in code), or switch back `
+      + `(cate browser tab ${tabId} --panel ${panel.panelId}, or cua.getTab({tabId:"${tabId}"}) in code).`)
+  }
+
+  // A person's tab switch cancels work bound to the tab it left.
+  const boundTab = (tabId: unknown): PageControlTab => {
+    if (tabId !== undefined && typeof tabId !== 'string') throw new RpcError('rejected', 'tabId-required')
+    const active = panel.activeTabId()
+    if (tabId !== undefined && tabId !== active) throw tabChanged(tabId)
+    const tab = panel.tab(active)
+    if (tab.internal) throw new RpcError('rejected', 'The active tab has no web page')
+    return tab
+  }
+
+  const still = (tabId: string): void => {
+    if (panel.isDisposed()) throw new RpcError('gone', `panel ${panel.panelId} is gone`)
+    if (panel.activeTabId() !== tabId) throw tabChanged(tabId)
+  }
+
+  const execute = async (tabId: string, method: string, args: Record<string, unknown>, settle: boolean, call?: PageCall): Promise<unknown> => {
+    const response: BrowserDriverResult = await panel.surface('page.execute', { tabId, method, args, ...(settle ? { settle } : {}) }, call)
+    if (response.cursor) panel.showCursor(response.cursor)
+    if (response.error) throw new RpcError('rejected', response.recovery ? `${response.error}: ${response.recovery}` : response.error)
+    return response.result
+  }
+
+  const pageInfo = async (tabId: string, call: PageCall) => {
+    const tab = panel.tab(tabId)
+    if (tab.internal) throw new RpcError('rejected', 'The active tab has no web page')
+    const page = await panel.surface('page.ready', { tabId, nav: tab.nav }, call)
+    still(tabId)
+    return { panelId: panel.panelId, tabId, ...page }
+  }
+
+  /** Reruns an observation to fail fast when the user took over since `args` was observed. */
+  const checkUserInput = async (tabId: string, args: Record<string, unknown>, call: PageCall): Promise<void> => {
+    if (args._userInputEpoch !== undefined) await execute(tabId, 'getAXState', args, false, call)
+  }
+
+  const observeAfterNavigation = async (tabId: string, args: Record<string, unknown>, call: PageCall): Promise<unknown> => {
+    await panel.surface('page.ready', { tabId, nav: panel.tab(tabId).nav }, call)
+    still(tabId)
+    return execute(tabId, 'getAXState', { ...args, disableDiffing: true }, false, call)
+  }
+
+  const pageMethod = (method: string, args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown> => {
+    const tabId = boundTab(args.tabId).id
+    if (BROWSER_ACTION_METHODS.has(method)) panel.showCursor({ kind: cursorKind(method), label: method })
+    return execute(tabId, method, { ...args, tabId }, false, pageCall(ctx))
+  }
+
+  const historyMethod = async (action: 'back' | 'forward' | 'reload', args: Record<string, unknown>, call: PageCall): Promise<unknown> => {
+    const tabId = boundTab(args.tabId).id
+    // A page too busy to observe can still be reloaded: that restarts it.
+    await checkUserInput(tabId, args, call).catch((error) => {
+      if (action !== 'reload' || !(error instanceof Error) || !error.message.startsWith('browser-page-unresponsive')) throw error
+    })
+    still(tabId)
+    const { ok } = await panel.surface('page.history', { tabId, action }, call)
+    if (!ok) throw new RpcError('rejected', 'no-history')
+    still(tabId)
+    return observeAfterNavigation(tabId, args, call)
+  }
+
+  /** An agent's `login`: the one saved login for the page the driving client
+   *  shows, after the person agrees when the workspace asks for that. The
+   *  password goes to the page driver, never back to the caller. */
+  const login = async (args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown> => {
+    const policy = deps.settings.get('browserAgentPasswords')
+    if (policy !== 'ask' && policy !== 'allow') {
+      throw new RpcError('rejected', 'browser-agent-passwords-off: agents may not use saved passwords in this workspace. '
+        + 'The person can allow it in Settings > Browser > "Agents may use saved passwords"; until then, ask them to sign in.')
+    }
+    const { credential: _credential, ...rest } = args
+    const tabId = boundTab(rest.tabId).id
+    const call = pageCall(ctx)
+    panel.showCursor({ kind: 'type', label: 'login' })
+    const { url } = await panel.surface('page.ready', { tabId, nav: panel.tab(tabId).nav }, call)
+    still(tabId)
+    let host = ''
+    try { host = new URL(url).hostname } catch { /* no page */ }
+    if (!host) throw new RpcError('rejected', 'browser-login-no-saved-password: the tab shows no web page')
+    const saved = deps.passwords.suggestions(url)
+    const names = saved.map((entry) => entry.username || '(no username)').join(', ')
+    const matching = typeof rest.username === 'string' ? saved.filter((entry) => entry.username === rest.username) : saved
+    if (!matching.length) {
+      throw new RpcError('rejected', saved.length
+        ? `browser-login-no-such-user: the saved logins for ${host} are ${names}`
+        : `browser-login-no-saved-password: there is no saved password for ${host}. Ask the person to sign in, or to save the login in the browser panel.`)
+    }
+    if (matching.length > 1) {
+      throw new RpcError('rejected', `browser-login-ambiguous: ${host} has several saved logins (${names}); pick one with --user <name> (username in code)`)
+    }
+    const [chosen] = matching
+    if (policy === 'ask') {
+      const who = chosen.username || 'the saved login'
+      const message = `An agent wants to sign in to ${host} as ${who}. Fill in the saved password for it? The agent does not see the password.`
+      const { ok } = await panel.surface('page.confirm', { message }, call)
+      if (!ok) throw new RpcError('rejected', 'browser-login-declined: the person did not allow it. Ask them to sign in.')
+      still(tabId)
+    }
+    const fill = deps.passwords.forFill(chosen.id, url)
+    if (!fill) throw new RpcError('rejected', `browser-login-no-saved-password: there is no saved password for ${host}`)
+    // The driver fills it only while the page still shows `origin`.
+    const credential = { username: fill.username, password: fill.password, origin: chosen.origin }
+    return execute(tabId, 'login', { ...rest, tabId, credential }, false, call)
+  }
+
+  const handlers: PageControlHandlers = {
+    getAXState: (args, ctx) => pageMethod('getAXState', args, ctx),
+    getScreenshot: (args, ctx) => pageMethod('getScreenshot', args, ctx),
+    getAXStateAndScreenshot: (args, ctx) => pageMethod('getAXStateAndScreenshot', args, ctx),
+    getAttribute: (args, ctx) => pageMethod('getAttribute', args, ctx),
+    waitFor: (args, ctx) => pageMethod('waitFor', args, ctx),
+    click: (args, ctx) => pageMethod('click', args, ctx),
+    hover: (args, ctx) => pageMethod('hover', args, ctx),
+    setValue: (args, ctx) => pageMethod('setValue', args, ctx),
+    typeText: (args, ctx) => pageMethod('typeText', args, ctx),
+    pressKey: (args, ctx) => pageMethod('pressKey', args, ctx),
+    scroll: (args, ctx) => pageMethod('scroll', args, ctx),
+    drag: (args, ctx) => pageMethod('drag', args, ctx),
+    selectText: (args, ctx) => pageMethod('selectText', args, ctx),
+    setChecked: (args, ctx) => pageMethod('setChecked', args, ctx),
+    selectOption: (args, ctx) => pageMethod('selectOption', args, ctx),
+    upload: (args, ctx) => pageMethod('upload', args, ctx),
+    dialog: (args, ctx) => pageMethod('dialog', args, ctx),
+    console: (args, ctx) => pageMethod('console', args, ctx),
+    network: (args, ctx) => pageMethod('network', args, ctx),
+    login: (args, ctx) => login(args, ctx),
+    goto: async (args, ctx) => {
+      const tabId = boundTab(args.tabId).id
+      await checkUserInput(tabId, args, pageCall(ctx))
+      still(tabId)
+      await panel.navigateTab(tabId, args.url)
+      return observeAfterNavigation(tabId, args, pageCall(ctx))
+    },
+    back: (args, ctx) => historyMethod('back', args, pageCall(ctx)),
+    forward: (args, ctx) => historyMethod('forward', args, pageCall(ctx)),
+    reload: (args, ctx) => historyMethod('reload', args, pageCall(ctx)),
+    download: async (args, ctx) => {
+      const tab = boundTab(args.tabId)
+      await checkUserInput(tab.id, args, pageCall(ctx))
+      const current = hasPage(tab) ? tab.url : ''
+      if (!args.url && !current) throw new RpcError('rejected', 'url-required')
+      let url: string
+      try {
+        url = args.url === undefined ? current : new URL(args.url, current || undefined).href
+      } catch {
+        throw new RpcError('rejected', 'invalid-browser-url')
+      }
+      return panel.surface('page.download', { tabId: tab.id, url }, pageCall(ctx))
+    },
+  }
+
+  return { handlers, boundTab, still, execute, pageInfo }
+}
