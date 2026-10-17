@@ -2,7 +2,7 @@
 // that split the whole dock, and the drag overlay. Each detached window has
 // its own native window.
 
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import { MAIN_WINDOW, dockStacks, type SplitSide, type WindowId } from '@workspace/document/contract'
 import { activeTabOf, installRevealHooks, panelDefinition } from '@client/host'
 import { useClientState, useDocument } from '../../document'
@@ -65,6 +65,8 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
     return () => { for (const stop of stops) stop() }
   }, [workspaceId, windowId, layoutId])
 
+  const host = useMemo(() => ({ windowId }), [windowId])
+
   const activeEdge = isDragging && target?.kind === 'dock-zone' && target.workspaceId === workspaceId
     && target.dock.layoutId === layoutId ? target.edge : undefined
 
@@ -75,7 +77,7 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
         <WindowHeader workspaceId={workspaceId} window={window} activeLayoutId={layoutId} leadingInset={leadingInset} floating={floating} />
       )}
       <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
-        <DockView workspaceId={workspaceId} dock={{ layoutId }} host={{ windowId }} emptyContent={emptyContent ?? <EmptyDockChooser workspaceId={workspaceId} dock={{ layoutId }} />} compact />
+        <DockView workspaceId={workspaceId} dock={{ layoutId }} host={host} emptyContent={emptyContent ?? <EmptyDockChooser workspaceId={workspaceId} dock={{ layoutId }} />} compact />
       </div>
       {activeEdge && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 9998, pointerEvents: 'none' }}>

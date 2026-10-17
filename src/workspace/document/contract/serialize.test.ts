@@ -47,6 +47,7 @@ describe('document.json', () => {
       ['canvas panel on a canvas', (d) => ({ ...d, canvases: { ...d.canvases, c1: { ...d.canvases.c1, nodes: { n1: { ...d.canvases.c1.nodes.n1, dock: { kind: 'stack', id: 'sn1', panels: ['x', 'cv2'] } } } } }, windows: { ...d.windows, w1: { ...d.windows.w1, dock: { kind: 'stack', id: 'sw', panels: ['w'] } } } })],
       ['relation to a missing panel', (d) => ({ ...d, relations: { r1: { ...d.relations.r1, toPanelId: 'nope' } } })],
       ['bad worktree status', (d) => ({ ...d, worktrees: { wt: { ...d.worktrees.wt, status: 'done' } } })],
+      ['layout without a name', (d) => ({ ...d, windows: { ...d.windows, main: { ...d.windows.main, layouts: d.windows.main.layouts.map(({ name: _name, ...l }) => l) } } })],
       ['extra key', (d) => ({ ...d, activeCanvasId: 'c1' })],
     ]
     for (const [name, mutate] of broken) {

@@ -72,7 +72,7 @@ export function validateDocument(value: unknown): string | null {
     for (const layout of layouts as DockLayout[]) {
       if (!isObject(layout) || !isId(layout.id) || layoutIds.has(layout.id)) return `${where} has a malformed layout`
       if (Object.keys(layout).some((key) => !['id', 'name', 'dock'].includes(key))) return `layout ${layout.id} has unknown keys`
-      if (layout.name !== undefined && typeof layout.name !== 'string') return `layout ${layout.id} has a bad name`
+      if (typeof layout.name !== 'string') return `layout ${layout.id} has no name`
       layoutIds.add(layout.id)
       const problem = place(layout.dock, `${where} layout ${layout.id}`, onCanvas)
       if (problem) return problem

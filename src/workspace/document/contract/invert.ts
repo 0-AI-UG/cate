@@ -121,8 +121,14 @@ function splitRatios(doc: Doc, splitId: string): number[] | undefined {
 
 function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => string): DocChange[] {
   switch (change.kind) {
-    case 'addPanel':
-      return [{ kind: 'removePanels', ids: [change.record.id] }]
+    case 'addPanel': {
+      const remove: DocChange = { kind: 'removePanels', ids: [change.record.id] }
+      // A panel added as a new layout's only tab can leave that layout empty behind: it goes too.
+      if (change.at.to === 'tab' && layoutById(applyOp(after, remove).doc, change.at.layoutId)) {
+        return [remove, { kind: 'removeLayout', layoutId: change.at.layoutId }]
+      }
+      return [remove]
+    }
     case 'replacePanel':
       return [{ kind: 'replacePanel', record: before.panels[change.record.id] }]
     case 'updatePanel': {
@@ -146,7 +152,7 @@ function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => s
       const panels = removalSet(before, dockPanels(layout.dock))
       // A host left with no panel went too; restoring its panels recreates it.
       if (!layoutsIn(after, hostOf(before, change.layoutId)!)) return restore(before, after, panels, 'add', newId)
-      const add = addLayoutOf(before, change.layoutId)
+      const add = addLayoutOf(before, change.layoutId, after)
       return [add, ...restore(before, applyOp(after, add).doc, panels, 'add', newId)]
     }
     case 'moveLayout': {
@@ -165,8 +171,13 @@ function invertChange(before: Doc, after: Doc, change: DocChange, newId: () => s
       const old = layoutById(before, change.layoutId)!
       return [{ kind: 'renameLayout', layoutId: change.layoutId, name: old.name ?? old.id }]
     }
-    case 'placePanel':
-      return restore(before, after, new Set([change.id]), 'move', newId)
+    case 'placePanel': {
+      const back = restore(before, after, new Set([change.id]), 'move', newId)
+      // A node keeps a layout its last panel left: the one a `tab` target made goes too.
+      if (change.at.to !== 'tab') return back
+      const undone = applyOp(after, { kind: 'batch', changes: back }).doc
+      return layoutById(undone, change.at.layoutId) ? [...back, { kind: 'removeLayout', layoutId: change.at.layoutId }] : back
+    }
     case 'setSplitRatio': {
       const ref = docIndex(before).splits.get(change.splitId)!
       const split = findSplit(dockOf(before, ref), change.splitId)!
@@ -214,7 +225,7 @@ function restore(before: Doc, after: Doc, panels: Set<PanelId>, mode: 'add' | 'm
     if (!panels.has(id)) continue
     // A recreated host comes back with its first layout; add the others.
     const dock = placementOf(before, id)?.dock
-    if (dock && dockOf(sim, dock) === undefined && layoutsIn(sim, hostOf(before, dock.layoutId)!)) push(addLayoutOf(before, dock.layoutId))
+    if (dock && dockOf(sim, dock) === undefined && layoutsIn(sim, hostOf(before, dock.layoutId)!)) push(addLayoutOf(before, dock.layoutId, sim))
     const at = targetLike(before, sim, id, newId)
     if (!at) continue
     push(mode === 'add' ? { kind: 'addPanel', record: before.panels[id], at } : { kind: 'placePanel', id, at })
@@ -227,12 +238,15 @@ function restore(before: Doc, after: Doc, panels: Set<PanelId>, mode: 'add' | 'm
   return changes
 }
 
-/** The change that adds a layout `before` had back where it was. */
-function addLayoutOf(before: Doc, layoutId: LayoutId): DocChange {
+/** The change that adds a layout `before` had back where it was: after the nearest earlier layout `now` still has
+ *  (`now` may hold layouts `before` did not, which a later change removes). */
+function addLayoutOf(before: Doc, layoutId: LayoutId, now: Doc): DocChange {
   const host = hostOf(before, layoutId)!
   const layouts = layoutsIn(before, host)!
   const layout = layouts.find((l) => l.id === layoutId)!
-  return { kind: 'addLayout', host, layoutId, index: layouts.indexOf(layout), ...(layout.name ? { name: layout.name } : {}) }
+  const current = layoutsIn(now, host)?.map((l) => l.id) ?? []
+  const earlier = layouts.slice(0, layouts.indexOf(layout)).map((l) => current.indexOf(l.id)).filter((i) => i >= 0)
+  return { kind: 'addLayout', host, layoutId, index: earlier.length ? Math.max(...earlier) + 1 : 0, ...(layout.name ? { name: layout.name } : {}) }
 }
 
 /** The hosts of `doc`, as (ref, layouts) pairs. */
@@ -247,11 +261,14 @@ function hostsOf(doc: Doc): { host: HostRef; layouts: { id: LayoutId }[] }[] {
  *  (an emptied layout is removed), added back where they were. */
 function restoreLayouts(before: Doc, doc: Doc): DocChange[] {
   const changes: DocChange[] = []
+  let sim = doc
   for (const { host, layouts } of hostsOf(before)) {
-    const now = layoutsIn(doc, host)
-    if (!now) continue
+    if (!layoutsIn(sim, host)) continue
     for (const layout of layouts) {
-      if (!now.some((l) => l.id === layout.id)) changes.push(addLayoutOf(before, layout.id))
+      if (layoutsIn(sim, host)!.some((l) => l.id === layout.id)) continue
+      const change = addLayoutOf(before, layout.id, sim)
+      changes.push(change)
+      sim = applyOp(sim, change).doc
     }
   }
   return changes

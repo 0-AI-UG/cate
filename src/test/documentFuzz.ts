@@ -72,6 +72,11 @@ function randomTarget(doc: WorkspaceDocument, rng: Rng, newId: () => string, can
   if (roll < 8 && canvases.length && !canvasPanel) {
     return { to: 'canvas', canvasId: rng.pick(canvases), nodeId: newId(), layoutId: newId(), stackId: newId(), rect: randomRect(rng) }
   }
+  // A new layout in a host (a canvas panel stays off canvas nodes).
+  if (roll === 8) {
+    const hosts = hostsOf(doc).filter(({ host }) => !canvasPanel || 'windowId' in host)
+    if (hosts.length) return { to: 'tab', host: rng.pick(hosts).host, layoutId: newId(), stackId: newId(), index: rng.chance(0.3) ? undefined : rng.int(4) }
+  }
   // An empty layout takes a first stack.
   const empty = hostsOf(doc).flatMap(({ layouts }) => layouts.filter((l) => !l.dock).map((l) => ({ layoutId: l.id })))
   if (empty.length && rng.chance(0.7)) return { to: 'stack', dock: rng.pick(empty), stackId: newId() }
