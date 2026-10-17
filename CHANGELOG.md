@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.1] - 2026-10-17
+
+This beta moves every workspace into its own runtime daemon. The desktop app is now a client of that runtime, other devices can pair and connect to the same live workspace, and agents run as CLIs in terminals.
+
+### Added
+
+- **Workspace runtimes**: each open workspace is served by a background runtime that holds its state and keeps running when the app closes.
+- **Pairing and connecting**: pair other devices and connect to a workspace over the same network or through Cate Connect, with pinned keys and an encrypted handshake on every connection.
+- **Remote machines**: open workspaces on other machines over SSH, with connection status and presence.
+- **iOS app**: workspaces, terminals and agent chats on iPhone, connected to the same runtime.
+
+### Fixed
+
+- Two runtimes serving one workspace, dropped edits after reopening, closes losing unsaved edits, undoing a close losing panel state, revoking trust leaving processes running, half-created worktrees after a crash, and many file watcher issues.
+
 ### Removed
 
 - **T3 Code**: the T3 Code chat panel, its provider settings, usage overview and conversation menu are gone, and the runtime no longer bundles the T3 harness. Agents run as CLIs in terminals: `cate agent start` lost `--runner`, `--instance` and `--model`, and `cate agent` JSON output no longer has a `runner` field.
