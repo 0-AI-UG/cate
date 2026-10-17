@@ -48,7 +48,9 @@ export function DragOverlay() {
     target && (target.kind === 'canvas-reposition' || target.kind === 'canvas-add')
       ? target.ghostRect
       : undefined
-  const rect = snappedRect ?? ghostScreenRect(cursor.client, grab, ghostSize, renderZoom)
+  // A canvas-add lands as a node of the target's size (a layout dragged by its chip is smaller).
+  const size = target?.kind === 'canvas-add' ? target.size : ghostSize
+  const rect = snappedRect ?? ghostScreenRect(cursor.client, grab, size, renderZoom)
 
   // Group drag: draw a ghost for every other selected member too, each offset
   // from the anchor ghost by its canvas-space start delta (× renderZoom). The

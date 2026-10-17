@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { MAIN_WINDOW, type DockRef } from '@workspace/document/contract'
-import { registerPanelDefinitions } from '@client/host'
+import { panelDropSize, registerPanelDefinitions } from '@client/host'
 import { testPanelDefinitions } from '../../../../../../test/clientWorkspace'
 import { resolveDrop, type CanvasHit, type DropEnvironment } from './resolve'
 import { resolveDropEdge, type DropZoneEntry } from './registry'
@@ -138,6 +138,12 @@ describe('resolveDrop on a one-panel pane', () => {
 })
 
 describe('a dragged layout on a canvas', () => {
+  it('lands as a node of the usual size, not the size of the chip it was dragged by', () => {
+    const chip = { width: 120, height: 28 }
+    const layout: DragSource = { workspaceId: 'ws', panelId: 'p', from: 'sidebar', origin: { kind: 'layout', host: { windowId: 'main' }, layoutId: 't' } }
+    expect(resolveDrop(cursor(200, 150), layout, grab, chip, 'terminal', { env: env([], canvasHit) })).toMatchObject({ kind: 'canvas-add', size: panelDropSize('terminal') })
+  })
+
   const layout: DragSource = { workspaceId: 'ws', panelId: 'p', origin: { kind: 'layout', host: { windowId: 'main' }, layoutId: 't' } }
 
   it('adds a node, unless the layout holds a canvas', () => {

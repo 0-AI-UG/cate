@@ -11,7 +11,7 @@ import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
 import { useClientState, useDocument } from '../../client/document'
 import { activeLayoutOf, activeTabOf, focusedLeafPanelId, panelRowLabel, switchLayout } from '@client/host'
 import type { WorkspaceEntry } from '@client/workspaces'
-import { hostOf, placementOf, type PanelRecord } from '@workspace/document/contract'
+import { dockPanels, hostOf, layoutById, placementOf, type PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
 import { useWorktreeColor, worktreeTitleStyle } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
@@ -244,6 +244,11 @@ export function WorkspaceRow({
     if (origin.kind === 'layout') {
       const layout = Object.values(doc.windows).flatMap((w) => w.layouts).find((l) => l.id === origin.layoutId)
       return layout ? layoutLook(layout.name) : null
+    }
+    // A node of several panels leaves as its layout, named like the layout.
+    if (origin.kind === 'canvas-node' && !origin.members?.length) {
+      const layout = layoutById(doc, placementOf(doc, dragSource.panelId)?.dock.layoutId ?? '')
+      if (layout && dockPanels(layout.dock).length > 1) return layoutLook(layout.name)
     }
     const record = doc.panels[dragSource.panelId]
     return record ? { label: panelRowLabel(record), icon: <Icon name={panelIcon(record.type)} size={11} style={{ opacity: 0.6 }} /> } : null
