@@ -6,15 +6,111 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-### Removed
+## [2.1.0-beta.1] - 2026-10-17
 
-- **T3 Code**: the T3 Code chat panel, its provider settings, usage overview and conversation menu are gone, and the runtime no longer bundles the T3 harness. Agents run as CLIs in terminals: `cate agent start` lost `--runner`, `--instance` and `--model`, and `cate agent` JSON output no longer has a `runner` field.
+This beta rebuilds Cate around workspace runtimes. Each open workspace now runs in its own background runtime that holds its state and does all its work: files, git, terminals, agents and the `cate` API. The desktop app is a client of that runtime, other devices can pair and join the same live workspace, workspaces can live on other machines over SSH, and a new iOS app connects to all of them. Agents now run as CLIs in terminals, and T3 Code is gone.
+
+### Added
+
+#### Workspace runtimes
+
+- **One runtime per workspace**: every open workspace is served by its own runtime process on the machine that holds it. Terminals, agents and file watching keep running when the app quits or reloads, and reopening the app reconnects to the same live state.
+- **One live workspace for every client**: windows, dock layouts, canvases, panels and relations are a shared document in the runtime. Every connected client sees the same workspace and every change as it happens.
+- **Presence**: see who else is connected to a workspace, as avatars on the sidebar's workspace row (and an "Also here" row on iOS).
+- **Runtime install progress**: the app installs the runtime for its build on first use and shows the progress instead of hanging silently.
+- **Panels open warm**: reopening a panel starts from its last snapshot, so terminals, editors and browsers come back instantly.
+
+#### Pairing and Cate Connect
+
+- **Pair devices**: share a workspace with another device by a pairing code or link from the new Share dialog. Only paired devices can connect, and each one is pinned to its key.
+- **Encrypted connections**: every network connection runs inside a Noise handshake with pinned keys. A runtime's network identity is derived from its key, so it cannot be claimed by anyone else.
+- **Same network and anywhere**: devices connect directly over the local network (found by mDNS), or through Cate Connect from anywhere, with a TURN relay as a fallback when no direct path works. "Try same network" only shows when nothing else works.
+- **Revoking devices**: removing a device, in the app or by editing `pairings.json`, drops its live connections right away.
+- **Push notifications** through Cate Connect for paired phones, sealed for each device.
+
+#### Remote machines
+
+- **Machines page**: open folders on SSH hosts (including hosts from `~/.ssh/config`) and WSL distros as workspaces. The runtime is streamed to the machine on first use, with no install script.
+- **SSH prompts in the app**: passwords and key passphrases are asked in Cate, and one shared SSH connection per machine serves all of its workspaces.
+- **Connection status** for each workspace in the sidebar.
+
+#### iOS app
+
+- A new SwiftUI app for iPhone that connects to your paired runtimes: workspaces, canvases and docks, terminals, editors, browsers, the review panel, worktrees and relations.
+- **Agents as chats**: start an agent from an empty chat, pick the agent and the worktree, follow its steps live and send it prompts. New panels and agents go where you are (on the canvas you are looking at, or in the dock).
+- Trust prompts, notifications (honoring your notification settings) and keep-awake for the computer running the workspace.
+
+#### Agents
+
+- **`cate agent start`**: starts an agent's CLI in a new terminal panel, in the caller's checkout, an existing worktree or a new one, placed next to the calling panel or where you say. Replaces missions and `cate codingAgent`.
+- **`cate agent types`** lists the installed agent CLIs, and **`cate agent interrupt`** stops a panel's turn with the CLI's own key.
+- **Agent chats**: each agent's conversation streams live from the runtime, with its steps, on every client. Prompts you send show as pending until the agent takes them.
+- **Kiro CLI V3** sessions are read, including replies split over several records.
+- A terminal running an agent shows under the agent's name on every client.
+- A "Hooks off" chip shows on a panel whose agent has hooks disabled.
+
+#### Browser
+
+- **Page dialogs**: `alert`, `confirm` and `prompt` dialogs are visible to automation, and can be accepted, dismissed or answered from the CLI.
+- **Frames and keys**: automation reaches into iframes and presses named keys (Enter, Tab, Escape, arrows, Page Up/Down, Home, End and more).
+- **Uploads**: upload files to a file input, its label, the button that opens the file chooser, or drop them on a drop area.
+- **Console and network logs**: read a page's console messages (all, errors or warnings) and its network requests (only failed ones, or filtered by URL).
+- **Saved logins**: fill a sign-in form from a saved login, choosing the account when a site has several.
+- Browser automation now runs in the runtime's browser service, and page operations honor the call's timeout and cancel.
+
+#### App
+
+- **Settings split into Device and Workspace tabs**, so it is clear which settings follow the device and which belong to the workspace.
+- **Open dialog** with a workspace picker, and a new **What's New** page.
+- **Keep awake** button to keep the computer running a workspace awake.
+- **`cate serve`** serves a folder as a workspace runtime from the command line.
 
 ### Changed
 
+- **Workspaces are closed, not kept as recents**: the sidebar lists the workspaces open on this device across restarts until you close them. Remove from Sidebar and Forget became Close Workspace, the Open picker lost its Recent section, and the welcome page is now two buttons and what is new. Closing a paired workspace also forgets its key and asks first. Declining trust only disconnects a workspace.
 - **Menus from the panel types**: the canvas menu, the new-tab menus, the empty window, the canvas toolbar, the command palette, the menu bar and the shortcuts settings are now built from the panel types and actions, so they always agree.
 - **Worktrees for more panels**: Files and Diff Review panels can now be created in a worktree from every creation menu, like terminals, and the command palette offers "New <panel> in <worktree>".
 - **New Files Panel** is now ⌘N (it replaces the separate New File command). Browser commands moved to the new Panel menu. Custom shortcuts for creating panels are reset.
+- **The `cate` CLI** is generated from the API the runtime declares, so its commands, help and arguments always match what the runtime accepts. CLI access is gated per area (read or control) in the workspace settings.
+- **Notifications** belong to the workspace rather than to agents: a notification an agent asked for is withdrawn when it starts working again.
+- **Terminal links** are detected in the runtime, so every client sees the same links.
+- **Lighter agent indicators**: a running agent shows a static indicator instead of an animated title shimmer, and the waiting dot takes its color from the theme.
+
+### Fixed
+
+- Two runtimes could serve the same workspace at once.
+- Ops sent right after reopening a workspace were dropped.
+- A crashed runtime could rewind the document without anyone noticing.
+- Closing a panel or window could drop unsaved edits; the discard answer now travels with the close.
+- Undoing a panel close lost its terminal, editor or browser state.
+- A record change could switch a dirty editor to another file.
+- Opening and saving a file could change its bytes.
+- Revoking trust left the workspace's processes running, and the review panel ran git without the trust check.
+- Worktrees a crash left half created or half removed.
+- A watcher error silently ended file events for every subscriber, and a late watcher echo could overwrite a newer edit.
+- Workspace settings stopped updating after a reconnect.
+- Closed or failed terminals never ended their agent's state.
+- A queued agent prompt could be sent twice after a failed send, and a slash command could wait for a turn that never started.
+- The server reaper could kill unrelated processes.
+- `daemon.out.log` grew forever.
+- Restored browser tabs could point at a dead file URL.
+- The review panel ignored a checkout change that arrived while it was busy.
+- Hermes history came back empty for some messages on Node 22.
+- File tree drops landed in the workspace root instead of the folder under the pointer.
+- The machine folder dialog for WSL and SSH opened behind Settings, and could hang on "Checking the Cate runtime there".
+- A withdrawn SSH prompt could leave its typed answer for the next prompt.
+- A wrong pairing proof no longer burns every pairing code at once; codes are burned after five wrong proofs.
+- Network listeners only accept private addresses, and unpaired connections are limited in size, time and number.
+
+### Removed
+
+- **T3 Code**: the T3 Code chat panel, its provider settings, usage overview and conversation menu are gone, and the runtime no longer bundles the T3 harness. Agents run as CLIs in terminals: `cate agent start` lost `--runner`, `--instance` and `--model`, and `cate agent` JSON output no longer has a `runner` field.
+- **Missions** and `cate codingAgent.*`, replaced by `cate agent start`.
+- **Recent workspaces**, replaced by the list of open workspaces.
+
+### Security
+
+- Dependency updates for open Dependabot alerts (simple-git 4, hono, dompurify, proxy-addr, @modelcontextprotocol/sdk and others).
 
 ## [2.0.5] - 2026-09-30
 
