@@ -1140,7 +1140,6 @@ type HostRef = { windowId } | { canvasId; nodeId }   // what holds layouts
 | Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node with its first layout (`{to: 'canvas', canvasId, nodeId, layoutId, stackId, rect}`) or a new layout holding the panel at an index of a host's strip (`{to: 'tab', host, layoutId, stackId, index?}`, counted after the panel left its old layout) or a new detached window (`{to: 'window', windowId, layoutId, stackId}`). `dock` is one layout (`{layoutId}`), in a window or a canvas node. Placing an already placed panel moves it. |
 | Layouts | `addLayout(host, layoutId)`, `removeLayout(layoutId)`, `renameLayout(layoutId, name)`, `moveLayout(layoutId, to)` where `to` is an existing host (`{to: 'host', host, index?}`), a new detached window (`{to: 'window', windowId}`) or a new canvas node (`{to: 'canvas', canvasId, nodeId, rect}`) |
 | Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `closeWindow(windowId, discard?)` (removes its panels; the view asks first) |
-
 | Relations | `addRelation`, `updateRelation`, `removeRelation` |
 | Worktrees | `setWorktree(meta)`, `removeWorktree(id)` (metadata only; the repository service does the resource work and writes these) |
 
