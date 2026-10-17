@@ -6,15 +6,17 @@ import type { WebContents } from 'electron'
 import { BROWSER_PAGE_CHANNELS } from '../contract'
 import { BrowserCodeSessions } from './codeSessions'
 import { CodeCellRegistry } from './codeCells'
+import { GuestDialogs } from './dialogs'
 import { GuestDownloads } from './downloads'
 import { registerBrowserIpc } from './ipc'
 import { PageDriverRegistry } from './pageDriver'
 import { registerBrowserPasskeys } from './passkeys'
 
-export { PageDriver, PageDriverRegistry, createPageDriver, type PageDriverOptions } from './pageDriver'
+export { PageDriver, PageDriverRegistry, createPageDriver, isAgentKeyInput, type PageDriverOptions } from './pageDriver'
 export { BrowserCodeSessions, type BrowserCodeSessionsOptions, type RunCodeOptions } from './codeSessions'
 export { CodeCellRegistry } from './codeCells'
 export { GuestDownloads, type GuestDownloadsDeps } from './downloads'
+export { GuestDialogs, registerGuestDialogs, type BrowserDialogAnswer } from './dialogs'
 export { registerBrowserIpc, hostedGuest, sendOpenTabRequest, sendBrowserShortcut, type BrowserIpcDeps } from './ipc'
 export { registerBrowserPasskeys, passkeysAddonPath, type BrowserPasskeysDeps } from './passkeys'
 export { listChromePasswordProfiles, readChromePasswords, readChromePasswordCsv, decryptChromePassword } from './chromeImport'
@@ -45,13 +47,14 @@ export interface BrowserDesktop {
 /** Builds and registers the browser desktop side in main. */
 export function createBrowserDesktop(options: BrowserDesktopOptions): BrowserDesktop {
   const cells = new CodeCellRegistry()
-  const drivers = new PageDriverRegistry({ checkCell: cells.assert })
+  const dialogs = new GuestDialogs()
+  const drivers = new PageDriverRegistry({ checkCell: cells.assert, dialogs })
   const codeSessions = new BrowserCodeSessions({ preloadPath: options.codeCellPreload, cells })
   const downloads = new GuestDownloads({
     downloadDir: options.downloadDir,
     notify: (host: WebContents, event) => host.send(BROWSER_PAGE_CHANNELS.downloads, event),
   })
-  const unregister = registerBrowserIpc({ drivers, codeSessions, downloads, tempDir: options.tempDir })
+  const unregister = registerBrowserIpc({ drivers, codeSessions, downloads, dialogs, tempDir: options.tempDir })
   const passkeysAvailable = options.passkeys
     ? registerBrowserPasskeys({ isRegistered: (id) => drivers.isRegistered(id) }).available
     : false

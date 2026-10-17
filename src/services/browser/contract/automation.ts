@@ -71,15 +71,53 @@ export interface BrowserCodeResult {
   isError?: boolean
 }
 
+/** A JavaScript dialog (`alert`, `confirm`, `prompt`) a page is waiting on. */
+export interface BrowserDialog {
+  type: 'alert' | 'confirm' | 'prompt'
+  message: string
+  /** A prompt's default text. */
+  defaultPrompt?: string
+}
+
+/** What an action did, printed above the observation after it. */
+export interface BrowserActionOutcome {
+  method: string
+  status: 'verified' | 'dispatched'
+  /** What else happened that the agent must act on (a file chooser opened). */
+  notices?: string[]
+}
+
 /** The longest a page operation may wait (`waitFor`, click's wait for an
  *  actionable element). The settle and fresh observation after it come on top. */
 export const BROWSER_WAIT_MAX_MS = 30_000
 
 export const BROWSER_OBSERVATION_METHODS = new Set(['getAXState', 'getScreenshot', 'getAXStateAndScreenshot'])
 export const BROWSER_ELEMENT_READ_METHODS = new Set(['getAttribute'])
-export const BROWSER_ACTION_METHODS = new Set(['click', 'setValue', 'typeText', 'pressKey', 'scroll', 'drag', 'selectText', 'setChecked', 'selectOption', 'upload'])
+export const BROWSER_ACTION_METHODS = new Set(['click', 'hover', 'setValue', 'typeText', 'pressKey', 'scroll', 'drag', 'selectText', 'setChecked', 'selectOption', 'upload', 'login'])
+/** The page's console messages and network requests, as the driver recorded them. */
+export const BROWSER_LOG_METHODS = new Set(['console', 'network'])
 const BROWSER_LIFECYCLE_METHODS = new Set(['getTab', 'listTabs', 'createTab', 'goto', 'back', 'forward', 'reload', 'close', 'setViewport', 'resize', 'download', 'downloads'])
-export const BROWSER_METHODS = new Set([...BROWSER_OBSERVATION_METHODS, ...BROWSER_ELEMENT_READ_METHODS, ...BROWSER_ACTION_METHODS, ...BROWSER_LIFECYCLE_METHODS, 'waitFor'])
+export const BROWSER_METHODS = new Set([...BROWSER_OBSERVATION_METHODS, ...BROWSER_ELEMENT_READ_METHODS, ...BROWSER_ACTION_METHODS, ...BROWSER_LOG_METHODS, ...BROWSER_LIFECYCLE_METHODS, 'waitFor', 'dialog'])
+
+export interface BrowserConsoleEntry {
+  at: number
+  level: 'error' | 'warning' | 'info' | 'log' | 'debug'
+  text: string
+  /** Where it came from, when Chromium says (`file:line`). */
+  source?: string
+}
+
+export interface BrowserNetworkEntry {
+  at: number
+  method: string
+  url: string
+  /** Chromium's resource type (Document, XHR, Fetch, Script, ...). */
+  type: string
+  status?: number
+  /** Why it failed (`net::ERR_...`); a failed request has no status. */
+  error?: string
+  durationMs?: number
+}
 
 /** The logical page a driver is bound to. */
 export type BrowserPageIdentity = BrowserBinding
@@ -90,6 +128,8 @@ export type BrowserCursorKind = 'move' | 'click' | 'dblclick' | 'hover' | 'drag'
  *  guest viewport pixels, for the agent cursor overlay. */
 export interface BrowserDriverResult {
   result?: unknown
+  /** A JavaScript dialog the call left open (the page waits for its answer). */
+  dialog?: BrowserDialog
   cursor?: { x?: number; y?: number; label: string; kind: BrowserCursorKind }
   error?: string
   recovery?: string

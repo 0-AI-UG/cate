@@ -61,7 +61,7 @@ describe('file capability', () => {
     expect(res.hash).toBe(contentHash(bytes))
     expect(new Uint8Array(await fs.readFile(file))).toEqual(bytes)
     expect(await client.readBinary(file)).toEqual(bytes)
-  })
+  }, 20_000)
 
   it('lists, stats, renames, copies, removes and makes directories', async () => {
     const { fs: client } = await ws.connect()

@@ -113,6 +113,16 @@ async function serve(args: ServeArgs): Promise<number> {
   const onSignal = () => void daemon.stop({ kind: 'signal' })
   process.once('SIGTERM', onSignal)
   process.once('SIGINT', onSignal)
+  // A stray rejection must not end every terminal and agent of the
+  // workspace. A thrown error leaves the process in an unknown state: stop
+  // as on a signal (state files first), then exit.
+  process.on('unhandledRejection', (reason) => log.error('unhandledRejection: %O', reason))
+  let crashed = false
+  process.on('uncaughtException', (error) => {
+    log.error('uncaughtException: %O', error)
+    crashed = true
+    void daemon.stop({ kind: 'signal' })
+  })
 
   const reason = await daemon.stopped
   releaseRuntimeInUse(installDirFromExecPath(process.execPath, process.platform), process.pid)
@@ -126,7 +136,7 @@ async function serve(args: ServeArgs): Promise<number> {
     })
     log.info('restarting into %s', reason.version)
   }
-  return 0
+  return crashed ? 1 : 0
 }
 
 async function main(): Promise<void> {

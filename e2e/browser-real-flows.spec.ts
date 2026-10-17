@@ -490,7 +490,7 @@ test('uploads an authorized local file and verifies the server receives its exac
   try {
     const browser = await createBrowser(page, `${shopOrigin}/upload`, { x: 100, y: 100 })
     await expect.poll(() => target(page, browser, "Attachment").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
-    const uploaded = await act(page, browser, 'upload', "Attachment", { filePath: uploadPath })
+    const uploaded = await act(page, browser, 'upload', "Attachment", { files: [uploadPath] })
     expect(uploaded, JSON.stringify(uploaded)).toMatchObject({ ok: true })
     await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#selected\")?.textContent ?? ''", 'text')).resolves.toMatchObject({ ok: true, result: { text: 'browser-upload-fixture.txt' } })
     await expect(act(page, browser, 'click', 'Submit attachment')).resolves.toMatchObject({ ok: true })

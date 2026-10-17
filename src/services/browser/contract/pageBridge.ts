@@ -4,7 +4,7 @@
 // desktop main. No workspace work crosses it: passwords come from the runtime
 // through `browserData`, and the view hands main only what one page needs.
 
-import type { BrowserCodeResult, BrowserDriverResult, BrowserPageIdentity } from './automation'
+import type { BrowserCodeResult, BrowserDialog, BrowserDriverResult, BrowserPageIdentity } from './automation'
 import type { BrowserCredentialImport, BrowserDownloadEntry } from './types'
 
 /** A guest webContents this window hosts, bound to its panel tab. */
@@ -39,6 +39,12 @@ export interface BrowserCodeCall {
   args: Record<string, unknown>
 }
 
+/** A guest's JavaScript dialog opened (`dialog`) or closed (null). */
+export interface BrowserDialogEvent {
+  webContentsId: number
+  dialog: (BrowserDialog & { id: string }) | null
+}
+
 export type BrowserDownloadAction = 'cancel' | 'open' | 'show'
 
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
@@ -48,6 +54,9 @@ export interface BrowserPageBridge {
   attach(guest: BrowserGuestRef): Promise<void>
   /** Runs one page-driver method on a bound guest. */
   execute(guest: BrowserGuestRef, method: string, args: Record<string, unknown>): Promise<BrowserDriverResult>
+  /** Restarts the guest's page when its main thread stopped yielding to the
+   *  page driver (a script in an endless loop); true when it did. */
+  restartIfHung(guest: BrowserGuestRef): Promise<boolean>
   /** Downloads `url` through the guest's partition. */
   download(guest: BrowserGuestRef, url: string): Promise<void>
   downloadAction(webContentsId: number, downloadId: string, action: BrowserDownloadAction): Promise<{ ok?: true; error?: string }>
@@ -56,6 +65,10 @@ export interface BrowserPageBridge {
   readDownload(webContentsId: number, downloadId: string): Promise<Uint8Array | null>
   /** Fills a credential into the password field the guest marked `targetId`. */
   fillCredential(webContentsId: number, targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }>
+  /** Answers the JavaScript dialog `dialogId` the guest waits on (the person's answer). */
+  answerDialog(webContentsId: number, dialogId: string, answer: { accept: boolean; text?: string }): Promise<void>
+  /** Dialogs of the guests this window hosts opening and closing. */
+  onDialog(listener: (event: BrowserDialogEvent) => void): () => void
   /** Writes bytes for a file input to a private temp file; returns its path. */
   stageUpload(name: string, bytes: Uint8Array): Promise<string>
   /** Captures the guest's page as a PNG data URL (the view stores it in the
@@ -85,11 +98,14 @@ export interface BrowserPageBridge {
 export const BROWSER_PAGE_CHANNELS = {
   attach: 'cate:browser-page:attach',
   execute: 'cate:browser-page:execute',
+  restartIfHung: 'cate:browser-page:restart-if-hung',
   download: 'cate:browser-page:download',
   downloadAction: 'cate:browser-page:download-action',
   readDownload: 'cate:browser-page:read-download',
   fillCredential: 'cate:browser-page:fill-credential',
   stageUpload: 'cate:browser-page:stage-upload',
+  answerDialog: 'cate:browser-page:answer-dialog',
+  dialog: 'cate:browser-page:dialog',
   screenshot: 'cate:browser-page:screenshot',
   runCode: 'cate:browser-page:run-code',
   resetCode: 'cate:browser-page:reset-code',
@@ -110,6 +126,7 @@ export const BROWSER_GUEST_CHANNELS = {
   passwordSubmit: 'cate-browser-password-submit',
   userInput: 'cate-browser-user-input',
   automationInput: 'cate-browser-automation-input',
+  dialog: 'cate-browser-dialog',
 } as const
 
 /** The partition of a workspace's webviews: `persist:ws-<runtimeId>`. */

@@ -4,7 +4,8 @@ import { channel } from '@kernel/rpc/contract'
 import { storedShortcut } from '@kernel/interaction/contract'
 import { definePanel, type PanelCreateOptions } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
-import { BROWSER_SURFACE_FEATURES, browserApi, type BrowserOp, type BrowserSnapshot } from './contract'
+import { BROWSER_SURFACE_FEATURES, browserApi } from '@services/browser/contract'
+import type { BrowserOp, BrowserSnapshot } from './contract'
 
 /** A browser on `url`; the start page when omitted. */
 interface BrowserCreateOptions extends PanelCreateOptions {

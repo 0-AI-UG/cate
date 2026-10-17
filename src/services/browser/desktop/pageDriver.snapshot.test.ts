@@ -2,17 +2,13 @@ import { expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({}))
 import { setupGuest } from './pageDriver.testSupport'
 
-it('resolves observation nodes in one private DOM world per frame', async () => {
+it('inspects observation nodes with one DOM snapshot, without touching page objects', async () => {
   const { observe, state, contents } = await setupGuest()
   state.nodes = [7, 8].map(id => ({ backendDOMNodeId: id, role: { value: 'textbox' }, name: { value: `Field ${id}` } }))
   await observe()
-  const calls = contents.debugger.sendCommand.mock.calls
-  expect(calls.filter(([method]) => method === 'Page.createIsolatedWorld')).toEqual([
-    ['Page.createIsolatedWorld', { frameId: 'main', worldName: 'cate-browser-observation' }, undefined],
-  ])
-  const resolutions = calls.filter(([method]) => method === 'DOM.resolveNode')
-  expect(resolutions).toHaveLength(2)
-  for (const [, params] of resolutions) expect(params).toMatchObject({ executionContextId: 1 })
+  const methods = contents.debugger.sendCommand.mock.calls.map(([method]) => method)
+  expect(methods.filter(method => method === 'DOMSnapshot.captureSnapshot')).toHaveLength(1)
+  expect(methods.some(method => method === 'DOM.resolveNode' || method === 'Page.createIsolatedWorld' || method === 'Runtime.callFunctionOn')).toBe(false)
 })
 
 it('captures screenshot-only observations without reading AX or granting numeric element authority', async () => {
@@ -96,11 +92,8 @@ it('bounds an unavailable rendering frame instead of hanging the screenshot queu
 })
 
 it('preserves hierarchy, values, states, offscreen IDs and password masking', async () => {
-  const { observe, state } = await setupGuest(async (method, params) => {
-    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('password: this instanceof HTMLInputElement')) {
-      return { result: { value: { visible: true, password: params.objectId === '3', offscreen: params.objectId === '4' } } }
-    }
-  })
+  const { observe, state } = await setupGuest()
+  state.dom = { 3: { password: true }, 4: { offscreen: true } }
   state.nodes = [
     { nodeId: 'group', backendDOMNodeId: 1, role: { value: 'group' }, name: { value: 'Account' }, childIds: ['email', 'password', 'check'] },
     { nodeId: 'email', parentId: 'group', backendDOMNodeId: 2, role: { value: 'textbox' }, name: { value: 'Email' }, value: { value: 'a@example.test' } },

@@ -5,6 +5,9 @@ export type BrowserNewTabBehavior = 'startPage' | 'homepage'
 /** Where a clicked web link opens: Cate's browser panel or the system
  *  browser (`ask`: the first click asks and remembers). */
 export type LinkOpenTarget = 'ask' | 'cate' | 'external'
+/** Whether an agent may fill saved passwords into pages (`cate browser
+ *  login`): never, after the person agrees each time, or always. */
+export type BrowserAgentPasswords = 'off' | 'ask' | 'allow'
 
 export const browserClientSettings = defineSettings({
   scope: 'client',
@@ -23,5 +26,6 @@ export const browserSettings = defineSettings({
     browserHomepage: setting(''),
     browserSearchEngine: setting<BrowserSearchEngine>('google', oneOf('google', 'duckDuckGo', 'bing', 'brave')),
     browserNewTabBehavior: setting<BrowserNewTabBehavior>('startPage', oneOf('startPage', 'homepage')),
+    browserAgentPasswords: setting<BrowserAgentPasswords>('off', oneOf('off', 'ask', 'allow')),
   },
 })

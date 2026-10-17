@@ -1,7 +1,8 @@
 // The pages of one browser panel on this client: one <webview> per tab. It
 // follows the session (loads a tab's URL when its `nav` moves and the change
-// came from elsewhere), reports what its own pages do, and runs the runtime's
-// page operations for this panel when this client drives it.
+// came from elsewhere), reports what its own pages do, and has the page of the
+// session's active tab ready when this client drives a page operation
+// (`services/browser`'s page ops run it).
 //
 // Following and reporting: a load this client makes because the session
 // changed is never reported back, so two clients whose sessions redirect the
@@ -12,9 +13,9 @@
 // The tab this client shows is client state (`show`); page operations act on
 // the session's active tab, and the driving client shows it while they run.
 
-import { RpcError } from '@kernel/rpc/contract'
-import type { BrowserDriverResult, BrowserPageBridge } from '@services/browser/contract'
-import type { BrowserOp, BrowserSnapshot, BrowserSurfaceArgs, BrowserSurfaceResult, BrowserTab } from '@panels/browser/contract'
+import type { BrowserDialog, BrowserDialogEvent, BrowserPageBridge, BrowserSurfaceArgs, BrowserSurfaceResult } from '@services/browser/contract'
+import type { PageOpTarget } from '@services/browser/desktop/renderer'
+import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
 import { pageLoadErrorFrom } from '@panels/browser/contract'
 import { createBrowserTabFollower, loadableTabUrl } from '@panels/browser/client'
 
@@ -69,7 +70,7 @@ interface PageHostDeps {
   /** Shows a tab on this client (a page operation runs on it). */
   reveal?(tabId: string): void
   bridge: BrowserPageBridge | null
-  /** Saved passwords and file uploads come from the runtime. */
+  /** Saved passwords come from the runtime. */
   passwords?: {
     suggestions(url: string): Promise<BrowserAutofill['suggestions']>
     forFill(id: string, url: string): Promise<{ username: string; password: string } | null>
@@ -78,8 +79,6 @@ interface PageHostDeps {
   }
   /** Asks the user whether to save a submitted password. */
   confirmSave?(message: string): Promise<boolean>
-  /** Moves a runtime file to this client for a file input. */
-  fetchUpload?(path: string): Promise<{ name: string; bytes: Uint8Array }>
   /** Guest scrollbar CSS matching the theme. */
   guestCss?(): string
   nextFrame?(): Promise<void>
@@ -112,11 +111,16 @@ export class BrowserPageHost {
   private autofillRequest = 0
   private filling = false
   private savePrompt = false
+  /** JavaScript dialogs the pages of this panel wait on, by tab. */
+  private readonly dialogs = new Map<string, BrowserDialog & { id: string; webContentsId: number }>()
+  private readonly unsubscribeDialogs: () => void
   visible = false
   local: LocalPageState = { url: '', canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false }
   autofill: BrowserAutofill | null = null
 
-  constructor(private readonly deps: PageHostDeps) {}
+  constructor(private readonly deps: PageHostDeps) {
+    this.unsubscribeDialogs = deps.bridge?.onDialog((event) => this.dialogChanged(event)) ?? (() => {})
+  }
 
   get panelId(): string { return this.deps.panelId }
 
@@ -164,24 +168,35 @@ export class BrowserPageHost {
       const page = this.pages.get(tabId)
       let current = ''
       try { current = page?.ready ? page.webview.getURL() : '' } catch { /* detached */ }
-      // No page yet (it mounts on the tab's URL), or it is there already.
-      if (!page || current === url) {
+      // No page yet (it mounts on the tab's URL), or another client's page
+      // went where this one is already. A navigation the session was asked
+      // for (`goto`, the address bar) loads even the URL the page shows.
+      if (!page || (current === url && this.tab(tabId)?.navSource !== null)) {
         this.follower.loadEnded(tabId)
         continue
       }
-      this.follow(page, url)
+      this.follow(tabId, page, url)
     }
     for (const check of [...this.waiters]) check()
   }
 
-  private follow(page: Page, url: string): void {
-    if (!page.ready) {
-      page.pending = url
-      return
+  private follow(tabId: string, page: Page, url: string): void {
+    page.pending = url
+    if (!page.ready) return
+    const load = () => {
+      if (page.pending !== url) return // a later navigation replaced this one
+      page.pending = null
+      try {
+        void Promise.resolve(page.webview.loadURL(url)).catch(() => { /* reported by did-fail-load */ })
+      } catch { /* detached */ }
+      this.changed()
     }
-    try {
-      void Promise.resolve(page.webview.loadURL(url)).catch(() => { /* reported by did-fail-load */ })
-    } catch { /* detached */ }
+    const { bridge } = this.deps
+    if (!bridge) return load()
+    // A hung page loads nothing until its renderer restarts.
+    let guest: ReturnType<BrowserPageHost['guestRef']>
+    try { guest = this.guestRef(tabId, page) } catch { return load() }
+    void bridge.restartIfHung(guest).catch(() => false).then(load)
   }
 
   // ---- Guests ---------------------------------------------------------------
@@ -224,7 +239,7 @@ export class BrowserPageHost {
         if (first && page.pending) {
           const url = page.pending
           page.pending = null
-          this.follow(page, url)
+          this.follow(tabId, page, url)
         }
       },
       'did-navigate': (event) => this.navigated(tabId, page, event.url, false),
@@ -427,49 +442,32 @@ export class BrowserPageHost {
   }
 
   async history(args: BrowserSurfaceArgs<'page.history'>): Promise<BrowserSurfaceResult<'page.history'>> {
-    await this.drive(args.tabId)
+    const page = await this.drive(args.tabId)
+    // Reloading restarts a page whose script keeps it from answering.
+    const reload = args.action === 'reload' || args.action === 'reloadHard'
+    if (reload && this.deps.bridge && await this.deps.bridge.restartIfHung(this.guestRef(args.tabId, page)).catch(() => false)) return { ok: true }
     return { ok: this.historyAction(args.action, args.tabId) }
   }
 
-  async execute(args: BrowserSurfaceArgs<'page.execute'>): Promise<BrowserDriverResult> {
-    const { bridge } = this.deps
-    if (!bridge) throw new RpcError('no-renderer', 'this client has no page driver')
-    const page = await this.drive(args.tabId)
-    if (args.settle) {
+  /** The page of the session's active tab `tabId`, shown and ready here,
+   *  for a page operation. `settle` waits for layout first (after a viewport
+   *  change). */
+  async target(tabId: string, settle = false): Promise<PageOpTarget> {
+    const page = await this.drive(tabId)
+    if (settle) {
       const frame = this.deps.nextFrame ?? defaultFrame
       await frame()
       await frame()
     }
     const ready = await this.waitFor(() => (page.ready ? true : undefined), 8_000)
     if (!ready) throw new Error('webview-not-ready')
-    this.requireActive(args.tabId)
-    // A parked guest (its panel off screen) paints nothing to capture.
-    let methodArgs = this.visible ? args.args : { ...args.args, _hidden: true }
-    if (args.method === 'upload' && typeof methodArgs.filePath === 'string') {
-      if (!this.deps.fetchUpload) throw new Error('browser-upload-unavailable')
-      const file = await this.deps.fetchUpload(methodArgs.filePath)
-      methodArgs = { ...methodArgs, filePath: await bridge.stageUpload(file.name, file.bytes) }
+    this.requireActive(tabId)
+    return {
+      guest: this.guestRef(tabId, page),
+      document: page.webview.ownerDocument,
+      hidden: !this.visible,
+      check: () => { this.requireActive(tabId) },
     }
-    // Keys reach a guest only while it has the window's focus (a click gives
-    // it too); text and fills work without.
-    if (args.method === 'pressKey') {
-      page.webview.focus()
-      const frame = this.deps.nextFrame ?? defaultFrame
-      await frame()
-    }
-    const guest = this.guestRef(args.tabId, page)
-    await bridge.attach(guest)
-    this.requireActive(args.tabId)
-    return bridge.execute(guest, args.method, methodArgs)
-  }
-
-  async download(args: BrowserSurfaceArgs<'page.download'>): Promise<BrowserSurfaceResult<'page.download'>> {
-    const { bridge } = this.deps
-    if (!bridge) throw new RpcError('no-renderer', 'this client has no page driver')
-    const page = await this.drive(args.tabId)
-    if (!page.ready) throw new Error('webview-not-ready')
-    await bridge.download(this.guestRef(args.tabId, page), args.url)
-    return { url: args.url }
   }
 
   /** The tab a download's guest belongs to. */
@@ -478,6 +476,28 @@ export class BrowserPageHost {
       try { if (page.webview.getWebContentsId() === webContentsId) return tabId } catch { /* unattached */ }
     }
     return undefined
+  }
+
+  // ---- Dialogs ----------------------------------------------------------------
+
+  /** The dialog the shown tab's page waits on. */
+  get dialog(): (BrowserDialog & { id: string; webContentsId: number }) | null {
+    return (this.shownTabId && this.dialogs.get(this.shownTabId)) || null
+  }
+
+  private dialogChanged(event: BrowserDialogEvent): void {
+    const tabId = this.tabForGuest(event.webContentsId)
+    if (!tabId) return
+    if (event.dialog) this.dialogs.set(tabId, { ...event.dialog, webContentsId: event.webContentsId })
+    else if (this.dialogs.get(tabId)?.webContentsId === event.webContentsId) this.dialogs.delete(tabId)
+    this.changed()
+  }
+
+  /** The person's answer to the shown tab's dialog. */
+  answerDialog(accept: boolean, text?: string): void {
+    const dialog = this.dialog
+    if (!dialog || !this.deps.bridge) return
+    void this.deps.bridge.answerDialog(dialog.webContentsId, dialog.id, { accept, ...(text === undefined ? {} : { text }) }).catch(() => {})
   }
 
   // ---- Passwords --------------------------------------------------------------
@@ -565,6 +585,7 @@ export class BrowserPageHost {
 
   dispose(): void {
     this.disposed = true
+    this.unsubscribeDialogs()
     for (const page of this.pages.values()) page.detach()
     this.pages.clear()
     for (const check of [...this.waiters]) check()

@@ -29,7 +29,8 @@ export async function browserWebContentsId(page: Page, panelId: string): Promise
   return page.evaluate((panelId) => {
     const surface = document.querySelector(`[data-browser-surface="${panelId}"]`)
     const views = [...(surface?.querySelectorAll('webview') ?? [])] as (HTMLElement & { getWebContentsId(): number })[]
-    const active = views.find((v) => v.style.display !== 'none') ?? views[0]
+    // A tab that is not shown keeps its page in an invisible slot.
+    const active = views.find((v) => !v.closest('[data-browser-webview-slot]')?.classList.contains('invisible')) ?? views[0]
     try { return active ? active.getWebContentsId() : null } catch { return null }
   }, panelId)
 }

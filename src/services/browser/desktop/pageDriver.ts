@@ -4,14 +4,17 @@
 // renderer routes the runtime's surface requests here through the desktop
 // IPC (`./ipc.ts`); there is no global target lookup.
 
-import type { WebContents } from 'electron'
+import { clipboard, type WebContents } from 'electron'
 import {
   BROWSER_ACTION_METHODS,
   BROWSER_ELEMENT_READ_METHODS,
+  BROWSER_LOG_METHODS,
   BROWSER_OBSERVATION_METHODS,
   BROWSER_WAIT_MAX_MS,
+  browserDialogNotice,
   browserRecovery,
   diffBrowserState,
+  type BrowserActionOutcome,
   type BrowserDriverResult,
   type BrowserElement,
   type BrowserImage,
@@ -22,6 +25,11 @@ import {
 } from '../contract'
 import { BrowserObservationCache, type CachedBrowserObservation } from './observationCache'
 import { readBrowserAX } from './ax'
+import { parseKey } from './keys'
+import { PageLog } from './pageLog'
+import { FrameTree } from './frames'
+import { FILE_INPUT_OF, PASSWORD_FIELD, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
+import type { GuestDialogs } from './dialogs'
 
 type BrowserArgs = Record<string, unknown>
 
@@ -30,6 +38,9 @@ export type { BrowserPageIdentity }
 export interface PageDriverOptions {
   /** Throws once the code cell that issued a call has ended (see `codeCells.ts`). */
   checkCell?: (codeCellId: unknown) => void
+  /** The guests' JavaScript dialogs: a call a dialog interrupts returns it,
+   *  and `dialog` answers it. */
+  dialogs?: Pick<GuestDialogs, 'current' | 'subscribe' | 'answer'>
 }
 
 type CursorKind = NonNullable<BrowserDriverResult['cursor']>['kind']
@@ -54,45 +65,23 @@ interface CdpEvent {
   sessionId?: string
 }
 
-const KEY_DATA: Record<string, { key: string; code: string; windowsVirtualKeyCode: number; nativeVirtualKeyCode: number; text?: string; unmodifiedText?: string }> = {
-  Enter: { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' },
-  Tab: { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 },
-  Escape: { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 },
-  Backspace: { key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 },
-  Delete: { key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 },
-  Space: { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32, text: ' ', unmodifiedText: ' ' },
-  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', windowsVirtualKeyCode: 37, nativeVirtualKeyCode: 37 },
-  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38, nativeVirtualKeyCode: 38 },
-  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39, nativeVirtualKeyCode: 39 },
-  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', windowsVirtualKeyCode: 40, nativeVirtualKeyCode: 40 },
-  PageUp: { key: 'PageUp', code: 'PageUp', windowsVirtualKeyCode: 33, nativeVirtualKeyCode: 33 },
-  PageDown: { key: 'PageDown', code: 'PageDown', windowsVirtualKeyCode: 34, nativeVirtualKeyCode: 34 },
-  Home: { key: 'Home', code: 'Home', windowsVirtualKeyCode: 36, nativeVirtualKeyCode: 36 },
-  End: { key: 'End', code: 'End', windowsVirtualKeyCode: 35, nativeVirtualKeyCode: 35 },
+/** Guests receiving a driver's key events right now. */
+const sendingKeys = new WeakSet<WebContents>()
+/** True while `contents` receives an agent's key event: the page's key,
+ *  never an app shortcut. */
+export function isAgentKeyInput(contents: WebContents): boolean {
+  return sendingKeys.has(contents)
 }
 
-// US-layout punctuation keys: physical code and virtual key code.
-const SYMBOL_KEYS: Record<string, { code: string; vk: number }> = {
-  '-': { code: 'Minus', vk: 189 }, '=': { code: 'Equal', vk: 187 }, '[': { code: 'BracketLeft', vk: 219 },
-  ']': { code: 'BracketRight', vk: 221 }, '\\': { code: 'Backslash', vk: 220 }, ';': { code: 'Semicolon', vk: 186 },
-  "'": { code: 'Quote', vk: 222 }, ',': { code: 'Comma', vk: 188 }, '.': { code: 'Period', vk: 190 },
-  '/': { code: 'Slash', vk: 191 }, '`': { code: 'Backquote', vk: 192 },
-}
-// What Shift types on a US-layout digit or punctuation key.
-const US_SHIFTED: Record<string, string> = {
-  '1': '!', '2': '@', '3': '#', '4': '$', '5': '%', '6': '^', '7': '&', '8': '*', '9': '(', '0': ')',
-  '-': '_', '=': '+', '[': '{', ']': '}', '\\': '|', ';': ':', "'": '"', ',': '<', '.': '>', '/': '?', '`': '~',
-}
-
-// macOS routes editing shortcuts through editing commands, not key events.
-const MAC_EDITING_COMMANDS: Record<string, string> = {
-  'Meta+a': 'selectAll', 'Meta+c': 'copy', 'Meta+x': 'cut', 'Meta+v': 'paste',
-  'Meta+z': 'undo', 'Meta+Shift+z': 'redo', 'Meta+Backspace': 'deleteToBeginningOfLine',
-  'Alt+Backspace': 'deleteWordBackward', 'Meta+ArrowLeft': 'moveToBeginningOfLine', 'Meta+ArrowRight': 'moveToEndOfLine',
-}
-
+/** How long one CDP command may take before the page counts as hung. */
+const CDP_TIMEOUT_MS = 10_000
+const PAGE_UNRESPONSIVE = 'browser-page-unresponsive'
+/** How long a hung page's renderer may take to go away when killed. */
+const RESTART_TIMEOUT_MS = 5_000
 /** How long an action waits for its element to become actionable. */
 const ACTIONABLE_TIMEOUT_MS = 5_000
+/** Where a covered element is scrolled to on each retry. */
+const OBSCURED_SCROLL_ALIGNMENTS = ['center', 'start', 'end'] as const
 /** Errors an element can grow out of while the page settles. */
 const TRANSIENT_ELEMENT_ERRORS = ['element-not-stable', 'element-obscured', 'element-not-visible', 'element-disabled', 'element-has-no-actionable-box']
 /** Requests an action may have started that its result should wait for. */
@@ -101,6 +90,8 @@ const SETTLE_REQUEST_TYPES = new Set(['Document', 'XHR', 'Fetch'])
  *  and are forgotten, so a long-lived page's unfinished streams do not pile up. */
 const REQUEST_MEMORY_MS = 10_000
 
+/** How long `upload` waits for the element it clicks to open a file chooser. */
+const FILE_CHOOSER_TIMEOUT_MS = 3_000
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 /** `promise`, or `code` once `ms` pass. The promise itself keeps running. */
@@ -139,18 +130,37 @@ export class PageDriver {
   private inputSent = false
   /** In-flight document and data requests, by request id, with their start time. */
   private requests = new Map<string, number>()
-  private frameParents = new Map<string, string | undefined>()
-  private frameSessions = new Map<string, string>()
-  private sessionFrames = new Map<string, string>()
+  private readonly frames = new FrameTree()
   private attached = false
+  /** A CDP command timed out: the page's main thread does not yield. */
+  private hung = false
+  private readonly dialogs?: PageDriverOptions['dialogs']
+  /** Set while an agent action may open a file chooser: the chooser is
+   *  reported to the driver instead of shown. */
+  private intercepting = false
+  /** The file chooser an agent action opened that no upload answered yet. */
+  private fileChooser?: { backendNodeId: number; sessionId?: string; documentEpoch: number }
+  private readonly log = new PageLog()
+  /** The debugger lets go of a guest whose renderer crashed or restarted:
+   *  the next command attaches again. */
+  private readonly onDebuggerDetach = (): void => {
+    this.contents.debugger.removeListener('message', this.onDebuggerMessage)
+    this.contents.debugger.removeListener('detach', this.onDebuggerDetach)
+    this.attached = false
+    this.hung = false
+    this.intercepting = false
+    this.frames.clear()
+  }
   private readonly onDebuggerMessage = (_event: Electron.Event, method: string, params: unknown, sessionId?: string): void => {
-    this.handleEvent({ method, params: objectValue(params), sessionId })
+    // The top frame's events come with an empty session id.
+    this.handleEvent({ method, params: objectValue(params), sessionId: sessionId || undefined })
   }
 
   constructor(contents: WebContents, identity: BrowserPageIdentity, options: PageDriverOptions = {}) {
     this.contents = contents
     this.identity = identity
     this.checkCell = options.checkCell ?? (() => {})
+    this.dialogs = options.dialogs
     contents.once('destroyed', () => this.dispose())
   }
 
@@ -164,13 +174,17 @@ export class PageDriver {
   }
 
   noteUserInput(): void {
-    if (this.agentInputDepth === 0) this.userInputEpoch += 1
+    if (this.agentInputDepth > 0) return
+    this.userInputEpoch += 1
+    // The person's own clicks open the system file chooser.
+    if (this.intercepting) void this.interceptFileChooser(false)
   }
 
   async attach(): Promise<void> {
     if (this.attached || this.contents.isDestroyed()) return
     if (!this.contents.debugger.isAttached()) this.contents.debugger.attach('1.3')
     this.contents.debugger.on('message', this.onDebuggerMessage)
+    this.contents.debugger.on('detach', this.onDebuggerDetach)
     this.attached = true
     try {
       await this.send('Target.setAutoAttach', {
@@ -189,22 +203,21 @@ export class PageDriver {
         this.send('Emulation.setFocusEmulationEnabled', { enabled: true }),
       ])
     } catch (error) {
-      this.attached = false
-      this.contents.debugger.removeListener('message', this.onDebuggerMessage)
+      this.onDebuggerDetach()
       throw error
     }
   }
 
   dispose(): void {
     this.requests.clear()
+    this.log.clear()
     this.refs.clear()
     this.stableIds.clear()
     this.observations.clear()
-    this.frameParents.clear()
-    this.frameSessions.clear()
-    this.sessionFrames.clear()
+    this.frames.clear()
     if (!this.contents.isDestroyed()) {
       this.contents.debugger.removeListener('message', this.onDebuggerMessage)
+      this.contents.debugger.removeListener('detach', this.onDebuggerDetach)
       if (this.contents.debugger.isAttached()) {
         try { this.contents.debugger.detach() } catch { /* target already gone */ }
       }
@@ -213,7 +226,24 @@ export class PageDriver {
   }
 
   execute(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
-    return this.enqueue(() => {
+    if (method === 'dialog') return this.answerDialog(args)
+    // A page that waits on a dialog runs nothing else until it is answered.
+    const open = this.dialogs?.current(this.contents.id)
+    if (open) return Promise.resolve({ error: 'browser-dialog-open', recovery: browserDialogNotice(open), dialog: open })
+    if (this.hung) {
+      return this.responsive().then(answers => answers
+        ? this.execute(method, args)
+        : { error: PAGE_UNRESPONSIVE, recovery: browserRecovery(PAGE_UNRESPONSIVE, false) })
+    }
+    let unsubscribe: (() => void) | undefined
+    const interrupted = new Promise<BrowserDriverResult>((resolve) => {
+      unsubscribe = this.dialogs?.subscribe((webContentsId, dialog) => {
+        if (webContentsId !== this.contents.id || !dialog) return
+        const action: BrowserActionOutcome = { method, status: 'dispatched', notices: [browserDialogNotice(dialog)] }
+        resolve({ result: { action }, dialog })
+      })
+    })
+    const run = this.enqueue(() => {
       this.inputSent = false
       return this.executeBound(method, args)
     }, args._codeCellId, args._userInputEpoch).catch((error) => {
@@ -221,6 +251,21 @@ export class PageDriver {
       const recovery = browserRecovery(message, this.inputSent)
       return { error: message, ...(recovery ? { recovery } : {}) }
     })
+    // The call itself finishes once the dialog is answered; the next call
+    // waits for it in the queue.
+    return Promise.race([run, interrupted]).finally(() => unsubscribe?.())
+  }
+
+  /** Answers the page's open dialog, then observes the page after it. */
+  private async answerDialog(args: BrowserArgs): Promise<BrowserDriverResult> {
+    if (args.action !== 'accept' && args.action !== 'dismiss') return { error: 'invalid-browser-dialog-action' }
+    if (args.text !== undefined && typeof args.text !== 'string') return { error: 'invalid-browser-dialog-text' }
+    const dialog = this.dialogs?.answer(this.contents.id, { accept: args.action === 'accept', ...(typeof args.text === 'string' ? { text: args.text } : {}) })
+    if (!dialog) return { error: 'browser-no-dialog', recovery: browserRecovery('browser-no-dialog', false) }
+    const action: BrowserActionOutcome = { method: 'dialog', status: 'verified', notices: [`${args.action === 'accept' ? 'Accepted' : 'Dismissed'} the ${dialog.type} dialog "${dialog.message}".`] }
+    const after = await this.execute('getAXState', { _codeCellId: args._codeCellId })
+    if (after.dialog) return { result: { action: { ...action, notices: [...action.notices!, ...(objectValue(objectValue(after.result).action).notices as string[] ?? [])] } }, dialog: after.dialog }
+    return { result: { action, ...(after.result ? { observation: after.result } : {}) } }
   }
 
   private enqueue<T>(operation: () => Promise<T>, codeCellId?: unknown, expectedEpoch?: unknown): Promise<T> {
@@ -243,8 +288,8 @@ export class PageDriver {
         // Observations retain backend node IDs, never temporary remote objects.
         // Cleanup must also run after takeover or a failed action.
         if (!this.contents.isDestroyed() && this.attached) {
-          await Promise.allSettled([undefined, ...this.sessionFrames.keys()].map(async sessionId => {
-            await this.contents.debugger.sendCommand('Runtime.releaseObjectGroup', { objectGroup: 'cate-browser' }, sessionId)
+          await Promise.allSettled([undefined, ...this.frames.sessionIds()].map(async sessionId => {
+            await this.command('Runtime.releaseObjectGroup', { objectGroup: 'cate-browser' }, sessionId)
           }))
         }
         this.activeGuard = undefined
@@ -254,40 +299,100 @@ export class PageDriver {
     return run
   }
 
+  /** Throws once the running call must stop (its cell ended, the user took over). */
+  private check(): void {
+    this.activeGuard?.()
+  }
+
   async fillCredential(targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
-    return this.enqueue(() => this.executeExclusive(async (guard) => {
+    return this.enqueue(async () => {
       const selector = `[data-cate-autofill-target=${JSON.stringify(targetId)}]`
-      const password = await this.resolveSelector(selector)
-      const usernameResult = await this.callOn(password, `function () {
-        const visible = (element) => {
-          const style = getComputedStyle(element); const rect = element.getBoundingClientRect();
-          return !element.disabled && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-        };
-        const scope = this.form || document.body;
-        return Array.from(scope.querySelectorAll('input[autocomplete="username"],input[autocomplete="email"],input[type="email"],input[type="text"]')).filter(visible).at(-1) || null;
-      }`, false)
-      guard()
-      if (typeof usernameResult.objectId === 'string') {
-        const usernameObjectId = usernameResult.objectId
-        const described = objectValue(await this.send('DOM.describeNode', { objectId: usernameObjectId }))
-        const node = objectValue(described.node)
-        if (typeof node.backendNodeId === 'number') {
-          await this.fillElement({ objectId: usernameObjectId, backendNodeId: node.backendNodeId }, credential.username, guard)
-        }
-      }
-      await this.fillElement(password, credential.password, guard)
+      await this.fillLogin(await this.resolveSelector(selector), credential)
       return { ok: true as const }
-    })).catch((error) => ({ error: error instanceof Error ? error.message : 'credential-fill-failed' }))
+    }).catch((error) => ({ error: error instanceof Error ? error.message : 'credential-fill-failed' }))
+  }
+
+  /** Fills a saved login: the username of the password field's form, then
+   *  the password. The value never comes back: observations mask it. */
+  private async fillLogin(password: ElementTarget, credential: { username: string; password: string }): Promise<void> {
+    const username = await this.locate(password, USERNAME_FOR_PASSWORD)
+    this.check()
+    if (username && credential.username) await this.fillUsername(username, credential.username)
+    await this.fillElement(password, credential.password)
+  }
+
+  /** A username step already shows the username, often read-only: leave it. */
+  private async fillUsername(field: ElementTarget, username: string): Promise<void> {
+    if ((await this.callOn(field, 'function () { return this.value; }')).value === username) return
+    try {
+      await this.fillElement(field, username)
+    } catch (error) {
+      if (!(error instanceof Error) || !['element-readonly', 'element-disabled'].includes(error.message)) throw error
+    }
+  }
+
+  /** Fills the saved login the runtime chose (`credential`, saved for
+   *  `origin`) into the sign-in form: the target's, or the page's. A step that
+   *  asks for the username alone gets the username. */
+  private async login(target: ElementTarget | undefined, credential: { username: string; password: string; origin: string }): Promise<string[]> {
+    // The page must still show the credential's origin (it may have navigated
+    // since the runtime chose), and the field must belong to the page itself,
+    // not to a frame of another site.
+    if (target?.sessionId) throw new Error('browser-login-origin-mismatch')
+    const password = await this.locate(target, PASSWORD_FIELD)
+    const field = password ?? await this.locate(target, USERNAME_FIELD)
+    if (!field) throw new Error('browser-login-field-not-found')
+    const fieldOrigin = (await this.callOn(field, 'function () { return this.ownerDocument.location.origin; }')).value
+    let pageOrigin = ''
+    try { pageOrigin = new URL(this.contents.getURL()).origin } catch { /* no page */ }
+    if (pageOrigin !== credential.origin || fieldOrigin !== pageOrigin) throw new Error('browser-login-origin-mismatch')
+    this.check()
+    if (password) {
+      await this.fillLogin(password, credential)
+      return [`Filled the saved login for ${credential.username || 'this site'}; the password is hidden. Submit the form to sign in.`]
+    }
+    await this.fillUsername(field, credential.username)
+    return [`Filled the username ${credential.username}; this step asks for no password. Continue, then run login again on the password step.`]
+  }
+
+  /** The element `declaration` returns, called on `scope` or the main document. */
+  private async locate(scope: ElementTarget | undefined, declaration: string): Promise<ElementTarget | undefined> {
+    let result: Record<string, unknown>
+    if (scope) result = await this.callOn(scope, declaration, false)
+    else {
+      const response = await this.send('Runtime.evaluate', { expression: `(${declaration}).call(document)`, objectGroup: 'cate-browser', returnByValue: false })
+      if (response.exceptionDetails) throw new Error('page-evaluation-failed')
+      result = objectValue(response.result)
+    }
+    if (typeof result.objectId !== 'string' || result.subtype === 'null') return undefined
+    const node = objectValue((await this.send('DOM.describeNode', { objectId: result.objectId }, scope?.sessionId)).node)
+    if (typeof node.backendNodeId !== 'number') return undefined
+    return { objectId: result.objectId, backendNodeId: node.backendNodeId, frameId: scope?.frameId, sessionId: scope?.sessionId }
+  }
+
+  /** Reports file choosers to the driver (`Page.fileChooserOpened`) instead
+   *  of showing them, in every frame. */
+  private async interceptFileChooser(enabled: boolean): Promise<void> {
+    if (this.intercepting === enabled || this.contents.isDestroyed() || !this.attached) return
+    this.intercepting = enabled
+    await Promise.allSettled([undefined, ...this.frames.sessionIds()].map(sessionId =>
+      this.command('Page.setInterceptFileChooserDialog', { enabled }, sessionId)))
   }
 
   private handleEvent(event: CdpEvent): void {
+    this.log.record(event)
+    if (event.method === 'Page.fileChooserOpened') {
+      if (this.intercepting && typeof event.params.backendNodeId === 'number') {
+        this.fileChooser = { backendNodeId: event.params.backendNodeId, sessionId: event.sessionId, documentEpoch: this.documentEpoch }
+      }
+      return
+    }
     if (event.method === 'Target.attachedToTarget') {
       const targetInfo = objectValue(event.params.targetInfo)
       const sessionId = typeof event.params.sessionId === 'string' ? event.params.sessionId : undefined
       const frameId = typeof targetInfo.targetId === 'string' ? targetInfo.targetId : undefined
       if (targetInfo.type === 'iframe' && sessionId && frameId) {
-        this.frameSessions.set(frameId, sessionId)
-        this.sessionFrames.set(sessionId, frameId)
+        this.frames.attachSession(frameId, sessionId)
         void this.enableSession(sessionId)
       }
       return
@@ -312,7 +417,7 @@ export class PageDriver {
     if (event.method === 'Page.frameAttached') {
       const frameId = typeof event.params.frameId === 'string' ? event.params.frameId : undefined
       const parentFrameId = typeof event.params.parentFrameId === 'string' ? event.params.parentFrameId : undefined
-      if (frameId) this.frameParents.set(frameId, parentFrameId)
+      if (frameId) this.frames.setParent(frameId, parentFrameId)
       return
     }
     if (event.method === 'Page.frameDetached') {
@@ -322,16 +427,17 @@ export class PageDriver {
     }
     if (event.method === 'Page.frameNavigated') {
       const frame = objectValue(event.params.frame)
-      const frameId = typeof frame.id === 'string' ? frame.id : this.sessionFrames.get(event.sessionId ?? '')
-      const parentId = typeof frame.parentId === 'string' ? frame.parentId : this.frameParents.get(frameId ?? '')
+      const frameId = typeof frame.id === 'string' ? frame.id : this.frames.frameOfSession(event.sessionId ?? '')
+      const parentId = typeof frame.parentId === 'string' ? frame.parentId : this.frames.parent(frameId ?? '')
       if (!event.sessionId && !parentId) {
         this.documentEpoch += 1
+        this.fileChooser = undefined
         this.requests.clear()
         this.refs.clear()
         this.stableIds.clear()
-        this.frameParents.clear()
+        this.frames.clearParents()
       } else if (frameId) {
-        this.frameParents.set(frameId, parentId)
+        this.frames.setParent(frameId, parentId)
         this.dropRefsForFrame(frameId, event.sessionId)
       }
       return
@@ -346,6 +452,7 @@ export class PageDriver {
         this.send('Runtime.enable', {}, sessionId),
         this.send('Accessibility.enable', {}, sessionId),
         this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId),
+        ...(this.intercepting ? [this.send('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId)] : []),
       ])
     } catch {
       this.dropFrameSession(sessionId)
@@ -362,18 +469,29 @@ export class PageDriver {
   }
 
   private dropFrame(frameId: string): void {
-    this.dropRefsForFrame(frameId)
-    const sessionId = this.frameSessions.get(frameId)
-    if (sessionId) this.sessionFrames.delete(sessionId)
-    this.frameSessions.delete(frameId)
-    this.frameParents.delete(frameId)
+    this.dropRefsForFrame(frameId, this.frames.ownSession(frameId))
+    this.frames.drop(frameId)
   }
 
   private dropFrameSession(sessionId: string): void {
-    const frameId = this.sessionFrames.get(sessionId)
+    const frameId = this.frames.frameOfSession(sessionId)
     if (frameId) this.dropFrame(frameId)
-    else {
-      for (const [ref, target] of this.refs) if (target.sessionId === sessionId) { this.refs.delete(ref); this.stableIds.delete(`${sessionId}:${target.backendNodeId}`) }
+    else this.dropRefsForFrame('', sessionId)
+  }
+
+  /** One CDP command. A page whose main thread never yields (a script in an
+   *  endless loop) answers none: the command fails after CDP_TIMEOUT_MS and
+   *  the page counts as hung, failing every command at once until it answers
+   *  a probe again (`execute`) or restarts (`restartIfHung`). */
+  private async command(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeoutMs = CDP_TIMEOUT_MS): Promise<Record<string, unknown>> {
+    if (this.hung && timeoutMs === CDP_TIMEOUT_MS) throw new Error(PAGE_UNRESPONSIVE)
+    try {
+      const result = objectValue(await within(this.contents.debugger.sendCommand(method, params, sessionId), timeoutMs, PAGE_UNRESPONSIVE))
+      this.hung = false
+      return result
+    } catch (error) {
+      if (error instanceof Error && error.message === PAGE_UNRESPONSIVE) this.hung = true
+      throw error
     }
   }
 
@@ -381,16 +499,40 @@ export class PageDriver {
     await this.attach()
     // Always allow paired releases so takeover cannot leave a button/key held.
     // Session setup also runs from debugger events, independently of commands.
-    const releasingInput = (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased')
-      || (method === 'Input.dispatchKeyEvent' && params.type === 'keyUp')
-    const setup = method.endsWith('.enable') || method === 'Target.setAutoAttach' || method === 'Emulation.setFocusEmulationEnabled'
+    const releasingInput = method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased'
+    const setup = method.endsWith('.enable') || method === 'Target.setAutoAttach' || method === 'Emulation.setFocusEmulationEnabled' || method === 'Page.setInterceptFileChooserDialog'
     if (!releasingInput && !setup) this.activeGuard?.()
     try {
-      return objectValue(await this.contents.debugger.sendCommand(method, params, sessionId))
+      return await this.command(method, params, sessionId)
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'CDP command failed'
+      if (detail === PAGE_UNRESPONSIVE) throw error
       throw new Error(`${method}: ${detail}`)
     }
+  }
+
+  /** Whether the page answers again after it hung. */
+  private async responsive(): Promise<boolean> {
+    if (!this.hung) return true
+    try {
+      await this.command('Runtime.evaluate', { expression: '1', returnByValue: true }, undefined, 1_000)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Restarts a hung page: its renderer is killed and the page loads again.
+   *  False when the page is not hung. */
+  async restartIfHung(): Promise<boolean> {
+    if (!this.hung || this.contents.isDestroyed()) return false
+    this.hung = false
+    // A reload before the old renderer is gone does nothing.
+    const gone = new Promise<void>(resolve => { this.contents.once('render-process-gone', () => resolve()) })
+    this.contents.forcefullyCrashRenderer()
+    await within(gone, RESTART_TIMEOUT_MS, 'browser-restart-timeout').catch(() => {})
+    if (!this.contents.isDestroyed()) this.contents.reload()
+    return true
   }
 
   /** Dispatch trusted input to this guest while marking the resulting DOM
@@ -417,7 +559,7 @@ export class PageDriver {
       // hidden guest. Listen in each frame's isolated world before dispatch,
       // then keep input marked until the receiving document finishes handling it.
       for (const frameId of await this.currentFrameIds()) {
-        const sessionId = this.frameSessions.get(frameId)
+        const sessionId = this.frames.ownSession(frameId)
         const world = await this.send('Page.createIsolatedWorld', { frameId, worldName: 'cate-browser-input' }, sessionId)
         const response = await this.send('Runtime.evaluate', {
           contextId: world.executionContextId, objectGroup: 'cate-browser', returnByValue: false,
@@ -454,33 +596,81 @@ export class PageDriver {
       try { await completion } catch { throw new Error('browser-wheel-event-timeout') }
     } finally {
       await Promise.allSettled(watches.map(async watch => {
-        await this.contents.debugger.sendCommand('Runtime.callFunctionOn', {
+        await this.command('Runtime.callFunctionOn', {
           objectId: watch.objectId, functionDeclaration: 'function () { this.cancel(); }', returnByValue: true,
         }, watch.sessionId)
       }))
     }
   }
 
-  private async dispatchKey(params: Record<string, unknown>): Promise<void> {
+  /** Sends key events to this guest's own widget. Input.dispatchKeyEvent
+   *  would deliver them to the window's focused guest, whichever that is (and
+   *  drop them while none is), and a key press must not take the user's focus. */
+  private async dispatchKey(events: Electron.KeyboardInputEvent[], command?: string): Promise<void> {
     this.inputSent = true
     this.agentInputDepth += 1
     this.contents.send('cate-browser-automation-input', true)
     try {
-      await this.send('Input.dispatchKeyEvent', params)
+      // A page that handles the shortcut itself cancels its keydown.
+      const cancelled = command ? await this.watchKeydownCancel() : undefined
+      sendingKeys.add(this.contents)
+      try {
+        for (const event of events) this.contents.sendInputEvent(event)
+      } finally {
+        sendingKeys.delete(this.contents)
+      }
+      if (command && !await cancelled?.()) await this.editingCommand(command)
+      // The guest handles input in order: once a task runs, the keys are in.
+      await this.evaluate('new Promise(resolve => setTimeout(() => resolve(true), 0))')
     } finally {
-      await new Promise<void>((resolve) => setImmediate(resolve))
       if (!this.contents.isDestroyed()) this.contents.send('cate-browser-automation-input', false)
       this.agentInputDepth -= 1
     }
   }
 
-  private async executeExclusive<T>(operation: (guard: () => void) => Promise<T>): Promise<T> {
-    await this.attach()
-    const guard = this.activeGuard!
-    guard()
-    const result = await operation(guard)
-    guard()
-    return result
+  /** Listens for the next keydown in the main frame; the returned call
+   *  resolves to whether the page cancelled it. */
+  private async watchKeydownCancel(): Promise<() => Promise<boolean>> {
+    const tree = objectValue(await this.send('Page.getFrameTree'))
+    const frameId = objectValue(objectValue(tree.frameTree).frame).id
+    const world = await this.send('Page.createIsolatedWorld', { frameId, worldName: 'cate-browser-input' })
+    const watch = await this.send('Runtime.evaluate', {
+      contextId: world.executionContextId, objectGroup: 'cate-browser', returnByValue: false,
+      expression: `new Promise(resolve => {
+        const timer = setTimeout(() => resolve(false), 1000);
+        addEventListener('keydown', event => { clearTimeout(timer); setTimeout(() => resolve(event.defaultPrevented), 0); }, { capture: true, once: true });
+      })`,
+    })
+    const objectId = objectValue(watch.result).objectId
+    return async () => {
+      if (typeof objectId !== 'string') return false
+      const result = await this.send('Runtime.callFunctionOn', { objectId, functionDeclaration: 'function () { return this; }', awaitPromise: true, returnByValue: true })
+      return objectValue(result.result).value === true
+    }
+  }
+
+  /** Runs a macOS editing command in the focused field (MAC_EDITING_COMMANDS). */
+  private async editingCommand(command: string): Promise<void> {
+    const pasted = command === 'paste' ? clipboard.readText() : ''
+    const copied = await this.evaluate(`(() => {
+      let doc = document;
+      while (doc.activeElement && doc.activeElement.contentDocument) doc = doc.activeElement.contentDocument;
+      const field = doc.activeElement, selection = doc.getSelection();
+      const inField = field && typeof field.selectionStart === 'number';
+      const selected = () => inField ? field.value.slice(field.selectionStart, field.selectionEnd) : String(selection);
+      const line = (alter, direction) => { selection.modify(alter, direction, 'lineboundary'); if (alter === 'extend') doc.execCommand('delete'); };
+      switch (${JSON.stringify(command)}) {
+        case 'selectAll': if (inField) field.select(); else doc.execCommand('selectAll'); return null;
+        case 'copy': return selected();
+        case 'cut': { const text = selected(); doc.execCommand('delete'); return text; }
+        case 'paste': doc.execCommand('insertText', false, ${JSON.stringify(pasted)}); return null;
+        case 'undo': case 'redo': doc.execCommand(${JSON.stringify(command)}); return null;
+        case 'deleteToBeginningOfLine': line('extend', 'backward'); return null;
+        case 'moveToBeginningOfLine': line('move', 'backward'); return null;
+        case 'moveToEndOfLine': line('move', 'forward'); return null;
+      }
+    })()`)
+    if (typeof copied === 'string' && copied) clipboard.writeText(copied)
   }
 
   private async resolveSelector(selector: string): Promise<ElementTarget> {
@@ -561,9 +751,9 @@ export class PageDriver {
     const seen = new Set<string>()
     while (current && !seen.has(current)) {
       seen.add(current)
-      const parent = this.frameParents.get(current)
+      const parent = this.frames.parent(current)
       if (!parent) break
-      const parentSession = this.frameSessions.get(parent)
+      const parentSession = this.frames.sessionOf(parent)
       const owner = await this.send('DOM.getFrameOwner', { frameId: current }, parentSession)
       const backendNodeId = objectValue(owner).backendNodeId
       if (typeof backendNodeId !== 'number') break
@@ -589,13 +779,14 @@ export class PageDriver {
 
   /** Waits up to `timeoutMs` for `target` to be stable, visible, enabled and
    *  uncovered, and returns its box. */
-  private async actionableBox(target: ElementTarget, guard: () => void, timeoutMs = ACTIONABLE_TIMEOUT_MS): Promise<{ x: number; y: number; width: number; height: number }> {
+  private async actionableBox(target: ElementTarget, timeoutMs = ACTIONABLE_TIMEOUT_MS): Promise<{ x: number; y: number; width: number; height: number }> {
     const deadline = Date.now() + timeoutMs
+    let obscured = 0
     for (let attempt = 0; ; attempt++) {
       try {
         const box = await this.box(target)
         await sleep(50)
-        guard()
+        this.check()
         const settled = await this.box(target, false)
         if (Object.keys(box).some((key) => Math.abs(box[key as keyof typeof box] - settled[key as keyof typeof settled]) > 0.5)) {
           throw new Error('element-not-stable')
@@ -622,30 +813,36 @@ export class PageDriver {
           return true;
         }`)
         if (actionable.value !== true) throw new Error(typeof actionable.value === 'string' ? actionable.value : 'element-not-actionable')
-        guard()
+        this.check()
         return settled
       } catch (error) {
-        guard()
+        this.check()
         const code = error instanceof Error ? error.message.split(':')[0] : ''
         if (!TRANSIENT_ELEMENT_ERRORS.includes(code) || Date.now() >= deadline) throw error
+        // Scrolling into view can leave the element under a sticky header or
+        // footer: try the other alignments before waiting for the cover to go.
+        if (code === 'element-obscured') {
+          const block = OBSCURED_SCROLL_ALIGNMENTS[obscured++ % OBSCURED_SCROLL_ALIGNMENTS.length]
+          await this.callOn(target, `function () { this.scrollIntoView({ block: ${JSON.stringify(block)}, inline: 'center' }); }`).catch(() => {})
+        }
         await sleep(Math.min(100 * 2 ** attempt, 500))
       }
     }
   }
 
-  private async clickElement(target: ElementTarget, count = 1, button = 'left', guard: () => void, timeoutMs?: number): Promise<ReturnType<PageDriver['cursor']>> {
+  private async clickElement(target: ElementTarget, count = 1, button = 'left', timeoutMs?: number): Promise<ReturnType<PageDriver['cursor']>> {
     target = await this.pointerTarget(target)
-    const settled = await this.actionableBox(target, guard, timeoutMs)
+    const settled = await this.actionableBox(target, timeoutMs)
     const x = settled.x + settled.width / 2
     const y = settled.y + settled.height / 2
     await this.dispatchInput({ type: 'mouseMoved', x, y })
-    guard()
+    this.check()
     try {
       await this.dispatchInput({ type: 'mousePressed', x, y, button, clickCount: count })
     } finally {
       await this.dispatchInput({ type: 'mouseReleased', x, y, button, clickCount: count })
     }
-    guard()
+    this.check()
     return this.cursor(settled, count === 2 ? 'dblclick' : 'click', count === 2 ? 'dblclick' : 'click')
   }
 
@@ -676,13 +873,13 @@ export class PageDriver {
     await this.send('DOM.focus', { backendNodeId: target.backendNodeId }, target.sessionId)
   }
 
-  private async fillElement(target: ElementTarget, text: string, guard: () => void): Promise<void> {
+  private async fillElement(target: ElementTarget, text: string): Promise<void> {
     await this.assertEditable(target)
     await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendNodeId }, target.sessionId)
     // Focus stays inside this CDP target's document. It does not activate the
     // Electron window, so xterm/Monaco focus in the host remains untouched.
     await this.focusElement(target)
-    guard()
+    this.check()
     this.inputSent = true
     const editable = await this.callOn(target, `function () {
       const text=${JSON.stringify(text)};
@@ -700,11 +897,11 @@ export class PageDriver {
       this.dispatchEvent(new Event('change',{bubbles:true}));
       return false;
     }`)
-    guard()
+    this.check()
     if (editable.value === true) {
       if (text) await this.insertText(target, text)
       else await this.callOn(target, 'function () { this.ownerDocument.execCommand("delete"); }')
-      guard()
+      this.check()
       const observed = await this.callOn(target, 'function () { return this.innerText; }')
       const normalize = (value: string) => value.replace(/\s+/g, ' ').trim()
       if (typeof observed.value === 'string' && normalize(observed.value) !== normalize(text)) throw new Error('browser-fill-postcondition-failed')
@@ -714,127 +911,94 @@ export class PageDriver {
     if (typeof observed.value === 'string' && observed.value !== text) throw new Error('browser-fill-postcondition-failed')
   }
 
-  private async typeElement(target: ElementTarget | null, text: string, guard: () => void): Promise<void> {
+  private async typeElement(target: ElementTarget | null, text: string): Promise<void> {
     if (!target) throw new Error('type-target-required')
     await this.assertEditable(target)
-    guard()
+    this.check()
     const content = 'function () { return this.isContentEditable ? this.innerText : this.value; }'
     const before = await this.callOn(target, `function () { return this.matches(':focus') ? (${content}).call(this) : null; }`)
     if (typeof before.value !== 'string') throw new Error('browser-type-target-not-focused')
     if (!text) return
     await this.insertText(target, text)
-    guard()
+    this.check()
     const after = await this.callOn(target, content)
     if (after.value === before.value) throw new Error('browser-type-failed')
   }
 
-  private async uploadFile(target: ElementTarget, filePath: string, guard: () => void): Promise<string> {
-    const input = await this.callOn(target, `function () {
-      return { file: this instanceof HTMLInputElement && this.type === 'file', enabled: !this.disabled };
-    }`)
-    const state = objectValue(input.value)
-    if (state.file !== true) throw new Error('browser-upload-target-must-be-file-input')
+  /** Sets `files` on the file input `target` stands for (its label, a
+   *  wrapper), or on the input whose chooser it opens when clicked; without
+   *  a target, on the chooser an earlier action opened. */
+  private async uploadFiles(target: ElementTarget | undefined, files: string[]): Promise<string[]> {
+    let input = target && await this.locate(target, FILE_INPUT_OF)
+    if (!input && target) {
+      // A styled button or drop area that opens the chooser from script.
+      this.fileChooser = undefined
+      await this.interceptFileChooser(true)
+      try {
+        await this.clickElement(target, 1, 'left')
+        const deadline = Date.now() + FILE_CHOOSER_TIMEOUT_MS
+        while (!this.fileChooser && Date.now() < deadline) { this.check(); await sleep(50) }
+      } finally {
+        await this.interceptFileChooser(false)
+      }
+    }
+    if (!input) {
+      const chooser = this.fileChooser
+      if (!chooser || chooser.documentEpoch !== this.documentEpoch) throw new Error('browser-upload-no-file-chooser')
+      input = { backendNodeId: chooser.backendNodeId, sessionId: chooser.sessionId }
+    }
+    this.fileChooser = undefined
+    const state = objectValue((await this.callOn(input, `function () {
+      return { file: this instanceof HTMLInputElement && this.type === 'file', enabled: !this.disabled, multiple: this.multiple === true };
+    }`)).value)
+    if (state.file !== true) throw new Error('browser-upload-no-file-chooser')
     if (state.enabled !== true) throw new Error('element-disabled')
-    guard()
+    if (files.length > 1 && state.multiple !== true) throw new Error('browser-upload-single-file-input')
+    this.check()
     this.inputSent = true
-    await this.send('DOM.setFileInputFiles', { files: [filePath], backendNodeId: target.backendNodeId }, target.sessionId)
-    guard()
-    const observed = await this.callOn(target, `function () {
-      const file=this.files?.[0]; return file ? { name:file.name, size:file.size, count:this.files.length } : null;
-    }`)
-    const file = objectValue(observed.value)
-    if (file.count !== 1 || typeof file.name !== 'string') throw new Error('browser-upload-postcondition-failed')
-    return file.name
+    await this.send('DOM.setFileInputFiles', { files, backendNodeId: input.backendNodeId }, input.sessionId)
+    this.check()
+    const observed = await this.callOn(input, 'function () { return Array.from(this.files || [], file => file.name); }')
+    if (!Array.isArray(observed.value) || observed.value.length !== files.length) throw new Error('browser-upload-postcondition-failed')
+    return observed.value.map(String)
   }
 
-  private async pressKey(keySpec: string, guard: () => void): Promise<void> {
-    const parts = keySpec.replace(/^cmd\+/i, 'Meta+').split(/\+(?=.)/)
-    const aliases: Record<string, string> = { Return: 'Enter', Esc: 'Escape', ' ': 'Space', Up: 'ArrowUp', Down: 'ArrowDown', Left: 'ArrowLeft', Right: 'ArrowRight' }
-    const named = parts.pop() || ''
-    const keyName = aliases[named] ?? named
-    const modifierNames = parts.map(part => ({ Ctrl: 'Control', Cmd: 'Meta', Command: 'Meta', Option: 'Alt' })[part] ?? part)
-    const unknown = modifierNames.find(part => !['Alt', 'Control', 'Meta', 'Shift'].includes(part))
-    if (unknown) throw new Error(`unsupported-key-modifier:${unknown}`)
-    const shift = modifierNames.includes('Shift')
-    const shifted = shift ? US_SHIFTED[keyName] ?? keyName.toUpperCase() : keyName
-    const symbol = SYMBOL_KEYS[keyName]
-    const virtualKey = symbol?.vk ?? keyName.toUpperCase().charCodeAt(0)
-    const data = KEY_DATA[keyName] ?? (keyName.length === 1
-      ? {
-          key: shifted,
-          code: /[a-z]/i.test(keyName) ? `Key${keyName.toUpperCase()}` : /[0-9]/.test(keyName) ? `Digit${keyName}` : symbol?.code ?? '',
-          windowsVirtualKeyCode: virtualKey,
-          nativeVirtualKeyCode: virtualKey,
-          text: shifted,
-          unmodifiedText: keyName,
-        }
-      : undefined)
-    if (!data) throw new Error(`unsupported-key:${keyName}`)
-    if ((keyName === 'PageDown' || keyName === 'PageUp') && parts.length === 0) {
-      guard()
-      await this.evaluate(`scrollBy(0, ${keyName === 'PageDown' ? 'innerHeight' : '-innerHeight'}); true`)
+  /** Drops `files` on a drop area, as dragging them from the desktop does. */
+  private async dropFiles(x: number, y: number, files: string[]): Promise<void> {
+    const data = { items: [], files, dragOperationsMask: 1 }
+    this.inputSent = true
+    for (const type of ['dragEnter', 'dragOver', 'drop']) {
+      this.check()
+      await this.send('Input.dispatchDragEvent', { type, x, y, data })
+    }
+  }
+
+  private async pressKey(keySpec: string): Promise<void> {
+    const press = parseKey(keySpec)
+    if ('scrollPage' in press) {
+      this.check()
+      await this.evaluate(`scrollBy(0, ${press.scrollPage} * innerHeight); true`)
       return
     }
-    let modifiers = 0
-    if (modifierNames.includes('Alt')) modifiers |= 1
-    if (modifierNames.includes('Control')) modifiers |= 2
-    if (modifierNames.includes('Meta')) modifiers |= 4
-    if (shift) modifiers |= 8
-    // A key with text types it (keyDown sends the char event); a shortcut does not.
-    const typing = data.text !== undefined && (modifiers & ~8) === 0
-    const command = process.platform === 'darwin' ? MAC_EDITING_COMMANDS[[...modifierNames, keyName].join('+')] : undefined
-    const event = {
-      ...data,
-      ...(typing ? {} : { text: undefined, unmodifiedText: undefined }),
-      modifiers,
-      ...(command ? { commands: [command] } : {}),
-    }
-    try {
-      await this.dispatchKey({ ...event, type: typing ? 'keyDown' : 'rawKeyDown' })
-    } finally {
-      await this.dispatchKey({ ...event, type: 'keyUp', commands: undefined })
-    }
-    guard()
+    await this.dispatchKey(press.events, press.command)
+    this.check()
   }
 
-  private recordFrameTree(raw: unknown, parentId: string | undefined, frameIds: string[]): void {
-    const tree = objectValue(raw)
-    const frame = objectValue(tree.frame)
-    const frameId = typeof frame.id === 'string' ? frame.id : undefined
-    if (!frameId) return
-    this.frameParents.set(frameId, parentId)
-    frameIds.push(frameId)
-    if (Array.isArray(tree.childFrames)) {
-      for (const child of tree.childFrames) this.recordFrameTree(child, frameId, frameIds)
-    }
-  }
-
+  /** The page's frames, the main frame first. */
   private async currentFrameIds(): Promise<string[]> {
-    const response = await this.send('Page.getFrameTree')
-    const frameIds: string[] = []
-    this.recordFrameTree(response.frameTree, undefined, frameIds)
-    return frameIds
+    return this.frames.record((await this.send('Page.getFrameTree')).frameTree)
   }
 
-  private async readAXState(): Promise<{ state: string; elements: BrowserElement[] }> {
+  private async readAXState(viewport: BrowserViewportState): Promise<{ state: string; elements: BrowserElement[] }> {
     const frameIds = await this.currentFrameIds()
     if (!frameIds.length) throw new Error('browser-frame-unavailable')
-    const worlds = new Map<string, Promise<number>>()
     return readBrowserAX({
-      frames: frameIds.map(frameId => ({ frameId, sessionId: this.frameSessions.get(frameId) })),
+      frames: frameIds.map(frameId => {
+        const parentFrameId = this.frames.parent(frameId)
+        return { frameId, sessionId: this.frames.ownSession(frameId), parentFrameId, parentSessionId: this.frames.sessionOf(parentFrameId) }
+      }),
+      viewport,
       send: (method, params, sessionId) => this.send(method, params, sessionId),
-      callOn: async (target, declaration) => {
-        const key = `${target.sessionId ?? 'root'}:${target.frameId}`
-        let world = worlds.get(key)
-        if (!world) {
-          world = this.send('Page.createIsolatedWorld', { frameId: target.frameId, worldName: 'cate-browser-observation' }, target.sessionId).then(result => {
-            if (typeof result.executionContextId !== 'number') throw new Error('browser-inspection-context-unavailable')
-            return result.executionContextId
-          })
-          worlds.set(key, world)
-        }
-        return this.callOn(target, declaration, true, await world)
-      },
       register: target => {
         const identity = `${target.sessionId ?? 'root'}:${target.backendNodeId}`
         let id = this.stableIds.get(identity)
@@ -883,7 +1047,7 @@ export class PageDriver {
         })`), 3000, 'browser-render-frame-timeout')
         if (frameReady !== true) throw new Error('browser-render-frame-timeout')
         if (profile) profile.frameWaitMs += performance.now() - started
-        this.activeGuard?.()
+        this.check()
         started = performance.now()
         const capture = await within(this.contents.capturePage(undefined, { stayHidden: true, stayAwake: true }), 5000, 'browser-screenshot-timeout')
         if (profile) profile.captureMs += performance.now() - started
@@ -916,10 +1080,10 @@ export class PageDriver {
     const busy = () => this.contents.isLoading()
       || [...this.requests.values()].some(at => at >= startedAt - 50 && Date.now() - at < 2500)
     while (!this.contents.isDestroyed() && busy() && Date.now() < deadline) {
-      this.activeGuard?.()
+      this.check()
       await sleep(50)
     }
-    this.activeGuard?.()
+    this.check()
     if (this.contents.isDestroyed() || (epoch !== this.documentEpoch && this.contents.isLoading())) return
     // A client-side route change (same document, new URL) often renders a
     // moment later: wait for its first change before waiting for quiet.
@@ -945,7 +1109,7 @@ export class PageDriver {
       const documentId = this.documentId
       const before = await this.viewport()
       const axStarted = performance.now()
-      const ax = imageOnly ? { state: '', elements: [] } : await this.readAXState()
+      const ax = imageOnly ? { state: '', elements: [] } : await this.readAXState(before)
       if (profile && !imageOnly) profile.axMs += performance.now() - axStarted
       let image: BrowserImage | undefined
       let screenshotError: string | undefined
@@ -1003,7 +1167,9 @@ export class PageDriver {
 
   private element(id: unknown, observation: CachedBrowserObservation): ElementTarget {
     if (observation.kind !== 'ax') throw new Error('browser-ax-observation-required')
-    if (!Number.isSafeInteger(id) || !observation.elementIds.has(id as number)) throw new Error('browser-element-not-in-observation')
+    // Ids stay the same for an element while its document lives, so any id
+    // this driver issued for the current document will do.
+    if (!Number.isSafeInteger(id) || (id as number) < 1 || (id as number) > this.elementCounter) throw new Error('browser-unknown-element')
     const ref = this.refs.get(id as number)
     if (!ref || ref.documentEpoch !== this.documentEpoch) throw new Error('stale-browser-element')
     return { backendNodeId: ref.backendNodeId, frameId: ref.frameId, sessionId: ref.sessionId }
@@ -1045,7 +1211,7 @@ export class PageDriver {
     if (!Number.isFinite(timeout) || timeout <= 0 || timeout > BROWSER_WAIT_MAX_MS) throw new Error('invalid-browser-timeout')
     const deadline = Date.now() + timeout
     for (;;) {
-      this.activeGuard?.()
+      this.check()
       if (observation.documentId !== this.documentId && condition.element !== undefined) throw new Error('stale-browser-observation')
       let ready = false
       if (typeof condition.text === 'string') ready = String(await this.evaluate('document.body?.innerText ?? ""')).includes(condition.text)
@@ -1060,12 +1226,12 @@ export class PageDriver {
           }`)).value)
           ready = state === 'visible' ? result.visible === true : state === 'hidden' ? result.visible !== true : state === 'checked' ? result.checked === true : state === 'unchecked' ? result.checked === false : state === 'enabled' ? result.enabled === true : result.enabled === false
         } catch (error) {
-          this.activeGuard?.()
-          if (state === 'hidden' && error instanceof Error && !['browser-element-not-in-observation', 'stale-browser-observation'].includes(error.message)) ready = true
+          this.check()
+          if (state === 'hidden' && error instanceof Error && !['browser-unknown-element', 'stale-browser-observation'].includes(error.message)) ready = true
           else throw error
         }
       } else throw new Error('invalid-browser-wait-condition')
-      this.activeGuard?.()
+      this.check()
       if (ready) return
       if (Date.now() >= deadline) throw new Error('browser-wait-timeout')
       await new Promise(resolve => setTimeout(resolve, 50))
@@ -1074,9 +1240,28 @@ export class PageDriver {
 
   private async executeBound(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
     if (BROWSER_OBSERVATION_METHODS.has(method)) return { result: await this.observe(args, method !== 'getAXState', method === 'getScreenshot') }
+    if (BROWSER_LOG_METHODS.has(method)) return { result: this.log.read(method, args) }
     if (!BROWSER_ELEMENT_READ_METHODS.has(method) && !BROWSER_ACTION_METHODS.has(method) && method !== 'waitFor') throw new Error('unsupported-browser-method')
+    // A click or a key can open a file chooser: the agent answers it with
+    // `upload`, so the chooser is reported rather than shown.
+    const choosing = method === 'click' || method === 'pressKey'
+    if (!choosing) return this.runAction(method, args)
+    this.fileChooser = undefined
+    await this.interceptFileChooser(true)
+    try {
+      const outcome = await this.runAction(method, args)
+      if (!this.fileChooser) return outcome
+      const result = objectValue(outcome.result)
+      const action = objectValue(result.action) as unknown as BrowserActionOutcome
+      const notice = 'The action opened a file chooser. Answer it with cate browser upload chooser <file>..., or tab.upload(null, files) in code.'
+      return { ...outcome, result: { ...result, action: { ...action, notices: [...(action.notices ?? []), notice] } } }
+    } finally {
+      await this.interceptFileChooser(false)
+    }
+  }
+
+  private async runAction(method: string, args: BrowserArgs): Promise<BrowserDriverResult> {
     const observation = await this.baseline(args)
-    const guard = this.activeGuard!
     const epoch = this.documentEpoch
     const startedAt = Date.now()
     const url = this.contents.getURL()
@@ -1091,6 +1276,8 @@ export class PageDriver {
     }
     let verified = false
     let cursor: BrowserDriverResult['cursor']
+    const notices: string[] = []
+    let uploaded: string[] | undefined
     if (method === 'waitFor') {
       await this.waitCondition(args, observation)
       verified = true
@@ -1100,23 +1287,32 @@ export class PageDriver {
       if (![1, 2, 3].includes(Number(count)) || !['left', 'middle', 'right'].includes(String(button))) throw new Error('invalid-browser-click-options')
       if (Array.isArray(args.target)) {
         const [x, y] = await this.point(args.target, observation)
-        await this.dispatchInput({ type: 'mouseMoved', x, y }); guard()
+        await this.dispatchInput({ type: 'mouseMoved', x, y }); this.check()
         try { await this.dispatchInput({ type: 'mousePressed', x, y, button, clickCount: count }) }
         finally { await this.dispatchInput({ type: 'mouseReleased', x, y, button, clickCount: count }) }
         cursor = { x, y, label: 'click', kind: 'click' }
       } else {
         const timeout = args.timeoutMs === undefined ? undefined : Number(args.timeoutMs)
         if (timeout !== undefined && (!Number.isFinite(timeout) || timeout < 0 || timeout > BROWSER_WAIT_MAX_MS)) throw new Error('invalid-browser-timeout')
-        cursor = await this.clickElement(this.element(args.target, observation), Number(count), String(button), guard, timeout)
+        cursor = await this.clickElement(this.element(args.target, observation), Number(count), String(button), timeout)
       }
+    } else if (method === 'hover') {
+      let x: number, y: number
+      if (Array.isArray(args.target)) [x, y] = await this.point(args.target, observation)
+      else {
+        const box = await this.actionableBox(await this.pointerTarget(this.element(args.target, observation)))
+        x = box.x + box.width / 2; y = box.y + box.height / 2
+      }
+      await this.dispatchInput({ type: 'mouseMoved', x, y })
+      cursor = { x, y, label: 'hover', kind: 'hover' }
     } else if (method === 'setValue' || method === 'typeText') {
       const text = method === 'setValue' ? args.value : args.text
       if (typeof text !== 'string') throw new Error('browser-text-required')
       const focused = args.target === undefined && method === 'typeText'
       const target = focused ? await this.activeElement(observation) : this.element(args.target, observation)
       if (focused) await this.assertEditable(target).catch((error) => { throw error instanceof Error && error.message === 'element-not-editable' ? new Error('browser-type-target-not-focused') : error })
-      if (method === 'setValue') { await this.fillElement(target, text, guard); verified = true }
-      else await this.typeElement(target, text, guard)
+      if (method === 'setValue') { await this.fillElement(target, text); verified = true }
+      else await this.typeElement(target, text)
       // Measure after editing so focus/scroll/layout changes are reflected.
       // A removed field must not turn a successful edit into a feedback error.
       const box = await this.box(target, false).catch(() => undefined)
@@ -1124,13 +1320,13 @@ export class PageDriver {
     } else if (method === 'pressKey') {
       if (typeof args.key !== 'string') throw new Error('browser-key-required')
       if (args.target !== undefined) await this.focusElement(this.element(args.target, observation))
-      await this.pressKey(args.key, guard)
+      await this.pressKey(args.key)
     } else if (method === 'setChecked') {
       if (typeof args.checked !== 'boolean') throw new Error('browser-checked-required')
       const target = this.element(args.target, observation)
       const checked = (await this.callOn(target, 'function () { return typeof this.checked === "boolean" ? this.checked : null; }')).value
       if (typeof checked !== 'boolean') throw new Error('browser-checkbox-required')
-      if (checked !== args.checked) cursor = await this.clickElement(target, 1, 'left', guard)
+      if (checked !== args.checked) cursor = await this.clickElement(target, 1, 'left')
       if ((await this.callOn(target, 'function () { return Boolean(this.checked); }')).value !== args.checked) throw new Error('browser-check-postcondition-failed')
       verified = true
     } else if (method === 'selectOption') {
@@ -1152,8 +1348,26 @@ export class PageDriver {
       if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'browser-select-postcondition-failed')
       verified = true
     } else if (method === 'upload') {
-      if (typeof args.filePath !== 'string') throw new Error('browser-upload-file-required')
-      await this.uploadFile(this.element(args.target, observation), args.filePath, guard)
+      const files = args.files
+      if (!Array.isArray(files) || !files.length || !files.every(file => typeof file === 'string' && file)) throw new Error('browser-upload-file-required')
+      if (args.drop === true) {
+        if (args.target === undefined || args.target === null) throw new Error('browser-drop-target-required')
+        let x: number, y: number
+        if (Array.isArray(args.target)) [x, y] = await this.point(args.target, observation)
+        else { const box = await this.box(this.element(args.target, observation)); x = box.x + box.width / 2; y = box.y + box.height / 2 }
+        await this.dropFiles(x, y, files)
+        cursor = { x, y, label: 'drop', kind: 'drag' }
+      } else {
+        uploaded = await this.uploadFiles(args.target === undefined || args.target === null ? undefined : this.element(args.target, observation), files)
+        verified = true
+      }
+    } else if (method === 'login') {
+      const credential = objectValue(args.credential)
+      if (typeof credential.username !== 'string' || typeof credential.password !== 'string' || !credential.password || typeof credential.origin !== 'string') {
+        throw new Error('browser-login-credential-required')
+      }
+      const target = args.target === undefined || args.target === null ? undefined : this.element(args.target, observation)
+      notices.push(...await this.login(target, { username: credential.username, password: credential.password, origin: credential.origin }))
       verified = true
     } else if (method === 'scroll') {
       const direction = args.direction ?? 'down'
@@ -1170,11 +1384,11 @@ export class PageDriver {
       cursor = { x, y, label: 'scroll', kind: 'scroll' }
     } else if (method === 'drag') {
       const from = await this.point(args.from, observation), to = await this.point(args.to, observation)
-      await this.dispatchInput({ type: 'mouseMoved', x: from[0], y: from[1] }); guard()
+      await this.dispatchInput({ type: 'mouseMoved', x: from[0], y: from[1] }); this.check()
       try {
         await this.dispatchInput({ type: 'mousePressed', x: from[0], y: from[1], button: 'left', clickCount: 1 })
         for (let step = 1; step <= 10; step++) {
-          guard()
+          this.check()
           await this.dispatchInput({ type: 'mouseMoved', x: from[0] + (to[0] - from[0]) * step / 10, y: from[1] + (to[1] - from[1]) * step / 10, button: 'left', buttons: 1 })
         }
       } finally { await this.dispatchInput({ type: 'mouseReleased', x: to[0], y: to[1], button: 'left', clickCount: 1 }) }
@@ -1211,10 +1425,11 @@ export class PageDriver {
       if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'browser-selection-text-not-found')
       verified = true
     }
-    guard()
+    this.check()
     if (method !== 'waitFor') await this.settle(epoch, startedAt, url)
     const fresh = await this.observe({ observationId: observation.observationId })
-    return { result: { action: { method, status: verified ? 'verified' : 'dispatched' }, observation: fresh }, ...(cursor ? { cursor } : {}) }
+    const action: BrowserActionOutcome = { method, status: verified ? 'verified' : 'dispatched', ...(notices.length ? { notices } : {}) }
+    return { result: { action, observation: fresh, ...(uploaded ? { files: uploaded } : {}) }, ...(cursor ? { cursor } : {}) }
   }
 
 }
@@ -1240,11 +1455,18 @@ export class PageDriverRegistry {
     const driver = createPageDriver(contents, identity, this.options)
     this.drivers.set(contents.id, driver)
     contents.once('destroyed', () => this.drivers.delete(contents.id))
-    await driver.attach()
+    // A page blocked on a dialog answers no CDP command until it is answered.
+    if (this.options.dialogs?.current(contents.id)) void driver.attach().catch(() => {})
+    else await driver.attach()
   }
 
   noteUserInput(webContentsId: number): void {
     this.drivers.get(webContentsId)?.noteUserInput()
+  }
+
+  /** Restarts the guest's page when it stopped responding (`PageDriver.restartIfHung`). */
+  async restartIfHung(webContentsId: number): Promise<boolean> {
+    return await this.drivers.get(webContentsId)?.restartIfHung() ?? false
   }
 
   isRegistered(webContentsId: number): boolean {

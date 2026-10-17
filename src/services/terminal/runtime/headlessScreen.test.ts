@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { HeadlessScreen } from './headlessScreen'
 
@@ -36,7 +37,7 @@ describe('HeadlessScreen.links', () => {
     await settle(screen)
     const isFile = async () => true
     expect(await screen.links({ row: 1, text: 'see src/a.ts:2' }, '/repo', isFile)).toEqual([
-      { target: { kind: 'file', path: '/repo/src/a.ts', line: 2 }, text: 'src/a.ts:2', start: { x: 4, row: 1 }, end: { x: 14, row: 1 } },
+      { target: { kind: 'file', path: path.resolve('/repo/src/a.ts'), line: 2 }, text: 'src/a.ts:2', start: { x: 4, row: 1 }, end: { x: 14, row: 1 } },
     ])
     expect(await screen.links({ row: 1, text: 'see src/b.ts:2' }, '/repo', isFile)).toEqual([])
     expect(await screen.links({ row: 9, text: '' }, '/repo', isFile)).toEqual([])

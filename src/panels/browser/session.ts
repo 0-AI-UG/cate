@@ -1,32 +1,31 @@
 // The browser panel session (architecture 10.2, 11.2). Holds tabs, URLs,
 // titles, navigation state, viewport and the downloads list; every
 // client loads the page itself and follows the session URL. Page operations
-// (`cate.browser.*` page methods, palette history commands) run on the
-// driving client through `withSurface`.
+// (palette history commands here, `cate.browser.*` page methods through
+// `services/browser`'s page control) run on the driving client through
+// `withSurface`.
 
-import { sessionApi, type ApiSessionContext } from '@kernel/api/contract'
+import { sessionApi, type ApiSessionContext, type SessionApiHandler } from '@kernel/api/contract'
 import { RpcError } from '@kernel/rpc/contract'
 import {
-  BROWSER_ACTION_METHODS,
   BROWSER_NEW_TAB_URL,
+  browserApi,
   isRecordableBrowserUrl,
+  type AgentCursorEvent,
   type BrowserDownloadEntry,
-  type BrowserDriverResult,
+  type BrowserSurfaceArgs,
+  type BrowserSurfaceOp,
+  type BrowserSurfaceResult,
 } from '@services/browser/contract'
 import type { BrowserNewTabBehavior, BrowserSearchEngine } from '@services/browser/contract/settings'
+import { createPageControl, pageCall, type PageControl, type PageControlDeps } from '@services/browser/runtime'
 import { isCanvasDock, placementOf, type Json, type PanelRecord } from '@workspace/document/contract'
 import { PanelSession, type OpContext, type OpHandlers, type PanelSessionClass, type SessionKit, type SurfaceCallOptions } from '@panels/framework/runtime'
 import {
   COMPACT_VIEWPORT,
-  browserApi,
-  type AgentCursorEvent,
-  type AgentCursorKind,
   type BrowserDownload,
   type BrowserOp,
   type BrowserSnapshot,
-  type BrowserSurfaceArgs,
-  type BrowserSurfaceOp,
-  type BrowserSurfaceResult,
   type BrowserTab,
   type BrowserViewport,
 } from './contract'
@@ -39,12 +38,15 @@ export interface BrowserSessionDeps {
   /** The workspace's browser data (`services/browser/runtime`). */
   browserData: {
     history: { recordVisit(url: string, title: string): void }
+    /** Saved passwords, for an agent's `login`. */
+    passwords: PageControlDeps['passwords']
     downloads: {
       list(panelId: string): BrowserDownloadEntry[]
       subscribe(panelId: string, cb: (entries: BrowserDownloadEntry[]) => void): () => void
     }
   }
-  /** Workspace settings: `browserSearchEngine`, `browserNewTabBehavior`, `browserHomepage`. */
+  /** Workspace settings: `browserSearchEngine`, `browserNewTabBehavior`,
+   *  `browserHomepage`, `browserAgentPasswords`. */
   settings: { get(key: string): unknown }
   /** The workspace's files: a typed path or `file://` URL loads the
    *  workspace's file through `serveUrl`, never the client's disk. */
@@ -67,17 +69,6 @@ type Persisted = {
 const isStartPage = (url: string) => url === BROWSER_NEW_TAB_URL
 const hasPage = (url: string) => !isStartPage(url) && !isBrowserInternalPage(url)
 
-/** A page operation for a `cate` API call: the call's deadline and
- *  cancellation (its signal) govern, not the broker's default timeout. */
-const apiCall = (ctx: ApiSessionContext): SurfaceCallOptions => ({ timeoutMs: 0, signal: ctx.signal })
-
-function cursorKind(method: string): AgentCursorKind {
-  if (method === 'setValue' || method === 'typeText') return 'type'
-  if (method === 'pressKey') return 'press'
-  if (method === 'scroll') return 'scroll'
-  return 'move'
-}
-
 function validViewport(value: unknown): value is BrowserViewport {
   if (!value || typeof value !== 'object') return false
   const viewport = value as Record<string, unknown>
@@ -90,6 +81,7 @@ function validViewport(value: unknown): value is BrowserViewport {
 export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private stopDownloads: (() => void) | undefined
   private readonly newId: () => string
+  private readonly control: PageControl
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: BrowserSessionDeps) {
     const id = `tab-${(deps.newId ?? (() => globalThis.crypto.randomUUID()))()}`
@@ -108,6 +100,19 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       agentCursor: null,
     })
     this.newId = deps.newId ?? (() => globalThis.crypto.randomUUID())
+    this.control = createPageControl({
+      panelId: this.panelId,
+      activeTabId: () => this.state.activeTabId,
+      tab: (tabId) => {
+        const { id, url, nav } = this.tab(tabId)
+        return { id, url, nav, internal: isBrowserInternalPage(url) }
+      },
+      isDisposed: () => this.isDisposed,
+      navigateTab: (tabId, input) => this.navigateTab(tabId, input),
+      surface: (op, args, call) => this.page(op, args, call),
+      showCursor: (event) => this.showAgentCursor(event),
+    }, { settings: deps.settings, passwords: deps.browserData.passwords })
+    this.handleApi = this.api()
   }
 
   override async start(): Promise<void> {
@@ -367,142 +372,44 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     return this.withSurface<BrowserSurfaceResult<Op>>(op, args, call)
   }
 
-  /** A bound tab that is no longer the panel's active one. */
-  private tabChanged(tabId: string): RpcError {
-    return new RpcError('rejected', `browser-tab-changed: the panel now shows tab ${this.state.activeTabId}, not ${tabId}. `
-      + `Act on the active tab (omit --tab, or a new cell's \`tab\` in code), or switch back `
-      + `(cate browser tab ${tabId} --panel ${this.panelId}, or cua.getTab({tabId:"${tabId}"}) in code).`)
-  }
+  override handleApi: SessionApiHandler
 
-  /** The active tab `tabId` (the active tab, when the call names none, as the
-   *  CLI's commands do), with a web page. A user's tab switch cancels work
-   *  bound to the tab it left. */
-  private boundTab(tabId: unknown): BrowserTab {
-    if (tabId !== undefined && typeof tabId !== 'string') throw new RpcError('rejected', 'tabId-required')
-    if (tabId !== undefined && tabId !== this.state.activeTabId) throw this.tabChanged(tabId)
-    const tab = this.activeTab
-    if (!hasPage(tab.url) && !isStartPage(tab.url)) throw new RpcError('rejected', 'The active tab has no web page')
-    return tab
-  }
-
-  private still(tabId: string): void {
-    if (this.isDisposed) throw new RpcError('gone', `panel ${this.panelId} is gone`)
-    if (this.state.activeTabId !== tabId) throw this.tabChanged(tabId)
-  }
-
-  private async execute(tabId: string, method: string, args: Record<string, unknown>, settle: boolean, call?: SurfaceCallOptions): Promise<unknown> {
-    const response: BrowserDriverResult = await this.page('page.execute', { tabId, method, args, ...(settle ? { settle } : {}) }, call)
-    if (response.cursor) this.showAgentCursor(response.cursor)
-    if (response.error) throw new RpcError('rejected', response.recovery ? `${response.error}: ${response.recovery}` : response.error)
-    return response.result
-  }
-
-  private async pageInfo(tabId: string, call: SurfaceCallOptions): Promise<{ panelId: string; tabId: string; url: string; title: string }> {
-    const tab = this.tab(tabId)
-    if (isBrowserInternalPage(tab.url)) throw new RpcError('rejected', 'The active tab has no web page')
-    const page = await this.page('page.ready', { tabId, nav: tab.nav }, call)
-    this.still(tabId)
-    return { panelId: this.panelId, tabId, ...page }
-  }
-
-  /** Reruns an observation to fail fast when the user took over since `args` was observed. */
-  private async checkUserInput(tabId: string, args: Record<string, unknown>, call: SurfaceCallOptions): Promise<void> {
-    if (args._userInputEpoch !== undefined) await this.execute(tabId, 'getAXState', args, false, call)
-  }
-
-  private async observeAfterNavigation(tabId: string, args: Record<string, unknown>, call: SurfaceCallOptions): Promise<unknown> {
-    await this.page('page.ready', { tabId, nav: this.tab(tabId).nav }, call)
-    this.still(tabId)
-    return this.execute(tabId, 'getAXState', { ...args, disableDiffing: true }, false, call)
-  }
-
-  private async pageMethod(method: string, args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown> {
-    const tabId = this.boundTab(args.tabId).id
-    if (BROWSER_ACTION_METHODS.has(method)) this.showAgentCursor({ kind: cursorKind(method), label: method })
-    return this.execute(tabId, method, { ...args, tabId }, false, apiCall(ctx))
-  }
-
-  override handleApi = sessionApi(browserApi, {
-    getTab: async ({ tabId }, ctx) => {
-      if (tabId && tabId !== this.state.activeTabId) this.selectTab(tabId)
-      return this.pageInfo(tabId ?? this.state.activeTabId, apiCall(ctx))
-    },
-    createTab: async ({ url }, ctx) => this.pageInfo(await this.newTab(url), apiCall(ctx)),
-
-    getAXState: (args, ctx) => this.pageMethod('getAXState', args, ctx),
-    getScreenshot: (args, ctx) => this.pageMethod('getScreenshot', args, ctx),
-    getAXStateAndScreenshot: (args, ctx) => this.pageMethod('getAXStateAndScreenshot', args, ctx),
-    getAttribute: (args, ctx) => this.pageMethod('getAttribute', args, ctx),
-    waitFor: (args, ctx) => this.pageMethod('waitFor', args, ctx),
-    click: (args, ctx) => this.pageMethod('click', args, ctx),
-    setValue: (args, ctx) => this.pageMethod('setValue', args, ctx),
-    typeText: (args, ctx) => this.pageMethod('typeText', args, ctx),
-    pressKey: (args, ctx) => this.pageMethod('pressKey', args, ctx),
-    scroll: (args, ctx) => this.pageMethod('scroll', args, ctx),
-    drag: (args, ctx) => this.pageMethod('drag', args, ctx),
-    selectText: (args, ctx) => this.pageMethod('selectText', args, ctx),
-    setChecked: (args, ctx) => this.pageMethod('setChecked', args, ctx),
-    selectOption: (args, ctx) => this.pageMethod('selectOption', args, ctx),
-    upload: (args, ctx) => this.pageMethod('upload', args, ctx),
-
-    downloads: (args) => {
-      this.boundTab(args.tabId)
-      return { downloads: this.state.downloads }
-    },
-    close: (args) => {
-      this.closeTab(this.boundTab(args.tabId).id)
-      return { closed: true }
-    },
-    goto: async (args, ctx) => {
-      const tabId = this.boundTab(args.tabId).id
-      await this.checkUserInput(tabId, args, apiCall(ctx))
-      this.still(tabId)
-      await this.navigateTab(tabId, args.url)
-      return this.observeAfterNavigation(tabId, args, apiCall(ctx))
-    },
-    back: (args, ctx) => this.historyMethod('back', args, apiCall(ctx)),
-    forward: (args, ctx) => this.historyMethod('forward', args, apiCall(ctx)),
-    reload: (args, ctx) => this.historyMethod('reload', args, apiCall(ctx)),
-    setViewport: async (args, ctx) => {
-      const tabId = this.boundTab(args.tabId).id
-      const { preset } = args
-      const width = preset === 'compact' ? 640 : args.width
-      const height = preset === 'compact' ? 480 : args.height
-      if (!width || !height) throw new RpcError('rejected', 'invalid-browser-viewport')
-      this.setViewport(preset === 'compact'
-        ? COMPACT_VIEWPORT
-        : { preset: preset === 'mobile' || preset === 'desktop' ? preset : 'custom', width, height })
-      const observation = await this.execute(tabId, 'getAXState', args, true, apiCall(ctx))
-      return { preset, width, height, observation }
-    },
-    resize: (args, ctx) => this.resize(args, ctx),
-    download: async (args, ctx) => {
-      const tab = this.boundTab(args.tabId)
-      await this.checkUserInput(tab.id, args, apiCall(ctx))
-      const current = hasPage(tab.url) ? tab.url : ''
-      if (!args.url && !current) throw new RpcError('rejected', 'url-required')
-      let url: string
-      try {
-        url = args.url === undefined ? current : new URL(args.url, current || undefined).href
-      } catch {
-        throw new RpcError('rejected', 'invalid-browser-url')
-      }
-      return this.page('page.download', { tabId: tab.id, url }, apiCall(ctx))
-    },
-  })
-
-  private async historyMethod(action: 'back' | 'forward' | 'reload', args: Record<string, unknown>, call: SurfaceCallOptions): Promise<unknown> {
-    const tabId = this.boundTab(args.tabId).id
-    await this.checkUserInput(tabId, args, call)
-    this.still(tabId)
-    const { ok } = await this.page('page.history', { tabId, action }, call)
-    if (!ok) throw new RpcError('rejected', 'no-history')
-    this.still(tabId)
-    return this.observeAfterNavigation(tabId, args, call)
+  /** `cate.browser.*` session methods: page control's, and those about the
+   *  panel's tabs and size. */
+  private api(): SessionApiHandler {
+    return sessionApi(browserApi, {
+      ...this.control.handlers,
+      getTab: async ({ tabId }, ctx) => {
+        if (tabId && tabId !== this.state.activeTabId) this.selectTab(tabId)
+        return this.control.pageInfo(tabId ?? this.state.activeTabId, pageCall(ctx))
+      },
+      createTab: async ({ url }, ctx) => this.control.pageInfo(await this.newTab(url), pageCall(ctx)),
+      downloads: (args) => {
+        this.control.boundTab(args.tabId)
+        return { downloads: this.state.downloads }
+      },
+      close: (args) => {
+        this.closeTab(this.control.boundTab(args.tabId).id)
+        return { closed: true }
+      },
+      setViewport: async (args, ctx) => {
+        const tabId = this.control.boundTab(args.tabId).id
+        const { preset } = args
+        const width = preset === 'compact' ? 640 : args.width
+        const height = preset === 'compact' ? 480 : args.height
+        if (!width || !height) throw new RpcError('rejected', 'invalid-browser-viewport')
+        this.setViewport(preset === 'compact'
+          ? COMPACT_VIEWPORT
+          : { preset: preset === 'mobile' || preset === 'desktop' ? preset : 'custom', width, height })
+        const observation = await this.control.execute(tabId, 'getAXState', args, true, pageCall(ctx))
+        return { preset, width, height, observation }
+      },
+      resize: (args, ctx) => this.resize(args, ctx),
+    })
   }
 
   private resize(args: { tabId?: string; width: number; height: number }, _ctx: ApiSessionContext): unknown {
-    this.boundTab(args.tabId)
+    this.control.boundTab(args.tabId)
     const { width, height } = args
     const minimum = definition.minimumSize
     if (width < minimum.width || height < minimum.height) {

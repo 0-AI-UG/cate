@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import { expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({}))
 import { PageDriverRegistry } from './pageDriver'
+import { domSnapshot } from './pageDriver.testSupport'
 
 it('returns numeric stable IDs, request-scoped diffs and actual image bytes', async () => {
   const events = new EventEmitter()
@@ -18,6 +19,7 @@ it('returns numeric stable IDs, request-scoped diffs and actual image bytes', as
         return { result: { value: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 } } }
       }
       if (method === 'Accessibility.getFullAXTree') return { nodes: [{ backendDOMNodeId: 7, role: { value: 'button' }, name: { value: 'Save' } }] }
+      if (method === 'DOMSnapshot.captureSnapshot') return domSnapshot([7])
       if (method === 'DOM.resolveNode') return { object: { objectId: 'save' } }
       if (method === 'Runtime.callFunctionOn') return { result: { value: String(params.functionDeclaration).includes('password: this instanceof HTMLInputElement') ? { visible: true, offscreen: false, password: false } : true } }
       return {}

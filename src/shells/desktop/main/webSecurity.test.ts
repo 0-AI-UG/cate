@@ -14,7 +14,7 @@ const h = vi.hoisted(() => {
   return { app, guestSession, fromPartition: vi.fn(() => guestSession) }
 })
 vi.mock('electron', () => ({ app: h.app, session: { fromPartition: h.fromPartition } }))
-vi.mock('@services/browser/desktop', () => ({ sendBrowserShortcut: vi.fn(), sendOpenTabRequest: vi.fn() }))
+vi.mock('@services/browser/desktop', () => ({ isAgentKeyInput: () => false, sendBrowserShortcut: vi.fn(), sendOpenTabRequest: vi.fn() }))
 
 import { browserActionForInput, forwardedActionForInput, installWebSecurity, isAllowedGuestUrl, isTrustedAppUrl } from './webSecurity'
 

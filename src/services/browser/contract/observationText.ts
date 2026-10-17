@@ -2,7 +2,7 @@
 // cell or the CLI prints, diffs between accessibility trees, and what to do
 // after each page-driver error. Hints name both surfaces: the CLI command
 // and the code-cell call.
-import type { BrowserObservation } from './automation'
+import type { BrowserActionOutcome, BrowserConsoleEntry, BrowserDialog, BrowserNetworkEntry, BrowserObservation } from './automation'
 
 const depthOf = (line: string): number => (line.length - line.trimStart().length) / 2
 
@@ -48,7 +48,8 @@ const RECOVERY: Record<string, string> = {
   'element-readonly': 'The field is read-only.',
   'element-not-found': 'The element is gone. Observe again and use a current id.',
   'stale-browser-element': 'The element is gone or the page changed. Observe again and use a current id.',
-  'browser-element-not-in-observation': 'Use an id from the latest observation; observe again if the page changed.',
+  'browser-unknown-element': 'No element has that id. Use an id from a snapshot of the current page.',
+  'browser-page-unresponsive': 'The page stopped responding (a script keeps it busy). Wait and retry, or restart it: cate browser reload (reload() in code).',
   'stale-browser-observation': 'The page navigated since that observation. Observe again and use the new ids.',
   'stale-browser-coordinates': 'The page scrolled or resized since those coordinates. Take a new screenshot first.',
   'browser-observation-required': 'Observe the tab first.',
@@ -64,6 +65,12 @@ const RECOVERY: Record<string, string> = {
   'browser-fill-postcondition-failed': 'The page rewrote the value. Observe to see what it holds now.',
   'browser-checkbox-required': 'The target is not a checkbox or radio. Click custom toggles instead (cate browser click <id>, or click(id) in code).',
   'browser-select-required': 'The target is not a <select>. Click a custom dropdown open, then click its option.',
+  'browser-dialog-open': 'Answer the dialog first: cate browser dialog accept (or dismiss; --text for a prompt), or dialog({accept:true}) in code.',
+  'browser-no-dialog': 'No dialog is open. Observe the tab to see its state.',
+  'browser-upload-no-file-chooser': 'Nothing opened a file chooser. Pass the id of the file input, its label, or the button or drop area that opens the chooser (cate browser upload <id> <file>); for a drop area that has no chooser, add --drop.',
+  'browser-upload-single-file-input': 'The file input takes one file. Upload one file, or find an input that accepts several.',
+  'browser-upload-postcondition-failed': 'The page did not keep the files. Observe the tab to see what it shows.',
+  'browser-login-field-not-found': 'The page has no visible username or password field. Open the sign-in form, observe, then retry (or pass the field id).',
 }
 
 /** What to do after a page-driver error. `inputSent`: the call had already
@@ -81,9 +88,9 @@ export function browserRecovery(error: string, inputSent: boolean): string | und
 
 /** The text of an observation for an agent: the action's outcome, the page,
  *  and the accessibility tree or its changes. */
-export function describeBrowserObservation(observation: BrowserObservation, action?: { method: string; status: string }): string {
+export function describeBrowserObservation(observation: BrowserObservation, action?: BrowserActionOutcome): string {
   const lines: string[] = []
-  if (action) lines.push(`${action.method}: ${action.status}`)
+  if (action) lines.push(describeBrowserAction(action))
   lines.push(`Page: ${observation.title ? `${observation.title} (${observation.url})` : observation.url}`)
   const { viewport } = observation
   if (viewport && (viewport.scrollX || viewport.scrollY)) lines.push(`Scrolled to ${Math.round(viewport.scrollX)},${Math.round(viewport.scrollY)} in a ${viewport.width}x${viewport.height} viewport`)
@@ -92,4 +99,36 @@ export function describeBrowserObservation(observation: BrowserObservation, acti
   else if (observation.diff) lines.push('Changes since the last observation:', observation.state)
   else lines.push(observation.state || '(no accessible elements)')
   return lines.join('\n')
+}
+
+/** An action's outcome line and its notices. */
+export function describeBrowserAction(action: BrowserActionOutcome): string {
+  return [`${action.method}: ${action.status}`, ...(action.notices ?? [])].join('\n')
+}
+
+/** The notice for a dialog a page is waiting on. */
+export function browserDialogNotice(dialog: BrowserDialog): string {
+  const answer = dialog.type === 'alert'
+    ? 'cate browser dialog accept, or dialog({accept:true}) in code'
+    : dialog.type === 'prompt'
+      ? 'cate browser dialog accept --text "<answer>" (or dismiss), or dialog({accept:true, text}) in code'
+      : 'cate browser dialog accept (or dismiss), or dialog({accept:true}) in code'
+  return `The page opened ${dialog.type === 'alert' ? 'an' : 'a'} ${dialog.type} dialog: "${dialog.message}"${dialog.defaultPrompt ? ` (default "${dialog.defaultPrompt}")` : ''}. `
+    + `The page waits until it is answered: ${answer}.`
+}
+
+const clock = (at: number): string => new Date(at).toISOString().slice(11, 23)
+
+export function describeBrowserConsole(entries: BrowserConsoleEntry[]): string {
+  if (!entries.length) return '(no console messages)'
+  return entries.map((entry) => `${clock(entry.at)} ${entry.level.padEnd(7)} ${entry.text}${entry.source ? `  (${entry.source})` : ''}`).join('\n')
+}
+
+export function describeBrowserNetwork(entries: BrowserNetworkEntry[]): string {
+  if (!entries.length) return '(no requests)'
+  return entries.map((entry) => {
+    const outcome = entry.error ?? (entry.status === undefined ? 'pending' : String(entry.status))
+    const time = entry.durationMs === undefined ? '' : ` ${Math.round(entry.durationMs)}ms`
+    return `${clock(entry.at)} ${outcome.padEnd(3)} ${entry.method.padEnd(6)} ${entry.type.padEnd(8)} ${entry.url}${time}`
+  }).join('\n')
 }

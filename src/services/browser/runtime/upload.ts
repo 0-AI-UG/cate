@@ -10,21 +10,22 @@ export interface UploadPathScope {
   validate(target: string): string | Promise<string>
 }
 
-/** Resolves an upload path to a readable file, hiding why a path was refused. */
+/** Resolves an upload path to a readable file. A refusal names the path
+ *  and where uploads may come from, not which check refused it. */
 export async function authorizeUpload(scope: UploadPathScope, target: unknown): Promise<{ path: string; size: number }> {
   if (typeof target !== 'string' || !target) throw new Error('browser-upload-file-required')
   let safePath: string
   try {
     safePath = await scope.validate(target)
   } catch {
-    throw new Error('browser-upload-path-denied')
+    throw new Error(`browser-upload-path-denied: ${target} is outside the files this workspace can read (its folder, its worktrees and granted folders). Copy the file into the workspace first, for example into .cate/tmp/.`)
   }
   try {
     const stat = await fs.stat(safePath)
     if (!stat.isFile()) throw new Error('not-file')
     return { path: safePath, size: stat.size }
   } catch {
-    throw new Error('browser-upload-file-required')
+    throw new Error(`browser-upload-file-required: ${target} is not a file`)
   }
 }
 

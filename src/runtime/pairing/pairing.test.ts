@@ -231,20 +231,20 @@ describe('pairing flow', () => {
     expect(seen.at(-1)).toEqual([])
   })
 
-  it('a wrong proof burns only the secret it names', async () => {
+  it('a wrong proof burns nothing, so finding a live id does not spoil its code', async () => {
     const ctx = setup()
     const first = secretOf(ctx.service.createSecret('sameNetwork').uri)
-    const other = secretOf(ctx.service.createSecret('sameNetwork').uri)
-    expect(first.secretId).not.toBe(other.secretId)
-    const wrong = await attempt(ctx, { secretId: first.secretId, secret: new Uint8Array(10).fill(7) })
-    expect((wrong.client as PromiseRejectedResult).reason.reason).toBe('invalid-proof')
-    expect((wrong.runtime as PromiseRejectedResult).reason).toBeInstanceOf(UnpairedPeerError)
-    const late = await attempt(ctx, first)
-    expect((late.client as PromiseRejectedResult).reason.reason).toBe('no-secret')
-    // The other code still works.
-    const right = await attempt(ctx, other)
+    for (let i = 0; i < 10; i++) {
+      const wrong = await attempt(ctx, { secretId: first.secretId, secret: new Uint8Array(10).fill(i) })
+      expect((wrong.client as PromiseRejectedResult).reason.reason).toBe('invalid-proof')
+      expect((wrong.runtime as PromiseRejectedResult).reason).toBeInstanceOf(UnpairedPeerError)
+    }
+    const right = await attempt(ctx, first)
     expect(right.client.status).toBe('fulfilled')
     expect(ctx.service.list()).toHaveLength(1)
+    // Used once: the code is gone now.
+    const again = await attempt(ctx, first)
+    expect((again.client as PromiseRejectedResult).reason.reason).toBe('no-secret')
   })
 
   it('an unknown secret id is refused and burns nothing', async () => {
@@ -333,7 +333,8 @@ describe('pairing flow', () => {
       file.update(() => ({ devices: [{ publicKey: 'ab'.repeat(32), name: 'n', admittedBy: 'pairing', addedAt: 1, lastSeen: 1 }] }))
       await file.flushDurable()
       file.dispose()
-      expect((await fs.stat(path.join(dir, 'devices.json'))).mode & 0o777).toBe(0o600)
+      // Windows has no POSIX file modes.
+      if (process.platform !== 'win32') expect((await fs.stat(path.join(dir, 'devices.json'))).mode & 0o777).toBe(0o600)
       const reopened = openDevicesFile(dir)
       expect(reopened.get().devices).toHaveLength(1)
       reopened.dispose()

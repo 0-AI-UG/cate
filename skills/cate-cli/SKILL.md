@@ -105,6 +105,7 @@ prints what changed:
 ```bash
 cate browser snapshot              # accessibility tree with element ids
 cate browser click 42              # or a point: cate browser click '[400,300]'
+cate browser hover 42              # opens hover menus and tooltips
 cate browser fill 17 "user@example.com"
 cate browser type "more text"      # inserts at the focused field
 cate browser press Enter           # keys and shortcuts: Escape, Tab, Meta+a
@@ -116,6 +117,11 @@ cate browser goto https://example.com
 cate browser back                  # forward, reload
 cate browser screenshot            # saves a PNG and prints its path
 cate browser attr 42 href
+cate browser upload 42 report.pdf  # see "Files" below
+cate browser login                 # see "Signing in" below
+cate browser dialog accept         # answer an alert, confirm or prompt
+cate browser console --level error # the page's console messages and uncaught errors
+cate browser network --failed      # the page's requests (--filter api/ narrows)
 cate browser tabs                  # tabs of every browser panel; cate browser tab <id> shows one
 ```
 
@@ -138,9 +144,55 @@ Keys and text are real input: Enter submits forms, and rich editors (Lexical,
 ProseMirror, Slate) see typing like a user's. `fill` replaces a field's whole
 text; `type` inserts at the selection of the focused field.
 
+A frame's elements are listed under its `Iframe` line. A page whose script
+never yields (an endless loop) fails every call with
+`browser-page-unresponsive`: `cate browser reload` restarts it. `goto` to the
+URL the tab already shows loads the page again.
+
 Do not guess ids or coordinates. A dispatched click is not proof that a
 business operation completed: `wait` for its result or read the next state.
 Every error says what to do next.
+
+### Files
+
+`upload <id> <file>...` chooses files for a file input. The id can be the
+input (the snapshot marks it `[file input]`), its label, or the button or
+drop area that opens the file chooser: Cate clicks it and answers the
+chooser. Several files work when the input takes several (`[file input,
+multiple]`). If a click of yours opened a file chooser, its result says so:
+answer it with `cate browser upload chooser <file>...`. For a drop area with
+no chooser, `--drop` drops the files on the element as a drag from the
+desktop would. Files must be inside the workspace (its folder, worktrees or
+granted folders); copy anything else into the workspace first, for example
+into `.cate/tmp/`.
+
+### Dialogs
+
+A page's `alert`, `confirm` or `prompt` blocks the page until it is answered.
+The action that opened it returns at once and prints the dialog's text;
+every other call fails with `browser-dialog-open` until you answer:
+`cate browser dialog accept` (OK) or `dismiss` (Cancel), `--text` for a
+prompt's answer. The person sees the same dialog in the panel and may answer
+it first.
+
+### Signing in
+
+`cate browser login` fills the login saved in Cate's browser for the current
+site into its sign-in form; the password never reaches you, and snapshots
+mask it. Submit the form yourself afterwards. With several saved logins,
+`--user <name>` picks one; a step that asks for the username alone gets the
+username, then run `login` again on the password step. The workspace setting
+"Agents may use saved passwords" decides: off (the default) refuses, and
+"ask" makes the person confirm each time. When it is refused or there is no
+saved login, ask the person to sign in; never ask them for a password.
+
+### Console and network
+
+`cate browser console` prints the page's console messages and uncaught
+errors, `cate browser network` its requests with status and timing
+(`--failed` for failures and 4xx/5xx, `--filter` by URL text, `--clear` to
+forget what was printed). Both record from the first browser command on the
+tab.
 
 Screenshots need the panel on screen. When it is off screen (scrolled away
 on the canvas, or behind another tab), `screenshot` fails at once and says
@@ -185,6 +237,7 @@ timings.
 const src = await tab.getAttribute(42, "src"); // string or null
 await tab.download(src);                       // relative URLs resolve against the current page
 await tab.click(42);                           // or [x,y]; {timeoutMs} for the actionability wait
+await tab.hover(42);
 await tab.setValue(17, "replacement");
 await tab.typeText("insert at selection");
 await tab.pressKey("Enter");
@@ -193,7 +246,11 @@ await tab.scroll([400,300], "down", 1);
 await tab.drag([100,100], [300,200]);
 await tab.setChecked(42, true);
 await tab.selectOption(42, "DE");              // or ["DE","FR"] for a multiple select
-await tab.upload(42, "/authorized/file");
+await tab.upload(42, ["/workspace/a.pdf", "/workspace/b.pdf"]); // or one path; null answers an open chooser; {drop:true}
+await tab.login({username: "me@example.com"});  // a saved login; options optional
+await tab.dialog({accept: true, text: "answer"}); // accept:false dismisses
+const errors = await tab.console({level: "error"}); // {entries, total}
+const failed = await tab.network({failed: true});
 await tab.waitFor({text:"Saved"});
 await tab.waitFor({element:42, state:"enabled"});
 await tab.goto("https://example.com");

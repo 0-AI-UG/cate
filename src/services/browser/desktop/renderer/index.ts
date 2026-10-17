@@ -1,5 +1,6 @@
-// services/browser desktop side, in the renderer: the page bridge (preload)
-// and the workspace partitions the desktop shell fills for its webviews.
+// services/browser desktop side, in the renderer: the page bridge (preload),
+// page operations on this client's guests, and the workspace partitions the
+// desktop shell fills for its webviews.
 
 import { workspacePartition, type BrowserPageBridge } from '../../contract'
 import { createLocalDownloads, type LocalDownloads } from './localDownloads'
@@ -59,3 +60,5 @@ export function subscribeBrowserPartitions(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
+
+export { createPageOps, type PageOps, type PageOpsDeps, type PageOpTarget } from './pageOps'

@@ -66,7 +66,12 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
     backend: {
       readSync: () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : null),
       read: async () => {
-        try { return await fsp.readFile(file, 'utf-8') } catch { return null }
+        try {
+          return await fsp.readFile(file, 'utf-8')
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+          throw error
+        }
       },
       write: async (value) => { await writeJsonAtomic(file, value, writeOptions) },
       writeSync: (value) => { writeJsonAtomicSync(file, value, writeOptions) },
@@ -84,8 +89,12 @@ export function createJsonStateFile<T>(options: JsonStateFileOptions<T>): JsonSt
         return
       }
       const backup = quarantineCorruptFile(file)
-      if (backup) log.error('%s is corrupt; backed up to %s and using defaults', name, backup)
-      else log.warn('corrupt backup for %s failed', name)
+      if (backup) {
+        log.error('%s is corrupt; backed up to %s and using defaults', name, backup)
+        return true
+      }
+      log.error('%s is corrupt and could not be backed up; using defaults without writing over it', name)
+      return false
     },
     onError: (operation, error) => log.warn('%s of %s failed: %O', operation, name, error),
   })

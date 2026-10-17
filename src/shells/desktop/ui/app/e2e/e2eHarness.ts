@@ -5,7 +5,7 @@
 // (the canvas view's pan, zoom and node moves, a panel type's driver).
 
 import { clientIdentity } from '@client/connections'
-import { documentStoreFor } from '@client/document'
+import { clientStateFor, documentStoreFor } from '@client/document'
 import { createPanel, newId, panelDefinition } from '@client/host'
 import { applyTheme } from '../../kernel/interaction'
 import { BUILT_IN_THEMES } from '@kernel/interaction/contract'
@@ -51,6 +51,8 @@ export interface ClientE2E {
   /** The panel's session snapshot, once one arrived (null after `timeoutMs`). */
   sessionSnapshot(panelId: string, workspaceId?: string, timeoutMs?: number): Promise<unknown>
   sessionOp(panelId: string, op: unknown, workspaceId?: string): Promise<unknown>
+  /** Sets one of this client's per-panel view values (a browser's page zoom). */
+  setPanelView(panelId: string, key: string, value: unknown, workspaceId?: string): void
   /** The connected clients as the runtime reports them. */
   presence(workspaceId?: string): Promise<unknown>
   connection(workspaceId?: string): { kind: string; state: string } | null
@@ -163,6 +165,10 @@ export function createClientE2E(options: { canvas?: CanvasE2EHooks; extensions?:
     async sessionOp(panelId, op, workspaceId) {
       const handle = connectionOf(workspaceId).subscribeSession(panelId)
       try { return await handle.send(op) } finally { handle.release() }
+    },
+    setPanelView(panelId, key, value, workspaceId) {
+      const id = workspaceId ?? selected()
+      if (id) clientStateFor(id)?.setPanelView(panelId, key, value)
     },
     presence(workspaceId) {
       const sub = connectionOf(workspaceId).runtime.presence.subscribe()

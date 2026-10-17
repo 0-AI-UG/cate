@@ -3,7 +3,14 @@ import type { BrowserPageBridge } from '@services/browser/contract'
 import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
 import { BrowserPageHost, type BrowserGuest } from '@panels/browser/desktop'
 import { registerSurface, runSurfaceRequest, subscribeDemandedSurfaces, demandedSurfaces } from '@client/host'
+import { createPageOps, type PageOpsDeps } from '@services/browser/desktop/renderer'
 import { runCodeOp, runPageOp } from './surfaces'
+
+/** One `page.*` request on a host, through this client's page ops. */
+function pageOp(host: BrowserPageHost, op: string, args: unknown, deps: PageOpsDeps & { confirm?(message: string): Promise<boolean> }): Promise<unknown> {
+  const { confirm = async () => true, ...opsDeps } = deps
+  return runPageOp({ host, ops: createPageOps(opsDeps), confirm }, { requestId: 0, panelId: host.panelId, op, args })
+}
 
 function guest(id = 7): BrowserGuest & { url: string; loading: boolean; fire(type: string, detail?: object): void } {
   const element = document.createElement('div') as unknown as BrowserGuest & { url: string; loading: boolean; fire(type: string, detail?: object): void }
@@ -37,7 +44,7 @@ function setup(bridge: Partial<BrowserPageBridge> | null = null) {
     panelId: 'p1',
     clientId: 'me',
     send: async (op) => { sent.push(op) },
-    bridge: bridge as BrowserPageBridge | null,
+    bridge: bridge ? { onDialog: () => () => {}, ...bridge } as BrowserPageBridge : null,
     nextFrame: async () => {},
   })
   return { host, sent }
@@ -69,6 +76,41 @@ describe('BrowserPageHost', () => {
     vi.mocked(webview.loadURL).mockClear()
     host.update(snapshot([tab({ url: 'https://b.test/next', nav: 2, navSource: 'me' })]))
     expect(webview.loadURL).not.toHaveBeenCalled()
+  })
+
+  it('loads the URL the page already shows when the session is asked for it, not when another page went there', () => {
+    const { host } = setup()
+    host.update(snapshot([tab()]))
+    const webview = guest()
+    host.attachGuest('t1', webview)
+    webview.fire('dom-ready')
+    webview.url = 'https://a.test/'
+
+    host.update(snapshot([tab({ nav: 1, navSource: 'other' })]))
+    expect(webview.loadURL).not.toHaveBeenCalled()
+    // `goto` or the address bar: the page loads again.
+    host.update(snapshot([tab({ nav: 2, navSource: null })]))
+    expect(webview.loadURL).toHaveBeenCalledWith('https://a.test/')
+  })
+
+  it('restarts a hung page before loading a navigation and on reload', async () => {
+    const restartIfHung = vi.fn(async () => true)
+    const { host } = setup({ restartIfHung, attach: vi.fn(async () => {}) })
+    host.update(snapshot([tab()]))
+    const webview = guest()
+    host.attachGuest('t1', webview)
+    webview.fire('dom-ready')
+
+    host.update(snapshot([tab({ url: 'https://b.test/', nav: 1 })]))
+    expect(webview.loadURL).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(webview.loadURL).toHaveBeenCalledWith('https://b.test/'))
+    expect(restartIfHung).toHaveBeenCalledWith({ webContentsId: 7, panelId: 'p1', tabId: 't1' })
+
+    expect(await host.history({ tabId: 't1', action: 'reload' })).toEqual({ ok: true })
+    expect(webview.reload).not.toHaveBeenCalled()
+    restartIfHung.mockResolvedValue(false)
+    expect(await host.history({ tabId: 't1', action: 'reload' })).toEqual({ ok: true })
+    expect(webview.reload).toHaveBeenCalled()
   })
 
   it('loads a navigation that arrived before the guest was ready once it is', () => {
@@ -117,32 +159,34 @@ describe('BrowserPageHost', () => {
 
   it('runs page-driver methods on the exact guest and stages uploads', async () => {
     const bridge = {
-      attach: vi.fn(async () => {}),
+      attach: vi.fn(async () => {}), onDialog: () => () => {},
       execute: vi.fn(async () => ({ result: 'ok' })),
       stageUpload: vi.fn(async () => '/tmp/staged/file.txt'),
     }
     const sent: BrowserOp[] = []
     const host = new BrowserPageHost({
       panelId: 'p1', clientId: 'me', send: async (op) => { sent.push(op) }, bridge: bridge as never, nextFrame: async () => {},
-      fetchUpload: async () => ({ name: 'file.txt', bytes: new Uint8Array([1]) }),
     })
+    const fetchUpload = async () => ({ name: 'file.txt', bytes: new Uint8Array([1]) })
+    const execute = (args: unknown) => pageOp(host, 'page.execute', args, { bridge: bridge as never, fetchUpload })
     host.update(snapshot([tab()]))
     const webview = guest(42)
     host.attachGuest('t1', webview)
     webview.fire('dom-ready')
     // A parked (off-screen) guest is flagged, so a screenshot fails at once.
-    await host.execute({ tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } })
+    await execute({ tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } })
     expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'getScreenshot', { tabId: 't1', _hidden: true })
     host.visible = true
-    await expect(host.execute({ tabId: 't1', method: 'getAXState', args: { tabId: 't1' } })).resolves.toEqual({ result: 'ok' })
+    await expect(execute({ tabId: 't1', method: 'getAXState', args: { tabId: 't1' } })).resolves.toEqual({ result: 'ok' })
     expect(bridge.execute).toHaveBeenCalledWith({ webContentsId: 42, panelId: 'p1', tabId: 't1' }, 'getAXState', { tabId: 't1' })
-    await host.execute({ tabId: 't1', method: 'upload', args: { target: 3, filePath: '/remote/file.txt' } })
-    expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'upload', { target: 3, filePath: '/tmp/staged/file.txt' })
-    await expect(host.execute({ tabId: 'other', method: 'click', args: {} })).rejects.toThrow('browser-tab-changed')
+    await execute({ tabId: 't1', method: 'upload', args: { target: 3, files: ['/remote/a.txt', '/remote/b.txt'] } })
+    expect(bridge.stageUpload).toHaveBeenCalledTimes(2)
+    expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'upload', { target: 3, files: ['/tmp/staged/file.txt', '/tmp/staged/file.txt'] })
+    await expect(execute({ tabId: 'other', method: 'click', args: {} })).rejects.toThrow('browser-tab-changed')
   })
 
   it('shows the session\'s active tab before a page operation runs on it', async () => {
-    const bridge = { attach: vi.fn(async () => {}), execute: vi.fn(async () => ({ result: 'ok' })) }
+    const bridge = { attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
     const revealed: string[] = []
     const host = new BrowserPageHost({
       panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
@@ -156,10 +200,10 @@ describe('BrowserPageHost', () => {
       host.attachGuest(id, webview)
       webview.fire('dom-ready')
     }
-    await expect(host.execute({ tabId: 't2', method: 'click', args: {} })).resolves.toEqual({ result: 'ok' })
+    await expect(pageOp(host, 'page.execute', { tabId: 't2', method: 'click', args: {} }, { bridge: bridge as never })).resolves.toEqual({ result: 'ok' })
     expect(revealed).toEqual(['t2'])
     expect(bridge.execute).toHaveBeenCalledWith({ webContentsId: 2, panelId: 'p1', tabId: 't2' }, 'click', {})
-    await expect(host.execute({ tabId: 't1', method: 'click', args: {} })).rejects.toThrow('browser-tab-changed')
+    await expect(pageOp(host, 'page.execute', { tabId: 't1', method: 'click', args: {} }, { bridge: bridge as never })).rejects.toThrow('browser-tab-changed')
   })
 
   it('offers to save a submitted password through the runtime', async () => {
@@ -178,9 +222,38 @@ describe('BrowserPageHost', () => {
   })
 })
 
+describe('BrowserPageHost dialogs', () => {
+  it('asks the person for the runtime and returns their answer', async () => {
+    const host = new BrowserPageHost({ panelId: 'p1', clientId: 'me', send: async () => {}, bridge: null })
+    const confirm = vi.fn(async () => false)
+    await expect(pageOp(host, 'page.confirm', { message: 'Sign in?' }, { bridge: {} as never, confirm })).resolves.toEqual({ ok: false })
+    expect(confirm).toHaveBeenCalledWith('Sign in?')
+  })
+
+  it('shows the dialog the shown page waits on and sends the person\'s answer', () => {
+    let listener!: (event: { webContentsId: number; dialog: { id: string; type: 'prompt'; message: string; defaultPrompt?: string } | null }) => void
+    const answerDialog = vi.fn(async () => {})
+    const host = new BrowserPageHost({
+      panelId: 'p1', clientId: 'me', send: async () => {}, nextFrame: async () => {},
+      bridge: { onDialog: (next: typeof listener) => { listener = next; return () => {} }, answerDialog } as never,
+    })
+    host.update(snapshot([tab()]))
+    host.attachGuest('t1', guest(42))
+    listener({ webContentsId: 9, dialog: { id: 'd0', type: 'prompt', message: 'Not ours' } })
+    expect(host.dialog).toBeNull()
+    listener({ webContentsId: 42, dialog: { id: 'd1', type: 'prompt', message: 'Name?', defaultPrompt: 'x' } })
+    expect(host.dialog).toMatchObject({ id: 'd1', message: 'Name?' })
+    host.answerDialog(true, 'Ada')
+    expect(answerDialog).toHaveBeenCalledWith(42, 'd1', { accept: true, text: 'Ada' })
+    listener({ webContentsId: 42, dialog: null })
+    expect(host.dialog).toBeNull()
+  })
+})
+
 describe('browser surface requests', () => {
   it('route page operations to the mounted panel and wait for one to mount', async () => {
-    const { host } = setup({ attach: vi.fn(async () => {}), execute: vi.fn(async () => ({ result: 1 })) })
+    const bridge = { attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 1 })) }
+    const { host } = setup(bridge)
     host.update(snapshot([tab()]))
     const webview = guest()
     host.attachGuest('t1', webview)
@@ -188,7 +261,7 @@ describe('browser surface requests', () => {
     const demands: number[] = []
     const stopDemand = subscribeDemandedSurfaces(() => demands.push(demandedSurfaces().size))
     const pending = runSurfaceRequest('ws', { requestId: 1, panelId: 'p1', op: 'page.execute', args: { tabId: 't1', method: 'getAXState', args: {} } })
-    const unregister = registerSurface('ws', 'p1', (request) => runPageOp(host, request))
+    const unregister = registerSurface('ws', 'p1', (request) => pageOp(host, request.op, request.args, { bridge: bridge as never }))
     await expect(pending).resolves.toEqual({ result: 1 })
     expect(demands).toEqual([1, 0])
     unregister()

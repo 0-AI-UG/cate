@@ -169,9 +169,9 @@ export class PairingService implements PeerPolicy {
   /**
    * The one attempt an unknown key gets: read `pair`, check the proof against
    * the live secret it names, answer, store the device and burn the secret.
-   * A wrong proof burns that secret, so each one can be guessed once; an
-   * unknown id burns nothing, so nobody can spoil another person's code
-   * without knowing it.
+   * A wrong proof or an unknown id burns nothing: the id is short enough to
+   * walk, so burning on a wrong proof would let anyone on the network spoil
+   * a code, and guessing the 80-bit secret online is hopeless anyway.
    */
   async pairUnknown(channel: SecureChannel): Promise<boolean> {
     const frame = await firstFrame(channel, this.options.pairTimeoutMs ?? 10_000)
@@ -185,10 +185,10 @@ export class PairingService implements PeerPolicy {
     const live = this.liveSecrets()
     const match = live.find((entry) => entry.id === request.secretId)
     if (!match) return this.answer(channel, { type: 'pair-rejected', reason: 'no-secret' })
-    this.secrets = live.filter((entry) => entry !== match)
     if (!verifyClientProof(match.secret, channel.handshakeHash, proofFromWire(request.proof))) {
       return this.answer(channel, { type: 'pair-rejected', reason: 'invalid-proof' })
     }
+    this.secrets = live.filter((entry) => entry !== match)
 
     const hex = bytesToHex(channel.remoteStatic)
     const now = this.now()

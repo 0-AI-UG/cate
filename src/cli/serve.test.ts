@@ -9,12 +9,12 @@ import { parseServeArgs, serveCommand, serveRefusal, SERVE_USAGE } from './serve
 
 describe('parseServeArgs', () => {
   it('serves the current directory on the same network by default', () => {
-    expect(parseServeArgs([], '/work/app')).toEqual({ kind: 'serve', root: '/work/app', network: 'sameNetwork', json: false })
+    expect(parseServeArgs([], '/work/app')).toEqual({ kind: 'serve', root: path.resolve('/work/app'), network: 'sameNetwork', json: false })
   })
 
   it('resolves a relative path and takes --connect in any position', () => {
-    expect(parseServeArgs(['--connect', '../other'], '/work/app')).toEqual({ kind: 'serve', root: '/work/other', network: 'cateConnect', json: false })
-    expect(parseServeArgs(['/abs', '--connect', '--json'], '/work/app')).toEqual({ kind: 'serve', root: '/abs', network: 'cateConnect', json: true })
+    expect(parseServeArgs(['--connect', '../other'], '/work/app')).toEqual({ kind: 'serve', root: path.resolve('/work/other'), network: 'cateConnect', json: false })
+    expect(parseServeArgs(['/abs', '--connect', '--json'], '/work/app')).toEqual({ kind: 'serve', root: path.resolve('/abs'), network: 'cateConnect', json: true })
   })
 
   it('refuses unknown options and a second path; -h asks for help', () => {
@@ -53,7 +53,7 @@ describe('serveCommand', () => {
   it('reaches the runtime through the install\'s bridge', async () => {
     const { command, bridge, err } = setup()
     expect(await command(['--connect'])).toBe(1)
-    expect(bridge).toHaveBeenCalledWith('/home/u/.cate/runtime/2.1.0/runtime/bin/node', '/home/u/.cate/runtime/2.1.0/runtime.cjs', '/work/app')
+    expect(bridge).toHaveBeenCalledWith('/home/u/.cate/runtime/2.1.0/runtime/bin/node', '/home/u/.cate/runtime/2.1.0/runtime.cjs', path.resolve('/work/app'))
     expect(err).toEqual(['cate serve: no runtime here'])
   })
 

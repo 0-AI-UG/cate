@@ -358,7 +358,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   })
   await options.beforeStart?.()
   await ws.start()
-  await network.settled()
+  await network.open()
   await writeInfo(network.endpoints())
   listener.open()
   log.info('serving %s as %s on %s', root, runtimeId, endpoint)

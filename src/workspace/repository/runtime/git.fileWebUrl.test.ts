@@ -15,7 +15,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  await fs.rm(root, { recursive: true, force: true })
+  await fs.rm(root, { recursive: true, force: true, maxRetries: 10 })
 })
 
 it('builds the GitHub blob URL of a file at the current branch', async () => {
@@ -36,6 +36,6 @@ it('is null outside a repository', async () => {
   try {
     expect(await testGitHost().fileWebUrl({ path: path.join(outside, 'x.ts') })).toBeNull()
   } finally {
-    await fs.rm(outside, { recursive: true, force: true })
+    await fs.rm(outside, { recursive: true, force: true, maxRetries: 10 })
   }
 })

@@ -21,7 +21,7 @@ import { agentsCapability } from '@services/agents/contract/capability'
 import { browserDataCapability } from '@services/browser/contract/capability'
 import { processCapability } from '@services/terminal/contract/capability'
 import { sessionCapability, surfaceCapability } from '@panels/framework/contract/capability'
-import { browserCodeCapability } from '@panels/browser/contract/capability'
+import { browserCodeCapability } from '@services/browser/contract/codeCapability'
 
 export const RUNTIME_CAPABILITIES = [
   apiCapability,

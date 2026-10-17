@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLogger } from '@kernel/log/contract'
 import { createDirLocks, type SkillFiles } from './files'
@@ -189,7 +190,7 @@ describe('syncWorkspaceSkills', () => {
     expect(text(`${TARGET_SKILL}/references/guide.md`)).toBe('guide')
     expect(text(`${TARGET}/.cate/skills.json`)).toBeUndefined()
     expect(text(`${TARGET}/.cate/skills-mirror.json`)).toContain('"contentHash"')
-    expect(gitignores).toEqual([`${TARGET}/.cate`])
+    expect(gitignores).toEqual([path.join(TARGET, '.cate')])
   })
 
   it('updates a mirror that still matches the owned hash', async () => {

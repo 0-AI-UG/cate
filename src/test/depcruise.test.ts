@@ -13,8 +13,9 @@ let rejected: Set<string>
 beforeAll(() => {
   let out: string
   try {
-    out = execFileSync(path.join(root, 'node_modules/.bin/depcruise'),
-      ['src', '--config', path.join(root, '.dependency-cruiser.cjs'), '--output-type', 'json'],
+    // Runs the package's bin with node: Windows cannot exec the .bin shim.
+    out = execFileSync(process.execPath,
+      [path.join(root, 'node_modules/dependency-cruiser/bin/dependency-cruiser.mjs'), 'src', '--config', path.join(root, '.dependency-cruiser.cjs'), '--output-type', 'json'],
       { cwd: fixtures, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
   } catch (error) {
     // depcruise exits non-zero when it finds violations; the report is on stdout.

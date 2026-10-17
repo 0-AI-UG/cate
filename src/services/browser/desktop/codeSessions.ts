@@ -33,6 +33,8 @@ function installBrowserCodeSdk(): void {
   const emit = async (result: any, enabled = true): Promise<any> => {
     const observation = result?.observation ?? (result?.observationId ? result : undefined)
     if (enabled && observation) await rpc('__observation', { observationId: observation.observationId })
+    // An action a dialog interrupted has no observation, only what to do next.
+    else if (enabled && result?.action?.notices?.length) await rpc('__write', { value: [`${result.action.method}: ${result.action.status}`, ...result.action.notices].join('\n') })
     return result
   }
   // A tab of the cell's browser panel (the command line chose it; code never
@@ -89,6 +91,7 @@ function installBrowserCodeSdk(): void {
       getAXStateAndScreenshot: (options: any = {}) => with_('getAXStateAndScreenshot', {}, options),
       getAttribute: (target: unknown, name: string) => call('getAttribute', { target, name }),
       click: (target: unknown, options: any = {}) => with_('click', { target }, options),
+      hover: (target: unknown, options: any = {}) => with_('hover', { target }, options),
       setValue: (target: unknown, value: unknown, options: any = {}) => with_('setValue', { target, value }, options),
       typeText: (text: string, options: any = {}) => with_('typeText', { text }, options),
       pressKey: (key: string, options: any = {}) => with_('pressKey', { key }, options),
@@ -97,7 +100,12 @@ function installBrowserCodeSdk(): void {
       selectText: (target: unknown, text: string, options: any = {}) => with_('selectText', { target, text }, options),
       setChecked: (target: unknown, checked: boolean, options: any = {}) => with_('setChecked', { target, checked }, options),
       selectOption: (target: unknown, values: unknown, options: any = {}) => with_('selectOption', { target, values }, options),
-      upload: (target: unknown, filePath: string, options: any = {}) => with_('upload', { target, filePath }, options),
+      // `target` null answers the file chooser an earlier action opened.
+      upload: (target: unknown, files: string | string[], options: any = {}) => with_('upload', { target, files: Array.isArray(files) ? files : [files] }, options),
+      login: (options: any = {}) => with_('login', {}, options),
+      dialog: ({ accept, text, ...options }: any = {}) => with_('dialog', { action: accept === false ? 'dismiss' : 'accept', ...(text === undefined ? {} : { text }) }, options),
+      console: (options: any = {}) => call('console', options),
+      network: (options: any = {}) => call('network', options),
       waitFor: (condition: unknown, options: any = {}) => with_('waitFor', { condition }, options),
       goto: (url: string, options: any = {}) => with_('goto', { url }, options),
       back: (options: any = {}) => with_('back', {}, options),

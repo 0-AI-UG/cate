@@ -6,7 +6,6 @@ export interface CachedBrowserObservation {
   kind: BrowserObservation['kind']
   viewport: BrowserObservation['viewport']
   state: string
-  elementIds: Set<number>
   focusedElementId?: number
 }
 
@@ -29,18 +28,17 @@ export class BrowserObservationCache {
   }
 
   set(source: BrowserObservation, fullState: string): void {
-    const elementIds = new Set(source.elements.map(element => element.id))
     const focusedElementId = source.elements.find(element => element.states?.focused === true
       && ['textbox', 'searchbox', 'combobox'].includes(element.role))?.id
     // Conservative accounting of retained UTF-16 text and Set entries. This is
     // an allocation budget estimate, not a V8 heap-size measurement.
-    const bytes = 256 + 2 * (fullState.length + source.observationId.length + source.documentId.length) + 32 * elementIds.size
+    const bytes = 256 + 2 * (fullState.length + source.observationId.length + source.documentId.length) + 32 * source.elements.length
     if (bytes > this.maxBytes) throw new Error('browser-observation-too-large')
     const previous = this.entries.get(source.observationId)
     if (previous) { this.entries.delete(source.observationId); this.bytes -= previous.bytes }
     const observation: CachedBrowserObservation = {
       observationId: source.observationId, documentId: source.documentId, kind: source.kind,
-      viewport: { ...source.viewport }, state: fullState, elementIds, focusedElementId,
+      viewport: { ...source.viewport }, state: fullState, focusedElementId,
     }
     this.entries.set(source.observationId, { observation, bytes })
     this.bytes += bytes

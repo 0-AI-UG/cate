@@ -5,9 +5,10 @@
 // the page through `withSurface()`. The common page operations are also CLI
 // commands (`cate browser click 12`) on the active tab of the target panel.
 
-import { BROWSER_WAIT_MAX_MS } from '@services/browser/contract'
+import { BROWSER_WAIT_MAX_MS } from './automation'
 import {
   ArgError,
+  arr,
   bool,
   custom,
   defineCateApi,
@@ -49,6 +50,12 @@ const elementTarget = custom('element id or [x,y]', (value): value is number | P
   .parseCli((raw) => (/^\d+$/.test(raw) ? Number(raw) : parseJsonWord(raw, 'element id or [x,y]')))
 
 const point = custom('[x,y]', isPoint)
+
+/** An upload's element, or null (`chooser` on the CLI): the file chooser an
+ *  earlier action opened. */
+const uploadTarget = custom('element id, [x,y] or chooser', (value): value is number | Point | null =>
+  value === null || (typeof value === 'number' && Number.isInteger(value)) || isPoint(value))
+  .parseCli((raw) => (raw === 'chooser' ? null : /^\d+$/.test(raw) ? Number(raw) : parseJsonWord(raw, 'element id, [x,y] or chooser')))
 
 /** Code cells bind a tab and carry their observation; a CLI command acts on
  *  the panel's active tab and its latest observation. */
@@ -172,6 +179,7 @@ export const browserApi = defineCateApi(
       clickCount: opt(num.int().min(1)).flag('count', 'n').help('2 for a double click'),
       timeoutMs: opt(num.int().min(0).max(BROWSER_WAIT_MAX_MS)).flag('timeout', 'ms').help('How long to wait for the element to be clickable (default 5000)'),
     }, command('click', 'Click an element (or [x,y])')),
+    hover: page('control', { target }, command('hover', 'Move the mouse over an element (or [x,y])')),
     setValue: page('control', { target, value: custom('value', (v): v is unknown => v !== undefined).pos('text').parseCli((raw) => raw).help('The new text') }, command('fill', 'Replace the text of a field')),
     typeText: page('control', { text: str.rest('text').help('Text to insert at the selection') }, command('type', 'Type text at the focused field')),
     pressKey: page('control', { key: str.nonEmpty().pos('key').help('Key name or shortcut') }, command('press', 'Press a key or shortcut (Enter, Escape, Meta+a)')),
@@ -193,7 +201,30 @@ export const browserApi = defineCateApi(
         .parseCli((raw) => (raw.startsWith('[') ? parseJsonWord(raw, 'JSON array of values') : raw))
         .help('Option value, or a JSON array for a multiple select'),
     }, command('select', 'Choose an option of a select by value')),
-    upload: page('control', { target, filePath: path.pos('file').help('File to upload') }, command('upload', 'Set the file of a file input')),
+    upload: page('control', {
+      target: opt(uploadTarget).pos('id').help('The file input, its label, or the button or drop area that opens the file chooser; "chooser" for the chooser an action opened'),
+      files: arr(path).rest('file').help('Files to upload (several for an input that takes several)'),
+      drop: opt(bool).help('Drop the files on the element (or [x,y]) instead, for a drop area with no file chooser'),
+    }, command('upload', 'Choose files for a file input or drop area')),
+    login: page('control', {
+      target: opt(elementTarget).pos('id').help('The password or username field, or the sign-in form (default: the page\'s)'),
+      username: opt(str).flag('user', 'name').help('Which saved login, when the site has several'),
+    }, command('login', 'Fill a saved login into the sign-in form (the password never reaches you)')),
+    dialog: page('control', {
+      action: oneOf('accept', 'dismiss').pos('action').help('accept (OK) or dismiss (Cancel)'),
+      text: opt(str).help('The answer to a prompt (default: its default text)'),
+    }, command('dialog', 'Answer the alert, confirm or prompt the page waits on')),
+    console: { ...page('read', {
+      level: opt(oneOf('all', 'error', 'warning')).help('Only errors, or errors and warnings (default all)'),
+      limit: opt(num.int().min(1).max(500)).help('How many of the newest to print (default 100)'),
+      clear: opt(bool).help('Forget the messages after printing them'),
+    }, command('console', 'Print the page\'s console messages and uncaught errors')), format: 'browserConsole' },
+    network: { ...page('read', {
+      failed: opt(bool).help('Only failed requests and error statuses (4xx, 5xx)'),
+      filter: opt(str).help('Only URLs containing this text'),
+      limit: opt(num.int().min(1).max(500)).help('How many of the newest to print (default 100)'),
+      clear: opt(bool).help('Forget the requests after printing them'),
+    }, command('network', 'Print the page\'s network requests')), format: 'browserNetwork' },
     goto: page('control', { url: str.nonEmpty().pos('url').help('URL, file path or search') }, command('goto', 'Load a URL in the tab')),
     back: page('control', {}, command('back', 'Go back')),
     forward: page('control', {}, command('forward', 'Go forward')),

@@ -18,7 +18,6 @@ it('retains only full diff state and element authority, independent of returned 
   source.viewport.scrollY = 40
   const cached = cache.get('one')!
   expect(cached).toMatchObject({ state: 'full state', focusedElementId: 7, viewport: { scrollY: 0 } })
-  expect([...cached.elementIds]).toEqual([7])
   expect(cached).not.toHaveProperty('elements')
   expect(cached).not.toHaveProperty('screenshot')
   expect(cached).not.toHaveProperty('url')

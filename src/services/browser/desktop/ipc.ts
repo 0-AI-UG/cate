@@ -19,6 +19,7 @@ import {
 } from '../contract'
 import { listChromePasswordProfiles, readChromePasswordCsv, readChromePasswords } from './chromeImport'
 import type { BrowserCodeSessions } from './codeSessions'
+import { registerGuestDialogs, type GuestDialogs } from './dialogs'
 import type { GuestDownloads } from './downloads'
 import type { PageDriverRegistry } from './pageDriver'
 import { flattenScreenshotPng } from './screenshotPng'
@@ -30,6 +31,7 @@ export interface BrowserIpcDeps {
   drivers: PageDriverRegistry
   codeSessions: BrowserCodeSessions
   downloads: GuestDownloads
+  dialogs: GuestDialogs
   /** A private directory for staged uploads. */
   tempDir(): string
 }
@@ -61,7 +63,7 @@ export function sendBrowserShortcut(host: WebContents, action: BrowserShortcutAc
 
 /** Registers the page bridge IPC. Returns an unregister function. */
 export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
-  const { drivers, codeSessions, downloads } = deps
+  const { drivers, codeSessions, downloads, dialogs } = deps
   const handled: string[] = []
   const handle = (channel: string, handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown) => {
     ipcMain.handle(channel, handler)
@@ -88,6 +90,11 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     if (!contents) return { error: 'no-guest' }
     if (typeof method !== 'string' || !method) return { error: 'browser-method-required' }
     return drivers.execute(contents.id, identity(guest), method, args && typeof args === 'object' ? args : {})
+  })
+
+  handle(BROWSER_PAGE_CHANNELS.restartIfHung, (event, guest: BrowserGuestRef) => {
+    const contents = hostedGuest(event, guest?.webContentsId)
+    return contents ? drivers.restartIfHung(contents.id) : false
   })
 
   handle(BROWSER_PAGE_CHANNELS.download, async (event, guest: BrowserGuestRef, url: string) => {
@@ -117,6 +124,13 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     if (typeof targetId !== 'string' || typeof credential?.password !== 'string') return { error: 'invalid-credential' }
     return drivers.fillCredential(contents.id, targetId, { username: String(credential.username ?? ''), password: credential.password })
   })
+
+  handle(BROWSER_PAGE_CHANNELS.answerDialog, (event, webContentsId: number, dialogId: string, answer: { accept?: unknown; text?: unknown }) => {
+    const contents = hostedGuest(event, webContentsId)
+    if (!contents || typeof dialogId !== 'string') return
+    dialogs.answer(contents.id, { accept: answer?.accept === true, ...(typeof answer?.text === 'string' ? { text: answer.text } : {}) }, dialogId)
+  })
+  const unregisterDialogs = registerGuestDialogs(dialogs)
 
   handle(BROWSER_PAGE_CHANNELS.stageUpload, async (_event, name: string, bytes: Uint8Array) => {
     if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('browser-upload-too-large')
@@ -183,6 +197,7 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
   return () => {
     for (const channel of handled) ipcMain.removeHandler(channel)
     ipcMain.removeListener(BROWSER_GUEST_CHANNELS.userInput, onUserInput)
+    unregisterDialogs()
     for (const pending of pendingCalls.values()) pending.reject(new Error('browser-ipc-closed'))
     pendingCalls.clear()
     codeSessions.dispose()

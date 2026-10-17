@@ -23,7 +23,7 @@ import { clientIdentity } from '@client/connections'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
 import { BROWSER_NEW_TAB_URL, queryBrowserHistoryEntries, type BrowserShortcutAction } from '@services/browser/contract'
-import { browserLocalDownloads, browserPageBridge, browserPartition, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
+import { browserLocalDownloads, browserPageBridge, browserPartition, createPageOps, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
 import { fsClient } from '@workspace/files/client'
 import { base64ToBytes, writeFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { BrowserPasswordManagerPage, useBrowserData } from '../../services/browser'
@@ -37,6 +37,7 @@ import { BrowserDownloadsPopover, type BrowserPanelDownload } from './parts/Brow
 import { BrowserHistoryPage } from './parts/BrowserHistoryPage'
 import { BrowserMenu } from './parts/BrowserMenu'
 import { BrowserTabStrip } from './parts/BrowserTabStrip'
+import { PageDialog } from './parts/PageDialog'
 import { StartPage } from './parts/StartPage'
 import { UrlSuggestions } from './parts/UrlSuggestions'
 
@@ -185,6 +186,10 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
       saveDisposition: async (input) => (await live.current.runtime?.browserData.passwordSaveDisposition({ input })) ?? 'unchanged',
       save: async (input) => live.current.runtime?.browserData.savePassword({ input }),
     },
+  }), [panelId, bridge])
+  // Page operations run on the host's ready pages; uploads come from the runtime.
+  const ops = useMemo(() => bridge && createPageOps({
+    bridge,
     fetchUpload: async (path) => {
       const current = live.current.runtime
       if (!current) throw new Error('The workspace is not connected')
@@ -199,12 +204,12 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
       return { name, bytes }
     },
-  }), [panelId, bridge])
+  }), [bridge])
   useEffect(() => () => host.dispose(), [host])
   useEffect(() => {
-    if (!bridge) return
-    return registerSurface(workspaceId, panelId, (request) => runPageOp(host, request))
-  }, [workspaceId, panelId, host, bridge])
+    if (!ops) return
+    return registerSurface(workspaceId, panelId, (request) => runPageOp({ host, ops, confirm: (message) => clientUi().confirm(message) }, request))
+  }, [workspaceId, panelId, host, ops])
   useSyncExternalStore(host.subscribe, host.getVersion)
 
   useLayoutEffect(() => { host.update(snapshot) }, [host, snapshot])
@@ -219,6 +224,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   const currentUrl = host.displayUrl()
   const { canGoBack, canGoForward, isLoading, loadError, crashed } = host.local
   const autofill = host.autofill
+  const pageDialog = host.dialog
 
   // A tab's page mounts the first time this client shows it, then stays
   // mounted (hidden by its slot) so switching back keeps its state. A guest
@@ -646,6 +652,14 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
                 </button>
               ))}
             </div>
+          )}
+
+          {pageDialog && (
+            <PageDialog
+              dialog={pageDialog}
+              origin={(() => { try { return new URL(currentUrl).host } catch { return '' } })()}
+              onAnswer={(accept, text) => host.answerDialog(accept, text)}
+            />
           )}
 
           <AgentCursorOverlay cursor={agentCursor} scale={zoom * displayScale} />

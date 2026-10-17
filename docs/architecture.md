@@ -846,10 +846,11 @@ terminal could share the computer.
   and burns the secret; the client checks that the runtime key derives the
   network id it paired with and pins the key under it in
   `known-runtimes.json`, refusing another key for an id already pinned. The
-  runtime checks the proof only against the secret `secretId` names: a wrong
-  proof burns that secret (each secret can be guessed once), and an unknown
-  id is refused (`no-secret`) without burning anything, so nobody who does
-  not hold a code can spoil another one.
+  runtime checks the proof only against the secret `secretId` names. A wrong
+  proof (`invalid-proof`) or an unknown id (`no-secret`) burns nothing: the
+  id is short enough to walk, so burning on a wrong proof would let anyone
+  on the network spoil a code, while the 80-bit secret cannot be guessed
+  online. Nobody who does not hold a code can spoil another one.
 - **Afterwards** both sides reconnect by key; no code is needed again.
 - **No pairing for the machine's user.** A client that reaches the runtime
   over the local socket or a machine's bridge does not pair: it is added to
@@ -958,12 +959,11 @@ implemented in its `runtime/` folder and registered by the composition root:
 `workspace` (workspace/lifecycle: info and trust), `file` and `search`
 (workspace/files), `vcs` (workspace/repository), `skills`
 (workspace/skills), `notifications` (workspace/notifications: the `events`
-stream, section 10.4), `process` (services/terminal), `browserData`
-(services/browser), `agents` (services/agents),
-`session` and `surface` (panels/framework: session channels, and page
-operations sent to the driving client, section 10.2) and `browserCode`
-(panels/browser: a client running a browser code cell passes the cell's
-`cua.*` calls back through it). A client lists every capability it proxies
+stream, section 10.4), `process` (services/terminal), `browserData` and
+`browserCode` (services/browser; through `browserCode` a client running a
+browser code cell passes the cell's `cua.*` calls back), `agents`
+(services/agents), and `session` and `surface` (panels/framework: session
+channels, and page operations sent to the driving client, section 10.2). A client lists every capability it proxies
 in `RUNTIME_CAPABILITIES` (`src/panels/capabilities.ts`, an index file next
 to the panel ones, handed to every connection by the shell's boot), which
 fails to compile when a registered capability is missing.
@@ -1344,17 +1344,48 @@ Service logic runs in the runtime; the client side is a typed client and UI.
 A page lives in a webview on a client. Everything else about the browser lives
 in the runtime.
 
+One module holds agent control of pages; the browser panel
+(`panels/browser`) holds only tabs, URLs, navigation, viewport, the
+downloads list and its views, and hands page work to it.
+
+- **contract**: the `cate.browser.*` spec (`contract/api.ts`; its page
+  methods are session methods of the browser panel), the page operations a
+  session sends its driving client (`contract/surface.ts`: `page.*` and
+  `code.*`), the page protocol (observations, actions, results), the agent
+  cursor, the text the CLI prints for observations and the `browserCode`
+  capability.
 - **runtime**: the `browserData` capability used by the browser panel's
   session (which holds tabs, URLs, navigation state and titles): history,
   bookmarks, saved
   passwords (in `secrets.json`), downloads (the client uploads each finished
   download to `browser/downloads/` with `file.storeDownload`, so agents find
   it) and uploads (moved from the host to the client for a file input).
+  **Page control** (`createPageControl`): the `cate.browser.*` page methods
+  of one panel, built by its session over a port (its tabs, `withSurface`,
+  the agent cursor); it binds each call to the active tab and picks the
+  saved login for `login`. **Code cells**: `run`, `reset` and the live
+  cells `browserCode.call` checks.
 - **desktop**: the webview, one partition per workspace
   (`persist:ws-<runtimeId>`, cookies are per device) routed through loopback
-  routing (section 12.3), the **page driver** (the CDP engine: accessibility
-  snapshots, actions, screenshots, waits, code cells), guest and code-cell
-  preloads, the password autofill bridge, and **passkeys**. Passkeys are
+  routing (section 12.3), the **page ops** (`desktop/renderer`: a `page.*`
+  request run on the guest the panel's page host has ready, staging a
+  file input's uploads on this client and returning the person's focus),
+  the **page driver** (the CDP engine: accessibility
+  snapshots, actions, screenshots, waits, file choosers and uploads, the
+  page's console and network log, code cells), guest and code-cell
+  preloads, the password autofill bridge, JavaScript dialogs, and **passkeys**.
+  A page whose script never yields answers no CDP command: after 10 s its
+  calls fail with `browser-page-unresponsive`, and reloading or navigating
+  the tab restarts its renderer.
+  A guest's `alert`, `confirm` and `prompt` wait on desktop main through the
+  guest preload (Electron shows none itself); the panel shows the dialog and
+  an agent may answer it (`cate browser dialog`). An agent's `login` fills a
+  saved password only as the workspace setting `browserAgentPasswords`
+  allows (off, ask each time, always): the runtime picks the one saved login
+  for the page the driving client shows, has that client ask the person
+  through `ClientUi` (`page.confirm`) when the setting says so, and only then
+  hands the credential to the page driver, never to the agent. The driver
+  fills it only while the page still shows the login's origin. Passkeys are
   never stored by Cate: the native addon calls the OS, which keeps them in
   the user's keychain. It needs the signed app's entitlement, a window and
   macOS, so the desktop shell declares the `passkeys` feature only on macOS.
@@ -2057,14 +2088,15 @@ Everything outside the UI that drives Cate goes through one router.
 | `cate.canvas.*` | `createPanel` | workspace/document | service |
 | `cate.ui.*` | `notify` | kernel/api (publishes a notification event) | service |
 | `cate.terminal.*` | `read`, `type`, `press` | terminal panel | session |
-| `cate.browser.*` | `run` and `reset` (the caller's code session), `listTabs`; page operations (`getTab`, `createTab`, `getAXState`, `getScreenshot`, `click`, `setValue`, `typeText`, `pressKey`, `goto`, `waitFor`, ...) | browser panel | service (`run`, `reset`, `listTabs`) / session |
+| `cate.browser.*` | `run` and `reset` (the caller's code session), `listTabs`; page operations (`getTab`, `createTab`, `getAXState`, `getScreenshot`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`run`, `reset`, `listTabs`) / session (the browser panel's, page methods through page control) |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
 | `cate.review.*` | `inspect`, `complete`, `note.add`, `note.resolve` | review panel | session |
 | `cate.agent.*` | `start`, `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
 
 There is no `cate.panel.focus`: focus is client state. The common page
-operations are also CLI commands (`cate browser snapshot`, `click`, `fill`,
-`type`, `press`, `goto`, `wait`, ...): without a `tabId` they act on the
+operations are also CLI commands (`cate browser snapshot`, `click`, `hover`,
+`fill`, `type`, `press`, `upload`, `login`, `dialog`, `console`, `network`,
+`goto`, `wait`, ...): without a `tabId` they act on the
 panel's active tab, and without an `observationId` on the page driver's latest
 accessibility observation. The rest (`drag`, `selectText`, `setViewport`,
 ...) stay with code cells (`cli: {command: false}`).

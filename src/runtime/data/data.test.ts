@@ -54,7 +54,8 @@ describe('workspace data directory', () => {
     const dir = workspaceDataDir('abcdefghijklmnop', tmp)
     expect(dir).toBe(path.join(tmp, '.cate', 'workspaces', 'abcdefghijklmnop'))
     const paths = await ensureDataDir(dir)
-    expect((await fs.stat(dir)).mode & 0o777).toBe(0o700)
+    // Windows has no POSIX file modes.
+    if (process.platform !== 'win32') expect((await fs.stat(dir)).mode & 0o777).toBe(0o700)
     expect(paths.socket).toBe(path.join(dir, 'runtime.sock'))
     expect(paths.session('panel-1')).toBe(path.join(dir, 'sessions', 'panel-1.json'))
     expect(() => paths.session('../x')).toThrow()
@@ -62,8 +63,8 @@ describe('workspace data directory', () => {
     expect(pipe).toMatch(/^\\\\\.\\pipe\\cate-[0-9a-f]{16}-abcdefghijklmnop$/)
     // Stable for the user, and private to them.
     expect(localEndpoint(dir, 'abcdefghijklmnop', 'win32')).toBe(pipe)
-    expect((await fs.stat(path.join(tmp, '.cate', 'pipe-key'))).mode & 0o077).toBe(0)
-    expect(localEndpointFor('abcdefghijklmnop', '/home/me', 'darwin')).toBe('/home/me/.cate/workspaces/abcdefghijklmnop/runtime.sock')
+    if (process.platform !== 'win32') expect((await fs.stat(path.join(tmp, '.cate', 'pipe-key'))).mode & 0o077).toBe(0)
+    expect(localEndpointFor('abcdefghijklmnop', '/home/me', 'darwin')).toBe(path.join('/home/me', '.cate', 'workspaces', 'abcdefghijklmnop', 'runtime.sock'))
   })
 
   it('writes and reads runtime.json', async () => {
@@ -81,7 +82,7 @@ describe('workspace data directory', () => {
     const second = await ensureRuntimeKeyPair(reopened)
     reopened.dispose()
     expect(bytesToHex(second.publicKey)).toBe(bytesToHex(first.publicKey))
-    expect((await fs.stat(dataPaths(tmp).secrets)).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect((await fs.stat(dataPaths(tmp).secrets)).mode & 0o777).toBe(0o600)
     const onDisk = JSON.parse(await fs.readFile(dataPaths(tmp).secrets, 'utf8'))
     expect(onDisk.browserPasswords).toEqual({ a: 1 })
     expect(onDisk.runtimeKey.publicKey).toBe(bytesToHex(first.publicKey))
@@ -112,7 +113,20 @@ describe.skipIf(process.platform === 'win32')('socket lock', () => {
     await new Promise<void>((resolve, reject) => net.connect(socket).once('connect', function (this: net.Socket) { this.destroy(); resolve() }).once('error', reject))
   })
 
-  const owner = async (program: string, args: string[] = []) => {
+  it('of starts taking over the same stale socket, exactly one binds', async () => {
+    const socket = dataPaths(tmp).socket
+    const child = spawn(process.execPath, ['-e', `require('net').createServer().listen(${JSON.stringify(socket)}, () => console.log('up'))`])
+    await new Promise<void>((resolve) => child.stdout.once('data', () => resolve()))
+    child.kill('SIGKILL')
+    await new Promise((resolve) => child.once('exit', resolve))
+
+    const results = await Promise.all([1, 2, 3, 4].map(() => acquireRuntimeSocket(tmp, 'abcdefghijklmnop')))
+    for (const result of results) if (result.kind === 'acquired') servers.push(result.server)
+    expect(results.filter((r) => r.kind === 'acquired')).toHaveLength(1)
+    await expect(fs.stat(path.join(tmp, 'takeover.lock'))).rejects.toThrow()
+  })
+
+  const owner =async (program: string, args: string[] = []) => {
     const child = spawn(program, args)
     await new Promise<void>((resolve) => child.once('spawn', () => resolve()))
     await writeRuntimeInfo(tmp, { runtimeId: 'abcdefghijklmnop', root: tmp, pid: child.pid!, version: '0', protocol: [1, 0], endpoints: { local: dataPaths(tmp).socket } })

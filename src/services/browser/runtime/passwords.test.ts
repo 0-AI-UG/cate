@@ -28,7 +28,8 @@ describe('saved passwords', () => {
     secrets.update((cur) => ({ ...cur, runtimeKey: { publicKey: 'p', secretKey: 's' } as never }))
     await store.save({ origin: 'https://example.com/login', username: 'me', password: 'hunter2' })
     const file = path.join(dir, 'secrets.json')
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+    // Windows has no POSIX file modes.
+    if (process.platform !== 'win32') expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
     const onDisk = JSON.parse(await fs.readFile(file, 'utf8'))
     expect(onDisk.runtimeKey).toBeTruthy()
     expect(onDisk[PASSWORDS_KEY]).toHaveLength(1)

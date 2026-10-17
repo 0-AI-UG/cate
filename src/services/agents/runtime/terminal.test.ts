@@ -370,7 +370,7 @@ describe('terminal agents steps', () => {
     agentTerminals.onStep((panelId, step) => steps.push([panelId, step]))
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     // CLIs report paths in the canonical checkout (macOS's /var is /private/var).
-    await post(env, agentId, TOOL_POSTS[agentId].edit(path.join(fs.realpathSync(root), 'src', 'created.txt')))
+    await post(env, agentId, TOOL_POSTS[agentId].edit(path.join(fs.realpathSync.native(root), 'src', 'created.txt')))
     await post(env, agentId, TOOL_POSTS[agentId].shell('npm test -- --run\nsecond line'))
     expect(steps.map(([panelId, step]) => [panelId, step.subject])).toEqual([
       ['term', 'src/created.txt'],

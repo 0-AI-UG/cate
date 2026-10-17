@@ -1,83 +1,36 @@
 // What the daemon's composition root needs for the browser panel: its
-// definition and session class, the `cate.browser.*` service handlers (`run`,
-// `reset`, `listTabs`) and the `browserCode` capability.
+// definition and session class, and the `cate.browser.*` service handlers
+// (`run` and `reset` from `services/browser`, `listTabs` here).
 
-import { RpcError, isRpcError } from '@kernel/rpc/contract'
+import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
-import type { BrowserCodeResult } from '@services/browser/contract'
+import type { browserApi } from '@services/browser/contract'
+import { browserCodeHandlers, type BrowserCodeDeps } from '@services/browser/runtime'
 import type { PanelId, WorkspaceDocument } from '@workspace/document/contract'
-import type { PanelSession, SurfaceBroker, SurfaceCallOptions } from '@panels/framework/runtime'
-import { BROWSER_CODE_TIMEOUT_MS, BROWSER_SURFACE_FEATURES, type BrowserSnapshot, type BrowserSurfaceArgs, type BrowserSurfaceOp, type browserApi } from './contract'
+import type { PanelSession } from '@panels/framework/runtime'
+import type { BrowserSnapshot } from './contract'
 import definition from './definition'
-import { BrowserCodeCells, browserCodeCapabilityImpl } from './parts/runtime/codeCells'
 import { BrowserSession, createBrowserSessionClass, type BrowserSessionDeps } from './session'
 
 export { definition as browserDefinition, BrowserSession, createBrowserSessionClass, type BrowserSessionDeps }
-export { BrowserCodeCells, browserCodeCapabilityImpl }
-
-/** A cell's own deadline; the router's is `BROWSER_CODE_TIMEOUT_MS`, a little longer. */
-export const BROWSER_CELL_DEADLINE_MS = 30_000
 
 /** The registry entry: `registry.register(entry.definition, entry.session)`. */
 export function browserPanel(deps: BrowserSessionDeps) {
   return { definition, session: createBrowserSessionClass(deps) }
 }
 
-export interface BrowserServiceDeps {
-  /** The surface broker: page operations on the driving client. */
-  surfaces: Pick<SurfaceBroker, 'request'>
+export interface BrowserServiceDeps extends BrowserCodeDeps {
   sessions: { session(panelId: PanelId): PanelSession | undefined }
   document: { get(): WorkspaceDocument }
-  cells: BrowserCodeCells
-  newId?: () => string
-  now?: () => number
 }
 
-const text = (message: string): BrowserCodeResult => ({ content: [{ type: 'text', text: message }], isError: true })
-
-/** The service half of `cate.browser.*`. A cell runs on the driving client of
- *  its one browser panel; its `cua.*` calls come back through
- *  `browserCode.call` as the same caller. */
+/** The service half of `cate.browser.*`. */
 export function browserServiceHandlers(deps: BrowserServiceDeps): CateServiceHandlers<typeof browserApi> {
-  const newId = deps.newId ?? (() => globalThis.crypto.randomUUID())
-  const now = deps.now ?? Date.now
-  const request = <Op extends BrowserSurfaceOp>(panelId: string | null, op: Op, args: BrowserSurfaceArgs<Op>, options?: SurfaceCallOptions & { near?: PanelId }) =>
-    deps.surfaces.request(panelId, op, args, { ...options, feature: BROWSER_SURFACE_FEATURES[op] })
-
   const browserPanels = (): PanelId[] =>
     Object.values(deps.document.get().panels).filter((record) => record.type === 'browser').map((record) => record.id)
 
   return {
-    run: async ({ code, panelId }, ctx) => {
-      // A cell drives one browser panel: the named one, or the one a command
-      // without --panel would target. It runs on that panel's driving client.
-      const target = panelId ?? ctx.defaultTarget('browser')
-      if (!target) return text('No browser panel to run in. Create one with `cate panel create browser [url]`, or pass --panel <id>.')
-      const cellId = newId()
-      deps.cells.begin(cellId, { deadline: now() + BROWSER_CELL_DEADLINE_MS, panelId: target, invoke: ctx.invoke })
-      try {
-        return await request(null, 'code.run', { key: ctx.caller.id, cellId, code, deadlineMs: BROWSER_CELL_DEADLINE_MS }, {
-          timeoutMs: BROWSER_CODE_TIMEOUT_MS - 2_000,
-          signal: ctx.signal,
-          near: target,
-        })
-      } catch (err) {
-        if (isRpcError(err, 'timeout')) void request(null, 'code.reset', { key: ctx.caller.id }, { near: target }).catch(() => {})
-        if (isRpcError(err, 'no-renderer')) return text('No connected client can run browser code')
-        return text(err instanceof Error ? err.message : String(err))
-      } finally {
-        deps.cells.end(cellId)
-      }
-    },
-    reset: async (_args, ctx) => {
-      const target = ctx.defaultTarget('browser') ?? null
-      try {
-        await request(null, 'code.reset', { key: ctx.caller.id }, { near: target ?? undefined })
-      } catch (err) {
-        if (!isRpcError(err, 'no-renderer')) throw err
-      }
-      return { content: [{ type: 'text', text: 'Browser code session reset' }] } satisfies BrowserCodeResult
-    },
+    ...browserCodeHandlers(deps),
     listTabs: ({ panelId }) => {
       const ids = panelId ? [panelId] : browserPanels()
       const tabs = ids.flatMap((id) => {

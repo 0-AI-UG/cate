@@ -14,6 +14,7 @@ import {
   type PanelRecord,
   type WorkspaceDocument,
 } from '@workspace/document/contract'
+import { checkoutPathKey, samePath } from '../contract'
 import { createRepositoryRuntime, vcsCapabilityImpl, type RepositoryRuntime } from './repository'
 
 /** Applies ops with the real reducer and records them. */
@@ -85,7 +86,7 @@ describe('worktree lifecycle', () => {
 
   afterEach(async () => {
     repo.dispose()
-    await fs.rm(root, { recursive: true, force: true })
+    await fs.rm(root, { recursive: true, force: true, maxRetries: 10 })
   })
 
   const statuses = () => document.changes().flatMap((c) =>
@@ -150,7 +151,7 @@ describe('worktree lifecycle', () => {
   test('remove moves bound panels to the main checkout when closing is off', async () => {
     closePanels = false
     await repo.reconcileWorktrees()
-    const main = Object.values(document.get().worktrees).find((w) => w.path === root)!
+    const main = Object.values(document.get().worktrees).find((w) => samePath(w.path, root))!
     const meta = await repo.createWorktree({ branch: 'feature' })
     await document.apply(addPanel(terminal('t1', meta.id)))
 
@@ -194,8 +195,9 @@ describe('worktree lifecycle', () => {
     await simpleGit(root).raw(['worktree', 'add', '-b', 'cli', outside])
     await repo.reconcileWorktrees()
     await repo.reconcileWorktrees()
-    const paths = Object.values(document.get().worktrees).map((w) => w.path).sort()
-    expect(paths).toEqual([root, outside].sort())
+    // Git for Windows lists checkouts with forward slashes.
+    const paths = Object.values(document.get().worktrees).map((w) => checkoutPathKey(w.path)).sort()
+    expect(paths).toEqual([root, outside].map(checkoutPathKey).sort())
   })
 
   test('prune drops metadata whose checkout is gone, with its panels', async () => {

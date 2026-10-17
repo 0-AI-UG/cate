@@ -15,8 +15,14 @@ export const CATE_GITIGNORE = `# Cate project-local state. Only skills.json is s
 !skills.json
 `
 
+/** The separator a path is written with (a native Windows path uses `\`). */
+export function pathSeparatorOf(path: string): '/' | '\\' {
+  return path.includes('\\') ? '\\' : '/'
+}
+
 export function cateTempDir(checkout: string): string {
-  return `${checkout.replace(/[/\\]+$/, '')}/${CATE_TEMP_DIR}`
+  const sep = pathSeparatorOf(checkout)
+  return `${checkout.replace(/[/\\]+$/, '')}${sep}${CATE_TEMP_DIR.replace(/\//g, sep)}`
 }
 
 export interface FileRef {

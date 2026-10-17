@@ -43,6 +43,16 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   if (!firstFill.ok) throw new Error(`browser fill failed: ${firstFill.error}`)
   await expect(rendererFocusTarget).toBeFocused()
 
+  // A click and a key press focus the guest while they run, then hand focus
+  // back, so a user typing elsewhere keeps typing there.
+  await expect(act(page, browser, 'click', 'Name')).resolves.toMatchObject({ ok: true })
+  await expect(rendererFocusTarget).toBeFocused()
+  await expect(activeAction(page, browser, 'pressKey', { key: '!' })).resolves.toMatchObject({ ok: true })
+  await expect(rendererFocusTarget).toBeFocused()
+  await expect(activeAction(page, browser, 'pressKey', { key: '?' })).resolves.toMatchObject({ ok: true })
+  await expect(rendererFocusTarget).toBeFocused()
+  await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value")).resolves.toMatchObject({ ok: true, result: { value: expect.stringContaining('!?') } })
+
   const otherWorkspace = await openWorkspace(page, makeProject(home, { name: 'other' }))
   await expect(act(page, browser, 'setValue', "Name", { value: 'Filled from another workspace' })).resolves.toMatchObject({ ok: true })
   // Browser control is target-bound: it must not switch back to the browser's
@@ -51,6 +61,32 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   expect(await page.evaluate(() => window.__cateE2E!.activeCanvasPanelId())).toBeNull()
 
   await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value")).resolves.toMatchObject({ ok: true, result: { value: 'Filled from another workspace' } })
+})
+
+test('agents typing in two browsers at once reach their own pages and leave focus alone', async () => {
+  test.setTimeout(60_000)
+  const html = (title: string) => `data:text/html,${encodeURIComponent(`<title>${title}</title><input id="name" aria-label="Name">`)}`
+  const left = await createBrowser(page, html('Left'), { x: 60, y: 60 })
+  const right = await createBrowser(page, html('Right'), { x: 900, y: 60 })
+  for (const browser of [left, right]) {
+    await expect.poll(() => browserWebContentsId(page, browser.panelId), { timeout: 20_000 }).not.toBeNull()
+    await expect(act(page, browser, 'click', 'Name')).resolves.toMatchObject({ ok: true })
+  }
+  const rendererFocusTarget = page.getByRole('button', { name: /Select tool/ })
+  await rendererFocusTarget.focus()
+
+  // Each click moves the window's focused guest; keys must not follow it.
+  const type = async (browser: typeof left, keys: string) => {
+    for (const key of keys) {
+      await expect(browserInvoke(page, browser, 'pressKey', { key })).resolves.toMatchObject({ ok: true })
+      await expect(act(page, browser, 'click', 'Name')).resolves.toMatchObject({ ok: true })
+    }
+  }
+  await Promise.all([type(left, 'abcde'), type(right, 'VWXYZ')])
+  await expect(rendererFocusTarget).toBeFocused()
+  const value = (browser: typeof left) => inspectFixture(app!, page, browser, 'document.querySelector("#name").value.split("").sort().join("")')
+  await expect(value(left)).resolves.toMatchObject({ ok: true, result: { value: 'abcde' } })
+  await expect(value(right)).resolves.toMatchObject({ ok: true, result: { value: 'VWXYZ' } })
 })
 
 test('the browser guest survives switching to another workspace and back', async () => {

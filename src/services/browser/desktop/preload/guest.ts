@@ -14,6 +14,27 @@ if (process.isMainFrame && ipcRenderer.sendSync('cate-passkeys-available')) {
   contextBridge.executeInMainWorld({ func: installPasskeyPageBridge })
 }
 
+// JavaScript dialogs: Electron answers a guest's `confirm` with false and has
+// no `prompt`. These wait on desktop main (`dialogs.ts`) instead, which shows
+// the dialog in the panel and lets an agent answer it. The bridged function
+// is called synchronously, so the page blocks as on a native dialog.
+if (process.isMainFrame) {
+  contextBridge.executeInMainWorld({
+    func: (ask: (type: string, message: string, defaultPrompt: string) => unknown) => {
+      const text = (value: unknown) => (value === undefined ? '' : String(value))
+      Object.defineProperties(window, {
+        alert: { configurable: true, writable: true, value: function alert(message?: unknown) { ask('alert', text(message), '') } },
+        confirm: { configurable: true, writable: true, value: function confirm(message?: unknown) { return ask('confirm', text(message), '') === true } },
+        prompt: { configurable: true, writable: true, value: function prompt(message?: unknown, defaultPrompt?: unknown) {
+          const answer = ask('prompt', text(message), text(defaultPrompt))
+          return typeof answer === 'string' ? answer : null
+        } },
+      })
+    },
+    args: [(type: string, message: string, defaultPrompt: string) => ipcRenderer.sendSync('cate-browser-dialog', { type, message, defaultPrompt })],
+  })
+}
+
 // Keep this preload self-contained. Sharing the IPC constants module with the
 // renderer preload makes electron-vite emit a chunk that Electron's sandboxed
 // preload loader cannot require.

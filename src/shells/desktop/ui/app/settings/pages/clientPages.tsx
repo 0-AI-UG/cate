@@ -257,6 +257,21 @@ export function WorkspaceBrowserPage({ workspaceId }: SettingsPageProps): JSX.El
         />
       </SettingRow>
       <SettingRow
+        label="Agents may use saved passwords"
+        keywords="login sign in cate browser login agent password"
+        description="Lets an agent fill a saved login into a sign-in form (cate browser login). The agent never sees the password, but it can sign in with it."
+      >
+        <Select
+          value={ws.browserAgentPasswords}
+          onChange={(v) => setWs(workspaceId, 'browserAgentPasswords', v as WorkspaceSettings['browserAgentPasswords'])}
+          options={[
+            { value: 'off', label: 'Never' },
+            { value: 'ask', label: 'Ask each time' },
+            { value: 'allow', label: 'Always' },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow
         label="Clear browsing history"
         description="The history the browser panels share."
         hint={message ? <span className="text-xs text-muted">{message}</span> : undefined}

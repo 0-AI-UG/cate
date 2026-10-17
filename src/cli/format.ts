@@ -1,7 +1,14 @@
 // Human-readable output for `cate` results, chosen by the spec's `format` id.
 // `--json` bypasses all of this.
 
-import { describeBrowserObservation, type BrowserObservation } from '@services/browser/contract'
+import {
+  describeBrowserAction,
+  describeBrowserConsole,
+  describeBrowserNetwork,
+  describeBrowserObservation,
+  type BrowserActionOutcome,
+  type BrowserObservation,
+} from '@services/browser/contract'
 
 const SHORT_ID = 8
 
@@ -94,8 +101,9 @@ const SCREENSHOT_NOTE = 'Open this file with your image-viewing tool to inspect 
 function browserObservation(value: unknown): string {
   const object = asObject(value)
   const observation = asObject(object?.observation) ?? (typeof object?.observationId === 'string' ? object : null)
-  if (!observation) return value === null ? '(none)' : generic(value)
-  const action = asObject(object?.action) as { method: string; status: string } | null
+  const action = asObject(object?.action) as BrowserActionOutcome | null
+  // An action a dialog interrupted has no observation: the page is waiting.
+  if (!observation) return action ? describeBrowserAction(action) : value === null ? '(none)' : generic(value)
   const text = describeBrowserObservation(observation as unknown as BrowserObservation, action ?? undefined)
   const shot = asObject(observation.screenshot)
   return typeof shot?.path === 'string' ? `${text}\nScreenshot: ${shot.path}\n${SCREENSHOT_NOTE}` : text
@@ -111,6 +119,17 @@ function browserTabs(value: unknown): string {
   }))
 }
 
+/** Console messages or requests, with how many matched when not all are shown. */
+function browserLog<T>(describe: (entries: T[]) => string) {
+  return (value: unknown): string => {
+    const object = asObject(value)
+    if (!Array.isArray(object?.entries)) return generic(value)
+    const text = describe(object.entries as T[])
+    const total = typeof object.total === 'number' ? object.total : object.entries.length
+    return total > object.entries.length ? `${text}\n(the last ${object.entries.length} of ${total}; --limit shows more)` : text
+  }
+}
+
 const FORMATTERS: Record<string, (value: unknown) => string> = {
   panelList,
   agentRuns,
@@ -123,6 +142,8 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
   browserContent,
   browserObservation,
   browserTabs,
+  browserConsole: browserLog(describeBrowserConsole),
+  browserNetwork: browserLog(describeBrowserNetwork),
   prettyJson: (value) => JSON.stringify(value, null, 2),
   terminalText: (value) => {
     const text = asObject(value)?.text

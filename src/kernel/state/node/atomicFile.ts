@@ -86,18 +86,16 @@ export async function writeFileAtomic(file: string, data: string | Uint8Array, o
   await fsp.mkdir(path.dirname(file), dirOptions(mode))
   const temporary = temporaryPath(file)
   try {
-    if (mode === undefined) {
-      await fsp.writeFile(temporary, data)
-    } else {
-      const handle = await fsp.open(temporary, 'w', mode)
-      try {
-        await handle.writeFile(data)
-        await handle.sync()
-      } finally {
-        await handle.close()
-      }
-      await fsp.chmod(temporary, mode).catch(() => { /* filesystems without POSIX modes */ })
+    // Synced before the rename: after a power loss the file is the old bytes
+    // or the new ones, never empty.
+    const handle = await fsp.open(temporary, 'w', mode)
+    try {
+      await handle.writeFile(data)
+      await handle.sync()
+    } finally {
+      await handle.close()
     }
+    if (mode !== undefined) await fsp.chmod(temporary, mode).catch(() => { /* filesystems without POSIX modes */ })
     await retryFilePublish(() => fsp.rename(temporary, file))
   } finally {
     await fsp.unlink(temporary).catch(() => {})
@@ -109,16 +107,14 @@ export function writeFileAtomicSync(file: string, data: string | Uint8Array, opt
   fs.mkdirSync(path.dirname(file), dirOptions(mode))
   const temporary = temporaryPath(file)
   try {
-    if (mode === undefined) {
-      fs.writeFileSync(temporary, data)
-    } else {
-      const fd = fs.openSync(temporary, 'w', mode)
-      try {
-        fs.writeFileSync(fd, data)
-        fs.fsyncSync(fd)
-      } finally {
-        fs.closeSync(fd)
-      }
+    const fd = fs.openSync(temporary, 'w', mode)
+    try {
+      fs.writeFileSync(fd, data)
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+    if (mode !== undefined) {
       try { fs.chmodSync(temporary, mode) } catch { /* filesystems without POSIX modes */ }
     }
     renameWithRetrySync(temporary, file)

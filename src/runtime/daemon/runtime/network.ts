@@ -38,6 +38,9 @@ export interface NetworkAccessDeps {
 }
 
 export interface NetworkAccess {
+  /** Starts following the setting. The daemon calls it once the workspace has
+   *  restored: a device that reconnects earlier would find no sessions. */
+  open(): Promise<void>
   /** Resolves once the listeners match the setting. */
   settled(): Promise<void>
   endpoints(): NetworkEndpoints
@@ -50,6 +53,7 @@ export interface NetworkAccess {
 export function createNetworkAccess(deps: NetworkAccessDeps): NetworkAccess {
   let lan: SameNetworkListener | null = null
   let registration: ConnectRegistration | null = null
+  let opened = false
   let disposed = false
   let chain: Promise<void> = Promise.resolve()
 
@@ -59,7 +63,7 @@ export function createNetworkAccess(deps: NetworkAccessDeps): NetworkAccess {
   })
 
   const apply = async () => {
-    const mode = disposed ? 'off' : deps.mode()
+    const mode = disposed || !opened ? 'off' : deps.mode()
     const before = JSON.stringify(endpoints())
     if (mode === 'off') {
       deps.peers.closeAll()
@@ -104,10 +108,16 @@ export function createNetworkAccess(deps: NetworkAccessDeps): NetworkAccess {
     return chain
   }
 
-  const off = deps.subscribe(() => void reconcile())
-  void reconcile()
+  const off = deps.subscribe(() => { if (opened) void reconcile() })
 
   return {
+    open() {
+      if (!opened && !disposed) {
+        opened = true
+        void reconcile()
+      }
+      return chain
+    },
     settled: () => chain,
     endpoints,
     addresses: () => lan?.addresses() ?? [],

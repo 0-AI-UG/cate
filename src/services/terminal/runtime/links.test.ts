@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Terminal } from '@xterm/headless'
 import { findTextLinks, logicalLineAt, rowLinks, type LogicalLine } from './links'
@@ -93,9 +94,9 @@ describe('logicalLineAt', () => {
 describe('rowLinks', () => {
   it('gives the links on a row, files only when they exist, resolved against the cwd', async () => {
     const terminal = await terminalWith(30, 'src/a.ts:3, src/gone.ts, ok\r\nhttps://example.com/aaaa/bbbb/cccc/dddd')
-    const isFile = async (file: string) => file === '/repo/src/a.ts'
+    const isFile = async (file: string) => file === path.resolve('/repo/src/a.ts')
     expect(await rowLinks(terminal.buffer.active, terminal.cols, 0, '/repo', isFile)).toEqual([
-      { target: { kind: 'file', path: '/repo/src/a.ts', line: 3 }, text: 'src/a.ts:3', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+      { target: { kind: 'file', path: path.resolve('/repo/src/a.ts'), line: 3 }, text: 'src/a.ts:3', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
     ])
     // The URL soft-wraps onto row 2: both rows answer with it.
     const url = { target: { kind: 'url', url: 'https://example.com/aaaa/bbbb/cccc/dddd' }, text: 'https://example.com/aaaa/bbbb/cccc/dddd', start: { x: 0, y: 1 }, end: { x: 9, y: 2 } }
@@ -106,7 +107,7 @@ describe('rowLinks', () => {
   it('resolves parent paths and keeps absolute ones', async () => {
     const terminal = await terminalWith(40, '../x/b.ts /abs/c.ts')
     const links = await rowLinks(terminal.buffer.active, terminal.cols, 0, '/repo/sub', async () => true)
-    expect(links.map((link) => link.target)).toEqual([{ kind: 'file', path: '/repo/x/b.ts' }, { kind: 'file', path: '/abs/c.ts' }])
+    expect(links.map((link) => link.target)).toEqual([{ kind: 'file', path: path.resolve('/repo/x/b.ts') }, { kind: 'file', path: path.resolve('/abs/c.ts') }])
   })
 })
 

@@ -2,7 +2,7 @@
 // (`withSurface`, architecture 10.2). The client's view routes each one to
 // the webview of `tabId` and its page driver.
 
-import type { BrowserCodeResult, BrowserDriverResult } from '@services/browser/contract'
+import type { BrowserCodeResult, BrowserDriverResult } from './automation'
 
 export type BrowserSurfaceRequests = {
   /** Mounts the tab's page if needed, waits until the view has followed the
@@ -13,6 +13,9 @@ export type BrowserSurfaceRequests = {
   /** One page-driver method (observations, actions, waits). `settle` waits
    *  for layout first (after a viewport change). */
   'page.execute': { args: { tabId: string; method: string; args: Record<string, unknown>; settle?: boolean }; result: BrowserDriverResult }
+  /** Asks the person on the driving client (an agent's `login` when the
+   *  workspace asks first). `ok` is their answer. */
+  'page.confirm': { args: { message: string }; result: { ok: boolean } }
   /** Downloads `url` through the tab's partition. */
   'page.download': { args: { tabId: string; url: string }; result: { url: string } }
   /** Runs a `cate.browser.run` cell in this client's code session for `key`. */
@@ -27,6 +30,7 @@ export const BROWSER_SURFACE_FEATURES = {
   'page.ready': 'pageDriver',
   'page.history': 'pageDriver',
   'page.execute': 'pageDriver',
+  'page.confirm': 'pageDriver',
   'page.download': 'pageDriver',
   'code.run': 'pageDriver',
   'code.reset': 'pageDriver',

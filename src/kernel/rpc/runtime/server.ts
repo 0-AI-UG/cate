@@ -221,7 +221,18 @@ class Connection {
   }
 
   private send(msg: Message): void {
-    if (this.open) this.port.send({ kind: 'msg', msg })
+    this.transmit({ kind: 'msg', msg })
+  }
+
+  /** A port whose transport went away throws until its close arrives; that
+   *  must not reach the code emitting (a terminal ending, a session change). */
+  private transmit(frame: Frame): void {
+    if (!this.open) return
+    try {
+      this.port.send(frame)
+    } catch {
+      this.port.close('transport closed')
+    }
   }
 
   private onFrame(frame: Frame): void {
@@ -366,7 +377,7 @@ class Connection {
       emit: (data) => { if (!state.ended) this.send({ t: 'evt', stream: id, data }) },
       bytes: (chunk) => {
         if (state.ended) return false
-        if (this.open) this.port.send({ kind: 'bytes', streamId: id, bytes: chunk })
+        this.transmit({ kind: 'bytes', streamId: id, bytes: chunk })
         state.outstanding += chunk.length
         return state.outstanding <= high
       },

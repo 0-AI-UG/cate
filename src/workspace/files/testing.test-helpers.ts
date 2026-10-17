@@ -74,7 +74,8 @@ export async function makeWorkspace(overrides: Partial<FilesRuntimeDeps> = {}) {
     for (const client of clients) client.detach()
     server.close()
     await files.dispose()
-    await fs.rm(base, { recursive: true, force: true })
+    // Retries ENOTEMPTY/EBUSY from a late buffer write (Windows).
+    await fs.rm(base, { recursive: true, force: true, maxRetries: 10 })
   }
 
   return { base, root, data, files, watcher, connect, dispose, deps }

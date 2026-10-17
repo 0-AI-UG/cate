@@ -20,7 +20,9 @@ export interface JsonStateStoreOptions<T> {
   normalize(parsed: unknown, defaults: T): T
   backend: JsonStateBackend<T>
   debounceMs?: number
-  onInvalid?(phase: 'load' | 'external'): void
+  /** `false` at load: the invalid file could not be set aside, so the store
+   *  must not write over it. */
+  onInvalid?(phase: 'load' | 'external'): boolean | void
   onError?(operation: 'read' | 'write' | 'watch' | 'writeSync', error: unknown): void
   /** A value reached the backend (the file is on disk). */
   onWritten?(value: T): void
@@ -52,6 +54,10 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
   let loaded = false
   let loading: Promise<T> | null = null
   let lastWrittenContent = ''
+  // The file exists but could not be read (or set aside when corrupt): the
+  // store runs on defaults and never writes over it, until a valid external
+  // edit arrives.
+  let unwritable: Error | null = null
   // Contents this store wrote whose watcher events may still arrive: a late
   // event for an older write is an echo, not an external edit.
   const echoes = new Map<string, number>()
@@ -99,7 +105,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
     try {
       return normalize(JSON.parse(raw) as unknown, defaults)
     } catch {
-      options.onInvalid?.(phase)
+      if (options.onInvalid?.(phase) === false && phase === 'load') unwritable = new Error('state file is corrupt and could not be set aside; not overwriting it')
       return null
     }
   }
@@ -125,6 +131,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
         raw = backend.read ? await backend.read() : backend.readSync?.() ?? null
       } catch (error) {
         report('read', error)
+        unwritable = new Error('state file could not be read; not overwriting it')
       }
       return initialize(raw)
     })()
@@ -145,6 +152,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       raw = backend.readSync()
     } catch (error) {
       report('read', error)
+      unwritable = new Error('state file could not be read; not overwriting it')
     }
     return initialize(raw)
   }
@@ -161,6 +169,10 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
     queuedWrites++
     flushChain = flushChain.then(async () => {
       queuedWrites--
+      if (unwritable) {
+        lastWriteError = unwritable
+        return
+      }
       const value = current
       const content = serialize(value)
       const revisionAtWrite = revision
@@ -239,6 +251,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
     if (raw == null || isEcho(raw)) return
     const next = parse(raw, 'external')
     if (next == null) return
+    unwritable = null
     if (serialize(next) === serialize(current)) return
     current = next
     revision++
@@ -323,7 +336,7 @@ export function createJsonStateStore<T>(options: JsonStateStoreOptions<T>): Json
       clearTimeout(writeTimer)
       writeTimer = null
     }
-    if (!backend.writeSync) return
+    if (!backend.writeSync || unwritable) return
     const content = serialize(current)
     if (!hadTimer && !flushInFlight && revision === durableRevision) return
     try {

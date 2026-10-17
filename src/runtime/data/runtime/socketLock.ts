@@ -7,6 +7,7 @@
 import { execFile } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import net from 'node:net'
+import path from 'node:path'
 import { RUNTIME_STOP_DEADLINE_MS } from '../contract'
 import { ensureLocalEndpoint } from '../node'
 import { readRuntimeInfo } from './runtimeInfo'
@@ -50,19 +51,48 @@ export async function acquireRuntimeSocket(
     }
   }
   if (!server) {
-    if (await socketAnswers(endpoint, probeMs)) return running
-    // A socket file nobody answers on, left by a daemon that died.
-    await removeStaleSocket(endpoint)
-    server = await tryListen(endpoint)
-    if (!server) {
+    // A socket file nobody answers on, left by a daemon that died. Starts
+    // take it over one at a time: otherwise one could unlink the socket
+    // another just bound, and both would serve the workspace.
+    const taken = await withTakeoverLock(dataDir, async () => {
+      if (await socketAnswers(endpoint, probeMs)) return null
+      await removeStaleSocket(endpoint)
+      return tryListen(endpoint)
+    })
+    if (!taken) {
       if (await socketAnswers(endpoint, probeMs)) return running
       throw new Error(`${endpoint} is in use and nothing answers on it`)
     }
-    // Two starts taking over the same dead daemon's socket can still both
-    // unlink and bind in the gap between the other's probe and its bind.
+    server = taken
   }
   if (platform !== 'win32') await fs.chmod(endpoint, 0o600)
   return { kind: 'acquired', server, endpoint }
+}
+
+/** Runs `fn` while holding `takeover.lock` in the data dir (created
+ *  exclusively, holding the pid; a lock whose holder died is removed). */
+async function withTakeoverLock<T>(dataDir: string, fn: () => Promise<T>): Promise<T> {
+  const lock = path.join(dataDir, 'takeover.lock')
+  const deadline = Date.now() + 10_000
+  for (;;) {
+    try {
+      await fs.writeFile(lock, String(process.pid), { flag: 'wx' })
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+    const holder = Number(await fs.readFile(lock, 'utf-8').catch(() => ''))
+    if (!Number.isInteger(holder) || holder <= 0 || !alive(holder) || Date.now() > deadline) {
+      await fs.rm(lock, { force: true })
+      continue
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  try {
+    return await fn()
+  } finally {
+    await fs.rm(lock, { force: true })
+  }
 }
 
 /** Whether something accepts a connection on `endpoint`. */

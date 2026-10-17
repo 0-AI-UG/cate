@@ -3,7 +3,7 @@
 // checkout's temporary folder. Pure path strings; `/` and `\` separators both
 // work.
 
-import { CATE_TEMP_DIR, cateTempDir } from '@workspace/files/contract'
+import { CATE_TEMP_DIR, cateTempDir, pathSeparatorOf } from '@workspace/files/contract'
 
 export const DRAFTS_DIR = CATE_TEMP_DIR
 
@@ -19,5 +19,5 @@ export function isEditorDraft(path: string | undefined): boolean {
 }
 
 export function editorDraftPath(root: string, id: string): string {
-  return `${cateTempDir(root)}/${id}.md`
+  return `${cateTempDir(root)}${pathSeparatorOf(root)}${id}.md`
 }

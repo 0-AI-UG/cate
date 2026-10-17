@@ -64,6 +64,20 @@ describe('jsonStateFile', () => {
     expect(quarantinedFiles().at(-1)).toEqual({ file: at('d.json'), backup: path.join(dir, backups[0]) })
   })
 
+  test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('a file that cannot be read is never written over', () => {
+    fs.writeFileSync(at('u.json'), JSON.stringify({ items: ['keep'] }))
+    fs.chmodSync(at('u.json'), 0o000)
+    try {
+      const store = createJsonStateFile({ file: at('u.json'), defaults, normalize })
+      expect(store.get()).toEqual({ items: [] })
+      store.set({ items: ['new'] })
+      store.flushSync()
+    } finally {
+      fs.chmodSync(at('u.json'), 0o600)
+    }
+    expect(JSON.parse(fs.readFileSync(at('u.json'), 'utf-8'))).toEqual({ items: ['keep'] })
+  })
+
   test('update applies a functional change', () => {
     const store = createJsonStateFile({ file: at('e.json'), defaults, normalize })
     store.set({ items: ['a'] })

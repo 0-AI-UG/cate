@@ -7,8 +7,7 @@ import { browserInvoke, browserWebContentsId, createBrowser as createBrowserPane
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
@@ -16,6 +15,7 @@ import { closeApp, launchApp } from './fixtures/electron-app'
 
 let app: ElectronApplication
 let page: Page
+let project: string
 let appServer: Server
 let frameServer: Server
 let appOrigin = ''
@@ -135,12 +135,33 @@ test.beforeAll(async () => {
       </script>`)
       return
     }
+    if (url.pathname === '/hang') {
+      html(response, '<title>Hang fixture</title><main><h1 id="state">Fresh page</h1><button onclick="while (true) {}">Hang forever</button><button onclick="state.textContent=\'Changed page\'">Change page</button></main>')
+      return
+    }
+    if (url.pathname === '/sticky') {
+      html(response, '<title>Sticky footer</title><style>footer{position:fixed;left:0;right:0;bottom:0;height:120px;background:#eee}</style><main><div style="height:calc(100vh - 80px)"></div><button id="below" onclick="this.textContent=\'Clicked below\'">Below the fold</button><div style="height:2000px"></div></main><footer>Cookie settings</footer>')
+      return
+    }
     if (url.pathname === '/crash') {
       html(response, '<title>Crash recovery fixture</title><main><h1>Crash recovery fixture</h1><button id="alive">Browser is alive</button></main>')
       return
     }
+    if (url.pathname === '/login') {
+      html(response, `<title>Sign in</title><main><h1>Sign in</h1><form id="login" onsubmit="event.preventDefault();signedIn.textContent=user.value+':'+pass.value"><label>Email <input id="user" type="email" autocomplete="username"></label><label>Password <input id="pass" type="password" autocomplete="current-password"></label><button>Sign in</button></form><output id="signed-in">signed out</output></main><script>const user=document.querySelector('#user'),pass=document.querySelector('#pass'),signedIn=document.querySelector('#signed-in')</script>`)
+      return
+    }
+    if (url.pathname === '/diagnostics') {
+      html(response, `<title>Diagnostics</title><main><h1>Diagnostics</h1><button onclick="console.error('checkout failed', 42); fetch('/missing-api', { method: 'POST' })">Break it</button>
+        <nav><button id="menu">Menu</button><div id="menu-items" hidden><a href="#">Hidden item</a></div></nav></main><script>
+        const menu=document.querySelector('#menu'),items=document.querySelector('#menu-items');menu.addEventListener('mouseenter',()=>{items.hidden=false})</script>`)
+      return
+    }
     if (url.pathname === '/uploads') {
-      html(response, `<title>Advanced uploads</title><main><h1>Advanced uploads</h1><input id="files" aria-label="Files" type="file" multiple><output id="selected">none</output><div id="drop-zone">Drop files here</div><output id="dropped">none</output></main><script>
+      html(response, `<title>Advanced uploads</title><main><h1>Advanced uploads</h1><input id="files" aria-label="Files" type="file" multiple><output id="selected">none</output><div id="drop-zone" role="region" aria-label="Drop zone">Drop files here</div><output id="dropped">none</output>
+        <button id="pick">Choose a picture</button><input id="hidden-input" type="file" style="display:none"><output id="picked">none</output></main><script>
+        const hiddenInput=document.querySelector('#hidden-input'); document.querySelector('#pick').addEventListener('click',()=>hiddenInput.click());
+        hiddenInput.addEventListener('change',()=>picked.textContent=Array.from(hiddenInput.files).map(file=>file.name).join(','));
         files.addEventListener('change',()=>selected.textContent=Array.from(files.files).map(file=>file.name).join(','));
         dropZone=document.querySelector('#drop-zone'); dropZone.addEventListener('dragover',event=>event.preventDefault());
         dropZone.addEventListener('drop',event=>{event.preventDefault();dropped.textContent=Array.from(event.dataTransfer.files).map(file=>file.name).join(',')});
@@ -160,8 +181,16 @@ test.afterAll(async () => {
 })
 
 test.beforeEach(async () => {
-  ;({ electronApp: app, mainWindow: page } = await launchApp())
+  ;({ electronApp: app, mainWindow: page, project } = await launchApp() as { electronApp: ElectronApplication; mainWindow: Page; project: string })
 })
+
+/** A folder in the workspace: uploads may read only workspace files. */
+function workspaceFiles(names: string[]): { dir: string; paths: string[] } {
+  const dir = mkdtempSync(path.join(realpathSync(project), 'upload-'))
+  const paths = names.map((name) => path.join(dir, name))
+  for (const file of paths) writeFileSync(file, `${path.basename(file)}\n`)
+  return { dir, paths }
+}
 
 test.afterEach(async () => {
   await closeApp(app)
@@ -293,40 +322,115 @@ test('shows recovery UI and reloads after the browser guest renderer crashes', a
   await expect.poll(() => target(page, browser, "Browser is alive").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
-// Not an app bug: `upload` takes one `filePath`; several files per action is
-// a feature the browser API does not offer.
-test.fixme('selects multiple user-granted files with one browser-control action', async () => {
-  const uploadDir = mkdtempSync(path.join(tmpdir(), 'cate-browser-multi-upload-'))
-  const firstPath = path.join(uploadDir, 'first.txt')
-  const secondPath = path.join(uploadDir, 'second.txt')
-  writeFileSync(firstPath, 'first\n')
-  writeFileSync(secondPath, 'second\n')
+test('fails fast on a page whose script never yields, and reload restarts it', async () => {
+  const browser = await createBrowser('/hang')
+  const hang = await act(page, browser, 'click', 'Hang forever')
+  expect(hang).toMatchObject({ ok: false, error: expect.stringContaining('browser-page-unresponsive') })
+  const started = Date.now()
+  expect(await browserInvoke(page, browser, 'getAXState')).toMatchObject({ ok: false, error: expect.stringContaining('browser-page-unresponsive') })
+  expect(Date.now() - started).toBeLessThan(5_000)
+  const reloaded = await browserInvoke(page, browser, 'reload')
+  expect(reloaded, reloaded.error).toMatchObject({ ok: true })
+  expect(await act(page, browser, 'click', 'Change page')).toMatchObject({ ok: true })
+})
+
+test('goto loads the URL the tab already shows again', async () => {
+  const browser = await createBrowser('/hang')
+  expect(await act(page, browser, 'click', 'Change page')).toMatchObject({ ok: true })
+  const again = await browserInvoke(page, browser, 'goto', { url: `${appOrigin}/hang` })
+  expect(again, again.error).toMatchObject({ ok: true })
+  expect((again.result as { state: string }).state).toContain('Fresh page')
+})
+
+test('clicks an element that sits in view under a sticky footer', async () => {
+  const browser = await createBrowser('/sticky')
+  expect(await act(page, browser, 'click', 'Below the fold')).toMatchObject({ ok: true })
+  expect(await fixtureEvaluate(app, page, browser, `document.querySelector('#below').textContent`)).toBe('Clicked below')
+})
+
+test('selects multiple workspace files with one browser-control action', async () => {
+  const { dir, paths } = workspaceFiles(['first.txt', 'second.txt'])
   try {
     const browser = await createBrowser('/uploads')
     await expect.poll(() => target(page, browser, "Files").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
-    await expect(act(page, browser, 'upload', 'Files', { filePaths: [firstPath, secondPath] })).resolves.toMatchObject({ ok: true, result: { files: ['first.txt', 'second.txt'] } })
+    await expect(act(page, browser, 'upload', 'Files', { files: paths })).resolves.toMatchObject({ ok: true, result: { files: ['first.txt', 'second.txt'] } })
     await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#selected\")?.textContent ?? ''", 'text')).resolves
       .toMatchObject({ ok: true, result: { text: 'first.txt,second.txt' } })
   } finally {
-    rmSync(uploadDir, { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 
-// Not an app bug: file-backed drag/drop is not in the browser API.
-test.fixme('drops user-granted files onto a page drop target', async () => {
-  const uploadDir = mkdtempSync(path.join(tmpdir(), 'cate-browser-file-drop-'))
-  const filePath = path.join(uploadDir, 'dropped.txt')
-  writeFileSync(filePath, 'dropped\n')
+test('drops workspace files onto a page drop target', async () => {
+  const { dir, paths } = workspaceFiles(['dropped.txt'])
   try {
     const browser = await createBrowser('/uploads')
-    await expect.poll(() => target(page, browser, "Drop files here").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
-    // Future extension: file-backed drag/drop, intentionally not in the current public API.
-    await expect(activeAction(page, browser, 'drag', { from: { filePath }, to: (await target(page, browser, 'Drop files here')).target })).resolves.toMatchObject({ ok: true, result: { files: ['dropped.txt'] } })
-    await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#dropped\")?.textContent ?? ''", 'text')).resolves
+    await expect.poll(() => target(page, browser, 'Drop zone', 'region').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+    await expect(act(page, browser, 'upload', 'Drop zone', { files: paths, drop: true }, 'region')).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector(\"#dropped\")?.textContent ?? ''", 'text'))
       .toMatchObject({ ok: true, result: { text: 'dropped.txt' } })
   } finally {
-    rmSync(uploadDir, { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('uploads through a button that opens a hidden file input, directly or after a click', async () => {
+  const { dir, paths } = workspaceFiles(['picture.png'])
+  try {
+    const browser = await createBrowser('/uploads')
+    await expect.poll(() => target(page, browser, 'Choose a picture').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+    // Upload on the button: it clicks, takes the chooser and fills its input.
+    await expect(act(page, browser, 'upload', 'Choose a picture', { files: paths })).resolves.toMatchObject({ ok: true, result: { files: ['picture.png'] } })
+    await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector('#picked').textContent", 'text')).toMatchObject({ result: { text: 'picture.png' } })
+    await fixtureEvaluate(app, page, browser, "document.querySelector('#hidden-input').value=''; document.querySelector('#picked').textContent='none'")
+
+    // A plain click reports the chooser; an upload without an element answers it.
+    const clicked = await act(page, browser, 'click', 'Choose a picture') as { ok: boolean; result: { action: { notices?: string[] } } }
+    expect(clicked.result.action.notices?.join('\n')).toContain('cate browser upload chooser')
+    await expect(browserInvoke(page, browser, 'upload', { target: null, files: paths })).resolves.toMatchObject({ ok: true, result: { files: ['picture.png'] } })
+    await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector('#picked').textContent", 'text')).toMatchObject({ result: { text: 'picture.png' } })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('refuses an upload from outside the workspace and says why', async () => {
+  const browser = await createBrowser('/uploads')
+  await expect.poll(() => target(page, browser, "Files").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+  const refused = await act(page, browser, 'upload', 'Files', { files: ['/etc/hosts'] })
+  expect(refused.ok).toBe(false)
+  expect(refused.error).toContain('/etc/hosts is outside the files this workspace can read')
+})
+
+test('hovers to open a menu and reads the page console and network', async () => {
+  const browser = await createBrowser('/diagnostics')
+  await expect.poll(() => target(page, browser, 'Menu').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await expect(act(page, browser, 'hover', 'Menu')).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, 'Hidden item', 'link').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+
+  await expect(act(page, browser, 'click', 'Break it')).resolves.toMatchObject({ ok: true })
+  await expect.poll(async () => ((await browserInvoke(page, browser, 'console', { level: 'error' })).result as { entries: Array<{ text: string }> }).entries.map((entry) => entry.text))
+    .toContain('checkout failed 42')
+  await expect.poll(async () => ((await browserInvoke(page, browser, 'network', { failed: true })).result as { entries: Array<{ url: string; status?: number; method: string }> }).entries)
+    .toEqual([expect.objectContaining({ url: `${appOrigin}/missing-api`, status: 404, method: 'POST' })])
+})
+
+test('signs in with a saved password the agent never sees, as the workspace allows', async () => {
+  const browser = await createBrowser('/login')
+  await expect.poll(() => target(page, browser, 'Sign in', 'button').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+  await page.evaluate(({ origin, workspaceId }) => window.__cateE2E!.call('browserData', 'savePassword', { input: { origin, username: 'ada@example.test', password: 's3cret-pass' } }, workspaceId), { origin: appOrigin, workspaceId: browser.workspaceId })
+
+  const refused = await browserInvoke(page, browser, 'login')
+  expect(refused).toMatchObject({ ok: false })
+  expect(refused.error).toContain('browser-agent-passwords-off')
+
+  await page.evaluate((workspaceId) => window.__cateE2E!.call('settings', 'set', { key: 'browserAgentPasswords', value: 'allow' }, workspaceId), browser.workspaceId)
+  const filled = await browserInvoke(page, browser, 'login')
+  expect(filled, JSON.stringify(filled)).toMatchObject({ ok: true, result: { action: { method: 'login', status: 'verified' } } })
+  expect(JSON.stringify(filled)).not.toContain('s3cret-pass')
+  await expect(act(page, browser, 'click', 'Sign in', {}, 'button')).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector('#signed-in').textContent", 'text')).resolves
+    .toMatchObject({ result: { text: 'ada@example.test:s3cret-pass' } })
 })
 
 // Not an app bug: the frame server is same-site with the page (both
@@ -374,21 +478,32 @@ test('recovers requests after Chromium restarts its network service', async () =
   await expect.poll(() => target(page, browser, "Next step").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
 })
 
-// Not an app bug: there is no `dialog` method in the browser API.
-test.fixme('applies an explicit policy to JavaScript alert, confirm, and prompt dialogs', async () => {
+test('answers JavaScript alert, confirm and prompt dialogs, from the agent or the panel', async () => {
   const browser = await createBrowser('/js-dialogs')
-  const confirmClick = act(page, browser, 'click', "Confirm")
-  await expect(browserInvoke(page, browser, 'dialog', { action: 'accept' })).resolves.toMatchObject({ ok: true })
-  await expect(confirmClick).resolves.toMatchObject({ ok: true })
+  await expect.poll(() => target(page, browser, 'Confirm').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+  const dialogBox = page.locator(`[data-browser-surface="${browser.panelId}"] [data-browser-dialog]`)
+  const confirmClick = await act(page, browser, 'click', "Confirm")
+  expect(confirmClick).toMatchObject({ ok: true, result: { action: { method: 'click', status: 'dispatched' } } })
+  expect(JSON.stringify(confirmClick)).toContain('Continue workflow?')
+  // The page waits on the dialog: other calls say so instead of hanging.
+  await expect(browserInvoke(page, browser, 'getAXState')).resolves.toMatchObject({ ok: false, error: expect.stringContaining('browser-dialog-open') })
+  await expect(dialogBox).toBeVisible()
+  await expect(browserInvoke(page, browser, 'dialog', { action: 'accept' })).resolves.toMatchObject({ ok: true, result: { action: { method: 'dialog' } } })
   await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#confirm-result\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'accepted' } })
+  await expect(dialogBox).toHaveCount(0)
 
-  const promptClick = act(page, browser, 'click', "Prompt")
-  await expect(browserInvoke(page, browser, 'dialog', { action: 'accept', promptText: 'release-ready' })).resolves
-    .toMatchObject({ ok: true })
-  await expect(promptClick).resolves.toMatchObject({ ok: true })
+  await act(page, browser, 'click', "Prompt")
+  await expect(browserInvoke(page, browser, 'dialog', { action: 'accept', text: 'release-ready' })).resolves.toMatchObject({ ok: true })
   await expect(inspectFixture(app!, page, browser, "document.querySelector(\"#prompt-result\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'release-ready' } })
+
+  // The person answers in the panel (its first click focuses the panel).
+  await act(page, browser, 'click', "Confirm")
+  await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
+  await dialogBox.getByRole('button', { name: 'Cancel' }).click()
+  await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector(\"#confirm-result\")?.textContent ?? ''", 'text'))
+    .toMatchObject({ ok: true, result: { text: 'dismissed' } })
 })
 
 test('keeps browser control bound after the panel moves into a detached window', async () => {

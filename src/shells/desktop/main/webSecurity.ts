@@ -7,7 +7,7 @@ import { app, session as electronSession, type Session, type WebContents } from 
 import { createLogger } from '@kernel/log/contract'
 import { shortcutMatches, type ActionId } from '@kernel/interaction/contract'
 import type { BrowserShortcutAction } from '@services/browser/contract'
-import { sendBrowserShortcut, sendOpenTabRequest } from '@services/browser/desktop'
+import { isAgentKeyInput, sendBrowserShortcut, sendOpenTabRequest } from '@services/browser/desktop'
 import { DESKTOP_CHANNELS as C, type MenuModel } from '../contract'
 
 const log = createLogger('security')
@@ -122,7 +122,7 @@ function hardenGuest(contents: WebContents, options: WebSecurityOptions, platfor
   })
   contents.on('before-input-event', (event, input) => {
     const host = contents.hostWebContents
-    if (!host) return
+    if (!host || isAgentKeyInput(contents)) return
     const forwarded = forwardedActionForInput(input, options.guestKeys(), platform)
     if (forwarded) {
       event.preventDefault()

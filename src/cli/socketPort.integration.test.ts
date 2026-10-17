@@ -26,7 +26,8 @@ afterEach(() => { while (cleanups.length) cleanups.pop()!() })
 
 async function startRuntime(settings: Record<string, unknown>) {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'cate-cli-'))
-  const socketPath = path.join(dir, 's.sock')
+  // Windows has no Unix socket files: the runtime listens on a named pipe there.
+  const socketPath = process.platform === 'win32' ? `\\\\.\\pipe\\${path.basename(dir)}` : path.join(dir, 's.sock')
   const panels = [{ id: 'term-123456789', type: 'terminal' }]
   const tokens = new ApiTokenRegistry()
   const router = new ApiRouter({

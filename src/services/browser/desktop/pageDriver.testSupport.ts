@@ -1,24 +1,47 @@
 import { EventEmitter } from 'events'
 import { vi } from 'vitest'
-import { PageDriverRegistry } from './pageDriver'
+import { PageDriverRegistry, type PageDriverOptions } from './pageDriver'
 import { CodeCellRegistry } from './codeCells'
 import type { BrowserObservation } from '../contract'
 
 export const testCells = new CodeCellRegistry()
 
 export const identity = { panelId: 'browser', tabId: 'tab' }
-export async function setupGuest(hook?: (method: string, params: Record<string, unknown>, sessionId?: string) => Promise<unknown>) {
+
+/** A `DOMSnapshot.captureSnapshot` of one document where every element of
+ *  `ids` has a box in an 800x600 viewport, except as `dom` says. */
+export function domSnapshot(ids: number[], dom: Record<number, { password?: boolean; offscreen?: boolean; hidden?: boolean }> = {}) {
+  const strings = ['INPUT', 'type', 'password', 'text', 'visible', '1', 'main']
+  return {
+    strings,
+    documents: [{
+      frameId: 6, scrollOffsetX: 0, scrollOffsetY: 0,
+      nodes: {
+        parentIndex: ids.map(() => -1), nodeName: ids.map(() => 0), backendNodeId: ids,
+        attributes: ids.map(id => [1, dom[id]?.password ? 2 : 3]),
+      },
+      layout: {
+        nodeIndex: ids.flatMap((id, i) => dom[id]?.hidden ? [] : [i]),
+        bounds: ids.flatMap(id => dom[id]?.hidden ? [] : [[20, dom[id]?.offscreen ? 5000 : 20, 100, 40]]),
+        styles: ids.flatMap(id => dom[id]?.hidden ? [] : [[4, 5]]),
+      },
+    }],
+  }
+}
+
+export async function setupGuest(hook?: (method: string, params: Record<string, unknown>, sessionId?: string) => Promise<unknown>, options: PageDriverOptions = {}) {
   const events = new EventEmitter()
   const state = {
     nodes: [{ nodeId: 'button', backendDOMNodeId: 7, role: { value: 'button' }, name: { value: 'Save' } }] as Record<string, unknown>[],
     viewport: { width: 800, height: 600, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 },
     checked: false, text: 'Busy', value: '',
+    dom: {} as Parameters<typeof domSnapshot>[1],
   }
   const png = Buffer.alloc(24); png.writeUInt32BE(800, 16); png.writeUInt32BE(600, 20)
   const nativeImage = { toPNG: () => png, resize: vi.fn() }; nativeImage.resize.mockReturnValue(nativeImage)
   const contents = {
     id: 80, once: vi.fn(), isDestroyed: () => false, isLoading: () => false, getURL: () => 'https://example.test/', getTitle: () => 'Example', getZoomFactor: () => 1,
-    send: vi.fn(), capturePage: vi.fn(async () => nativeImage),
+    send: vi.fn(), sendInputEvent: vi.fn(), capturePage: vi.fn(async () => nativeImage), forcefullyCrashRenderer: vi.fn(), reload: vi.fn(),
     debugger: { isAttached: () => true, on: events.on.bind(events), removeListener: events.removeListener.bind(events),
       sendCommand: vi.fn(async (method: string, params: Record<string, unknown> = {}, sessionId?: string) => {
         const result = await hook?.(method, params, sessionId)
@@ -33,6 +56,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
           return { result: { value: state.text } }
         }
         if (method === 'Accessibility.getFullAXTree') return { nodes: state.nodes }
+        if (method === 'DOMSnapshot.captureSnapshot') return domSnapshot(state.nodes.map(node => Number(node.backendDOMNodeId)), state.dom)
         if (method === 'DOM.resolveNode') return { object: { objectId: String(params.backendNodeId) } }
         if (method === 'DOM.describeNode') return { node: { backendNodeId: /^\d+$/.test(String(params.objectId)) ? Number(params.objectId) : 7, attributes: [] } }
         if (method === 'DOM.getBoxModel') return { model: { content: [20, 20, 120, 20, 120, 60, 20, 60] } }
@@ -52,7 +76,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
       }),
     },
   }
-  const runtime = new PageDriverRegistry({ checkCell: testCells.assert })
+  const runtime = new PageDriverRegistry({ checkCell: testCells.assert, ...options })
   await runtime.attach(contents as never, identity)
   const execute = (method: string, args: Record<string, unknown> = {}) => runtime.execute(contents.id, identity, method, args)
   const observe = async (args: Record<string, unknown> = {}) => (await execute('getAXState', args)).result as BrowserObservation

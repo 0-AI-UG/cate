@@ -5,7 +5,7 @@
 // last selection named, the one `cate.browser.*` acts on.
 
 import type { BrowserDownloadState, BrowserViewport } from '@services/browser/contract'
-import type { AgentCursorKind } from './agentCursor'
+import type { AgentCursorKind } from '@services/browser/contract'
 
 export type { BrowserViewport }
 

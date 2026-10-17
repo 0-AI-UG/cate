@@ -102,8 +102,8 @@ test('lists a saved password and autofills username and password without exposin
     // popup against the independently measured field and webview rectangles.
     for (const zoom of [1, 0.75]) {
       await page.evaluate((zoom) => window.__cateE2E!.setZoom(zoom), zoom)
-      // Page zoom goes through the panel (the view positions the popup from it).
-      await page.evaluate((panelId) => window.__cateE2E!.sessionOp(panelId, { kind: 'setZoom', zoom: 1.2 }), browser.panelId)
+      // Page zoom is client state (the view positions the popup from it).
+      await page.evaluate((panelId) => window.__cateE2E!.setPanelView(panelId, 'zoom', 1.2), browser.panelId)
       await expect.poll(() => app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.getZoomFactor(), webContentsId)).toBeCloseTo(1.2)
       await expect(act(page, browser, 'click', 'Email', {}, 'textbox')).resolves.toMatchObject({ ok: true })
       await expect(act(page, browser, 'click', 'Password', {}, 'textbox')).resolves.toMatchObject({ ok: true })

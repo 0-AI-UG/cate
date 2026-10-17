@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { RpcError } from '@kernel/rpc/contract'
 import {
@@ -84,9 +85,9 @@ describe('parseCommandLine', () => {
   })
 
   it('resolves paths against the working directory and splits path:line:column', () => {
-    expect(call(['editor', 'open', 'src/app.tsx:42:7']).args).toEqual({ path: '/work/repo/src/app.tsx', line: 42, column: 7 })
-    expect(call(['editor', 'open', '/abs/file.ts']).args).toEqual({ path: '/abs/file.ts' })
-    expect(call(['panel', 'create', 'editor', '--file', 'a.md']).args).toEqual({ type: 'editor', filePath: '/work/repo/a.md' })
+    expect(call(['editor', 'open', 'src/app.tsx:42:7']).args).toEqual({ path: path.resolve('/work/repo/src/app.tsx'), line: 42, column: 7 })
+    expect(call(['editor', 'open', '/abs/file.ts']).args).toEqual({ path: path.resolve('/abs/file.ts') })
+    expect(call(['panel', 'create', 'editor', '--file', 'a.md']).args).toEqual({ type: 'editor', filePath: path.resolve('/work/repo/a.md') })
   })
 
   it('keeps quoted JavaScript as one argument', () => {

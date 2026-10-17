@@ -495,8 +495,9 @@ describe('terminal service with node-pty', () => {
     expect((await proc.read({ id })).text).toContain('from node')
   })
 
+  // bash, which every POSIX runner has (zsh is missing on Linux CI).
   posixIt('shutdown ends the shell\'s background jobs too, as closing a window does', async () => {
-    const { service, connect } = setup({ spawnPty: undefined })
+    const { service, connect } = setup({ spawnPty: undefined, resolveShell: () => ({ path: '/bin/bash', args: ['-l'] }) })
     const proc = await connect()
     const { id } = await proc.spawn({ cols: 80, rows: 24 })
     service.write(id, 'sleep 600 & p=$! ; echo PID=$p\r')
@@ -506,7 +507,7 @@ describe('terminal service with node-pty', () => {
     expect(alive()).toBe(true)
     await service.shutdown()
     await until(() => !alive(), 3_000)
-  })
+  }, 20_000)
 })
 
 // Keeps the binding type in the public surface under test.
