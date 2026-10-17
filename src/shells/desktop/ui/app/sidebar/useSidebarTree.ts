@@ -102,6 +102,7 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
     const type = documentStoreFor(workspaceId)?.getSnapshot().panels[source.panelId]?.type
     const canvases = takesCanvasDrop(source, type) ? { lifted: own ? panel : null } : undefined
     // A layout drag takes tab slots only; where its layout stands (or in another window) nothing is lifted ('' is no layout).
+    // A canvas-node drag has no row in the tree (it stands on a canvas), so treat it like a standing source (has: false).
     const standing: AxisSource = layout !== null ? { kind: 'layout', layoutId: '' } : { kind: 'none' }
     let removed = 0
     let size = childRect ? childRect.bottom - childRect.top : ROW_SIZE
@@ -188,13 +189,14 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
   return { containerRef, view }
 }
 
-/** The tree takes tab and layout drags only: a canvas node's or another window's drag passes it by. */
+/** The tree takes tab, layout, and canvas-node drags. */
 function takesDrag(source: DragSource): boolean {
-  return source.origin.kind === 'dock-tab' || source.origin.kind === 'layout'
+  return source.origin.kind === 'dock-tab' || source.origin.kind === 'layout' || source.origin.kind === 'canvas-node'
 }
 
 /** A dragged tab that can live on a canvas: every canvas of the tree shows its container and takes
- *  it among its panels. The tree's slots and the rows' containers both ask this. */
+ *  it among its panels. The tree's slots and the rows' containers both ask this.
+ *  Canvas-node sources never show containers; they're repositioning on the same canvas, not being added. */
 export function takesCanvasDrop(source: DragSource, type: string | undefined): boolean {
   return source.origin.kind === 'dock-tab' && type !== 'canvas' && canLiveOnCanvas(type)
 }

@@ -24,8 +24,11 @@ export interface DropZoneEntry {
   /** False rejects the dragged panel. */
   acceptsPanel?(panelType: string): boolean
   /** False when the stack draws no tab bar (a one-panel window pane): its
-   *  whole body splits by the nearest edge. */
+   *  top strip stacks a tab, the rest of its body splits by the nearest edge. */
   hasTabBar?(): boolean
+  /** True when the stack shows a canvas: its body is the canvas's drop
+   *  surface, so only the tab strip and the edge bands count. */
+  showsCanvas?(): boolean
   /** A window's tab strip (`dock` is unused). It keeps the state of a drag
    *  over it (which gap is open), so it picks the drop itself. */
   strip?: { resolve(cursorX: number, source: DragSource): StripTarget | null }
@@ -92,26 +95,28 @@ export function canvasSurfaceAt(element: Element | null): CanvasDropSurface | nu
 
 const TAB_BAR_DROP_HINT = 38
 
-/** Which part of a stack the cursor is over: its tab bar (`center`), an edge
- *  band, or its body (null). */
+/** Which part of a stack the cursor is over: its tab bar or, without one, its
+ *  top strip (`center`), an edge band, or its body (null). Without a tab bar
+ *  the body splits by the nearest edge unless `bodySplits` is false. */
 export function resolveDropEdge(
   cursorX: number,
   cursorY: number,
   rect: DOMRect,
   tabBar = true,
+  bodySplits = true,
 ): 'top' | 'bottom' | 'left' | 'right' | 'center' | null {
   const relX = cursorX - rect.left
   const relY = cursorY - rect.top
   const w = rect.width
   const h = rect.height
 
-  // No tab bar: every point of the pane splits it, by the nearest edge.
-  if (!tabBar) {
+  if (relY >= 0 && relY < TAB_BAR_DROP_HINT) return 'center'
+  // No tab bar: every other point of the pane splits it, by the nearest edge.
+  if (!tabBar && bodySplits) {
     const dx = relX / w - 0.5
     const dy = relY / h - 0.5
     return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'top' : 'bottom')
   }
-  if (relY >= 0 && relY < TAB_BAR_DROP_HINT) return 'center'
 
   const edgeFraction = 0.12
   const EDGE_MAX_PX = 60

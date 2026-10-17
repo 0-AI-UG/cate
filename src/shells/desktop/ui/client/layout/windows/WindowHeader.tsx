@@ -364,8 +364,8 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
       } as React.CSSProperties}
     >
       {items}
-      {model && (dragLayoutId || (dragSource?.origin.kind === 'dock-tab' && !dragPanelId)) && (
-        // A dragged layout, collapsed to its name, or a panel the strip has no chip of (another window's),
+      {model && (dragLayoutId || (dragSource?.origin.kind === 'dock-tab' && !dragPanelId) || dragSource?.origin.kind === 'canvas-node') && (
+        // A dragged layout, collapsed to its name, or a panel the strip has no chip of (another window's or a canvas node),
         // following the cursor along the strip.
         <div
           aria-hidden

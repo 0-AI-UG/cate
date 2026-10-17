@@ -2,7 +2,7 @@
 // lookups come in through a DropEnvironment so tests can pass a fake.
 
 import { snapToGrid, CANVAS_GRID_SIZE, type Point, type Size } from '@workspace/canvas/contract'
-import { isNodeHost } from '@workspace/document/contract'
+import { isNodeHost, type HostRef, type LayoutId } from '@workspace/document/contract'
 import { canLiveOnCanvas } from '@client/host'
 import { canvasSurfaceAt, getDropZoneEntries, resolveDropEdge, type DropZoneEntry } from './registry'
 import { cursorToCanvasOrigin, snappedGhostScreenRect } from './geometry'
@@ -21,6 +21,8 @@ export interface DropEnvironment {
   readonly dropZones: readonly DropZoneEntry[]
   /** A drop outside the window may detach into a new window. */
   canDetach(): boolean
+  /** Whether the layout holds a canvas panel (it never goes onto a canvas). */
+  layoutHoldsCanvas?(workspaceId: string, host: HostRef, layoutId: LayoutId): boolean
 }
 
 interface ResolveOptions {
@@ -59,8 +61,13 @@ export function resolveDrop(
     const target = resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
     return target?.kind === 'canvas-reposition' ? target : null
   }
-  // A layout only moves along a tab strip: no dock, canvas or other window.
-  if (source.origin.kind === 'layout') return cursor.insideWindow ? resolveDockHit(cursor.client, source, panelType, env) : null
+  // A layout moves along a tab strip or onto a canvas, never into a dock or
+  // another window.
+  if (source.origin.kind === 'layout') {
+    if (!cursor.insideWindow) return null
+    return resolveDockHit(cursor.client, source, panelType, env)
+      ?? resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
+  }
   if (!cursor.insideWindow) return env.canDetach() ? { kind: 'detach', screen: cursor.screen } : null
   return resolveDockHit(cursor.client, source, panelType, env)
     ?? resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
@@ -110,13 +117,14 @@ function resolveDockHit(client: Point, source: DragSource, panelType: string, en
   }
 
   if (entry.stackId) {
-    const edge = resolveDropEdge(client.x, client.y, rect, entry.hasTabBar?.() ?? true)
+    const tabBar = entry.hasTabBar?.() ?? true
+    const edge = resolveDropEdge(client.x, client.y, rect, tabBar, !entry.showsCanvas?.())
     if (edge === null) return null
     const selfStack = source.origin.kind === 'dock-tab' && source.origin.stackId === entry.stackId
     // A lone tab cannot split against its own stack (the other half would be
     // empty). Dropping it back on its own tab bar still previews and commits
-    // as a no-op.
-    if (selfStack && (entry.tabCount?.() ?? 1) <= 1 && edge !== 'center') return null
+    // as a no-op; a pane without a tab bar has nothing to preview.
+    if (selfStack && (entry.tabCount?.() ?? 1) <= 1 && (edge !== 'center' || !tabBar)) return null
     if (edge === 'center') return { kind: 'dock-tab', workspaceId, dock: entry.dock, stackId: entry.stackId }
     return { kind: 'dock-split', workspaceId, dock: entry.dock, stackId: entry.stackId, edge }
   }
@@ -147,12 +155,14 @@ function resolveCanvasHit(
   // Anything else becomes a new node, including a tab dragged out of a node
   // of this canvas. A canvas panel cannot sit on a canvas.
   if (!canLiveOnCanvas(panelType)) return null
+  if (source.origin.kind === 'layout' && env.layoutHoldsCanvas?.(source.workspaceId, source.origin.host, source.origin.layoutId)) return null
   return { kind: 'canvas-add', workspaceId, canvasId, origin, size: ghostSize, zoom, ghostRect }
 }
 
 /** The environment of the real DOM and registries. */
-export function domDropEnvironment(canDetach: () => boolean): DropEnvironment {
+export function domDropEnvironment(canDetach: () => boolean, layoutHoldsCanvas?: DropEnvironment['layoutHoldsCanvas']): DropEnvironment {
   return {
+    layoutHoldsCanvas,
     canvasAtCursor: defaultCanvasAtCursor,
     get dropZones() { return getDropZoneEntries() },
     canDetach,

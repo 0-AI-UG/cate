@@ -158,7 +158,7 @@ describe('the tree as a drop zone', () => {
     expect(commit(d, home!)).toBeNull()
   })
 
-  it('takes only tab and layout drags: a canvas node or another window\'s drag resolves nothing', () => {
+  it('canvas-node drags are accepted and produce tree targets; remote drags resolve nothing', () => {
     addCanvas('t', 'u')
     mountTree()
     const node: DragSource = { workspaceId: 'w', panelId: 't', origin: { kind: 'canvas-node', canvasId: 'cvs', nodeId: 'n0' } }
@@ -167,13 +167,21 @@ describe('the tree as a drop zone', () => {
       panelId: 'd',
       origin: { kind: 'remote', drag: { dragId: 'x', workspaceId: 'w', panelId: 'd', panelType: 'terminal', title: 'd', size: { width: 480, height: 320 }, grab: { x: 0, y: 0 } } },
     }
+    // Canvas-node sources resolve to tree targets (stack-slot, tab-slot, or group-slot)
+    // All should be valid tree targets with a workspaceId
     for (const y of [10, 80, 112, 140]) {
-      expect(drop(node, y)).toBeNull()
+      const target = drop(node, y)!
+      expect(target).toBeDefined()
+      expect(['stack-slot', 'tab-slot', 'group-slot', 'group-home']).toContain(target.kind)
+      expect(target).toHaveProperty('workspaceId', 'w')
+    }
+    // Remote drags still resolve nothing
+    for (const y of [10, 80, 112, 140]) {
       expect(drop(remote, y)).toBeNull()
     }
   })
 
-  it('a dock tab over a canvas\'s children takes the canvas slot and draws its container; a canvas node draws none', () => {
+  it('a dock tab over a canvas\'s children takes the canvas slot and draws its container; a canvas node drops into tree slots (no container shown)', () => {
     addCanvas('t')
     mountTree()
     const container = () => host.querySelector('[data-canvas-container="cv"]')
@@ -183,8 +191,11 @@ describe('the tree as a drop zone', () => {
     act(() => useDragStore.setState({ isDragging: true, source: d, target, cursor: cursorAt(112) }))
     expect(container()).not.toBeNull()
     expect(host.querySelector('[data-canvas-end]')).not.toBeNull()
+    // A canvas-node resolves to tree targets, not canvas-slot, so no container is shown.
     const node: DragSource = { workspaceId: 'w', panelId: 't', origin: { kind: 'canvas-node', canvasId: 'cvs', nodeId: 'n0' } }
-    act(() => useDragStore.setState({ source: node, target: null }))
+    const nodeTarget = drop(node, 112)!
+    expect(nodeTarget).toMatchObject({ kind: expect.stringMatching(/tab-slot|group-slot/), via: 'tree' })
+    act(() => useDragStore.setState({ source: node, target: nodeTarget }))
     expect(container()).toBeNull()
   })
 

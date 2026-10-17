@@ -7,6 +7,7 @@ import {
   dockPanels,
   dockStacks,
   findStack,
+  layoutById,
   layoutsIn,
   placementOf,
   sameDockRef,
@@ -53,6 +54,10 @@ export function dropChanges(
 
     case 'canvas-add': {
       if (!canLiveOnCanvas(panel.type) || !doc.canvases[target.canvasId]) return null
+      // A layout moves whole, keeping its panels and its name.
+      if (source.origin.kind === 'layout') {
+        return [{ kind: 'moveLayout', layoutId: source.origin.layoutId, to: { to: 'canvas', canvasId: target.canvasId, nodeId: ctx.newId(), rect: { origin: target.origin, size: target.size } } }]
+      }
       return [{
         kind: 'placePanel',
         id: panel.id,
@@ -97,23 +102,19 @@ export function dropChanges(
     case 'tab-slot': {
       const layouts = layoutsIn(doc, target.host)
       if (!layouts) return null
-      // Slots count the layouts as they stand; the dragged one leaves its
-      // place first, which shifts every slot after it.
-      if (source.origin.kind === 'layout') {
-        const from = layouts.findIndex((l) => l.id === (source.origin as { layoutId: string }).layoutId)
-        if (from < 0) return null
-        const index = target.index > from ? target.index - 1 : target.index
-        return index === from ? null : [{ kind: 'moveLayout', layoutId: layouts[from].id, to: { to: 'host', host: target.host, index } }]
+      // A layout (dragged whole, or a tab on its own) moves keeping its id and
+      // name, within this host or from another window. A canvas-node's layout also
+      // moves whole if it holds only one panel.
+      const layoutId = source.origin.kind === 'layout' ? source.origin.layoutId : placementOf(doc, panel.id)?.dock.layoutId
+      const moved = layoutId ? layoutById(doc, layoutId) : undefined
+      if (layoutId && moved && (source.origin.kind === 'layout' || dockPanels(moved.dock).length === 1)) {
+        const from = layouts.findIndex((l) => l.id === layoutId)
+        // Slots count the layouts as they stand; the dragged one leaves its
+        // place first, which shifts every slot after it.
+        const index = from >= 0 && target.index > from ? target.index - 1 : target.index
+        return index === from ? null : [{ kind: 'moveLayout', layoutId, to: { to: 'host', host: target.host, index } }]
       }
-      const current = placementOf(doc, panel.id)
-      const from = current ? layouts.findIndex((l) => l.id === current.dock.layoutId) : -1
-      let index = target.index
-      // A tab on its own is a layout: it moves as one, keeping its id.
-      if (from >= 0 && dockPanels(layouts[from].dock).length === 1) {
-        if (index > from) index--
-        return index === from ? null : [{ kind: 'moveLayout', layoutId: layouts[from].id, to: { to: 'host', host: target.host, index } }]
-      }
-      return [{ kind: 'placePanel', id: panel.id, at: { to: 'tab', host: target.host, layoutId: ctx.newId(), stackId: ctx.newId(), index } }]
+      return [{ kind: 'placePanel', id: panel.id, at: { to: 'tab', host: target.host, layoutId: ctx.newId(), stackId: ctx.newId(), index: target.index } }]
     }
 
     case 'group-home':

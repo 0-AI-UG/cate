@@ -5,7 +5,7 @@
 import type React from 'react'
 import { useCallback } from 'react'
 import { viewToCanvas, type Point, type Size } from '@workspace/canvas/contract'
-import { isNodeHost, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
+import { dockPanels, isNodeHost, layoutsIn, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { newId, panelDefaultSize, panelDropSize, showLayoutsOf } from '@client/host'
 import { windowsPort } from '../windows/ports'
@@ -51,7 +51,11 @@ export function canDetach(): boolean {
 }
 
 function dropEnvironment(): DropEnvironment {
-  return domDropEnvironment(canDetach)
+  return domDropEnvironment(canDetach, (workspaceId, host, layoutId) => {
+    const doc = documentOf(workspaceId)
+    const layout = doc && layoutsIn(doc, host)?.find((l) => l.id === layoutId)
+    return !!doc && !!layout && dockPanels(layout.dock).some((id) => doc.panels[id]?.canvasId !== undefined)
+  })
 }
 
 /** Tests only. */

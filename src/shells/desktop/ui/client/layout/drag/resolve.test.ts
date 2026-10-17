@@ -121,6 +121,32 @@ describe('resolveDrop', () => {
   })
 })
 
+describe('resolveDrop on a one-panel pane', () => {
+  const lone = (extra: Partial<DropZoneEntry> = {}) => stackEntry('s1', rect(0, 0, 400, 400), { tabCount: () => 1, hasTabBar: () => false, ...extra })
+
+  it('the top strip stacks a tab, the body still splits by the nearest edge', () => {
+    const e = env([lone()])
+    expect(resolveDrop(cursor(200, 10), tabSource(), grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'dock-tab', stackId: 's1' })
+    expect(resolveDrop(cursor(390, 200), tabSource(), grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'dock-split', edge: 'right' })
+  })
+
+  it('a pane showing a canvas hands its body to the canvas', () => {
+    const e = env([lone({ showsCanvas: () => true })], canvasHit)
+    expect(resolveDrop(cursor(200, 200), tabSource(), grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'canvas-add' })
+    expect(resolveDrop(cursor(395, 200), tabSource(), grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'dock-split', edge: 'right' })
+  })
+})
+
+describe('a dragged layout on a canvas', () => {
+  const layout: DragSource = { workspaceId: 'ws', panelId: 'p', origin: { kind: 'layout', host: { windowId: 'main' }, layoutId: 't' } }
+
+  it('adds a node, unless the layout holds a canvas', () => {
+    const e = env([], canvasHit)
+    expect(resolveDrop(cursor(200, 150), layout, grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'canvas-add' })
+    expect(resolveDrop(cursor(200, 150), layout, grab, size, 'terminal', { env: { ...e, layoutHoldsCanvas: () => true } })).toBeNull()
+  })
+})
+
 describe('resolveDrop on a tab strip', () => {
   const host = { windowId: 'main' }
   // The strip picks its own drop (its model keeps the drag's state): here a fake.
@@ -166,11 +192,10 @@ describe('resolveDrop on a tree zone', () => {
     expect(at(50, 100, layout, [tree])).toEqual({ kind: 'tab-slot', workspaceId: 'ws', host, index: 2, via: 'tree' })
   })
 
-  it('a layout source is refused by a stack zone, canvas and split edge', () => {
+  it('a layout source is refused by a stack zone and split edge', () => {
     const edge: DropZoneEntry = { id: 'edge', workspaceId: 'ws', dock: main, host, edge: 'left', getRect: () => rect(0, 0, 60, 600) }
     expect(at(200, 150, layout, [stackEntry('s1', rect(0, 100, 400, 400))])).toBeNull()
     expect(at(20, 150, layout, [edge])).toBeNull()
-    expect(resolveDrop(cursor(200, 10), layout, grab, size, 'terminal', { env: env([], canvasHit) })).toBeNull()
   })
 
   it('a panel source over a tree zone resolves through tree.resolve and adds workspaceId', () => {
@@ -182,5 +207,11 @@ describe('resolveDrop on a tree zone', () => {
   it('the tree zone ranks with strips and stacks (before whole docks, even a tighter one)', () => {
     const dock: DropZoneEntry = { id: 'dock', workspaceId: 'ws', dock: main, host, getRect: () => rect(0, 0, 100, 200) }
     expect(at(50, 100, tabSource(), [dock, tree])).toMatchObject({ kind: 'tab-slot', via: 'tree' })
+  })
+
+  it('a canvas-node source is accepted by a tree zone', () => {
+    const node: DragSource = { workspaceId: 'ws', panelId: 'p', origin: { kind: 'canvas-node', canvasId: 'C', nodeId: 'N1' } }
+    expect(at(50, 150, node, [tree])).toEqual({ kind: 'tab-slot', workspaceId: 'ws', host, index: 2, via: 'tree' })
+    expect(seen.at(-1)).toEqual({ y: 150, from: undefined })
   })
 })

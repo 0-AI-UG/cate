@@ -236,8 +236,10 @@ describe('dock tab drags', () => {
     scene.mouse.dragBy({ x: 20, y: 5 })
     scene.mouse.moveTo({ x: 780, y: 300 })
     expect(scene.drag().target).toMatchObject({ kind: 'dock-split', stackId: 's2', edge: 'right' })
-    scene.mouse.moveTo({ x: 600, y: 20 })
+    scene.mouse.moveTo({ x: 600, y: 60 })
     expect(scene.drag().target).toMatchObject({ kind: 'dock-split', stackId: 's2', edge: 'top' })
+    scene.mouse.moveTo({ x: 600, y: 20 })
+    expect(scene.drag().target).toMatchObject({ kind: 'dock-tab', stackId: 's2' })
   })
 
   it('a tab dropped on another stack becomes a tab there', () => {

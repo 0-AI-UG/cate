@@ -92,6 +92,8 @@ export function DockTabStack({
   // A one-panel window pane has no tab bar (its chip floats), so a drag splits it anywhere.
   const hasTabBarRef = useRef(true)
   hasTabBarRef.current = onCanvas || stack.panels.length > 1
+  const showsCanvasRef = useRef(false)
+  showsCanvasRef.current = activeRecord?.canvasId !== undefined
   useEffect(() => registerDropZone({
     id: `stack-${workspaceId}-${stack.id}`,
     workspaceId,
@@ -102,6 +104,7 @@ export function DockTabStack({
     getElement: () => stackRef.current,
     tabCount: () => tabCountRef.current,
     hasTabBar: () => hasTabBarRef.current,
+    showsCanvas: () => showsCanvasRef.current,
   }), [workspaceId, dock, host, stack.id])
 
   // --- Split room ----------------------------------------------------------------------
@@ -147,12 +150,17 @@ export function DockTabStack({
   const isDragging = useDragStore((s) => s.isDragging)
   const target = useDragStore((s) => s.target)
   const dragSource = useDragStore((s) => s.source)
+  const dragPanel = useDragStore((s) => s.panel)
   const showTabPlaceholder = isDragging && target?.kind === 'dock-tab' && target.workspaceId === workspaceId && target.stackId === stack.id
   const selfTabDrag = useMemo(() => {
     if (!showTabPlaceholder || !dragSource || dragSource.origin.kind !== 'dock-tab' || dragSource.origin.stackId !== stack.id) return null
     const index = stack.panels.indexOf(dragSource.panelId)
     return index < 0 ? null : { draggedPanelId: dragSource.panelId, originalIndex: index }
   }, [showTabPlaceholder, dragSource, stack.id, stack.panels])
+  // For non-self sources (another stack's tab, canvas node, etc), show insertion chip with panel title
+  const otherSourceTitle = showTabPlaceholder && dragSource && dragSource.origin.kind !== 'dock-tab' ? dragPanel?.title : (
+    showTabPlaceholder && dragSource && dragSource.origin.kind === 'dock-tab' && dragSource.origin.stackId !== stack.id ? dragPanel?.title : null
+  )
 
   // A floating tab bar (a canvas) lets the view show behind it.
   const floating = !compact && !!activeRecord && !!panelDefinition(activeRecord.type)?.chrome?.floatingTabBar
@@ -273,6 +281,7 @@ export function DockTabStack({
           onEmptyContextMenu={onEmptyContextMenu}
           showTabPlaceholder={showTabPlaceholder}
           selfTabDrag={selfTabDrag}
+          otherSourceTitle={otherSourceTitle}
           onTabBarMouseDown={onTabBarMouseDown}
           newTabControl={newTabControl ?? <NewTabButton canvasAttached={onCanvas} compact={compact} items={menuItems} onPick={actions.addTabOfType} />}
         />

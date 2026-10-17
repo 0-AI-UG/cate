@@ -91,6 +91,8 @@ export interface DockTabBarProps {
   /** The dragged tab comes from this stack: hide it and put the placeholder
    *  at its old place. */
   selfTabDrag?: { draggedPanelId: string; originalIndex: number } | null
+  /** Title of the dragged panel for non-self sources (e.g., canvas-node, external dock-tab). */
+  otherSourceTitle?: string | null
   newTabControl?: React.ReactNode
   /** Set by a host that drags the whole node from the tab bar. */
   onTabBarMouseDown?: (e: React.MouseEvent, panelId?: string) => void
@@ -138,7 +140,7 @@ export function DockTabBar(props: DockTabBarProps) {
     renameId, renameValue, renameInputRef, setRenameValue, setRenameId, commitRename,
     springLoadTimer, setActiveTab,
     onEmptyMouseDown, onEmptyContextMenu,
-    showTabPlaceholder, selfTabDrag, onTabBarMouseDown, newTabControl,
+    showTabPlaceholder, selfTabDrag, otherSourceTitle, onTabBarMouseDown, newTabControl,
   } = props
 
   const selector = React.useMemo(() => selectTabRecords(stack), [stack])
@@ -151,7 +153,7 @@ export function DockTabBar(props: DockTabBarProps) {
   const remaining = selfTabDrag ? stack.panels.filter((id) => id !== selfTabDrag.draggedPanelId) : stack.panels
   const placeholderAt = selfTabDrag ? Math.min(Math.max(selfTabDrag.originalIndex, 1), remaining.length) : remaining.length
 
-  const placeholder = showTabPlaceholder ? <DropGhostChip key="__tab-placeholder__" compact={compact}>+ new tab</DropGhostChip> : null
+  const placeholder = showTabPlaceholder ? <DropGhostChip key="__tab-placeholder__" compact={compact}>{otherSourceTitle || '+ new tab'}</DropGhostChip> : null
 
   return (
     <div

@@ -215,6 +215,39 @@ describe('tab strip drops', () => {
   })
 })
 
+describe('layout drops across hosts', () => {
+  const main = { windowId: 'main' }
+  const doc = (): WorkspaceDocument => buildDocument([
+    add('cv', { to: 'stack', dock: { layoutId: 'main' }, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+    add('x', { to: 'tab', host: main, layoutId: 'T1', layoutName: 'Notes', stackId: 'sx' }),
+    add('y', { to: 'window', windowId: 'W2', layoutId: 'T2', layoutName: 'Other', stackId: 'sy' }),
+  ])
+  const layoutSource = (layoutId: string, panelId: string, host: { windowId: string }): DragSource => ({ workspaceId: 'ws', panelId, origin: { kind: 'layout', host, layoutId } })
+  const slot: DropTarget = { kind: 'tab-slot', workspaceId: 'ws', host: { windowId: 'W2' }, index: 0 }
+
+  it('a layout dropped on another window strip moves there', () => {
+    const d = doc()
+    const next = run(d, dropChanges(d, layoutSource('T1', 'x', main), slot, panel(d, 'x'), ctx))
+    expect(next.windows.W2.layouts.map((l) => l.id)).toEqual(['T1', 'T2'])
+  })
+
+  it('a lone tab moved to another window keeps its layout name', () => {
+    const d = doc()
+    const placement = placementOf(d, 'x')!
+    const source: DragSource = { workspaceId: 'ws', panelId: 'x', origin: { kind: 'dock-tab', dock: placement.dock, host: main, stackId: placement.stackId } }
+    const next = run(d, dropChanges(d, source, slot, panel(d, 'x'), ctx))
+    expect(next.windows.W2.layouts[0]).toMatchObject({ id: 'T1', name: 'Notes' })
+  })
+
+  it('a layout dropped on a canvas becomes a node', () => {
+    const d = doc()
+    const target: DropTarget = { kind: 'canvas-add', workspaceId: 'ws', canvasId: 'C', origin: { x: 5, y: 6 }, size: { width: 300, height: 200 }, zoom: 1 }
+    const next = run(d, dropChanges(d, layoutSource('T1', 'x', main), target, panel(d, 'x'), ctx))
+    expect(canvasOf(next, 'x')).toBe('C')
+    expect(next.windows.main.layouts.map((l) => l.id)).not.toContain('T1')
+  })
+})
+
 describe('slot drops (the tree)', () => {
   const stackSlot = (stackId: string | null, after: string | null, layoutId = 'main'): DropTarget => ({ kind: 'stack-slot', workspaceId: 'ws', layoutId, stackId, after })
   const canvasSlot = (canvasPanelId: string): DropTarget => ({ kind: 'canvas-slot', workspaceId: 'ws', canvasPanelId, after: null, order: [] })
@@ -254,5 +287,37 @@ describe('slot drops (the tree)', () => {
   it('canvas-slot for a canvas panel returns null (a canvas never nests)', () => {
     const doc = fixture()
     expect(dropChanges(doc, tab('s1', 'cv'), canvasSlot('cv'), panel(doc, 'cv'), ctx)).toBeNull()
+  })
+})
+
+describe('canvas-node drops on tree slots', () => {
+  const stackSlot = (stackId: string | null, after: string | null, layoutId = 'main'): DropTarget => ({ kind: 'stack-slot', workspaceId: 'ws', layoutId, stackId, after })
+
+  it('a canvas node dropped on a stack-slot moves to that stack and removes the emptied node', () => {
+    const doc = fixture()
+    const next = run(doc, dropChanges(doc, nodeSource('N1', 'a'), stackSlot('s2', null, 'main'), panel(doc, 'a'), ctx))
+    expect(next.canvases.C.nodes.N1).toBeUndefined()
+    expect(placementOf(next, 'a')?.stackId).toBe('s2')
+    expect(dockPanels(dockOf(next, main))).toContain('a')
+  })
+
+  it('a canvas node with a lone panel dropped on a tab-slot moves its layout there', () => {
+    const doc = fixture()
+    const host = { windowId: 'main' }
+    const next = run(doc, dropChanges(doc, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 2 }, panel(doc, 'a'), ctx))
+    expect(next.canvases.C.nodes.N1).toBeUndefined()
+    expect(next.windows.main.layouts.map((l) => l.id)).toContain('L-N1')
+  })
+
+  it('a canvas node with multiple panels dropped on a tab-slot creates a new tab', () => {
+    const doc = fixture()
+    const host = { windowId: 'main' }
+    // Add another panel to the node's layout so it's not a lone panel
+    const docWithExtra = run(doc, [{ kind: 'placePanel', id: 'p1', at: { to: 'stack', dock: { layoutId: 'L-N1' }, stackId: 'ns1' } }])
+    const next = run(docWithExtra, dropChanges(docWithExtra, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 2 }, panel(docWithExtra, 'a'), ctx))
+    // The node layout should still exist
+    expect(next.canvases.C.nodes.N1).toBeDefined()
+    // 'a' should be in the new tab
+    expect(placementOf(next, 'a')?.dock.layoutId).not.toBe('L-N1')
   })
 })
