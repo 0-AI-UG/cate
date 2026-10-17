@@ -7,7 +7,8 @@ import { sameDockRef } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
 import { useDragStore } from './store'
 import type { DragSource, DropTarget } from './types'
-import { canvasSurfaceAt, getDropZoneEntries } from './registry'
+import { canvasSurfaceAt, getDropZoneEntries, ownsFeedback } from './registry'
+import { focusBlue } from './ghostLook'
 import { ghostScreenRect } from './geometry'
 
 export function DragOverlay() {
@@ -64,7 +65,7 @@ export function DragOverlay() {
 
   return createPortal(
     <div data-drag-overlay="true" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10000 }}>
-      {target?.kind === 'tab-slot' || target?.kind === 'group-slot' || target?.kind === 'group-home' || target?.kind === 'stack-slot' || target?.kind === 'canvas-slot' ? null : (
+      {ownsFeedback(target) ? null : (
         // Over a tab strip or the sidebar's tree the zone draws its own feedback (WindowHeader, WorkspaceRow).
         <GhostWindow
           left={rect.left}
@@ -140,8 +141,8 @@ function GhostWindow({
         width,
         height,
         borderRadius: 8,
-        border: '1.5px solid rgba(74, 158, 255, 0.7)',
-        background: 'rgba(74, 158, 255, 0.08)',
+        border: `1.5px solid ${focusBlue(70)}`,
+        background: focusBlue(8),
         boxShadow: '0 8px 24px var(--shadow-node)',
         pointerEvents: 'none',
         display: 'flex',
@@ -172,7 +173,7 @@ function GhostWindow({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'rgba(74, 158, 255, 0.85)',
+          color: focusBlue(85),
           fontSize: 11,
           fontWeight: 500,
           userSelect: 'none',
@@ -224,8 +225,8 @@ function DropIndicator({ target }: { target: DropTarget | null }) {
           top: r.top,
           width: r.width,
           height: r.height,
-          backgroundColor: 'rgba(74, 158, 255, 0.08)',
-          border: '2px dashed rgba(74, 158, 255, 0.4)',
+          backgroundColor: focusBlue(8),
+          border: `2px dashed ${focusBlue(40)}`,
           borderRadius: 6,
           pointerEvents: 'none',
         }}
@@ -262,8 +263,8 @@ function DropIndicator({ target }: { target: DropTarget | null }) {
         top: r.top,
         width: r.width,
         height: r.height,
-        backgroundColor: 'rgba(74, 158, 255, 0.12)',
-        border: '2px solid rgba(74, 158, 255, 0.5)',
+        backgroundColor: focusBlue(12),
+        border: `2px solid ${focusBlue(50)}`,
         borderRadius: 6,
         pointerEvents: 'none',
       }}

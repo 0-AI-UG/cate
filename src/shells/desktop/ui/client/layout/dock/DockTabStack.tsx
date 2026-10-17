@@ -157,10 +157,8 @@ export function DockTabStack({
     const index = stack.panels.indexOf(dragSource.panelId)
     return index < 0 ? null : { draggedPanelId: dragSource.panelId, originalIndex: index }
   }, [showTabPlaceholder, dragSource, stack.id, stack.panels])
-  // For non-self sources (another stack's tab, canvas node, etc), show insertion chip with panel title
-  const otherSourceTitle = showTabPlaceholder && dragSource && dragSource.origin.kind !== 'dock-tab' ? dragPanel?.title : (
-    showTabPlaceholder && dragSource && dragSource.origin.kind === 'dock-tab' && dragSource.origin.stackId !== stack.id ? dragPanel?.title : null
-  )
+  // Another source's insertion chip carries its title (a layout's name for a layout).
+  const otherSourceTitle = !selfTabDrag && showTabPlaceholder ? dragPanel?.title : null
 
   // A floating tab bar (a canvas) lets the view show behind it.
   const floating = !compact && !!activeRecord && !!panelDefinition(activeRecord.type)?.chrome?.floatingTabBar

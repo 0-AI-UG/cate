@@ -48,6 +48,10 @@ export type TreeTarget = DistributiveOmit<
   Extract<DropTarget, { kind: 'tab-slot' | 'group-slot' | 'group-home' | 'stack-slot' | 'canvas-slot' }>,
   'workspaceId'
 >
+
+/** Targets whose zone (a tab strip, the sidebar's tree) draws its own feedback: the overlay draws no ghost. */
+export const ownsFeedback = (target: DropTarget | null): boolean =>
+  target?.kind === 'tab-slot' || target?.kind === 'group-slot' || target?.kind === 'group-home' || target?.kind === 'stack-slot' || target?.kind === 'canvas-slot'
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never
 
 /** A canvas the canvas view draws, as the drag system sees it. */

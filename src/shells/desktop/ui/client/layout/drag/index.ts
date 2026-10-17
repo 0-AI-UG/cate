@@ -5,7 +5,7 @@
 
 export { useDragStore, type PendingDetach } from './store'
 export { useDragSettled } from './settled'
-export { useDragOp, beginDrag, commitDrop, proposeDrop, canDetach, resetDragDispatch } from './useDragOp'
+export { useDragOp, beginDrag, groupLayoutOf, commitDrop, proposeDrop, canDetach, resetDragDispatch } from './useDragOp'
 export { useDragSourceVisibility, useTabSourceVisibility, selectDragSourceRole, selectDragSourceRoleForTab, type DragSourceRole } from './selectors'
 export { DragOverlay, memberGhostRects } from './Overlay'
 export { EdgeDropIndicator } from './EdgeIndicator'

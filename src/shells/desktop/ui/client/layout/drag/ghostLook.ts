@@ -5,9 +5,12 @@
 
 import type { CSSProperties } from 'react'
 
+/** The accent at `pct` percent. */
+export const focusBlue = (pct: number): string => `color-mix(in srgb, var(--focus-blue, #3b82f6) ${pct}%, transparent)`
+
 export const GHOST_LOOK: CSSProperties = {
   color: 'var(--focus-blue, #3b82f6)',
-  backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
-  outline: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
+  backgroundColor: focusBlue(18),
+  outline: `1px dashed ${focusBlue(70)}`,
   outlineOffset: -1,
 }

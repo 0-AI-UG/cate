@@ -89,9 +89,6 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   const dragPanelId = dragSource?.origin.kind === 'dock-tab' && window.layouts.some((l) => dockPanels(l.dock).includes(dragSource.panelId)) ? dragSource.panelId : null
   const dragLayoutId = dragSource?.origin.kind === 'layout' ? dragSource.origin.layoutId : null
   const liftedLayoutId = dragLayoutId && window.layouts.some((l) => l.id === dragLayoutId) ? dragLayoutId : null
-  // A dragged layout shows its own name, not its first panel's title.
-  const dragLayoutIndex = window.layouts.findIndex((l) => l.id === dragLayoutId)
-  const dragLabel = dragLayoutIndex >= 0 ? window.layouts[dragLayoutIndex].name : dragTitle
   // The cursor is over this strip: the dragged chip floats along it and the strip makes a gap.
   const stripTarget = dragTarget ? stripTargetOf(dragTarget) : null
   // A tree's target (`via: 'tree'`) is not the strip's, though it is a tab slot of this window.
@@ -364,15 +361,15 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
       } as React.CSSProperties}
     >
       {items}
-      {model && (dragLayoutId || (dragSource?.origin.kind === 'dock-tab' && !dragPanelId) || dragSource?.origin.kind === 'canvas-node') && (
-        // A dragged layout, collapsed to its name, or a panel the strip has no chip of (another window's or a canvas node),
-        // following the cursor along the strip.
+      {model && !dragPanelId && (
+        // Whatever the strip has no chip of (a layout, collapsed to its name, or a panel of another window,
+        // a canvas node or a remote drag), following the cursor along the strip.
         <div
           aria-hidden
           data-strip-float
           style={{ position: 'fixed', left: 0, top: model.top, width: model.width, transform: `translateX(${model.ghostLeft(dragCursorX)}px)`, transition: 'transform 70ms ease-out', pointerEvents: 'none', zIndex: 9999 }}
         >
-          <DropGhostChip data-strip-ghost="float" style={{ width: '100%', minWidth: 0 }}>{dragLabel}</DropGhostChip>
+          <DropGhostChip data-strip-ghost="float" style={{ width: '100%', minWidth: 0 }}>{dragTitle}</DropGhostChip>
         </div>
       )}
       {/* While a chip of this strip is dragged, the + steps aside to just past the room the right wall gives. */}

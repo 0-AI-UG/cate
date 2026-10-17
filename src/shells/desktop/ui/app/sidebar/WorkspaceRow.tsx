@@ -11,7 +11,7 @@ import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
 import { useClientState, useDocument } from '../../client/document'
 import { activeLayoutOf, activeTabOf, focusedLeafPanelId, panelRowLabel, switchLayout } from '@client/host'
 import type { WorkspaceEntry } from '@client/workspaces'
-import { dockPanels, hostOf, layoutById, placementOf, type PanelRecord } from '@workspace/document/contract'
+import { hostOf, placementOf, type PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
 import { useWorktreeColor, worktreeTitleStyle } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
@@ -28,7 +28,7 @@ import { PresenceAvatars } from './PresenceAvatars'
 import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
 import { itemKey, layoutKey, layoutRows } from './sidebarDrag'
-import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
+import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, groupLayoutOf, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
 import { closeLayout, showLayoutMenu, showPanelMenu, useLayoutRename } from '../../client/layout/windows'
 import { DragFloat, type RowLook } from './GhostBlock'
 import { takesCanvasDrop, useSidebarTree, type Float } from './useSidebarTree'
@@ -100,6 +100,7 @@ export function WorkspaceRow({
   const { wasDragged } = useDragOp()
   // The drag of a panel or layout of this workspace, wherever it began (one object per drag).
   const dragSource = useDragStore((s) => (s.isDragging && s.source?.workspaceId === workspaceId ? s.source : null))
+  const dragTitle = useDragStore((s) => s.panel?.title ?? '')
   const statuses = useTerminalStatuses(isOpen ? workspaceId : null)
   const ports = panelsWithPorts(statuses)
   const agents = useAgentInfoByPanel(isOpen ? workspaceId : null)
@@ -239,16 +240,10 @@ export function WorkspaceRow({
    *  layout is named as its window's strip names it (it may be another window's than the tree's). */
   const foreignLook = ((): RowLook | null => {
     if (liftedPanel || liftedLayout || !dragSource) return null
+    // A layout, or a node of several panels (which leaves as its layout), carries the layout's name.
     const origin = dragSource.origin
-    if (origin.kind === 'layout') {
-      const layout = Object.values(doc.windows).flatMap((w) => w.layouts).find((l) => l.id === origin.layoutId)
-      return layout ? layoutLook(layout.name) : null
-    }
-    // A node of several panels leaves as its layout, named like the layout.
-    if (origin.kind === 'canvas-node' && !origin.members?.length) {
-      const layout = layoutById(doc, placementOf(doc, dragSource.panelId)?.dock.layoutId ?? '')
-      if (layout && dockPanels(layout.dock).length > 1) return layoutLook(layout.name)
-    }
+    const moved = origin.kind === 'canvas-node' && origin.members?.length
+    if (!moved && groupLayoutOf(doc, origin.kind, dragSource.panelId, origin.kind === 'layout' ? origin.layoutId : undefined)) return layoutLook(dragTitle)
     const record = doc.panels[dragSource.panelId]
     return record ? { label: panelRowLabel(record), icon: <Icon name={panelIcon(record.type)} size={11} style={{ opacity: 0.6 }} /> } : null
   })()

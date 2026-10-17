@@ -5,7 +5,7 @@
 import type React from 'react'
 import { useCallback } from 'react'
 import { viewToCanvas, type Point, type Size } from '@workspace/canvas/contract'
-import { dockPanels, isNodeHost, layoutById, layoutsIn, placementOf, type DockLayout, type DockStack, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
+import { dockPanels, isNodeHost, layoutById, layoutsIn, placementOf, type DockLayout, type DockStack, type DocChange, type LayoutId, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { activeTabOf, newId, panelDefaultSize, panelDropSize, showLayoutsOf } from '@client/host'
 import { windowsPort } from '../windows/ports'
@@ -65,10 +65,10 @@ function dropEnvironment(): DropEnvironment {
 }
 
 /** The layout a drag moves as a group (a layout drag, or a group node's layout); null for one panel. */
-function groupLayoutOf(doc: WorkspaceDocument, spec: DragOpSourceSpec): DockLayout | null {
-  if (spec.kind === 'layout') return layoutById(doc, spec.layoutId) ?? null
-  if (spec.kind !== 'canvas-node') return null
-  const placement = placementOf(doc, spec.panelId)
+export function groupLayoutOf(doc: WorkspaceDocument, kind: string, panelId: string, layoutId?: LayoutId): DockLayout | null {
+  if (kind === 'layout') return layoutId ? layoutById(doc, layoutId) ?? null : null
+  if (kind !== 'canvas-node') return null
+  const placement = placementOf(doc, panelId)
   const layout = placement && layoutById(doc, placement.dock.layoutId)
   return layout && dockPanels(layout.dock).length > 1 ? layout : null
 }
@@ -145,26 +145,32 @@ function measureNode(
   const node = documentOf(workspaceId)?.canvases[canvasId]?.nodes[nodeId]
   const surface = canvasSurfaceFor(workspaceId, canvasId)
   const viewport = surface?.getViewport() ?? { offset: { x: 0, y: 0 }, zoom: 1 }
-  if (!node) return { grab: { x: 0, y: 12 }, ghostSize: panelDefaultSize(panelType), ghostZoom: viewport.zoom }
-  const size = node.rect.size
+  const ghostZoom = viewport.zoom
+  if (!node) return { grab: { x: 0, y: 12 }, ghostSize: panelDefaultSize(panelType), ghostZoom }
+  const ghostSize = node.rect.size
   const container = surface?.getElement()
-  if (!container) return { grab: { x: size.width / 2, y: 12 }, ghostSize: size, ghostZoom: viewport.zoom }
+  if (!container) return { grab: { x: ghostSize.width / 2, y: 12 }, ghostSize, ghostZoom }
   const rect = container.getBoundingClientRect()
-  const cursor = viewToCanvas({ x: cursorClient.x - rect.left, y: cursorClient.y - rect.top }, viewport.zoom, viewport.offset)
-  return { grab: { x: cursor.x - node.rect.origin.x, y: cursor.y - node.rect.origin.y }, ghostSize: size, ghostZoom: viewport.zoom }
+  const cursor = viewToCanvas({ x: cursorClient.x - rect.left, y: cursorClient.y - rect.top }, ghostZoom, viewport.offset)
+  return { grab: { x: cursor.x - node.rect.origin.x, y: cursor.y - node.rect.origin.y }, ghostSize, ghostZoom }
+}
+
+/** The canvas node a drag stands for (the node dragged, or the node whose dock the tab is in); null off a canvas. */
+function nodeOf(spec: DragOpSourceSpec): { canvasId: string; nodeId: string } | null {
+  if (spec.kind === 'canvas-node') return spec
+  if (spec.from === 'sidebar' || !isNodeHost(spec.host)) return null
+  return spec.host
 }
 
 function measure(spec: DragOpSourceSpec, panelType: string, cursorClient: Point, sourceRect: DOMRect | null) {
-  if (spec.kind === 'canvas-node') return measureNode(spec.workspaceId, spec.canvasId, spec.nodeId, cursorClient, panelType)
-  if (spec.from === 'sidebar') {
-    // Held where the row (or the layout's group) was pressed: the tree reads that offset. A
-    // panel's ghost is the node a canvas drop makes; a layout's is its group, which its
-    // placeholder in the tree keeps the height of.
+  const node = nodeOf(spec)
+  if (node) return measureNode(spec.workspaceId, node.canvasId, node.nodeId, cursorClient, panelType)
+  if (spec.kind !== 'canvas-node' && spec.from === 'sidebar') {
+    // Held where the row (or the layout's group) was pressed: the tree reads that offset. The
+    // ghost is the node a canvas drop makes, for a panel or a layout alike.
     const grab = sourceRect ? { x: cursorClient.x - sourceRect.left, y: cursorClient.y - sourceRect.top } : { x: 0, y: 0 }
-    const ghostSize = spec.kind === 'layout' && sourceRect ? { width: sourceRect.width, height: sourceRect.height } : { ...panelDropSize(panelType) }
-    return { grab, ghostSize, ghostZoom: 1 }
+    return { grab, ghostSize: { ...panelDropSize(panelType) }, ghostZoom: 1 }
   }
-  if (isNodeHost(spec.host)) return measureNode(spec.workspaceId, spec.host.canvasId, spec.host.nodeId, cursorClient, panelType)
   // A window dock tab previews the compact canvas-drop footprint.
   const ghostSize: Size = { ...panelDropSize(panelType) }
   if (sourceRect) return { grab: dockTabGrabOffset({ cursorClient, sourceRect, ghostSize }), ghostSize, ghostZoom: 1 }
@@ -380,13 +386,13 @@ export function beginDrag(e: Pick<MouseEvent, 'button' | 'clientX' | 'clientY'> 
   const cursorClient: Point = { x: e.clientX, y: e.clientY }
   let sourceRect: DOMRect | null = e.currentTarget instanceof Element ? e.currentTarget.getBoundingClientRect() : null
   // A ghost that stands for a whole node measures against the node element.
-  const nodeId = spec.kind === 'canvas-node' ? spec.nodeId : spec.from === 'sidebar' ? null : isNodeHost(spec.host) ? spec.host.nodeId : null
+  const nodeId = nodeOf(spec)?.nodeId
   if (nodeId) {
     const nodeEl = document.querySelector<HTMLElement>(`[data-node-id="${cssEscape(nodeId)}"]`)
     if (nodeEl) sourceRect = nodeEl.getBoundingClientRect()
   }
   // A group carries its layout's name in the ghost; the representative panel's id and type stay.
-  const group = groupLayoutOf(doc, spec)
+  const group = groupLayoutOf(doc, spec.kind, spec.panelId, spec.kind === 'layout' ? spec.layoutId : undefined)
   const panel: DragPanel = { id: record.id, type: record.type, title: group ? group.name : record.title }
   const { grab, ghostSize, ghostZoom } = measure(spec, record.type, cursorClient, sourceRect)
   active = {
