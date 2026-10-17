@@ -288,7 +288,7 @@ describe('dock tab drags', () => {
     expect(canvasOf(scene.doc(), 'p2')).toBe('C')
   })
 
-  it('a canvas tab refuses a canvas and a node mini dock', () => {
+  it('a canvas tab is refused by a canvas, over a node mini dock too', () => {
     const doc = canvasDoc([add('p1', { to: 'split', dock: main, beside: 's1', side: 'left', stackId: 's0', splitId: 'sp' })])
     scene = renderScene({
       doc,
@@ -297,10 +297,11 @@ describe('dock tab drags', () => {
     })
     scene.mouse.downOnTab('cv')
     scene.mouse.dragBy({ x: 30, y: 30 })
+    // Over a node's mini dock it is the canvas under it that refuses.
     scene.mouse.moveTo({ x: 520, y: 110 })
-    expect(scene.drag().target).toBeNull()
+    expect(scene.drag().target).toMatchObject({ kind: 'canvas-add', refused: 'Cannot add a recursive canvas item' })
     scene.mouse.moveTo({ x: 800, y: 500 })
-    expect(scene.drag().target).toBeNull()
+    expect(scene.drag().target).toMatchObject({ kind: 'canvas-add', refused: 'Cannot add a recursive canvas item' })
     scene.mouse.up()
     expect(placementOf(scene.doc(), 'cv')?.stackId).toBe('s1')
   })

@@ -3,10 +3,13 @@
 
 import { snapToGrid, CANVAS_GRID_SIZE, type Point, type Size } from '@workspace/canvas/contract'
 import { isNodeHost, type HostRef, type LayoutId } from '@workspace/document/contract'
-import { canLiveOnCanvas, panelDropSize } from '@client/host'
+import { canLiveOnCanvas } from '@client/host'
 import { canvasSurfaceAt, getDropZoneEntries, resolveDropEdge, type DropZoneEntry } from './registry'
 import { cursorToCanvasOrigin, snappedGhostScreenRect } from './geometry'
 import type { DragSource, DropTarget } from './types'
+
+/** Why a canvas takes no canvas (the ghost says it). */
+export const RECURSIVE_CANVAS = 'Cannot add a recursive canvas item'
 
 export interface CanvasHit {
   workspaceId: string
@@ -161,10 +164,7 @@ function resolveCanvasHit(
   const { offset, zoom } = hit.viewport
   const raw = cursorToCanvasOrigin(cursor, hit.rect, zoom, offset, grab)
   const origin = snap ? snapToGrid(raw, CANVAS_GRID_SIZE) : raw
-  // A layout lands as a node of the usual footprint, whichever strip or tree
-  // row it was dragged by (its ghost size there is the chip's).
-  const landing = source.origin.kind === 'layout' ? { ...panelDropSize(panelType) } : ghostSize
-  const ghostRect = snap ? snappedGhostScreenRect(origin, hit.rect, zoom, offset, landing) : undefined
+  const ghostRect = snap ? snappedGhostScreenRect(origin, hit.rect, zoom, offset, ghostSize) : undefined
   const { workspaceId, canvasId } = hit
 
   // A node already on this canvas moves.
@@ -172,10 +172,11 @@ function resolveCanvasHit(
     return { kind: 'canvas-reposition', workspaceId, canvasId, nodeId: source.origin.nodeId, origin, zoom, ghostRect }
   }
   // Anything else becomes a new node, including a tab dragged out of a node
-  // of this canvas. A canvas panel cannot sit on a canvas.
-  if (!canLiveOnCanvas(panelType)) return null
-  if (source.origin.kind === 'layout' && env.layoutHoldsCanvas?.(source.workspaceId, source.origin.host, source.origin.layoutId)) return null
-  return { kind: 'canvas-add', workspaceId, canvasId, origin, size: landing, zoom, ghostRect }
+  // of this canvas. A canvas panel (or a layout holding one) cannot sit on a
+  // canvas: the ghost stays and says so, and the release does nothing.
+  const recursive = !canLiveOnCanvas(panelType)
+    || (source.origin.kind === 'layout' && !!env.layoutHoldsCanvas?.(source.workspaceId, source.origin.host, source.origin.layoutId))
+  return { kind: 'canvas-add', workspaceId, canvasId, origin, size: ghostSize, zoom, ghostRect, ...(recursive ? { refused: RECURSIVE_CANVAS } : null) }
 }
 
 /** The environment of the real DOM and registries. */

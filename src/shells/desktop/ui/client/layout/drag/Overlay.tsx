@@ -8,7 +8,7 @@ import { documentStoreFor } from '@client/document'
 import { useDragStore } from './store'
 import type { DragSource, DropTarget } from './types'
 import { canvasSurfaceAt, getDropZoneEntries, ownsFeedback } from './registry'
-import { focusBlue } from './ghostLook'
+import { focusBlue, warnAmber } from './ghostLook'
 import { ghostScreenRect } from './geometry'
 
 export function DragOverlay() {
@@ -49,9 +49,7 @@ export function DragOverlay() {
     target && (target.kind === 'canvas-reposition' || target.kind === 'canvas-add')
       ? target.ghostRect
       : undefined
-  // A canvas-add lands as a node of the target's size (a layout dragged by its chip is smaller).
-  const size = target?.kind === 'canvas-add' ? target.size : ghostSize
-  const rect = snappedRect ?? ghostScreenRect(cursor.client, grab, size, renderZoom)
+  const rect = snappedRect ?? ghostScreenRect(cursor.client, grab, ghostSize, renderZoom)
 
   // Group drag: draw a ghost for every other selected member too, each offset
   // from the anchor ghost by its canvas-space start delta (× renderZoom). The
@@ -73,6 +71,7 @@ export function DragOverlay() {
           width={rect.width}
           height={rect.height}
           title={panel.title}
+          refused={target?.kind === 'canvas-add' ? target.refused : undefined}
         />
       )}
       {memberGhosts.map((m) => (
@@ -124,16 +123,21 @@ function GhostWindow({
   width,
   height,
   title,
+  refused,
 }: {
   left: number
   top: number
   width: number
   height: number
   title: string
+  /** Why the drop is refused: the ghost turns amber and says so. */
+  refused?: string
 }) {
+  const accent = refused ? warnAmber : focusBlue
   return (
     <div
       data-drag-overlay-ghost="true"
+      data-drag-refused={refused ? 'true' : undefined}
       style={{
         position: 'absolute',
         left,
@@ -141,8 +145,8 @@ function GhostWindow({
         width,
         height,
         borderRadius: 8,
-        border: `1.5px solid ${focusBlue(70)}`,
-        background: focusBlue(8),
+        border: `1.5px solid ${accent(70)}`,
+        background: accent(refused ? 14 : 8),
         boxShadow: '0 8px 24px var(--shadow-node)',
         pointerEvents: 'none',
         display: 'flex',
@@ -173,13 +177,15 @@ function GhostWindow({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: focusBlue(85),
+          color: accent(refused ? 100 : 85),
+          padding: '0 10px',
+          textAlign: 'center',
           fontSize: 11,
           fontWeight: 500,
           userSelect: 'none',
         }}
       >
-        Drop to place
+        {refused ?? 'Drop to place'}
       </div>
     </div>
   )

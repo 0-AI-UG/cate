@@ -83,6 +83,8 @@ export type DropTarget =
       size: Size
       zoom: number
       ghostRect?: GhostRect
+      /** Set when the canvas takes no such drop: the ghost shows this, and the release does nothing. */
+      refused?: string
     }
   | { kind: 'dock-split'; workspaceId: string; dock: DockRef; stackId: StackId; edge: SplitSide }
   | { kind: 'dock-tab'; workspaceId: string; dock: DockRef; stackId: StackId }

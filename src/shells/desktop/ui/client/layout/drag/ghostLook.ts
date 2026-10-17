@@ -8,6 +8,9 @@ import type { CSSProperties } from 'react'
 /** The accent at `pct` percent. */
 export const focusBlue = (pct: number): string => `color-mix(in srgb, var(--focus-blue, #3b82f6) ${pct}%, transparent)`
 
+/** The refusal accent (amber) at `pct` percent: a ghost that says its drop is refused. */
+export const warnAmber = (pct: number): string => `color-mix(in srgb, #fbbf24 ${pct}%, transparent)`
+
 export const GHOST_LOOK: CSSProperties = {
   color: 'var(--focus-blue, #3b82f6)',
   backgroundColor: focusBlue(18),

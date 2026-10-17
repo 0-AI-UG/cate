@@ -108,6 +108,12 @@ describe('dock tab drops', () => {
     expect(dropChanges(doc, tab('s1', 'cv'), target, panel(doc, 'cv'), ctx)).toBeNull()
   })
 
+  it('a refused canvas drop changes nothing', () => {
+    const doc = fixture()
+    const target: DropTarget = { kind: 'canvas-add', workspaceId: 'ws', canvasId: 'C', origin: { x: 0, y: 0 }, size: { width: 1, height: 1 }, zoom: 1, refused: 'no' }
+    expect(dropChanges(doc, tab('s1', 'p1'), target, panel(doc, 'p1'), ctx)).toBeNull()
+  })
+
   it('a window edge strip splits the whole dock', () => {
     const doc = fixture()
     const next = run(doc, dropChanges(doc, tab('s1', 'p1'), { kind: 'dock-zone', workspaceId: 'ws', dock: main, edge: 'bottom' }, panel(doc, 'p1'), ctx))

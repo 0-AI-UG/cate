@@ -75,7 +75,7 @@ export function dropChanges(
     }
 
     case 'canvas-add': {
-      if (!canLiveOnCanvas(panel.type) || !doc.canvases[target.canvasId]) return null
+      if (target.refused || !canLiveOnCanvas(panel.type) || !doc.canvases[target.canvasId]) return null
       // A layout moves whole, keeping its panels and its name.
       if (source.origin.kind === 'layout') {
         return [{ kind: 'moveLayout', layoutId: source.origin.layoutId, to: { to: 'canvas', canvasId: target.canvasId, nodeId: ctx.newId(), rect: { origin: target.origin, size: target.size } } }]

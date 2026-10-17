@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { MAIN_WINDOW, type DockRef } from '@workspace/document/contract'
 import { panelDropSize, registerPanelDefinitions } from '@client/host'
 import { testPanelDefinitions } from '../../../../../../test/clientWorkspace'
-import { resolveDrop, type CanvasHit, type DropEnvironment } from './resolve'
+import { RECURSIVE_CANVAS, resolveDrop, type CanvasHit, type DropEnvironment } from './resolve'
 import { resolveDropEdge, type DropZoneEntry } from './registry'
 import type { DragSource } from './types'
 
@@ -80,9 +80,9 @@ describe('resolveDrop', () => {
     expect(resolveDrop(cursor(395, 200), tabSource('s1'), grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'dock-split', edge: 'right' })
   })
 
-  it('a canvas panel skips node docks and canvases', () => {
+  it('a canvas panel skips node docks and meets a canvas as a refusal', () => {
     const nodeDock = stackEntry('ns', rect(0, 0, 400, 400), { dock: { layoutId: 'L-N9' }, host: { canvasId: 'C', nodeId: 'N9' } })
-    expect(resolveDrop(cursor(200, 10), tabSource(), grab, size, 'canvas', { env: env([nodeDock], canvasHit) })).toBeNull()
+    expect(resolveDrop(cursor(200, 10), tabSource(), grab, size, 'canvas', { env: env([nodeDock], canvasHit) })).toMatchObject({ kind: 'canvas-add', refused: RECURSIVE_CANVAS })
   })
 
   it('a dragged node never drops into its own mini dock', () => {
@@ -138,18 +138,14 @@ describe('resolveDrop on a one-panel pane', () => {
 })
 
 describe('a dragged layout on a canvas', () => {
-  it('lands as a node of the usual size, not the size of the chip it was dragged by', () => {
-    const chip = { width: 120, height: 28 }
-    const layout: DragSource = { workspaceId: 'ws', panelId: 'p', from: 'sidebar', origin: { kind: 'layout', host: { windowId: 'main' }, layoutId: 't' } }
-    expect(resolveDrop(cursor(200, 150), layout, grab, chip, 'terminal', { env: env([], canvasHit) })).toMatchObject({ kind: 'canvas-add', size: panelDropSize('terminal') })
-  })
-
   const layout: DragSource = { workspaceId: 'ws', panelId: 'p', origin: { kind: 'layout', host: { windowId: 'main' }, layoutId: 't' } }
 
-  it('adds a node, unless the layout holds a canvas', () => {
+  it('adds a node, unless the layout holds a canvas: then the ghost says it is refused', () => {
     const e = env([], canvasHit)
-    expect(resolveDrop(cursor(200, 150), layout, grab, size, 'terminal', { env: e })).toMatchObject({ kind: 'canvas-add' })
-    expect(resolveDrop(cursor(200, 150), layout, grab, size, 'terminal', { env: { ...e, layoutHoldsCanvas: () => true } })).toBeNull()
+    const added = resolveDrop(cursor(200, 150), layout, grab, size, 'terminal', { env: e })
+    expect(added).toMatchObject({ kind: 'canvas-add', size })
+    expect(added).not.toHaveProperty('refused')
+    expect(resolveDrop(cursor(200, 150), layout, grab, size, 'terminal', { env: { ...e, layoutHoldsCanvas: () => true } })).toMatchObject({ kind: 'canvas-add', refused: RECURSIVE_CANVAS })
   })
 })
 
