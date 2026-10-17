@@ -30,9 +30,10 @@ export function holdFocus(
       if (waited++ < waitTicks) timer = setTimeout(tick, intervalMs)
       return
     }
-    // Focus that went to a text field (an inline rename the click opened) is the user's: stop.
+    // Focus that went to a text field after we began (an inline rename the click opened) is the user's: stop.
+    // A field that already had it at the start (a URL bar) is what we are taking focus from.
     const active = el.ownerDocument.activeElement
-    if (active instanceof HTMLInputElement) return
+    if (held > 0 && active instanceof HTMLInputElement) return
     if (active !== el) el.focus({ preventScroll: true })
     if (held++ < holdTicks) timer = setTimeout(tick, intervalMs)
   }

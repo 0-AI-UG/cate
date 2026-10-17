@@ -112,12 +112,13 @@ function inDock(context: ActionContext): boolean {
   return !!doc && !!leaf && !!record && !record.canvasId && !nodeOfPanel(doc, leaf)
 }
 
-/** The canvas binding, or `dock` when focus is in a dock. */
-function canvasOrDock(canvas: ActionBinding, dock: (workspaceId: string, context: ActionContext) => void, dockEnabled: (context: ActionContext) => boolean): ActionBinding {
+/** The canvas binding, or `dock` when focus is in a dock; a dock action that goes nowhere (false, at the dock's edge)
+ *  falls through to the canvas. */
+function canvasOrDock(canvas: ActionBinding, dock: (workspaceId: string, context: ActionContext) => boolean | void, dockEnabled: (context: ActionContext) => boolean): ActionBinding {
   return {
     run: (context) => {
       const workspaceId = context.workspaceId ?? useUIStore.getState().selectedWorkspaceId
-      if (workspaceId && dockEnabled(context)) return dock(workspaceId, context)
+      if (workspaceId && dockEnabled(context) && dock(workspaceId, context) !== false) return
       return canvas.run(context)
     },
     enabled: (context) => dockEnabled(context) || (canvas.enabled?.(context) ?? true),
@@ -125,9 +126,9 @@ function canvasOrDock(canvas: ActionBinding, dock: (workspaceId: string, context
 }
 
 const navigateOrPane = (dir: 'up' | 'down' | 'left' | 'right', side: SplitSide): ActionBinding =>
-  canvasOrDock(navigate(dir), (workspaceId) => { focusPaneBeside(workspaceId, side) }, inDock)
+  canvasOrDock(navigate(dir), (workspaceId) => focusPaneBeside(workspaceId, side), inDock)
 const stepOrPanel = (canvasStep: ActionBinding, delta: number): ActionBinding =>
-  canvasOrDock(canvasStep, (workspaceId, context) => { stepPanel(workspaceId, context.windowId ?? MAIN_WINDOW, delta) }, inDock)
+  canvasOrDock(canvasStep, (workspaceId, context) => stepPanel(workspaceId, context.windowId ?? MAIN_WINDOW, delta), inDock)
 
 const pan = (dir: 'up' | 'down' | 'left' | 'right'): ActionBinding =>
   onCanvas((canvas) => canvas.store.getState().panViewport(dir))

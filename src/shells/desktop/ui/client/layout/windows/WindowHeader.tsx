@@ -11,7 +11,7 @@ import { Columns2 as Columns, X } from 'lucide-react'
 import { dockPanels, type DockLayout, type DocWindow, type LayoutId, type PanelRecord } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
 import { activeTabOf, closePanel, createPanel, panelDefinition, revealOnce, switchLayout } from '@client/host'
-import { placementOf } from '@workspace/document/contract'
+import { canvasOf, placementOf } from '@workspace/document/contract'
 import { Tooltip } from '../../../kernel/interaction'
 import { useClientState, useDocument } from '../../document'
 import { TabIcon } from '../dock/DockTabBar'
@@ -55,12 +55,14 @@ function CloseButton({ label, active, onClose, hidden = false }: { label: string
   )
 }
 
-export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset }: {
+export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset, floating }: {
   workspaceId: string
   window: DocWindow
   activeLayoutId: LayoutId
   /** Space the chips leave at the left for window chrome (traffic lights). */
   leadingInset?: number
+  /** Over the view, with no band of its own (a shown canvas shows its grid behind). */
+  floating?: boolean
 }) {
   const rename = useLayoutRename(workspaceId)
   const panelRename = usePanelRename(workspaceId)
@@ -70,7 +72,13 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
   const worktrees = useDocument(workspaceId, (doc) => doc.worktrees)
   // Several worktrees: a panel's title takes its worktree's color, as in a tab bar.
   const tintWorktrees = Object.keys(worktrees).length >= 2
-  const focused = useClientState(workspaceId, (s) => s.focusedPanelId)
+  const focusedPanel = useClientState(workspaceId, (s) => s.focusedPanelId)
+  // Focus inside a canvas node is focus on the canvas chip that draws it.
+  const focused = useDocument(workspaceId, (doc) => {
+    const canvasId = focusedPanel ? canvasOf(doc, focusedPanel) : null
+    if (!canvasId) return focusedPanel
+    return window.layouts.flatMap((l) => dockPanels(l.dock)).find((id) => doc.panels[id]?.canvasId === canvasId) ?? focusedPanel
+  })
   const activeTabs = useClientState(workspaceId, (s) => s.activeTabs)
   const decorations = useTabDecorations(workspaceId)
   const { handleDragStart, wasDragged } = useDragOp()
@@ -352,10 +360,10 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
     <div
       ref={headerRef}
       data-window-header={windowId}
-      className="app-header-bar flex-shrink-0 gap-1 border-b border-subtle select-none"
-      // The solid band a window's tab bar had before the compact header.
+      className={`app-header-bar gap-1 select-none ${floating ? 'absolute top-0 left-0 right-0 z-20' : 'flex-shrink-0 border-b border-subtle'}`}
+      // The solid band a window's tab bar had before the compact header, unless the view shows through.
       style={{
-        backgroundColor: 'var(--node-chrome-bg, var(--surface-1))',
+        ...(floating ? null : { backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }),
         ...(leadingInset ? { paddingLeft: leadingInset } : null),
         WebkitAppRegion: 'drag',
       } as React.CSSProperties}

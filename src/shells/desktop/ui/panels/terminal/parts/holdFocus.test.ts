@@ -40,4 +40,18 @@ describe('holdFocus', () => {
     vi.advanceTimersByTime(100)
     expect(document.activeElement).toBe(other)
   })
+
+  it('takes focus from a text field that had it at the start, and stops for one that takes it later', () => {
+    vi.useFakeTimers()
+    const target = document.createElement('textarea')
+    const urlBar = document.createElement('input')
+    const rename = document.createElement('input')
+    document.body.append(target, urlBar, rename)
+    urlBar.focus()
+    holdFocus(() => target, () => true)
+    expect(document.activeElement).toBe(target)
+    rename.focus()
+    vi.advanceTimersByTime(100)
+    expect(document.activeElement).toBe(rename)
+  })
 })

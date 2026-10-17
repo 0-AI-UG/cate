@@ -3,8 +3,8 @@
 // its own native window.
 
 import React, { useEffect, useRef } from 'react'
-import { MAIN_WINDOW, type SplitSide, type WindowId } from '@workspace/document/contract'
-import { installRevealHooks } from '@client/host'
+import { MAIN_WINDOW, dockStacks, type SplitSide, type WindowId } from '@workspace/document/contract'
+import { activeTabOf, installRevealHooks, panelDefinition } from '@client/host'
 import { useClientState, useDocument } from '../../document'
 import { DockView } from '../dock/DockView'
 import { EmptyDockChooser } from '../dock/EmptyDockChooser'
@@ -39,6 +39,12 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
   const chosen = useClientState(workspaceId, (s) => s.activeLayouts[windowId])
   const layoutId = window?.layouts.find((l) => l.id === chosen)?.id ?? window?.layouts[0]?.id ?? ''
 
+  // A shown canvas lets the grid show behind the strip, as its floating tab bar did.
+  const stacks = dockStacks(window?.layouts.find((l) => l.id === layoutId)?.dock)
+  const shown = useClientState(workspaceId, (s) => (stacks.length === 1 ? activeTabOf(s.activeTabs, stacks[0]) : null))
+  const shownType = useDocument(workspaceId, (doc) => (shown ? doc.panels[shown]?.type : undefined))
+  const floating = !!shownType && !!panelDefinition(shownType)?.chrome?.floatingTabBar
+
   useEffect(() => {
     const dock = { layoutId }
     const stops = EDGES.map((edge) => registerDropZone({
@@ -66,7 +72,7 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
     <div ref={rootRef} data-window-view={windowId} className="flex flex-col h-full w-full min-h-0 min-w-0 relative">
       {/* The tab strip: panels and layouts of the window. */}
       {window && (
-        <WindowHeader workspaceId={workspaceId} window={window} activeLayoutId={layoutId} leadingInset={leadingInset} />
+        <WindowHeader workspaceId={workspaceId} window={window} activeLayoutId={layoutId} leadingInset={leadingInset} floating={floating} />
       )}
       <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
         <DockView workspaceId={workspaceId} dock={{ layoutId }} host={{ windowId }} emptyContent={emptyContent ?? <EmptyDockChooser workspaceId={workspaceId} dock={{ layoutId }} />} compact />
