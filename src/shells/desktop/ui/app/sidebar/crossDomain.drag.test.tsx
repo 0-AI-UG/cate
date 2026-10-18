@@ -255,6 +255,37 @@ describe('across the sidebar, the strip and the split', () => {
     expect(layouts().map((l) => l.id)).toEqual(['main'])
   })
 
+  it('a sidebar layout handle -> canvas node: the whole layout becomes the node', () => {
+    const withGroup = buildDocument([
+      add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+      { kind: 'addLayout', host: { windowId: MAIN_WINDOW }, layoutId: 'two' },
+      add('d', { to: 'stack', dock: { layoutId: 'two' }, stackId: 's3' }),
+      add('e', { to: 'split', dock: { layoutId: 'two' }, beside: 's3', side: 'right', stackId: 's4', splitId: 'sp2' }),
+    ])
+    scene = renderScene({ doc: withGroup, rects, window: true, extra: sidebar, canvases: [{ canvasId: 'C', rect: { x: 300, y: 30, w: 700, h: 570 } }] })
+    drag('[data-test-extra] [data-layout-gutter="two"]', { x: 10, y: 80 }, { x: 700, y: 400 })
+    expect(scene.drag().target).toMatchObject({ kind: 'canvas-add', canvasId: 'C' })
+    scene.mouse.up()
+    expect(canvasOf(scene.doc(), 'd')).toBe('C')
+    expect(canvasOf(scene.doc(), 'e')).toBe('C')
+    expect(layouts().map((l) => l.id)).toEqual(['main'])
+  })
+
+  it('a canvas node -> tree: the node moves out as its layout', () => {
+    const withCanvas = buildDocument([
+      add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+      add('n1', { to: 'canvas', canvasId: 'C', nodeId: 'N1', layoutId: 'L-N1', stackId: 'ns1', rect: rect(100, 100) }),
+    ])
+    scene = renderScene({ doc: withCanvas, rects, window: true, extra: sidebar, canvases: [{ canvasId: 'C', rect: { x: 300, y: 30, w: 700, h: 570 } }] })
+    scene.mouse.downOnNode('N1')
+    scene.mouse.dragBy({ x: 30, y: 30 })
+    scene.mouse.moveTo({ x: 100, y: 400 })
+    expect(scene.drag().target).toMatchObject({ kind: 'tab-slot', via: 'tree' })
+    scene.mouse.up()
+    expect(canvasOf(scene.doc(), 'n1')).toBeNull()
+    expect(layouts().flatMap((l) => dockPanels(l.dock))).toContain('n1')
+  })
+
   it('Escape during a sidebar -> split drag leaves the document unchanged', () => {
     open()
     const seq = scene!.workspace.document.seq

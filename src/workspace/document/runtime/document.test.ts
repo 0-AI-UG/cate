@@ -110,6 +110,20 @@ describe('document service', () => {
     doc.dispose()
   })
 
+  it('asks the removal guard before a layout is removed, and honours its discard list', () => {
+    const doc = createDocumentService({ file })
+    doc.apply({ kind: 'addPanel', record: record('a'), at: { to: 'tab', host: { windowId: MAIN_WINDOW }, layoutId: 'L2', stackId: 's2' } })
+    doc.guardRemovals((removing, discard) => {
+      if (removing.has('a') && !discard.has('a')) throw new RpcError('dirty', 'a is busy')
+    })
+    const remove: DocChange = { kind: 'removeLayout', layoutId: 'L2' }
+    expect(doc.submit(op('c1', 1, remove))).toMatchObject({ status: 'failed', error: { code: 'dirty' } })
+    expect(doc.get().panels.a).toBeDefined()
+    expect(doc.submit(op('c1', 2, { ...remove, discard: ['a'] }))).toMatchObject({ status: 'applied' })
+    expect(doc.get().panels.a).toBeUndefined()
+    doc.dispose()
+  })
+
   it('persists debounced with seq and counters, and a resend after restart is not applied twice', async () => {
     const doc = createDocumentService({ file, debounceMs: 5 })
     doc.submit(op('c1', 1, addPanel('a')))

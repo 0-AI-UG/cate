@@ -288,6 +288,17 @@ describe('dock tab drags', () => {
     expect(canvasOf(scene.doc(), 'p2')).toBe('C')
   })
 
+  it('a lone pane (no tab bar) dragged by its grip out onto a canvas becomes a node', () => {
+    const doc = canvasDoc([add('p1', { to: 'split', dock: main, beside: 's1', side: 'left', stackId: 's0', splitId: 'sp' })])
+    scene = renderScene({ doc, stacks: { s0: { x: 0, y: 0, w: 260, h: 600 } }, canvases: [{ canvasId: 'C', rect: { x: 400, y: 0, w: 600, h: 600 } }] })
+    scene.mouse.downOn('[data-pane-drag="p1"]', { x: 100, y: 300 })
+    scene.mouse.dragBy({ x: 30, y: 30 })
+    scene.mouse.moveTo({ x: 700, y: 300 })
+    expect(scene.drag().target?.kind).toBe('canvas-add')
+    scene.mouse.up()
+    expect(canvasOf(scene.doc(), 'p1')).toBe('C')
+  })
+
   it('a canvas tab is refused by a canvas, over a node mini dock too', () => {
     const doc = canvasDoc([add('p1', { to: 'split', dock: main, beside: 's1', side: 'left', stackId: 's0', splitId: 'sp' })])
     scene = renderScene({

@@ -12,7 +12,7 @@ import { documentStoreFor } from '@client/document'
 import { createPanel, newId } from './createPanel'
 import { creatableDefinitions, panelDefinition, registerPanelDefinitions } from './definitions'
 import { focusedLeafPanelId } from './focus'
-import { CANVAS_REVEAL_INTENT, revealPanel } from './reveal'
+import { CANVAS_REVEAL_INTENT, revealPanel, selectPanelAt, stepPanel } from './reveal'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
@@ -229,5 +229,36 @@ describe('creation menus', () => {
     expect(creationPick('new:editor', worktrees)).toEqual({ type: 'editor', options: {} })
     expect(creationPick('close', worktrees)).toBeNull()
     expect(creationPick(null, worktrees)).toBeNull()
+  })
+})
+
+// Two layouts: the main one (a canvas with a node, a terminal) and a second tab (a panel, a canvas).
+const second = () => buildDocument([
+  add('b', { to: 'tab', host: { windowId: MAIN_WINDOW }, layoutId: 'T2', stackId: 's2' }),
+  add('cv2', { to: 'stack', dock: { layoutId: 'T2' }, stackId: 's2' }, 'canvas', { canvasId: 'C2' }),
+], fixture())
+
+describe('panel order', () => {
+  it('Alt+N and Ctrl+Tab follow the sidebar: layout by layout, a canvas panel followed by its nodes', () => {
+    ws = attachTestWorkspace('w', second())
+    expect(selectPanelAt('w', MAIN_WINDOW, 1)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('a')
+    expect(selectPanelAt('w', MAIN_WINDOW, 3)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('b')
+    expect(ws.state.getSnapshot().activeLayouts.main).toBe('T2')
+    expect(selectPanelAt('w', MAIN_WINDOW, 9)).toBe(false)
+    expect(stepPanel('w', MAIN_WINDOW, -1)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('t1')
+    expect(stepPanel('w', MAIN_WINDOW, 1)).toBe(true)
+    expect(stepPanel('w', MAIN_WINDOW, 1)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('cv2')
+  })
+
+  it('a panel created on a canvas in a hidden layout shows that layout', () => {
+    ws = attachTestWorkspace('w', second())
+    expect(ws.state.getSnapshot().activeLayouts.main).toBeUndefined()
+    const id = createPanel('w', 'terminal', { near: 'cv2' })!
+    expect(canvasOf(ws.confirmed(), id)).toBe('C2')
+    expect(ws.state.getSnapshot().activeLayouts.main).toBe('T2')
   })
 })

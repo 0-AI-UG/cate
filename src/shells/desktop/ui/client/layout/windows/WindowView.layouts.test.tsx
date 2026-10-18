@@ -175,4 +175,34 @@ describe('WindowView tab strip', () => {
     act(() => { switchLayout('w', { windowId: MAIN_WINDOW }, 'main') })
     expect(container.querySelector('[data-tab-panel-id="p1"], [data-pane-chip="s1"]')).not.toBeNull()
   })
+
+  describe('over a canvas', () => {
+    const R = { origin: { x: 0, y: 0 }, size: { width: 400, height: 300 } }
+    const withCanvas = () => {
+      ws.detach()
+      ws = attachTestWorkspace('w', buildDocument([
+        add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+        add('n1', { to: 'canvas', canvasId: 'C', nodeId: 'N1', layoutId: 'LN', stackId: 'sn', rect: R }),
+      ]))
+    }
+
+    it('the strip floats over a shown canvas and is solid over anything else', () => {
+      withCanvas()
+      render()
+      expect(header()?.className).toContain('absolute')
+      act(() => root.unmount())
+      root = createRoot(container)
+      ws.detach()
+      ws = attachTestWorkspace('w', buildDocument([add('p1', { to: 'stack', dock: main, stackId: 's1' })]))
+      render()
+      expect(header()?.className).not.toContain('absolute')
+    })
+
+    it('focus inside a canvas node lights the canvas chip', () => {
+      withCanvas()
+      render()
+      act(() => { ws.state.focus('n1') })
+      expect(strip('cv').dataset.active).toBe('true')
+    })
+  })
 })
