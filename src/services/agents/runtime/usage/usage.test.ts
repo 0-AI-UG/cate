@@ -150,12 +150,12 @@ describe('workspace usage', () => {
     writeFileSync(path.join(kiro, 'session.json'), JSON.stringify({ workspacePaths: [root] }))
     writeFileSync(path.join(kiro, 'messages.jsonl'), `${JSON.stringify({ timestamp: iso, payload: { type: 'usage_summary', promptTurnSummaries: [{ unit: 'credit', usage: 0.5 }] } })}\n`)
     mkdirSync(path.join(home, '.cursor'))
-    const opencode = JSON.stringify({ role: 'assistant', modelID: 'gpt-4.1', cost: 0, path: { cwd: root }, tokens: { input: 100, output: 10, reasoning: 5, cache: { read: 50, write: 0 } }, time: { created: at, completed: at } })
+    const opencode = (cwd: string) => JSON.stringify({ role: 'assistant', modelID: 'gpt-4.1', cost: 0, path: { cwd }, tokens: { input: 100, output: 10, reasoning: 5, cache: { read: 50, write: 0 } }, time: { created: at, completed: at } })
     return Promise.all([
       seedSqlite(path.join(home, '.local', 'share', 'opencode', 'opencode.db'), [
         'CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)',
-        `INSERT INTO message VALUES ('m', 'oc', ${at}, ${at}, '${opencode}')`,
-        `INSERT INTO message VALUES ('n', 'oc2', ${at}, ${at}, '${opencode.replace(root, elsewhere)}')`,
+        `INSERT INTO message VALUES ('m', 'oc', ${at}, ${at}, '${opencode(root)}')`,
+        `INSERT INTO message VALUES ('n', 'oc2', ${at}, ${at}, '${opencode(elsewhere)}')`,
       ]),
       seedSqlite(path.join(home, '.hermes', 'state.db'), [
         'CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT)',
