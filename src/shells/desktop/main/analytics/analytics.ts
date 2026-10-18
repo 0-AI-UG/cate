@@ -9,7 +9,7 @@ import path from 'node:path'
 import { createLogger } from '@kernel/log/contract'
 import { appendLine, readJsonFile, readTextFile, removeFile, writeJsonFile, writeTextFile } from '@kernel/state/node'
 import { PRIVATE_DEVICE_FILES } from '../../contract'
-import { decideCensusAction, decideUpdateAction, sanitizeFeedbackPayload, sanitizeUsageProps, type AnalyticsState } from './decisions'
+import { decideCensusAction, decideUpdateAction, sanitizeUsageProps, type AnalyticsState } from './decisions'
 
 const log = createLogger('analytics')
 
@@ -39,8 +39,6 @@ export interface AnalyticsDeps {
   /** POSTs a JSON body; true on 2xx. */
   post(body: string): Promise<boolean>
   installIdPreexisted(): boolean
-  /** Asks the main window to show the post-update feedback dialog. */
-  promptFeedback(prompt: { fromVersion: string; toVersion: string }): void
 }
 
 export interface Analytics {
@@ -49,9 +47,6 @@ export interface Analytics {
   /** First install, update detection and `app_start`, once per launch. */
   reportLaunch(currentVersion: string): void
   hasRunBefore(): boolean
-  feedbackPending(): { fromVersion: string; toVersion: string } | null
-  submitFeedback(raw: unknown): Promise<{ ok: boolean; buffered?: boolean }>
-  dismissFeedback(): void
   flushPending(): Promise<void>
   /** Dev only: make the next launch look like an update from one level below. */
   simulateUpdateFrom(current: string, level: 'major' | 'minor' | 'patch'): string
@@ -118,8 +113,6 @@ export function createAnalytics(deps: AnalyticsDeps): Analytics {
     return false
   }
 
-  const clearFeedback = () => updateState({ pendingFeedbackForVersion: undefined, pendingFeedbackFromVersion: undefined })
-
   return {
     send,
     trackUsage(feature, props) {
@@ -140,31 +133,10 @@ export function createAnalytics(deps: AnalyticsDeps): Analytics {
         void send('app_updated', { from_version: action.from, to_version: action.to })
         writeState(action.nextState)
       }
-      if (action.kind !== 'first_install' && action.prompt) {
-        deps.promptFeedback({ fromVersion: action.prompt.from, toVersion: action.prompt.to })
-      }
       void send('app_start')
       flushPending().catch(() => {})
     },
     hasRunBefore: () => !!readState().lastSeenVersion,
-    feedbackPending() {
-      const state = readState()
-      return state.pendingFeedbackForVersion
-        ? { fromVersion: state.pendingFeedbackFromVersion ?? '', toVersion: state.pendingFeedbackForVersion }
-        : null
-    },
-    async submitFeedback(raw) {
-      const { rating, comment } = sanitizeFeedbackPayload(raw)
-      const ok = await send('feedback_submitted', { rating, comment, from_version: readState().pendingFeedbackFromVersion ?? null })
-      // Buffered sends flush later; never ask again for the same answer.
-      clearFeedback()
-      return ok ? { ok: true } : { ok: true, buffered: true }
-    },
-    dismissFeedback() {
-      const state = readState()
-      void send('feedback_dismissed', { to_version: state.pendingFeedbackForVersion ?? null, from_version: state.pendingFeedbackFromVersion ?? null })
-      clearFeedback()
-    },
     flushPending,
     simulateUpdateFrom(current, level) {
       const [major = 0, minor = 0, patch = 0] = current.replace(/^v/, '').split('.').map(Number)

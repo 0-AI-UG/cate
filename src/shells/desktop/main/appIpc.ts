@@ -131,9 +131,6 @@ export function registerAppIpc(deps: AppIpcDeps): { blockers(): string[] } {
   handle(C.updateInstall, () => deps.updater.installNow())
 
   listen(C.analyticsTrack, (_event, feature: unknown, props: unknown) => deps.analytics.trackUsage(feature, props))
-  handle(C.analyticsFeedbackPending, () => deps.analytics.feedbackPending())
-  handle(C.analyticsFeedbackSubmit, (_event, feedback: unknown) => deps.analytics.submitFeedback(feedback))
-  listen(C.analyticsFeedbackDismiss, () => deps.analytics.dismissFeedback())
 
   const drag = createCrossWindowDrag({
     cursor: () => screen.getCursorScreenPoint(),

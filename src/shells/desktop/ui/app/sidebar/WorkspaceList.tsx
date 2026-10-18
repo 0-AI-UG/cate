@@ -5,13 +5,14 @@
 // picker.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpen, Monitor, Plus, Server, Link2 } from 'lucide-react'
-import { Button, SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
+import { Monitor, Plus, Server, Link2 } from 'lucide-react'
+import { SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
 import { groupByMachine, type MachineGroup } from '@client/workspaces'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
 import { closeWorkspaces, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
+import { OPEN_WORKSPACE_ANCHOR } from '../remote/OpenWorkspaceDialog'
 import { showMenu } from './menu'
 import { WorkspaceRow } from './WorkspaceRow'
 
@@ -37,6 +38,12 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
   // Row order as shown: machine by machine.
   const entries = useMemo(() => groups.flatMap((g) => g.entries), [groups])
   const selectedId = useUIStore((s) => s.selectedWorkspaceId)
+  const pickerOpen = useUIStore((s) => s.openDialogOpen)
+  const toggleOpenPicker = () => {
+    const ui = useUIStore.getState()
+    if (ui.openDialogOpen) ui.closeWorkspacePicker()
+    else ui.openWorkspacePicker()
+  }
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [insertIndex, setInsertIndex] = useState<number | null>(null)
@@ -119,21 +126,16 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
         title={headerTitle}
         large
         leadingAction={headerLeadingAction}
-        actions={
-          <SidebarHeaderButton action="openWorkspace" onClick={() => useUIStore.getState().openWorkspacePicker()} title="Open Workspace…">
+        // With none, the welcome page shows the picker itself.
+        actions={groups.length > 0 && (
+          <SidebarHeaderButton action="openWorkspace" onClick={toggleOpenPicker} title="Open Workspace…" aria-expanded={pickerOpen} {...{ [OPEN_WORKSPACE_ANCHOR]: '' }}>
             <Plus size={14} />
           </SidebarHeaderButton>
-        }
+        )}
       />
       <div className="flex-1 overflow-y-auto pb-1" role="tree" aria-label="Workspaces">
         {groups.length === 0 && (
-          <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
-            <p className="text-xs text-muted">No workspaces yet</p>
-            <Button onClick={() => useUIStore.getState().openWorkspacePicker()}>
-              <FolderOpen size={13} />
-              Open a workspace
-            </Button>
-          </div>
+          <p className="px-4 py-8 text-center text-xs text-muted">No workspaces yet</p>
         )}
         {groups.map((group) => (
           <React.Fragment key={group.machine.key}>

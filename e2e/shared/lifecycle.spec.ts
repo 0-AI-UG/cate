@@ -37,7 +37,7 @@ test.describe('invite and remove a device [network]', () => {
     expect(code).toMatch(/\S{8,}/)
 
     c = await launchApp({ workspace: false, domTerminals: true })
-    await c.mainWindow.locator('[data-onboarding="welcome-actions"]').getByRole('button', { name: 'Join with a code' }).click()
+    await c.mainWindow.locator('[data-onboarding="welcome-actions"]').getByRole('option', { name: 'Join with a code…' }).click()
     await c.mainWindow.getByRole('textbox', { name: 'Pairing code' }).fill(code)
     await c.mainWindow.getByRole('button', { name: 'Join', exact: true }).click()
 

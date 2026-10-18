@@ -24,6 +24,9 @@ export interface UIState {
   joinDialog: JoinRequest | null
   /** "Open…": the picker of machines and workspaces. */
   openDialogOpen: boolean
+  /** The page shows the picker itself (the welcome page): "Open…" goes to
+   *  that one instead of a popover. */
+  pickerOnPage: boolean
   /** The machine whose folder dialog is open. */
   machineFolder: Machine | null
   /** The workspace "Share" shows. */
@@ -48,10 +51,11 @@ export interface UIActions {
   toggleSidebar(): void
   openJoinDialog(request?: JoinRequest): void
   closeJoinDialog(): void
-  /** "Open Workspace…": the window shows no workspace (the welcome page)
-   *  with the workspace picker over it. */
+  /** "Open Workspace…": the workspace picker over what the window shows,
+   *  which changes only once something opens. */
   openWorkspacePicker(): void
   closeWorkspacePicker(): void
+  setPickerOnPage(shown: boolean): void
   openMachineFolder(machine: Machine | null): void
   openShare(workspaceId: string | null): void
 }
@@ -65,6 +69,7 @@ export const INITIAL_UI_STATE: UIState = {
   sidebarHidden: false,
   joinDialog: null,
   openDialogOpen: false,
+  pickerOnPage: false,
   machineFolder: null,
   shareWorkspaceId: null,
 }
@@ -91,8 +96,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
   // to it; one that succeeds closes it.
   openJoinDialog: (request = {}) => set({ joinDialog: request, overlay: null }),
   closeJoinDialog: () => set({ joinDialog: null }),
-  openWorkspacePicker: () => set({ selectedWorkspaceId: null, openDialogOpen: true, overlay: null }),
+  openWorkspacePicker: () => set({ openDialogOpen: true, overlay: null }),
   closeWorkspacePicker: () => set({ openDialogOpen: false }),
+  setPickerOnPage: (pickerOnPage) => set({ pickerOnPage }),
   openMachineFolder: (machineFolder) => set({ machineFolder }),
   openShare: (shareWorkspaceId) => set({ shareWorkspaceId }),
 }))

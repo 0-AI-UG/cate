@@ -20,7 +20,6 @@ export {
   type DesktopPort,
   type UpdateStatus,
   type UpdateState,
-  type FeedbackPrompt,
   type MenuItem,
 } from './desktop'
 
@@ -74,7 +73,6 @@ export { OverlayHeader, LeftSidebarReopen, useLeftChromeInset, useWindowControls
 export { UpdateButton } from './chrome/UpdateButton'
 export { WelcomeDialog } from './dialogs/WelcomeDialog'
 export { UpdateReadyDialog } from './dialogs/UpdateReadyDialog'
-export { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
 export { AnimatedDotGrid } from './dialogs/AnimatedDotGrid'
 export { OnboardingTour } from './onboarding/OnboardingTour'
 export { ONBOARDING_STEPS, type OnboardingStep } from './onboarding/steps'

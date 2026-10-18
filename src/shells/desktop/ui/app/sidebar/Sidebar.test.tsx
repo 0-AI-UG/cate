@@ -64,7 +64,7 @@ afterEach(() => {
 })
 
 describe('Sidebar', () => {
-  it('with no workspaces, the list stays as it is: no headers, nothing in their place', () => {
+  it('with no workspaces, the sidebar only says so: no headers, no "+"', () => {
     const none: WorkspaceListSnapshot = { entries: [], open: [] }
     const empty = { ...list, getSnapshot: () => none }
     installClientApp({
@@ -74,7 +74,8 @@ describe('Sidebar', () => {
     })
     act(() => root.render(<Sidebar />))
     expect(host.querySelectorAll('[data-machine], [role="treeitem"]')).toHaveLength(0)
-    expect(host.querySelector('[aria-label="Open Workspace…"]')).not.toBeNull()
+    expect(host.textContent).toContain('No workspaces yet')
+    expect(host.querySelector('[aria-label="Open Workspace…"]')).toBeNull()
   })
 
   it('lists local and paired workspaces under their machines', () => {
@@ -82,6 +83,7 @@ describe('Sidebar', () => {
     expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(3)
     expect(host.textContent).toContain('Shared')
     expect([...host.querySelectorAll('[data-machine]')].map((h) => h.textContent)).toEqual(['This device', 'Paired'])
+    expect(host.querySelector('[aria-label="Open Workspace…"]')).not.toBeNull()
   })
 
   it('opens and selects a workspace on click', async () => {

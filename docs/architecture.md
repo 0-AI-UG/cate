@@ -1869,7 +1869,7 @@ a panel type in a menu by hand.
   open overlay or a focused list; run from inside a web page; window-only,
   no native accelerator), its place in the native menu bar (menu, group,
   order, submenu), the context menus it is offered in (`canvas`) and whether
-  the palette or the welcome page lists it. `registerActions(specs,
+  the palette lists it. `registerActions(specs,
   bindings)` (`client/host`) declares them in the catalog (`kernel/interaction`) and
   binds what each does (`run`, the client features it `requires`, `enabled`
   for a context); every declared action has a binding. The core turns the

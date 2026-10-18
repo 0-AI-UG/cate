@@ -1,5 +1,5 @@
 // Desktop-only actions ui/app offers when a shell provides them: the app
-// updater, the post-update feedback prompt, native menus, window chrome,
+// updater, native menus, window chrome,
 // ssh's sign-in prompts, runtime install progress and usage analytics. The desktop shell fills this slot; other shells leave it
 // empty and the UI hides what depends on it.
 
@@ -18,12 +18,6 @@ export interface UpdateStatus {
   manual?: boolean
   /** Reopen the "update ready" dialog even for a dismissed version. */
   forceShow?: boolean
-}
-
-export interface FeedbackPrompt {
-  /** Empty on a first install. */
-  fromVersion: string
-  toVersion: string
 }
 
 /** A runtime install and how far it is (null: it ended). `target` is
@@ -55,11 +49,6 @@ export interface DesktopPort {
   checkForUpdates(): Promise<void>
   /** Resolves false when nothing is staged. */
   quitAndInstallUpdate(): Promise<boolean>
-  // What's new and feedback after an update.
-  pendingFeedback(): Promise<FeedbackPrompt | null>
-  onFeedbackPrompt(listener: (prompt: FeedbackPrompt) => void): () => void
-  dismissFeedback(): void
-  submitFeedback(feedback: { rating: number; comment?: string }): Promise<{ buffered: boolean }>
   // Native chrome.
   /** Resolves the chosen item id, or null. */
   showContextMenu(items: MenuItem[]): Promise<string | null>

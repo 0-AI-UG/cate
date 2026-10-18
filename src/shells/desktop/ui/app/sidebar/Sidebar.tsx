@@ -1,16 +1,16 @@
 // The sidebar frame: the workspace list, and while settings are open the
-// settings navigation (in `settings-sidebar-slot`); resizable, hideable, with
+// navigation of settings and What's New (in `overlay-sidebar-slot`); resizable, hideable, with
 // the skills / repository / settings buttons and the update button at the
 // bottom. Window controls (macOS traffic lights) inset its header.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, GitPullRequest, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, GitPullRequest, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, ScrollText, type LucideIcon } from 'lucide-react'
 import { CateLogo, Tooltip, useShortcutLabel } from '../../kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import type { ActionId } from '@kernel/interaction/contract'
 import { UpdateButton } from '../chrome/UpdateButton'
 import { useWindowControlsInset } from '../chrome/chrome'
-import { hasOverlay, useOverlaysVersion } from '../overlays'
+import { hasOverlay, overlayOwnsSidebar, useOverlaysVersion } from '../overlays'
 import { useUIStore } from '../state/uiStore'
 import { WorkspaceList } from './WorkspaceList'
 
@@ -33,6 +33,7 @@ export interface SidebarOverlayButton {
 const DEFAULT_OVERLAY_BUTTONS: readonly SidebarOverlayButton[] = [
   { view: 'skills', label: 'Skills', action: 'skills', icon: PuzzlePiece },
   { view: 'pullRequests', label: 'Repository', action: 'openRepository', icon: GitPullRequest },
+  { view: 'whatsNew', label: "What's New", action: 'whatsNew', icon: ScrollText },
 ]
 
 export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, overlayButtons = DEFAULT_OVERLAY_BUTTONS }: SidebarProps): JSX.Element {
@@ -40,6 +41,7 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
   const hidden = useUIStore((s) => s.sidebarHidden)
   const overlay = useUIStore((s) => s.overlay)
   const settingsOpen = overlay?.view === 'settings'
+  const navOpen = overlayOwnsSidebar(overlay?.view)
   const controlsInset = useWindowControlsInset()
   const shortcutLabel = useShortcutLabel()
   useOverlaysVersion()
@@ -91,7 +93,7 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
   )
 
   const ui = useUIStore.getState
-  const utilities = !settingsOpen && (
+  const utilities = !navOpen && (
     <div className="flex-shrink-0 flex items-center gap-1 px-2 py-2">
       {overlay ? (
         <button
@@ -151,7 +153,7 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
         style={(controlsInset > 0 ? { WebkitAppRegion: 'drag' } : {}) as React.CSSProperties}
       />
       <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative pr-1">
-        {settingsOpen && (
+        {navOpen && (
           <div
             className="app-header-bar flex-shrink-0 gap-2 pr-3"
             style={{ paddingLeft: controlsInset || 12, WebkitAppRegion: 'drag' } as React.CSSProperties}
@@ -160,8 +162,8 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
             <CateLogo size={88} className="h-7 w-auto text-primary" aria-label="Cate" />
           </div>
         )}
-        <div id="settings-sidebar-slot" className={settingsOpen ? 'flex flex-col flex-1 min-h-0' : 'hidden'} />
-        <div className={`flex-1 min-h-0 overflow-hidden relative ${settingsOpen ? 'hidden' : ''}`}>
+        <div id="overlay-sidebar-slot" className={navOpen ? 'flex flex-col flex-1 min-h-0' : 'hidden'} />
+        <div className={`flex-1 min-h-0 overflow-hidden relative ${navOpen ? 'hidden' : ''}`}>
           <div className="absolute inset-0 animate-sidebar-view-in">
             <WorkspaceList
               headerTitle={<CateLogo size={88} className="h-7 w-auto text-primary" aria-label="Cate" />}

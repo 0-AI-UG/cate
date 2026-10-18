@@ -1,5 +1,5 @@
 // Application overlays: full-content views over the workspace (settings,
-// skills, pull requests, usage). ui/app renders settings; modules register
+// what's new, skills, pull requests, usage). ui/app renders settings; modules register
 // their own views here, and `openOverlay({ view })` shows one.
 //
 // `ClientOverlays` is what a window mounts once: the overlay on screen, the
@@ -15,10 +15,10 @@ import { ShareDialog } from './pairing/ShareDialog'
 import { MachineFolderHost } from './remote/MachineFolderHost'
 import { MachinePromptDialog } from './remote/MachinePromptDialog'
 import { OpenWorkspaceDialog } from './remote/OpenWorkspaceDialog'
+import { WHATS_NEW_VIEW, WhatsNewAfterUpdate, WhatsNewOverlay } from './chrome/WhatsNew'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { WelcomeDialog } from './dialogs/WelcomeDialog'
 import { UpdateReadyDialog } from './dialogs/UpdateReadyDialog'
-import { PostUpdateFeedbackDialog } from './dialogs/PostUpdateFeedbackDialog'
 import { OnboardingTour } from './onboarding/OnboardingTour'
 import { NotificationToasts } from './notifications'
 import { useUIStore } from './state/uiStore'
@@ -30,7 +30,7 @@ export interface OverlayViewProps {
   onClose: () => void
 }
 
-const views = new Map<string, ComponentType<OverlayViewProps>>([['settings', SettingsWindow]])
+const views = new Map<string, ComponentType<OverlayViewProps>>([['settings', SettingsWindow], [WHATS_NEW_VIEW, WhatsNewOverlay]])
 const listeners = new Set<() => void>()
 let version = 0
 
@@ -44,6 +44,14 @@ export function registerOverlay(view: string, component: ComponentType<OverlayVi
     version++
     for (const l of [...listeners]) l()
   }
+}
+
+/** Overlays that put their own navigation in the sidebar (its
+ *  `overlay-sidebar-slot`) in place of the workspace list. */
+const SIDEBAR_VIEWS = new Set(['settings', WHATS_NEW_VIEW])
+
+export function overlayOwnsSidebar(view: string | undefined): boolean {
+  return !!view && SIDEBAR_VIEWS.has(view)
 }
 
 export function hasOverlay(view: string): boolean {
@@ -89,7 +97,7 @@ export function ClientOverlays({ firstRun = true }: ClientOverlaysProps): JSX.El
         <>
           <WelcomeDialog />
           <OnboardingTour />
-          <PostUpdateFeedbackDialog />
+          <WhatsNewAfterUpdate />
         </>
       )}
       <UpdateReadyDialog />

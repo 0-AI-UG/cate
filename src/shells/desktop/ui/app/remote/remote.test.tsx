@@ -10,7 +10,7 @@ import { installClientApp, type ClientApp } from '../app'
 import { useUIStore } from '../state/uiStore'
 import { MachineFolderHost } from './MachineFolderHost'
 import { WorkspacePicker } from './WorkspacePicker'
-import { OpenWorkspaceDialog } from './OpenWorkspaceDialog'
+import { OPEN_WORKSPACE_ANCHOR, OpenWorkspaceDialog } from './OpenWorkspaceDialog'
 import { installDesktopPort, type DesktopPort } from '../desktop'
 import { clientSettingsTable, type ClientSettings } from '../../../settings'
 import { installMockClientUi } from '../../../../../test/clientUi'
@@ -194,11 +194,37 @@ it('Open joins a workspace on another device with a code', async () => {
   expect(useUIStore.getState().joinDialog).toEqual({})
 })
 
-it('Open Workspace… shows the welcome page with the picker over it', () => {
+it('Open Workspace… shows the picker over the workspace the window shows', () => {
   useUIStore.setState({ selectedWorkspaceId: 'local:/code/app', overlay: { view: 'settings' } })
   useUIStore.getState().openWorkspacePicker()
-  expect(useUIStore.getState()).toMatchObject({ selectedWorkspaceId: null, openDialogOpen: true, overlay: null })
+  expect(useUIStore.getState()).toMatchObject({ selectedWorkspaceId: 'local:/code/app', openDialogOpen: true, overlay: null })
   useUIStore.setState({ openDialogOpen: false })
+})
+
+it('Open hangs from the sidebar\'s "+" while it shows, and an outside click closes it', async () => {
+  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
+  const plus = document.createElement('button')
+  plus.setAttribute(OPEN_WORKSPACE_ANCHOR, '')
+  plus.getBoundingClientRect = () => ({ left: 10, right: 32, top: 10, bottom: 32, width: 22, height: 22, x: 10, y: 10, toJSON: () => ({}) })
+  document.body.appendChild(plus)
+  useUIStore.setState({ openDialogOpen: true })
+  await act(async () => root.render(<OpenWorkspaceDialog />))
+  const popover = document.body.querySelector('[role="dialog"][aria-label="Open a workspace"]')
+  expect(popover?.closest('[data-placement]')).toBeTruthy()
+  // Pressing the "+" itself is left to its toggle.
+  await act(async () => plus.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  expect(useUIStore.getState().openDialogOpen).toBe(true)
+  await act(async () => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  expect(useUIStore.getState().openDialogOpen).toBe(false)
+  plus.remove()
+})
+
+it('Open shows nothing of its own while the page shows the picker', async () => {
+  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
+  useUIStore.setState({ openDialogOpen: true, pickerOnPage: true })
+  await act(async () => root.render(<OpenWorkspaceDialog />))
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  useUIStore.setState({ pickerOnPage: false })
 })
 
 it('the Open dialog stays when the native folder dialog is cancelled, and closes on a pick', async () => {
@@ -207,11 +233,11 @@ it('the Open dialog stays when the native folder dialog is cancelled, and closes
   installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
   useUIStore.setState({ openDialogOpen: true })
   await act(async () => root.render(<OpenWorkspaceDialog />))
-  await act(async () => option('This device').click())
+  await act(async () => option('Open a folder…').click())
   expect(pickFolder).toHaveBeenCalled()
   expect(useUIStore.getState().openDialogOpen).toBe(true)
   pickFolder.mockResolvedValueOnce('/code/app')
-  await act(async () => option('This device').click())
+  await act(async () => option('Open a folder…').click())
   expect(useUIStore.getState().openDialogOpen).toBe(false)
 })
 

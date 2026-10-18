@@ -24,7 +24,7 @@ import { useTerminalStatuses } from '../state/statusStore'
 import { useUIStore } from '../state/uiStore'
 import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
-import { PresenceAvatars } from './PresenceAvatars'
+import { ShareSlot } from './ShareSlot'
 import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type WindowTree } from './panelTree'
 
@@ -95,6 +95,11 @@ export function WorkspaceRow({
 
   const allPanelIds = (): string[] => Object.keys(doc.panels)
 
+  // Opens the workspace first when it is closed.
+  const share = async () => {
+    if (await selectWorkspace(workspaceId)) useUIStore.getState().openShare(workspaceId)
+  }
+
   const handleContextMenu = async (e: React.MouseEvent) => {
     if (onBulkContextMenu && (await onBulkContextMenu(e))) return
     e.preventDefault()
@@ -102,8 +107,8 @@ export function WorkspaceRow({
     const cwd = terminalCwd(statuses, isOpen ? focusedLeafPanelId(workspaceId) : null) ?? rootPath
     const items: MenuItem[] = [
       { id: 'select', label: 'Select Workspace', enabled: !isSelected },
+      { id: 'share', label: 'Share…' },
       { id: 'rename', label: 'Rename Workspace' },
-      { id: 'share', label: 'Share…', enabled: isOpen },
       { id: 'settings', label: 'Workspace Settings…', enabled: isOpen },
       { type: 'separator' },
       { id: 'copy-cwd', label: 'Copy Working Directory', enabled: !!cwd },
@@ -117,9 +122,7 @@ export function WorkspaceRow({
     switch (id) {
       case 'select': void selectWorkspace(workspaceId); break
       case 'rename': beginRename(); break
-      case 'share':
-        if (await selectWorkspace(workspaceId)) useUIStore.getState().openShare(workspaceId)
-        break
+      case 'share': void share(); break
       case 'settings':
         await selectWorkspace(workspaceId)
         useUIStore.getState().openSettings('runtime')
@@ -247,7 +250,7 @@ export function WorkspaceRow({
             {displayTitle}
           </span>
         )}
-        {isOpen && <PresenceAvatars workspaceId={entry.id} />}
+        <ShareSlot workspaceId={workspaceId} isOpen={isOpen} isSelected={isSelected} onShare={() => void share()} />
         {canExpand && !isExpanded && (
           <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">
             {tree.count}

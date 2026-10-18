@@ -102,7 +102,9 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
   const userDataDir = opts.userDataDir ?? path.join(home, `ud-${++userDataCounter}`)
   if (!opts.firstRun && !existsSync(path.join(userDataDir, 'ui-state.json'))) {
     mkdirSync(userDataDir, { recursive: true })
-    writeFileSync(path.join(userDataDir, 'ui-state.json'), JSON.stringify({ telemetryNoticeAcknowledgedVersion: 99, onboardingCompleted: true }))
+    // This version's "What's New" counts as seen: it would open over the test.
+    const { version } = JSON.parse(readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string }
+    writeFileSync(path.join(userDataDir, 'ui-state.json'), JSON.stringify({ telemetryNoticeAcknowledgedVersion: 99, onboardingCompleted: true, whatsNewSeenVersion: version }))
   }
   const env: NodeJS.ProcessEnv = {
     ...process.env,
