@@ -96,6 +96,9 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
         options.log?.info('refused a network connection: no opening')
         break
     }
+    // The peer hangs up once it has read the answer. Closing first can drop
+    // the answer still buffered in the transport (a WebRTC data channel).
+    if (admission.kind !== 'no-opening') await peerHangsUp(channel)
     channel.close()
   }
 
@@ -142,6 +145,20 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
       this.closeAll()
     },
   }
+}
+
+/** How long a turned-away peer has to hang up after its answer. */
+const ANSWER_LINGER_MS = 2_000
+
+function peerHangsUp(channel: SecureChannel): Promise<void> {
+  return new Promise((resolve) => {
+    if (channel.closed) return resolve()
+    const timer = setTimeout(resolve, ANSWER_LINGER_MS)
+    channel.onClose(() => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
 }
 
 /**
