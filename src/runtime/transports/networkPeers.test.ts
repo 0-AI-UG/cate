@@ -1,5 +1,5 @@
-// The network peers' limits on connections that have not proven a paired
-// key yet, and closing them (B33).
+// The network peers' limits on connections not admitted yet, and closing
+// them (B33).
 
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { RpcServer } from '@kernel/rpc/runtime'
@@ -14,7 +14,7 @@ beforeEach(() => {
   peers = createNetworkPeers({
     rpc: new RpcServer({ version: 'test', lifecycle: createLifecycleBus() }),
     runtimeKeys: generateKeyPair(),
-    pairing: { isPaired: async () => false, onRevoked: () => () => {} } as never,
+    pairing: { admit: async () => ({ kind: 'no-opening' }), onRevoked: () => () => {} },
     handshakeTimeoutMs: 60_000,
     maxUnproven: 4,
   })
@@ -49,7 +49,7 @@ it('closes handshakes in progress with the rest, and one transport alone', () =>
   expect(local.closed).toBe(true)
 })
 
-it('frees a slot once the handshake proves a paired key, and holds it while an unknown key pairs', async () => {
+it('frees a slot once a paired device is admitted, and holds it while another sends no opening', async () => {
   const runtimeKeys = generateKeyPair()
   const device = generateKeyPair()
   peers.dispose()
@@ -57,8 +57,9 @@ it('frees a slot once the handshake proves a paired key, and holds it while an u
     rpc: new RpcServer({ version: 'test', lifecycle: createLifecycleBus() }),
     runtimeKeys,
     pairing: {
-      isPaired: async (key: Uint8Array) => bytesEqual(key, device.publicKey),
-      pairUnknown: (channel) => new Promise<boolean>((resolve) => channel.onClose(() => resolve(false))),
+      admit: (channel) => bytesEqual(channel.remoteStatic, device.publicKey)
+        ? Promise.resolve({ kind: 'connect' })
+        : new Promise((resolve) => channel.onClose(() => resolve({ kind: 'no-opening' }))),
       onRevoked: () => () => {},
     },
     maxUnproven: 1,
@@ -78,6 +79,6 @@ it('frees a slot once the handshake proves a paired key, and holds it while an u
   await unknown.channel
   await new Promise((resolve) => setTimeout(resolve, 10))
   expect(unknown.server.closed).toBe(false)
-  // The unknown key sits in its pairing attempt and keeps its slot.
+  // The other connection waits for its opening and keeps its slot.
   expect(silent('cateConnect').closed).toBe(true)
 })

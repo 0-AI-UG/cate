@@ -32,15 +32,14 @@ function setup() {
     dialed.push(link)
     const target = parsePairingInput(link)
     const [a, b] = createMemoryPortPair()
-    void acceptPeer(b, { runtimeKeys, policy: service }).catch(() => {})
-    const channel = await pairWithRuntime(a, {
+    void acceptPeer(b, { runtimeKeys }).then((channel) => service.admit(channel)).catch(() => {})
+    const publicKey = await pairWithRuntime(a, {
       deviceKeys,
       deviceName: 'Test phone',
       target: { runtimeId: target.runtimeId, secretId: target.secretId, secret: target.secret, fingerprint: target.fingerprint },
       pins: workspaces.known,
     })
-    channel.close()
-    return { runtimeId: target.runtimeId, endpoints: target.endpoints, publicKey: channel.remoteStatic }
+    return { runtimeId: target.runtimeId, endpoints: target.endpoints, publicKey }
   }
   return { runtimeKeys, service, workspaces, pair: pairAs(deviceKeys), pairAs, deviceKeys, dialed }
 }

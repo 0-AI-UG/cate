@@ -760,29 +760,39 @@ iOS app use the same code.
   `Noise_XX_25519_ChaChaPoly_BLAKE2b`. After it, both sides know the other's
   static public key and every frame is encrypted and authenticated. Frames
   larger than a Noise message are split.
-- **Known peers only.** After the handshake:
-  - the client checks that the runtime's key is the one it pinned for that
-    network id and that the key derives the id, and aborts otherwise;
-  - the runtime checks that the client's key is in `devices.json`; if not, the
-    only message it accepts is `pair` (below), and it closes the connection
-    after one failed attempt.
+- **Known peers only.** After the handshake the client checks that the
+  runtime's key is the one it pinned for that network id and that the key
+  derives the id, and aborts otherwise. Pairing checks the key against the
+  code instead (below).
+- **The opening.** The client's first frame after the handshake says what it
+  wants (`runtime/pairing/contract`): `pair` with a code's proof, or
+  `connect` by key. The runtime acts on that and on whether the key is in
+  `devices.json` (`PairingService.admit`, `NetworkPeers`):
+
+  | Opening | Key paired | Key not paired |
+  |---|---|---|
+  | `pair` | pairs again (a device that lost the runtime's pin) | pairs |
+  | `connect` | serves the protocol | answers the hello with a refusal |
+
+  A `pair` is answered and ends the connection, whatever the answer; the
+  device then connects by key. A `connect` has no answer: the protocol's
+  frames follow it at once. Anything else ends the connection. Every
+  refusal is logged with its reason.
 - **Why not transport security alone.** WebRTC's DTLS authenticates whatever
   fingerprint the signaling carried, and Cate Connect does the signaling.
   Running Noise inside the channel with pinned keys means a compromised or
   impersonated Cate Connect can deny service but cannot read or inject
   anything. The same holds for its TURN relay: a relayed session is the same
   Noise channel, so the relay sees only ciphertext, sizes and timing. The LAN WebSocket needs no TLS certificates for the same reason.
-- **Before a key is known.** Until a connection's key is proven paired
-  (or pairs), the runtime accepts frames of at most 16 KiB, enough for
-  `pair` or a `hello`, and raises the limit to the default (64 MiB)
-  afterwards. It holds at most 32 such connections per transport (so the
+- **Before a connection is admitted.** Until its opening admits it, the
+  runtime accepts frames of at most 16 KiB, enough for an opening or a
+  `hello`, and raises the limit to the default (64 MiB) for a paired
+  device's `connect`. It holds at most 32 such connections per transport (so the
   peers anyone can send through Cate Connect never lock out the same
   network), and at most 4 from one remote address on the same-network
   listener; more are closed at once. A connection has 5 s to finish its
-  handshake, and leaves the count as soon as the handshake shows a paired
-  key; an unknown key keeps its place while it has its one attempt. An
-  unknown key has 10 s to send `pair`. The refusal to an unpaired device
-  names no version. Each Cate Connect session costs a WebRTC peer
+  handshake and 10 s to send its opening, and leaves the count once it is
+  served or ended. The refusal to an unpaired device names no version. Each Cate Connect session costs a WebRTC peer
   connection before any handshake, so the runtime keeps at most 8 in setup
   at once and ignores more until one opens or times out.
 - **Every client is a device.** The workspace's devices are every device
@@ -791,7 +801,7 @@ iOS app use the same code.
   machine, over the local socket or a machine's bridge (`machineUser`). A
   client's hello names its device key; the runtime adds an unknown key when
   the client connects (only the local socket can bring one: an unknown key on
-  the network never gets to hello) and marks a known one seen. A connection
+  the network is refused before its hello) and marks a known one seen. A connection
   that names no key (`cate serve`) is no device. On the local socket the key
   is taken as given: its door is the machine's user, who can already create
   a pairing secret. A device admitted as the machine's user is known on the
@@ -834,16 +844,17 @@ terminal could share the computer.
   (for "Share"; refused without `acknowledged`, the person's confirmation
   that whoever joins can use this computer as them; running `cate serve` by
   hand is that confirmation),
-  `list`, the `watch` stream, `revoke {deviceKey}`. `pair` itself is the one
-  message a runtime accepts from an unknown key.
+  `list`, the `watch` stream, `revoke {deviceKey}`. `pair` itself is an
+  opening (7.6), not a capability method.
 - **Pair message.** The joining client connects (7.5), completes the Noise
-  handshake, and sends `pair { deviceName, secretId, proof }` where
+  handshake, and opens with `pair { deviceName, secretId, proof }` where
   `proof = HMAC-SHA256(secret, "cate-pair-client" || handshakeHash)`. The
   runtime answers with `HMAC-SHA256(secret, "cate-pair-runtime" ||
   handshakeHash)`. Each side verifies the other's proof, which binds the
   secret to this exact encrypted session, so a party in the middle learns
   nothing usable. The runtime then stores the device key in `devices.json`
-  and burns the secret; the client checks that the runtime key derives the
+  (replacing the entry of a key already there) and burns the secret; the
+  client checks that the runtime key derives the
   network id it paired with and pins the key under it in
   `known-runtimes.json`, refusing another key for an id already pinned. The
   runtime checks the proof only against the secret `secretId` names. A wrong
@@ -851,7 +862,8 @@ terminal could share the computer.
   id is short enough to walk, so burning on a wrong proof would let anyone
   on the network spoil a code, while the 80-bit secret cannot be guessed
   online. Nobody who does not hold a code can spoil another one.
-- **Afterwards** both sides reconnect by key; no code is needed again.
+- **Afterwards** the device connects by key (`connect`); no code is needed
+  again.
 - **No pairing for the machine's user.** A client that reaches the runtime
   over the local socket or a machine's bridge does not pair: it is added to
   the devices when it connects (7.6).

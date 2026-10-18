@@ -17,7 +17,7 @@ import { PinMismatchError } from '../security/client'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '../pairing/contract'
 import { encodeBase64, pushCapability } from '../push/contract'
 import { openPushMessage } from '../../test/push'
-import { KnownRuntimes, PairingError } from '../pairing/client'
+import { KnownRuntimes, PairingError, pairWithRuntime } from '../pairing/client'
 import type { IceServer, PeerConnectionFactory, PeerConnectionLike } from '../transports/contract'
 import { openSecureConnection } from '../transports/client'
 import { dialLocal, loadNodePeerConnection, nodeWebSocketFactory } from '../transports/node'
@@ -110,7 +110,7 @@ const dial = (service: ConnectStandIn, runtimeId: string, timeoutMs = 10_000) =>
   dialCateConnect({ url: service.url, runtimeId, webSocket: nodeWebSocketFactory, createPeer, timeoutMs })
 
 describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 }, () => {
-  it('pairs and calls runtime.info over a WebRTC data channel, then reconnects by key', async () => {
+  it('pairs over a WebRTC data channel, then connects by key and calls runtime.info', async () => {
     const service = await standIn()
     const daemon = await daemonOn(service)
     expect(daemon.network.registration()!.state()).toEqual({ kind: 'registered' })
@@ -120,21 +120,17 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     expect(payload.mode).toBe('cateConnect')
     const phone = { keys: generateKeyPair(), pins: new KnownRuntimes(createMemoryDeviceStore()) }
 
-    const paired = await openSecureConnection(await dial(service, payload.runtimeId), {
-      kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
+    await pairWithRuntime(await dial(service, payload.runtimeId), {
+      deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
     })
-    const first = rpcClient('phone', phone.keys)
-    await first.attach(paired.frames)
-    expect((await createCapabilityProxy(first, runtimeCapability).info()).runtimeId).toBe(daemon.runtimeId)
-    first.detach()
-    paired.channel.close()
 
-    const again = await openSecureConnection(await dial(service, daemon.networkId), {
-      kind: 'connect', deviceKeys: phone.keys, runtimeId: daemon.networkId, pins: phone.pins,
+    const connected = await openSecureConnection(await dial(service, daemon.networkId), {
+      deviceKeys: phone.keys, runtimeId: daemon.networkId, pins: phone.pins,
     })
-    const second = rpcClient('phone', phone.keys)
-    await second.attach(again.frames)
-    const info = await createCapabilityProxy(second, runtimeCapability).info()
+    const client = rpcClient('phone', phone.keys)
+    await client.attach(connected.frames)
+    const info = await createCapabilityProxy(client, runtimeCapability).info()
+    expect(info.runtimeId).toBe(daemon.runtimeId)
     expect(info.clients.map((c) => c.device.name)).toContain('phone')
   }, 30_000)
 
@@ -143,11 +139,14 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     const daemon = await daemonOn(service)
     const payload = decodePairingUri((await addDevice(daemon)).created.uri)
     const phone = { keys: generateKeyPair(), pins: new KnownRuntimes(createMemoryDeviceStore()) }
-    const paired = await openSecureConnection(await dial(service, payload.runtimeId), {
-      kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
+    await pairWithRuntime(await dial(service, payload.runtimeId), {
+      deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
+    })
+    const connected = await openSecureConnection(await dial(service, daemon.networkId), {
+      deviceKeys: phone.keys, runtimeId: daemon.networkId, pins: phone.pins,
     })
     const client = rpcClient('phone', phone.keys)
-    await client.attach(paired.frames)
+    await client.attach(connected.frames)
     const push = createCapabilityProxy(client, pushCapability)
     const key = new Uint8Array(32).fill(3)
     expect(await push.register({ target: `apns:sandbox:${'ab'.repeat(32)}`, key: encodeBase64(key) }))
@@ -267,10 +266,9 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
       const daemon = await daemonOn(honest)
       const payload = decodePairingUri((await addDevice(daemon)).created.uri)
       const phone = { keys: generateKeyPair(), pins: new KnownRuntimes(createMemoryDeviceStore()) }
-      const paired = await openSecureConnection(await dial(honest, payload.runtimeId), {
-        kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
+      await pairWithRuntime(await dial(honest, payload.runtimeId), {
+        deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
       })
-      paired.channel.close()
       await daemon.stop({ kind: 'signal' })
       daemons.splice(daemons.indexOf(daemon), 1)
 
@@ -278,7 +276,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
       const again = await daemonOn(mitm)
       expect(again.networkId).toBe(daemon.networkId)
       await expect(openSecureConnection(await dial(mitm, daemon.networkId), {
-        kind: 'connect', deviceKeys: phone.keys, runtimeId: daemon.networkId, pins: phone.pins,
+        deviceKeys: phone.keys, runtimeId: daemon.networkId, pins: phone.pins,
       })).rejects.toBeInstanceOf(PinMismatchError)
       expect(again.rpc.connections().filter((c) => c.client?.device.name === 'phone')).toEqual([])
     }, 40_000)
@@ -287,8 +285,8 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
       const { service, daemon } = await mitmSetup()
       const payload = decodePairingUri((await addDevice(daemon)).created.uri)
       const phone = { keys: generateKeyPair(), pins: new KnownRuntimes(createMemoryDeviceStore()) }
-      await expect(openSecureConnection(await dial(service, payload.runtimeId), {
-        kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
+      await expect(pairWithRuntime(await dial(service, payload.runtimeId), {
+        deviceKeys: phone.keys, deviceName: 'phone', target: payload, pins: phone.pins,
       })).rejects.toMatchObject({ reason: 'id-mismatch' })
       expect(await phone.pins.get(daemon.networkId)).toBeUndefined()
     }, 30_000)
@@ -298,8 +296,8 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
       const { pairing, created } = await addDevice(daemon)
       const typed = parsePairingCode(created.code)
       const phone = { keys: generateKeyPair(), pins: new KnownRuntimes(createMemoryDeviceStore()) }
-      const error = await openSecureConnection(await dial(service, typed.runtimeId), {
-        kind: 'pair', deviceKeys: phone.keys, deviceName: 'phone', target: typed, pins: phone.pins,
+      const error = await pairWithRuntime(await dial(service, typed.runtimeId), {
+        deviceKeys: phone.keys, deviceName: 'phone', target: typed, pins: phone.pins,
       }).catch((e: unknown) => e)
       expect(error).toBeInstanceOf(PairingError)
       expect(error).toMatchObject({ reason: 'id-mismatch' })

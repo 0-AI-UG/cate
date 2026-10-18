@@ -34,7 +34,7 @@ beforeEach(async () => {
     runtimePublicKey: runtimeKeys.publicKey,
     store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
     addresses: () => lan.addresses(),
-    pairTimeoutMs: 2_000,
+    openingTimeoutMs: 2_000,
   })
   const rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
   rpc.register(pingCap, { ping: () => 'pong' })

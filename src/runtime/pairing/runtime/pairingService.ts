@@ -5,25 +5,28 @@
 import { randomBytes as nobleRandomBytes } from '@noble/hashes/utils.js'
 import { RpcError, type DeviceInfo, type HelloMessage } from '@kernel/rpc/contract'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
-import { base32Encode, bytesToHex, fingerprint, hexToBytes, networkIdOf, type SecureChannel } from '../../security/contract'
-import type { PeerPolicy } from '../../security/runtime'
+import { base32Encode, bytesToHex, fingerprint, hexToBytes, networkIdOf, nextFrame, type SecureChannel } from '../../security/contract'
 import {
   cleanDeviceName,
   isDeviceKey,
-  decodePairMessage,
+  decodeOpening,
+  encodePairAnswer,
   encodePairingUri,
-  encodePairMessage,
   formatPairingCode,
   PAIRING_SECRET_BYTES,
   PAIRING_SECRET_TTL_MS,
+  OPENING_TIMEOUT_MS,
   SECRET_ID_CHARS,
   proofFromWire,
   proofToWire,
   runtimeProof,
   verifyClientProof,
+  type Admission,
   type CreatedSecret,
   type PairAnswer,
   type PairingMode,
+  type PairRejectReason,
+  type PairRequest,
   type pairingCapability,
   type WorkspaceDevice,
 } from '../contract'
@@ -40,8 +43,8 @@ export interface PairingServiceOptions {
   sameNetworkProblem?: () => SameNetworkProblem | null
   now?: () => number
   randomBytes?: (length: number) => Uint8Array
-  /** How long an unknown key has to send `pair`. */
-  pairTimeoutMs?: number
+  /** How long a connection has to send its opening. */
+  openingTimeoutMs?: number
 }
 
 interface LiveSecret {
@@ -50,7 +53,7 @@ interface LiveSecret {
   expiresAt: number
 }
 
-export class PairingService implements PeerPolicy {
+export class PairingService {
   private secrets: LiveSecret[] = []
   private readonly revokeListeners = new Set<(publicKey: string) => void>()
   private readonly listListeners = new Set<(devices: WorkspaceDevice[]) => void>()
@@ -167,41 +170,49 @@ export class PairingService implements PeerPolicy {
   }
 
   /**
-   * The one attempt an unknown key gets: read `pair`, check the proof against
-   * the live secret it names, answer, store the device and burn the secret.
-   * A wrong proof or an unknown id burns nothing: the id is short enough to
-   * walk, so burning on a wrong proof would let anyone on the network spoil
-   * a code, and guessing the 80-bit secret online is hopeless anyway.
+   * Reads a network connection's opening and acts on it (architecture 7.6):
+   * `connect` is admitted for a known key and refused for any other; `pair`
+   * is checked against the live secret it names whether the key is known or
+   * not (a device that lost the runtime's pin pairs again), answered, and
+   * stores the device and burns the secret when it holds. A wrong proof or
+   * an unknown id burns nothing: the id is short enough to walk, so burning
+   * on a wrong proof would let anyone on the network spoil a code, and
+   * guessing the 80-bit secret online is hopeless anyway.
    */
-  async pairUnknown(channel: SecureChannel): Promise<boolean> {
-    const frame = await firstFrame(channel, this.options.pairTimeoutMs ?? 10_000)
-    if (!frame) return false
-    const request = decodePairMessage(frame)
-    // Not the pairing protocol at all: a client whose key is not (or no
-    // longer) paired saying hello. The transport tells it it was refused.
-    if (!request) return false
-    if (request.type !== 'pair') return this.answer(channel, { type: 'pair-rejected', reason: 'malformed' })
+  async admit(channel: SecureChannel): Promise<Admission> {
+    const frame = await nextFrame(channel, this.options.openingTimeoutMs ?? OPENING_TIMEOUT_MS)
+    const opening = frame instanceof Uint8Array ? decodeOpening(frame) : null
+    if (!opening) return { kind: 'no-opening' }
+    if (opening.type === 'connect') return this.isPaired(channel.remoteStatic) ? { kind: 'connect' } : { kind: 'unpaired' }
+    return this.pair(channel, opening)
+  }
 
+  private pair(channel: SecureChannel, request: PairRequest): Admission {
     const live = this.liveSecrets()
     const match = live.find((entry) => entry.id === request.secretId)
-    if (!match) return this.answer(channel, { type: 'pair-rejected', reason: 'no-secret' })
+    if (!match) return this.reject(channel, 'no-secret')
     if (!verifyClientProof(match.secret, channel.handshakeHash, proofFromWire(request.proof))) {
-      return this.answer(channel, { type: 'pair-rejected', reason: 'invalid-proof' })
+      return this.reject(channel, 'invalid-proof')
     }
     this.secrets = live.filter((entry) => entry !== match)
 
     const hex = bytesToHex(channel.remoteStatic)
     const now = this.now()
-    const name = cleanDeviceName(request.deviceName)
+    const deviceName = cleanDeviceName(request.deviceName)
     this.update((file) => ({
-      devices: [...file.devices.filter((device) => device.publicKey !== hex), { publicKey: hex, name, admittedBy: 'pairing', addedAt: now, lastSeen: now }],
+      devices: [...file.devices.filter((device) => device.publicKey !== hex), { publicKey: hex, name: deviceName, admittedBy: 'pairing', addedAt: now, lastSeen: now }],
     }))
-    return this.answer(channel, { type: 'paired', proof: proofToWire(runtimeProof(match.secret, channel.handshakeHash)) })
+    this.answer(channel, { type: 'paired', proof: proofToWire(runtimeProof(match.secret, channel.handshakeHash)) })
+    return { kind: 'paired', deviceName }
   }
 
-  private answer(channel: SecureChannel, answer: PairAnswer): boolean {
-    if (!channel.closed) channel.send(encodePairMessage(answer))
-    return answer.type === 'paired'
+  private reject(channel: SecureChannel, reason: PairRejectReason): Admission {
+    this.answer(channel, { type: 'pair-rejected', reason })
+    return { kind: 'pair-rejected', reason }
+  }
+
+  private answer(channel: SecureChannel, answer: PairAnswer): void {
+    if (!channel.closed) channel.send(encodePairAnswer(answer))
   }
 
   private liveSecrets(): LiveSecret[] {
@@ -227,19 +238,4 @@ export function pairingCapabilityImpl(service: PairingService): CapabilityImpl<t
     },
     revoke: ({ deviceKey }) => service.revoke(deviceKey),
   }
-}
-
-function firstFrame(channel: SecureChannel, timeoutMs: number): Promise<Uint8Array | null> {
-  if (channel.closed) return Promise.resolve(null)
-  return new Promise((resolve) => {
-    const finish = (frame: Uint8Array | null) => {
-      clearTimeout(timer)
-      offFrame()
-      offClose()
-      resolve(frame)
-    }
-    const timer = setTimeout(() => finish(null), timeoutMs)
-    const offFrame = channel.onFrame((frame) => finish(frame))
-    const offClose = channel.onClose(() => finish(null))
-  })
 }

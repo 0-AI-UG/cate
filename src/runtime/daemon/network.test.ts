@@ -11,9 +11,9 @@ import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { settingsCapability } from '@kernel/settings/contract'
-import { encodePublicKey, fingerprint, generateKeyPair } from '@runtime/security/contract'
+import { encodePublicKey, fingerprint, generateKeyPair, type MessagePortLike } from '@runtime/security/contract'
 import { decodePairingUri, pairingCapability, parsePairingCode } from '@runtime/pairing/contract'
-import { KnownRuntimes } from '@runtime/pairing/client'
+import { KnownRuntimes, pairWithRuntime, type PairTarget } from '@runtime/pairing/client'
 import { readRuntimeInfo } from '@runtime/data/runtime'
 import { dialSameNetwork, openSecureConnection } from '@runtime/transports/client'
 import { dialLocal, nodeWebSocketFactory } from '@runtime/transports/node'
@@ -79,6 +79,14 @@ function device(name: string) {
   }
 }
 
+type Device = ReturnType<typeof device>
+
+/** Pairs with the code, then connects by key, as the app does. */
+async function join(dev: Device, target: PairTarget, dial: () => Promise<MessagePortLike>) {
+  await pairWithRuntime(await dial(), { deviceKeys: dev.keys, deviceName: dev.name, target, pins: dev.pins })
+  return openSecureConnection(await dial(), { deviceKeys: dev.keys, runtimeId: target.runtimeId, pins: dev.pins })
+}
+
 describe.skipIf(process.platform === 'win32')('daemon network access', () => {
   it('pairs a device from the QR payload and serves runtime.info over the network', async () => {
     const daemon = await start('sameNetwork')
@@ -91,10 +99,8 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     expect(payload).toMatchObject({ runtimeId: daemon.networkId, mode: 'sameNetwork', addresses: info!.endpoints.sameNetwork!.addresses })
 
     const phone = device('phone')
-    const port = await dialSameNetwork({ runtimeId: payload.runtimeId, addresses: payload.addresses, webSocket: nodeWebSocketFactory })
-    const { frames } = await openSecureConnection(port, {
-      kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name, target: payload, pins: phone.pins,
-    })
+    const { frames } = await join(phone, payload, () =>
+      dialSameNetwork({ runtimeId: payload.runtimeId, addresses: payload.addresses, webSocket: nodeWebSocketFactory }))
     const rpc = phone.rpc()
     await rpc.attach(frames)
     const runtimeInfo = await createCapabilityProxy(rpc, runtimeCapability).info()
@@ -114,16 +120,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
       daemon.networkId === runtimeId ? (await readRuntimeInfo(daemon.paths.dir))!.endpoints.sameNetwork!.addresses : []
 
     const laptop = device('laptop')
-    const first = await openSecureConnection(
-      await dialSameNetwork({ runtimeId: typed.runtimeId, discover, webSocket: nodeWebSocketFactory }),
-      { kind: 'pair', deviceKeys: laptop.keys, deviceName: laptop.name, target: typed, pins: laptop.pins },
-    )
-    first.channel.close()
-
-    const again = await openSecureConnection(
-      await dialSameNetwork({ runtimeId: typed.runtimeId, discover, webSocket: nodeWebSocketFactory }),
-      { kind: 'connect', deviceKeys: laptop.keys, runtimeId: typed.runtimeId, pins: laptop.pins },
-    )
+    const again = await join(laptop, typed, () => dialSameNetwork({ runtimeId: typed.runtimeId, discover, webSocket: nodeWebSocketFactory }))
     const rpc = laptop.rpc()
     await rpc.attach(again.frames)
     expect((await createCapabilityProxy(rpc, runtimeCapability).info()).runtimeId).toBe(daemon.runtimeId)
@@ -137,7 +134,7 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
     // Coming back with the removed key, the client is told it was refused.
     const removed = await openSecureConnection(
       await dialSameNetwork({ runtimeId: typed.runtimeId, discover, webSocket: nodeWebSocketFactory }),
-      { kind: 'connect', deviceKeys: laptop.keys, runtimeId: typed.runtimeId, pins: laptop.pins },
+      { deviceKeys: laptop.keys, runtimeId: typed.runtimeId, pins: laptop.pins },
     )
     const refused = laptop.rpc()
     await expect(refused.attach(removed.frames)).rejects.toThrow(/not paired/)
@@ -158,10 +155,8 @@ describe.skipIf(process.platform === 'win32')('daemon network access', () => {
 
     const phone = device('phone')
     const payload = decodePairingUri((await createCapabilityProxy(desk, pairingCapability).createSecret({ mode: 'sameNetwork', acknowledged: true })).uri)
-    const { frames } = await openSecureConnection(
-      await dialSameNetwork({ runtimeId: daemon.networkId, addresses: payload.addresses, webSocket: nodeWebSocketFactory }),
-      { kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name, target: payload, pins: phone.pins },
-    )
+    const { frames } = await join(phone, payload, () =>
+      dialSameNetwork({ runtimeId: daemon.networkId, addresses: payload.addresses, webSocket: nodeWebSocketFactory }))
     const rpc = phone.rpc()
     await rpc.attach(frames)
     const dropped = new Promise<void>((resolve) => rpc.onStateChange((s) => { if (s === 'disconnected') resolve() }))
