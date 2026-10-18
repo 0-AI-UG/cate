@@ -14,6 +14,7 @@ import { createPanelKit, placeTargetFor, type PanelCreateOptions, type PanelKit 
 import { inheritWorktree, type InheritedWorktree } from '@workspace/repository/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { panelCheckoutHooks, panelDefinition } from './definitions'
+import { showLayoutsOf, withActiveLayout } from './layouts'
 
 export const newId = (): string => globalThis.crypto.randomUUID()
 
@@ -32,7 +33,7 @@ export function clientPanelKit(workspaceId: string): PanelKit {
       const store = documentStoreFor(workspaceId)
       const definition = panelDefinition(record.type)
       if (!store || !definition) return null
-      const at = placeTargetFor(store.getSnapshot(), definition, placement, newId)
+      const at = placeTargetFor(store.getSnapshot(), definition, withActiveLayout(workspaceId, placement), newId)
       const result = store.propose({ kind: 'addPanel', record, at })
       return result.ok ? record.id : null
     },
@@ -84,5 +85,7 @@ function activateNewPanel(workspaceId: string, panelId: PanelId): void {
   const placement = doc ? placementOf(doc, panelId) : null
   if (!state || !placement) return
   state.setActiveTab(placement.stackId, panelId)
+  // A panel in a layout this client does not show brings it forward, with the layouts of the hosts around it.
+  showLayoutsOf(state, doc!, panelId)
   state.focus(panelId)
 }

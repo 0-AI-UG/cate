@@ -2,12 +2,15 @@
 // surfaces. Hit testing reads them on every move.
 
 import type { Point } from '@workspace/canvas/contract'
-import type { DockRef, SplitSide, StackId } from '@workspace/document/contract'
+import type { DockRef, HostRef, LayoutId, SplitSide, StackId } from '@workspace/document/contract'
+import type { DragSource, DropTarget } from './types'
 
 export interface DropZoneEntry {
   id: string
   workspaceId: string
   dock: DockRef
+  /** The window or canvas node holding `dock`. */
+  host: HostRef
   /** A stack: tab bar and edges. */
   stackId?: StackId
   /** A window edge strip: dropping splits the dock's root on this side.
@@ -20,7 +23,36 @@ export interface DropZoneEntry {
   tabCount?(): number
   /** False rejects the dragged panel. */
   acceptsPanel?(panelType: string): boolean
+  /** False when the stack draws no tab bar (a one-panel window pane): its
+   *  top strip stacks a tab, the rest of its body splits by the nearest edge. */
+  hasTabBar?(): boolean
+  /** True when the stack shows a canvas: its body is the canvas's drop
+   *  surface, so only the tab strip and the edge bands count. */
+  showsCanvas?(): boolean
+  /** A window's tab strip (`dock` is unused). It keeps the state of a drag
+   *  over it (which gap is open), so it picks the drop itself. */
+  strip?: { resolve(cursorX: number, source: DragSource): StripTarget | null }
+  /** The sidebar's workspace tree (`dock` is unused). Like a strip, it picks
+   *  the drop itself from the cursor's y. */
+  tree?: { resolve(cursorY: number, source: DragSource): TreeTarget | null }
 }
+
+/** A drop in a tab strip, before the workspace and host are added. */
+export type StripTarget =
+  | { kind: 'tab-slot'; index: number }
+  | { kind: 'group-slot'; layoutId: LayoutId; beside: StackId; side: 'left' | 'right'; slot: number }
+  | { kind: 'group-home'; layoutId: LayoutId; slot: number }
+
+/** A drop in the sidebar tree, before the workspace is added. */
+export type TreeTarget = DistributiveOmit<
+  Extract<DropTarget, { kind: 'tab-slot' | 'group-slot' | 'group-home' | 'stack-slot' | 'canvas-slot' }>,
+  'workspaceId'
+>
+
+/** Targets whose zone (a tab strip, the sidebar's tree) draws its own feedback: the overlay draws no ghost. */
+export const ownsFeedback = (target: DropTarget | null): boolean =>
+  target?.kind === 'tab-slot' || target?.kind === 'group-slot' || target?.kind === 'group-home' || target?.kind === 'stack-slot' || target?.kind === 'canvas-slot'
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never
 
 /** A canvas the canvas view draws, as the drag system sees it. */
 export interface CanvasDropSurface {
@@ -67,12 +99,15 @@ export function canvasSurfaceAt(element: Element | null): CanvasDropSurface | nu
 
 const TAB_BAR_DROP_HINT = 38
 
-/** Which part of a stack the cursor is over: its tab bar (`center`), an edge
- *  band, or its body (null). */
+/** Which part of a stack the cursor is over: its tab bar or, without one, its
+ *  top strip (`center`), an edge band, or its body (null). Without a tab bar
+ *  the body splits by the nearest edge unless `bodySplits` is false. */
 export function resolveDropEdge(
   cursorX: number,
   cursorY: number,
   rect: DOMRect,
+  tabBar = true,
+  bodySplits = true,
 ): 'top' | 'bottom' | 'left' | 'right' | 'center' | null {
   const relX = cursorX - rect.left
   const relY = cursorY - rect.top
@@ -80,6 +115,12 @@ export function resolveDropEdge(
   const h = rect.height
 
   if (relY >= 0 && relY < TAB_BAR_DROP_HINT) return 'center'
+  // No tab bar: every other point of the pane splits it, by the nearest edge.
+  if (!tabBar && bodySplits) {
+    const dx = relX / w - 0.5
+    const dy = relY / h - 0.5
+    return Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : (dy < 0 ? 'top' : 'bottom')
+  }
 
   const edgeFraction = 0.12
   const EDGE_MAX_PX = 60

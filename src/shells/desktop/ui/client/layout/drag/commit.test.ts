@@ -2,8 +2,12 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   MAIN_WINDOW,
   applyOp,
+  canvasOf,
   dockOf,
   dockPanels,
+  dockStacks,
+  layoutById,
+  nodeOfPanel,
   placementOf,
   type DocChange,
   type DockRef,
@@ -11,12 +15,12 @@ import {
 } from '@workspace/document/contract'
 import { registerPanelDefinitions } from '@client/host'
 import { add, buildDocument, testPanelDefinitions } from '../../../../../../test/clientWorkspace'
-import { detachBounds, detachChange, dropChanges } from './commit'
+import { detachBounds, detachChange, dropChanges, expandHiddenTabs } from './commit'
 import type { DragPanel, DragSource, DropTarget } from './types'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 const rect = (x: number, y: number) => ({ origin: { x, y }, size: { width: 400, height: 300 } })
 
 function fixture(): WorkspaceDocument {
@@ -25,9 +29,9 @@ function fixture(): WorkspaceDocument {
     add('p1', { to: 'stack', dock: main, stackId: 's1' }),
     add('p2', { to: 'stack', dock: main, stackId: 's1' }),
     add('p3', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
-    add('a', { to: 'canvas', canvasId: 'C', nodeId: 'N1', stackId: 'ns1', rect: rect(0, 0) }),
-    add('b', { to: 'canvas', canvasId: 'C', nodeId: 'N2', stackId: 'ns2', rect: rect(500, 0) }),
-    add('c', { to: 'stack', dock: { canvasId: 'C', nodeId: 'N2' }, stackId: 'ns2' }),
+    add('a', { to: 'canvas', canvasId: 'C', nodeId: 'N1', layoutId: 'L-N1', stackId: 'ns1', rect: rect(0, 0) }),
+    add('b', { to: 'canvas', canvasId: 'C', nodeId: 'N2', layoutId: 'L-N2', stackId: 'ns2', rect: rect(500, 0) }),
+    add('c', { to: 'stack', dock: { layoutId: 'L-N2' }, stackId: 'ns2' }),
   ])
 }
 
@@ -44,7 +48,7 @@ function run(doc: WorkspaceDocument, changes: DocChange[] | null): WorkspaceDocu
 
 const panel = (doc: WorkspaceDocument, id: string): DragPanel => ({ id, type: doc.panels[id].type, title: id })
 const tab = (stackId: string, panelId: string, dock: DockRef = main): DragSource => ({
-  workspaceId: 'ws', panelId, origin: { kind: 'dock-tab', dock, stackId },
+  workspaceId: 'ws', panelId, origin: { kind: 'dock-tab', dock, host: { windowId: 'main' }, stackId },
 })
 const nodeSource = (nodeId: string, panelId: string, extra: object = {}): DragSource => ({
   workspaceId: 'ws', panelId, origin: { kind: 'canvas-node', canvasId: 'C', nodeId, ...extra },
@@ -84,14 +88,14 @@ describe('dock tab drops', () => {
     const target: DropTarget = { kind: 'canvas-add', workspaceId: 'ws', canvasId: 'C', origin: { x: 40, y: 800 }, size: { width: 480, height: 320 }, zoom: 1 }
     const next = run(doc, dropChanges(doc, tab('s1', 'p1'), target, panel(doc, 'p1'), ctx))
     const placement = placementOf(next, 'p1')
-    expect(placement?.dock).toMatchObject({ canvasId: 'C' })
-    const nodeId = (placement!.dock as { nodeId: string }).nodeId
+    expect(canvasOf(next, 'p1')).toBe('C')
+    const nodeId = nodeOfPanel(next, 'p1')!.nodeId
     expect(next.canvases.C.nodes[nodeId].rect).toEqual({ origin: { x: 40, y: 800 }, size: { width: 480, height: 320 } })
   })
 
   it('canvas-node tab bar and edge: a tab or split pane there', () => {
     const doc = fixture()
-    const n1 = { canvasId: 'C', nodeId: 'N1' }
+    const n1 = { layoutId: 'L-N1' }
     const asTab = run(doc, dropChanges(doc, tab('s1', 'p1'), { kind: 'dock-tab', workspaceId: 'ws', dock: n1, stackId: 'ns1' }, panel(doc, 'p1'), ctx))
     expect(dockPanels(dockOf(asTab, n1))).toEqual(['a', 'p1'])
     const asSplit = run(doc, dropChanges(doc, tab('s1', 'p1'), { kind: 'dock-split', workspaceId: 'ws', dock: n1, stackId: 'ns1', edge: 'right' }, panel(doc, 'p1'), ctx))
@@ -102,6 +106,12 @@ describe('dock tab drops', () => {
     const doc = fixture()
     const target: DropTarget = { kind: 'canvas-add', workspaceId: 'ws', canvasId: 'C', origin: { x: 0, y: 0 }, size: { width: 1, height: 1 }, zoom: 1 }
     expect(dropChanges(doc, tab('s1', 'cv'), target, panel(doc, 'cv'), ctx)).toBeNull()
+  })
+
+  it('a refused canvas drop changes nothing', () => {
+    const doc = fixture()
+    const target: DropTarget = { kind: 'canvas-add', workspaceId: 'ws', canvasId: 'C', origin: { x: 0, y: 0 }, size: { width: 1, height: 1 }, zoom: 1, refused: 'no' }
+    expect(dropChanges(doc, tab('s1', 'p1'), target, panel(doc, 'p1'), ctx)).toBeNull()
   })
 
   it('a window edge strip splits the whole dock', () => {
@@ -118,7 +128,7 @@ describe('canvas node drops', () => {
     const doc = fixture()
     const changes = dropChanges(doc, nodeSource('N2', 'b'), { kind: 'canvas-reposition', workspaceId: 'ws', canvasId: 'C', nodeId: 'N2', origin: { x: 60, y: 900 }, zoom: 1 }, panel(doc, 'b'), ctx)
     expect(changes).toEqual([{ kind: 'setNodeRects', canvasId: 'C', rects: [{ nodeId: 'N2', rect: { origin: { x: 60, y: 900 }, size: { width: 400, height: 300 } } }] }])
-    expect(dockPanels(dockOf(run(doc, changes), { canvasId: 'C', nodeId: 'N2' }))).toEqual(['b', 'c'])
+    expect(dockPanels(dockOf(run(doc, changes), { layoutId: 'L-N2' }))).toEqual(['b', 'c'])
   })
 
   it('a group moves every member by the anchor delta in the same op', () => {
@@ -131,9 +141,9 @@ describe('canvas node drops', () => {
 
   it('another node tab bar: merges as a tab and removes the emptied node', () => {
     const doc = fixture()
-    const next = run(doc, dropChanges(doc, nodeSource('N1', 'a'), { kind: 'dock-tab', workspaceId: 'ws', dock: { canvasId: 'C', nodeId: 'N2' }, stackId: 'ns2' }, panel(doc, 'a'), ctx))
+    const next = run(doc, dropChanges(doc, nodeSource('N1', 'a'), { kind: 'dock-tab', workspaceId: 'ws', dock: { layoutId: 'L-N2' }, stackId: 'ns2' }, panel(doc, 'a'), ctx))
     expect(next.canvases.C.nodes.N1).toBeUndefined()
-    expect(dockPanels(dockOf(next, { canvasId: 'C', nodeId: 'N2' }))).toEqual(['b', 'c', 'a'])
+    expect(dockPanels(dockOf(next, { layoutId: 'L-N2' }))).toEqual(['b', 'c', 'a'])
   })
 
   it('main dock tab bar and edge', () => {
@@ -149,7 +159,223 @@ describe('canvas node drops', () => {
     const next = run(doc, [detachChange(panel(doc, 'b'), 'W9', ctx.newId)])
     expect(next.windows.W9).toMatchObject({ kind: 'detached' })
     expect(next.windows.W9).not.toHaveProperty('bounds')
-    expect(dockPanels(next.windows.W9.dock)).toEqual(['b'])
+    expect(dockPanels(next.windows.W9.layouts[0].dock)).toEqual(['b'])
     expect(detachBounds({ x: 900, y: 500 }, { x: 12, y: 12 }, { width: 400, height: 300 })).toEqual({ origin: { x: 888, y: 488 }, size: { width: 400, height: 300 } })
+  })
+})
+
+describe('tab strip drops', () => {
+  const host = { windowId: 'main' }
+  // Layouts: main [cv, p1, p2 | p3], T1 [x], T2 [y], T3 [z].
+  const strip = (): WorkspaceDocument => buildDocument([
+    add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+    add('p3', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
+    add('x', { to: 'tab', host, layoutId: 'T1', stackId: 'sx' }),
+    add('y', { to: 'tab', host, layoutId: 'T2', stackId: 'sy' }),
+    add('z', { to: 'tab', host, layoutId: 'T3', stackId: 'sz' }),
+  ])
+  const ids = (doc: WorkspaceDocument) => doc.windows.main.layouts.map((l) => l.id)
+  const slot = (index: number): DropTarget => ({ kind: 'tab-slot', workspaceId: 'ws', host, index })
+  const source = (panelId: string, doc: WorkspaceDocument): DragSource => {
+    const placement = placementOf(doc, panelId)!
+    return tab(placement.stackId, panelId, placement.dock)
+  }
+  const layoutSource = (layoutId: string, panelId: string): DragSource => ({ workspaceId: 'ws', panelId, origin: { kind: 'layout', host, layoutId } })
+
+  it('a lone tab dropped on a later gap moves there; its own gaps do nothing', () => {
+    const doc = strip()
+    const drop = (index: number) => dropChanges(doc, source('x', doc), slot(index), panel(doc, 'x'), ctx)
+    expect(drop(1)).toBeNull() // right before itself
+    expect(drop(2)).toBeNull() // right after itself
+    expect(ids(run(doc, drop(4)))).toEqual(['main', 'T2', 'T3', 'T1'])
+    expect(ids(run(doc, dropChanges(doc, source('z', doc), slot(0), panel(doc, 'z'), ctx)))).toEqual(['T3', 'main', 'T1', 'T2'])
+  })
+
+  it('a pane of a group dropped on a gap becomes a plain tab there', () => {
+    const doc = strip()
+    const next = run(doc, dropChanges(doc, source('p3', doc), slot(2), panel(doc, 'p3'), ctx))
+    expect(ids(next)).toEqual(['main', 'T1', expect.any(String), 'T2', 'T3'])
+    expect(dockPanels(dockOf(next, main))).toEqual(['p1'])
+    expect(placementOf(next, 'p3')?.dock.layoutId).toBe(ids(next)[2])
+  })
+
+  it('a dragged layout moves along the strip', () => {
+    const doc = strip()
+    const drop = (index: number) => dropChanges(doc, layoutSource('main', 'p1'), slot(index), panel(doc, 'p1'), ctx)
+    expect(drop(0)).toBeNull()
+    expect(drop(1)).toBeNull()
+    expect(ids(run(doc, drop(4)))).toEqual(['T1', 'T2', 'T3', 'main'])
+    expect(ids(run(doc, dropChanges(doc, layoutSource('T3', 'z'), slot(1), panel(doc, 'z'), ctx)))).toEqual(['main', 'T3', 'T1', 'T2'])
+  })
+
+  it('a panel dropped in a group becomes a pane beside the chip next to the gap', () => {
+    const doc = strip()
+    const target: DropTarget = { kind: 'group-slot', workspaceId: 'ws', layoutId: 'main', beside: 's2', side: 'right', slot: 2 }
+    const next = run(doc, dropChanges(doc, source('x', doc), target, panel(doc, 'x'), ctx))
+    expect(ids(next)).toEqual(['main', 'T2', 'T3'])
+    expect(dockOf(next, main)).toMatchObject({ children: [{ panels: ['p1'] }, { panels: ['p3'] }, { panels: ['x'] }] })
+  })
+
+  it('a pane dropped beside itself stays put', () => {
+    const doc = strip()
+    const target: DropTarget = { kind: 'group-slot', workspaceId: 'ws', layoutId: 'main', beside: 's2', side: 'left', slot: 1 }
+    expect(dropChanges(doc, source('p3', doc), target, panel(doc, 'p3'), ctx)).toBeNull()
+  })
+})
+
+describe('layout drops across hosts', () => {
+  const main = { windowId: 'main' }
+  const doc = (): WorkspaceDocument => buildDocument([
+    add('cv', { to: 'stack', dock: { layoutId: 'main' }, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+    add('x', { to: 'tab', host: main, layoutId: 'T1', layoutName: 'Notes', stackId: 'sx' }),
+    add('y', { to: 'window', windowId: 'W2', layoutId: 'T2', layoutName: 'Other', stackId: 'sy' }),
+  ])
+  const layoutSource = (layoutId: string, panelId: string, host: { windowId: string }): DragSource => ({ workspaceId: 'ws', panelId, origin: { kind: 'layout', host, layoutId } })
+  const slot: DropTarget = { kind: 'tab-slot', workspaceId: 'ws', host: { windowId: 'W2' }, index: 0 }
+
+  it('a layout dropped on another window strip moves there', () => {
+    const d = doc()
+    const next = run(d, dropChanges(d, layoutSource('T1', 'x', main), slot, panel(d, 'x'), ctx))
+    expect(next.windows.W2.layouts.map((l) => l.id)).toEqual(['T1', 'T2'])
+  })
+
+  it('a lone tab moved to another window keeps its layout name', () => {
+    const d = doc()
+    const placement = placementOf(d, 'x')!
+    const source: DragSource = { workspaceId: 'ws', panelId: 'x', origin: { kind: 'dock-tab', dock: placement.dock, host: main, stackId: placement.stackId } }
+    const next = run(d, dropChanges(d, source, slot, panel(d, 'x'), ctx))
+    expect(next.windows.W2.layouts[0]).toMatchObject({ id: 'T1', name: 'Notes' })
+  })
+
+  it('a layout dropped on a canvas becomes a node', () => {
+    const d = doc()
+    const target: DropTarget = { kind: 'canvas-add', workspaceId: 'ws', canvasId: 'C', origin: { x: 5, y: 6 }, size: { width: 300, height: 200 }, zoom: 1 }
+    const next = run(d, dropChanges(d, layoutSource('T1', 'x', main), target, panel(d, 'x'), ctx))
+    expect(canvasOf(next, 'x')).toBe('C')
+    expect(next.windows.main.layouts.map((l) => l.id)).not.toContain('T1')
+  })
+})
+
+describe('slot drops (the tree)', () => {
+  const stackSlot = (stackId: string | null, after: string | null, layoutId = 'main'): DropTarget => ({ kind: 'stack-slot', workspaceId: 'ws', layoutId, stackId, after })
+  const canvasSlot = (canvasPanelId: string): DropTarget => ({ kind: 'canvas-slot', workspaceId: 'ws', canvasPanelId, after: null, order: [] })
+
+  it('stack-slot after a neighbour places the panel into that stack', () => {
+    const doc = fixture()
+    const next = run(doc, dropChanges(doc, tab('s2', 'p3'), stackSlot('s1', 'p1'), panel(doc, 'p3'), ctx))
+    expect(dockPanels(dockOf(next, main))).toEqual(['cv', 'p1', 'p3', 'p2'])
+  })
+
+  it("stack-slot on the panel's own spot returns null", () => {
+    const doc = fixture()
+    expect(dropChanges(doc, tab('s1', 'p2'), stackSlot('s1', 'p1'), panel(doc, 'p2'), ctx)).toBeNull()
+    expect(dropChanges(doc, tab('s1', 'cv'), stackSlot('s1', null), panel(doc, 'cv'), ctx)).toBeNull()
+  })
+
+  it('stack-slot with stackId null creates a stack', () => {
+    const doc = buildDocument([
+      add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+      { kind: 'addLayout', host: { windowId: MAIN_WINDOW }, layoutId: 'empty' },
+    ])
+    expect(dropChanges(doc, tab('s1', 'p1'), stackSlot(null, null, 'empty'), panel(doc, 'p1'), { newId: () => 'new' }))
+      .toEqual([{ kind: 'placePanel', id: 'p1', at: { to: 'stack', dock: { layoutId: 'empty' }, stackId: 'new', after: null } }])
+  })
+
+  it('canvas-slot adds a canvas node', () => {
+    const doc = fixture()
+    const next = run(doc, dropChanges(doc, tab('s1', 'p1'), canvasSlot('cv'), panel(doc, 'p1'), ctx))
+    expect(canvasOf(next, 'p1')).toBe('C')
+  })
+
+  it("canvas-slot on the panel's own canvas returns null", () => {
+    const doc = fixture()
+    expect(dropChanges(doc, nodeSource('N1', 'a'), canvasSlot('cv'), panel(doc, 'a'), ctx)).toBeNull()
+  })
+
+  it('canvas-slot for a canvas panel returns null (a canvas never nests)', () => {
+    const doc = fixture()
+    expect(dropChanges(doc, tab('s1', 'cv'), canvasSlot('cv'), panel(doc, 'cv'), ctx)).toBeNull()
+  })
+})
+
+describe('canvas-node drops on tree slots', () => {
+  const stackSlot = (stackId: string | null, after: string | null, layoutId = 'main'): DropTarget => ({ kind: 'stack-slot', workspaceId: 'ws', layoutId, stackId, after })
+
+  it('a canvas node dropped on a stack-slot moves to that stack and removes the emptied node', () => {
+    const doc = fixture()
+    const next = run(doc, dropChanges(doc, nodeSource('N1', 'a'), stackSlot('s2', null, 'main'), panel(doc, 'a'), ctx))
+    expect(next.canvases.C.nodes.N1).toBeUndefined()
+    expect(placementOf(next, 'a')?.stackId).toBe('s2')
+    expect(dockPanels(dockOf(next, main))).toContain('a')
+  })
+
+  it('a canvas node with a lone panel dropped on a tab-slot moves its layout there', () => {
+    const doc = fixture()
+    const host = { windowId: 'main' }
+    const next = run(doc, dropChanges(doc, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 2 }, panel(doc, 'a'), ctx))
+    expect(next.canvases.C.nodes.N1).toBeUndefined()
+    expect(next.windows.main.layouts.map((l) => l.id)).toContain('L-N1')
+  })
+
+  it('a canvas node with several panels dropped on a tab-slot moves its whole layout', () => {
+    const doc = fixture()
+    const host = { windowId: 'main' }
+    // p1 joins the node's stack behind `a`, so the node holds two panels.
+    const docWithExtra = run(doc, [{ kind: 'placePanel', id: 'p1', at: { to: 'stack', dock: { layoutId: 'L-N1' }, stackId: 'ns1' } }])
+    const next = run(docWithExtra, dropChanges(docWithExtra, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 1 }, panel(docWithExtra, 'a'), ctx))
+    expect(next.canvases.C.nodes.N1).toBeUndefined()
+    expect(next.windows.main.layouts.map((l) => l.id)).toEqual(['main', 'L-N1'])
+    expect(placementOf(next, 'a')?.dock.layoutId).toBe('L-N1')
+    expect(placementOf(next, 'p1')?.dock.layoutId).toBe('L-N1')
+    // The hidden p1 becomes its own pane beside a.
+    expect(dockStacks(dockOf(next, { layoutId: 'L-N1' }))).toHaveLength(2)
+  })
+})
+
+describe('canvas node layouts with hidden tabs', () => {
+  const host = { windowId: 'main' }
+  // Node N3 holds a split: stack ns3a [a3, b3, c3] | stack ns3b [d3].
+  const doc = (): WorkspaceDocument => buildDocument([
+    add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
+    add('a3', { to: 'canvas', canvasId: 'C', nodeId: 'N3', layoutId: 'L-N3', stackId: 'ns3a', rect: rect(0, 0) }),
+    add('b3', { to: 'stack', dock: { layoutId: 'L-N3' }, stackId: 'ns3a' }),
+    add('c3', { to: 'stack', dock: { layoutId: 'L-N3' }, stackId: 'ns3a' }),
+    add('d3', { to: 'split', dock: { layoutId: 'L-N3' }, beside: 'ns3a', side: 'right', stackId: 'ns3b', splitId: 'sp3' }),
+  ])
+
+  it('a node dropped on a window strip moves its whole layout; hidden tabs become panes beside their stack', () => {
+    const d = doc()
+    const before = layoutById(d, 'L-N3')
+    const next = run(d, dropChanges(d, nodeSource('N3', 'a3'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 1 }, panel(d, 'a3'), ctx))
+    expect(next.canvases.C.nodes.N3).toBeUndefined()
+    expect(next.windows.main.layouts.map((l) => l.id)).toEqual(['main', 'L-N3'])
+    expect(next.windows.main.layouts[1]).toMatchObject({ id: 'L-N3', name: before?.name })
+    const tree = dockOf(next, { layoutId: 'L-N3' })
+    expect(dockPanels(tree).sort()).toEqual(['a3', 'b3', 'c3', 'd3'])
+    // ns3a keeps the active a3; b3 and c3 are their own panes; d3 keeps its pane.
+    expect(dockStacks(tree)).toHaveLength(4)
+    expect(placementOf(next, 'a3')?.stackId).toBe('ns3a')
+    expect(placementOf(next, 'd3')?.stackId).toBe('ns3b')
+    expect(placementOf(next, 'b3')?.stackId).not.toBe('ns3a')
+    expect(placementOf(next, 'c3')?.stackId).not.toBe('ns3a')
+  })
+
+  it('a one-panel node moves as a plain tab with no additions', () => {
+    const d = fixture()
+    const changes = dropChanges(d, nodeSource('N1', 'a'), { kind: 'tab-slot', workspaceId: 'ws', host, index: 1 }, panel(d, 'a'), ctx)
+    expect(changes).toEqual([{ kind: 'moveLayout', layoutId: 'L-N1', to: { to: 'host', host, index: 1 } }])
+    const next = run(d, changes)
+    expect(next.windows.main.layouts.map((l) => l.id)).toEqual(['main', 'L-N1'])
+    expect(dockPanels(dockOf(next, { layoutId: 'L-N1' }))).toEqual(['a'])
+  })
+
+  it('expandHiddenTabs keeps the active tab of each stack, chosen by activeOf', () => {
+    const d = doc()
+    const activeCtx = { newId: ctx.newId, activeOf: (stack: { id: string; panels: string[] }) => (stack.id === 'ns3a' ? 'b3' : stack.panels[0]) }
+    const changes = expandHiddenTabs(d, 'L-N3', activeCtx)
+    expect(changes.map((c) => (c.kind === 'placePanel' ? c.id : null))).toEqual(['a3', 'c3'])
+    const next = run(d, changes)
+    expect(placementOf(next, 'b3')?.stackId).toBe('ns3a')
+    expect(dockStacks(dockOf(next, { layoutId: 'L-N3' }))).toHaveLength(4)
   })
 })

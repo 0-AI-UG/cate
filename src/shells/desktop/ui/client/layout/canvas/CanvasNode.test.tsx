@@ -7,6 +7,7 @@ import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { rect } from '@workspace/canvas/contract'
+import { clientStateFor } from '@client/document'
 import { applyOp, type WorkspaceDocument } from '@workspace/document/contract'
 import { canvasViewFor, resetCanvasViews, setCanvasAnimations } from './registry'
 import { installCanvasDrag, type CanvasDragPort, type CanvasDragState, type CanvasNodeDragSource, type CanvasTabDragSource } from './ports'
@@ -21,7 +22,7 @@ import CanvasNode from './CanvasNode'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function FakeDock({ dock, onTabBarMouseDown, trailingControls }: NodeDockProps) {
-  const stack = dock.kind === 'stack' ? dock : null
+  const stack = dock?.kind === 'stack' ? dock : null
   return (
     <div data-dock-stack-id={stack?.id}>
       <div className="dock-tab-bar" onMouseDown={(e) => onTabBarMouseDown?.(e)}>
@@ -166,13 +167,26 @@ describe('CanvasNode', () => {
     doc = applyOp(doc, {
       kind: 'addPanel',
       record: { id: 'p3', type: 'terminal', title: 'p3', fields: {} },
-      at: { to: 'stack', dock: { canvasId: 'c1', nodeId: 'n1' }, stackId: 'stack-n1' },
+      at: { to: 'stack', dock: { layoutId: 'layout-n1' }, stackId: 'stack-n1' },
     }).doc
     const store = open(doc)
     render(store, ['n1'])
     mouseDown(container.querySelector('[data-node-id="n1"] [data-tab-panel-id="p3"]')!)
-    expect(drag.tabDrags).toEqual([{ workspaceId: 'ws', canvasId: 'c1', nodeId: 'n1', stackId: 'stack-n1', panelId: 'p3' }])
+    expect(drag.tabDrags).toEqual([{ workspaceId: 'ws', canvasId: 'c1', nodeId: 'n1', layoutId: 'layout-n1', stackId: 'stack-n1', panelId: 'p3' }])
     expect(drag.nodeDrags).toEqual([])
+  })
+
+  it('a node with several layouts shows a layout strip; a chip switches the one this client shows', () => {
+    const doc = applyOp(twoNodes(), { kind: 'addLayout', host: { canvasId: 'c1', nodeId: 'n1' }, layoutId: 'extra', name: 'Logs' }).doc
+    const store = open(doc)
+    render(store, ['n1', 'n2'])
+    const chips = (nodeId: string) => [...container.querySelectorAll<HTMLElement>(`[data-node-id="${nodeId}"] [data-node-layout-chips] [data-layout-id]`)]
+    expect(chips('n2')).toEqual([])
+    expect(chips('n1').map((chip) => chip.textContent)).toEqual(['Layout 1', 'Logs'])
+    expect(container.querySelector('[data-node-id="n1"]')!.getAttribute('data-active-panel-id')).toBe('p1')
+    act(() => { chips('n1')[1].dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(clientStateFor('ws')!.getSnapshot().activeLayouts.n1).toBe('extra')
+    expect(container.querySelector('[data-node-id="n1"]')!.hasAttribute('data-active-panel-id')).toBe(false)
   })
 
   it('a locked node does not drag', () => {

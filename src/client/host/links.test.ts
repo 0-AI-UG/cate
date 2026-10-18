@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
-import { MAIN_WINDOW, placementOf } from '@workspace/document/contract'
+import { canvasOf, placementOf } from '@workspace/document/contract'
 import { installMockClientUi } from '../../test/clientUi'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../test/clientWorkspace'
 import { registerPanelDefinitions } from './definitions'
@@ -12,14 +12,14 @@ beforeAll(() => registerPanelDefinitions(testPanelDefinitions().map((definition)
   ? { ...definition, fields: (options) => ({ filePath: options.filePath }), checkoutPath: (record) => record.fields.filePath as string | undefined }
   : definition)))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 const rect = { origin: { x: 0, y: 0 }, size: { width: 400, height: 300 } }
 
 /** A terminal docked in the main window, and one on a docked canvas. */
 const fixture = () => buildDocument([
   add('t1', { to: 'stack', dock: main, stackId: 's1' }, 'terminal'),
   add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
-  add('t2', { to: 'canvas', canvasId: 'C', nodeId: 'N1', stackId: 'ns1', rect }),
+  add('t2', { to: 'canvas', canvasId: 'C', nodeId: 'N1', layoutId: 'nl1', stackId: 'ns1', rect }),
   add('e1', { to: 'stack', dock: main, stackId: 's1' }, 'editor', { fields: { filePath: '/repo/open.ts' } }),
 ])
 
@@ -46,7 +46,8 @@ describe('openLink', () => {
     const w = attach()
     expect(await openLink('w', { kind: 'url', url: 'https://example.com' }, { from: 't1' })).toBe(true)
     const [browser] = newOf(w, 'browser')
-    expect(placementOf(w.confirmed(), browser.id)).toMatchObject({ stackId: 's1' })
+    expect(canvasOf(w.confirmed(), browser.id)).toBeNull()
+    expect(placementOf(w.confirmed(), browser.id)).not.toBeNull()
   })
 
   it('places from a source on a canvas through the canvas picker, on that canvas', async () => {
@@ -61,7 +62,7 @@ describe('openLink', () => {
     await openLink('w', { kind: 'url', url: 'https://example.com' }, { from: 't2' })
     expect(requests).toMatchObject([{ canvasId: 'C', sourcePanelId: 't2', panelType: 'browser' }])
     const [browser] = newOf(w, 'browser')
-    expect(placementOf(w.confirmed(), browser.id)?.dock).toMatchObject({ canvasId: 'C' })
+    expect(canvasOf(w.confirmed(), browser.id)).toBe('C')
   })
 
   it('sends a web URL to the system browser when asked, but never a loopback URL', async () => {
@@ -79,7 +80,8 @@ describe('openLink', () => {
     const w = attach()
     await openLink('w', { kind: 'file', path: '/repo/a.ts', line: 12, column: 5 }, { from: 't1' })
     const editor = newOf(w, 'editor').find((panel) => panel.fields.filePath === '/repo/a.ts')!
-    expect(placementOf(w.confirmed(), editor.id)).toMatchObject({ stackId: 's1' })
+    expect(canvasOf(w.confirmed(), editor.id)).toBeNull()
+    expect(placementOf(w.confirmed(), editor.id)).not.toBeNull()
     expect(ops).toHaveBeenCalledWith({ panelId: editor.id, op: { kind: 'openFile', path: '/repo/a.ts', line: 12, column: 5 } })
   })
 

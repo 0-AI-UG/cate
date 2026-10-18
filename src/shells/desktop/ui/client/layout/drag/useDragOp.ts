@@ -5,9 +5,9 @@
 import type React from 'react'
 import { useCallback } from 'react'
 import { viewToCanvas, type Point, type Size } from '@workspace/canvas/contract'
-import { isCanvasDock, placementOf, type DocChange, type WorkspaceDocument } from '@workspace/document/contract'
+import { dockPanels, isNodeHost, layoutById, layoutsIn, placementOf, windowOf, type DockLayout, type DockStack, type DocChange, type LayoutId, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
-import { newId, panelDefaultSize, panelDropSize } from '@client/host'
+import { activeTabOf, newId, panelDefaultSize, panelDropSize, showLayoutsOf } from '@client/host'
 import { windowsPort } from '../windows/ports'
 import { openWindowAt } from '../windows/windowSync'
 import { detachBounds, detachChange, dropChanges } from './commit'
@@ -19,6 +19,7 @@ import { domDropEnvironment, resolveDrop, type DropEnvironment } from './resolve
 import { reduce, initial as runtimeInitial } from './runtime'
 import { useDragStore } from './store'
 import {
+  CANVAS_ORDER_KEY,
   type DragEffect,
   type DragEvent,
   type DragOpSourceSpec,
@@ -49,8 +50,27 @@ export function canDetach(): boolean {
   return windowsPort()?.canOpen?.() ?? true
 }
 
+/** A canvas node whose layout holds 2+ panels drags as a group. */
+function nodeIsGroup(workspaceId: string, canvasId: string, nodeId: string): boolean {
+  const layout = documentOf(workspaceId)?.canvases[canvasId]?.nodes[nodeId]?.layouts[0]
+  return !!layout && dockPanels(layout.dock).length > 1
+}
+
 function dropEnvironment(): DropEnvironment {
-  return domDropEnvironment(canDetach)
+  return domDropEnvironment(canDetach, (workspaceId, host, layoutId) => {
+    const doc = documentOf(workspaceId)
+    const layout = doc && layoutsIn(doc, host)?.find((l) => l.id === layoutId)
+    return !!doc && !!layout && dockPanels(layout.dock).some((id) => doc.panels[id]?.canvasId !== undefined)
+  }, nodeIsGroup)
+}
+
+/** The layout a drag moves as a group (a layout drag, or a group node's layout); null for one panel. */
+export function groupLayoutOf(doc: WorkspaceDocument, kind: string, panelId: string, layoutId?: LayoutId): DockLayout | null {
+  if (kind === 'layout') return layoutId ? layoutById(doc, layoutId) ?? null : null
+  if (kind !== 'canvas-node') return null
+  const placement = placementOf(doc, panelId)
+  const layout = placement && layoutById(doc, placement.dock.layoutId)
+  return layout && dockPanels(layout.dock).length > 1 ? layout : null
 }
 
 /** Tests only. */
@@ -108,7 +128,9 @@ function specToSource(spec: DragOpSourceSpec): DragSource {
       origin: { kind: 'canvas-node', canvasId: spec.canvasId, nodeId: spec.nodeId, startOrigin: spec.startOrigin, members: spec.members },
     }
   }
-  return { workspaceId: spec.workspaceId, panelId: spec.panelId, origin: { kind: 'dock-tab', dock: spec.dock, stackId: spec.stackId } }
+  const from = spec.from ? { from: spec.from } : {}
+  if (spec.kind === 'layout') return { workspaceId: spec.workspaceId, panelId: spec.panelId, ...from, origin: { kind: 'layout', host: spec.host, layoutId: spec.layoutId } }
+  return { workspaceId: spec.workspaceId, panelId: spec.panelId, ...from, origin: { kind: 'dock-tab', dock: spec.dock, host: spec.host, stackId: spec.stackId } }
 }
 
 /** Grab and ghost of a whole node: the cursor's canvas point against the
@@ -123,18 +145,32 @@ function measureNode(
   const node = documentOf(workspaceId)?.canvases[canvasId]?.nodes[nodeId]
   const surface = canvasSurfaceFor(workspaceId, canvasId)
   const viewport = surface?.getViewport() ?? { offset: { x: 0, y: 0 }, zoom: 1 }
-  if (!node) return { grab: { x: 0, y: 12 }, ghostSize: panelDefaultSize(panelType), ghostZoom: viewport.zoom }
-  const size = node.rect.size
+  const ghostZoom = viewport.zoom
+  if (!node) return { grab: { x: 0, y: 12 }, ghostSize: panelDefaultSize(panelType), ghostZoom }
+  const ghostSize = node.rect.size
   const container = surface?.getElement()
-  if (!container) return { grab: { x: size.width / 2, y: 12 }, ghostSize: size, ghostZoom: viewport.zoom }
+  if (!container) return { grab: { x: ghostSize.width / 2, y: 12 }, ghostSize, ghostZoom }
   const rect = container.getBoundingClientRect()
-  const cursor = viewToCanvas({ x: cursorClient.x - rect.left, y: cursorClient.y - rect.top }, viewport.zoom, viewport.offset)
-  return { grab: { x: cursor.x - node.rect.origin.x, y: cursor.y - node.rect.origin.y }, ghostSize: size, ghostZoom: viewport.zoom }
+  const cursor = viewToCanvas({ x: cursorClient.x - rect.left, y: cursorClient.y - rect.top }, ghostZoom, viewport.offset)
+  return { grab: { x: cursor.x - node.rect.origin.x, y: cursor.y - node.rect.origin.y }, ghostSize, ghostZoom }
+}
+
+/** The canvas node a drag stands for (the node dragged, or the node whose dock the tab is in); null off a canvas. */
+function nodeOf(spec: DragOpSourceSpec): { canvasId: string; nodeId: string } | null {
+  if (spec.kind === 'canvas-node') return spec
+  if (spec.from === 'sidebar' || !isNodeHost(spec.host)) return null
+  return spec.host
 }
 
 function measure(spec: DragOpSourceSpec, panelType: string, cursorClient: Point, sourceRect: DOMRect | null) {
-  if (spec.kind === 'canvas-node') return measureNode(spec.workspaceId, spec.canvasId, spec.nodeId, cursorClient, panelType)
-  if (isCanvasDock(spec.dock)) return measureNode(spec.workspaceId, spec.dock.canvasId, spec.dock.nodeId, cursorClient, panelType)
+  const node = nodeOf(spec)
+  if (node) return measureNode(spec.workspaceId, node.canvasId, node.nodeId, cursorClient, panelType)
+  if (spec.kind !== 'canvas-node' && spec.from === 'sidebar') {
+    // Held where the row (or the layout's group) was pressed: the tree reads that offset. The
+    // ghost is the node a canvas drop makes, for a panel or a layout alike.
+    const grab = sourceRect ? { x: cursorClient.x - sourceRect.left, y: cursorClient.y - sourceRect.top } : { x: 0, y: 0 }
+    return { grab, ghostSize: { ...panelDropSize(panelType) }, ghostZoom: 1 }
+  }
   // A window dock tab previews the compact canvas-drop footprint.
   const ghostSize: Size = { ...panelDropSize(panelType) }
   if (sourceRect) return { grab: dockTabGrabOffset({ cursorClient, sourceRect, ghostSize }), ghostSize, ghostZoom: 1 }
@@ -150,6 +186,7 @@ function crossWindowDragFor(dispatch: ActiveDispatch): CrossWindowDrag {
     title: dispatch.panel.title,
     size: dispatch.ghostSize,
     grab: { x: dispatch.grab.x * dispatch.ghostZoom, y: dispatch.grab.y * dispatch.ghostZoom },
+    ...(dispatch.spec.kind === 'layout' ? { layoutId: dispatch.spec.layoutId } : {}),
   }
 }
 
@@ -164,6 +201,9 @@ export function proposeDrop(workspaceId: string, changes: DocChange[], panelId: 
   const placement = placementOf(store.getSnapshot(), panelId)
   const state = clientStateFor(workspaceId)
   if (placement && state) {
+    // The layout it landed in shows, so a drop onto another layout (or a new
+    // one) ends with the panel on screen.
+    showLayoutsOf(state, store.getSnapshot(), panelId)
     state.setActiveTab(placement.stackId, panelId)
     state.focus(panelId)
   }
@@ -180,8 +220,13 @@ export async function commitDrop(
 ): Promise<void> {
   const workspaceId = source.workspaceId
   if (target.kind !== 'detach') {
+    if (target.kind === 'canvas-slot') clientStateFor(workspaceId)?.setPanelView(target.canvasPanelId, CANVAS_ORDER_KEY, target.order)
     const doc = documentOf(workspaceId)
-    const changes = doc && dropChanges(doc, source, target, panel, { newId })
+    const activeTabs = clientStateFor(workspaceId)?.getSnapshot().activeTabs ?? {}
+    const changes = doc && dropChanges(doc, source, target, panel, {
+      newId,
+      activeOf: (stack) => activeTabOf(activeTabs, stack as DockStack),
+    })
     if (changes) proposeDrop(workspaceId, changes, panel.id, target.kind !== 'canvas-reposition')
     return
   }
@@ -196,7 +241,8 @@ export async function commitDrop(
       await movedOrTimeout(workspaceId, before, panel.id)
       return
     }
-    if (!canDetach()) return
+    // A layout leaves for another window or stays; it opens no window of its own here.
+    if (!canDetach() || source.from === 'sidebar' || source.origin.kind === 'layout') return
     const grab = { x: geometry.grab.x * geometry.ghostZoom, y: geometry.grab.y * geometry.ghostZoom }
     const windowId = newId()
     openWindowAt(workspaceId, windowId, detachBounds(target.screen, grab, geometry.ghostSize))
@@ -211,12 +257,13 @@ export async function commitDrop(
 function movedOrTimeout(workspaceId: string, before: WorkspaceDocument | null, panelId: string, timeoutMs = 1500): Promise<void> {
   const store = documentStoreFor(workspaceId)
   const was = before ? placementOf(before, panelId) : null
+  const wasWindow = before ? windowOf(before, panelId) : null
   if (!store) return Promise.resolve()
   return new Promise((resolve) => {
     const done = () => { clearTimeout(timer); stop(); resolve() }
     const check = () => {
       const now = placementOf(store.getSnapshot(), panelId)
-      if (!now || !was || now.stackId !== was.stackId) done()
+      if (!now || !was || now.stackId !== was.stackId || windowOf(store.getSnapshot(), panelId) !== wasWindow) done()
     }
     const timer = setTimeout(done, timeoutMs)
     const stop = store.subscribe(check)
@@ -283,8 +330,8 @@ function onMouseMove(ev: MouseEvent): void {
   }
 
   const inside = cursorInsideWindow(client)
-  // A group never leaves its canvas, so it never shows the native ghost.
-  const grouped = dispatch.spec.kind === 'canvas-node' && !!dispatch.spec.members?.length
+  // A canvas group never leaves the window; a layout may, to another window.
+  const grouped = dispatch.spec.kind === 'canvas-node' && (!!dispatch.spec.members?.length || nodeIsGroup(dispatch.spec.workspaceId, dispatch.spec.canvasId, dispatch.spec.nodeId))
   const wasInside = dispatch.runtime.state.cursor?.insideWindow ?? true
   const shell = dragShell()
   const crossing = !grouped && wasInside && !inside && !dispatch.runtime.crossWindowActive && (!!shell.ghost || !!shell.crossWindow)
@@ -333,19 +380,22 @@ export function beginDrag(e: Pick<MouseEvent, 'button' | 'clientX' | 'clientY'> 
   if (active || e.button !== 0) return false
   // First gesture wins: a resize in progress holds `canvas-interacting`.
   if (document.body.classList.contains('canvas-interacting')) return false
-  const record = documentOf(spec.workspaceId)?.panels[spec.panelId]
-  if (!record) return false
+  const doc = documentOf(spec.workspaceId)
+  const record = doc?.panels[spec.panelId]
+  if (!doc || !record) return false
   wasDragged.current = false
 
   const cursorClient: Point = { x: e.clientX, y: e.clientY }
   let sourceRect: DOMRect | null = e.currentTarget instanceof Element ? e.currentTarget.getBoundingClientRect() : null
   // A ghost that stands for a whole node measures against the node element.
-  const nodeId = spec.kind === 'canvas-node' ? spec.nodeId : isCanvasDock(spec.dock) ? spec.dock.nodeId : null
+  const nodeId = nodeOf(spec)?.nodeId
   if (nodeId) {
     const nodeEl = document.querySelector<HTMLElement>(`[data-node-id="${cssEscape(nodeId)}"]`)
     if (nodeEl) sourceRect = nodeEl.getBoundingClientRect()
   }
-  const panel: DragPanel = { id: record.id, type: record.type, title: record.title }
+  // A group carries its layout's name in the ghost; the representative panel's id and type stay.
+  const group = groupLayoutOf(doc, spec.kind, spec.panelId, spec.kind === 'layout' ? spec.layoutId : undefined)
+  const panel: DragPanel = { id: record.id, type: record.type, title: group ? group.name : record.title }
   const { grab, ghostSize, ghostZoom } = measure(spec, record.type, cursorClient, sourceRect)
   active = {
     spec,

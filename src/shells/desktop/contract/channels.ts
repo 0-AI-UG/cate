@@ -12,6 +12,8 @@ export const DESKTOP_CHANNELS = {
   windowsOpen: 'cate-desktop:windows:open',
   windowsClose: 'cate-desktop:windows:close',
   windowsFocus: 'cate-desktop:windows:focus',
+  windowsReveal: 'cate-desktop:windows:reveal',
+  windowRevealRequested: 'cate-desktop:window:reveal-requested',
   windowsList: 'cate-desktop:windows:list',
   windowNewMain: 'cate-desktop:window:new-main',
   windowMinimize: 'cate-desktop:window:minimize',

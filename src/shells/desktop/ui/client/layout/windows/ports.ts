@@ -16,8 +16,6 @@ export interface WindowsPort {
    *  where a new window goes. */
   open(window: WindowRef & { bounds?: Rect }): void
   close(window: WindowRef): void
-  /** Brings an open window to the front. */
-  focus?(window: WindowRef): void
   /** False while a new window cannot open (a fullscreen main window would put
    *  it in another Space). */
   canOpen?(): boolean

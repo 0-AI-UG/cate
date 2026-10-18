@@ -17,6 +17,8 @@ export interface CrossWindowDrag {
   size: Size
   /** Offset from the ghost's top-left to the cursor, in screen px. */
   grab: Point
+  /** Set when the drag moves a whole layout; `panelId` is then one of its panels. */
+  layoutId?: string
 }
 
 export interface DragGhostPort {

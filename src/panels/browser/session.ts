@@ -19,7 +19,7 @@ import {
 } from '@services/browser/contract'
 import type { BrowserNewTabBehavior, BrowserSearchEngine } from '@services/browser/contract/settings'
 import { createPageControl, pageCall, type PageControl, type PageControlDeps } from '@services/browser/runtime'
-import { isCanvasDock, placementOf, type Json, type PanelRecord } from '@workspace/document/contract'
+import { nodeOfPanel, placementOf, type Json, type PanelRecord } from '@workspace/document/contract'
 import { PanelSession, type OpContext, type OpHandlers, type PanelSessionClass, type SessionKit, type SurfaceCallOptions } from '@panels/framework/runtime'
 import {
   COMPACT_VIEWPORT,
@@ -418,8 +418,9 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
     const doc = this.kit.document.get()
     const placement = placementOf(doc, this.panelId)
     if (!placement) throw new RpcError('gone', 'panel-not-placed')
-    if (!isCanvasDock(placement.dock)) throw new RpcError('rejected', 'browser-panel-is-docked')
-    const { canvasId, nodeId } = placement.dock
+    const host = nodeOfPanel(doc, this.panelId)
+    if (!host) throw new RpcError('rejected', 'browser-panel-is-docked')
+    const { canvasId, nodeId } = host
     const node = doc.canvases[canvasId]?.nodes[nodeId]
     if (!node) throw new RpcError('gone', 'panel-not-placed')
     this.kit.document.apply({ kind: 'setNodeRects', canvasId, rects: [{ nodeId, rect: { origin: node.rect.origin, size: { width, height } } }] })

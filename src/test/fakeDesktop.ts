@@ -68,7 +68,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       perf: async () => null,
     },
     device,
-    windows: { open: vi.fn(async () => {}), close: vi.fn(async () => {}), focus: vi.fn(async () => {}), list: async () => [] },
+    windows: { open: vi.fn(async () => {}), close: vi.fn(async () => {}), focus: vi.fn(async () => {}), reveal: vi.fn(async () => {}), list: async () => [] },
     window: {
       newMainWindow: async () => {},
       minimize: async () => {},
@@ -78,6 +78,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       state: async () => ({ fullscreen: false, maximized: false, focused: true }),
       onState: off,
       onCloseRequested: off,
+      onRevealRequested: off,
       anyFullscreen: () => false,
       setZoomFactor: vi.fn(),
     },

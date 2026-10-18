@@ -26,7 +26,7 @@ import {
   installScreenshotPort,
 } from '../ui/client/layout/canvas'
 import { canDetach, domDropEnvironment, installDragShell, installGestureLockWatchdog, setupCrossWindowDrops } from '../ui/client/layout/drag'
-import { installWindowReveal, installWindowsPort, syncDetachedWindows } from '../ui/client/layout/windows'
+import { installWindowsPort, syncDetachedWindows } from '../ui/client/layout/windows'
 import { onAgentsWorking } from '@services/agents/client'
 import { attachNotifications } from '@workspace/notifications/client'
 import {
@@ -206,7 +206,6 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   stops.push(installDragShell(dragShell))
   stops.push(installGestureLockWatchdog())
   if (dragShell.crossWindow) stops.push(setupCrossWindowDrops(dragShell.crossWindow, () => domDropEnvironment(canDetach)))
-  stops.push(installWindowReveal())
   if (identity.features.has('windows')) {
     const port = createWindowsPort(api)
     installWindowsPort(port)

@@ -3,8 +3,8 @@
 // keep-mounted nodes (native surfaces, whose guest would reload) are exempt.
 
 import { useEffect, useState } from 'react'
-import { dockPanels, type NodeId, type PanelId } from '@workspace/document/contract'
-import type { CanvasView, CanvasViewStore, ViewNode } from './store'
+import type { NodeId, PanelId } from '@workspace/document/contract'
+import { nodePanelIds, type CanvasView, type CanvasViewStore, type ViewNode } from './store'
 import { canvasPerfCount } from './perf'
 import { focusedNodeId } from './selection'
 import { shallowArrayEqual } from './context'
@@ -35,10 +35,10 @@ const dockTags = new WeakMap<object, number>()
 function membershipSignature(nodes: Record<NodeId, ViewNode>): string {
   let sig = ''
   for (const n of Object.values(nodes)) {
-    let tag = dockTags.get(n.dock)
+    let tag = dockTags.get(n.layouts)
     if (tag === undefined) {
       tag = ++dockTagCounter
-      dockTags.set(n.dock, tag)
+      dockTags.set(n.layouts, tag)
     }
     sig += `${n.id}=d${tag};`
   }
@@ -56,7 +56,7 @@ function keepAliveNodeIds(nodes: Record<NodeId, ViewNode>, keepMounted: Readonly
   }
   const ids = new Set<NodeId>()
   for (const n of Object.values(nodes)) {
-    if (dockPanels(n.dock).some((id) => keepMounted.has(id))) ids.add(n.id)
+    if (nodePanelIds(n).some((id) => keepMounted.has(id))) ids.add(n.id)
   }
   keepAliveCache.set(keepMounted, { nodes, sig, ids })
   return ids

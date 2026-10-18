@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { MAIN_WINDOW, placementOf } from '@workspace/document/contract'
+import { canvasOf, MAIN_WINDOW, placementOf } from '@workspace/document/contract'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../test/clientWorkspace'
 import { actionSpec, declaredActions } from '@kernel/interaction'
 import { storedShortcut } from '@kernel/interaction/contract'
@@ -12,18 +12,18 @@ import { documentStoreFor } from '@client/document'
 import { createPanel, newId } from './createPanel'
 import { creatableDefinitions, panelDefinition, registerPanelDefinitions } from './definitions'
 import { focusedLeafPanelId } from './focus'
-import { CANVAS_REVEAL_INTENT, revealPanel } from './reveal'
+import { CANVAS_REVEAL_INTENT, installRevealHooks, revealOnce, revealPanel, selectPanelAt, stepPanel } from './reveal'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 const rect = { origin: { x: 0, y: 0 }, size: { width: 400, height: 300 } }
 
 function fixture() {
   return buildDocument([
     add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
     add('t1', { to: 'stack', dock: main, stackId: 's1' }, 'terminal', { worktreeId: 'wt' }),
-    add('a', { to: 'canvas', canvasId: 'C', nodeId: 'N1', stackId: 'ns1', rect }),
+    add('a', { to: 'canvas', canvasId: 'C', nodeId: 'N1', layoutId: 'L-N1', stackId: 'ns1', rect }),
   ])
 }
 
@@ -34,13 +34,16 @@ afterEach(() => {
 })
 
 describe('createPanel', () => {
-  it('goes after `near` in its stack, inherits its worktree, and becomes the shown, focused tab', () => {
+  it('becomes a new tab after the layout of `near`, inherits its worktree, and is shown and focused', () => {
     ws = attachTestWorkspace('w', fixture())
     const id = createPanel('w', 'editor', { near: 't1' })!
     const doc = ws.confirmed()
-    expect(placementOf(doc, id)).toMatchObject({ stackId: 's1', index: 2 })
+    const placement = placementOf(doc, id)!
+    expect(doc.windows.main.layouts.map((l) => l.id)).toEqual(['main', placement.dock.layoutId])
+    expect(placement.index).toBe(0)
     expect(doc.panels[id]).toMatchObject({ type: 'editor', title: 'editor', worktreeId: 'wt' })
-    expect(ws.state.getSnapshot().activeTabs.s1).toBe(id)
+    expect(ws.state.getSnapshot().activeLayouts.main).toBe(placement.dock.layoutId)
+    expect(ws.state.getSnapshot().activeTabs[placement.stackId]).toBe(id)
     expect(ws.state.getSnapshot().focusedPanelId).toBe(id)
   })
 
@@ -49,21 +52,22 @@ describe('createPanel', () => {
     const onCanvas = createPanel('w', 'terminal', { near: 'cv' })!
     const beside = createPanel('w', 'terminal', { near: 'a' })!
     const doc = ws.confirmed()
-    expect(placementOf(doc, onCanvas)?.dock).toMatchObject({ canvasId: 'C' })
-    expect(placementOf(doc, beside)?.dock).toMatchObject({ canvasId: 'C' })
+    expect(canvasOf(doc, onCanvas)).toBe('C')
+    expect(canvasOf(doc, beside)).toBe('C')
   })
 
   it('a type that cannot live on a canvas goes after the canvas panel', () => {
     const canvas = testPanelDefinitions().find((d) => d.type === 'canvas')!
-    expect(placeTargetFor(fixture(), canvas, { near: 'a' }, newId)).toEqual({ to: 'stack', dock: main, stackId: 's1', after: 'cv' })
+    expect(placeTargetFor(fixture(), canvas, { near: 'a' }, newId)).toMatchObject({ to: 'tab', host: { windowId: 'main' }, index: 1 })
   })
 
-  it('without options: the first stack of the main window, or a new one', () => {
+  it('without options: the empty main layout, then a new tab after the shown one', () => {
     ws = attachTestWorkspace('w')
     const first = createPanel('w', 'terminal')!
     const second = createPanel('w', 'terminal')!
     const doc = ws.confirmed()
-    expect(placementOf(doc, second)?.stackId).toBe(placementOf(doc, first)?.stackId)
+    expect(placementOf(doc, first)?.dock).toEqual(main)
+    expect(doc.windows.main.layouts.map((l) => l.id)).toEqual(['main', placementOf(doc, second)!.dock.layoutId])
   })
 
   it('an unknown type creates nothing', () => {
@@ -225,5 +229,60 @@ describe('creation menus', () => {
     expect(creationPick('new:editor', worktrees)).toEqual({ type: 'editor', options: {} })
     expect(creationPick('close', worktrees)).toBeNull()
     expect(creationPick(null, worktrees)).toBeNull()
+  })
+})
+
+// Two layouts: the main one (a canvas with a node, a terminal) and a second tab (a panel, a canvas).
+const second = () => buildDocument([
+  add('b', { to: 'tab', host: { windowId: MAIN_WINDOW }, layoutId: 'T2', stackId: 's2' }),
+  add('cv2', { to: 'stack', dock: { layoutId: 'T2' }, stackId: 's2' }, 'canvas', { canvasId: 'C2' }),
+], fixture())
+
+describe('revealing in another window', () => {
+  const inWindow = () => buildDocument([add('far', { to: 'window', windowId: 'W1', layoutId: 'W1-main', stackId: 'ws1' }), add('far2', { to: 'stack', dock: { layoutId: 'W1-main' }, stackId: 'ws1' })])
+
+  it('asks the shell to show the panel in its window (the tab selection is that window\'s own)', () => {
+    ws = attachTestWorkspace('w', inWindow())
+    const showWindow = vi.fn()
+    const stop = installRevealHooks({ showWindow })
+    expect(revealOnce('w', 'far2')).toBe(true)
+    expect(showWindow).toHaveBeenCalledWith('w', 'W1', 'far2')
+    stop()
+  })
+
+  it('a reveal another window asked for sets only this window\'s state and asks nobody', () => {
+    ws = attachTestWorkspace('w', inWindow())
+    const showWindow = vi.fn()
+    const stop = installRevealHooks({ showWindow })
+    expect(revealOnce('w', 'far2', { local: true })).toBe(true)
+    expect(showWindow).not.toHaveBeenCalled()
+    expect(ws.state.getSnapshot().activeTabs.ws1).toBe('far2')
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('far2')
+    stop()
+  })
+})
+
+describe('panel order', () => {
+  it('Alt+N and Ctrl+Tab follow the strip: the docks of each layout in turn, canvas nodes left out', () => {
+    ws = attachTestWorkspace('w', second())
+    expect(selectPanelAt('w', MAIN_WINDOW, 1)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('t1')
+    expect(selectPanelAt('w', MAIN_WINDOW, 2)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('b')
+    expect(ws.state.getSnapshot().activeLayouts.main).toBe('T2')
+    expect(selectPanelAt('w', MAIN_WINDOW, 9)).toBe(false)
+    expect(stepPanel('w', MAIN_WINDOW, -1)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('t1')
+    expect(stepPanel('w', MAIN_WINDOW, 1)).toBe(true)
+    expect(stepPanel('w', MAIN_WINDOW, 1)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('cv2')
+  })
+
+  it('a panel created on a canvas in a hidden layout shows that layout', () => {
+    ws = attachTestWorkspace('w', second())
+    expect(ws.state.getSnapshot().activeLayouts.main).toBeUndefined()
+    const id = createPanel('w', 'terminal', { near: 'cv2' })!
+    expect(canvasOf(ws.confirmed(), id)).toBe('C2')
+    expect(ws.state.getSnapshot().activeLayouts.main).toBe('T2')
   })
 })

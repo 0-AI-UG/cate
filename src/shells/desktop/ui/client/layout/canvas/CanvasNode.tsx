@@ -14,7 +14,7 @@ import { panelCheckout } from '@workspace/repository/contract'
 import { PanelRelationHandle, connectPanelToExisting } from '../../../workspace/relations'
 import { canvasDrag, canvasHost, panelMinimumSize } from './ports'
 import { useWorkspaceSetting } from './settingsHooks'
-import { activeNodePanelId, type ViewNode } from './store'
+import { activeNodePanelId, nodePanelIds, shownLayout, type ViewNode } from './store'
 import { isGroupDragMember, isSelected as isNodeSelected } from './selection'
 import { panelCheckoutHooks } from '@client/host'
 import { useCanvasTopOverlayTarget, useCanvasView, useCanvasViewStore } from './context'
@@ -24,6 +24,7 @@ import { useCanvasNodeStyle } from './useCanvasNodeStyle'
 import { useNodeResize } from './useNodeResize'
 import { NodeResizeOverlay } from './NodeResizeOverlay'
 import { canvasSlots } from './slots'
+import { NodeLayoutChips } from './NodeLayoutChips'
 import { useCanvasUi } from './uiState'
 import { showContextMenu } from './contextMenu'
 import { worktreeColor as paletteColor } from './worktree'
@@ -89,7 +90,7 @@ function sameNodeView(a: ViewNode | undefined, b: ViewNode | undefined): boolean
   return a.origin.x === b.origin.x && a.origin.y === b.origin.y
     && a.size.width === b.size.width && a.size.height === b.size.height
     && a.zOrder === b.zOrder && a.isPinned === b.isPinned
-    && a.animationState === b.animationState && a.dock === b.dock
+    && a.animationState === b.animationState && a.layouts === b.layouts
 }
 
 interface CanvasNodeProps {
@@ -137,9 +138,10 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   }, [fileDragOver])
 
   // --- The node's visible panel -------------------------------------------------
-  const dock = node?.dock ?? null
+  const chosenLayout = useClientState(workspaceId, (s) => s.activeLayouts[nodeId])
+  const shown = node ? node.layouts.find((l) => l.id === chosenLayout) ?? node.layouts[0] : null
   // Only this node's active tab: a tab switch elsewhere does not re-render it.
-  const activePanelId = useClientState(workspaceId, (s) => (dock ? activeNodePanelId(dock, s.activeTabs) : null))
+  const activePanelId = useClientState(workspaceId, (s) => (node ? activeNodePanelId(node, s) : null))
   const activePanel = useDocument(workspaceId, (d) => (activePanelId ? d.panels[activePanelId] : undefined))
   const relationsEnabled = useWorkspaceSetting(workspaceId, 'panelRelationsEnabled')
   const canConnect = Boolean(relationsEnabled && activePanel)
@@ -185,7 +187,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const startNodeDrag = useCallback((e: React.MouseEvent) => {
     const state = store.getState()
     const current = state.nodes[nodeId]
-    const panelId = current ? activeNodePanelId(current.dock, clientStateFor(workspaceId)?.getSnapshot().activeTabs) : null
+    const panelId = activeNodePanelId(current, clientStateFor(workspaceId)?.getSnapshot())
     if (!current || current.isPinned || !panelId) return
     // A member of a multi-selection carries the group, so the drag layer
     // moves all of it by the anchor's delta.
@@ -216,10 +218,11 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
       startNodeDrag(e)
       return
     }
-    if (panelId && dockPanels(current.dock).length > 1) {
-      const stack = stackOfPanel(current.dock, panelId)
+    const shownDock = shownLayout(current, clientStateFor(workspaceId)?.getSnapshot().activeLayouts).dock
+    if (panelId && dockPanels(shownDock).length > 1) {
+      const stack = stackOfPanel(shownDock, panelId)
       if (stack) {
-        canvasDrag().beginTabDrag(e.nativeEvent, { workspaceId, canvasId, nodeId, stackId: stack.id, panelId })
+        canvasDrag().beginTabDrag(e.nativeEvent, { workspaceId, canvasId, nodeId, layoutId: shownLayout(current, clientStateFor(workspaceId)?.getSnapshot().activeLayouts).id, stackId: stack.id, panelId })
         return
       }
     }
@@ -230,7 +233,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const minSizeOf = useCallback((id: NodeId) => {
     const target = store.getState().nodes[id]
     const doc = documentStoreFor(workspaceId)?.getSnapshot()
-    const panelId = target ? activeNodePanelId(target.dock, clientStateFor(workspaceId)?.getSnapshot().activeTabs) : null
+    const panelId = activeNodePanelId(target, clientStateFor(workspaceId)?.getSnapshot())
     return panelMinimumSize(panelId ? doc?.panels[panelId]?.type : undefined)
   }, [store, workspaceId])
   const { handleResizeStart } = useNodeResize(nodeId, store, minSizeOf)
@@ -242,7 +245,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   // --- Actions --------------------------------------------------------------------
   const handleClose = useCallback(() => {
     const current = store.getState().nodes[nodeId]
-    if (current) void canvasHost().closePanels(workspaceId, dockPanels(current.dock))
+    if (current) void canvasHost().closePanels(workspaceId, nodePanelIds(current))
   }, [store, nodeId, workspaceId])
 
   const handleTogglePin = useCallback(() => store.getState().togglePin(nodeId), [store, nodeId])
@@ -270,9 +273,9 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
     const current = store.getState().nodes[nodeId]
     if (!current) return null
     const pressed = pressedLeafRef.current
-    if (pressed && dockPanels(current.dock).includes(pressed)) return pressed
+    if (pressed && dockPanels(shownLayout(current, clientStateFor(workspaceId)?.getSnapshot().activeLayouts).dock).includes(pressed)) return pressed
     pressedLeafRef.current = null
-    return activeNodePanelId(current.dock, clientStateFor(workspaceId)?.getSnapshot().activeTabs)
+    return activeNodePanelId(current, clientStateFor(workspaceId)?.getSnapshot())
   }, [store, nodeId, workspaceId])
 
   const focusThisNode = useCallback(() => {
@@ -288,7 +291,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
     const stackId = el?.closest?.<HTMLElement>('[data-dock-stack-id]')?.dataset.dockStackId
     const current = store.getState().nodes[nodeId]
     if (!stackId || !current) return
-    const stack = findStack(current.dock, stackId)
+    const stack = findStack(shownLayout(current, clientStateFor(workspaceId)?.getSnapshot().activeLayouts).dock, stackId)
     const clicked = el?.closest?.<HTMLElement>('[data-tab-panel-id]')?.dataset.tabPanelId
     const activeTab = stack ? clientStateFor(workspaceId)?.getSnapshot().activeTabs[stack.id] : undefined
     const leaf = clicked ?? (activeTab && stack?.panels.includes(activeTab) ? activeTab : stack?.panels[0])
@@ -376,7 +379,11 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
 
   if (!node) return null
 
-  const rootIsStack = node.dock.kind === 'stack'
+  const shownLayoutOfNode = shown ?? node.layouts[0]
+  // A node's own tab bar doubles as its title bar when its layout is one stack;
+  // a split root or several layouts get a strip above the dock instead.
+  const showStrip = shownLayoutOfNode.dock?.kind !== 'stack' || node.layouts.length > 1
+  const rootIsStack = !showStrip
   const controls = (
     <>
       <GrabButton
@@ -425,6 +432,9 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
             onMouseDown={handleGrabStripMouseDown}
             onContextMenu={handleGrabStripContextMenu}
           >
+            {node.layouts.length > 1
+              ? <NodeLayoutChips workspaceId={workspaceId} canvasId={canvasId} nodeId={nodeId} layouts={node.layouts} activeLayoutId={shownLayoutOfNode.id} />
+              : null}
             <div style={{ flex: 1, height: '100%' }} />
             <div
               style={{
@@ -518,7 +528,8 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
               workspaceId={workspaceId}
               canvasId={canvasId}
               nodeId={nodeId}
-              dock={node.dock}
+              layoutId={shownLayoutOfNode.id}
+              dock={shownLayoutOfNode.dock}
               onTabBarMouseDown={rootIsStack ? handleTabBarMouseDown : undefined}
               trailingControls={rootIsStack ? controls : undefined}
               dropDisabled={isWholeNodeDragSource}

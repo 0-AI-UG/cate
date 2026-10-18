@@ -10,6 +10,7 @@
 import { useEffect } from 'react'
 import type { ActionId } from '@kernel/interaction/contract'
 import { actionSpec, shortcutRegistry } from '@kernel/interaction'
+import { isMacKeyboard } from '../../kernel/interaction'
 import { documentStoreFor } from '@client/document'
 import { focusedLeafPanelId, panelDefinition } from '@client/host'
 import type { PanelRecord } from '@workspace/document/contract'
@@ -84,7 +85,9 @@ export function handleShortcutKey(event: KeyboardEvent): void {
       return
     }
   }
-  const action = shortcutRegistry().match(event)
+  // Before the focused surface sees the key (this listener captures), so a bound key wins in a terminal, and an
+  // unbound one (Ctrl+L) reaches it.
+  const action = shortcutRegistry().match(event, isMacKeyboard())
   if (!action || !shouldRunShortcut(action, event, ctx)) return
   if (!runWindowAction(action)) return
   event.preventDefault()

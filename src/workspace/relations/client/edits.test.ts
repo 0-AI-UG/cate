@@ -17,7 +17,7 @@ function storeWith(...ids: string[]): RelationDocument & { doc: WorkspaceDocumen
     store.propose({
       kind: 'addPanel',
       record: { id, type: 'terminal', title: id, fields: {} },
-      at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+      at: { to: 'stack', dock: { layoutId: 'main' }, stackId: 's1' },
     })
   }
   return store

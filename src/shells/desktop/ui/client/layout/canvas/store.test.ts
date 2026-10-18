@@ -133,7 +133,7 @@ describe('canvas view store', () => {
     document.propose({
       kind: 'addPanel',
       record: { id: 'pd', type: 'terminal', title: 'd', fields: {} },
-      at: { to: 'canvas', canvasId: 'c1', nodeId: 'd', stackId: 'sd', rect: rect(900, 900, 100, 100) },
+      at: { to: 'canvas', canvasId: 'c1', nodeId: 'd', layoutId: 'L-d', stackId: 'sd', rect: rect(900, 900, 100, 100) },
     })
     expect(store.getState().nodes.d.animationState).toBe('entering')
   })
@@ -143,7 +143,7 @@ describe('canvas view store', () => {
     document.propose({
       kind: 'addPanel',
       record: { id: 'loose', type: 'terminal', title: 'loose', fields: {} },
-      at: { to: 'stack', dock: { windowId: 'main' }, stackId: 'main-stack' },
+      at: { to: 'stack', dock: { layoutId: 'main' }, stackId: 'main-stack' },
     })
     const nodeId = store.getState().placePanel('loose', { size: { width: 400, height: 300 } })
     expect(nodeId).not.toBeNull()

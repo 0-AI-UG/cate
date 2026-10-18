@@ -8,6 +8,7 @@
 import React, { useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { dockStacks, type DockNode, type DockSplit, type DockStack, type StackId } from '@workspace/document/contract'
+import { resyncPanelSurfaces } from '../../host/surfaceRegistry'
 import { DockSplitContainer } from './DockSplitContainer'
 import { layoutMinimum, type PanelTypeOf } from './sizing'
 
@@ -26,8 +27,11 @@ function DockStackSlot({ host }: { host: HTMLDivElement }) {
     const slot = slotRef.current
     if (!slot) return
     slot.appendChild(host)
+    // The stack's webviews follow their slots into the document, and are parked while it is out.
+    resyncPanelSurfaces()
     return () => {
       if (host.parentNode === slot) slot.removeChild(host)
+      resyncPanelSurfaces()
     }
   }, [host])
   return <div ref={slotRef} className="h-full w-full min-h-0 min-w-0" />

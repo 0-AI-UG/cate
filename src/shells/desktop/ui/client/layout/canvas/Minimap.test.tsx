@@ -24,7 +24,7 @@ function documentWithNodes(): WorkspaceDocument {
   const node = (id: string, x: number, panel: string) => ({
     id,
     rect: { origin: { x, y: 0 }, size: { width: 600, height: 400 } },
-    dock: { kind: 'stack' as const, id: `stack-${id}`, panels: [panel] },
+    layouts: [{ id: `L-stack-${id}`, name: 'Layout 1', dock: { kind: 'stack' as const, id: `stack-${id}`, panels: [panel] } }],
   })
   doc.canvases.c = { id: 'c', nodes: { one: node('one', 0, 'editor'), two: node('two', 700, 'review') } }
   return doc

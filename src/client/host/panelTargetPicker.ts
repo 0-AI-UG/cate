@@ -11,6 +11,7 @@ import { clientUi } from '@kernel/interaction'
 import { documentStoreFor } from '@client/document'
 import { createPanel, newId } from './createPanel'
 import { panelDefinition, panelLabel } from './definitions'
+import { withActiveLayout } from './layouts'
 import { revealPanel } from './reveal'
 
 export type PanelTarget =
@@ -71,7 +72,7 @@ export async function pickPanelPlace(request: PanelTargetRequest): Promise<Panel
   if (!target || target.kind === 'existing') return target
   const doc = documentStoreFor(request.workspaceId)?.getSnapshot()
   const definition = panelDefinition(request.panelType)
-  return doc && definition ? { kind: 'new', at: placeTargetFor(doc, definition, target.placement, newId) } : null
+  return doc && definition ? { kind: 'new', at: placeTargetFor(doc, definition, withActiveLayout(request.workspaceId, target.placement), newId) } : null
 }
 
 /** Where a new panel of `panelType` that `sourcePanelId` asked for goes:
@@ -113,7 +114,7 @@ export async function requestPanelTarget(request: PanelTargetRequest): Promise<P
   // first canvas docked in a window.
   const firstDockedCanvas = documentOrder(doc).map((id) => doc.panels[id]).find((panel) => {
     const placement = panel?.canvasId ? placementOf(doc, panel.id) : null
-    return placement && !isCanvasDock(placement.dock)
+    return placement && !isCanvasDock(doc, placement.dock)
   })
   const canvasId = sourceCanvas ?? (sourcePlacement ? null : firstDockedCanvas?.canvasId ?? null)
   const canvasPanel = canvasId ? canvasPanelOf(doc, canvasId) : null
@@ -125,7 +126,7 @@ export async function requestPanelTarget(request: PanelTargetRequest): Promise<P
     }
     const docked = existing.filter((panel) => {
       const placement = placementOf(doc, panel.panelId)
-      return placement && !isCanvasDock(placement.dock)
+      return placement && !isCanvasDock(doc, placement.dock)
     })
     if (docked.length === 0) return request.availability === 'both' ? { kind: 'new', placement: dockPlacement } : null
     const id = await clientUi().showContextMenu([
@@ -150,6 +151,6 @@ export async function requestPanelTarget(request: PanelTargetRequest): Promise<P
   if (choice.kind === 'existing') return choice
   return {
     kind: 'new',
-    placement: { at: { to: 'canvas', canvasId, nodeId: newId(), stackId: newId(), rect: { origin: choice.point, size: choice.size } } },
+    placement: { at: { to: 'canvas', canvasId, nodeId: newId(), layoutId: newId(), stackId: newId(), rect: { origin: choice.point, size: choice.size } } },
   }
 }

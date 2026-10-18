@@ -3,9 +3,9 @@ import { rect } from '@workspace/canvas/contract'
 import { registerPanelDefinitions } from '@client/host'
 import { canvasViewFor, resetCanvasViews } from '../../client/layout/canvas'
 import { canvasDocument } from '../../client/layout/canvas/testing.canvas'
-import { attachTestWorkspace, testPanelDefinitions, type TestWorkspace } from '../../../../../test/clientWorkspace'
+import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../../../../test/clientWorkspace'
 import { useUIStore } from '../state/uiStore'
-import { handleCanvasKey } from './canvas'
+import { canvasActionBindings, handleCanvasKey } from './canvas'
 import { keyContext } from './useShortcuts'
 
 registerPanelDefinitions(testPanelDefinitions().map((d) => (d.type === 'terminal' ? { ...d, ownsKeyboard: true } : d)))
@@ -48,5 +48,25 @@ describe('canvas keys', () => {
     expect(keyContext().keyboardOwned).toBe(true)
     expect(handleCanvasKey(del(), keyContext())).toBe(false)
     expect(deleteSelection).not.toHaveBeenCalled()
+  })
+})
+
+describe('navigation from a dock panel', () => {
+  function inDock() {
+    ws = attachTestWorkspace('ws', buildDocument([
+      add('pd', { to: 'stack', dock: { layoutId: 'main' }, stackId: 'main-stack' }),
+      add('pa', { to: 'canvas', canvasId: 'c1', nodeId: 'a', layoutId: 'la', stackId: 'sa', rect: rect(0, 0, 400, 300) }),
+    ], canvasDocument([])))
+    useUIStore.setState({ selectedWorkspaceId: 'ws' })
+    ws.state.focus('pd')
+    const navigateSelect = vi.fn()
+    canvasViewFor('ws', 'c1')!.setState({ navigateSelect })
+    return navigateSelect
+  }
+
+  it('Cmd+arrow at the dock\'s edge falls through to the canvas', () => {
+    const navigateSelect = inDock()
+    canvasActionBindings().navigateRight.run({ workspaceId: 'ws' })
+    expect(navigateSelect).toHaveBeenCalledWith('right')
   })
 })

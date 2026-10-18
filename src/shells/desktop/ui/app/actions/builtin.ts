@@ -3,9 +3,11 @@
 // close, rename and claimed keys, and creating panels of every type (from the
 // definitions, through client/host's panel actions).
 
+import { MAIN_WINDOW } from '@workspace/document/contract'
 import { defineActions, storedShortcut, type ActionId } from '@kernel/interaction/contract'
 import { documentStoreFor } from '@client/document'
 import {
+  addLayout,
   closePanel,
   createPanel,
   focusedLeafPanelId,
@@ -15,6 +17,8 @@ import {
   registerPanelActions,
   requestPanelRename,
   requestPanelShortcut,
+  selectPanelAt,
+  toggleExpandedPane,
   type ActionBinding,
 } from '@client/host'
 import { tryClientApp } from '../app'
@@ -25,6 +29,14 @@ import { setUiState } from '../state/uiState'
 import { useUIStore } from '../state/uiStore'
 
 const key = storedShortcut
+
+/** Shows and focuses the n-th panel (0-based) of the window the shortcut came from. */
+const selectPanelAction = (index: number) => ({
+  run: ({ workspaceId, windowId }: { workspaceId?: string | null; windowId?: string }) => {
+    if (workspaceId) selectPanelAt(workspaceId, windowId ?? MAIN_WINDOW, index)
+  },
+  enabled: ({ workspaceId }: { workspaceId?: string | null }) => !!workspaceId,
+})
 
 export const BUILTIN_ACTIONS = defineActions({
   commandPalette: {
@@ -40,6 +52,18 @@ export const BUILTIN_ACTIONS = defineActions({
   toggleSidebar: { title: 'Toggle Sidebar', key: key('b', { command: true }), welcome: true, menu: { bar: 'view', group: 'panes' } },
   nextWorkspace: { title: 'Next Workspace', key: key('→', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 1 } },
   previousWorkspace: { title: 'Previous Workspace', key: key('←', { command: true, option: true }), menu: { bar: 'go', group: 'workspaces', order: 0 } },
+  newLayout: { title: 'New Layout', key: key('t', { command: true, option: true }), menu: { bar: 'go', group: 'layouts', order: 0 } },
+  expandPane: { title: 'Expand Active Panel', key: key('Escape', { shift: true }), menu: { bar: 'view', group: 'panes' } },
+  selectPanel1: { title: 'Panel 1', key: key('1', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 11, submenu: 'Select Panel' } },
+  selectPanel2: { title: 'Panel 2', key: key('2', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 12, submenu: 'Select Panel' } },
+  selectPanel3: { title: 'Panel 3', key: key('3', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 13, submenu: 'Select Panel' } },
+  selectPanel4: { title: 'Panel 4', key: key('4', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 14, submenu: 'Select Panel' } },
+  selectPanel5: { title: 'Panel 5', key: key('5', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 15, submenu: 'Select Panel' } },
+  selectPanel6: { title: 'Panel 6', key: key('6', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 16, submenu: 'Select Panel' } },
+  selectPanel7: { title: 'Panel 7', key: key('7', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 17, submenu: 'Select Panel' } },
+  selectPanel8: { title: 'Panel 8', key: key('8', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 18, submenu: 'Select Panel' } },
+  selectPanel9: { title: 'Panel 9', key: key('9', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 19, submenu: 'Select Panel' } },
+  selectPanel10: { title: 'Panel 10', key: key('0', { option: true }), palette: false, menu: { bar: 'go', group: 'panels', order: 20, submenu: 'Select Panel' } },
   undo: { title: 'Undo', key: key('z', { command: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   redo: { title: 'Redo', key: key('z', { command: true, shift: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   openWorkspace: { title: 'Open Workspace…', key: key('o', { command: true }), welcome: true, menu: { bar: 'file', group: 'open', order: 0 } },
@@ -115,6 +139,19 @@ export function registerBuiltinActions(): () => void {
       toggleSidebar: { run: () => useUIStore.getState().toggleSidebar() },
       nextWorkspace: { run: () => cycleWorkspace(1) },
       previousWorkspace: { run: () => cycleWorkspace(-1) },
+      // The layouts of the window the shortcut came from.
+      newLayout: { run: ({ workspaceId, windowId }) => { if (workspaceId) addLayout(workspaceId, { windowId: windowId ?? MAIN_WINDOW }) }, enabled: ({ workspaceId }) => !!workspaceId },
+      expandPane: { run: ({ workspaceId }) => { if (workspaceId) toggleExpandedPane(workspaceId) }, enabled: ({ workspaceId }) => !!workspaceId },
+      selectPanel1: selectPanelAction(0),
+      selectPanel2: selectPanelAction(1),
+      selectPanel3: selectPanelAction(2),
+      selectPanel4: selectPanelAction(3),
+      selectPanel5: selectPanelAction(4),
+      selectPanel6: selectPanelAction(5),
+      selectPanel7: selectPanelAction(6),
+      selectPanel8: selectPanelAction(7),
+      selectPanel9: selectPanelAction(8),
+      selectPanel10: selectPanelAction(9),
       undo: {
         run: () => { selectedDocument()?.undo() },
         enabled: () => selectedDocument()?.getUndoState().canUndo ?? false,

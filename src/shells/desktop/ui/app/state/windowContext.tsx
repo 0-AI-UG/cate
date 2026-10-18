@@ -10,3 +10,15 @@ export const WindowIdContext = createContext<WindowId>(MAIN_WINDOW)
 export function useWindowId(): WindowId {
   return useContext(WindowIdContext)
 }
+
+// The window this renderer shows, for code outside React (shortcuts). One
+// renderer shows one document window.
+let shownWindowId: WindowId = MAIN_WINDOW
+
+export function setShownWindowId(windowId: WindowId): void {
+  shownWindowId = windowId
+}
+
+export function shownWindow(): WindowId {
+  return shownWindowId
+}

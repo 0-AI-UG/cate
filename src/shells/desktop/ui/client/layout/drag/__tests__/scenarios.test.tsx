@@ -3,12 +3,14 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
-import { MAIN_WINDOW, dockOf, dockPanels, placementOf, type DocChange } from '@workspace/document/contract'
+import { MAIN_WINDOW, canvasOf, dockOf, dockPanels, placementOf, type DocChange } from '@workspace/document/contract'
 import { add, buildDocument } from '../../../../../../../test/clientWorkspace'
 import type { CrossWindowPort, DragGhostPort } from '../ports'
+import { CANVAS_ORDER_KEY } from '../types'
+import { commitDrop } from '../useDragOp'
 import { WS, renderScene, type Scene } from './harness'
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 const rect = (x: number, y: number, w = 200, h = 150) => ({ origin: { x, y }, size: { width: w, height: h } })
 
 let scene: Scene | null = null
@@ -21,7 +23,7 @@ afterEach(() => {
 function canvasDoc(extra: DocChange[] = []) {
   return buildDocument([
     add('cv', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C' }),
-    add('n1', { to: 'canvas', canvasId: 'C', nodeId: 'N1', stackId: 'ns1', rect: rect(100, 100) }),
+    add('n1', { to: 'canvas', canvasId: 'C', nodeId: 'N1', layoutId: 'L-N1', stackId: 'ns1', rect: rect(100, 100) }),
     ...extra,
   ])
 }
@@ -53,8 +55,8 @@ describe('canvas node drags', () => {
 
   it('a grabbed member of a selection moves the whole group by the same delta', () => {
     const doc = canvasDoc([
-      add('n2', { to: 'canvas', canvasId: 'C', nodeId: 'N2', stackId: 'ns2', rect: rect(400, 100) }),
-      add('n3', { to: 'canvas', canvasId: 'C', nodeId: 'N3', stackId: 'ns3', rect: rect(700, 100) }),
+      add('n2', { to: 'canvas', canvasId: 'C', nodeId: 'N2', layoutId: 'L-N2', stackId: 'ns2', rect: rect(400, 100) }),
+      add('n3', { to: 'canvas', canvasId: 'C', nodeId: 'N3', layoutId: 'L-N3', stackId: 'ns3', rect: rect(700, 100) }),
     ])
     scene = renderScene({ doc, canvases: [canvasAt()], selection: { C: ['N1', 'N2', 'N3'] } })
     scene.mouse.downOnNode('N2')
@@ -84,7 +86,7 @@ describe('canvas node drags', () => {
     scene.mouse.moveBy({ x: 5, y: 5 })
     scene.mouse.up()
     expect(scene.doc().canvases.C.nodes.N1).toBeUndefined()
-    expect(placementOf(scene.doc(), 'n1')?.dock).toMatchObject({ canvasId: 'D' })
+    expect(canvasOf(scene.doc(), 'n1')).toBe('D')
   })
 
   it('while dragging, the source is the node; blur cancels', () => {
@@ -98,7 +100,7 @@ describe('canvas node drags', () => {
   })
 
   it('a second press during a drag is ignored; a second mouseup is harmless', () => {
-    const doc = canvasDoc([add('n2', { to: 'canvas', canvasId: 'C', nodeId: 'N2', stackId: 'ns2', rect: rect(400, 400) })])
+    const doc = canvasDoc([add('n2', { to: 'canvas', canvasId: 'C', nodeId: 'N2', layoutId: 'L-N2', stackId: 'ns2', rect: rect(400, 400) })])
     scene = renderScene({ doc, canvases: [canvasAt()] })
     scene.mouse.downOnNode('N1')
     scene.mouse.moveBy({ x: 10, y: 10 })
@@ -135,9 +137,34 @@ describe('leaving the window', () => {
     scene.mouse.up()
     await vi.waitFor(() => expect(Object.values(scene!.doc().windows).some((w) => w.kind === 'detached')).toBe(true))
     const detached = Object.values(scene.doc().windows).find((w) => w.kind === 'detached')!
-    expect(dockPanels(detached.dock)).toEqual(['n1'])
+    expect(dockPanels(detached.layouts[0].dock)).toEqual(['n1'])
     expect(scene.doc().canvases.C.nodes.N1).toBeUndefined()
     expect(scene.drag().pendingDetach).toEqual([])
+  })
+
+  it('a layout dragged out carries its id to the other windows, and unclaimed it opens no window', async () => {
+    const ports = shell()
+    const doc = buildDocument([
+      add('a', { to: 'stack', dock: main, stackId: 's1' }),
+      add('b', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
+      add('c', { to: 'tab', host: { windowId: MAIN_WINDOW }, layoutId: 'L2', stackId: 's3' }),
+    ])
+    scene = renderScene({
+      doc,
+      window: true,
+      features: ['windows'],
+      shell: ports,
+      rects: { '[data-window-view]': { x: 0, y: 0, w: 1000, h: 600 }, '[data-window-header]': { x: 0, y: 0, w: 1000, h: 24 }, '[data-window-header] [data-layout-id="main"]': { x: 0, y: 0, w: 24, h: 24 } },
+    })
+    scene.mouse.downOn('[data-window-header] [data-layout-id="main"]', { x: 10, y: 10 })
+    scene.mouse.dragBy({ x: 20, y: 5 })
+    scene.mouse.moveTo({ x: 2000, y: 400 })
+    expect(ports.crossWindow.begin).toHaveBeenCalledWith(expect.objectContaining({ layoutId: 'main' }), expect.anything())
+    scene.mouse.up()
+    await vi.waitFor(() => expect(ports.crossWindow.release).toHaveBeenCalled())
+    await Promise.resolve()
+    expect(Object.values(scene.doc().windows).some((w) => w.kind === 'detached')).toBe(false)
+    expect(scene.doc().windows[MAIN_WINDOW].layouts.map((l) => l.id)).toEqual(['main', 'L2'])
   })
 
   it('a drop another window claimed sends nothing from here', async () => {
@@ -151,6 +178,32 @@ describe('leaving the window', () => {
     scene.mouse.up()
     await vi.waitFor(() => expect(ports.crossWindow.release).toHaveBeenCalled())
     expect(scene.workspace.document.seq).toBe(seq)
+  })
+
+  describe('a sidebar-tagged drag', () => {
+    const source = { workspaceId: WS, panelId: 'p2', from: 'sidebar' as const, origin: { kind: 'dock-tab' as const, dock: main, host: { windowId: MAIN_WINDOW }, stackId: 's1' } }
+    const geometry = { grab: { x: 0, y: 0 }, ghostSize: { width: 1, height: 1 }, ghostZoom: 1, dragId: 'd' }
+    const panel = { id: 'p2', type: 'terminal', title: 'p2' }
+    const detach = { kind: 'detach' as const, screen: { x: 5, y: 5 } }
+
+    it('a sidebar-tagged drag released outside the window opens no detached window', async () => {
+      const ports = shell()
+      scene = renderScene({ doc: canvasDoc([add('p2', { to: 'stack', dock: main, stackId: 's1' })]), canvases: [canvasAt()], features: ['windows'], shell: ports })
+      const seq = scene.workspace.document.seq
+      await commitDrop(source, detach, panel, geometry)
+      expect(ports.crossWindow.release).toHaveBeenCalled()
+      expect(Object.values(scene.doc().windows).some((w) => w.kind === 'detached')).toBe(false)
+      expect(scene.workspace.document.seq).toBe(seq)
+    })
+
+    it('a sidebar-tagged drag with a remote claim still hands over', async () => {
+      const ports = shell()
+      ;(ports.crossWindow.release as ReturnType<typeof vi.fn>).mockResolvedValue({ claimed: true })
+      scene = renderScene({ doc: canvasDoc([add('p2', { to: 'stack', dock: main, stackId: 's1' })]), canvases: [canvasAt()], features: ['windows'], shell: ports })
+      await commitDrop(source, detach, panel, geometry)
+      expect(ports.crossWindow.release).toHaveBeenCalled()
+      expect(scene.drag().pendingDetach).toEqual([])
+    })
   })
 
   it('coming back cancels the relay', () => {
@@ -167,7 +220,7 @@ describe('leaving the window', () => {
 
   it('a group never leaves the window', async () => {
     const ports = shell()
-    const doc = canvasDoc([add('n2', { to: 'canvas', canvasId: 'C', nodeId: 'N2', stackId: 'ns2', rect: rect(400, 100) })])
+    const doc = canvasDoc([add('n2', { to: 'canvas', canvasId: 'C', nodeId: 'N2', layoutId: 'L-N2', stackId: 'ns2', rect: rect(400, 100) })])
     scene = renderScene({ doc, canvases: [canvasAt()], features: ['windows'], shell: ports, selection: { C: ['N1', 'N2'] } })
     scene.mouse.downOnNode('N1')
     scene.mouse.dragBy({ x: 60, y: 60 })
@@ -183,16 +236,35 @@ describe('leaving the window', () => {
 describe('dock tab drags', () => {
   const stacks = { s1: { x: 0, y: 0, w: 400, h: 600 }, s2: { x: 400, y: 0, w: 400, h: 600 } }
 
-  it('a lone tab dropped on its own tab bar previews and changes nothing', () => {
-    const doc = buildDocument([add('p1', { to: 'stack', dock: main, stackId: 's1' })])
+  it('a lone pane of a split dragged over itself previews nothing and changes nothing', () => {
+    const doc = buildDocument([
+      add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+      add('p3', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
+    ])
     scene = renderScene({ doc, stacks })
     const seq = scene.workspace.document.seq
     scene.mouse.downOnTab('p1')
     scene.mouse.dragBy({ x: 20, y: 5 })
     scene.mouse.moveTo({ x: 120, y: 20 })
-    expect(scene.drag().target).toMatchObject({ kind: 'dock-tab', stackId: 's1' })
+    expect(scene.drag().target).toBeNull()
     scene.mouse.up()
     expect(scene.workspace.document.seq).toBe(seq)
+  })
+
+  it('a pane without a tab bar splits by the nearest edge anywhere over its body', () => {
+    const doc = buildDocument([
+      add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+      add('p3', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
+    ])
+    scene = renderScene({ doc, stacks })
+    scene.mouse.downOnTab('p1')
+    scene.mouse.dragBy({ x: 20, y: 5 })
+    scene.mouse.moveTo({ x: 780, y: 300 })
+    expect(scene.drag().target).toMatchObject({ kind: 'dock-split', stackId: 's2', edge: 'right' })
+    scene.mouse.moveTo({ x: 600, y: 60 })
+    expect(scene.drag().target).toMatchObject({ kind: 'dock-split', stackId: 's2', edge: 'top' })
+    scene.mouse.moveTo({ x: 600, y: 20 })
+    expect(scene.drag().target).toMatchObject({ kind: 'dock-tab', stackId: 's2' })
   })
 
   it('a tab dropped on another stack becomes a tab there', () => {
@@ -200,6 +272,7 @@ describe('dock tab drags', () => {
       add('p1', { to: 'stack', dock: main, stackId: 's1' }),
       add('p2', { to: 'stack', dock: main, stackId: 's1' }),
       add('p3', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
+      add('p4', { to: 'stack', dock: main, stackId: 's2' }),
     ])
     scene = renderScene({ doc, stacks })
     scene.mouse.downOnTab('p1')
@@ -237,10 +310,21 @@ describe('dock tab drags', () => {
     expect(scene.drag().target?.kind).toBe('canvas-add')
     scene.mouse.up()
     expect(dockPanels(dockOf(scene.doc(), main))).toEqual(['p1', 'cv'])
-    expect(placementOf(scene.doc(), 'p2')?.dock).toMatchObject({ canvasId: 'C' })
+    expect(canvasOf(scene.doc(), 'p2')).toBe('C')
   })
 
-  it('a canvas tab refuses a canvas and a node mini dock', () => {
+  it('a lone pane (no tab bar) dragged by its grip out onto a canvas becomes a node', () => {
+    const doc = canvasDoc([add('p1', { to: 'split', dock: main, beside: 's1', side: 'left', stackId: 's0', splitId: 'sp' })])
+    scene = renderScene({ doc, stacks: { s0: { x: 0, y: 0, w: 260, h: 600 } }, canvases: [{ canvasId: 'C', rect: { x: 400, y: 0, w: 600, h: 600 } }] })
+    scene.mouse.downOn('[data-pane-drag="p1"]', { x: 100, y: 300 })
+    scene.mouse.dragBy({ x: 30, y: 30 })
+    scene.mouse.moveTo({ x: 700, y: 300 })
+    expect(scene.drag().target?.kind).toBe('canvas-add')
+    scene.mouse.up()
+    expect(canvasOf(scene.doc(), 'p1')).toBe('C')
+  })
+
+  it('a canvas tab is refused by a canvas, over a node mini dock too', () => {
     const doc = canvasDoc([add('p1', { to: 'split', dock: main, beside: 's1', side: 'left', stackId: 's0', splitId: 'sp' })])
     scene = renderScene({
       doc,
@@ -249,10 +333,11 @@ describe('dock tab drags', () => {
     })
     scene.mouse.downOnTab('cv')
     scene.mouse.dragBy({ x: 30, y: 30 })
+    // Over a node's mini dock it is the canvas under it that refuses.
     scene.mouse.moveTo({ x: 520, y: 110 })
-    expect(scene.drag().target).toBeNull()
+    expect(scene.drag().target).toMatchObject({ kind: 'canvas-add', refused: 'Cannot add a recursive canvas item' })
     scene.mouse.moveTo({ x: 800, y: 500 })
-    expect(scene.drag().target).toBeNull()
+    expect(scene.drag().target).toMatchObject({ kind: 'canvas-add', refused: 'Cannot add a recursive canvas item' })
     scene.mouse.up()
     expect(placementOf(scene.doc(), 'cv')?.stackId).toBe('s1')
   })
@@ -271,8 +356,18 @@ describe('dock tab drags', () => {
     scene.mouse.dragBy({ x: 30, y: 30 })
     // Node N1 sits at canvas (100, 100): screen (500, 100); its tab bar is the top strip.
     scene.mouse.moveTo({ x: 560, y: 110 })
-    expect(scene.drag().target).toMatchObject({ kind: 'dock-tab', dock: { canvasId: 'C', nodeId: 'N1' } })
+    expect(scene.drag().target).toMatchObject({ kind: 'dock-tab', dock: { layoutId: 'L-N1' } })
     scene.mouse.up()
-    expect(dockPanels(dockOf(scene.doc(), { canvasId: 'C', nodeId: 'N1' }))).toEqual(['n1', 'p2'])
+    expect(dockPanels(dockOf(scene.doc(), { layoutId: 'L-N1' }))).toEqual(['n1', 'p2'])
+  })
+})
+
+describe('canvas-slot commit', () => {
+  it('canvas-slot commit stores the order in client state', async () => {
+    scene = renderScene({ doc: canvasDoc([add('p2', { to: 'stack', dock: main, stackId: 's1' })]), canvases: [canvasAt()] })
+    const source = { workspaceId: WS, panelId: 'p2', origin: { kind: 'dock-tab' as const, dock: main, host: { windowId: MAIN_WINDOW }, stackId: 's1' } }
+    const target = { kind: 'canvas-slot' as const, workspaceId: WS, canvasPanelId: 'cv', after: null, order: ['p2', 'n1'] }
+    await commitDrop(source, target, { id: 'p2', type: 'terminal', title: 'p2' }, { grab: { x: 0, y: 0 }, ghostSize: { width: 1, height: 1 }, ghostZoom: 1, dragId: 'd' })
+    expect(scene.workspace.state.getSnapshot().panelViews.cv?.[CANVAS_ORDER_KEY]).toEqual(['p2', 'n1'])
   })
 })

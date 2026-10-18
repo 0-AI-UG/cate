@@ -5,14 +5,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import type { Point } from '@workspace/canvas/contract'
-import { MAIN_WINDOW, dockPanels, dockOf, placementOf } from '@workspace/document/contract'
+import { MAIN_WINDOW, canvasOf, dockPanels, dockOf, placementOf } from '@workspace/document/contract'
 import { add, buildDocument } from '../../../../../../../test/clientWorkspace'
 import { setupCrossWindowDrops, shouldIgnoreDragEnd } from '../crossWindow'
 import type { CrossWindowDrag, CrossWindowPort } from '../ports'
 import { domDropEnvironment } from '../resolve'
 import { WS, renderScene, type Scene } from './harness'
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 
 function relay(claim = true) {
   let pointer: ((drag: CrossWindowDrag, screen: Point) => void) | null = null
@@ -36,8 +36,9 @@ function relay(claim = true) {
 function fixture() {
   return buildDocument([
     add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+    add('p1b', { to: 'stack', dock: main, stackId: 's1' }),
     add('cv', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }, 'canvas', { canvasId: 'C' }),
-    add('far', { to: 'window', windowId: 'W1', stackId: 'ws1' }),
+    add('far', { to: 'window', windowId: 'W1', layoutId: 'W1-main', stackId: 'ws1' }),
   ])
 }
 
@@ -89,7 +90,7 @@ describe('a relayed drag', () => {
     r.move(drag(), { x: 700, y: 300 })
     expect(scene!.drag().target?.kind).toBe('canvas-add')
     r.end('d1')
-    await vi.waitFor(() => expect(placementOf(scene!.doc(), 'far')?.dock).toMatchObject({ canvasId: 'C' }))
+    await vi.waitFor(() => expect(canvasOf(scene!.doc(), 'far')).toBe('C'))
   })
 
   it('a refused claim sends nothing', async () => {
@@ -100,7 +101,7 @@ describe('a relayed drag', () => {
     await vi.waitFor(() => expect(r.port.claim).toHaveBeenCalled())
     await Promise.resolve()
     expect(scene!.workspace.document.seq).toBe(seq)
-    expect(dockPanels(dockOf(scene!.doc(), { windowId: 'W1' }))).toEqual(['far'])
+    expect(dockPanels(dockOf(scene!.doc(), { layoutId: 'W1-main' }))).toEqual(['far'])
   })
 
   it('no target: no claim, state cleared', () => {
@@ -125,6 +126,51 @@ describe('a relayed drag', () => {
     r.move(drag(), { x: 120, y: 15 })
     act(() => { stop?.(); stop = null })
     expect(scene!.drag().isDragging).toBe(false)
+  })
+})
+
+describe('a relayed layout drag', () => {
+  const layoutDrag = (): CrossWindowDrag => ({ ...drag(), panelId: 'far', title: 'Far', layoutId: 'W1-main' })
+  const open = (claim = true) => {
+    scene = renderScene({
+      doc: buildDocument([
+        add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+        add('far', { to: 'window', windowId: 'W1', layoutId: 'W1-main', stackId: 'ws1' }),
+        add('far2', { to: 'split', dock: { layoutId: 'W1-main' }, beside: 'ws1', side: 'right', stackId: 'ws2', splitId: 'wsp' }),
+      ]),
+      stacks: { s1: { x: 0, y: 30, w: 1000, h: 570 } },
+      rects: {
+        '[data-window-view]': { x: 0, y: 0, w: 1000, h: 600 },
+        '[data-window-header]': { x: 0, y: 0, w: 1000, h: 24 },
+        '[data-strip-panel-id="p1"]': { x: 25, y: 0, w: 100, h: 24 },
+      },
+      window: true,
+    })
+    const r = relay(claim)
+    stop = setupCrossWindowDrops(r.port, () => domDropEnvironment(() => false))
+    return r
+  }
+
+  it('moves the whole layout, name and panes, into this window on an accepted claim', async () => {
+    const r = open()
+    r.move(layoutDrag(), { x: 900, y: 10 })
+    expect(scene!.drag().source?.origin).toMatchObject({ kind: 'layout', layoutId: 'W1-main' })
+    expect(scene!.drag().target).toMatchObject({ kind: 'tab-slot' })
+    r.end('d1')
+    await vi.waitFor(() => expect(scene!.doc().windows.W1).toBeUndefined())
+    const layouts = scene!.doc().windows[MAIN_WINDOW].layouts
+    expect(layouts.map((l) => l.id)).toEqual(['main', 'W1-main'])
+    expect(dockPanels(layouts[1].dock)).toEqual(['far', 'far2'])
+  })
+
+  it('a refused claim leaves the layout where it was', async () => {
+    const r = open(false)
+    const seq = scene!.workspace.document.seq
+    r.move(layoutDrag(), { x: 900, y: 10 })
+    r.end('d1')
+    await vi.waitFor(() => expect(r.port.claim).toHaveBeenCalled())
+    await Promise.resolve()
+    expect(scene!.workspace.document.seq).toBe(seq)
   })
 })
 

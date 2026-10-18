@@ -65,6 +65,14 @@ function CanvasNodes({ workspaceId, canvasId, canvasPanelId, store, maximized }:
   )
 }
 
+/** The dock of the maximized node: the layout this client shows in it. */
+function MaximizedNodeDock({ workspaceId, canvasId, nodeId }: { workspaceId: string; canvasId: string; nodeId: NodeId }) {
+  const layouts = useDocument(workspaceId, (d) => d.canvases[canvasId]?.nodes[nodeId]?.layouts)
+  const chosen = useClientState(workspaceId, (s) => s.activeLayouts[nodeId])
+  const layoutId = layouts?.find((l) => l.id === chosen)?.id ?? layouts?.[0]?.id
+  return layoutId ? <DockView workspaceId={workspaceId} dock={{ layoutId }} host={{ canvasId, nodeId }} /> : null
+}
+
 export function CanvasView({ workspaceId, canvasId, canvasPanelId }: CanvasViewProps): React.ReactElement | null {
   const exists = useDocument(workspaceId, (d) => !!d.canvases[canvasId])
   const wanted = useClientState(workspaceId, (s) => s.maximizedNodes[canvasId] ?? null)
@@ -107,7 +115,7 @@ export function CanvasView({ workspaceId, canvasId, canvasPanelId }: CanvasViewP
         </Canvas>
         {maximized && (
           <div data-maximized-node={maximized} className="absolute inset-0 z-[60] flex flex-col bg-canvas-bg">
-            <DockView workspaceId={workspaceId} dock={{ canvasId, nodeId: maximized }} />
+            <MaximizedNodeDock workspaceId={workspaceId} canvasId={canvasId} nodeId={maximized} />
           </div>
         )}
       </div>

@@ -98,6 +98,8 @@ export interface DragPayload {
   /** An inline `<svg>` icon, or empty. */
   iconSvg?: string
   size?: { width: number; height: number }
+  /** Set when the drag moves a whole layout; `panelId` is then one of its panels. */
+  layoutId?: string
 }
 
 export interface DragPointer {
@@ -187,6 +189,9 @@ export interface DesktopApi {
     open(ref: DetachedWindowRef & { bounds?: Bounds }): Promise<void>
     close(ref: DetachedWindowRef): Promise<void>
     focus(ref: DetachedWindowRef): Promise<void>
+    /** Brings a detached window to the front and asks it to show `panelId`: its tab selection and focus are that
+     *  window's own, so no other window can set them. */
+    reveal(ref: DetachedWindowRef & { panelId: string }): Promise<void>
     list(): Promise<DetachedWindowRef[]>
   }
   /** The calling window. */
@@ -201,6 +206,8 @@ export interface DesktopApi {
     /** The user closed this detached window: the renderer applies the
      *  document op; the window closes when its document window goes. */
     onCloseRequested(listener: () => void): () => void
+    /** Another window asks this one to show a panel (see `windows.reveal`). */
+    onRevealRequested(listener: (panelId: string) => void): () => void
     /** Synchronous: any app window in native fullscreen (refuse detaching). */
     anyFullscreen(): boolean
     /** This window's zoom factor (the `uiScale` setting). Scales Cate's own

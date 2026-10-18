@@ -24,7 +24,7 @@ import { createLifecycleBus } from '@kernel/lifecycle/contract'
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 
 const record = (id: string): PanelRecord => ({ id, type: 'terminal', title: id, fields: {} })
-const add = (id: string): DocChange => ({ kind: 'addPanel', record: record(id), at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } })
+const add = (id: string): DocChange => ({ kind: 'addPanel', record: record(id), at: { to: 'stack', dock: { layoutId: 'main' }, stackId: 's1' } })
 const title = (id: string, value: string): DocChange => ({ kind: 'updatePanel', id, patch: { title: value } })
 
 /** A document runtime over a real RpcServer, ordering ops with createSequencer. */

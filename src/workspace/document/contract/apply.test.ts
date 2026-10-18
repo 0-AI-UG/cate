@@ -9,7 +9,7 @@ import { validateDocument } from './serialize'
 
 type Doc = WorkspaceDocument
 
-const MAIN: DockRef = { windowId: MAIN_WINDOW }
+const MAIN: DockRef = { layoutId: 'main' }
 const R = rect(0, 0, 400, 300)
 
 function record(id: string, type: PanelType = 'terminal', extra: Partial<PanelRecord> = {}): PanelRecord {
@@ -19,8 +19,8 @@ function record(id: string, type: PanelType = 'terminal', extra: Partial<PanelRe
 const tab = (stackId: string, after?: string | null, dock: DockRef = MAIN): PlaceTarget => ({ to: 'stack', dock, stackId, after })
 const split = (beside: string, side: 'left' | 'right' | 'top' | 'bottom', stackId: string, splitId = `split-${stackId}`, dock: DockRef = MAIN): PlaceTarget =>
   ({ to: 'split', dock, beside, side, stackId, splitId })
-const node = (canvasId: string, nodeId: string, stackId = `stack-${nodeId}`, r = R): PlaceTarget => ({ to: 'canvas', canvasId, nodeId, stackId, rect: r })
-const win = (windowId: string, stackId = `stack-${windowId}`): PlaceTarget => ({ to: 'window', windowId, stackId })
+const node = (canvasId: string, nodeId: string, stackId = `stack-${nodeId}`, r = R): PlaceTarget => ({ to: 'canvas', canvasId, nodeId, layoutId: `L-${nodeId}`, stackId, rect: r })
+const win = (windowId: string, stackId = `stack-${windowId}`): PlaceTarget => ({ to: 'window', windowId, layoutId: `${windowId}-main`, stackId })
 
 function ok(doc: Doc, ...changes: DocChange[]): Doc {
   for (const change of changes) {
@@ -40,7 +40,7 @@ function fails(doc: Doc, change: DocChange, code: OpErrorCode): void {
 
 const add = (id: string, at: PlaceTarget, type: PanelType = 'terminal'): DocChange => ({ kind: 'addPanel', record: record(id, type), at })
 const place = (id: string, at: PlaceTarget): DocChange => ({ kind: 'placePanel', id, at })
-const mainDock = (doc: Doc) => doc.windows[MAIN_WINDOW].dock
+const mainDock = (doc: Doc) => doc.windows[MAIN_WINDOW].layouts[0].dock
 const stack = (id: string, ...panels: string[]): DockNode => ({ kind: 'stack', id, panels })
 
 /** main: stack s1 [a, b, c] */
@@ -56,7 +56,7 @@ function withCanvas(): Doc {
 describe('createDocument', () => {
   it('has an empty main window and nothing else', () => {
     const doc = createDocument()
-    expect(doc).toEqual({ panels: {}, windows: { main: { id: 'main', kind: 'main', dock: null } }, canvases: {}, relations: {}, worktrees: {} })
+    expect(doc).toEqual({ panels: {}, windows: { main: { id: 'main', kind: 'main', layouts: [{ id: 'main', name: 'Layout 1', dock: null }]} }, canvases: {}, relations: {}, worktrees: {} })
     expect(validateDocument(doc)).toBeNull()
   })
 })
@@ -78,7 +78,7 @@ describe('addPanel', () => {
   it('fails with gone for a missing stack, window or canvas', () => {
     const doc = threeTabs()
     fails(doc, add('d', tab('nope')), 'gone')
-    fails(doc, add('d', tab('s1', undefined, { windowId: 'nope' })), 'gone')
+    fails(doc, add('d', tab('s1', undefined, { layoutId: 'nope-main' })), 'gone')
     fails(doc, add('d', node('nope', 'n1')), 'gone')
     fails(doc, add('d', split('nope', 'left', 's2')), 'gone')
   })
@@ -109,15 +109,15 @@ describe('addPanel', () => {
   it('never places a canvas panel on a canvas', () => {
     const doc = withCanvas()
     fails(doc, add('cv2', node('canvas-cv', 'n9'), 'canvas'), 'rejected')
-    fails(doc, add('cv2', tab('stack-n1', undefined, { canvasId: 'canvas-cv', nodeId: 'n1' }), 'canvas'), 'rejected')
-    fails(doc, add('cv2', split('stack-n1', 'left', 'sx', 'px', { canvasId: 'canvas-cv', nodeId: 'n1' }), 'canvas'), 'rejected')
+    fails(doc, add('cv2', tab('stack-n1', undefined, { layoutId: 'L-n1' }), 'canvas'), 'rejected')
+    fails(doc, add('cv2', split('stack-n1', 'left', 'sx', 'px', { layoutId: 'L-n1' }), 'canvas'), 'rejected')
   })
 
   it('adds canvas nodes with their rect and detached windows without a position', () => {
     const doc = ok(withCanvas(), add('w', win('w1', 'ws')))
-    expect(doc.canvases['canvas-cv'].nodes.n1).toEqual({ id: 'n1', rect: R, dock: stack('stack-n1', 'x') })
+    expect(doc.canvases['canvas-cv'].nodes.n1).toEqual({ id: 'n1', rect: R, layouts: [{ id: 'L-n1', name: 'Layout 1', dock: stack('stack-n1', 'x') }] })
     expect(Object.keys(doc.canvases['canvas-cv'].nodes)).toEqual(['n1', 'n2'])
-    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', dock: stack('ws', 'w') })
+    expect(doc.windows.w1).toEqual({ id: 'w1', kind: 'detached', layouts: [{ id: 'w1-main', name: 'Layout 1', dock: stack('ws', 'w') }]})
   })
 })
 
@@ -174,7 +174,7 @@ describe('placePanel', () => {
     const doc = ok(threeTabs(), add('d', split('s1', 'right', 's2', 'p1')))
     expect(applyOp(doc, place('d', split('s2', 'bottom', 's9', 'p9'))).doc).toBe(doc)
     const canvas = withCanvas()
-    expect(applyOp(canvas, place('x', split('stack-n1', 'left', 's9', 'p9', { canvasId: 'canvas-cv', nodeId: 'n1' }))).doc).toBe(canvas)
+    expect(applyOp(canvas, place('x', split('stack-n1', 'left', 's9', 'p9', { layoutId: 'L-n1' }))).doc).toBe(canvas)
   })
 
   it('follows a split that collapsed while the panel moved out', () => {
@@ -189,12 +189,12 @@ describe('placePanel', () => {
     doc = ok(doc, place('x', win('w1')), place('x', tab('s1')))
     expect(doc.windows.w1).toBeUndefined()
     doc = ok(createDocument(), add('a', tab('s1')), place('a', win('w1')))
-    expect(doc.windows.main).toEqual({ id: 'main', kind: 'main', dock: null })
+    expect(doc.windows.main).toEqual({ id: 'main', kind: 'main', layouts: [{ id: 'main', name: 'Layout 1', dock: null }]})
   })
 
   it('moves between nodes and into new nodes', () => {
-    let doc = ok(withCanvas(), place('x', tab('stack-n2', undefined, { canvasId: 'canvas-cv', nodeId: 'n2' })))
-    expect(doc.canvases['canvas-cv'].nodes.n2.dock).toEqual(stack('stack-n2', 'y', 'x'))
+    let doc = ok(withCanvas(), place('x', tab('stack-n2', undefined, { layoutId: 'L-n2' })))
+    expect(doc.canvases['canvas-cv'].nodes.n2.layouts[0].dock).toEqual(stack('stack-n2', 'y', 'x'))
     doc = ok(doc, place('y', node('canvas-cv', 'n3', 's3', rect(5, 5, 100, 100))))
     expect(doc.canvases['canvas-cv'].nodes.n3.rect).toEqual(rect(5, 5, 100, 100))
   })
@@ -203,12 +203,12 @@ describe('placePanel', () => {
     const doc = withCanvas()
     fails(doc, place('nope', tab('s1')), 'gone')
     fails(doc, place('cv', node('canvas-cv', 'n9')), 'rejected')
-    fails(doc, place('x', tab('nope', undefined, { canvasId: 'canvas-cv', nodeId: 'n1' })), 'gone')
+    fails(doc, place('x', tab('nope', undefined, { layoutId: 'L-n1' })), 'gone')
   })
 
   it('shares every untouched part of the document', () => {
     const doc = ok(withCanvas(), add('w', win('w1')))
-    const next = ok(doc, place('x', tab('stack-n2', undefined, { canvasId: 'canvas-cv', nodeId: 'n2' })))
+    const next = ok(doc, place('x', tab('stack-n2', undefined, { layoutId: 'L-n2' })))
     expect(next.windows).toBe(doc.windows)
     expect(next.panels).toBe(doc.panels)
     expect(next.relations).toBe(doc.relations)
@@ -223,7 +223,7 @@ describe('replacePanel', () => {
   })
 
   it('turns a docked surface into a canvas, never one on a canvas', () => {
-    let doc = ok(withCanvas(), add('s', tab('s1'), 'surface'), add('t', tab('stack-n1', undefined, { canvasId: 'canvas-cv', nodeId: 'n1' }), 'surface'))
+    let doc = ok(withCanvas(), add('s', tab('s1'), 'surface'), add('t', tab('stack-n1', undefined, { layoutId: 'L-n1' }), 'surface'))
     doc = ok(doc, { kind: 'replacePanel', record: record('s', 'canvas') })
     expect(doc.canvases['canvas-s']).toEqual({ id: 'canvas-s', nodes: {} })
     fails(doc, { kind: 'replacePanel', record: record('t', 'canvas') }, 'rejected')
@@ -292,9 +292,9 @@ describe('containers', () => {
   it('setSplitRatio normalises, in window and node docks', () => {
     let doc = ok(twoStacks(), { kind: 'setSplitRatio', splitId: 'p1', ratios: [3, 1] })
     expect(mainDock(doc)).toMatchObject({ ratios: [0.75, 0.25] })
-    const ref = { canvasId: 'canvas-cv', nodeId: 'n1' }
+    const ref = { layoutId: 'L-n1' }
     doc = ok(withCanvas(), add('q', split('stack-n1', 'bottom', 'sq', 'pq', ref)), { kind: 'setSplitRatio', splitId: 'pq', ratios: [1, 4] })
-    expect(doc.canvases['canvas-cv'].nodes.n1.dock).toMatchObject({ ratios: [0.2, 0.8] })
+    expect(doc.canvases['canvas-cv'].nodes.n1.layouts[0].dock).toMatchObject({ ratios: [0.2, 0.8] })
   })
 
   it('setSplitRatio fails for a missing split and rejects a wrong count or bad values', () => {
@@ -314,7 +314,7 @@ describe('containers', () => {
 
 
   it('closeWindow removes the window and its panels, canvases included', () => {
-    let doc = ok(withCanvas(), add('w', win('w1')), place('cv', tab('stack-w1', undefined, { windowId: 'w1' })))
+    let doc = ok(withCanvas(), add('w', win('w1')), place('cv', tab('stack-w1', undefined, { layoutId: 'w1-main' })))
     doc = ok(doc, { kind: 'closeWindow', windowId: 'w1' })
     expect(Object.keys(doc.panels)).toEqual([])
     expect(doc.canvases).toEqual({})
@@ -369,7 +369,7 @@ describe('batch', () => {
     const doc = threeTabs()
     const good = applyOp(doc, { kind: 'batch', changes: [add('d', tab('s1')), place('d', win('w1'))] })
     expect(good.error).toBeUndefined()
-    expect(placementOf(good.doc, 'd')?.dock).toEqual({ windowId: 'w1' })
+    expect(placementOf(good.doc, 'd')?.dock).toEqual({ layoutId: 'w1-main' })
     const bad = applyOp(doc, { kind: 'batch', changes: [add('d', tab('s1')), place('nope', tab('s1'))] })
     expect(bad.error?.code).toBe('gone')
     expect(bad.doc).toBe(doc)

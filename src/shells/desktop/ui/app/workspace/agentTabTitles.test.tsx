@@ -14,14 +14,15 @@ import { fakeStream } from '@services/agents/client/testing'
 import { createClientIdentity, installClientIdentity } from '@client/connections'
 import { registerPanelDefinitions } from '@client/host'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../../../../test/clientWorkspace'
-import { DockView, registerTabDecorations } from '../../client/layout/dock'
+import { registerTabDecorations } from '../../client/layout/dock'
+import { WindowView } from '../../client/layout/windows/WindowView'
 import { useAgentTabDecorations } from '../../services/agents'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 let ws: TestWorkspace
 let container: HTMLDivElement
 let root: Root
@@ -48,8 +49,8 @@ afterEach(() => {
   installClientIdentity(null)
 })
 
-const renderDock = () => act(() => { root.render(<DockView workspaceId="w" dock={main} renderPanel={(id) => <div>{id}</div>} />) })
-const tabText = () => container.querySelector<HTMLElement>('[data-tab-panel-id="t1"]')!.textContent ?? ''
+const renderDock = () => act(() => { root.render(<WindowView workspaceId="w" windowId={MAIN_WINDOW} overlay={false} />) })
+const tabText = () => container.querySelector<HTMLElement>('[data-strip-panel-id="t1"]')!.textContent ?? ''
 const setTitle = (title: string) => act(() => ws.remote({ kind: 'updatePanel', id: 't1', patch: { title } }))
 const agentState = (agent: (typeof AGENTS)[number], patch: Partial<PanelAgentState> = {}): PanelAgentState => ({
   panelId: 't1',
