@@ -14,7 +14,7 @@ export interface RevealHooks {
   selectWorkspace?(workspaceId: string): void | Promise<void>
   /** Brings a document window on screen (raises a detached window, or
    *  switches to it on a client that shows every window in one). */
-  showWindow?(workspaceId: string, windowId: string): void
+  showWindow?(workspaceId: string, windowId: string, panelId: PanelId): void
 }
 
 let hooks: RevealHooks = {}
@@ -25,7 +25,8 @@ export function installRevealHooks(next: RevealHooks): () => void {
   return () => { hooks = previous }
 }
 
-export function revealOnce(workspaceId: string, panelId: PanelId): boolean {
+/** `local`: only this window's own state is set (another window asked for the reveal): the window is already on screen. */
+export function revealOnce(workspaceId: string, panelId: PanelId, { local = false }: { local?: boolean } = {}): boolean {
   const doc = documentStoreFor(workspaceId)?.getSnapshot()
   const state = clientStateFor(workspaceId)
   if (!doc || !state) return false
@@ -44,7 +45,7 @@ export function revealOnce(workspaceId: string, panelId: PanelId): boolean {
     if (host) state.pushIntent({ panelId: host.id, kind: CANVAS_REVEAL_INTENT, data: { nodeId, panelId } })
   }
   const windowId = windowOf(doc, panelId)
-  if (windowId) hooks.showWindow?.(workspaceId, windowId)
+  if (windowId && !local) hooks.showWindow?.(workspaceId, windowId, panelId)
   state.focus(panelId)
   return true
 }

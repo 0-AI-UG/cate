@@ -68,8 +68,8 @@ export interface DesktopPort {
   /** Space the window controls take at the top left, in px (0 when none). */
   windowControlsInset(): number
   onWindowControlsInsetChange(listener: () => void): () => void
-  /** Brings a detached window of a workspace to the front. */
-  focusWindow(workspaceId: string, windowId: string): void
+  /** Brings a detached window of a workspace to the front, and has it show `panelId` when given. */
+  focusWindow(workspaceId: string, windowId: string, panelId?: string): void
   /** Shows an application overlay (settings, ...) in the main window; used
    *  from a detached window, which has no room for it. Returns false when this
    *  is the main window. */

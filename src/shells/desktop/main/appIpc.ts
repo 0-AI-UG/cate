@@ -87,6 +87,13 @@ export function registerAppIpc(deps: AppIpcDeps): { blockers(): string[] } {
     const entry = registry.findDetached(detachedRef(ref))
     if (entry) deps.focusWindow(entry.win)
   })
+  handle(C.windowsReveal, (_event, ref: unknown) => {
+    const entry = registry.findDetached(detachedRef(ref))
+    const panelId = (ref as { panelId?: unknown } | null)?.panelId
+    if (!entry || typeof panelId !== 'string') return
+    deps.focusWindow(entry.win)
+    entry.win.webContents.send(C.windowRevealRequested, panelId)
+  })
   handle(C.windowsList, () => registry.detachedRefs())
 
   // The calling window.

@@ -129,8 +129,8 @@ export function installNavigationHooks(): () => void {
     async selectWorkspace(workspaceId) {
       if (useUIStore.getState().selectedWorkspaceId !== workspaceId) await selectWorkspace(workspaceId)
     },
-    showWindow(workspaceId, windowId) {
-      if (windowId !== MAIN_WINDOW) desktopPort()?.focusWindow(workspaceId, windowId)
+    showWindow(workspaceId, windowId, panelId) {
+      if (windowId !== MAIN_WINDOW) desktopPort()?.focusWindow(workspaceId, windowId, panelId)
     },
   })
   return () => { stopFollowing(); stopReveal() }

@@ -4,7 +4,7 @@
 
 import React, { useEffect, useMemo, useRef } from 'react'
 import { MAIN_WINDOW, dockStacks, type SplitSide, type WindowId } from '@workspace/document/contract'
-import { activeTabOf, installRevealHooks, panelDefinition } from '@client/host'
+import { activeTabOf, panelDefinition } from '@client/host'
 import { useClientState, useDocument } from '../../document'
 import { DockView } from '../dock/DockView'
 import { EmptyDockChooser } from '../dock/EmptyDockChooser'
@@ -12,7 +12,6 @@ import { DragOverlay } from '../drag/Overlay'
 import { EdgeDropIndicator } from '../drag/EdgeIndicator'
 import { registerDropZone } from '../drag/registry'
 import { useDragStore } from '../drag/store'
-import { windowsPort } from './ports'
 import { WindowHeader } from './WindowHeader'
 
 /** Width of the edge strips a drag can split the whole dock at. */
@@ -87,15 +86,6 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
       {overlay && <DragOverlay />}
     </div>
   )
-}
-
-/** Reveal brings a detached window forward. Returns the uninstall. */
-export function installWindowReveal(): () => void {
-  return installRevealHooks({
-    showWindow(workspaceId, windowId) {
-      if (windowId !== MAIN_WINDOW) windowsPort()?.focus?.({ workspaceId, windowId })
-    },
-  })
 }
 
 /** The main window of a workspace. Empty, it offers the panel types to open

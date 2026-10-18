@@ -4,6 +4,7 @@
 // connection. Where a window sits is this device's (main keeps it).
 
 import type { Rect } from '@workspace/canvas/contract'
+import { revealOnce } from '@client/host'
 import { clampToScreens, closeDetachedWindow, type WindowsPort } from '../ui/client/layout/windows'
 import type { Bounds, DesktopApi } from '../contract'
 
@@ -21,7 +22,6 @@ export function createWindowsPort(api: DesktopApi): WindowsPort {
       void api.windows.open({ workspaceId, windowId, bounds: bounds && toBounds(clampToScreens(bounds, screens())) })
     },
     close: (ref) => { void api.windows.close(ref) },
-    focus: (ref) => { void api.windows.focus(ref) },
     // A new window next to a fullscreen one would land in another Space.
     canOpen: () => !api.window.anyFullscreen(),
   }
@@ -30,5 +30,8 @@ export function createWindowsPort(api: DesktopApi): WindowsPort {
 /** The detached window's side: the user closing it becomes `closeWindow`
  *  after the close guards. */
 export function attachDetachedWindow(api: DesktopApi, workspaceId: string, windowId: string): () => void {
-  return api.window.onCloseRequested(() => { void closeDetachedWindow(workspaceId, windowId) })
+  const stopClose = api.window.onCloseRequested(() => { void closeDetachedWindow(workspaceId, windowId) })
+  // Another window revealed a panel here: this window's tab selection and focus are its own to set.
+  const stopReveal = api.window.onRevealRequested((panelId) => { revealOnce(workspaceId, panelId, { local: true }) })
+  return () => { stopClose(); stopReveal() }
 }

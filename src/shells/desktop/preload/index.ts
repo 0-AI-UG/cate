@@ -134,6 +134,7 @@ const api: DesktopApi = {
     open: (request) => invoke(C.windowsOpen, request),
     close: (ref) => invoke(C.windowsClose, ref),
     focus: (ref) => invoke(C.windowsFocus, ref),
+    reveal: (ref) => invoke(C.windowsReveal, ref),
     list: () => invoke(C.windowsList),
   },
   window: {
@@ -145,6 +146,7 @@ const api: DesktopApi = {
     state: () => invoke(C.windowState),
     onState: (listener) => listen(C.windowStateChanged, listener),
     onCloseRequested: (listener) => listen(C.windowCloseRequested, listener),
+    onRevealRequested: (listener) => listen(C.windowRevealRequested, listener),
     anyFullscreen: () => ipcRenderer.sendSync(C.anyFullscreen) === true,
     setZoomFactor: (factor) => {
       if (Number.isFinite(factor) && factor > 0) webFrame.setZoomFactor(factor)

@@ -12,7 +12,7 @@ import { documentStoreFor } from '@client/document'
 import { createPanel, newId } from './createPanel'
 import { creatableDefinitions, panelDefinition, registerPanelDefinitions } from './definitions'
 import { focusedLeafPanelId } from './focus'
-import { CANVAS_REVEAL_INTENT, revealPanel, selectPanelAt, stepPanel } from './reveal'
+import { CANVAS_REVEAL_INTENT, installRevealHooks, revealOnce, revealPanel, selectPanelAt, stepPanel } from './reveal'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
@@ -237,6 +237,30 @@ const second = () => buildDocument([
   add('b', { to: 'tab', host: { windowId: MAIN_WINDOW }, layoutId: 'T2', stackId: 's2' }),
   add('cv2', { to: 'stack', dock: { layoutId: 'T2' }, stackId: 's2' }, 'canvas', { canvasId: 'C2' }),
 ], fixture())
+
+describe('revealing in another window', () => {
+  const inWindow = () => buildDocument([add('far', { to: 'window', windowId: 'W1', layoutId: 'W1-main', stackId: 'ws1' }), add('far2', { to: 'stack', dock: { layoutId: 'W1-main' }, stackId: 'ws1' })])
+
+  it('asks the shell to show the panel in its window (the tab selection is that window\'s own)', () => {
+    ws = attachTestWorkspace('w', inWindow())
+    const showWindow = vi.fn()
+    const stop = installRevealHooks({ showWindow })
+    expect(revealOnce('w', 'far2')).toBe(true)
+    expect(showWindow).toHaveBeenCalledWith('w', 'W1', 'far2')
+    stop()
+  })
+
+  it('a reveal another window asked for sets only this window\'s state and asks nobody', () => {
+    ws = attachTestWorkspace('w', inWindow())
+    const showWindow = vi.fn()
+    const stop = installRevealHooks({ showWindow })
+    expect(revealOnce('w', 'far2', { local: true })).toBe(true)
+    expect(showWindow).not.toHaveBeenCalled()
+    expect(ws.state.getSnapshot().activeTabs.ws1).toBe('far2')
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('far2')
+    stop()
+  })
+})
 
 describe('panel order', () => {
   it('Alt+N and Ctrl+Tab follow the strip: the docks of each layout in turn, canvas nodes left out', () => {
