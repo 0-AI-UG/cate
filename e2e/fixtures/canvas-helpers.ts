@@ -8,18 +8,22 @@ export type DockTree =
   | { kind: 'stack'; id: string; panels: string[] }
   | { kind: 'split'; id: string; direction: 'horizontal' | 'vertical'; children: DockTree[]; ratios: number[] }
 
+export interface DockLayout { id: string; dock: DockTree | null }
+
 export interface Where {
   /** 'window' for a window's dock, 'canvas' for a canvas node's mini dock. */
   kind: 'window' | 'canvas'
   windowId?: string
   canvasId?: string
   nodeId?: string
+  /** The layout holding the stack: the `dock: { layoutId }` of an op. */
+  layoutId: string
   stackId: string
 }
 
 export interface Layout {
-  windows: { id: string; kind: string; dock: DockTree | null }[]
-  canvases: { id: string; nodes: { id: string; dock: DockTree; rect: { origin: { x: number; y: number }; size: { width: number; height: number } } }[] }[]
+  windows: { id: string; kind: string; layouts: DockLayout[] }[]
+  canvases: { id: string; nodes: { id: string; layouts: DockLayout[]; rect: { origin: { x: number; y: number }; size: { width: number; height: number } } }[] }[]
   places: Record<string, Where>
 }
 
@@ -27,19 +31,22 @@ export interface Layout {
 export async function layout(page: Page, workspaceId?: string): Promise<Layout> {
   return page.evaluate((ws) => {
     const doc = window.__cateE2E!.document(ws ?? undefined) as unknown as {
-      windows: Record<string, { id: string; kind: string; dock: DockTree | null }>
-      canvases: Record<string, { id: string; nodes: Record<string, { id: string; dock: DockTree; rect: never }> }>
+      windows: Record<string, { id: string; kind: string; layouts: DockLayout[] }>
+      canvases: Record<string, { id: string; nodes: Record<string, { id: string; layouts: DockLayout[]; rect: never }> }>
     } | null
     const places: Record<string, Where> = {}
-    const visit = (node: DockTree | null, at: Omit<Where, 'stackId'>) => {
+    const visit = (node: DockTree | null, at: Omit<Where, 'stackId' | 'layoutId'>, layoutId: string) => {
       if (!node) return
-      if (node.kind === 'stack') for (const p of node.panels) places[p] = { ...at, stackId: node.id }
-      else for (const child of node.children) visit(child, at)
+      if (node.kind === 'stack') for (const p of node.panels) places[p] = { ...at, layoutId, stackId: node.id }
+      else for (const child of node.children) visit(child, at, layoutId)
     }
     if (!doc) return { windows: [], canvases: [], places }
-    for (const w of Object.values(doc.windows)) visit(w.dock, { kind: 'window', windowId: w.id })
+    const visitLayouts = (layouts: DockLayout[], at: Omit<Where, 'stackId' | 'layoutId'>) => {
+      for (const l of layouts) visit(l.dock, at, l.id)
+    }
+    for (const w of Object.values(doc.windows)) visitLayouts(w.layouts, { kind: 'window', windowId: w.id })
     for (const c of Object.values(doc.canvases)) {
-      for (const n of Object.values(c.nodes)) visit(n.dock, { kind: 'canvas', canvasId: c.id, nodeId: n.id })
+      for (const n of Object.values(c.nodes)) visitLayouts(n.layouts, { kind: 'canvas', canvasId: c.id, nodeId: n.id })
     }
     return {
       windows: Object.values(doc.windows),
@@ -63,8 +70,13 @@ export async function mainWindowStacks(page: Page): Promise<string[][]> {
     if (node.kind === 'stack') stacks.push(node.panels)
     else node.children.forEach(visit)
   }
-  visit(main?.dock ?? null)
+  visit(main?.layouts[0]?.dock ?? null)
   return stacks
+}
+
+/** The main window's first layout: its id (for `dock: { layoutId }`) and dock. */
+export function mainLayout(l: Layout): DockLayout {
+  return l.windows.find((w) => w.kind === 'main')!.layouts[0]!
 }
 
 /** Removes every panel but the canvas panels (old `clearCanvas`). */

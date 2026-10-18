@@ -10,7 +10,7 @@
 import { test, expect } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import { addCanvas, closeApp, launchApp, makeProject, openWorkspace } from './fixtures/electron-app'
-import { layout, whereIs } from './fixtures/canvas-helpers'
+import { layout, mainLayout, whereIs } from './fixtures/canvas-helpers'
 
 let app: ElectronApplication
 let main: Page
@@ -34,7 +34,7 @@ async function detach(panelId: string): Promise<{ page: Page; windowId: string }
     const ok = window.__cateE2E!.propose({
       kind: 'placePanel',
       id,
-      at: { to: 'window', windowId, stackId: crypto.randomUUID() },
+      at: { to: 'window', windowId, layoutId: crypto.randomUUID(), stackId: crypto.randomUUID() },
     } as never).ok
     return ok ? windowId : null
   }, panelId)
@@ -65,12 +65,13 @@ for (const type of ['terminal', 'browser', 'editor', 'canvas', 'review', 'surfac
     await expect(detached.getByRole('dialog')).toHaveCount(0)
 
     // Moving the last panel back to main closes the detached window.
-    const mainStack = (await layout(main)).windows.find((w) => w.kind === 'main')!.dock!
+    const mainLay = mainLayout(await layout(main))
+    const mainStack = mainLay.dock!
     const stackId = mainStack.kind === 'stack' ? mainStack.id : null
     test.skip(!stackId, 'main window dock is split')
-    await main.evaluate(({ id, stackId }) => window.__cateE2E!.propose({
-      kind: 'placePanel', id, at: { to: 'stack', dock: { windowId: 'main' }, stackId },
-    } as never), { id, stackId })
+    await main.evaluate(({ id, stackId, layoutId }) => window.__cateE2E!.propose({
+      kind: 'placePanel', id, at: { to: 'stack', dock: { layoutId }, stackId },
+    } as never), { id, stackId, layoutId: mainLay.id })
     await expect(main.locator(`[data-tab-panel-id="${id}"]`)).toBeVisible({ timeout: 15_000 })
     await expect.poll(() => detached.isClosed(), { timeout: 15_000 }).toBe(true)
     expect((await layout(main)).windows.map((w) => w.id)).toEqual(['main'])

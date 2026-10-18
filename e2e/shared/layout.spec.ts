@@ -4,11 +4,12 @@
 // viewport, active tab) stays per client.
 
 import { test, expect } from '@playwright/test'
-import { layout, type DockTree } from '../fixtures/canvas-helpers'
+import { layout, mainLayout, type DockTree } from '../fixtures/canvas-helpers'
 import { activeCanvasId, call, describeShared, doc, moveNode, nodeOf, propose, seedShared, setZoom, snapshot, zoom, type SharedClient } from '../fixtures/shared-workspace'
 
 const place = async (c: SharedClient, panelId: string) => (await layout(c.page, c.workspaceId)).places[panelId] ?? null
-const mainDock = async (c: SharedClient) => (await layout(c.page, c.workspaceId)).windows.find((w) => w.kind === 'main')!.dock!
+const mainLayoutOf = async (c: SharedClient) => mainLayout(await layout(c.page, c.workspaceId))
+const mainDock = async (c: SharedClient) => (await mainLayoutOf(c)).dock!
 const stacksOf = (tree: DockTree | null): string[][] => !tree ? [] : tree.kind === 'stack' ? [tree.panels] : tree.children.flatMap(stacksOf)
 
 describeShared('layout', (pair) => {
@@ -58,7 +59,7 @@ describeShared('layout', (pair) => {
     const first = await seedShared(pair(), a, 'terminal', { x: 100, y: 1500 })
     const second = await seedShared(pair(), a, 'editor', { x: 900, y: 1500 })
     const where = (await place(b, first.panelId))!
-    await propose(b, { kind: 'placePanel', id: second.panelId, at: { to: 'stack', dock: { canvasId: where.canvasId, nodeId: where.nodeId }, stackId: where.stackId } })
+    await propose(b, { kind: 'placePanel', id: second.panelId, at: { to: 'stack', dock: { layoutId: where.layoutId }, stackId: where.stackId } })
     await expect.poll(async () => (await place(a, second.panelId))?.nodeId).toBe(first.nodeId)
     await expect(a.page.locator(`[data-node-id="${second.nodeId}"]`)).toHaveCount(0)
     await expect(a.page.locator(`[data-node-id="${first.nodeId}"] [data-tab-panel-id]`)).toHaveCount(2)
@@ -68,9 +69,10 @@ describeShared('layout', (pair) => {
     const { a, b } = pair()
     const root = await mainDock(a)
     const splitId = crypto.randomUUID()
-    const panelId = await a.page.evaluate(({ beside, splitId }) => window.__cateE2E!.createPanel('terminal', {
-      at: { to: 'split', dock: { windowId: 'main' }, beside, side: 'right', stackId: crypto.randomUUID(), splitId },
-    }), { beside: root.id, splitId })
+    const layoutId = (await mainLayoutOf(a)).id
+    const panelId = await a.page.evaluate(({ beside, splitId, layoutId }) => window.__cateE2E!.createPanel('terminal', {
+      at: { to: 'split', dock: { layoutId }, beside, side: 'right', stackId: crypto.randomUUID(), splitId },
+    }), { beside: root.id, splitId, layoutId })
     expect(panelId).toBeTruthy()
     await expect.poll(async () => stacksOf(await mainDock(b)).length).toBe(2)
     await expect(b.page.locator(`[data-dock-window="main"] [data-tab-panel-id="${panelId}"]`)).toBeVisible({ timeout: 15_000 })
@@ -86,7 +88,7 @@ describeShared('layout', (pair) => {
     const rightStack = stacksOf(await mainDock(b)).findIndex((s) => s.includes(panelId!))
     const dock = await mainDock(b)
     const stackId = dock.kind === 'split' ? (dock.children[rightStack] as { id: string }).id : dock.id
-    await propose(b, { kind: 'placePanel', id: node.panelId, at: { to: 'stack', dock: { windowId: 'main' }, stackId } })
+    await propose(b, { kind: 'placePanel', id: node.panelId, at: { to: 'stack', dock: { layoutId: (await mainLayoutOf(b)).id }, stackId } })
     await expect.poll(async () => (await place(a, node.panelId))?.kind).toBe('window')
     await expect(a.page.locator(`[data-node-id="${node.nodeId}"]`)).toHaveCount(0)
 
@@ -100,9 +102,10 @@ describeShared('layout', (pair) => {
     const added: string[] = []
     for (const side of ['right', 'bottom', 'right', 'bottom'] as const) {
       const root = await mainDock(a)
-      const id = await a.page.evaluate(({ beside, side }) => window.__cateE2E!.createPanel('terminal', {
-        at: { to: 'split', dock: { windowId: 'main' }, beside, side, stackId: crypto.randomUUID(), splitId: crypto.randomUUID() },
-      }), { beside: root.id, side })
+      const layoutId = (await mainLayoutOf(a)).id
+      const id = await a.page.evaluate(({ beside, side, layoutId }) => window.__cateE2E!.createPanel('terminal', {
+        at: { to: 'split', dock: { layoutId }, beside, side, stackId: crypto.randomUUID(), splitId: crypto.randomUUID() },
+      }), { beside: root.id, side, layoutId })
       added.push(id!)
     }
     await expect.poll(async () => stacksOf(await mainDock(b)).length).toBe(5)
@@ -140,7 +143,7 @@ describeShared('layout', (pair) => {
     const windowId = crypto.randomUUID()
     const beforeA = a.app.electronApp.windows().length
     const beforeB = b.app.electronApp.windows().length
-    await propose(a, { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, stackId: crypto.randomUUID() } })
+    await propose(a, { kind: 'placePanel', id: panelId, at: { to: 'window', windowId, layoutId: crypto.randomUUID(), stackId: crypto.randomUUID() } })
     for (const c of [a, b]) await expect.poll(async () => (await doc(c))?.windows[windowId]?.kind).toBe('detached')
     await expect.poll(() => a.app.electronApp.windows().length, { timeout: 15_000 }).toBe(beforeA + 1)
     await expect.poll(() => b.app.electronApp.windows().length, { timeout: 15_000 }).toBe(beforeB + 1)
