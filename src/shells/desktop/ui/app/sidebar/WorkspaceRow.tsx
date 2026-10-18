@@ -272,7 +272,15 @@ export function WorkspaceRow({
    *  is shown. A layout with one panel is a plain row; an empty one draws nothing. */
   const renderWindow = (w: WindowTree) => {
     const active = activeLayoutOf(doc, activeLayouts, { windowId: w.windowId })
-    return <React.Fragment key={w.windowId}>{w.layouts.map((layout) => renderLayout(w, layout, layout.layoutId === active))}</React.Fragment>
+    // A window whose layouts are all lifted draws nothing, so its slot has no row to open the gap on: it opens a room of its own.
+    const drawsNothing = w.layouts.every((l) => layoutRows(l).length === 0 || (liftedLayout === l.layoutId && (view || own)))
+    const here = view && !view.gap && 'host' in view.target && 'windowId' in view.target.host && view.target.host.windowId === w.windowId
+    return (
+      <React.Fragment key={w.windowId}>
+        {w.layouts.map((layout) => renderLayout(w, layout, layout.layoutId === active))}
+        {drawsNothing && here && <div data-sb-room style={{ height: view.size }} />}
+      </React.Fragment>
+    )
   }
 
   const renderLayout = (w: WindowTree, layout: LayoutTree, layoutActive: boolean) => {

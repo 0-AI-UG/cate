@@ -63,10 +63,18 @@ const rect = (left: number, right: number, top: number, bottom: number) =>
 
 /** jsdom has no layout: every panel row is 28px with 2px of margin around it, so rows (and
  *  layouts) touch at 32px; the tree spans x 0..200. An anchor's rect spans the rows it holds. */
-function measure() {
+function measure(labelGap = 0) {
   let y = 0
+  let labelDone = false
   const leaves = new Map<Element, [number, number]>()
   for (const layout of host.querySelectorAll('[data-sb-key^="l:"]')) {
+    // The "Other windows" label sits above the first layout of another window.
+    if (labelGap && (layout as HTMLElement).dataset.sbKey!.includes('W2') && !labelDone) {
+      const top = y
+      host.querySelector<HTMLElement>('[data-sb-key="other-windows"]')!.getBoundingClientRect = () => rect(0, 200, top, top + labelGap)
+      y += labelGap
+      labelDone = true
+    }
     for (const leaf of layout.querySelectorAll('[data-panel-id]')) { leaves.set(leaf, [y + 2, y + 30]); y += 32 }
   }
   for (const [leaf, [top, bottom]] of leaves) (leaf as HTMLElement).getBoundingClientRect = () => rect(0, 200, top, bottom)
@@ -241,6 +249,24 @@ describe('the workspace tree', () => {
     fire(gutter('main'), 'click', 10, 40)
     expect(ws.document.getSnapshot()).toBe(seq)
     expect(ws.state.getSnapshot().activeLayouts[MAIN_WINDOW]).toBe('main')
+  })
+
+  it('another window\'s only layout, lifted over its own slot below the label, leaves a room there for the drop', () => {
+    act(() => {
+      ws.document.propose(add('e', { to: 'window', windowId: 'W2', layoutId: 'W2-main', stackId: 'ws2' }))
+      ws.document.propose(add('f', { to: 'split', dock: { layoutId: 'W2-main' }, beside: 'ws2', side: 'right', stackId: 'ws3', splitId: 'wsp' }))
+    })
+    measure(24)
+    // The label takes 128..152; the window's group stands below it (152..216).
+    fire(gutter('W2-main'), 'mousedown', 10, 170)
+    fire(globalThis, 'mousemove', 10, 174)
+    fire(globalThis, 'mousemove', 10, 150)
+    fire(globalThis, 'mousemove', 10, 230)
+    expect(host.querySelector('[data-layout-group="W2-main"]')).toBeNull()
+    expect(host.querySelector('[data-sb-room]')).not.toBeNull()
+    fire(globalThis, 'mousemove', 10, 100)
+    expect(host.querySelector('[data-sb-room]')).toBeNull()
+    act(() => { globalThis.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
   })
 
   it('off the tree the lifted row stays in place with normal styling; releasing there changes nothing', () => {
