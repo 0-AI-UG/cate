@@ -34,7 +34,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
     checked: false, text: 'Busy', value: '',
     dom: {} as Parameters<typeof domSnapshot>[1],
   }
-  const nativeImage = { toJPEG: () => Buffer.alloc(24), getSize: () => ({ width: 800, height: 600 }), resize: vi.fn() }; nativeImage.resize.mockReturnValue(nativeImage)
+  const nativeImage = { toBitmap: () => Buffer.alloc(4, 255), toJPEG: () => Buffer.alloc(24), getSize: () => ({ width: 800, height: 600 }), resize: vi.fn() }; nativeImage.resize.mockReturnValue(nativeImage)
   const contents = {
     id: 80, once: vi.fn(), isDestroyed: () => false, isLoading: () => false, getURL: () => 'https://example.test/', getTitle: () => 'Example', getZoomFactor: () => 1,
     send: vi.fn(), sendInputEvent: vi.fn(), capturePage: vi.fn(async () => nativeImage), forcefullyCrashRenderer: vi.fn(), reload: vi.fn(),

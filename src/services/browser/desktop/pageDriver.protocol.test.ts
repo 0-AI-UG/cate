@@ -6,7 +6,7 @@ import { domSnapshot } from './pageDriver.testSupport'
 
 it('returns numeric stable IDs, request-scoped diffs and actual image bytes', async () => {
   const events = new EventEmitter()
-  const image = { toJPEG: () => Buffer.from('jpeg'), getSize: () => ({ width: 800, height: 600 }), resize: vi.fn() }; image.resize.mockReturnValue(image)
+  const image = { toBitmap: () => Buffer.alloc(4, 255), toJPEG: () => Buffer.from('jpeg'), getSize: () => ({ width: 800, height: 600 }), resize: vi.fn() }; image.resize.mockReturnValue(image)
   const contents = {
     id: 500, once: vi.fn(), isDestroyed: () => false, getURL: () => 'https://example.test', getTitle: () => 'Example', getZoomFactor: () => 1,
     capturePage: vi.fn(async () => image), send: vi.fn(),
