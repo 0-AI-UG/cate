@@ -24,7 +24,7 @@ export const editorCliArea = defineCliArea({
   read: {
     key: 'cliEditorReadEnabled',
     code: 'editor-read-disabled',
-    detail: 'Read which file the active editor panel is showing.',
+    detail: '`cate editor active`: read which file the active editor panel is showing.',
   },
   control: {
     key: 'cliEditorControlEnabled',

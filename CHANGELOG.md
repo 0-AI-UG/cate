@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Changed
+
+- **cate-cli skill**: split into a short `SKILL.md` and `references/browser.md` and `references/agents.md`, so agents load the browser and agent guides only when they need them, with a description that says when to use it. Unedited installed copies update themselves.
+
 ## [2.1.0-beta.1] - 2026-10-17
 
 This beta rebuilds Cate around workspace runtimes. Each open workspace now runs in its own background runtime that holds its state and does all its work: files, git, terminals, agents and the `cate` API. The desktop app is a client of that runtime, other devices can pair and join the same live workspace, workspaces can live on other machines over SSH, and a new iOS app connects to all of them. Agents now run as CLIs in terminals, and T3 Code is gone.

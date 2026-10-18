@@ -21,6 +21,7 @@ dev-app-update.yml
 # Claude Code
 .claude/
 .agents/
+.codex/
 
 # oh-my-claudecode agent state — per-machine scratch, never project state
 .omc/
