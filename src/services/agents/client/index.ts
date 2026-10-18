@@ -8,3 +8,4 @@ export {
 } from './panelStates'
 export { onAgentsWorking, type AgentConnections } from './working'
 export { watchAgentChat, type AgentChat, type AgentChatHandle } from './conversation'
+export { createUsageReports, type UsageReport, type UsageReports } from './usage'

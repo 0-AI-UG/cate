@@ -13,6 +13,11 @@ export const TELEMETRY_NOTICE_VERSION = 2
 export type ScreenCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
 const CORNERS: readonly ScreenCorner[] = ['bottom-right', 'bottom-left', 'top-right', 'top-left']
 
+export type UsageMetric = 'cost' | 'tokens' | 'limits'
+const USAGE_METRICS: readonly UsageMetric[] = ['cost', 'tokens', 'limits']
+export type UsageWindowDays = 1 | 7 | 30 | 90
+const USAGE_WINDOW_DAYS: readonly UsageWindowDays[] = [1, 7, 30, 90]
+
 export interface UiStateValues {
   /** Corner the canvas minimap button sits in. */
   minimapButtonCorner: ScreenCorner
@@ -24,6 +29,9 @@ export interface UiStateValues {
   sidebarTreeCollapsed: string[]
   /** The version whose "What's New" was shown ('' before the first). */
   whatsNewSeenVersion: string
+  /** What the usage overview shows, and over how many days. */
+  usageMetric: UsageMetric
+  usageWindowDays: UsageWindowDays
 }
 
 export const DEFAULT_UI_STATE: UiStateValues = {
@@ -32,6 +40,8 @@ export const DEFAULT_UI_STATE: UiStateValues = {
   onboardingCompleted: false,
   sidebarTreeCollapsed: [],
   whatsNewSeenVersion: '',
+  usageMetric: 'cost',
+  usageWindowDays: 30,
 }
 
 export function normalizeUiState(raw: unknown): UiStateValues {
@@ -49,6 +59,10 @@ export function normalizeUiState(raw: unknown): UiStateValues {
       ? o.sidebarTreeCollapsed.filter((k): k is string => typeof k === 'string')
       : DEFAULT_UI_STATE.sidebarTreeCollapsed,
     whatsNewSeenVersion: typeof o.whatsNewSeenVersion === 'string' ? o.whatsNewSeenVersion : DEFAULT_UI_STATE.whatsNewSeenVersion,
+    usageMetric: USAGE_METRICS.includes(o.usageMetric as UsageMetric) ? (o.usageMetric as UsageMetric) : DEFAULT_UI_STATE.usageMetric,
+    usageWindowDays: USAGE_WINDOW_DAYS.includes(o.usageWindowDays as UsageWindowDays)
+      ? (o.usageWindowDays as UsageWindowDays)
+      : DEFAULT_UI_STATE.usageWindowDays,
   }
 }
 

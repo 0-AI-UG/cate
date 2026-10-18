@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentSessionLocator } from './types'
-import { claudeSessionStore } from './claude'
+import { claudeSessionStore, claudeUsageLimits, claudeUsageRecord } from './claude'
 
 const tempDirs: string[] = []
 
@@ -136,5 +136,30 @@ describe('Claude Code session conversation', () => {
       session: { agentId: 'claude-code', sessionId: 'missing', cwd: '/Users/me/my_project' },
       homeDir,
     })).resolves.toBeNull()
+  })
+})
+
+describe('Claude Code usage', () => {
+  it('reads an assistant record with its cwd and the message/request dedupe key', () => {
+    const record = claudeUsageRecord(JSON.stringify({
+      type: 'assistant', timestamp: '2026-10-01T10:00:00Z', sessionId: 's1', requestId: 'r1', cwd: '/repo',
+      message: { id: 'm1', model: 'claude-sonnet-4-5', usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 7 } },
+    }))
+    expect(record).toEqual({
+      timestampMs: Date.parse('2026-10-01T10:00:00Z'), model: 'claude-sonnet-4-5', sessionId: 's1', cwd: '/repo',
+      totals: { uncachedInputTokens: 10, cachedInputTokens: 100, cacheCreationTokens: 7, outputTokens: 5, reasoningTokens: 0 },
+      reportedCostUsd: null, dedupeKey: 'm1:r1',
+    })
+    expect(claudeUsageRecord(JSON.stringify({ type: 'user', message: { usage: {} } }))).toBeNull()
+  })
+
+  it('maps a get_usage answer to limit windows', () => {
+    const limits = claudeUsageLimits({
+      subscription_type: 'max', rate_limits_available: true,
+      rate_limits: { five_hour: { utilization: 5, resets_at: '2026-10-18T00:00:00Z' }, seven_day: { utilization: 10, resets_at: null }, model_scoped: [{ display_name: 'Fable', utilization: 0 }] },
+    }, { email: 'a@b.c' }, '2026-10-17T00:00:00.000Z')
+    expect(limits).toMatchObject({ agent: 'claude-code', email: 'a@b.c', plan: 'Claude Max Subscription' })
+    expect(limits.windows.map((w) => [w.id, w.kind, w.usedPercent])).toEqual([['five_hour', 'session', 5], ['seven_day', 'weekly', 10], ['seven_day_fable', 'weekly', 0]])
+    expect(claudeUsageLimits({ rate_limits_available: false }, undefined, 'now').unavailable?.reason).toBe('unsupported')
   })
 })

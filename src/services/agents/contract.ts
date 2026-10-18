@@ -1,5 +1,6 @@
 // services/agents contract: the agent registry, hook specs, sessions,
-// status, starting an agent, change records and the `agents` capability. Pure.
+// status, starting an agent, change records, usage and the `agents`
+// capability. Pure.
 
 export * from './contract/registry'
 export * from './contract/hooks'
@@ -14,3 +15,7 @@ export * from './contract/launch'
 export * from './contract/capability'
 export * from './contract/api'
 export * from './contract/settings'
+export * from './contract/usage/types'
+export * from './contract/usage/format'
+export * from './contract/usage/limits'
+export * from './contract/usage/prices'

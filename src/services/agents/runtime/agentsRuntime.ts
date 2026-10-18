@@ -3,6 +3,7 @@
 // agents) and the starter, and answers the few calls other modules make;
 // hooks and terminal agents stay private to this module.
 
+import os from 'node:os'
 import path from 'node:path'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import type { CateServiceHandlers } from '@kernel/api/contract'
@@ -19,12 +20,18 @@ import { createAgentsCore, type AgentsCoreDeps } from './core'
 import { evaluateAgentCliHooks, inspectAgentCliHooks } from './hooks/readiness'
 import { createTerminalAgents, type AgentTerminalService, type TerminalAgents } from './terminal'
 import { createAgentStarter, type AgentStartArgs, type AgentStartPorts } from './start'
+import { AGENT_SESSION_STORES } from './sessions'
+import { createAgentUsage, type AgentUsageDeps } from './usage/usage'
 
 export interface AgentsRuntimeDeps extends AgentsCoreDeps {
   /** The terminal service: the terminal agents plug into its extension points. */
   terminal: AgentTerminalService
   /** What starting an agent needs from panels and worktrees. */
   start: AgentStartPorts
+  /** The environment the agent CLIs run with (limit probes). */
+  env(): NodeJS.ProcessEnv
+  /** Tests: the usage service's rate fetch and clock. */
+  usageOptions?: Partial<Pick<AgentUsageDeps, 'fetchRates' | 'now'>>
 }
 
 export interface AgentsRuntime {
@@ -51,6 +58,16 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   const core = createAgentsCore(deps, (base) =>
     terminals = createTerminalAgents(base, deps.terminal, { stampsFile: path.join(deps.agentsDir, 'stamps.json') }))
   const starter = createAgentStarter(core, deps.start)
+  const usage = createAgentUsage({
+    root: deps.root,
+    dataDir: path.join(deps.agentsDir, 'usage'),
+    homeDir: deps.homeDir ?? os.homedir(),
+    stores: deps.hookOptions?.sessionStores ?? AGENT_SESSION_STORES,
+    priceOverrides: () => deps.settings.usagePriceOverrides(),
+    env: deps.env,
+    log: deps.log,
+    ...deps.usageOptions,
+  })
 
   return {
     start: (callerPanelId, args) => starter.start(callerPanelId, args),
@@ -63,7 +80,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
       return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
     },
     onSessionEnded: (listener) => terminals.onExit((panelId) => listener(panelId)),
-    capability: () => agentsCapabilityImpl(core, starter),
+    capability: () => agentsCapabilityImpl(core, starter, usage),
     apiHandlers: () => createAgentApiHandlers(core, starter),
     dispose: () => core.dispose(),
   }

@@ -406,7 +406,12 @@ Generic machinery. The kernel knows no feature.
 - **`kernel/state`**: hand-editable JSON state files: in-memory authority,
   debounced atomic write, external-edit watcher, corrupt-file quarantine,
   keyed locks. The engine is pure; the files are its `node/` side, used by
-  the daemon for workspace data and by the desktop shell for device files. Every state file has exactly one writer process. Client
+  the daemon for workspace data and by the desktop shell for device files. Every state file has exactly one writer process.
+  Files that are not live state (small self-contained files such as the
+  install id, and caches the owner rebuilds when missing, such as
+  `agents/usage/`) use the same `node/` side's one-shot helpers instead
+  (`writeJsonAtomic`, `readJsonFile`): the same atomic write, no in-memory
+  authority or watcher. Client
   core code never touches files: it reads and writes device state through
   the `DeviceStore` port, which each shell implements (the desktop shell with
   these files).
@@ -552,7 +557,9 @@ persisted session and document file. It is created with mode `0700`.
   grants.json           granted paths outside the root
   skills/sources.json   the workspace's skill sources
   browser/              history.json, bookmarks.json, downloads/
-  agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps)
+  agents/               hooks/ (hook bridges), changes/ (change history), stamps.json (resume stamps),
+                        usage/ (model-rates.json, the LiteLLM rate snapshot; scan-cache.json,
+                        transcripts parsed for usage, by size and mtime)
   terminal-logs/
   screenshots/
   logs/                 daemon.log (the daemon's log, rotated) and
@@ -1070,7 +1077,7 @@ or that changes shared state, is a **workspace** setting.
 | Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
 | Runtime (`runtime/daemon`) | | `runtimeLifetime`, `runtimeNetwork` |
 | `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliNotifyEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
-| Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`) |
+| Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
 
 ## 9. Workspace
 
@@ -1488,7 +1495,25 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     sends the messages from the first one that changed;
   - the panel states (`panels.ts`): what each terminal panel hosts, with
     when relation context last went with its prompt, published as changes;
-  - prompt context from relations, and agent notification events.
+  - prompt context from relations, and agent notification events;
+  - **usage** (`usage/`, the `usage`, `refreshUsageRates` and `usageLimits`
+    methods): what the agent CLIs used in this workspace. Each session store
+    declares where its CLI records usage (`AgentSessionStore.usage`):
+    append-only transcripts with a line parser (Claude Code, Codex, Grok),
+    a store queried per window (OpenCode, Hermes), or none, with a note on
+    what it keeps instead (Kiro's credits, Cursor). The engine reads them
+    all with no per-agent code, keeps the records whose session cwd is the
+    root or under it (its worktrees), drops repeats, and prices and buckets
+    them by day or hour: a custom price, else a cost the CLI recorded, else
+    LiteLLM's rate (`agents/usage/model-rates.json`, refreshed daily), then
+    totals them per agent, model and period with their shares.
+    Transcripts are cached per file with the parser's state, so a file
+    that grew is read from where the last scan stopped
+    (`agents/usage/scan-cache.json`). A store may also probe its CLI for the
+    account's subscription limits without a prompt (Claude Code's
+    `get_usage` control request, `codex app-server`'s
+    `account/rateLimits/read`); the report carries what each window has
+    left and its pace against the clock.
 - **Starting an agent** (`cate.agent.start`): its CLI, with or without a
   first prompt, in a new terminal panel (a hook-ready agent, launched in
   place of the shell) or an idle one the caller names, in the
@@ -1502,12 +1527,16 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
 - **terminal agents** (`terminal.ts`): plug into the terminal service (hook env on PTY spawn,
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).
-- **client**: the agent panel states mirror and an agent chat
+- **client**: the agent panel states mirror, an agent chat
   (`watchAgentChat`: the conversation channel, a prompt sent from the
   client pending until the conversation shows it, and a prompt sent while
-  the agent works queued until it is back at its prompt).
+  the agent works queued until it is back at its prompt), and a workspace's
+  usage and limits reports, kept per workspace and window
+  (`createUsageReports`).
 - **Desktop UI** (`shells/desktop/ui/services/agents`): the changes pill, activity title, logos, hook settings, the
-  relation context transport (`useAgentContextTransport`).
+  relation context transport (`useAgentContextTransport`), and the usage
+  overview (the Usage overlay, `openUsage`): cost, tokens and limits of the
+  shown workspace, with its custom model prices.
 - **Consumers**: the terminal panel, review (changes), sidebar and dock
   tabs (status), `cate.agent.*`.
 
@@ -2216,7 +2245,7 @@ client-local work (a file drop still importing).
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
 | Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/` |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
-| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
+| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
 Every JSON state file above is written through `kernel/state` (a temporary
 file renamed over the old one, fsynced first for the `0600` files: secrets,

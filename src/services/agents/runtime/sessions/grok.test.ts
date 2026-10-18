@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentSessionLocator } from './types'
-import { grokSessionStore } from './grok'
+import { grokSessionStore, grokUsageRecords } from './grok'
 
 let homeDir = ''
 let transcriptPath = ''
@@ -128,5 +128,18 @@ describe('Grok session conversation', () => {
       .resolves.toEqual([{ role: 'user', text: 'Hi', createdAt: '2026-09-07T14:09:43.000Z' }])
     await expect(grokSessionStore.conversation({ session: session({ transcriptPath: undefined, sessionId: 'missing' }), homeDir }))
       .resolves.toBeNull()
+  })
+})
+
+describe('Grok usage', () => {
+  it('splits the turn cost across models by token share', () => {
+    const records = grokUsageRecords(JSON.stringify({
+      timestamp: 1790000000,
+      params: { sessionId: 'g', update: { sessionUpdate: 'turn_completed', prompt_id: 'p', usage: {
+        inputTokens: 30, outputTokens: 10, costUsdTicks: 4e10,
+        modelUsage: { a: { inputTokens: 10, outputTokens: 0 }, b: { inputTokens: 20, outputTokens: 10 } },
+      } } },
+    }), '/repo')
+    expect(records.map((r) => [r.model, r.reportedCostUsd, r.cwd, r.dedupeKey])).toEqual([['a', 1, '/repo', 'g:p:a'], ['b', 3, '/repo', 'g:p:b']])
   })
 })

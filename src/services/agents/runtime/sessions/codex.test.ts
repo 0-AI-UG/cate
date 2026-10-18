@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AgentSessionLocator } from './types'
-import { codexSessionStore } from './codex'
+import { codexSessionStore, codexUsageLimits, codexUsageParser } from './codex'
 
 let homeDir = ''
 
@@ -123,5 +123,44 @@ describe('Codex session conversation', () => {
       .resolves.toEqual([{ role: 'user', text: 'Archived prompt', createdAt: '2026-07-01T10:00:00.000Z' }])
     await expect(codexSessionStore.conversation({ session: { agentId: 'codex', sessionId: 'missing' }, homeDir }))
       .resolves.toBeNull()
+  })
+})
+
+describe('Codex usage', () => {
+  const tokenCount = (at: string, input: number) => JSON.stringify({ timestamp: at, type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: input, cached_input_tokens: 40, output_tokens: 20, reasoning_output_tokens: 5 } } } })
+
+  it('carries model and cwd forward, drops re-emitted events and resumes from its state', () => {
+    const parser = codexUsageParser()
+    parser.line(JSON.stringify({ timestamp: '2026-10-01T10:00:00Z', type: 'session_meta', payload: { id: 'sess', cwd: '/repo' } }))
+    // No model yet: not counted, and the re-emission once it is known still counts.
+    expect(parser.line(tokenCount('2026-10-01T10:00:01Z', 100))).toEqual([])
+    parser.line(JSON.stringify({ timestamp: '2026-10-01T10:00:01Z', type: 'turn_context', payload: { model: 'gpt-5' } }))
+    expect(parser.line(tokenCount('2026-10-01T10:00:02Z', 100))).toEqual([expect.objectContaining({
+      model: 'gpt-5', sessionId: 'sess', cwd: '/repo', totals: { uncachedInputTokens: 60, cachedInputTokens: 40, cacheCreationTokens: 0, outputTokens: 20, reasoningTokens: 5 },
+    })])
+    const resumed = codexUsageParser(JSON.parse(JSON.stringify(parser.state())))
+    expect(resumed.line(tokenCount('2026-10-01T10:00:03Z', 100))).toEqual([])
+    expect(resumed.line(tokenCount('2026-10-01T10:00:04Z', 200))).toHaveLength(1)
+  })
+
+  it('skips the parent history a fork copies in', () => {
+    const parser = codexUsageParser()
+    parser.line(JSON.stringify({ timestamp: '2026-10-01T11:00:00Z', type: 'session_meta', payload: { id: 'child', forked_from_id: 'sess' } }))
+    parser.line(JSON.stringify({ timestamp: '2026-10-01T11:00:00Z', type: 'turn_context', payload: { model: 'gpt-5' } }))
+    expect(parser.line(tokenCount('2026-10-01T11:00:00.010Z', 100))).toEqual([])
+    expect(parser.line(tokenCount('2026-10-01T11:00:09Z', 200))).toHaveLength(1)
+  })
+
+  it('maps rate limits and reset credits', () => {
+    const limits = codexUsageLimits(
+      { account: { type: 'chatgpt', email: 'a@b.c', planType: 'plus' } },
+      { rateLimitsByLimitId: { codex: { limitId: 'codex', primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: 1792291531 }, secondary: { usedPercent: 3, windowDurationMins: 10080 } } },
+        rateLimitResetCredits: { availableCount: 2, credits: [{ status: 'available', expiresAt: 1793295019 }] } },
+      'now',
+    )
+    expect(limits.plan).toBe('ChatGPT Plus Subscription')
+    expect(limits.windows.map((w) => [w.kind, w.usedPercent])).toEqual([['session', 12], ['weekly', 3]])
+    expect(limits.resetCredits?.availableCount).toBe(2)
+    expect(codexUsageLimits({ account: null }, {}, 'now').unavailable?.reason).toBe('unsupported')
   })
 })

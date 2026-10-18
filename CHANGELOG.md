@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Added
+
+- **Usage**: the Usage button is back in the sidebar (⌘⌥U). It shows what Claude Code, Codex, Grok, OpenCode and Hermes used in the shown workspace, as its runtime totals it (tokens and API-equivalent cost, by day or hour, agent and model), read from the CLIs' own session stores, plus the Claude Code and Codex subscription limits. Kiro records only credits and Cursor no token counts; the overview says so. Custom model prices are a workspace setting.
+
 ### Changed
 
 - **cate-cli skill**: split into a short `SKILL.md` and `references/browser.md` and `references/agents.md`, so agents load the browser and agent guides only when they need them, with a description that says when to use it. Unedited installed copies update themselves.

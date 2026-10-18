@@ -5,6 +5,7 @@ import type { PanelAgentState } from './session'
 import type { AgentId } from './registry'
 import type { AgentTypeInfo } from './launch'
 import type { PlaceTarget } from '@workspace/document/contract'
+import type { UsageLimitsReport, UsagePricing, UsageSummary, UsageSummaryInput } from './usage/types'
 
 /** Starting an agent from a client, as `cate agent start` does from a
  *  terminal: a new terminal panel, placed on a canvas when asked. Without a
@@ -53,6 +54,15 @@ export const agentsCapability = defineCapability('agents', {
     types: method<void, AgentTypeInfo[]>(),
     send: method<{ panelId: string; prompt: string }, { ok: true }>({ mutates: true, timeoutMs: 20_000 }),
     interrupt: method<{ panelId: string }, { ok: true }>({ mutates: true }),
+    /** The agent CLIs' usage in this workspace for a window, totalled per
+     *  agent, model and period (a cold 90-day scan reads every transcript
+     *  on the machine). */
+    usage: method<UsageSummaryInput, UsageSummary>({ timeoutMs: 180_000 }),
+    /** Refetches the model rate table ahead of its daily refresh. */
+    refreshUsageRates: method<void, UsagePricing>({ timeoutMs: 20_000 }),
+    /** The signed-in accounts' subscription windows, asked of the CLIs,
+     *  with what is left and the pace; `refresh` skips the minute-long cache. */
+    usageLimits: method<{ refresh?: boolean }, UsageLimitsReport>({ timeoutMs: 45_000 }),
   },
   streams: {
     /** Every agent panel's state: a snapshot, then changes. */

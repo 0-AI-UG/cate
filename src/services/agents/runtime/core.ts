@@ -15,6 +15,7 @@ import type {
   AgentSession,
   AgentStep,
   PanelAgentState,
+  UsageModelPriceOverride,
 } from '../contract'
 import type { StoredAgentChange } from './changes/store'
 import { createAgentHooks, type AgentHooks, type AgentHooksDeps } from './hooks/agentHooks'
@@ -34,6 +35,7 @@ export interface TrustGate {
 export interface AgentsSettingsReader {
   agentHookInjection(): AgentHookConfig
   panelRelationsEnabled(): boolean
+  usagePriceOverrides(): Readonly<Record<string, UsageModelPriceOverride>>
 }
 
 export interface AgentsCoreDeps {
