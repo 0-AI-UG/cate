@@ -2,7 +2,7 @@
 // on a canvas also the canvas panel's tab and the node; show its window; focus
 // it. The canvas view centres the node when it takes the reveal intent.
 
-import { canvasPanelOf, nodeOfPanel, panelsInWindow, placementOf, windowOf, type PanelId } from '@workspace/document/contract'
+import { canvasPanelOf, nodeOfPanel, placementOf, windowDockPanels, windowOf, type PanelId } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { showLayoutsOf } from './layouts'
 
@@ -61,11 +61,10 @@ export async function revealPanel(workspaceId: string, panelId: PanelId, options
   return false
 }
 
-/** Brings the n-th panel (0-based) of a window on screen and focuses it: the sidebar's order, layout by
- *  layout, whatever the layouts group. False when there is none. */
+/** Brings the n-th panel (0-based) of a window's docks on screen and focuses it: the strip's order, layout by
+ *  layout (the panels in docks, not those on canvases). False when there is none. */
 export function selectPanelAt(workspaceId: string, windowId: string, index: number): boolean {
-  const doc = documentStoreFor(workspaceId)?.getSnapshot()
-  const panelId = doc && panelsInWindow(doc, windowId)[index]
+  const panelId = windowDockPanels(documentStoreFor(workspaceId)?.getSnapshot().windows[windowId])[index]
   return panelId ? revealOnce(workspaceId, panelId) : false
 }
 
@@ -73,8 +72,7 @@ export function selectPanelAt(workspaceId: string, windowId: string, index: numb
  *  from nothing focused, the first or the last. False when the window has no panels. */
 export function stepPanel(workspaceId: string, windowId: string, delta: number): boolean {
   const state = clientStateFor(workspaceId)
-  const doc = documentStoreFor(workspaceId)?.getSnapshot()
-  const panels = doc ? panelsInWindow(doc, windowId) : []
+  const panels = windowDockPanels(documentStoreFor(workspaceId)?.getSnapshot().windows[windowId])
   if (!state || panels.length === 0) return false
   const at = panels.indexOf(state.getSnapshot().focusedPanelId ?? '')
   const next = at < 0 ? (delta > 0 ? 0 : panels.length - 1) : (at + delta + panels.length) % panels.length

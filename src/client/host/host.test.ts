@@ -239,11 +239,11 @@ const second = () => buildDocument([
 ], fixture())
 
 describe('panel order', () => {
-  it('Alt+N and Ctrl+Tab follow the sidebar: layout by layout, a canvas panel followed by its nodes', () => {
+  it('Alt+N and Ctrl+Tab follow the strip: the docks of each layout in turn, canvas nodes left out', () => {
     ws = attachTestWorkspace('w', second())
     expect(selectPanelAt('w', MAIN_WINDOW, 1)).toBe(true)
-    expect(ws.state.getSnapshot().focusedPanelId).toBe('a')
-    expect(selectPanelAt('w', MAIN_WINDOW, 3)).toBe(true)
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('t1')
+    expect(selectPanelAt('w', MAIN_WINDOW, 2)).toBe(true)
     expect(ws.state.getSnapshot().focusedPanelId).toBe('b')
     expect(ws.state.getSnapshot().activeLayouts.main).toBe('T2')
     expect(selectPanelAt('w', MAIN_WINDOW, 9)).toBe(false)
