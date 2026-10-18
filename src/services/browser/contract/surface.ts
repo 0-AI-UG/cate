@@ -13,9 +13,6 @@ export type BrowserSurfaceRequests = {
   /** One page-driver method (observations, actions, waits). `settle` waits
    *  for layout first (after a viewport change). */
   'page.execute': { args: { tabId: string; method: string; args: Record<string, unknown>; settle?: boolean }; result: BrowserDriverResult }
-  /** Asks the person on the driving client (an agent's `login` when the
-   *  workspace asks first). `ok` is their answer. */
-  'page.confirm': { args: { message: string }; result: { ok: boolean } }
   /** Downloads `url` through the tab's partition. */
   'page.download': { args: { tabId: string; url: string }; result: { url: string } }
 }
@@ -27,7 +24,6 @@ export const BROWSER_SURFACE_FEATURES = {
   'page.ready': 'pageDriver',
   'page.history': 'pageDriver',
   'page.execute': 'pageDriver',
-  'page.confirm': 'pageDriver',
   'page.download': 'pageDriver',
 } as const satisfies Record<BrowserSurfaceOp, 'pageDriver'>
 export type BrowserSurfaceArgs<Op extends BrowserSurfaceOp> = BrowserSurfaceRequests[Op]['args']

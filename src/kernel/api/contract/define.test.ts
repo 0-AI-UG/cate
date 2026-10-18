@@ -5,6 +5,7 @@ import {
   bool,
   cateApiTimeoutMs,
   cliAccessDenied,
+  cliAreasOf,
   custom,
   DEFAULT_API_TIMEOUT_MS,
   defineCateApi,
@@ -73,6 +74,15 @@ describe('defineCateApi', () => {
     expect(demo.methods.run.area).toBe(TEST_AREAS.terminal)
     expect(versionApi.methods.version.method).toBe('cate.version')
     expect(uiApi.methods.notify.method).toBe('cate.ui.notify')
+  })
+
+  it('lists a method\'s opt-in area with the namespaces\' areas', () => {
+    const api = defineCateApi('own', {
+      special: { access: 'control', handler: 'service', optIn: TEST_AREAS.notify },
+    }, { area: TEST_AREAS.panel })
+    expect(api.methods.special.area).toBe(TEST_AREAS.panel)
+    expect(api.methods.special.optIn).toBe(TEST_AREAS.notify)
+    expect(cliAreasOf([demo, api])).toEqual([TEST_AREAS.terminal, TEST_AREAS.panel, TEST_AREAS.notify])
   })
 
   it('rejects malformed declarations', () => {
@@ -147,5 +157,13 @@ describe('cliAccessDenied', () => {
   it('leaves read methods of an area without a read cell behind the master switch only', () => {
     expect(cliAccessDenied(TEST_AREAS.notify, 'read', settings({ cliEnabled: true }))).toBeNull()
     expect(cliAccessDenied(TEST_AREAS.notify, 'control', settings({ cliEnabled: true }))).toMatch(/^notify-disabled/)
+  })
+
+  it('needs both the area cell and the opt-in cell', () => {
+    const check = (values: Record<string, unknown>) =>
+      cliAccessDenied(TEST_AREAS.panel, 'control', settings({ cliEnabled: true, ...values }), TEST_AREAS.notify)
+    expect(check({ cliPanelControlEnabled: true, cliNotifyEnabled: true })).toBeNull()
+    expect(check({ cliNotifyEnabled: true })).toMatch(/^panel-control-disabled/)
+    expect(check({ cliPanelControlEnabled: true })).toMatch(/^notify-disabled/)
   })
 })

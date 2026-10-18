@@ -116,6 +116,17 @@ export const browserCliArea = defineCliArea({
   },
 })
 
+/** `cate browser login` and `signup` need this on top of browser control;
+ *  off unless the person turns it on. */
+export const browserPasswordsCliArea = defineCliArea({
+  label: 'Browser passwords',
+  control: {
+    key: 'cliBrowserPasswordsEnabled',
+    code: 'browser-passwords-disabled',
+    detail: '`cate browser login / signup`: fill a password saved in the browser into a sign-in form, or a new generated one into a sign-up form and save it. The agent never sees the password, but it can sign in with it.',
+  },
+})
+
 export const browserApi = defineCateApi(
   'browser',
   {
@@ -218,10 +229,14 @@ export const browserApi = defineCateApi(
       files: arr(path).rest('file').help('Files to upload (several for an input that takes several)'),
       drop: opt(bool).help('Drop the files on the element (or [x,y]) instead, for a drop area with no file chooser'),
     }, command('upload', 'Choose files for a file input or drop area')),
-    login: page('control', {
+    login: { ...page('control', {
       target: opt(elementTarget).pos('id').help('The password or username field, or the sign-in form (default: the page\'s)'),
       username: opt(str).flag('user', 'name').help('Which saved login, when the site has several'),
-    }, command('login', 'Fill a saved login into the sign-in form (the password never reaches you)')),
+    }, command('login', 'Fill a saved login into the sign-in form (the password never reaches you)')), optIn: browserPasswordsCliArea },
+    signup: { ...page('control', {
+      target: opt(elementTarget).pos('id').help('The password field or the sign-up form (default: the page\'s)'),
+      username: str.nonEmpty().flag('user', 'name').help('The username or email the account signs in with, to save the login under'),
+    }, command('signup', 'Fill a new generated password into the sign-up form and save it as this site\'s login (the password never reaches you)')), optIn: browserPasswordsCliArea },
     dialog: page('control', {
       action: oneOf('accept', 'dismiss').pos('action').help('accept (OK) or dismiss (Cancel)'),
       text: opt(str).help('The answer to a prompt (default: its default text)'),

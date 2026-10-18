@@ -2,7 +2,7 @@
 // secrets.json (0600). No keychain: protection is the machine user's file
 // permissions (7.2). Passwords reach a client only through `passwordForFill`.
 
-import { randomUUID } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 import { isPlainObject } from '@kernel/state/contract'
 import type { JsonStateFile } from '@kernel/state/node'
 import type { SecretsFile } from '@runtime/data/runtime'
@@ -18,6 +18,22 @@ import {
 } from '../contract'
 
 export const PASSWORDS_KEY = 'browserPasswords'
+
+// Without look-alikes (l, I, O, 0, 1) and with symbols most sites accept.
+const PASSWORD_SETS = ['abcdefghijkmnopqrstuvwxyz', 'ABCDEFGHJKLMNPQRSTUVWXYZ', '23456789', '-_.!@#']
+
+/** A random password for a new account: `length` characters with at least
+ *  one lower and upper case letter, digit and symbol. */
+export function generatePassword(length = 20): string {
+  const all = PASSWORD_SETS.join('')
+  const chars = PASSWORD_SETS.map((set) => set[randomInt(set.length)])
+  while (chars.length < length) chars.push(all[randomInt(all.length)])
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1)
+    ;[chars[i], chars[j]] = [chars[j], chars[i]]
+  }
+  return chars.join('')
+}
 
 const MAX_CREDENTIALS = 20_000
 const MAX_ORIGIN_LENGTH = 2_048

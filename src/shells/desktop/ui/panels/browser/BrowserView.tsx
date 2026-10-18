@@ -216,7 +216,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   }, [host])
   useEffect(() => {
     if (!ops) return
-    return registerSurface(workspaceId, panelId, (request) => runPageOp({ host, ops, confirm: (message) => clientUi().confirm(message) }, request))
+    return registerSurface(workspaceId, panelId, (request) => runPageOp({ host, ops }, request))
   }, [workspaceId, panelId, host, ops])
   useSyncExternalStore(host.subscribe, host.getVersion)
 

@@ -151,6 +151,10 @@ test.beforeAll(async () => {
       html(response, `<title>Sign in</title><main><h1>Sign in</h1><form id="login" onsubmit="event.preventDefault();signedIn.textContent=user.value+':'+pass.value"><label>Email <input id="user" type="email" autocomplete="username"></label><label>Password <input id="pass" type="password" autocomplete="current-password"></label><button>Sign in</button></form><output id="signed-in">signed out</output></main><script>const user=document.querySelector('#user'),pass=document.querySelector('#pass'),signedIn=document.querySelector('#signed-in')</script>`)
       return
     }
+    if (url.pathname === '/signup') {
+      html(response, `<title>Join</title><main><h1>Join</h1><form id="join" onsubmit="event.preventDefault();created.textContent=pass.value.length===20&&pass.value===again.value?'created':'mismatch'"><label>Password <input id="pass" type="password" autocomplete="new-password"></label><label>Repeat password <input id="again" type="password" autocomplete="new-password"></label><button>Create account</button></form><output id="created">none</output></main><script>const pass=document.querySelector('#pass'),again=document.querySelector('#again'),created=document.querySelector('#created')</script>`)
+      return
+    }
     if (url.pathname === '/diagnostics') {
       html(response, `<title>Diagnostics</title><main><h1>Diagnostics</h1><button onclick="console.error('checkout failed', 42); fetch('/missing-api', { method: 'POST' })">Break it</button>
         <nav><button id="menu">Menu</button><div id="menu-items" hidden><a href="#">Hidden item</a></div></nav></main><script>
@@ -415,22 +419,36 @@ test('hovers to open a menu and reads the page console and network', async () =>
     .toEqual([expect.objectContaining({ url: `${appOrigin}/missing-api`, status: 404, method: 'POST' })])
 })
 
-test('signs in with a saved password the agent never sees, as the workspace allows', async () => {
+// The harness calls as a client, which the CLI permissions never gate (the
+// router tests cover `cliBrowserPasswordsEnabled`).
+test('signs in with a saved password the agent never sees', async () => {
   const browser = await createBrowser('/login')
   await expect.poll(() => target(page, browser, 'Sign in', 'button').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
   await page.evaluate(({ origin, workspaceId }) => window.__cateE2E!.call('browserData', 'savePassword', { input: { origin, username: 'ada@example.test', password: 's3cret-pass' } }, workspaceId), { origin: appOrigin, workspaceId: browser.workspaceId })
 
-  const refused = await browserInvoke(page, browser, 'login')
-  expect(refused).toMatchObject({ ok: false })
-  expect(refused.error).toContain('browser-agent-passwords-off')
-
-  await page.evaluate((workspaceId) => window.__cateE2E!.call('settings', 'set', { key: 'browserAgentPasswords', value: 'allow' }, workspaceId), browser.workspaceId)
   const filled = await browserInvoke(page, browser, 'login')
   expect(filled, JSON.stringify(filled)).toMatchObject({ ok: true, result: { action: { method: 'login', status: 'verified' } } })
   expect(JSON.stringify(filled)).not.toContain('s3cret-pass')
   await expect(act(page, browser, 'click', 'Sign in', {}, 'button')).resolves.toMatchObject({ ok: true })
   await expect(inspectFixture(app!, page, browser, "document.querySelector('#signed-in').textContent", 'text')).resolves
     .toMatchObject({ result: { text: 'ada@example.test:s3cret-pass' } })
+})
+
+test('creates an account with a generated password the agent never sees, and saves it', async () => {
+  const browser = await createBrowser('/signup')
+  await expect.poll(() => target(page, browser, 'Create account', 'button').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
+
+  const filled = await browserInvoke(page, browser, 'signup', { username: 'grace@example.test' })
+  expect(filled, JSON.stringify(filled)).toMatchObject({ ok: true, result: { action: { method: 'signup', status: 'verified' } } })
+  expect(JSON.stringify(filled)).toContain('2 password fields')
+  await expect(act(page, browser, 'click', 'Create account', {}, 'button')).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app!, page, browser, "document.querySelector('#created').textContent", 'text')).resolves
+    .toMatchObject({ result: { text: 'created' } })
+  const saved = await page.evaluate((workspaceId) => window.__cateE2E!.call('browserData', 'passwords', {}, workspaceId), browser.workspaceId) as Array<{ username: string; origin: string }>
+  expect(saved).toContainEqual(expect.objectContaining({ username: 'grace@example.test', origin: appOrigin }))
+
+  const again = await browserInvoke(page, browser, 'signup', { username: 'grace@example.test' })
+  expect(again.error).toContain('browser-signup-exists')
 })
 
 // Not an app bug: the frame server is same-site with the page (both

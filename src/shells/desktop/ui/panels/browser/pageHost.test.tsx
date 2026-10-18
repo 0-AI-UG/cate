@@ -7,9 +7,8 @@ import { createPageOps, type PageOpsDeps } from '@services/browser/desktop/rende
 import { runPageOp } from './surfaces'
 
 /** One `page.*` request on a host, through this client's page ops. */
-function pageOp(host: BrowserPageHost, op: string, args: unknown, deps: PageOpsDeps & { confirm?(message: string): Promise<boolean> }): Promise<unknown> {
-  const { confirm = async () => true, ...opsDeps } = deps
-  return runPageOp({ host, ops: createPageOps(opsDeps), confirm }, { requestId: 0, panelId: host.panelId, op, args })
+function pageOp(host: BrowserPageHost, op: string, args: unknown, deps: PageOpsDeps): Promise<unknown> {
+  return runPageOp({ host, ops: createPageOps(deps) }, { requestId: 0, panelId: host.panelId, op, args })
 }
 
 function guest(id = 7): BrowserGuest & { url: string; loading: boolean; fire(type: string, detail?: object): void } {
@@ -223,13 +222,6 @@ describe('BrowserPageHost', () => {
 })
 
 describe('BrowserPageHost dialogs', () => {
-  it('asks the person for the runtime and returns their answer', async () => {
-    const host = new BrowserPageHost({ panelId: 'p1', clientId: 'me', send: async () => {}, bridge: null })
-    const confirm = vi.fn(async () => false)
-    await expect(pageOp(host, 'page.confirm', { message: 'Sign in?' }, { bridge: {} as never, confirm })).resolves.toEqual({ ok: false })
-    expect(confirm).toHaveBeenCalledWith('Sign in?')
-  })
-
   it('shows the dialog the shown page waits on and sends the person\'s answer', () => {
     let listener!: (event: { webContentsId: number; dialog: { id: string; type: 'prompt'; message: string; defaultPrompt?: string } | null }) => void
     const answerDialog = vi.fn(async () => {})

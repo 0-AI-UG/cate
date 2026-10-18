@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { openSecretsFile, type SecretsFile } from '@runtime/data/runtime'
 import type { JsonStateFile } from '@kernel/state/node'
-import { createPasswordStore, PASSWORDS_KEY, type PasswordStore } from './passwords'
+import { createPasswordStore, generatePassword, PASSWORDS_KEY, type PasswordStore } from './passwords'
 
 let dir: string
 let secrets: JsonStateFile<SecretsFile>
@@ -99,5 +99,19 @@ describe('saved passwords', () => {
     expect(store.list().map((c) => c.username)).toEqual(['b'])
     await store.clear()
     expect(store.list()).toEqual([])
+  })
+})
+
+describe('generatePassword', () => {
+  it('makes distinct passwords with every character class', () => {
+    const made = Array.from({ length: 50 }, () => generatePassword())
+    expect(new Set(made).size).toBe(50)
+    for (const password of made) {
+      expect(password).toHaveLength(20)
+      expect(password).toMatch(/[a-z]/)
+      expect(password).toMatch(/[A-Z]/)
+      expect(password).toMatch(/[0-9]/)
+      expect(password).toMatch(/[-_.!@#]/)
+    }
   })
 })

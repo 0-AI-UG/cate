@@ -33,7 +33,7 @@ import { readBrowserAX } from './ax'
 import { parseKey } from './keys'
 import { PageLog } from './pageLog'
 import { FrameTree } from './frames'
-import { FILE_INPUT_OF, PASSWORD_FIELD, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
+import { EMPTY_PASSWORD_FIELD, FILE_INPUT_OF, PASSWORD_FIELD, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
 import type { GuestDialogs } from './dialogs'
 
 type BrowserArgs = Record<string, unknown>
@@ -365,10 +365,7 @@ export class PageDriver {
     const password = await this.locate(target, PASSWORD_FIELD)
     const field = password ?? await this.locate(target, USERNAME_FIELD)
     if (!field) throw new Error('browser-login-field-not-found')
-    const fieldOrigin = (await this.callOn(field, 'function () { return this.ownerDocument.location.origin; }')).value
-    let pageOrigin = ''
-    try { pageOrigin = new URL(this.contents.getURL()).origin } catch { /* no page */ }
-    if (pageOrigin !== credential.origin || fieldOrigin !== pageOrigin) throw new Error('browser-login-origin-mismatch')
+    await this.checkOrigin(field, credential.origin)
     this.check()
     if (password) {
       await this.fillLogin(password, credential)
@@ -376,6 +373,35 @@ export class PageDriver {
     }
     await this.fillUsername(field, credential.username)
     return [`Filled the username ${credential.username}; this step asks for no password. Continue, then run login again on the password step.`]
+  }
+
+  /** Fills a new password (`credential`, generated for `origin`) into a
+   *  sign-up form: every empty password field of the form, so the password
+   *  and its confirmation. */
+  private async signup(target: ElementTarget | undefined, credential: { password: string; origin: string }): Promise<string[]> {
+    if (target?.sessionId) throw new Error('browser-login-origin-mismatch')
+    const first = await this.locate(target, EMPTY_PASSWORD_FIELD)
+    if (!first) throw new Error('browser-signup-field-not-found')
+    await this.checkOrigin(first, credential.origin)
+    this.check()
+    let field: ElementTarget | undefined = first
+    let filled = 0
+    // A field that keeps no value would be found again: stop after a few.
+    for (; field && filled < 3; filled += 1) {
+      await this.fillElement(field, credential.password)
+      field = await this.locate(first, EMPTY_PASSWORD_FIELD)
+    }
+    const where = filled === 1 ? 'the password field' : `${filled} password fields`
+    return [`Filled a new generated password into ${where}; the password is hidden and is saved as this site's login. Fill in the rest of the form, then submit it.`]
+  }
+
+  /** Throws unless the page still shows `origin` and `field` belongs to the
+   *  page itself, not to a frame of another site. */
+  private async checkOrigin(field: ElementTarget, origin: string): Promise<void> {
+    const fieldOrigin = (await this.callOn(field, 'function () { return this.ownerDocument.location.origin; }')).value
+    let pageOrigin = ''
+    try { pageOrigin = new URL(this.contents.getURL()).origin } catch { /* no page */ }
+    if (pageOrigin !== origin || fieldOrigin !== pageOrigin) throw new Error('browser-login-origin-mismatch')
   }
 
   /** The element `declaration` returns, called on `scope` or the main document. */
@@ -1455,6 +1481,14 @@ export class PageDriver {
       }
       const target = args.target === undefined || args.target === null ? undefined : this.element(args.target, observation)
       notices.push(...await this.login(target, { username: credential.username, password: credential.password, origin: credential.origin }))
+      verified = true
+    } else if (method === 'signup') {
+      const credential = objectValue(args.credential)
+      if (typeof credential.password !== 'string' || !credential.password || typeof credential.origin !== 'string') {
+        throw new Error('browser-login-credential-required')
+      }
+      const target = args.target === undefined || args.target === null ? undefined : this.element(args.target, observation)
+      notices.push(...await this.signup(target, { password: credential.password, origin: credential.origin }))
       verified = true
     } else if (method === 'scroll') {
       const direction = args.direction ?? 'down'

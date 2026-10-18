@@ -13,6 +13,14 @@ export const PASSWORD_FIELD = `function () {
   const fields = Array.from(this.querySelectorAll('input[type=password]')).filter(visible);
   return fields.find(field => field.autocomplete.toLowerCase() !== 'new-password') || fields[0] || null;
 }`
+/** The first empty password field of a sign-up form, a new-password one
+ *  first: of the field's form (`this`: a field), or inside `this`. */
+export const EMPTY_PASSWORD_FIELD = `function () {
+  const visible = ${VISIBLE_FIELD};
+  const scope = this instanceof HTMLInputElement ? (this.form || this.ownerDocument.body) : this;
+  const fields = Array.from(scope.querySelectorAll('input[type=password]')).filter(field => visible(field) && !field.value);
+  return fields.find(field => field.autocomplete.toLowerCase() === 'new-password') || fields[0] || null;
+}`
 /** The username field of a password field's form (`this`: the password field). */
 export const USERNAME_FOR_PASSWORD = `function () {
   const visible = ${VISIBLE_FIELD};

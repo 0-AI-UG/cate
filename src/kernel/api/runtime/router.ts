@@ -106,7 +106,7 @@ export class ApiRouter {
     if (!method) throw new RpcError('unsupported', `unknown method: ${methodName}`)
 
     if (isGatedCaller(caller)) {
-      const denied = cliAccessDenied(method.area, method.access, (key) => this.options.settings.get(key))
+      const denied = cliAccessDenied(method.area, method.access, (key) => this.options.settings.get(key), method.optIn)
       if (denied) throw new RpcError('rejected', denied, { reason: 'permission' })
     }
 

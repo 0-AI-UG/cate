@@ -11,8 +11,9 @@ import type { AgentCursorEvent, AgentCursorKind } from '../contract/agentCursor'
 import type { browserApi } from '../contract/api'
 import { BROWSER_ACTION_METHODS, type BrowserDriverResult } from '../contract/automation'
 import type { BrowserSurfaceArgs, BrowserSurfaceOp, BrowserSurfaceResult } from '../contract/surface'
+import { credentialOrigin } from '../contract/history'
 import { BROWSER_NEW_TAB_URL } from '../contract/types'
-import type { PasswordStore } from './passwords'
+import { generatePassword, type PasswordStore } from './passwords'
 
 /** A page operation's deadline and cancellation. */
 export interface PageCall {
@@ -47,10 +48,8 @@ export interface PageControlPanel {
 }
 
 export interface PageControlDeps {
-  /** Workspace settings: `browserAgentPasswords`. */
-  settings: { get(key: string): unknown }
   /** The workspace's saved passwords, for an agent's `login`. */
-  passwords: Pick<PasswordStore, 'suggestions' | 'forFill'>
+  passwords: Pick<PasswordStore, 'suggestions' | 'forFill' | 'save'>
 }
 
 /** The session methods of `cate.browser.*` that page control answers. */
@@ -74,7 +73,7 @@ export interface PageControl {
 export const pageCall = (ctx: ApiSessionContext): PageCall => ({ timeoutMs: 0, signal: ctx.signal })
 
 function cursorKind(method: string): AgentCursorKind {
-  if (method === 'setValue' || method === 'typeText' || method === 'login') return 'type'
+  if (method === 'setValue' || method === 'typeText' || method === 'login' || method === 'signup') return 'type'
   if (method === 'hover') return 'hover'
   if (method === 'pressKey') return 'press'
   if (method === 'scroll') return 'scroll'
@@ -143,15 +142,10 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     return observeAfterNavigation(tabId, args, call)
   }
 
-  /** An agent's `login`: the one saved login for the page the driving client
-   *  shows, after the person agrees when the workspace asks for that. The
-   *  password goes to the page driver, never back to the caller. */
+  /** An agent's `login` (gated by `cliBrowserPasswordsEnabled`, like `signup`): the one saved
+   *  login for the page the driving client shows. The password goes to the
+   *  page driver, never back to the caller. */
   const login = async (args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown> => {
-    const policy = deps.settings.get('browserAgentPasswords')
-    if (policy !== 'ask' && policy !== 'allow') {
-      throw new RpcError('rejected', 'browser-agent-passwords-off: agents may not use saved passwords in this workspace. '
-        + 'The person can allow it in Settings > Browser > "Agents may use saved passwords"; until then, ask them to sign in.')
-    }
     const { credential: _credential, ...rest } = args
     const tabId = boundTab(rest.tabId).id
     const call = pageCall(ctx)
@@ -173,18 +167,35 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
       throw new RpcError('rejected', `browser-login-ambiguous: ${host} has several saved logins (${names}); pick one with --user <name>`)
     }
     const [chosen] = matching
-    if (policy === 'ask') {
-      const who = chosen.username || 'the saved login'
-      const message = `An agent wants to sign in to ${host} as ${who}. Fill in the saved password for it? The agent does not see the password.`
-      const { ok } = await panel.surface('page.confirm', { message }, call)
-      if (!ok) throw new RpcError('rejected', 'browser-login-declined: the person did not allow it. Ask them to sign in.')
-      still(tabId)
-    }
     const fill = deps.passwords.forFill(chosen.id, url)
     if (!fill) throw new RpcError('rejected', `browser-login-no-saved-password: there is no saved password for ${host}`)
     // The driver fills it only while the page still shows `origin`.
     const credential = { username: fill.username, password: fill.password, origin: chosen.origin }
     return execute(tabId, 'login', { ...rest, tabId, credential }, false, call)
+  }
+
+  /** An agent's `signup` (gated like `login`): a generated password filled
+   *  into the sign-up form of the page the driving client shows, then saved
+   *  as the site's login for `username`. The password goes to the page
+   *  driver and the store, never back to the caller. */
+  const signup = async (args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown> => {
+    const { credential: _credential, ...rest } = args
+    const tabId = boundTab(rest.tabId).id
+    const call = pageCall(ctx)
+    panel.showCursor({ kind: 'type', label: 'signup' })
+    const { url } = await panel.surface('page.ready', { tabId, nav: panel.tab(tabId).nav }, call)
+    still(tabId)
+    const origin = credentialOrigin(url)
+    if (!origin) throw new RpcError('rejected', 'browser-signup-no-page: the tab shows no web page')
+    const host = new URL(origin).hostname
+    const username = String(rest.username)
+    if (deps.passwords.suggestions(url).some((entry) => entry.username === username)) {
+      throw new RpcError('rejected', `browser-signup-exists: there is already a saved login for ${host} as ${username}; sign in with cate browser login`)
+    }
+    const password = generatePassword()
+    const result = await execute(tabId, 'signup', { ...rest, tabId, credential: { password, origin } }, false, call)
+    await deps.passwords.save({ origin, username, password })
+    return result
   }
 
   const handlers: PageControlHandlers = {
@@ -208,6 +219,7 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     console: (args, ctx) => pageMethod('console', args, ctx),
     network: (args, ctx) => pageMethod('network', args, ctx),
     login: (args, ctx) => login(args, ctx),
+    signup: (args, ctx) => signup(args, ctx),
     goto: async (args, ctx) => {
       const tabId = boundTab(args.tabId).id
       await panel.navigateTab(tabId, args.url)

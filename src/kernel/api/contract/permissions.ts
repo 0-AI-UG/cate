@@ -31,9 +31,12 @@ export function defineCliArea<const A extends CliPermissionArea>(area: A): A {
   return area
 }
 
-/** The distinct areas of some API namespaces, in order. */
-export function cliAreasOf(namespaces: readonly { area?: CliPermissionArea }[]): CliPermissionArea[] {
-  return [...new Set(namespaces.flatMap((namespace) => (namespace.area ? [namespace.area] : [])))]
+/** The distinct areas of some API namespaces and their methods' opt-ins, in order. */
+export function cliAreasOf(
+  namespaces: readonly { area?: CliPermissionArea; methods: Record<string, { optIn?: CliPermissionArea }> }[],
+): CliPermissionArea[] {
+  return [...new Set(namespaces.flatMap((namespace) =>
+    [namespace.area, ...Object.values(namespace.methods).map((method) => method.optIn)].filter((area) => area !== undefined)))]
 }
 
 export const CLI_DISABLED_MESSAGE =
@@ -52,17 +55,20 @@ export function cliPermissionDenied(area: CliPermissionArea, access: ApiAccess):
 }
 
 /**
- * Checks the master switch and the area cell. Returns the denial text, or
- * null when allowed. `setting` reads a workspace setting; anything but `true`
- * counts as off.
+ * Checks the master switch, the area cell and the cell of the method's
+ * opt-in, if any. Returns the denial text, or null when allowed. `setting`
+ * reads a workspace setting; anything but `true` counts as off.
  */
 export function cliAccessDenied(
   area: CliPermissionArea | undefined,
   access: ApiAccess,
   setting: (key: string) => unknown,
+  optIn?: CliPermissionArea,
 ): string | null {
   if (setting(CLI_MASTER_KEY) !== true) return CLI_DISABLED_MESSAGE
-  const cell = cliPermissionCell(area, access)
-  if (cell && setting(cell.key) !== true) return cliPermissionDenied(area!, access)
+  for (const each of [area, optIn]) {
+    const cell = cliPermissionCell(each, access)
+    if (cell && setting(cell.key) !== true) return cliPermissionDenied(each!, access)
+  }
   return null
 }
