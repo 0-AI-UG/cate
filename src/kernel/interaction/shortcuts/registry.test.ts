@@ -34,6 +34,14 @@ function settingsRegistry() {
 }
 
 describe('shortcut registry', () => {
+  it('off a Mac keyboard Ctrl answers a binding stored as command or as control', () => {
+    const registry = createMemoryShortcutRegistry()
+    expect(registry.match(keyEvent('t', { ctrl: true }), false)).toBe('panel.new.terminal')
+    expect(registry.match(keyEvent(' ', { ctrl: true }), false)).toBe('toggleTool')
+    expect(registry.match(keyEvent('l', { ctrl: true }), false)).toBeNull()
+    expect(registry.match(keyEvent('t', { ctrl: true }))).toBeNull()
+  })
+
   it('resolves every declared action to its default key, unbound without one', () => {
     const registry = createMemoryShortcutRegistry()
     expect(registry.resolved()).toEqual({ toggleTool: TOGGLE, nextWorkspace: NEXT, 'panel.new.terminal': TERMINAL, unbound: storedShortcut('') })

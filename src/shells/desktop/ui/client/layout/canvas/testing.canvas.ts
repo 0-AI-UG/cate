@@ -49,13 +49,13 @@ export function canvasDocument(nodes: { nodeId: string; panelId: string; rect: R
   apply({
     kind: 'addPanel',
     record: { id: 'canvas-panel', type: 'canvas', title: 'Canvas', canvasId, fields: {} },
-    at: { to: 'stack', dock: { windowId: 'main' }, stackId: 'main-stack' },
+    at: { to: 'stack', dock: { layoutId: 'main' }, stackId: 'main-stack' },
   })
   for (const n of nodes) {
     apply({
       kind: 'addPanel',
       record: { id: n.panelId, type: 'terminal', title: n.panelId, fields: {} },
-      at: { to: 'canvas', canvasId, nodeId: n.nodeId, stackId: `stack-${n.nodeId}`, rect: n.rect },
+      at: { to: 'canvas', canvasId, nodeId: n.nodeId, layoutId: `layout-${n.nodeId}`, stackId: `stack-${n.nodeId}`, rect: n.rect },
     })
   }
   return doc

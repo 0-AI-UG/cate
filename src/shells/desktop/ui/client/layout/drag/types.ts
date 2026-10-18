@@ -4,7 +4,7 @@
 // document is the only placement state, so a drop is one document op.
 
 import type { Point, Size } from '@workspace/canvas/contract'
-import type { DockRef, PanelId, SplitSide, StackId } from '@workspace/document/contract'
+import type { DockRef, HostRef, LayoutId, PanelId, SplitSide, StackId } from '@workspace/document/contract'
 import type { CrossWindowDrag } from './ports'
 
 export interface DragPanel {
@@ -17,6 +17,9 @@ export interface DragPanel {
 export interface DragSource {
   workspaceId: string
   panelId: PanelId
+  /** Started on a row of the sidebar's workspace tree: never detaches into a
+   *  new window. */
+  from?: 'sidebar'
   origin:
     | {
         kind: 'canvas-node'
@@ -29,9 +32,17 @@ export interface DragSource {
       }
     | {
         kind: 'dock-tab'
-        /** The dock the tab sits in: a window's, or a canvas node's. */
+        /** The dock the tab sits in, and the window or canvas node holding it. */
         dock: DockRef
+        host: HostRef
         stackId: StackId
+      }
+    | {
+        /** A whole layout dragged by its anchor chip in a tab strip. `panelId`
+         *  of the source is one of its panels, which stands for it in the ghost. */
+        kind: 'layout'
+        host: HostRef
+        layoutId: LayoutId
       }
     | {
         /** A drag that started in another window of this client; this window
@@ -48,6 +59,11 @@ export interface GhostRect {
   width: number
   height: number
 }
+
+/** The client-state key (on a canvas panel) of the order its panels are listed
+ *  in. A canvas does not care in which order its nodes are listed, so a drag
+ *  only rearranges the list. */
+export const CANVAS_ORDER_KEY = 'sidebar.order'
 
 export type DropTarget =
   | {
@@ -67,12 +83,29 @@ export type DropTarget =
       size: Size
       zoom: number
       ghostRect?: GhostRect
+      /** Set when the canvas takes no such drop: the ghost shows this, and the release does nothing. */
+      refused?: string
     }
   | { kind: 'dock-split'; workspaceId: string; dock: DockRef; stackId: StackId; edge: SplitSide }
   | { kind: 'dock-tab'; workspaceId: string; dock: DockRef; stackId: StackId }
   /** A whole dock: its root split on `edge` (a window's edge strip), or its
    *  first stack (a new stack in an empty window). */
   | { kind: 'dock-zone'; workspaceId: string; dock: DockRef; edge?: SplitSide }
+  /** A gap of a window's tab strip: the dropped panel becomes a plain tab
+   *  (a dragged layout moves) at `index` among the host's layouts. */
+  | { kind: 'tab-slot'; workspaceId: string; host: HostRef; index: number; via?: 'tree' }
+  /** The dragged pane's own spot in its group, at `slot`: nothing drops. */
+  | { kind: 'group-home'; workspaceId: string; layoutId: LayoutId; slot: number; via?: 'tree' }
+  /** Inside a group of the strip: the dropped panel becomes a new pane beside
+   *  the stack of the chip next to the gap (`slot` is the gap's index among
+   *  the group's chips, for the ghost chip). */
+  | { kind: 'group-slot'; workspaceId: string; layoutId: LayoutId; beside: StackId; side: 'left' | 'right'; slot: number; via?: 'tree' }
+  /** A tab position in a stack: after `after`, first when null. `stackId` null
+   *  is an empty layout (a new stack). */
+  | { kind: 'stack-slot'; workspaceId: string; layoutId: LayoutId; stackId: StackId | null; after: PanelId | null }
+  /** Among the panels of a canvas (a new node). `order` is the list order the
+   *  drop leaves, kept in client state. */
+  | { kind: 'canvas-slot'; workspaceId: string; canvasPanelId: PanelId; after: PanelId | null; order: PanelId[] }
   | { kind: 'detach'; screen: Point }
 
 export interface DragState {
@@ -120,7 +153,18 @@ export type DragOpSourceSpec =
       kind: 'dock-tab'
       workspaceId: string
       dock: DockRef
+      host: HostRef
       stackId: StackId
+      panelId: PanelId
+      from?: 'sidebar'
+    }
+  | {
+      kind: 'layout'
+      workspaceId: string
+      from?: 'sidebar'
+      host: HostRef
+      layoutId: LayoutId
+      /** One of the layout's panels, which stands for it in the ghost. */
       panelId: PanelId
     }
 

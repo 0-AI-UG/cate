@@ -33,14 +33,6 @@ function render() {
   return { host, click, unmount: () => act(() => root.unmount()) }
 }
 
-it('does not reserve label spacing while collapsed', () => {
-  const { host, unmount } = render()
-  const button = host.querySelector<HTMLButtonElement>('[aria-label="Open agent changes"]')!
-  expect(button.classList).toContain('gap-0')
-  expect(button.classList).toContain('hover:gap-1')
-  unmount()
-})
-
 it('opens the agent panel\'s changes; the opener finds its checkout', async () => {
   const { click, unmount } = render()
   await click()

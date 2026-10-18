@@ -1078,18 +1078,49 @@ runtime and in every client's mirror, so both apply ops the same way):
 interface WorkspaceDocument {
   panels: Record<PanelId, PanelRecord>      // type, title, worktreeId, type fields
   windows: Record<WindowId, DocWindow>      // 'main' always exists
-  canvases: Record<CanvasId, CanvasModel>   // nodes: rect, mini dock tree
+  canvases: Record<CanvasId, CanvasModel>   // nodes: rect, layouts
   relations: Record<RelationId, PanelRelation>
   worktrees: Record<WorktreeId, WorktreeMeta> // status: creating | ready | removing
 }
 interface DocWindow {
-  id: WindowId; kind: 'main' | 'detached'; dock: DockNode | null
+  id: WindowId; kind: 'main' | 'detached'; layouts: DockLayout[]   // at least one
 }
+interface CanvasNode { id: NodeId; rect: Rect; layouts: DockLayout[] }   // at least one, not all empty
+interface DockLayout { id: LayoutId; name?: string; dock: DockNode | null }
+type HostRef = { windowId } | { canvasId; nodeId }   // what holds layouts
 ```
 
-- Every panel has exactly one placement: a tab in a dock stack of a window, or
-  a tab in the mini dock of a canvas node. The placement index is derived,
-  never stored twice.
+- Every panel has exactly one placement: a tab in a dock stack of one layout.
+  The placement index is derived, never stored twice; it also gives each
+  layout's host.
+- A **host** (a window, or a canvas node) holds one or more **layouts**
+  (`DockLayout`), each its own dock tree, like the windows of tmux: the
+  switcher of the host switches layouts, never panels. A window draws its
+  layouts as one tab strip, like a browser's tabs and tab groups: a layout
+  holding one panel is a plain tab, one holding several is a group (an anchor
+  chip for the layout, a container around its panel chips), derived from the
+  tree, never stored. A window layout that empties is dropped, like a closed
+  tab, unless it is the window's only one (the main window then shows its
+  creation menu); a node layout that empties stays, empty; a detached window
+  or a canvas node goes when it has no panel in any layout. A new panel is a
+  plain tab right after the layout it is created next to; a split makes a
+  group, and a pane of a group pops out into a plain tab after it. Layout ids are unique
+  in the document and a dock is addressed by its layout alone (`{layoutId}`).
+  `addLayout` (to a host), `removeLayout` (with its panels; the view asks
+  first), `moveLayout` and `renameLayout` are ops. A layout is named when
+  created ("Layout N"), never by its position, so moving one keeps its name; a
+  blank rename is refused. `moveLayout` reorders a switcher or takes the whole
+  layout (tree, panels, name) to another host: an existing window or node, a
+  new detached window, or a new node on a canvas, and the same op brings it
+  back. The main window keeps at least one layout (its last cannot leave), a
+  new host needs a layout with panels, and a layout holding a canvas panel
+  cannot go on a canvas (canvases never nest). A host a move leaves with only
+  empty layouts goes with them; undo recreates it. Which layout a client shows
+  in a host is client state (`activeLayouts`, by window id or node id), so two
+  clients can look at different layouts of the same host; a reveal switches to
+  the panel's layouts, and a new panel with no better place goes to the layout
+  the creating client shows in the main window. `document.json` is version 2 (a
+  host's `dock` became `layouts`); older files are rejected, not migrated.
 - A canvas panel's record names its `canvasId`. A canvas is created with its
   canvas panel (`addPanel`) and removed with it (`removePanels` removes the
   canvas and the panels on it; the view asks first). A canvas panel cannot
@@ -1106,7 +1137,8 @@ interface DocWindow {
 | Group | Ops |
 |---|---|
 | Records | `addPanel(record, at)`, `replacePanel(record, discard?)` (a surface becoming the picked type: same id, the old session is disposed and the new one started), `updatePanel(id, patch)`, `removePanels(ids, discard?)` |
-| Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node (`{to: 'canvas', canvasId, nodeId, stackId, rect}`) or a new detached window (`{to: 'window', windowId, stackId}`). `dock` is a window's dock or a canvas node's mini dock. Placing an already placed panel moves it. |
+| Placement | `placePanel(id, at)`, where `at` is a tab in a stack (`{to: 'stack', dock, stackId, after?}`), a new stack beside a stack or split (`{to: 'split', dock, beside, side, stackId, splitId}`), a new canvas node with its first layout (`{to: 'canvas', canvasId, nodeId, layoutId, stackId, rect}`) or a new layout holding the panel at an index of a host's strip (`{to: 'tab', host, layoutId, stackId, index?}`, counted after the panel left its old layout) or a new detached window (`{to: 'window', windowId, layoutId, stackId}`). `dock` is one layout (`{layoutId}`), in a window or a canvas node. Placing an already placed panel moves it. |
+| Layouts | `addLayout(host, layoutId)`, `removeLayout(layoutId)`, `renameLayout(layoutId, name)`, `moveLayout(layoutId, to)` where `to` is an existing host (`{to: 'host', host, index?}`), a new detached window (`{to: 'window', windowId}`) or a new canvas node (`{to: 'canvas', canvasId, nodeId, rect}`) |
 | Containers | `setSplitRatio(splitId, ratios)`, `setNodeRects(canvasId, [{nodeId, rect}])`, `closeWindow(windowId, discard?)` (removes its panels; the view asks first) |
 | Relations | `addRelation`, `updateRelation`, `removeRelation` |
 | Worktrees | `setWorktree(meta)`, `removeWorktree(id)` (metadata only; the repository service does the resource work and writes these) |

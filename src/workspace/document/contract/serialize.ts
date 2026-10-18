@@ -2,10 +2,11 @@
 // or any other format is rejected, never repaired or migrated.
 
 import { dockPanels, findStack, visitDock, type DockNode } from './dock'
-import { MAIN_WINDOW, type WorkspaceDocument } from './schema'
+import { MAIN_WINDOW, type DockLayout, type WorkspaceDocument } from './schema'
 import { checkDock, checkRecord, checkRelation, checkWorktree, isId, isObject, isRect } from './validate'
 
-export const DOCUMENT_FILE_VERSION = 1
+/** 2: a window holds a list of dock layouts (was one dock). Version 1 files are rejected, not migrated. */
+export const DOCUMENT_FILE_VERSION = 2
 
 export interface DocumentFile {
   version: typeof DOCUMENT_FILE_VERSION
@@ -22,7 +23,7 @@ export function parseDocument(text: string): ParseResult {
   } catch (error) {
     return { ok: false, error: `not JSON: ${(error as Error).message}` }
   }
-  if (!isObject(value) || value.version !== DOCUMENT_FILE_VERSION) return { ok: false, error: 'not a version 1 document file' }
+  if (!isObject(value) || value.version !== DOCUMENT_FILE_VERSION) return { ok: false, error: `not a version ${DOCUMENT_FILE_VERSION} document file` }
   const error = validateDocument(value.document)
   return error ? { ok: false, error } : { ok: true, doc: value.document as WorkspaceDocument }
 }
@@ -65,18 +66,35 @@ export function validateDocument(value: unknown): string | null {
     return null
   }
 
+  const layoutIds = new Set<string>()
+  const checkLayouts = (layouts: unknown, where: string, onCanvas: boolean): string | null => {
+    if (!Array.isArray(layouts) || layouts.length === 0) return `${where} needs a layout`
+    for (const layout of layouts as DockLayout[]) {
+      if (!isObject(layout) || !isId(layout.id) || layoutIds.has(layout.id)) return `${where} has a malformed layout`
+      if (Object.keys(layout).some((key) => !['id', 'name', 'dock'].includes(key))) return `layout ${layout.id} has unknown keys`
+      if (typeof layout.name !== 'string') return `layout ${layout.id} has no name`
+      layoutIds.add(layout.id)
+      const problem = place(layout.dock, `${where} layout ${layout.id}`, onCanvas)
+      if (problem) return problem
+    }
+    return null
+  }
+
   const main = doc.windows[MAIN_WINDOW]
   if (!isObject(main) || main.kind !== 'main') return 'the main window is missing'
   for (const [id, window] of Object.entries(doc.windows)) {
     if (!isObject(window) || window.id !== id) return `window ${id} is malformed`
     if (window.kind === 'main') {
       if (id !== MAIN_WINDOW) return `window ${id} is not the main window`
-    } else if (window.kind !== 'detached' || window.dock === null) {
+    } else if (window.kind !== 'detached') {
+      return `window ${id} has an unknown kind`
+    }
+    if (Object.keys(window).some((key) => !['id', 'kind', 'layouts'].includes(key))) return `window ${id} has unknown keys`
+    const problem = checkLayouts(window.layouts, `window ${id}`, false)
+    if (problem) return problem
+    if (window.kind === 'detached' && window.layouts.every((layout) => layout.dock === null)) {
       return `detached window ${id} needs a dock`
     }
-    if (Object.keys(window).some((key) => !['id', 'kind', 'dock'].includes(key))) return `window ${id} has unknown keys`
-    const problem = place(window.dock, `window ${id}`, false)
-    if (problem) return problem
   }
 
   const canvasPanels = new Map<string, string>()
@@ -90,11 +108,13 @@ export function validateDocument(value: unknown): string | null {
     if (!isObject(canvas) || canvas.id !== id || !isObject(canvas.nodes)) return `canvas ${id} is malformed`
     if (!canvasPanels.has(id)) return `canvas ${id} has no canvas panel`
     for (const [nodeId, node] of Object.entries(canvas.nodes)) {
-      if (!isObject(node) || node.id !== nodeId || !isRect(node.rect) || !node.dock) return `node ${nodeId} is malformed`
+      if (!isObject(node) || node.id !== nodeId || !isRect(node.rect)) return `node ${nodeId} is malformed`
+      if (Object.keys(node).some((key) => !['id', 'rect', 'layouts'].includes(key))) return `node ${nodeId} has unknown keys`
       if (seenNodes.has(nodeId)) return `node id ${nodeId} is used twice`
       seenNodes.add(nodeId)
-      const problem = place(node.dock, `node ${nodeId}`, true)
+      const problem = checkLayouts(node.layouts, `node ${nodeId}`, true)
       if (problem) return problem
+      if (node.layouts.every((layout) => layout.dock === null)) return `node ${nodeId} needs a dock`
     }
   }
   for (const canvasId of canvasPanels.keys()) {

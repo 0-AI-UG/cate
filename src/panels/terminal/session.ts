@@ -106,9 +106,15 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
     return this.deps.terminal.read(id, lines)
   }
 
+  /** Set by `terminate`: a killed shell stays as an exited panel to restart. */
+  private terminated = false
+
   terminate(): void {
     const id = this.state.ptyId
-    if (id && this.state.status === 'running') this.deps.terminal.kill(id)
+    if (id && this.state.status === 'running') {
+      this.terminated = true
+      this.deps.terminal.kill(id)
+    }
   }
 
   protected override readonly ops: OpHandlers<TerminalOp> = {
@@ -242,6 +248,7 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       return
     }
     this.shell = result.shell
+    this.terminated = false
     this.publish({ ptyId: result.id, status: 'running', title: shellName(result.shell), cwd })
     this.rememberCwd(cwd)
     this.followStatus(this.deps.terminal.statuses()[result.id] ?? null)
@@ -257,6 +264,8 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       ...(status.alive ? {} : { status: 'exited' as const, exitCode: status.exitCode, activity: { type: 'idle' as const } }),
     })
     if (status.cwd) this.rememberCwd(status.cwd)
+    // The shell ended (`exit`): nothing is left to show, so the panel closes.
+    if (!status.alive && !this.terminated) this.kit.document.apply({ kind: 'removePanels', ids: [this.panelId] })
   }
 
   private rememberCwd(cwd: string): void {

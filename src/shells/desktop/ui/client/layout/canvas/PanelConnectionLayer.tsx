@@ -14,7 +14,7 @@ import {
 } from '../../../workspace/relations'
 import { useClientState, useDocument } from '../../document'
 import type { CanvasDragState } from './ports'
-import type { ViewNode } from './store'
+import { shownLayout, type ViewNode } from './store'
 import { useCanvasRelationOverlayTarget, useCanvasView, useCanvasViewStore } from './context'
 import { useCanvasDrag } from './dragState'
 
@@ -35,7 +35,7 @@ function flowColor(index: number): string {
 }
 
 /** The panel each stack shows: its active tab, else its first. */
-function visiblePanelIds(dock: DockNode, activeTabs: Readonly<Record<string, PanelId>>): PanelId[] {
+function visiblePanelIds(dock: DockNode | null, activeTabs: Readonly<Record<string, PanelId>>): PanelId[] {
   return dockStacks(dock).flatMap((stack) => {
     const active = activeTabs[stack.id]
     const shown = active && stack.panels.includes(active) ? active : stack.panels[0]
@@ -49,6 +49,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
   const overlayTarget = useCanvasRelationOverlayTarget()
   const nodes = useCanvasView((state) => state.nodes)
   const activeTabs = useClientState(workspaceId, (state) => state.activeTabs)
+  const activeLayouts = useClientState(workspaceId, (state) => state.activeLayouts)
   const panels = useDocument(workspaceId, (doc) => doc.panels)
   const relationMap = useDocument(workspaceId, (doc) => doc.relations)
   const relations = useMemo(() => Object.values(relationMap), [relationMap])
@@ -72,7 +73,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         const origin = { x: dragGhost.x, y: dragGhost.y }
         renderedNode = { ...node, origin, rect: { origin, size: node.size } }
       }
-      for (const panelId of visiblePanelIds(node.dock, activeTabs)) panelToNode.set(panelId, renderedNode)
+      for (const panelId of visiblePanelIds(shownLayout(node, activeLayouts).dock, activeTabs)) panelToNode.set(panelId, renderedNode)
     }
 
     const byNodePair = new Map<string, RenderedConnection>()
@@ -110,7 +111,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
       add(relation.fromPanelId, relation.toPanelId, undefined, preview ? { ...relation, waypoint: preview } : relation)
     }
     return [...byNodePair.values()]
-  }, [activeTabs, dragGhost, dragSourceNodeId, interactions, nodes, panels, panelRelationsEnabled, relations, waypointPreview, workspaceId])
+  }, [activeTabs, activeLayouts, dragGhost, dragSourceNodeId, interactions, nodes, panels, panelRelationsEnabled, relations, waypointPreview, workspaceId])
 
   if (connections.length === 0) return null
 

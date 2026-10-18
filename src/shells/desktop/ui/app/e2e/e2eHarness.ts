@@ -142,7 +142,7 @@ export function createClientE2E(options: { canvas?: CanvasE2EHooks; extensions?:
       if (!active || !definition) return null
       const nodeId = newId()
       const size = definition.defaultSize
-      const at = { to: 'canvas' as const, canvasId: active.canvasId, nodeId, stackId: newId(), rect: { origin, size } }
+      const at = { to: 'canvas' as const, canvasId: active.canvasId, nodeId, layoutId: newId(), stackId: newId(), rect: { origin, size } }
       const panelId = createPanel(active.workspaceId, type, { ...options, at })
       return panelId ? { panelId, nodeId } : null
     },

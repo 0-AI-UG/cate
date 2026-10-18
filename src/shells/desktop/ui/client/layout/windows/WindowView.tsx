@@ -2,9 +2,10 @@
 // that split the whole dock, and the drag overlay. Each detached window has
 // its own native window.
 
-import React, { useEffect, useRef } from 'react'
-import { MAIN_WINDOW, type SplitSide, type WindowId } from '@workspace/document/contract'
-import { installRevealHooks } from '@client/host'
+import React, { useEffect, useMemo, useRef } from 'react'
+import { MAIN_WINDOW, dockStacks, type SplitSide, type WindowId } from '@workspace/document/contract'
+import { activeTabOf, installRevealHooks, panelDefinition } from '@client/host'
+import { useClientState, useDocument } from '../../document'
 import { DockView } from '../dock/DockView'
 import { EmptyDockChooser } from '../dock/EmptyDockChooser'
 import { DragOverlay } from '../drag/Overlay'
@@ -12,6 +13,7 @@ import { EdgeDropIndicator } from '../drag/EdgeIndicator'
 import { registerDropZone } from '../drag/registry'
 import { useDragStore } from '../drag/store'
 import { windowsPort } from './ports'
+import { WindowHeader } from './WindowHeader'
 
 /** Width of the edge strips a drag can split the whole dock at. */
 const EDGE_ZONE_SIZE = 60
@@ -20,7 +22,7 @@ const EDGES: SplitSide[] = ['left', 'bottom']
 export interface WindowViewProps {
   workspaceId: string
   windowId: WindowId
-  /** Shown while the window's dock is empty. */
+  /** Shown while the shown layout is empty; the creation menu by default. */
   emptyContent?: React.ReactNode
   /** Draw the drag ghost and indicators here (once per client window). */
   overlay?: boolean
@@ -32,13 +34,24 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
   const rootRef = useRef<HTMLDivElement>(null)
   const isDragging = useDragStore((s) => s.isDragging)
   const target = useDragStore((s) => s.target)
+  // The layout this client shows (a window with one layout shows no switcher).
+  const window = useDocument(workspaceId, (doc) => doc.windows[windowId])
+  const chosen = useClientState(workspaceId, (s) => s.activeLayouts[windowId])
+  const layoutId = window?.layouts.find((l) => l.id === chosen)?.id ?? window?.layouts[0]?.id ?? ''
+
+  // A shown canvas lets the grid show behind the strip, as its floating tab bar did.
+  const stacks = dockStacks(window?.layouts.find((l) => l.id === layoutId)?.dock)
+  const shown = useClientState(workspaceId, (s) => (stacks.length === 1 ? activeTabOf(s.activeTabs, stacks[0]) : null))
+  const shownType = useDocument(workspaceId, (doc) => (shown ? doc.panels[shown]?.type : undefined))
+  const floating = !!shownType && !!panelDefinition(shownType)?.chrome?.floatingTabBar
 
   useEffect(() => {
-    const dock = { windowId }
+    const dock = { layoutId }
     const stops = EDGES.map((edge) => registerDropZone({
       id: `edge-${workspaceId}-${windowId}-${edge}`,
       workspaceId,
       dock,
+      host: { windowId },
       edge,
       getRect: () => {
         const root = rootRef.current
@@ -50,15 +63,21 @@ export function WindowView({ workspaceId, windowId, emptyContent, overlay = true
       },
     }))
     return () => { for (const stop of stops) stop() }
-  }, [workspaceId, windowId])
+  }, [workspaceId, windowId, layoutId])
+
+  const host = useMemo(() => ({ windowId }), [windowId])
 
   const activeEdge = isDragging && target?.kind === 'dock-zone' && target.workspaceId === workspaceId
-    && 'windowId' in target.dock && target.dock.windowId === windowId ? target.edge : undefined
+    && target.dock.layoutId === layoutId ? target.edge : undefined
 
   return (
     <div ref={rootRef} data-window-view={windowId} className="flex flex-col h-full w-full min-h-0 min-w-0 relative">
+      {/* The tab strip: panels and layouts of the window. */}
+      {window && (
+        <WindowHeader workspaceId={workspaceId} window={window} activeLayoutId={layoutId} leadingInset={leadingInset} floating={floating} />
+      )}
       <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
-        <DockView workspaceId={workspaceId} dock={{ windowId }} emptyContent={emptyContent} leadingInset={leadingInset} />
+        <DockView workspaceId={workspaceId} dock={{ layoutId }} host={host} emptyContent={emptyContent ?? <EmptyDockChooser workspaceId={workspaceId} dock={{ layoutId }} />} compact />
       </div>
       {activeEdge && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 9998, pointerEvents: 'none' }}>
@@ -91,7 +110,7 @@ export function MainWindowView({ workspaceId, emptyContent, leadingInset }: {
     <WindowView
       workspaceId={workspaceId}
       windowId={MAIN_WINDOW}
-      emptyContent={emptyContent ?? <EmptyDockChooser workspaceId={workspaceId} />}
+      emptyContent={emptyContent}
       leadingInset={leadingInset}
     />
   )

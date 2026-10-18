@@ -19,6 +19,7 @@ import { canvasApi, panelApi } from '@workspace/document/contract/api'
 import {
   MAIN_WINDOW,
   canvasOf,
+  hostOf,
   placementOf,
   type DocChange,
   type JsonObject,
@@ -198,7 +199,7 @@ const sessionFile = (panelId: string) => path.join(dir, 'sessions', `${panelId}.
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 const record = (id: string, type: PanelType, extra: Partial<PanelRecord> = {}): PanelRecord => ({ id, type, title: id, fields: {}, ...extra })
 const addTo = (id: string, type: PanelType = 'terminal', stackId = 's1'): DocChange =>
-  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId } })
+  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { layoutId: 'main' }, stackId } })
 
 interface World {
   document: DocumentService
@@ -320,7 +321,7 @@ describe('session host lifecycle', () => {
     const canvasId = w.factory.createPanel('canvas')!
     const canvas = w.document.get().panels[canvasId].canvasId!
     const onCanvas = w.factory.createPanel('terminal', {
-      at: { to: 'canvas', canvasId: canvas, nodeId: 'n1', stackId: 'ns1', rect: { origin: { x: 0, y: 0 }, size } },
+      at: { to: 'canvas', canvasId: canvas, nodeId: 'n1', layoutId: 'L-n1', stackId: 'ns1', rect: { origin: { x: 0, y: 0 }, size } },
     })!
     // Near a panel on a canvas: a new node on the same canvas.
     const child = w.factory.createPanel('terminal', { near: onCanvas })!
@@ -328,9 +329,9 @@ describe('session host lifecycle', () => {
     expect(Object.keys(w.document.get().canvases[canvas].nodes)).toHaveLength(2)
     // A canvas panel near a panel on a canvas goes next to the canvas panel.
     const nested = w.factory.createPanel('canvas', { near: onCanvas })!
-    expect(placementOf(w.document.get(), nested)?.dock).toEqual({ windowId: MAIN_WINDOW })
+    expect(hostOf(w.document.get(), placementOf(w.document.get(), nested)!.dock.layoutId)).toEqual({ windowId: 'main' })
     const detached = w.factory.createPanel('terminal', {
-      at: { to: 'window', windowId: 'w2', stackId: 'ws1' },
+      at: { to: 'window', windowId: 'w2', layoutId: 'w2-main', stackId: 'ws1' },
     })!
     await w.host.restore()
 
@@ -493,11 +494,11 @@ describe('createPanel', () => {
   it('places next to the calling panel, on its canvas or in its stack, else the main window', () => {
     const w = world()
     const first = w.factory.createPanel('terminal')!
-    expect(placementOf(w.document.get(), first)?.dock).toEqual({ windowId: MAIN_WINDOW })
+    expect(placementOf(w.document.get(), first)?.dock).toEqual({ layoutId: 'main' })
     expect(w.document.get().panels[first].title).toBe('Terminal 1')
     const second = w.factory.createPanel('terminal', { near: first })!
     expect(w.document.get().panels[second].title).toBe('Terminal 2')
-    expect(placementOf(w.document.get(), second)).toMatchObject({ stackId: placementOf(w.document.get(), first)!.stackId, index: 1 })
+    expect(w.document.get().windows.main.layouts.map((l) => l.id)).toEqual(['main', placementOf(w.document.get(), second)!.dock.layoutId])
 
     const browser = w.factory.createPanel('browser', { url: 'https://example.com' })!
     expect(w.document.get().panels[browser].fields).toEqual({ url: 'https://example.com' })
@@ -535,7 +536,8 @@ describe('panel and canvas API handlers', () => {
     w.document.apply(addTo('term-caller'))
     const cli = w.tokens.issue({ kind: 'cli', panelId: 'term-caller' })
     const created = await w.router.call(cli.caller, 'cate.canvas.createPanel', { type: 'browser', url: 'https://a.test' }) as { panelId: string }
-    expect(placementOf(w.document.get(), created.panelId)).toMatchObject({ index: 1 })
+    expect(w.document.get().windows.main.layouts).toHaveLength(2)
+    expect(placementOf(w.document.get(), created.panelId)).toMatchObject({ index: 0 })
     await expect(w.router.call(cli.caller, 'cate.canvas.createPanel', { type: 'bogus' })).rejects.toMatchObject({ code: 'rejected' })
 
     const rows = await w.router.call(cli.caller, 'cate.panel.list', {}) as Array<{ panelId: string; url?: string }>

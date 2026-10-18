@@ -66,7 +66,7 @@ function setup(options: { active?: boolean } = {}) {
   }) as MobileBridge
   const agents = createMobileAgents(client, bridge)
   // The document names each agent's panel.
-  const ws = attachTestWorkspace('ws', buildDocument([add('p1', { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' })]))
+  const ws = attachTestWorkspace('ws', buildDocument([add('p1', { to: 'stack', dock: { layoutId: 'main' }, stackId: 's1' })]))
   const stop = () => { ws.detach(); stopResolver() }
   return { agents, panels, notifications, power, runtime, shown, withdrawn, stopResolver: stop, setConnection }
 }

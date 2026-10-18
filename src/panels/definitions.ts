@@ -60,7 +60,7 @@ export function freshRecord(doc: WorkspaceDocument, type: PanelType, options: Fr
 /** The types a surface can become where it sits. */
 export function surfaceChoices(doc: WorkspaceDocument, surfaceId: PanelId): AnyPanelDefinition[] {
   const placement = placementOf(doc, surfaceId)
-  const onCanvas = !!placement && isCanvasDock(placement.dock)
+  const onCanvas = !!placement && isCanvasDock(doc, placement.dock)
   return creatableDefinitions().filter((definition) => !onCanvas || definition.canLiveOnCanvas)
 }
 
@@ -73,6 +73,6 @@ export function surfaceReplacement(doc: WorkspaceDocument, surfaceId: PanelId, t
   const surface = doc.panels[surfaceId]
   if (!definition?.creation || !surface) return null
   const placement = placementOf(doc, surfaceId)
-  if (!definition.canLiveOnCanvas && placement && isCanvasDock(placement.dock)) return null
+  if (!definition.canLiveOnCanvas && placement && isCanvasDock(doc, placement.dock)) return null
   return freshRecord(doc, type, surface.worktreeId ? { worktreeId: surface.worktreeId } : {}, surfaceId)
 }

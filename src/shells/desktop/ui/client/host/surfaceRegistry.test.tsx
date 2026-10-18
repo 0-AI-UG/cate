@@ -1,7 +1,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PanelSurfaceSlot, registerPanelSurface, syncPanelSurfaces } from './surfaceRegistry'
+import { PanelSurfaceSlot, registerPanelSurface, resyncPanelSurfaces, syncPanelSurfaces } from './surfaceRegistry'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -236,4 +236,31 @@ it('parks a mounted guest without changing its logical viewport size', async () 
   expect(surface.dataset.browserSurfaceVisible).toBe('false')
   expect(surface.style.width).toBe(width)
   expect(surface.style.height).toBe(height)
+})
+
+it('parks a guest whose slot left the document without unmounting, like a stack hidden behind an expanded pane', async () => {
+  await frame()
+  expect(surface.dataset.browserSurfaceVisible).toBe('true')
+  const slot = host.querySelector<HTMLElement>('[data-browser-surface-slot]')!
+  const detached = document.createElement('div')
+  detached.append(slot)
+  act(() => syncPanelSurfaces())
+  expect(surface.dataset.browserSurfaceVisible).toBe('false')
+  expect(surface.style.visibility).toBe('hidden')
+})
+
+it('shows a parked guest again when its slot returns to the document, though nothing was watching it', async () => {
+  await frame()
+  const slot = host.querySelector<HTMLElement>('[data-browser-surface-slot]')!
+  const parent = slot.parentElement!
+  const detached = document.createElement('div')
+  detached.append(slot)
+  resyncPanelSurfaces()
+  await frame()
+  expect(surface.dataset.browserSurfaceVisible).toBe('false')
+  parent.append(slot)
+  resyncPanelSurfaces()
+  await frame()
+  expect(surface.dataset.browserSurfaceVisible).toBe('true')
+  expect(surface.style.visibility).toBe('visible')
 })

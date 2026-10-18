@@ -8,7 +8,7 @@ import { isCanvasDock, placementOf, stacksIn, type WorkspaceDocument } from '@wo
 
 export function besideTree(doc: WorkspaceDocument, treePanelId: string): PanelPlacementOptions {
   const placement = placementOf(doc, treePanelId)
-  if (!placement || isCanvasDock(placement.dock)) return { near: treePanelId }
+  if (!placement || isCanvasDock(doc, placement.dock)) return { near: treePanelId }
   const stacks = stacksIn(doc, placement.dock)
   const index = stacks.findIndex((stack) => stack.id === placement.stackId)
   const neighbour = stacks[index + 1] ?? stacks[index - 1]

@@ -13,6 +13,7 @@ import { useClientState, usePanelView } from '../../client/document'
 import { getClientSetting } from '../../kernel/settings'
 import { onPanelShortcut, panelTypeOpening } from '@client/host'
 import { type PanelViewProps } from '../../client/host/views'
+import { usePanelPaneControls } from '../../client/host/panelChrome'
 import { openDroppedFiles } from '../../app'
 import { pathDisplayName, pathKey, toRelativePath } from '@workspace/files/contract'
 import { recordRecentFile } from '@workspace/files/client'
@@ -238,6 +239,9 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
     event.stopPropagation()
   }
 
+  // The pane's maximize, drag and close sit at the end of the toolbar, not over its buttons.
+  const paneControls = usePanelPaneControls()
+
   // A collapsed editor leaves the layout, so Monaco stops measuring and drawing.
   const editorVisible = !treeOnly || !(sidebar.visible && !!snapshot?.checkout)
 
@@ -326,6 +330,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
             aria-label="Search sidebar"
             aria-pressed={sidebarVisible && sidebar.view === 'search'}
           ><Search size={15} /></button>
+          {paneControls}
         </div>
       </div>
       <div className="flex-1 min-h-0 flex" style={{ backgroundColor: background, '--file-explorer-bg': background } as CSSProperties}>

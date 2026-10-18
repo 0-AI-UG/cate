@@ -2,7 +2,6 @@
 // are shared with the input, and a failed op returns the input unchanged.
 // The runtime and every client mirror run this same function.
 
-import type { CanvasModel, CanvasNode } from './schema'
 import {
   dockPanels,
   findDockNode,
@@ -18,17 +17,18 @@ import {
   type DockNodeId,
   type DockStack,
 } from './dock'
-import type { DocBatch, DocChange, DockRef, DocOp, OpErrorCode, OpResult, PlaceTarget } from './ops'
+import type { DocBatch, DocChange, DockRef, DocOp, LayoutTarget, OpErrorCode, OpResult, PlaceTarget } from './ops'
 import { opChanges } from './ops'
-import { docIndex, dockOf, isCanvasDock, placementOf, sameDockRef } from './placement'
-import { canvasPanelOf } from './selectors'
+import { docIndex, dockOf, hostOf, isCanvasDock, isNodeHost, layoutById, layoutsIn, placementOf, sameDockRef, sameHost } from './placement'
+import { nodePanels, windowDockPanels } from './selectors'
 import {
   MAIN_WINDOW,
-  type DocWindow,
+  defaultLayoutName,
+  type DockLayout,
+  type HostRef,
   type PanelId,
   type PanelRecord,
   type SplitId,
-  type WindowId,
   type WorkspaceDocument,
 } from './schema'
 import { checkChange } from './validate'
@@ -71,6 +71,10 @@ function applyOne(doc: Doc, change: DocChange): Doc {
     case 'setSplitRatio': return setSplitRatio(doc, change.splitId, change.ratios)
     case 'setNodeRects': return setNodeRects(doc, change)
     case 'closeWindow': return closeWindow(doc, change.windowId)
+    case 'addLayout': return addLayout(doc, change)
+    case 'removeLayout': return removeLayout(doc, change)
+    case 'moveLayout': return moveLayout(doc, change)
+    case 'renameLayout': return renameLayout(doc, change)
     case 'addRelation': return addRelation(doc, change)
     case 'updateRelation': return updateRelation(doc, change)
     case 'removeRelation': return removeRelation(doc, change.id)
@@ -86,31 +90,38 @@ function applyOne(doc: Doc, change: DocChange): Doc {
 
 // --- Docks ---------------------------------------------------------------------
 
-/** Write a dock tree back. An emptied node or detached window goes with it. */
-function setDock(doc: Doc, ref: DockRef, dock: DockNode | null): Doc {
-  if (isCanvasDock(ref)) {
-    const canvas = doc.canvases[ref.canvasId]
-    const node = canvas.nodes[ref.nodeId]
-    if (node.dock === dock) return doc
-    let nodes: CanvasModel['nodes']
-    if (dock) nodes = { ...canvas.nodes, [ref.nodeId]: { ...node, dock } }
-    else {
-      const { [ref.nodeId]: _removed, ...rest } = canvas.nodes
+/** Replace a host's layouts. A host left with no panel in any layout goes
+ *  (a node or a detached window); the main window always stays. */
+function setLayouts(doc: Doc, host: HostRef, layouts: DockLayout[]): Doc {
+  const emptied = layouts.every((l) => l.dock === null)
+  if (isNodeHost(host)) {
+    const canvas = doc.canvases[host.canvasId]
+    let nodes = canvas.nodes
+    if (emptied) {
+      const { [host.nodeId]: _removed, ...rest } = nodes
       nodes = rest
-    }
+    } else nodes = { ...nodes, [host.nodeId]: { ...nodes[host.nodeId], layouts } }
     return { ...doc, canvases: { ...doc.canvases, [canvas.id]: { ...canvas, nodes } } }
   }
-  const window = doc.windows[ref.windowId]
-  if (window.dock === dock) return doc
-  if (!dock && window.kind === 'detached') {
+  const window = doc.windows[host.windowId]
+  if (window.kind === 'detached' && emptied) {
     const { [window.id]: _removed, ...windows } = doc.windows
     return { ...doc, windows }
   }
-  return setWindow(doc, { ...window, dock })
+  return { ...doc, windows: { ...doc.windows, [window.id]: { ...window, layouts } } }
 }
 
-function setWindow(doc: Doc, window: DocWindow): Doc {
-  return { ...doc, windows: { ...doc.windows, [window.id]: window } }
+/** Write a dock tree back. A window layout that empties is dropped, like a
+ *  closed browser tab, unless it is the window's only one (the main window
+ *  then offers the creation menu); an emptied node layout stays, empty. A host
+ *  left with only empty layouts goes. */
+function setDock(doc: Doc, ref: DockRef, dock: DockNode | null): Doc {
+  const host = hostOf(doc, ref.layoutId)!
+  const layouts = layoutsIn(doc, host)!
+  const layout = layouts.find((l) => l.id === ref.layoutId)!
+  if (layout.dock === dock) return doc
+  const dropped = dock === null && !isNodeHost(host) && layouts.length > 1
+  return setLayouts(doc, host, dropped ? layouts.filter((l) => l !== layout) : layouts.map((l) => (l === layout ? { ...l, dock } : l)))
 }
 
 /** Take a placed panel out of its dock, removing whatever that empties. */
@@ -127,13 +138,17 @@ function idInUse(doc: Doc, id: string): boolean {
   return index.stacks.has(id) || index.splits.has(id)
 }
 
-function targetsCanvas(target: PlaceTarget): boolean {
-  return target.to === 'canvas' || ((target.to === 'stack' || target.to === 'split') && isCanvasDock(target.dock))
+function layoutIdInUse(doc: Doc, id: string): boolean {
+  return docIndex(doc).layouts.has(id)
+}
+
+function targetsCanvas(doc: Doc, target: PlaceTarget): boolean {
+  return target.to === 'canvas' || (target.to === 'tab' && isNodeHost(target.host)) || ((target.to === 'stack' || target.to === 'split') && isCanvasDock(doc, target.dock))
 }
 
 /** Check that a target exists and its new ids are free. Throws otherwise. */
 function checkTargetIn(doc: Doc, record: PanelRecord, target: PlaceTarget): void {
-  if (record.canvasId !== undefined && targetsCanvas(target)) rejected('a canvas panel cannot be placed on a canvas')
+  if (record.canvasId !== undefined && targetsCanvas(doc, target)) rejected('a canvas panel cannot be placed on a canvas')
   switch (target.to) {
     case 'stack': {
       const tree = dockOf(doc, target.dock)
@@ -153,11 +168,19 @@ function checkTargetIn(doc: Doc, record: PanelRecord, target: PlaceTarget): void
     case 'canvas': {
       if (!doc.canvases[target.canvasId]) gone(`canvas ${target.canvasId}`)
       if (docIndex(doc).nodes.has(target.nodeId)) rejected(`node id ${target.nodeId} is in use`)
+      if (layoutIdInUse(doc, target.layoutId)) rejected(`layout id ${target.layoutId} is in use`)
+      if (idInUse(doc, target.stackId)) rejected(`stack id ${target.stackId} is in use`)
+      return
+    }
+    case 'tab': {
+      if (!layoutsIn(doc, target.host)) gone(isNodeHost(target.host) ? `node ${target.host.nodeId}` : `window ${target.host.windowId}`)
+      if (layoutIdInUse(doc, target.layoutId)) rejected(`layout id ${target.layoutId} is in use`)
       if (idInUse(doc, target.stackId)) rejected(`stack id ${target.stackId} is in use`)
       return
     }
     case 'window': {
       if (doc.windows[target.windowId]) rejected(`window id ${target.windowId} is in use`)
+      if (layoutIdInUse(doc, target.layoutId)) rejected(`layout id ${target.layoutId} is in use`)
       if (idInUse(doc, target.stackId)) rejected(`stack id ${target.stackId} is in use`)
       return
     }
@@ -181,18 +204,29 @@ function placeAt(doc: Doc, panelId: PanelId, target: PlaceTarget): Doc {
     }
     case 'canvas': {
       const canvas = doc.canvases[target.canvasId]
-      const node: CanvasNode = { id: target.nodeId, rect: target.rect, dock: stack(target.stackId) }
+      const layout = { id: target.layoutId, name: target.layoutName || defaultLayoutName([]), dock: stack(target.stackId) }
+      const node = { id: target.nodeId, rect: target.rect, layouts: [layout] }
       return {
         ...doc,
         canvases: { ...doc.canvases, [canvas.id]: { ...canvas, nodes: { ...canvas.nodes, [node.id]: node } } },
       }
+    }
+    case 'tab': {
+      const layouts = layoutsIn(doc, target.host)!
+      const layout = { id: target.layoutId, name: target.layoutName || defaultLayoutName(layouts), dock: stack(target.stackId) }
+      const at = target.index === undefined ? layouts.length : Math.max(0, Math.min(target.index, layouts.length))
+      return withLayouts(doc, target.host, [...layouts.slice(0, at), layout, ...layouts.slice(at)])
     }
     case 'window':
       return {
         ...doc,
         windows: {
           ...doc.windows,
-          [target.windowId]: { id: target.windowId, kind: 'detached', dock: stack(target.stackId) },
+          [target.windowId]: {
+            id: target.windowId,
+            kind: 'detached',
+            layouts: [{ id: target.layoutId, name: target.layoutName || defaultLayoutName([]), dock: stack(target.stackId) }],
+          },
         },
       }
   }
@@ -230,7 +264,7 @@ function replacePanel(doc: Doc, record: PanelRecord): Doc {
     const canvasId = record.canvasId
     if (next.canvases[canvasId]) rejected(`canvas id ${canvasId} is in use`)
     const placement = placementOf(doc, record.id)
-    if (placement && isCanvasDock(placement.dock)) rejected('a canvas panel cannot be placed on a canvas')
+    if (placement && isCanvasDock(doc, placement.dock)) rejected('a canvas panel cannot be placed on a canvas')
     next = { ...next, canvases: { ...next.canvases, [canvasId]: { id: canvasId, nodes: {} } } }
   }
   return next
@@ -264,7 +298,7 @@ export function removalSet(doc: Doc, ids: readonly PanelId[]): Set<PanelId> {
     const record = doc.panels[id]
     if (record?.canvasId === undefined) continue
     for (const node of Object.values(doc.canvases[record.canvasId]?.nodes ?? {})) {
-      for (const panelId of dockPanels(node.dock)) removed.add(panelId)
+      for (const panelId of nodePanels(node)) removed.add(panelId)
     }
   }
   return removed
@@ -321,6 +355,16 @@ function placePanel(doc: Doc, panelId: PanelId, target: PlaceTarget): Doc {
       return placeAt(next, panelId, { ...target, beside })
     }
   }
+  if (target.to === 'tab') {
+    // The host may have gone with the panel's last layout; the panel stays.
+    if (!layoutsIn(next, target.host)) return doc
+    // A sole layout that emptied (the main window's) would linger beside the new tab.
+    const left = current && layoutById(next, current.dock.layoutId)
+    if (left && left.dock === null && sameHost(hostOf(next, left.id)!, target.host)) {
+      const kept = layoutsIn(next, target.host)!.filter((l) => l !== left)
+      return placeAt(withLayouts(next, target.host, kept), panelId, target)
+    }
+  }
   return placeAt(next, panelId, target)
 }
 
@@ -352,7 +396,105 @@ function closeWindow(doc: Doc, windowId: string): Doc {
   const window = doc.windows[windowId]
   if (!window) gone(`window ${windowId}`)
   if (windowId === MAIN_WINDOW) rejected('the main window cannot be closed')
-  return removePanels(doc, dockPanels(window.dock))
+  return removePanels(doc, windowDockPanels(window))
+}
+
+// --- Layouts ---------------------------------------------------------------------
+
+function addLayout(doc: Doc, change: Extract<DocChange, { kind: 'addLayout' }>): Doc {
+  const layouts = layoutsIn(doc, change.host)
+  if (!layouts) gone(isNodeHost(change.host) ? `node ${change.host.nodeId}` : `window ${change.host.windowId}`)
+  if (layoutIdInUse(doc, change.layoutId)) rejected(`layout id ${change.layoutId} is in use`)
+  const layout = { id: change.layoutId, name: change.name || defaultLayoutName(layouts), dock: null }
+  const at = change.index === undefined ? layouts.length : Math.max(0, Math.min(change.index, layouts.length))
+  return withLayouts(doc, change.host, [...layouts.slice(0, at), layout, ...layouts.slice(at)])
+}
+
+/** Like setLayouts, but an empty layout is added to a host that holds panels,
+ *  so the host-removal rule must not fire on it. */
+function withLayouts(doc: Doc, host: HostRef, layouts: DockLayout[]): Doc {
+  if (isNodeHost(host)) {
+    const canvas = doc.canvases[host.canvasId]
+    const nodes = { ...canvas.nodes, [host.nodeId]: { ...canvas.nodes[host.nodeId], layouts } }
+    return { ...doc, canvases: { ...doc.canvases, [canvas.id]: { ...canvas, nodes } } }
+  }
+  const window = doc.windows[host.windowId]
+  return { ...doc, windows: { ...doc.windows, [window.id]: { ...window, layouts } } }
+}
+
+function removeLayout(doc: Doc, change: Extract<DocChange, { kind: 'removeLayout' }>): Doc {
+  const host = hostOf(doc, change.layoutId)
+  if (!host) gone(`layout ${change.layoutId}`)
+  const layouts = layoutsIn(doc, host)!
+  const layout = layouts.find((l) => l.id === change.layoutId)!
+  if (layouts.length === 1) rejected('a host keeps at least one layout')
+  // Removing the panels leaves the layout empty; it is dropped below.
+  const next = removePanels(doc, dockPanels(layout.dock))
+  const now = layoutsIn(next, host)
+  if (!now) return next
+  return setLayouts(next, host, now.filter((l) => l.id !== layout.id))
+}
+
+/** Whether a layout holds a canvas panel. */
+function holdsCanvasPanel(doc: Doc, layout: DockLayout): boolean {
+  return dockPanels(layout.dock).some((id) => doc.panels[id]?.canvasId !== undefined)
+}
+
+function moveLayout(doc: Doc, change: Extract<DocChange, { kind: 'moveLayout' }>): Doc {
+  const from = hostOf(doc, change.layoutId)
+  if (!from) gone(`layout ${change.layoutId}`)
+  const source = layoutsIn(doc, from)!
+  const layout = source.find((l) => l.id === change.layoutId)!
+  const to: LayoutTarget = change.to
+  const { to: kind } = to
+
+  // Where the layout lands, and the host it lands in.
+  let dest: HostRef
+  if (kind === 'host') {
+    dest = to.host
+    if (!layoutsIn(doc, dest)) gone(isNodeHost(dest) ? `node ${dest.nodeId}` : `window ${dest.windowId}`)
+  } else if (kind === 'window') {
+    if (doc.windows[to.windowId]) rejected(`window id ${to.windowId} is in use`)
+    dest = { windowId: to.windowId }
+  } else {
+    if (!doc.canvases[to.canvasId]) gone(`canvas ${to.canvasId}`)
+    if (docIndex(doc).nodes.has(to.nodeId)) rejected(`node id ${to.nodeId} is in use`)
+    dest = { canvasId: to.canvasId, nodeId: to.nodeId }
+  }
+  if (isNodeHost(dest) && holdsCanvasPanel(doc, layout)) rejected('a layout with a canvas panel cannot go on a canvas')
+  if (kind !== 'host' && layout.dock === null) rejected('a new host needs a layout with panels')
+
+  const same = sameHost(from, dest)
+  if (same) {
+    const rest = source.filter((l) => l !== layout)
+    const index = kind === 'host' && to.index !== undefined ? Math.max(0, Math.min(to.index, rest.length)) : rest.length
+    rest.splice(index, 0, layout)
+    return withLayouts(doc, from, rest)
+  }
+  if (!isNodeHost(from) && from.windowId === MAIN_WINDOW && source.length === 1) rejected('the main window keeps at least one layout')
+
+  // Leave the old host first (it may go), then join the new one.
+  let next = setLayouts(doc, from, source.filter((l) => l !== layout))
+  if (kind === 'window') {
+    next = { ...next, windows: { ...next.windows, [to.windowId]: { id: to.windowId, kind: 'detached', layouts: [layout] } } }
+  } else if (kind === 'canvas') {
+    const canvas = next.canvases[to.canvasId]
+    const node = { id: to.nodeId, rect: to.rect, layouts: [layout] }
+    next = { ...next, canvases: { ...next.canvases, [canvas.id]: { ...canvas, nodes: { ...canvas.nodes, [node.id]: node } } } }
+  } else {
+    const target = layoutsIn(next, dest)!
+    const index = to.index === undefined ? target.length : Math.max(0, Math.min(to.index, target.length))
+    next = withLayouts(next, dest, [...target.slice(0, index), layout, ...target.slice(index)])
+  }
+  return next
+}
+
+function renameLayout(doc: Doc, change: Extract<DocChange, { kind: 'renameLayout' }>): Doc {
+  const host = hostOf(doc, change.layoutId)
+  if (!host) gone(`layout ${change.layoutId}`)
+  if (!change.name.trim()) rejected('a layout needs a name')
+  const layouts = layoutsIn(doc, host)!.map((l) => (l.id === change.layoutId ? { ...l, name: change.name } : l))
+  return withLayouts(doc, host, layouts)
 }
 
 // --- Relations -------------------------------------------------------------------

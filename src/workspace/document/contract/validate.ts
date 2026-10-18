@@ -3,7 +3,7 @@
 
 import { isFiniteRect, type Point, type Rect } from '@workspace/canvas/contract'
 import type { DockNode } from './dock'
-import type { DocChange, PanelPatch, PlaceTarget, RelationPatch } from './ops'
+import type { DocChange, LayoutTarget, PanelPatch, PlaceTarget, RelationPatch } from './ops'
 import {
   isPanelType,
   RELATION_KINDS,
@@ -111,9 +111,24 @@ export function checkDock(v: unknown, depth = 0, parentDirection?: string): Prob
 }
 
 function checkDockRef(v: unknown): Problem {
-  if (!isObject(v)) return 'dock is not an object'
-  if ('canvasId' in v) return isId(v.canvasId) && isId(v.nodeId) ? null : 'dock names no node'
-  return isId(v.windowId) ? null : 'dock names no window'
+  return isObject(v) && isId(v.layoutId) ? null : 'dock names no layout'
+}
+
+function checkHostRef(v: unknown): Problem {
+  if (!isObject(v)) return 'host is not an object'
+  if ('canvasId' in v) return isId(v.canvasId) && isId(v.nodeId) ? null : 'host names no node'
+  return isId(v.windowId) ? null : 'host names no window'
+}
+
+function checkLayoutTarget(v: unknown): Problem {
+  if (!isObject(v)) return 'layout target is not an object'
+  const t = v as unknown as LayoutTarget
+  switch (t.to) {
+    case 'host': return checkHostRef(t.host) ?? (t.index === undefined || Number.isInteger(t.index) ? null : 'bad layout index')
+    case 'window': return isId(t.windowId) ? null : 'bad window target'
+    case 'canvas': return isId(t.canvasId) && isId(t.nodeId) && isRect(t.rect) ? null : 'bad canvas target'
+    default: return 'unknown layout target'
+  }
 }
 
 const SIDES = ['left', 'right', 'top', 'bottom']
@@ -129,9 +144,14 @@ export function checkTarget(v: unknown): Problem {
       return checkDockRef(t.dock) ?? (isId(t.beside) && SIDES.includes(t.side) && isId(t.stackId) && isId(t.splitId)
         ? null : 'bad split target')
     case 'canvas':
-      return isId(t.canvasId) && isId(t.nodeId) && isId(t.stackId) && isRect(t.rect) ? null : 'bad canvas target'
+      return isId(t.canvasId) && isId(t.nodeId) && isId(t.layoutId) && isId(t.stackId) && isRect(t.rect)
+        && (t.layoutName === undefined || typeof t.layoutName === 'string') ? null : 'bad canvas target'
+    case 'tab':
+      return checkHostRef(t.host) ?? (isId(t.layoutId) && isId(t.stackId) && (t.layoutName === undefined || typeof t.layoutName === 'string')
+        && (t.index === undefined || Number.isInteger(t.index)) ? null : 'bad tab target')
     case 'window':
-      return isId(t.windowId) && isId(t.stackId) ? null : 'bad window target'
+      return isId(t.windowId) && isId(t.layoutId) && isId(t.stackId) && (t.layoutName === undefined || typeof t.layoutName === 'string')
+        ? null : 'bad window target'
     default:
       return 'unknown target'
   }
@@ -179,6 +199,14 @@ export function checkChange(v: unknown): Problem {
     case 'closeWindow':
       if (!isId(c.windowId)) return 'no window id'
       return c.discard === undefined || (Array.isArray(c.discard) && c.discard.every(isId)) ? null : 'bad discard ids'
+    case 'addLayout':
+      return checkHostRef(c.host) ?? (isId(c.layoutId) && (c.name === undefined || typeof c.name === 'string')
+        && (c.index === undefined || Number.isInteger(c.index)) ? null : 'bad layout')
+    case 'removeLayout':
+      if (!isId(c.layoutId)) return 'bad layout'
+      return c.discard === undefined || (Array.isArray(c.discard) && c.discard.every(isId)) ? null : 'bad discard ids'
+    case 'moveLayout': return isId(c.layoutId) ? checkLayoutTarget(c.to) : 'bad layout'
+    case 'renameLayout': return isId(c.layoutId) && typeof c.name === 'string' ? null : 'bad layout'
     case 'addRelation': return checkRelation(c.relation)
     case 'updateRelation': return isId(c.id) ? checkRelationPatch(c.patch) : 'no relation id'
     case 'removeRelation': return isId(c.id) ? null : 'no relation id'

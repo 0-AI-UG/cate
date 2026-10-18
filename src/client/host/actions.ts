@@ -16,6 +16,8 @@ export interface ActionContext {
   workspaceId: string | null
   /** The canvas the request came from (its context menu), when one did. */
   canvasId?: string
+  /** The document window the request came from; the main window when absent. */
+  windowId?: string
 }
 
 export interface ActionBinding {

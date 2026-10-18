@@ -29,7 +29,7 @@ afterEach(async () => { await fs.rm(dir, { recursive: true, force: true }) })
 
 const record = (id: string, type: PanelType = 'terminal'): PanelRecord => ({ id, type, title: id, fields: {} })
 const addPanel = (id: string, type: PanelType = 'terminal'): DocChange =>
-  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' } })
+  ({ kind: 'addPanel', record: record(id, type), at: { to: 'stack', dock: { layoutId: 'main' }, stackId: 's1' } })
 const op = (clientId: string, counter: number, change: DocChange): DocOp => ({ ...change, opId: { clientId, counter } })
 const tick = () => new Promise<void>((r) => setTimeout(r, 0))
 
@@ -62,7 +62,7 @@ describe('document service', () => {
   it('forgets the op counters of clients not seen for a week', async () => {
     const day = 24 * 60 * 60_000
     await fs.writeFile(file, JSON.stringify({
-      version: 1,
+      version: 2,
       seq: 0,
       counters: { gone: 5, recent: 3 },
       lastSeen: { gone: Date.now() - 8 * day, recent: Date.now() - day },
@@ -110,6 +110,20 @@ describe('document service', () => {
     doc.dispose()
   })
 
+  it('asks the removal guard before a layout is removed, and honours its discard list', () => {
+    const doc = createDocumentService({ file })
+    doc.apply({ kind: 'addPanel', record: record('a'), at: { to: 'tab', host: { windowId: MAIN_WINDOW }, layoutId: 'L2', stackId: 's2' } })
+    doc.guardRemovals((removing, discard) => {
+      if (removing.has('a') && !discard.has('a')) throw new RpcError('dirty', 'a is busy')
+    })
+    const remove: DocChange = { kind: 'removeLayout', layoutId: 'L2' }
+    expect(doc.submit(op('c1', 1, remove))).toMatchObject({ status: 'failed', error: { code: 'dirty' } })
+    expect(doc.get().panels.a).toBeDefined()
+    expect(doc.submit(op('c1', 2, { ...remove, discard: ['a'] }))).toMatchObject({ status: 'applied' })
+    expect(doc.get().panels.a).toBeUndefined()
+    doc.dispose()
+  })
+
   it('persists debounced with seq and counters, and a resend after restart is not applied twice', async () => {
     const doc = createDocumentService({ file, debounceMs: 5 })
     doc.submit(op('c1', 1, addPanel('a')))
@@ -117,7 +131,7 @@ describe('document service', () => {
     await new Promise((r) => setTimeout(r, 30))
     await doc.flush()
     const saved = JSON.parse(await fs.readFile(file, 'utf8'))
-    expect(saved).toMatchObject({ version: 1, seq: 2, counters: { c1: 1, runtime: 1 } })
+    expect(saved).toMatchObject({ version: 2, seq: 2, counters: { c1: 1, runtime: 1 } })
     doc.dispose()
 
     const again = createDocumentService({ file })

@@ -11,7 +11,8 @@ export type DragSourceRole = 'whole-node' | 'tab' | null
 
 /** Returns the role this nodeId plays in the current drag, or null. */
 export function selectDragSourceRole(state: DragState, nodeId: string): DragSourceRole {
-  if (!state.isDragging || !state.source) return null
+  // A row of the sidebar's tree stands for the panel: its node and tab stay as they are.
+  if (!state.isDragging || !state.source || state.source.from === 'sidebar') return null
   const origin = state.source.origin
   if (origin.kind === 'canvas-node') {
     if (origin.nodeId === nodeId) return 'whole-node'
@@ -21,7 +22,7 @@ export function selectDragSourceRole(state: DragState, nodeId: string): DragSour
     return null
   }
   if (origin.kind === 'dock-tab') {
-    if ('nodeId' in origin.dock && origin.dock.nodeId === nodeId) return 'tab'
+    if ('nodeId' in origin.host && origin.host.nodeId === nodeId) return 'tab'
     return null
   }
   return null
@@ -34,6 +35,8 @@ export function selectDragSourceRoleForTab(
 ): 'tab' | null {
   if (!state.isDragging || !state.source) return null
   const src = state.source
+  // A drag that began on the sidebar's tree leaves the tab standing until the dock takes the drop: then the tab is the ghost.
+  if (src.from === 'sidebar' && !(state.target?.kind === 'dock-tab' || state.target?.kind === 'dock-split' || state.target?.kind === 'dock-zone')) return null
   if (src.origin.kind === 'dock-tab' && src.panelId === panelId) return 'tab'
   // A canvas-node drag of a single-panel node also "hides" the source, but
   // the whole node is hidden by useDragSourceVisibility(nodeId), which covers

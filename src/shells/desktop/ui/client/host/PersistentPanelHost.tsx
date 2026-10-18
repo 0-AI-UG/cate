@@ -8,7 +8,8 @@
 
 import { memo, useCallback, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { windowOf, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
+import { hostOf, isNodeHost, placementOf, windowOf, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
+import { clientStateFor, documentStoreFor } from '@client/document'
 import { useDocument } from '../document'
 import { panelDefinition } from '@client/host'
 import { PanelView, WorkspaceReady } from './PanelHost'
@@ -34,6 +35,27 @@ const PersistentPanelSurface = memo(function PersistentPanelSurface({
   })
   useLayoutEffect(() => registerPanelSurface(record.id, container, backgroundRoot), [backgroundRoot, container, record.id])
   useLayoutEffect(() => () => container.remove(), [container])
+  // The surface is drawn over its pane but is not inside it: the pane never sees
+  // a press in it, nor a webview taking the focus (which also blurs this window).
+  // So the surface focuses its panel itself, when it is shown in a dock; a canvas
+  // node does its own focusing.
+  useLayoutEffect(() => {
+    const focusPanel = () => {
+      const doc = documentStoreFor(workspaceId)?.getSnapshot()
+      const placement = doc && placementOf(doc, record.id)
+      const host = doc && placement && hostOf(doc, placement.dock.layoutId)
+      if (host && !isNodeHost(host)) clientStateFor(workspaceId)?.focus(record.id)
+    }
+    const onBlur = () => globalThis.setTimeout(() => { if (container.contains(document.activeElement)) focusPanel() }, 0)
+    container.addEventListener('pointerdown', focusPanel, true)
+    container.addEventListener('focusin', focusPanel)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      container.removeEventListener('pointerdown', focusPanel, true)
+      container.removeEventListener('focusin', focusPanel)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [container, workspaceId, record.id])
 
   const subscribe = useCallback((listener: () => void) => subscribeSurfaceVisibility(record.id, listener), [record.id])
   const visible = useSyncExternalStore(subscribe, () => isSurfaceVisible(record.id))

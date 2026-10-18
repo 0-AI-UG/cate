@@ -7,15 +7,15 @@ import './index'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
 
-const main = { windowId: MAIN_WINDOW }
+const main = { layoutId: 'main' }
 const rect = { origin: { x: 40, y: 40 }, size: { width: 400, height: 300 } }
 
 function twoCanvases() {
   return buildDocument([
     add('cv1', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C1' }),
     add('cv2', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C2' }),
-    add('a', { to: 'canvas', canvasId: 'C1', nodeId: 'N1', stackId: 'ns1', rect }),
-    add('b', { to: 'canvas', canvasId: 'C1', nodeId: 'N2', stackId: 'ns2', rect }),
+    add('a', { to: 'canvas', canvasId: 'C1', nodeId: 'N1', layoutId: 'L-N1', stackId: 'ns1', rect }),
+    add('b', { to: 'canvas', canvasId: 'C1', nodeId: 'N2', layoutId: 'L-N2', stackId: 'ns2', rect }),
   ])
 }
 
@@ -55,7 +55,7 @@ describe('closing a canvas', () => {
   it('the last canvas can only close, and asks with a plain confirm without the dialog', async () => {
     ws = attachTestWorkspace('w', buildDocument([
       add('cv1', { to: 'stack', dock: main, stackId: 's1' }, 'canvas', { canvasId: 'C1' }),
-      add('a', { to: 'canvas', canvasId: 'C1', nodeId: 'N1', stackId: 'ns1', rect }),
+      add('a', { to: 'canvas', canvasId: 'C1', nodeId: 'N1', layoutId: 'L-N1', stackId: 'ns1', rect }),
     ]))
     const ui = installMockClientUi({ confirm: vi.fn(async () => true) })
     expect(await closePanel('w', 'cv1')).toBe(true)

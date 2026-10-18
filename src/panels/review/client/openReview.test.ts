@@ -17,7 +17,7 @@ vi.mock('@client/document', () => ({
       return { ok: true }
     },
   }),
-  clientStateFor: () => ({ getSnapshot: () => ({ focusedPanelId: h.focused }), focus: h.focus, setActiveTab: () => {} }),
+  clientStateFor: () => ({ getSnapshot: () => ({ focusedPanelId: h.focused, activeLayouts: {} }), focus: h.focus, setActiveTab: () => {}, setActiveLayout: () => {} }),
 }))
 vi.mock('@kernel/rpc/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@kernel/rpc/client')>()),
@@ -30,7 +30,7 @@ import { agentCheckout, openAgentChanges, openReviewPanel } from './openReview'
 
 registerPanelDefinitions([review])
 
-const at = { to: 'stack' as const, dock: { windowId: MAIN_WINDOW }, stackId: 's1' }
+const at = { to: 'stack' as const, dock: { layoutId: 'main' }, stackId: 's1' }
 const add = (id: string, type: 'review' | 'terminal', fields = {}) => {
   h.doc = applyOp(h.doc, { kind: 'addPanel', record: { id, type, title: id, fields }, at }).doc
 }
@@ -75,7 +75,7 @@ it('opens agent changes in a new panel, or moves a chosen review to the agent ch
 
 it('places a new agent changes review where the caller picked', async () => {
   add('agent', 'terminal')
-  const picked = { to: 'split' as const, dock: { windowId: MAIN_WINDOW }, beside: 's1', side: 'right' as const, stackId: 'picked', splitId: 'split' }
+  const picked = { to: 'split' as const, dock: { layoutId: 'main' }, beside: 's1', side: 'right' as const, stackId: 'picked', splitId: 'split' }
   const id = await openAgentChanges({ workspaceId: 'ws', panelId: 'agent', cwd: '/wt', sessionId: 'session', focusedFile: 'a.ts', at: picked })
   expect(h.doc.panels[id!]).toMatchObject({ fields: { request: { focusedFile: 'a.ts', agentChanges: { panelId: 'agent', sessionId: 'session' } } } })
   expect(placementOf(h.doc, id!)?.stackId).toBe('picked')

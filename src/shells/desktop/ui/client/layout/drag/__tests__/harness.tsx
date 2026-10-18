@@ -10,11 +10,12 @@ import * as React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { canvasToView, type Point } from '@workspace/canvas/contract'
-import { MAIN_WINDOW, dockPanels, type DockRef, type WorkspaceDocument } from '@workspace/document/contract'
+import { nodePanels, type DockRef, type HostRef, type WorkspaceDocument } from '@workspace/document/contract'
 import { createClientIdentity, installClientIdentity } from '@client/connections'
 import { registerPanelDefinitions } from '@client/host'
 import type { ClientFeature } from '@kernel/rpc/contract'
 import { DockView } from '../../dock/DockView'
+import { WindowView } from '../../windows/WindowView'
 import { attachTestWorkspace, testPanelDefinitions, type TestWorkspace } from '../../../../../../../test/clientWorkspace'
 import { installDragShell, type DragShell } from '../ports'
 import { registerCanvasDropSurface, resetDragRegistry } from '../registry'
@@ -46,6 +47,13 @@ export interface SceneSpec {
   shell?: DragShell
   /** Node selection per canvas (group drags). */
   selection?: Record<string, string[]>
+  /** Draw the main window as the app does (tab strip, dock, edge zones), not a bare dock. */
+  window?: boolean
+  /** More UI drawn before the window (a test's own drop zones and drag sources): `setup` runs
+   *  before the first render and returns its teardown; `layOut` stubs its rects before each press. */
+  extra?: { node: React.ReactNode; setup?(): () => void; layOut?(root: Element): void }
+  /** Screen rects of other elements by selector (no hit testing: only their rects). */
+  rects?: Record<string, Box>
 }
 
 const domRect = (b: Box): DOMRect => ({
@@ -98,7 +106,7 @@ function TestCanvas({ spec, workspace }: { spec: CanvasSpec; workspace: TestWork
   return (
     <div ref={ref} data-test-canvas={spec.canvasId}>
       {nodes.map((node) => (
-        <TestNode key={node.id} spec={spec} nodeId={node.id} panelId={dockPanels(node.dock)[0]} workspace={workspace} />
+        <TestNode key={node.id} spec={spec} nodeId={node.id} panelId={nodePanels(node)[0]} workspace={workspace} />
       ))}
     </div>
   )
@@ -112,7 +120,9 @@ function TestNode({ spec, nodeId, panelId, workspace }: { spec: CanvasSpec; node
       stubRect(stack, () => nodeBox(workspace.document.getSnapshot(), spec, nodeId), 2)
     }
   })
-  const dock = React.useMemo<DockRef>(() => ({ canvasId: spec.canvasId, nodeId }), [spec.canvasId, nodeId])
+  const layoutId = workspace.document.getSnapshot().canvases[spec.canvasId].nodes[nodeId].layouts[0].id
+  const dock = React.useMemo<DockRef>(() => ({ layoutId }), [layoutId])
+  const host = React.useMemo<HostRef>(() => ({ canvasId: spec.canvasId, nodeId }), [spec.canvasId, nodeId])
   return (
     <div
       ref={ref}
@@ -135,7 +145,7 @@ function TestNode({ spec, nodeId, panelId, workspace }: { spec: CanvasSpec; node
         })
       }}
     >
-      {spec.miniDocks && <DockView workspaceId={WS} dock={dock} compact renderPanel={() => null} />}
+      {spec.miniDocks && <DockView workspaceId={WS} dock={dock} host={host} compact renderPanel={() => null} />}
     </div>
   )
 }
@@ -147,12 +157,15 @@ export interface Scene {
   mouse: {
     downOnTab(panelId: string, at?: Point): void
     downOnNode(nodeId: string, at?: Point): void
+    /** On the first element matching `selector`, at its middle unless `at`. */
+    downOn(selector: string, at?: Point): void
     moveTo(p: Point): void
     moveBy(d: Point): void
     /** Past the dead zone, then to start + delta. */
     dragBy(d: Point): void
     up(): void
     blur(): void
+    escape(): void
   }
   unmount(): void
 }
@@ -165,6 +178,7 @@ export function renderScene(spec: SceneSpec): Scene {
   const workspace = attachTestWorkspace(WS, spec.doc)
   for (const [canvasId, nodes] of Object.entries(spec.selection ?? {})) workspace.state.setSelection(canvasId, { nodes, active: null })
 
+  const teardownExtra = spec.extra?.setup?.()
   const container = document.createElement('div')
   document.body.append(container)
   const root: Root = createRoot(container)
@@ -172,8 +186,11 @@ export function renderScene(spec: SceneSpec): Scene {
   act(() => {
     root.render(
       <>
+        {spec.extra && <div data-test-extra>{spec.extra.node}</div>}
         <div data-test-main>
-          <DockView workspaceId={WS} dock={{ windowId: MAIN_WINDOW }} renderPanel={() => null} />
+          {spec.window
+            ? <WindowView workspaceId={WS} windowId="main" />
+            : <DockView workspaceId={WS} dock={{ layoutId: 'main' }} host={{ windowId: 'main' }} renderPanel={() => null} />}
         </div>
         {spec.canvases?.map((c) => <TestCanvas key={c.canvasId} spec={c} workspace={workspace} />)}
       </>,
@@ -190,6 +207,15 @@ export function renderScene(spec: SceneSpec): Scene {
     }
   }
   stubStacks()
+  const layOut = () => {
+    stubStacks()
+    for (const [selector, box] of Object.entries(spec.rects ?? {})) {
+      for (const el of container.querySelectorAll(selector)) Object.defineProperty(el, 'getBoundingClientRect', { value: () => domRect(box), configurable: true })
+    }
+    const extra = container.querySelector('[data-test-extra]')
+    if (extra) spec.extra?.layOut?.(extra)
+  }
+  layOut()
 
   let last: Point = { x: 0, y: 0 }
   const fire = (target: EventTarget, type: string, p: Point) => {
@@ -210,13 +236,19 @@ export function renderScene(spec: SceneSpec): Scene {
     mouse: {
       downOnTab(panelId, at) {
         stubStacks()
-        const el = container.querySelector(`[data-tab-panel-id="${panelId}"]`)
+        const el = container.querySelector(`[data-tab-panel-id="${panelId}"], [data-pane-drag="${panelId}"]`)
         if (!el) throw new Error(`no tab ${panelId}`)
         fire(el, 'mousedown', at ?? center(el))
       },
       downOnNode(nodeId, at) {
         const el = container.querySelector(`[data-node-id="${nodeId}"]`)
         if (!el) throw new Error(`no node ${nodeId}`)
+        fire(el, 'mousedown', at ?? center(el))
+      },
+      downOn(selector, at) {
+        layOut()
+        const el = container.querySelector(selector)
+        if (!el) throw new Error(`no ${selector}`)
         fire(el, 'mousedown', at ?? center(el))
       },
       moveTo(p) { fire(window, 'mousemove', p) },
@@ -228,6 +260,7 @@ export function renderScene(spec: SceneSpec): Scene {
       },
       up() { fire(window, 'mouseup', last) },
       blur() { act(() => { window.dispatchEvent(new Event('blur')) }) },
+      escape() { act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) }) },
     },
     unmount() {
       act(() => root.unmount())
@@ -238,6 +271,7 @@ export function renderScene(spec: SceneSpec): Scene {
       restoreShell()
       hitRects.clear()
       installClientIdentity(null)
+      teardownExtra?.()
       useDragStore.setState({ ...INITIAL_DRAG_STATE, pendingDetach: [] })
     },
   }

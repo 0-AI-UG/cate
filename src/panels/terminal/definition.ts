@@ -47,7 +47,7 @@ export const terminalDefinition = definePanel({
     { id: 'terminal.terminate', title: 'Kill Terminal Process', op: { kind: 'terminate' } },
   ],
   describe: (record) => cwdOf(record.fields),
-  chrome: { worktreeChip: true },
+  chrome: { worktreeChip: true, hoverPaneControls: true },
 })
 
 export default terminalDefinition

@@ -9,6 +9,7 @@ import {
   type PanelId,
   type WindowId,
   type WorkspaceDocument,
+  windowDockPanels,
 } from '@workspace/document/contract'
 
 /** Every panel's window, canvas children included. */
@@ -35,6 +36,6 @@ export function detachedWindows(doc: WorkspaceDocument): DocWindow[] {
 /** A short name for a window: its first tab's title. */
 export function windowTitle(doc: WorkspaceDocument, windowId: WindowId): string {
   if (windowId === MAIN_WINDOW) return 'Main'
-  const first = dockPanels(doc.windows[windowId]?.dock)[0]
+  const first = windowDockPanels(doc.windows[windowId])[0]
   return (first && doc.panels[first]?.title) || 'Window'
 }

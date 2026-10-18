@@ -13,6 +13,8 @@ import {
   createDocument,
   createSequencer,
   opChanges,
+  layoutById,
+  panelsInLayout,
   panelsInWindow,
   removalSet,
   parseDocument,
@@ -206,6 +208,10 @@ export function createDocumentService(options: DocumentServiceOptions): Document
           } else if (change.kind === 'removePanels' || change.kind === 'closeWindow') {
             const ids = change.kind === 'removePanels' ? change.ids : panelsInWindow(sequencer.doc, change.windowId)
             removing = removalSet(sequencer.doc, ids)
+            discard = new Set(change.discard ?? [])
+          } else if (change.kind === 'removeLayout') {
+            if (!layoutById(sequencer.doc, change.layoutId)) continue
+            removing = removalSet(sequencer.doc, panelsInLayout(sequencer.doc, change.layoutId))
             discard = new Set(change.discard ?? [])
           } else {
             continue

@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRuntime } from '../../kernel/rpc'
-import { Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
+import { Spinner, getActiveTheme, isMacKeyboard, subscribeTheme } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { bindTerminal, type TerminalBinding } from '@services/terminal/client'
 import { clientStateFor } from '@client/document'
@@ -18,13 +18,12 @@ import { useClaimPanelCorner } from '../../client/host/panelChrome'
 import { type PanelViewProps } from '../../client/host/views'
 import { dropFilesInto, isFileDrag } from '../../client/layout/drag'
 import { openClickedLink } from '../../app/links'
-import { isCanvasDock, placementOf } from '@workspace/document/contract'
+import { canvasOf } from '@workspace/document/contract'
 import type { TerminalOp, TerminalSnapshot } from '@panels/terminal/contract/types'
 import { shouldAdjustTerminalCoords } from './parts/coordAdjust'
 import { formatTerminalPaste } from './parts/drop'
 import { snapRenderScale } from './parts/renderScale'
 import { holdFocus } from './parts/holdFocus'
-import { isMacKeyboard } from './parts/platform'
 import { terminalOptions, terminalViewSettings, useTerminalOptions } from './parts/settings'
 import { useTerminalGrid } from './parts/grid'
 import { createTerminalXterm, type TerminalXterm } from './parts/xterm'
@@ -58,10 +57,15 @@ export default function TerminalView({
   useClaimPanelCorner(showSearch)
 
   const canvasId = useDocument(workspaceId, (doc) => {
-    const placement = placementOf(doc, panelId)
-    return placement && isCanvasDock(placement.dock) ? placement.dock.canvasId : null
+    return canvasOf(doc, panelId)
   })
   const zoom = useClientState(workspaceId, (state) => (canvasId ? state.viewports[canvasId]?.zoom ?? 1 : 1))
+
+  // The theme's terminal background also fills the box around the grid: the
+  // grid takes whole rows and columns, and the leftover strip would otherwise
+  // show the app background as a bar under the last row.
+  const [terminalBackground, setTerminalBackground] = useState(() => getActiveTheme().terminal.background)
+  useEffect(() => subscribeTheme((theme) => setTerminalBackground(theme.terminal.background)), [])
 
   // ---- The xterm: built once per view ---------------------------------------
 
@@ -336,6 +340,7 @@ export default function TerminalView({
       <div
         ref={containerRef}
         className="flex-1 relative min-h-0 overflow-hidden"
+        style={terminalBackground ? { backgroundColor: terminalBackground } : undefined}
         data-filedrop="terminal"
         data-filedrop-label="Drop to paste path"
         onDragOver={onDragOver}

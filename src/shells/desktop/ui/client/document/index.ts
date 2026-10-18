@@ -44,6 +44,7 @@ export function useDocument<T>(
 
 const EMPTY_CLIENT_STATE: ClientState = {
   activeTabs: {},
+  activeLayouts: {},
   focusedPanelId: null,
   focusEpoch: 0,
   viewing: [],

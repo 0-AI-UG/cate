@@ -7,7 +7,8 @@ import { sameDockRef } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
 import { useDragStore } from './store'
 import type { DragSource, DropTarget } from './types'
-import { canvasSurfaceAt, getDropZoneEntries } from './registry'
+import { canvasSurfaceAt, getDropZoneEntries, ownsFeedback } from './registry'
+import { focusBlue, warnAmber } from './ghostLook'
 import { ghostScreenRect } from './geometry'
 
 export function DragOverlay() {
@@ -62,13 +63,17 @@ export function DragOverlay() {
 
   return createPortal(
     <div data-drag-overlay="true" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 10000 }}>
-      <GhostWindow
-        left={rect.left}
-        top={rect.top}
-        width={rect.width}
-        height={rect.height}
-        title={panel.title}
-      />
+      {ownsFeedback(target) ? null : (
+        // Over a tab strip or the sidebar's tree the zone draws its own feedback (WindowHeader, WorkspaceRow).
+        <GhostWindow
+          left={rect.left}
+          top={rect.top}
+          width={rect.width}
+          height={rect.height}
+          title={panel.title}
+          refused={target?.kind === 'canvas-add' ? target.refused : undefined}
+        />
+      )}
       {memberGhosts.map((m) => (
         <GhostWindow key={m.key} left={m.left} top={m.top} width={m.width} height={m.height} title="" />
       ))}
@@ -118,16 +123,21 @@ function GhostWindow({
   width,
   height,
   title,
+  refused,
 }: {
   left: number
   top: number
   width: number
   height: number
   title: string
+  /** Why the drop is refused: the ghost turns amber and says so. */
+  refused?: string
 }) {
+  const accent = refused ? warnAmber : focusBlue
   return (
     <div
       data-drag-overlay-ghost="true"
+      data-drag-refused={refused ? 'true' : undefined}
       style={{
         position: 'absolute',
         left,
@@ -135,8 +145,8 @@ function GhostWindow({
         width,
         height,
         borderRadius: 8,
-        border: '1.5px solid rgba(74, 158, 255, 0.7)',
-        background: 'rgba(74, 158, 255, 0.08)',
+        border: `1.5px solid ${accent(70)}`,
+        background: accent(refused ? 14 : 8),
         boxShadow: '0 8px 24px var(--shadow-node)',
         pointerEvents: 'none',
         display: 'flex',
@@ -167,13 +177,15 @@ function GhostWindow({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: 'rgba(74, 158, 255, 0.85)',
+          color: accent(refused ? 100 : 85),
+          padding: '0 10px',
+          textAlign: 'center',
           fontSize: 11,
           fontWeight: 500,
           userSelect: 'none',
         }}
       >
-        Drop to place
+        {refused ?? 'Drop to place'}
       </div>
     </div>
   )
@@ -219,8 +231,8 @@ function DropIndicator({ target }: { target: DropTarget | null }) {
           top: r.top,
           width: r.width,
           height: r.height,
-          backgroundColor: 'rgba(74, 158, 255, 0.08)',
-          border: '2px dashed rgba(74, 158, 255, 0.4)',
+          backgroundColor: focusBlue(8),
+          border: `2px dashed ${focusBlue(40)}`,
           borderRadius: 6,
           pointerEvents: 'none',
         }}
@@ -257,8 +269,8 @@ function DropIndicator({ target }: { target: DropTarget | null }) {
         top: r.top,
         width: r.width,
         height: r.height,
-        backgroundColor: 'rgba(74, 158, 255, 0.12)',
-        border: '2px solid rgba(74, 158, 255, 0.5)',
+        backgroundColor: focusBlue(12),
+        border: `2px solid ${focusBlue(50)}`,
         borderRadius: 6,
         pointerEvents: 'none',
       }}
