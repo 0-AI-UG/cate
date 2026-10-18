@@ -149,8 +149,10 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
     // The ghost follows the cursor along y and stops at the first and last rows.
     const ghostTop = Math.max(wall.start, Math.min(cursorY - grab, wall.end - size))
     lifted.ghostTop = ghostTop
-    // The window whose layouts the cursor is over (or nearest to).
-    const distance = (s: Scope) => (cursorY < s.start ? s.start - cursorY : cursorY > s.end ? cursorY - s.end : 0)
+    // The window whose slots the ghost's top edge (what the models place by) is over or nearest to. By the cursor,
+    // a window's end slot (the edge at its last row's end, the cursor half a ghost lower) lay past the point where
+    // the next window took over, and the room between two windows (the "Other windows" label) was unreachable.
+    const distance = (s: Scope) => (ghostTop < s.start ? s.start - ghostTop : ghostTop > s.end ? ghostTop - s.end : 0)
     const k = scopes.reduce((best, s, i) => (distance(s) < distance(scopes[best]) ? i : best), 0)
     const jump = k !== lifted.active
     lifted.active = k

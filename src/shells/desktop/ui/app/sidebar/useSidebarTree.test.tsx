@@ -70,10 +70,12 @@ const rect = (left: number, right: number, top: number, bottom: number) =>
 
 /** As in WorkspaceRow.drag.test: every panel row is 28px with 2px of margin around it, so rows
  *  (and layouts) touch at 32px; the tree spans x 0..200, y 0..400. */
-function measure() {
+function measure(labelGap = 0) {
   let y = 0
   const leaves = new Map<Element, [number, number]>()
   for (const layout of host.querySelectorAll('[data-sb-key^="l:"]')) {
+    // The "Other windows" label sits above the first layout of another window.
+    if (labelGap && (layout as HTMLElement).dataset.sbKey!.includes('W2')) y += labelGap
     for (const leaf of layout.querySelectorAll('[data-panel-id]')) { leaves.set(leaf, [y + 2, y + 30]); y += 32 }
   }
   for (const [leaf, [top, bottom]] of leaves) (leaf as HTMLElement).getBoundingClientRect = () => rect(0, 200, top, bottom)
@@ -140,8 +142,24 @@ describe('the tree as a drop zone', () => {
     act(() => { ws.document.propose(add('e', { to: 'window', windowId: 'W2', layoutId: 'W2-main', stackId: 'ws2' })) })
     mountTree()
     // Window W2's row e is 128-160, below the main window's rows; a's row is lifted, so e moves up to 96-128.
-    expect(drop(foreign('a'), 100)).toMatchObject({ kind: 'tab-slot', host: { windowId: 'W2' }, index: 0, via: 'tree' })
+    expect(drop(foreign('a'), 116)).toMatchObject({ kind: 'tab-slot', host: { windowId: 'W2' }, index: 0, via: 'tree' })
     expect(drop(foreign('b'), 10)).toMatchObject({ kind: 'tab-slot', host: { windowId: MAIN_WINDOW }, index: 0, via: 'tree' })
+  })
+
+  it('the room between the main window\'s last row and the next window\'s first is not claimed by either, going down or up', () => {
+    act(() => { ws.document.propose(add('e', { to: 'window', windowId: 'W2', layoutId: 'W2-main', stackId: 'ws2' })) })
+    act(() => root.render(<Tree />))
+    measure(24)
+    // Main's rows end at 128 (96 with the dragged row gone); the label takes 128..152, W2's row follows.
+    const source = foreign('a')
+    const where = (y: number) => { const t = drop(source, y) as { host?: { windowId: string }; index?: number }; return `${t.host?.windowId}:${t.index}` }
+    const down = Array.from({ length: 30 }, (_, i) => where(80 + i * 4))
+    const up = Array.from({ length: 30 }, (_, i) => where(196 - i * 4)).reverse()
+    for (const sweep of [down, up]) {
+      // main's end slot holds for a stretch of the label's height, then the next window's first slot takes over
+      expect(sweep.filter((w) => w === `${MAIN_WINDOW}:2`).length).toBeGreaterThanOrEqual(3)
+      expect(sweep.indexOf('W2:0')).toBeGreaterThan(sweep.lastIndexOf(`${MAIN_WINDOW}:2`))
+    }
   })
 
   it('a foreign panel over its own row resolves a no-op target (commit returns null)', () => {
