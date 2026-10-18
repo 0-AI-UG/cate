@@ -59,8 +59,6 @@ export interface ActionSpec {
   icon?: IconName
   /** Listed in the command palette (default true). */
   palette?: boolean
-  /** Listed on the welcome page with its key. */
-  welcome?: boolean
   menu?: ActionMenuPlacement
   contextMenus?: readonly ActionContextMenu[]
   keys?: ActionKeyPolicy

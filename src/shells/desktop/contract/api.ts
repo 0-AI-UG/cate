@@ -243,10 +243,6 @@ export interface DesktopApi {
   }
   analytics: {
     track(feature: string, props?: Record<string, string | number | boolean>): void
-    feedbackPending(): Promise<{ fromVersion: string; toVersion: string } | null>
-    submitFeedback(feedback: { rating: number; comment: string }): Promise<{ ok: boolean; buffered?: boolean }>
-    dismissFeedback(): void
-    onFeedbackPrompt(listener: (prompt: { fromVersion: string; toVersion: string }) => void): () => void
   }
   capture: {
     /** This window as PNG bytes; `rect` in window CSS pixels. */

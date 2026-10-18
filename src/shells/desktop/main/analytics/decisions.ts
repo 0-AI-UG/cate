@@ -3,9 +3,6 @@
 
 export interface AnalyticsState {
   lastSeenVersion?: string
-  /** Show the post-update changelog and feedback dialog once for this version. */
-  pendingFeedbackForVersion?: string
-  pendingFeedbackFromVersion?: string
   /** The one-time install census was sent. */
   censusSent?: boolean
 }
@@ -27,28 +24,10 @@ export function sanitizeUsageProps(raw: unknown): Record<string, string | number
   return out
 }
 
-/** Clamp + truncate raw IPC payload from the renderer. Exported for tests. */
-export function sanitizeFeedbackPayload(payload: unknown): { rating: number; comment: string } {
-  const p = (payload ?? {}) as { rating?: unknown; comment?: unknown }
-  const rating = Math.max(1, Math.min(5, Math.round(Number(p.rating) || 0)))
-  const comment = typeof p.comment === 'string' ? p.comment.slice(0, 1000) : ''
-  return { rating, comment }
-}
-
 type UpdateAction =
-  // First install emits app_install but does NOT queue a feedback prompt: the
-  // onboarding tour is the first-run welcome, so the changelog/feedback dialog would
-  // overlap it. The dialog is for updates only.
   | { kind: 'first_install'; emit: 'app_install'; nextState: AnalyticsState }
-  | { kind: 'no_change'; nextState: AnalyticsState; prompt?: { from: string; to: string } }
-  | {
-      kind: 'version_changed'
-      emit: 'app_updated'
-      from: string
-      to: string
-      nextState: AnalyticsState
-      prompt?: { from: string; to: string }
-    }
+  | { kind: 'no_change'; nextState: AnalyticsState }
+  | { kind: 'version_changed'; emit: 'app_updated'; from: string; to: string; nextState: AnalyticsState }
 
 // ---------------------------------------------------------------------------
 // Install census: one-time backfill of installs that existed under an earlier
@@ -85,33 +64,17 @@ export function decideUpdateAction(current: string, state: AnalyticsState): Upda
     return {
       kind: 'first_install',
       emit: 'app_install',
-      // No pendingFeedback*: the first-run welcome is the onboarding tour, so we
-      // never surface the changelog/feedback dialog on a brand-new install.
       nextState: { ...state, lastSeenVersion: current },
     }
   }
 
-  if (previous === current) {
-    const action: UpdateAction = { kind: 'no_change', nextState: state }
-    // Re-prompt if a previous launch queued feedback but the user killed the
-    // app before answering. The pending flag is cleared on submit/dismiss.
-    if (state.pendingFeedbackForVersion === current) {
-      action.prompt = { from: state.pendingFeedbackFromVersion ?? previous, to: current }
-    }
-    return action
-  }
+  if (previous === current) return { kind: 'no_change', nextState: state }
 
   return {
     kind: 'version_changed',
     emit: 'app_updated',
     from: previous,
     to: current,
-    nextState: {
-      ...state,
-      lastSeenVersion: current,
-      pendingFeedbackForVersion: current,
-      pendingFeedbackFromVersion: previous,
-    },
-    prompt: { from: previous, to: current },
+    nextState: { ...state, lastSeenVersion: current },
   }
 }

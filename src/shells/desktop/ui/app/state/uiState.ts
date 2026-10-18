@@ -22,6 +22,8 @@ export interface UiStateValues {
   onboardingCompleted: boolean
   /** Collapsed rows of the sidebar workspace tree (keys from treeCollapse). */
   sidebarTreeCollapsed: string[]
+  /** The version whose "What's New" was shown ('' before the first). */
+  whatsNewSeenVersion: string
 }
 
 export const DEFAULT_UI_STATE: UiStateValues = {
@@ -29,6 +31,7 @@ export const DEFAULT_UI_STATE: UiStateValues = {
   telemetryNoticeAcknowledgedVersion: 0,
   onboardingCompleted: false,
   sidebarTreeCollapsed: [],
+  whatsNewSeenVersion: '',
 }
 
 export function normalizeUiState(raw: unknown): UiStateValues {
@@ -45,6 +48,7 @@ export function normalizeUiState(raw: unknown): UiStateValues {
     sidebarTreeCollapsed: Array.isArray(o.sidebarTreeCollapsed)
       ? o.sidebarTreeCollapsed.filter((k): k is string => typeof k === 'string')
       : DEFAULT_UI_STATE.sidebarTreeCollapsed,
+    whatsNewSeenVersion: typeof o.whatsNewSeenVersion === 'string' ? o.whatsNewSeenVersion : DEFAULT_UI_STATE.whatsNewSeenVersion,
   }
 }
 

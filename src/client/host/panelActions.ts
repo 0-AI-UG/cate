@@ -36,7 +36,6 @@ export function registerPanelActions(create: (type: string, context: ActionConte
         title: creation.title ?? `New ${definition.label}`,
         ...(creation.key ? { key: creation.key } : {}),
         ...(isIconName(definition.icon) ? { icon: definition.icon } : {}),
-        welcome: true,
         menu: { bar: 'file', group: 'new', order: creation.order },
       }
       bound[id] = { run: (context) => create(type, context) }

@@ -1,7 +1,7 @@
-// "Open…": one list of everywhere a workspace can come from: this device
-// (a folder picker), saved SSH machines, the hosts of the SSH config, WSL
+// "Open…": one list of everywhere a workspace can come from: a folder of
+// this device (first, so Enter opens the folder dialog), saved SSH machines, the hosts of the SSH config, WSL
 // distros and adding one by its ssh command; then joining a workspace on
-// another device with a code. Typing filters; arrows and Enter pick. A saved
+// another device with a code. Arrows and Enter pick. A saved
 // machine is removed from its row. The Open dialog shows it.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -19,7 +19,7 @@ import { forgetMachine } from './machines'
 interface PickerItem {
   key: string
   section: 'Machines' | 'Other devices'
-  /** Shown whatever is typed (adding a machine, joining). */
+  /** An action rather than a place (adding a machine, joining). */
   always?: boolean
   icon: ReactNode
   label: string
@@ -43,7 +43,6 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
   const saved = useClientSetting('sshMachines')
   const [hosts, setHosts] = useState<SshConfigHost[]>([])
   const [distros, setDistros] = useState<string[]>([])
-  const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const [adding, setAdding] = useState<string | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
@@ -72,28 +71,21 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
       if (await clientUi().confirm(`Remove ${label}? Its workspaces stay in the sidebar.`)) forgetMachine(id)
     }
     const out: PickerItem[] = []
-    const q = query.trim().toLowerCase()
-    const matches = (...words: (string | undefined)[]) => !q || words.some((w) => w?.toLowerCase().includes(q))
-
-
-    if (port && matches('This device', 'local folder')) {
-      out.push({ key: 'this', section: 'Machines', icon: <Monitor size={14} />, label: 'This device', hint: 'Open workspace…', run: () => void pickFolder() })
+    if (port) {
+      out.push({ key: 'this', section: 'Machines', icon: <Monitor size={14} />, label: 'Open a folder…', detail: 'This device', run: () => void pickFolder() })
     }
     if (setup) {
       const savedKeys = new Set(saved.map((m) => formatSshTarget(m.target)))
       for (const machine of saved) {
         const label = machine.target.destination
-        if (matches(label, machine.lastPath)) {
-          out.push({ key: `ssh:${machine.id}`, section: 'Machines', icon: <Server size={14} />, label, detail: 'SSH', hint: 'Browse…', run: openOn({ kind: 'ssh', target: machine.target }), remove: () => void removeMachine(machine.id, label) })
-        }
+        out.push({ key: `ssh:${machine.id}`, section: 'Machines', icon: <Server size={14} />, label, detail: 'SSH', hint: 'Browse…', run: openOn({ kind: 'ssh', target: machine.target }), remove: () => void removeMachine(machine.id, label) })
       }
       for (const host of hosts) {
         const target = { destination: host.alias }
-        if (savedKeys.has(formatSshTarget(target)) || !matches(host.alias, host.hostName, host.user)) continue
+        if (savedKeys.has(formatSshTarget(target))) continue
         out.push({ key: `config:${host.alias}`, section: 'Machines', icon: <Server size={14} />, label: host.alias, detail: 'SSH config', hint: 'Browse…', run: openOn({ kind: 'ssh', target }) })
       }
       for (const distro of distros) {
-        if (!matches(distro, 'wsl')) continue
         out.push({ key: `wsl:${distro}`, section: 'Machines', icon: <Server size={14} />, label: distro, detail: 'WSL', hint: 'Browse…', run: openOn({ kind: 'wsl', distro }) })
       }
       out.push({ key: 'add-ssh', section: 'Machines', always: true, icon: <Plus size={14} />, label: 'Add an SSH machine…', run: () => { setAdding(''); setAddError(null) } })
@@ -102,9 +94,8 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
       out.push({ key: 'join', section: 'Other devices', always: true, icon: <KeyRound size={14} />, label: 'Join with a code…', run: () => ui.openJoinDialog() })
     }
     return out
-  }, [hosts, distros, saved, query, port, setup, onPicked, app])
+  }, [hosts, distros, saved, port, setup, onPicked, app])
 
-  useEffect(() => { setActive(0) }, [query])
   useEffect(() => {
     listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest' })
   }, [active])
@@ -118,20 +109,20 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
   let lastSection: string | null = null
   return (
     <div className="flex flex-col min-h-0">
-      <input
+      <div
+        ref={listRef}
+        role="listbox"
+        aria-label="Machines"
+        tabIndex={0}
         autoFocus={autoFocus}
-        aria-label="Search machines"
-        placeholder="Search machines"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
+          // The SSH command field and the rows' buttons keep their own keys.
+          if (e.target !== e.currentTarget) return
           if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, items.length - 1)) }
           if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)) }
           if (e.key === 'Enter') { e.preventDefault(); items[active]?.run() }
         }}
-        className={inputCls}
-      />
-      <div ref={listRef} role="listbox" aria-label="Machines" className={`mt-2 min-h-0 overflow-y-auto ${listClassName}`}>
+        className={`min-h-0 overflow-y-auto outline-none ${listClassName}`}>
         {items.map((item, index) => {
           const header = item.section !== lastSection ? item.section : null
           lastSection = item.section

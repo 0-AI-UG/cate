@@ -181,10 +181,6 @@ const api: DesktopApi = {
   },
   analytics: {
     track: (feature, props) => ipcRenderer.send(C.analyticsTrack, feature, props),
-    feedbackPending: () => invoke(C.analyticsFeedbackPending),
-    submitFeedback: (feedback) => invoke(C.analyticsFeedbackSubmit, feedback),
-    dismissFeedback: () => ipcRenderer.send(C.analyticsFeedbackDismiss),
-    onFeedbackPrompt: (listener) => listen(C.analyticsFeedbackPrompt, listener),
   },
   capture: {
     window: (rect) => invoke(C.captureWindow, rect),

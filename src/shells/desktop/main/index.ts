@@ -100,13 +100,6 @@ const analytics = createAnalytics({
       resolve(false)
     }
   }),
-  promptFeedback: (prompt) => {
-    // After the first paint, so the dialog does not compete with it.
-    setTimeout(() => {
-      const main = registry.activeMain()
-      if (main) main.win.webContents.send(C.analyticsFeedbackPrompt, prompt)
-    }, 2500)
-  },
 })
 
 // `npm run dev:update:<level>`: launch as if just updated from one level below.

@@ -29,7 +29,7 @@ const pans = { yieldToOverlay: true, yieldToText: true, windowOnly: true } as co
 export const CANVAS_ACTIONS = defineActions({
   zoomIn: { title: 'Zoom In', key: key('=', { command: true }), aliasKeys: [key('=', { command: true, shift: true }), key('+', { command: true })], menu: { bar: 'view', group: 'zoom', order: 0 } },
   zoomOut: { title: 'Zoom Out', key: key('-', { command: true }), menu: { bar: 'view', group: 'zoom', order: 1 } },
-  zoomReset: { title: 'Reset Zoom', key: key('0', { command: true }), welcome: true, menu: { bar: 'view', group: 'zoom', order: 2 } },
+  zoomReset: { title: 'Reset Zoom', key: key('0', { command: true }), menu: { bar: 'view', group: 'zoom', order: 2 } },
   zoomToFit: { title: 'Zoom to Fit', key: key('1', { command: true }), menu: { bar: 'view', group: 'zoom', order: 3 }, contextMenus: ['canvas'] },
   zoomToSelection: { title: 'Zoom to Selection', key: key('2', { command: true }) },
   focusNext: { title: 'Next Panel', key: key('\t', { control: true }), menu: { bar: 'go', group: 'panels', order: 0 } },

@@ -1,5 +1,4 @@
-// ui/app's DesktopPort over the desktop IPC: the updater, the post-update
-// feedback prompt, native menus, the window-controls inset, ssh's prompts,
+// ui/app's DesktopPort over the desktop IPC: the updater, native menus, the window-controls inset, ssh's prompts,
 // runtime install progress and analytics.
 
 import type { DesktopPort, UpdateStatus } from '../ui/app'
@@ -31,13 +30,6 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
     onUpdateStatus: (listener) => api.updates.onStatus((status) => listener(toUpdateStatus(status))),
     checkForUpdates: () => api.updates.check(),
     quitAndInstallUpdate: () => api.updates.install(),
-    pendingFeedback: () => api.analytics.feedbackPending(),
-    onFeedbackPrompt: (listener) => api.analytics.onFeedbackPrompt(listener),
-    dismissFeedback: () => api.analytics.dismissFeedback(),
-    async submitFeedback({ rating, comment }) {
-      const result = await api.analytics.submitFeedback({ rating, comment: comment ?? '' })
-      return { buffered: !!result.buffered }
-    },
     showContextMenu: (items) => api.menu.showContextMenu(items),
     onMenuAction: (listener) => api.menu.onAction(listener),
     // Only macOS draws native controls over the content; in fullscreen they hide.

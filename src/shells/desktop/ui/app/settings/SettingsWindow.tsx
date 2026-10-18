@@ -6,7 +6,7 @@
 //
 // The search box filters rows across every page (SettingsSearchContext from
 // kernel/interaction); empty pages collapse and the nav lists only pages with matches.
-// The nav renders into the sidebar's `settings-sidebar-slot` and the content
+// The nav renders into the sidebar's `overlay-sidebar-slot` and the content
 // into the shell's `settings-content-slot` when both exist, else the window
 // takes the whole screen.
 
@@ -100,7 +100,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const shownPages = useMemo(() => pages.filter((p) => searching || p.scope === scope), [pages, searching, scope])
 
   useLayoutEffect(() => {
-    const sidebar = document.getElementById('settings-sidebar-slot')
+    const sidebar = document.getElementById('overlay-sidebar-slot')
     const content = document.getElementById('settings-content-slot')
     if (sidebar && content) setSlots({ sidebar, content })
   }, [])

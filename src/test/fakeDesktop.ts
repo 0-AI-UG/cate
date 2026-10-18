@@ -105,13 +105,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       onNotificationAction: off,
     },
     updates: { status: async () => ({ state: 'idle', version: null }), check: async () => {}, install: async () => false, onStatus: off },
-    analytics: {
-      track: () => {},
-      feedbackPending: async () => null,
-      submitFeedback: async () => ({ ok: true }),
-      dismissFeedback: () => {},
-      onFeedbackPrompt: off,
-    },
+    analytics: { track: () => {} },
     capture: {
       window: async () => null,
       recentScreenshots: async () => [],

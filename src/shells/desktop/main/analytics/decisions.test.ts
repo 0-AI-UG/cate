@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { decideCensusAction, decideUpdateAction, sanitizeFeedbackPayload, sanitizeUsageProps } from './decisions'
+import { decideCensusAction, decideUpdateAction, sanitizeUsageProps } from './decisions'
 
 describe('sanitizeUsageProps', () => {
   test('keeps small primitives and drops everything else', () => {
@@ -22,103 +22,32 @@ describe('sanitizeUsageProps', () => {
 })
 
 describe('decideUpdateAction', () => {
-  test('first launch: emits app_install, persists version, and does NOT queue a prompt', () => {
+  test('first launch: emits app_install and persists the version', () => {
     const action = decideUpdateAction('1.0.0', {})
     expect(action.kind).toBe('first_install')
-    if (action.kind !== 'first_install') return
-    expect(action.emit).toBe('app_install')
-    // The onboarding tour is the first-run welcome: no feedback/promo dialog.
     expect(action.nextState).toEqual({ lastSeenVersion: '1.0.0' })
-    expect('prompt' in action).toBe(false)
   })
 
-  test('same version, no pending feedback: no event, no prompt, state unchanged', () => {
+  test('same version: no event, state unchanged', () => {
     const state = { lastSeenVersion: '1.0.0' }
     const action = decideUpdateAction('1.0.0', state)
     expect(action.kind).toBe('no_change')
-    if (action.kind !== 'no_change') return
-    expect(action.prompt).toBeUndefined()
-    expect(action.nextState).toBe(state) // referentially unchanged
+    expect(action.nextState).toBe(state)
   })
 
-  test('same version with pending feedback: re-prompts using stored from/to', () => {
-    const state = {
-      lastSeenVersion: '1.0.0',
-      pendingFeedbackForVersion: '1.0.0',
-      pendingFeedbackFromVersion: '0.9.0',
-    }
-    const action = decideUpdateAction('1.0.0', state)
-    expect(action.kind).toBe('no_change')
-    if (action.kind !== 'no_change') return
-    expect(action.prompt).toEqual({ from: '0.9.0', to: '1.0.0' })
-  })
-
-  test('same version with pending feedback but no from-version: falls back to previous', () => {
-    const state = { lastSeenVersion: '1.0.0', pendingFeedbackForVersion: '1.0.0' }
-    const action = decideUpdateAction('1.0.0', state)
-    if (action.kind !== 'no_change') throw new Error('expected no_change')
-    expect(action.prompt).toEqual({ from: '1.0.0', to: '1.0.0' })
-  })
-
-  test('version changed: emits app_updated, queues prompt, persists new version + pending flags', () => {
+  test('version changed: emits app_updated and persists the new version', () => {
     const action = decideUpdateAction('1.1.0', { lastSeenVersion: '1.0.0' })
     expect(action.kind).toBe('version_changed')
     if (action.kind !== 'version_changed') return
     expect(action.emit).toBe('app_updated')
     expect(action.from).toBe('1.0.0')
     expect(action.to).toBe('1.1.0')
-    expect(action.prompt).toEqual({ from: '1.0.0', to: '1.1.0' })
-    expect(action.nextState).toEqual({
-      lastSeenVersion: '1.1.0',
-      pendingFeedbackForVersion: '1.1.0',
-      pendingFeedbackFromVersion: '1.0.0',
-    })
+    expect(action.nextState).toEqual({ lastSeenVersion: '1.1.0' })
   })
 
   test('version downgrade is still treated as a change (defensive)', () => {
     const action = decideUpdateAction('0.9.0', { lastSeenVersion: '1.0.0' })
     expect(action.kind).toBe('version_changed')
-    if (action.kind !== 'version_changed') return
-    expect(action.from).toBe('1.0.0')
-    expect(action.to).toBe('0.9.0')
-  })
-
-  test('first launch never triggers the feedback dialog (the tour is the welcome)', () => {
-    const action = decideUpdateAction('2.0.0', {})
-    expect(action.kind).toBe('first_install')
-    if (action.kind !== 'first_install') return
-    expect('prompt' in action).toBe(false)
-    expect(action.nextState.pendingFeedbackForVersion).toBeUndefined()
-  })
-
-  test('major/minor version update triggers the dialog prompt', () => {
-    const action = decideUpdateAction('2.0.0', { lastSeenVersion: '1.5.0' })
-    expect(action.kind).toBe('version_changed')
-    if (action.kind !== 'version_changed') return
-    expect(action.prompt).toBeDefined()
-    expect(action.prompt!.from).toBe('1.5.0')
-    expect(action.prompt!.to).toBe('2.0.0')
-    expect(action.nextState.pendingFeedbackForVersion).toBe('2.0.0')
-    expect(action.nextState.pendingFeedbackFromVersion).toBe('1.5.0')
-  })
-
-  test('patch-only update also triggers the changelog dialog prompt', () => {
-    const action = decideUpdateAction('1.0.1', { lastSeenVersion: '1.0.0' })
-    expect(action.kind).toBe('version_changed')
-    if (action.kind !== 'version_changed') return
-    expect(action.emit).toBe('app_updated')
-    expect(action.from).toBe('1.0.0')
-    expect(action.to).toBe('1.0.1')
-    expect(action.prompt).toEqual({ from: '1.0.0', to: '1.0.1' })
-    expect(action.nextState.pendingFeedbackForVersion).toBe('1.0.1')
-    expect(action.nextState.pendingFeedbackFromVersion).toBe('1.0.0')
-  })
-
-  test('normal launch (same version, no pending) does NOT trigger dialog', () => {
-    const action = decideUpdateAction('1.0.0', { lastSeenVersion: '1.0.0' })
-    expect(action.kind).toBe('no_change')
-    if (action.kind !== 'no_change') return
-    expect(action.prompt).toBeUndefined()
   })
 
   test('does not lose unrelated fields when merging state', () => {
@@ -156,47 +85,11 @@ describe('decideCensusAction', () => {
 
   test('preserves unrelated state fields when marking censusSent', () => {
     const action = decideCensusAction(
-      { lastSeenVersion: '1.0.0', pendingFeedbackForVersion: '1.0.0' },
+      { lastSeenVersion: '1.0.0', ...(({ futureField: 'keep' } as unknown) as object) },
       false,
     )
     if (action.kind !== 'backfill') throw new Error('expected backfill')
-    expect(action.nextState.pendingFeedbackForVersion).toBe('1.0.0')
+    expect((action.nextState as Record<string, unknown>).futureField).toBe('keep')
     expect(action.nextState.censusSent).toBe(true)
-  })
-})
-
-describe('sanitizeFeedbackPayload', () => {
-  test('clamps rating into 1..5', () => {
-    expect(sanitizeFeedbackPayload({ rating: 0 }).rating).toBe(1)
-    expect(sanitizeFeedbackPayload({ rating: -3 }).rating).toBe(1)
-    expect(sanitizeFeedbackPayload({ rating: 99 }).rating).toBe(5)
-    expect(sanitizeFeedbackPayload({ rating: 3 }).rating).toBe(3)
-  })
-
-  test('rounds fractional ratings', () => {
-    expect(sanitizeFeedbackPayload({ rating: 3.4 }).rating).toBe(3)
-    expect(sanitizeFeedbackPayload({ rating: 3.6 }).rating).toBe(4)
-  })
-
-  test('coerces non-numeric ratings to 1 (lower clamp of NaN)', () => {
-    expect(sanitizeFeedbackPayload({ rating: 'three' }).rating).toBe(1)
-    expect(sanitizeFeedbackPayload({}).rating).toBe(1)
-    expect(sanitizeFeedbackPayload(null).rating).toBe(1)
-    expect(sanitizeFeedbackPayload(undefined).rating).toBe(1)
-  })
-
-  test('truncates comment to 1000 characters', () => {
-    const long = 'x'.repeat(1500)
-    const result = sanitizeFeedbackPayload({ rating: 5, comment: long })
-    expect(result.comment).toHaveLength(1000)
-  })
-
-  test('non-string comment becomes empty string', () => {
-    expect(sanitizeFeedbackPayload({ rating: 5, comment: 42 }).comment).toBe('')
-    expect(sanitizeFeedbackPayload({ rating: 5 }).comment).toBe('')
-  })
-
-  test('preserves a short string comment as-is', () => {
-    expect(sanitizeFeedbackPayload({ rating: 4, comment: 'looks great' }).comment).toBe('looks great')
   })
 })

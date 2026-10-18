@@ -121,3 +121,16 @@ export function App({ client }: { client: DesktopClient }) {
   if (window.kind === 'detached') return <DetachedApp client={client} workspaceId={window.workspaceId} windowId={window.windowId} />
   return <MainApp client={client} />
 }
+
+/** What a window shows when it cannot start. Kept out of main.tsx: a component
+ *  there makes the entry a fast-refresh boundary, so an HMR update re-runs
+ *  the boot over the mounted tree instead of reloading. */
+export function BootFailed({ error }: { error: unknown }) {
+  return (
+    <div style={{ color: '#f87171', padding: 20, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+      <h2>Cate could not start this window</h2>
+      <p>{error instanceof Error ? error.message : String(error)}</p>
+      <button type="button" onClick={() => window.location.reload()} style={{ marginTop: 16, padding: '8px 16px' }}>Reload</button>
+    </div>
+  )
+}

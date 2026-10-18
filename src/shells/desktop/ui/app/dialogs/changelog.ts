@@ -1,13 +1,21 @@
 export const CHANGELOG_URL = 'https://github.com/0-AI-UG/cate/blob/main/CHANGELOG.md'
 
-interface ChangelogSection {
-  title: string
+/** Items under a `####` heading (or none) of a section. */
+interface ChangelogGroup {
+  title?: string
   items: string[]
 }
 
-interface ChangelogRelease {
+interface ChangelogSection {
+  title: string
+  groups: ChangelogGroup[]
+}
+
+export interface ChangelogRelease {
   version: string
   date?: string
+  /** What follows the date in the heading ("withdrawn"). */
+  note?: string
   summary?: string
   sections: ChangelogSection[]
 }
@@ -17,6 +25,7 @@ export function parseChangelog(markdown: string): ChangelogRelease[] {
   const releases: ChangelogRelease[] = []
   let release: ChangelogRelease | null = null
   let section: ChangelogSection | null = null
+  let group: ChangelogGroup | null = null
   const summaryLines: string[] = []
 
   const finishRelease = (): void => {
@@ -26,18 +35,20 @@ export function parseChangelog(markdown: string): ChangelogRelease[] {
     releases.push(release)
     release = null
     section = null
+    group = null
     summaryLines.length = 0
   }
 
   for (const rawLine of markdown.split(/\r?\n/)) {
     const line = rawLine.trim()
-    const releaseMatch = line.match(/^## \[([^\]]+)\](?:\s+-\s+(\d{4}-\d{2}-\d{2}))?$/)
+    const releaseMatch = line.match(/^## \[([^\]]+)\](?:\s+-\s+(\d{4}-\d{2}-\d{2}))?(?:\s+\(([^)]+)\))?$/)
     if (releaseMatch) {
       finishRelease()
       if (releaseMatch[1].toLowerCase() !== 'unreleased') {
         release = {
           version: releaseMatch[1],
           ...(releaseMatch[2] ? { date: releaseMatch[2] } : {}),
+          ...(releaseMatch[3] ? { note: releaseMatch[3] } : {}),
           sections: [],
         }
       }
@@ -48,17 +59,29 @@ export function parseChangelog(markdown: string): ChangelogRelease[] {
 
     const sectionMatch = line.match(/^### (.+)$/)
     if (sectionMatch) {
-      section = { title: sectionMatch[1], items: [] }
+      section = { title: sectionMatch[1], groups: [] }
+      group = null
       release.sections.push(section)
+      continue
+    }
+
+    const groupMatch = line.match(/^#### (.+)$/)
+    if (groupMatch && section) {
+      group = { title: groupMatch[1], items: [] }
+      section.groups.push(group)
       continue
     }
 
     if (line.startsWith('- ')) {
       if (!section) {
-        section = { title: 'Highlights', items: [] }
+        section = { title: 'Highlights', groups: [] }
         release.sections.push(section)
       }
-      section.items.push(line.slice(2).trim())
+      if (!group) {
+        group = { items: [] }
+        section.groups.push(group)
+      }
+      group.items.push(line.slice(2).trim())
       continue
     }
 
@@ -78,16 +101,30 @@ export function findChangelogRelease(
   return releases.find((release) => release.version.replace(/^v/, '') === normalized) ?? null
 }
 
-/** An item's lead (its bold feature name), or the whole item, without
- *  inline Markdown. */
-export function changelogHeadline(item: string): string {
-  const feature = item.match(/^\*\*(.+?)\*\*/)
-  return stripInlineMarkdown(feature ? feature[1] : item)
+/** A release line (`2.1`) and its releases, newest first. */
+export interface ChangelogMinor {
+  line: string
+  releases: ChangelogRelease[]
 }
 
-export function stripInlineMarkdown(value: string): string {
-  return value
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
+/** A major version and its release lines, newest first. */
+export interface ChangelogMajor {
+  major: string
+  minors: ChangelogMinor[]
+}
+
+/** The releases (newest first, as the changelog lists them) by major
+ *  version, then by release line. */
+export function groupChangelog(releases: ChangelogRelease[]): ChangelogMajor[] {
+  const majors: ChangelogMajor[] = []
+  for (const release of releases) {
+    const [major = release.version, minor = '0'] = release.version.replace(/^v/, '').split(/[.-]/)
+    const line = `${major}.${minor}`
+    let group = majors.find((m) => m.major === major)
+    if (!group) majors.push(group = { major, minors: [] })
+    let lineGroup = group.minors.find((m) => m.line === line)
+    if (!lineGroup) group.minors.push(lineGroup = { line, releases: [] })
+    lineGroup.releases.push(release)
+  }
+  return majors
 }

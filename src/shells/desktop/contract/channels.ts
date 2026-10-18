@@ -50,10 +50,6 @@ export const DESKTOP_CHANNELS = {
   updateInstall: 'cate-desktop:update:install',
 
   analyticsTrack: 'cate-desktop:analytics:track',
-  analyticsFeedbackPending: 'cate-desktop:analytics:feedback-pending',
-  analyticsFeedbackSubmit: 'cate-desktop:analytics:feedback-submit',
-  analyticsFeedbackDismiss: 'cate-desktop:analytics:feedback-dismiss',
-  analyticsFeedbackPrompt: 'cate-desktop:analytics:feedback-prompt',
 
   captureWindow: 'cate-desktop:capture:window',
   recentScreenshots: 'cate-desktop:capture:recent',
