@@ -29,7 +29,7 @@ it('reports opt-in observation phase costs and bounded retained-cache size', asy
   const { execute } = await setupGuest()
   expect((await execute('getScreenshot')).result).not.toHaveProperty('performance')
   expect((await execute('getScreenshot', { profile: true })).result).toMatchObject({ performance: {
-    axMs: 0, frameWaitMs: expect.any(Number), captureMs: expect.any(Number), pngMs: expect.any(Number),
+    axMs: 0, frameWaitMs: expect.any(Number), captureMs: expect.any(Number), encodeMs: expect.any(Number),
     imageBytes: 24, cacheEntries: 2, cacheEstimatedBytes: expect.any(Number), totalMs: expect.any(Number),
   } })
 })

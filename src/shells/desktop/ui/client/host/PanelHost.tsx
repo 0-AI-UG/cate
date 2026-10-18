@@ -8,7 +8,7 @@ import { documentStoreFor, documentStoresVersion, subscribeDocumentStores } from
 import { useDocument } from '../document'
 import { LoadingState, PanelCenteredState, PanelErrorBoundary } from '../../kernel/interaction'
 import { panelDefinition } from '@client/host'
-import { PanelSessionBoundary } from './PanelSessionBoundary'
+import { PANEL_LOADING_DELAY_MS, PanelSessionBoundary } from './PanelSessionBoundary'
 import { PanelSurfaceSlot } from './surfaceRegistry'
 import { panelView } from './views'
 
@@ -18,7 +18,7 @@ export const PanelPlacementContext = createContext<{ onCanvas?: boolean } | null
 
 export function PanelSuspense({ children }: { children: ReactNode }) {
   return (
-    <Suspense fallback={<LoadingState label="Loading panel" className="w-full h-full bg-surface-4 text-sm" />}>
+    <Suspense fallback={<LoadingState label="Loading panel" className="w-full h-full bg-surface-4 text-sm" delayMs={PANEL_LOADING_DELAY_MS} />}>
       {children}
     </Suspense>
   )
@@ -34,7 +34,7 @@ export function WorkspaceReady({ workspaceId, children }: { workspaceId: string;
   if (synced) return <>{children}</>
   return (
     <div data-workspace-required className="flex h-full min-h-0 items-center justify-center overflow-auto p-6">
-      <LoadingState label="Opening workspace" />
+      <LoadingState label="Opening workspace" delayMs={PANEL_LOADING_DELAY_MS} />
     </div>
   )
 }

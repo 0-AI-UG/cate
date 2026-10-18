@@ -2,7 +2,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTrustStore, type TrustApi } from '@client/workspaces'
-import { WorkspaceTrustDialog } from './WorkspaceTrustDialog'
+import { WorkspaceTrustCard, WorkspaceTrustDialog, useTrustInPlace } from './TrustQuestion'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -48,6 +48,19 @@ describe('WorkspaceTrustDialog', () => {
     await expect(gate).resolves.toBe(true)
     expect(setTrust).toHaveBeenCalledWith({ trusted: true })
     expect(document.body.textContent).not.toContain('Do you trust this workspace?')
+  })
+
+  it('leaves the question to the card of a workspace that shows it in place', async () => {
+    const api = { getTrust: async () => ({ trusted: false, decidedAt: null }), setTrust: vi.fn() } as unknown as TrustApi
+    const store = createTrustStore(() => api)
+    function Place({ id }: { id: string }) { useTrustInPlace(id, true); return <WorkspaceTrustCard workspaceId={id} store={store} /> }
+    act(() => root.render(<><WorkspaceTrustDialog store={store} /><Place id="ws" /></>))
+    await act(async () => { void store.ensureTrusted('ws', '/repo') })
+    expect(document.body.textContent).toContain('/repo')
+    expect(document.querySelector('[aria-modal="true"]')).toBeNull()
+    await act(async () => { void store.ensureTrusted('other', '/other') })
+    await act(async () => { await store.answer(false) })
+    expect(document.querySelector('[aria-modal="true"]')?.textContent).toContain('/other')
   })
 
   it('shows why trusting failed and lets the person retry', async () => {

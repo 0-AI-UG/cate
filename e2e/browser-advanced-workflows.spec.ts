@@ -238,7 +238,7 @@ test('handles modal UI, denied permissions, and popup ownership across panels', 
 
   await act(page, first, 'click', "Open popup")
   const popup = await popupBinding(page, first, `${appOrigin}/popup-result`)
-  await expect.poll(() => browserInvoke(page, popup, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, popup, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${appOrigin}/popup-result` } })
   await expect(act(page, popup, 'click', "Finish popup")).resolves.toMatchObject({ ok: true })
   await expect(inspectFixture(app!, page, popup, "document.querySelector(\"#popup-action\")?.textContent ?? ''", 'text')).resolves
@@ -275,7 +275,7 @@ test('keeps clicks and navigation correct while the page and canvas layout move'
     window.__cateE2E!.setZoom(0.72)
   }, node!.id)
   await expect(navigation).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${appOrigin}/navigation-result` } })
   await expect(activeAction(page, browser, 'click', { target: navigationRef })).resolves.toMatchObject({ ok: false })
   await expect(act(page, browser, 'setValue', "Next step", { value: 'continue safely' })).resolves.toMatchObject({ ok: true })
@@ -462,7 +462,7 @@ test.fixme('recovers an individual out-of-process iframe after its renderer cras
 
 test('recovers requests after Chromium restarts its network service', async () => {
   const browser = await createBrowser('/crash')
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${appOrigin}/crash` } })
   const killed = await app.evaluate(({ app: electronApp }) => {
     const network = electronApp.getAppMetrics().find((metric) => (

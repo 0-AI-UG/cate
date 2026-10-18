@@ -187,7 +187,7 @@ test('completes authenticated shopping and cross-origin documentation flows', as
   await expect(act(page, browser, 'setValue', "Password", { value: 'correct horse battery staple' })).resolves.toMatchObject({ ok: true })
   await expect(act(page, browser, 'click', "Sign in", {}, 'button')).resolves.toMatchObject({ ok: true })
 
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/dashboard` } })
   await expect(inspectFixture(app!, page, browser, "document.querySelector(\"h1\")?.textContent ?? ''", 'text')).resolves
     .toMatchObject({ ok: true, result: { text: 'Welcome, automation user' } })
@@ -201,21 +201,21 @@ test('completes authenticated shopping and cross-origin documentation flows', as
   const docsTab = await browserInvoke(page, browser, 'createTab', { url: docsOrigin }) as { ok: boolean; result: { tabId: string } }
   expect(docsTab.ok, JSON.stringify(docsTab)).toBe(true)
   const docs = { ...browser, tabId: docsTab.result.tabId }
-  await expect.poll(() => browserInvoke(page, docs, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, docs, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${docsOrigin}/` } })
   await expect(act(page, docs, 'setValue', "Search docs", { value: 'background input' })).resolves.toMatchObject({ ok: true })
   await expect(activeAction(page, docs, 'pressKey', { key: 'Enter' })).resolves.toMatchObject({ ok: true })
   await expect.poll(() => inspectFixture(app!, page, docs, "document.querySelector(\"#result\")?.textContent ?? ''", 'text'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { text: 'Result for background input' } })
 
-  await expect.poll(() => browserInvoke(page, browser, 'getTab', { tabId: shopTabId }), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab', { tabId: shopTabId }), { timeout: 20_000 })
     .toMatchObject({ ok: true })
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/dashboard` } })
 
   await expect(act(page, browser, 'click', "Open support")).resolves.toMatchObject({ ok: true })
   const popup = await popupBinding(page, browser, `${shopOrigin}/support`)
-  await expect.poll(() => browserInvoke(page, popup, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, popup, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/support` } })
   await expect(act(page, popup, 'setValue', "Question", { value: 'Where is my order?' })).resolves.toMatchObject({ ok: true })
   await expect(act(page, popup, 'click', "Ask")).resolves.toMatchObject({ ok: true })
@@ -224,11 +224,11 @@ test('completes authenticated shopping and cross-origin documentation flows', as
   const popupTabs = await browserInvoke(page, browser, 'listTabs') as { ok: boolean; result: { tabs: Array<{ id: string; active: boolean }> } }
   expect(popupTabs.result.tabs).toHaveLength(3)
   const popupTabId = popup.tabId
-  await expect(browserInvoke(page, browser, 'close', { tabId: popupTabId })).resolves.toMatchObject({ ok: true })
-  await expect(browserInvoke(page, browser, 'getTab', { tabId: shopTabId })).resolves.toMatchObject({ ok: true })
+  await expect(browserInvoke(page, browser, 'closeTab', { tabId: popupTabId })).resolves.toMatchObject({ ok: true })
+  await expect(browserInvoke(page, browser, 'selectTab', { tabId: shopTabId })).resolves.toMatchObject({ ok: true })
 
   await expect(act(page, browser, 'click', "Checkout")).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/checkout` } })
   await expect(act(page, browser, 'setValue', "Shipping address", { value: 'Invalidenstrasse 117, Berlin' })).resolves.toMatchObject({ ok: true })
   await expect(act(page, browser, 'selectOption', "Country", { values: ['DE'] })).resolves.toMatchObject({ ok: true })
@@ -238,10 +238,10 @@ test('completes authenticated shopping and cross-origin documentation flows', as
     .toMatchObject({ ok: true, result: { text: 'Order CATE-4242' } })
 
   await expect(browserInvoke(page, browser, 'back')).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/checkout` } })
   await expect(browserInvoke(page, browser, 'forward')).resolves.toMatchObject({ ok: true })
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/confirmation` } })
   await expect(browserInvoke(page, browser, 'back')).resolves.toMatchObject({ ok: true })
 
@@ -265,7 +265,7 @@ test('completes authenticated shopping and cross-origin documentation flows', as
 
   const imageUrl = `${shopOrigin}/pixel.png`
   const image = await target(page, browser, 'Keyboard product image', 'image')
-  const src = await browserInvoke(page, browser, 'getAttribute', { ...image, name: 'src' })
+  const src = await browserInvoke(page, browser, 'getAttribute', { ...image, attribute: 'src' })
   expect(src).toEqual({ ok: true, result: '/pixel.png' })
   await expect(browserInvoke(page, browser, 'download', { url: src.result })).resolves
     .toEqual({ ok: true, result: { url: imageUrl } })
@@ -295,6 +295,7 @@ test('completes authenticated shopping and cross-origin documentation flows', as
     result: { screenshot: { data: string; mimeType: string } }
   }
   expect(screenshot.ok).toBe(true)
+  // The shop leaves its background transparent: PNG keeps the alpha.
   expect(screenshot.result.screenshot.mimeType).toBe('image/png')
   expect(Buffer.from(screenshot.result.screenshot.data, 'base64').length).toBeGreaterThan(100)
 })
@@ -401,7 +402,7 @@ test('keeps concurrent workflows isolated across multiple live browser panels', 
 
 test('observes 10,000 interactive controls within the workflow latency budget', async ({ browserName: _browserName }, testInfo) => {
   const browser = await createBrowser(page, `${shopOrigin}/large-dom`, { x: 100, y: 100 })
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/large-dom` } })
 
   const startedAt = performance.now()
@@ -468,7 +469,7 @@ test('does not silently lose a click after a responsive viewport round trip', as
   await act(page, browser, 'setValue', "Email", { value: 'viewport@example.test' })
   await act(page, browser, 'setValue', "Password", { value: 'viewport test' })
   await act(page, browser, 'click', "Sign in", {}, 'button')
-  await expect.poll(() => browserInvoke(page, browser, 'getTab'), { timeout: 20_000 })
+  await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${shopOrigin}/dashboard` } })
   await browserInvoke(page, browser, 'setViewport', { preset: 'mobile', width: 390, height: 844 })
   await browserInvoke(page, browser, 'setViewport', { preset: 'compact', width: 640, height: 480 })

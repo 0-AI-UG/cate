@@ -5,10 +5,9 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, GitPullRequest, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, type LucideIcon } from 'lucide-react'
-import { Tooltip, useShortcutLabel } from '../../kernel/interaction'
+import { CateLogo, Tooltip, useShortcutLabel } from '../../kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import type { ActionId } from '@kernel/interaction/contract'
-import { CateLogo } from '../chrome/CateLogo'
 import { UpdateButton } from '../chrome/UpdateButton'
 import { useWindowControlsInset } from '../chrome/chrome'
 import { hasOverlay, useOverlaysVersion } from '../overlays'

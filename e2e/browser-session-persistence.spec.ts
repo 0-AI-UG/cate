@@ -53,7 +53,7 @@ test('shares cookies across panels and preserves the authenticated session acros
     app = launched.electronApp
     let page = launched.mainWindow
     const login = await createBrowser(page, `${origin}/login`, { x: 100, y: 100 })
-    await expect.poll(() => browserInvoke(page, login, 'getTab'), { timeout: 20_000 })
+    await expect.poll(() => browserInvoke(page, login, 'selectTab'), { timeout: 20_000 })
       .toMatchObject({ ok: true, result: { url: `${origin}/login` } })
     await expect(inspectFixture(app!, page, login, "document.querySelector(\"#email\")?.getAttribute(\"id\")")).resolves
       .toMatchObject({ ok: true, result: { value: 'email' } })

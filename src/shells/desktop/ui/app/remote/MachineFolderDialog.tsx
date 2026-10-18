@@ -117,7 +117,7 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
       onOpened?.(target.path)
       onClose()
       useUIStore.getState().closeOverlay()
-      useUIStore.getState().setOpenDialogOpen(false)
+      useUIStore.getState().closeWorkspacePicker()
       await selectWorkspace(entry.id)
     } catch (err) {
       if (!mounted.current) return

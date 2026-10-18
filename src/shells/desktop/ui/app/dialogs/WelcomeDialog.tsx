@@ -5,9 +5,8 @@
 
 import { useState } from 'react'
 import { Mail as EnvelopeSimple } from 'lucide-react'
-import { Spinner } from '../../kernel/interaction'
+import { CateLogo, Spinner } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
-import { CateLogo } from '../chrome/CateLogo'
 import { track } from '../desktop'
 import { TELEMETRY_NOTICE_VERSION, setUiState, useUiState } from '../state/uiState'
 import headerImg from '../assets/welcome-header.jpg'

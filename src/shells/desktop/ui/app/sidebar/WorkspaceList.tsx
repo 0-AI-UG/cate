@@ -120,7 +120,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
         large
         leadingAction={headerLeadingAction}
         actions={
-          <SidebarHeaderButton action="openWorkspace" onClick={() => useUIStore.getState().setOpenDialogOpen(true)} title="Open Workspace…">
+          <SidebarHeaderButton action="openWorkspace" onClick={() => useUIStore.getState().openWorkspacePicker()} title="Open Workspace…">
             <Plus size={14} />
           </SidebarHeaderButton>
         }
@@ -129,7 +129,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
         {groups.length === 0 && (
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center">
             <p className="text-xs text-muted">No workspaces yet</p>
-            <Button onClick={() => useUIStore.getState().setOpenDialogOpen(true)}>
+            <Button onClick={() => useUIStore.getState().openWorkspacePicker()}>
               <FolderOpen size={13} />
               Open a workspace
             </Button>

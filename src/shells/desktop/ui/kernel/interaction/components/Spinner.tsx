@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { LoaderCircle as CircleNotch } from 'lucide-react'
 
 interface SpinnerProps {
@@ -28,10 +28,20 @@ interface LoadingStateProps {
   label?: ReactNode
   size?: number
   className?: string
+  /** Shows the spinner and label only after this long: a wait that ends
+   *  sooner shows just the empty surface instead of a flash. */
+  delayMs?: number
 }
 
 /** Centered, labelled loading feedback for panels and other content surfaces. */
-export function LoadingState({ label = 'Loading', size = 18, className = '' }: LoadingStateProps) {
+export function LoadingState({ label = 'Loading', size = 18, className = '', delayMs = 0 }: LoadingStateProps) {
+  const [shown, setShown] = useState(delayMs <= 0)
+  useEffect(() => {
+    if (shown) return
+    const timer = setTimeout(() => setShown(true), delayMs)
+    return () => clearTimeout(timer)
+  }, [shown, delayMs])
+  if (!shown) return <div className={className} aria-busy="true" />
   return (
     <div
       className={`flex items-center justify-center gap-2 text-muted ${className}`}

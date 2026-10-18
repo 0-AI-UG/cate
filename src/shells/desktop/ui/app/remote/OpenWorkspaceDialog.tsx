@@ -10,7 +10,7 @@ import { WorkspacePicker } from './WorkspacePicker'
 export function OpenWorkspaceDialog(): JSX.Element | null {
   const open = useUIStore((s) => s.openDialogOpen && !s.machineFolder && !s.joinDialog)
   if (!open) return null
-  const close = () => useUIStore.getState().setOpenDialogOpen(false)
+  const close = () => useUIStore.getState().closeWorkspacePicker()
   return (
     <Modal onClose={close} width={560} icon={<FolderOpen size={16} />} title="Open a workspace" bodyClassName="min-h-0 flex flex-col p-3">
       <WorkspacePicker autoFocus onPicked={close} listClassName="max-h-[60vh]" />

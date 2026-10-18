@@ -139,14 +139,6 @@ export class ApiRouter {
       method: method.method,
       signal: controller.signal,
       sticky,
-      defaultTarget: (type) => {
-        try {
-          return resolveTarget({ ...this.targetReaders(), type, policy: 'auto', caller, sticky })
-        } catch {
-          return undefined
-        }
-      },
-      invoke: (nested, nestedArgs) => this.call(caller, nested, nestedArgs ?? {}, { signal: controller.signal }),
     }
 
     let run: () => Promise<unknown>

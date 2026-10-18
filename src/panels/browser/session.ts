@@ -22,11 +22,13 @@ import { createPageControl, pageCall, type PageControl, type PageControlDeps } f
 import { isCanvasDock, placementOf, type Json, type PanelRecord } from '@workspace/document/contract'
 import { PanelSession, type OpContext, type OpHandlers, type PanelSessionClass, type SessionKit, type SurfaceCallOptions } from '@panels/framework/runtime'
 import {
+  BROWSER_VIEWPORT_PRESETS,
   COMPACT_VIEWPORT,
   type BrowserDownload,
   type BrowserOp,
   type BrowserSnapshot,
   type BrowserTab,
+  type BrowserTabOpener,
   type BrowserViewport,
 } from './contract'
 import definition from './definition'
@@ -55,19 +57,40 @@ export interface BrowserSessionDeps {
     /** The workspace file a served URL shows, or null. */
     servedPath(url: string): string | null
   }
-  newId?: () => string
 }
 
 type Persisted = {
   /** `file`: a workspace file the tab shows, served again at start (its URL
    *  holds the file server's per-start port and token). */
-  tabs: Array<{ id: string; url: string; title: string; favicon: string | null; pinned: boolean; file?: string }>
+  tabs: Array<{ id: string; url: string; title: string; favicon: string | null; pinned: boolean; openedBy?: BrowserTabOpener; file?: string }>
   activeTabId: string
   viewport: BrowserViewport
 }
 
+/** A caller's view of the tabs after its last call. */
+type TabsSeen = { activeTabId: string; tabIds: string[] }
+
+/** Methods whose own effect on the tabs is their result, not a notice. */
+const TAB_METHODS = new Set(['selectTab', 'createTab', 'closeTab'])
+
 const isStartPage = (url: string) => url === BROWSER_NEW_TAB_URL
 const hasPage = (url: string) => !isStartPage(url) && !isBrowserInternalPage(url)
+
+/** `result` with `notices` added: on the object itself, or around a plain value. */
+function withNotices(result: unknown, notices: string[]): unknown {
+  if (!notices.length) return result
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    const own = (result as { notices?: unknown }).notices
+    return { ...result, notices: [...(Array.isArray(own) ? own : []), ...notices] }
+  }
+  return { value: result, notices }
+}
+
+function validOpener(value: unknown): value is NonNullable<BrowserTabOpener> {
+  if (!value || typeof value !== 'object') return false
+  const opener = value as Record<string, unknown>
+  return typeof opener.page === 'string' || typeof opener.caller === 'string'
+}
 
 function validViewport(value: unknown): value is BrowserViewport {
   if (!value || typeof value !== 'object') return false
@@ -80,14 +103,19 @@ function validViewport(value: unknown): value is BrowserViewport {
 
 export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private stopDownloads: (() => void) | undefined
-  private readonly newId: () => string
   private readonly control: PageControl
+  /** The last tab handle issued: tabs are `t1`, `t2`, ... */
+  private tabCounter = 0
+  /** What made the active tab active, for a call it interrupts. */
+  private activeCause: string | null = null
+  /** Each caller's view of the tabs, for the notices of its next call. */
+  private readonly seenTabs = new Map<string, TabsSeen>()
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: BrowserSessionDeps) {
-    const id = `tab-${(deps.newId ?? (() => globalThis.crypto.randomUUID()))()}`
+    const id = 't1'
     const url = typeof record.fields.url === 'string' && record.fields.url ? record.fields.url : BROWSER_NEW_TAB_URL
     super(kit, record, {
-      tabs: [{ id, url, title: browserInternalPageTitle(url), favicon: null, pinned: false, nav: 0, navSource: null }],
+      tabs: [{ id, url, title: browserInternalPageTitle(url), favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null }],
       activeTabId: id,
       activeSource: null,
       viewport: COMPACT_VIEWPORT,
@@ -99,10 +127,11 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       downloads: [],
       agentCursor: null,
     })
-    this.newId = deps.newId ?? (() => globalThis.crypto.randomUUID())
+    this.tabCounter = 1
     this.control = createPageControl({
       panelId: this.panelId,
       activeTabId: () => this.state.activeTabId,
+      activeTabCause: () => this.activeCause,
       tab: (tabId) => {
         const { id, url, nav } = this.tab(tabId)
         return { id, url, nav, internal: isBrowserInternalPage(url) }
@@ -132,7 +161,9 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
         pinned: tab.pinned === true,
         nav: 0,
         navSource: null,
+        openedBy: validOpener(tab.openedBy) ? tab.openedBy : null,
       }))
+      this.tabCounter = Math.max(0, ...tabs.map((tab) => Number(/^t(\d+)$/.exec(tab.id)?.[1] ?? 0)))
       const activeTabId = tabs.some((tab) => tab.id === saved.activeTabId) ? saved.activeTabId : tabs[0].id
       const active = tabs.find((tab) => tab.id === activeTabId)!
       this.publish({
@@ -169,16 +200,20 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
 
   private tab(tabId: string): BrowserTab {
     const tab = this.state.tabs.find((candidate) => candidate.id === tabId)
-    if (!tab) throw new RpcError('gone', 'no-such-tab')
+    if (!tab) throw new RpcError('gone', `no-such-tab: the panel has no tab ${tabId} (cate browser tab list shows its tabs)`)
     return tab
+  }
+
+  private nextTabId(): string {
+    return `t${++this.tabCounter}`
   }
 
   private save(): void {
     const { tabs, activeTabId, viewport } = this.state
     this.persist({
-      tabs: tabs.map(({ id, url, title, favicon, pinned }) => {
+      tabs: tabs.map(({ id, url, title, favicon, pinned, openedBy }) => {
         const file = this.deps.files.servedPath(url)
-        return { id, url, title, favicon, pinned, ...(file ? { file } : {}) }
+        return { id, url, title, favicon, pinned, ...(openedBy ? { openedBy } : {}), ...(file ? { file } : {}) }
       }),
       activeTabId,
       viewport,
@@ -267,21 +302,24 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
 
   /** Opens a tab on `url` (a `file://` URL through the workspace's file
    *  server, like `navigate`). Returns the new tab's id. */
-  async newTab(url?: string, source: string | null = null): Promise<string> {
+  async newTab(url?: string, source: string | null = null, openedBy: BrowserTabOpener = null): Promise<string> {
     const homepage = this.deps.settings.get('browserHomepage')
     const behavior = this.deps.settings.get('browserNewTabBehavior') as BrowserNewTabBehavior | undefined
     const file = url ? filePathOfUrl(url) : null
     const page = file ? await this.deps.files.serveUrl(file) : url
     const target = page || (behavior === 'homepage' && typeof homepage === 'string' && homepage) || BROWSER_NEW_TAB_URL
     const tab: BrowserTab = {
-      id: `tab-${this.newId()}`,
+      id: this.nextTabId(),
       url: target,
       title: browserInternalPageTitle(target),
       favicon: null,
       pinned: false,
       nav: 1,
       navSource: null,
+      openedBy,
     }
+    this.activeCause = openedBy && 'page' in openedBy ? `the page in ${openedBy.page} opened it`
+      : openedBy ? 'an agent opened it' : 'the person opened it'
     this.setTabs([...this.state.tabs, tab], tab.id, source)
     this.publish({ isLoading: hasPage(target) })
     return tab.id
@@ -289,18 +327,21 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
 
   closeTab(tabId: string, source: string | null = null): void {
     const index = this.state.tabs.findIndex((tab) => tab.id === tabId)
-    if (index < 0) throw new RpcError('gone', 'no-such-tab')
+    if (index < 0) this.tab(tabId)
     const tabs = this.state.tabs.filter((tab) => tab.id !== tabId)
     if (tabs.length === 0) {
-      tabs.push({ id: `tab-${this.newId()}`, url: BROWSER_NEW_TAB_URL, title: '', favicon: null, pinned: false, nav: 0, navSource: null })
+      tabs.push({ id: this.nextTabId(), url: BROWSER_NEW_TAB_URL, title: '', favicon: null, pinned: false, nav: 0, navSource: null, openedBy: null })
     }
+    if (tabId === this.state.activeTabId) this.activeCause = `tab ${tabId} was closed`
     const activeTabId = tabId === this.state.activeTabId ? tabs[Math.min(index, tabs.length - 1)].id : this.state.activeTabId
     this.setTabs(tabs, activeTabId, source)
   }
 
   selectTab(tabId: string, source: string | null = null): void {
     this.tab(tabId)
-    if (tabId !== this.state.activeTabId) this.setTabs(this.state.tabs, tabId, source)
+    if (tabId === this.state.activeTabId) return
+    this.activeCause = source === null ? 'an agent switched to it' : 'the person switched to it'
+    this.setTabs(this.state.tabs, tabId, source)
   }
 
   private setViewport(viewport: BrowserViewport): void {
@@ -313,7 +354,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
 
   protected override readonly ops: OpHandlers<BrowserOp> = {
     navigate: async ({ input, tabId }) => { await this.navigateTab(tabId ?? this.state.activeTabId, input) },
-    newTab: ({ url }, ctx) => this.newTab(url, ctx.clientId),
+    newTab: ({ url, openerTabId }, ctx) => this.newTab(url, ctx.clientId, openerTabId && this.state.tabs.some((tab) => tab.id === openerTabId) ? { page: openerTabId } : null),
     closeTab: ({ tabId }, ctx) => { this.closeTab(tabId, ctx.clientId) },
     selectTab: ({ tabId }, ctx) => { this.selectTab(tabId, ctx.clientId) },
     pin: ({ tabId, pinned }) => { this.patchTab(tabId, { pinned: pinned ?? !this.tab(tabId).pinned }) },
@@ -375,37 +416,81 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   override handleApi: SessionApiHandler
 
   /** `cate.browser.*` session methods: page control's, and those about the
-   *  panel's tabs and size. */
+   *  panel's tabs and size. Each result carries what happened to the tabs
+   *  since the caller's last call (`notices`): a page that opened a tab, a
+   *  person who switched tabs. */
   private api(): SessionApiHandler {
-    return sessionApi(browserApi, {
+    const handle = sessionApi(browserApi, {
       ...this.control.handlers,
-      getTab: async ({ tabId }, ctx) => {
-        if (tabId && tabId !== this.state.activeTabId) this.selectTab(tabId)
-        return this.control.pageInfo(tabId ?? this.state.activeTabId, pageCall(ctx))
+      selectTab: async ({ tabId }, ctx) => {
+        this.selectTab(tabId)
+        return this.control.pageInfo(tabId, pageCall(ctx))
       },
-      createTab: async ({ url }, ctx) => this.control.pageInfo(await this.newTab(url), pageCall(ctx)),
+      createTab: async ({ url }, ctx) => this.control.pageInfo(await this.newTab(url, null, { caller: ctx.caller.id }), pageCall(ctx)),
+      closeTab: ({ tabId, mine }, ctx) => {
+        if (mine && tabId) throw new RpcError('rejected', 'browser-close-tab-or-mine: name a tab or pass --mine, not both')
+        const closed = mine
+          ? this.state.tabs.filter((tab) => tab.openedBy && 'caller' in tab.openedBy && tab.openedBy.caller === ctx.caller.id).map((tab) => tab.id)
+          : [this.tab(tabId ?? this.state.activeTabId).id]
+        for (const id of closed) this.closeTab(id)
+        return { closed, activeTabId: this.state.activeTabId }
+      },
       downloads: (args) => {
         this.control.boundTab(args.tabId)
         return { downloads: this.state.downloads }
       },
-      close: (args) => {
-        this.closeTab(this.control.boundTab(args.tabId).id)
-        return { closed: true }
-      },
       setViewport: async (args, ctx) => {
         const tabId = this.control.boundTab(args.tabId).id
         const { preset } = args
-        const width = preset === 'compact' ? 640 : args.width
-        const height = preset === 'compact' ? 480 : args.height
-        if (!width || !height) throw new RpcError('rejected', 'invalid-browser-viewport')
-        this.setViewport(preset === 'compact'
-          ? COMPACT_VIEWPORT
-          : { preset: preset === 'mobile' || preset === 'desktop' ? preset : 'custom', width, height })
+        const sized = preset === 'compact' ? undefined : preset === 'custom' ? undefined : BROWSER_VIEWPORT_PRESETS[preset]
+        const width = preset === 'compact' ? 640 : args.width ?? sized?.width
+        const height = preset === 'compact' ? 480 : args.height ?? sized?.height
+        if (!width || !height) throw new RpcError('rejected', 'invalid-browser-viewport: custom takes --width and --height')
+        this.setViewport(preset === 'compact' ? COMPACT_VIEWPORT : { preset, width, height })
         const observation = await this.control.execute(tabId, 'getAXState', args, true, pageCall(ctx))
         return { preset, width, height, observation }
       },
       resize: (args, ctx) => this.resize(args, ctx),
     })
+    return async (method, args, ctx) => {
+      const caller = ctx.caller.id
+      const start = this.tabsSeen()
+      const earlier = this.tabNotices(this.seenTabs.get(caller) ?? start, caller)
+      try {
+        const result = await handle(method, args, ctx)
+        // A tab command's own effect is its result; an action's (a popup) is news.
+        const notices = [...earlier, ...(TAB_METHODS.has(method) ? [] : this.tabNotices(start, caller))]
+        return withNotices(result, notices)
+      } finally {
+        this.seenTabs.set(caller, this.tabsSeen())
+      }
+    }
+  }
+
+  private tabsSeen(): TabsSeen {
+    return { activeTabId: this.state.activeTabId, tabIds: this.state.tabs.map((tab) => tab.id) }
+  }
+
+  /** What changed in the tabs since `seen`, as `caller` should hear it. Tabs
+   *  the caller opened itself are no news. */
+  private tabNotices(seen: TabsSeen, caller: string): string[] {
+    const notices: string[] = []
+    const { tabs, activeTabId } = this.state
+    const page = (tab: BrowserTab) => `${tab.id} (${isStartPage(tab.url) ? 'new tab' : tab.url})`
+    for (const tab of tabs) {
+      if (seen.tabIds.includes(tab.id)) continue
+      const opener = tab.openedBy
+      if (opener && 'caller' in opener && opener.caller === caller) continue
+      const who = opener && 'page' in opener ? `The page in ${opener.page}` : opener ? 'Another agent' : 'The person'
+      notices.push(`${who} opened tab ${page(tab)}${tab.id === activeTabId ? '; the panel shows it now, so commands act on it' : ''}.`)
+    }
+    const closed = seen.tabIds.filter((id) => !tabs.some((tab) => tab.id === id))
+    if (closed.length) notices.push(`Closed: tab ${closed.join(', ')}.`)
+    const shown = tabs.find((tab) => tab.id === activeTabId)
+    if (activeTabId !== seen.activeTabId && seen.tabIds.includes(activeTabId) && shown) {
+      notices.push(`The panel shows tab ${page(shown)} now, not ${seen.activeTabId}; commands act on it (cate browser tab select ${seen.activeTabId} switches back).`)
+    }
+    return notices
   }
 
   private resize(args: { tabId?: string; width: number; height: number }, _ctx: ApiSessionContext): unknown {

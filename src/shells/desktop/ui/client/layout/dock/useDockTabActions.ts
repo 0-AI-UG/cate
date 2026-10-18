@@ -15,6 +15,7 @@ import {
 } from '@workspace/document/contract'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { clientUi } from '@kernel/interaction'
+import { actionAccelerator } from '../../../kernel/interaction'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import {
   closePanel,
@@ -23,6 +24,7 @@ import {
   creatableDefinitions,
   creationMenuItems,
   creationPick,
+  moveIntoDock,
   newId,
   worktreeChoices,
   type CreationPick,
@@ -163,6 +165,7 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
       ...(showCloseAll ? [{ id: 'close-all', label: 'Close All' }] : []),
       { type: 'separator' },
       { id: 'split-right', label: 'Split Right', enabled: canSplit?.() ?? true },
+      ...(isCanvasDock(dock) ? [{ id: 'move-dock', label: 'Move into Dock', accelerator: actionAccelerator('moveIntoDock') }] : []),
       { id: 'move-window', label: 'Move into New Window' },
     ]
     const id = await showMenu(menu)
@@ -174,12 +177,13 @@ export function useDockTabActions({ workspaceId, dock, stack, activePanelId, can
       case 'close-right': await closeMany(stack.panels.slice(index + 1)); return
       case 'close-all': await closeMany([...stack.panels]); return
       case 'split-right': splitPanel(); return
+      case 'move-dock': moveIntoDock(workspaceId, panelId); return
       case 'move-window': moveTabToNewWindow(panelId); return
     }
     for (const contribution of tabMenuContributions()) {
       if (await contribution.run(id, context)) return
     }
-  }, [showMultiSelectionMenu, workspaceId, stack.panels, showCloseAll, canSplit, beginRename, closeOne, closeMany, splitPanel, moveTabToNewWindow])
+  }, [showMultiSelectionMenu, workspaceId, dock, stack.panels, showCloseAll, canSplit, beginRename, closeOne, closeMany, splitPanel, moveTabToNewWindow])
 
   const handleTabBarContextMenu = useCallback(async (e: React.MouseEvent) => {
     if (e.target !== e.currentTarget) return

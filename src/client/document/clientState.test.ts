@@ -44,19 +44,17 @@ describe('client state', () => {
     expect(seen).toHaveBeenCalledTimes(3)
   })
 
-  it('keeps one maximize per window and per canvas; null restores', () => {
+  it('keeps one maximize per window; null restores', () => {
     const state = createClientStateStore()
     const seen = vi.fn()
     state.subscribe(seen)
     state.setMaximizedStack('main', 's1')
     state.setMaximizedStack('main', 's1')
-    state.setMaximizedNode('c1', 'n1')
-    expect(state.getSnapshot()).toMatchObject({ maximizedStacks: { main: 's1' }, maximizedNodes: { c1: 'n1' } })
+    expect(state.getSnapshot().maximizedStacks).toEqual({ main: 's1' })
     state.setMaximizedStack('main', null)
-    state.setMaximizedNode('c1', null)
-    state.setMaximizedNode('c1', null)
-    expect(state.getSnapshot()).toMatchObject({ maximizedStacks: {}, maximizedNodes: {} })
-    expect(seen).toHaveBeenCalledTimes(4)
+    state.setMaximizedStack('main', null)
+    expect(state.getSnapshot().maximizedStacks).toEqual({})
+    expect(seen).toHaveBeenCalledTimes(2)
   })
 })
 

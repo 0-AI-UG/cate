@@ -80,20 +80,42 @@ async function inspectSession(send: AXOptions['send'], sessionId: string | undef
   for (const { doc, docIndex, parent, names, backend, attributes, boxes } of parsed) {
     const viewport = docIndex === 0 && mainViewport ? mainViewport : frameViewports.get(docIndex)
     const scrollX = Number(doc.scrollOffsetX ?? 0), scrollY = Number(doc.scrollOffsetY ?? 0)
+    // Whether a node or an ancestor is fully transparent, once per node.
+    const transparent = new Map<number, boolean>()
+    const isTransparent = (node: number): boolean => {
+      const chain: number[] = []
+      let result = false
+      for (let at = node; at >= 0 && !chain.includes(at); at = parent[at]) {
+        const known = transparent.get(at)
+        if (known !== undefined) { result = known; break }
+        if (boxes.get(at)?.opacity === '0') { result = true; break }
+        chain.push(at)
+      }
+      for (const at of chain) transparent.set(at, result)
+      return result
+    }
     // An element is shown when it has a box, its visibility is visible and
     // neither it nor an ancestor is fully transparent (checkVisibility).
     const shown = (node: number): number[] | undefined => {
       const box = boxes.get(node)
       if (!box || box.rect.length < 4 || box.rect[2] <= 0 || box.rect[3] <= 0 || box.visibility !== 'visible') return undefined
-      for (let at = node; at >= 0; at = parent[at]) if (boxes.get(at)?.opacity === '0') return undefined
-      return box.rect
+      return isTransparent(node) ? undefined : box.rect
     }
+    // The <label for> elements by the id they name, collected on first use.
+    let labelsFor: Map<string, number[]> | undefined
     const labels = (node: number): number[] => {
       const found: number[] = []
       for (let at = parent[node]; at >= 0; at = parent[at]) if (names[at] === 'LABEL') { found.push(at); break }
       const id = attributes[node]?.get('id')
-      if (id) names.forEach((name, at) => { if (name === 'LABEL' && attributes[at]?.get('for') === id) found.push(at) })
-      return found
+      if (!id) return found
+      if (!labelsFor) {
+        labelsFor = new Map()
+        names.forEach((name, at) => {
+          const target = name === 'LABEL' ? attributes[at]?.get('for') : undefined
+          if (target) labelsFor!.set(target, [...labelsFor!.get(target) ?? [], at])
+        })
+      }
+      return [...found, ...labelsFor.get(id) ?? []]
     }
     names.forEach((name, node) => {
       const type = name === 'INPUT' ? (attributes[node]?.get('type') ?? 'text').toLowerCase() : ''
@@ -140,20 +162,14 @@ export async function readBrowserAX({ frames, viewport, send, register }: AXOpti
     }
     return pending
   }
-  const outputs: FrameLines[] = []
-  for (let frameIndex = 0; frameIndex < frames.length; frameIndex++) {
-    const source = frames[frameIndex]
-    let tree: CdpRecord
-    try {
-      tree = frameIndex === 0
-        ? await send('Accessibility.getFullAXTree')
-        : await send('Accessibility.getFullAXTree', source.sessionId ? {} : { frameId: source.frameId }, source.sessionId)
-    } catch (error) {
-      if (frameIndex === 0) throw error
-      // A child frame can detach between Page.getFrameTree and its AX query.
-      continue
-    }
-    const [inspection, owner] = await Promise.all([
+  // Every frame's tree, DOM snapshot and <iframe> are asked for at once, so
+  // the round trips overlap; a child frame can detach between
+  // Page.getFrameTree and its queries, and is then left out.
+  const reads = frames.map((source, frameIndex) => {
+    const read = Promise.all([
+      frameIndex === 0
+        ? send('Accessibility.getFullAXTree')
+        : send('Accessibility.getFullAXTree', source.sessionId ? {} : { frameId: source.frameId }, source.sessionId),
       inspect(source.sessionId),
       frameIndex > 0 && source.frameId
         ? send('DOM.getFrameOwner', { frameId: source.frameId }, source.parentSessionId)
@@ -161,6 +177,14 @@ export async function readBrowserAX({ frames, viewport, send, register }: AXOpti
           .catch(() => undefined)
         : Promise.resolve(undefined),
     ])
+    return frameIndex === 0 ? read : read.catch(() => undefined)
+  })
+  const outputs: FrameLines[] = []
+  for (let frameIndex = 0; frameIndex < frames.length; frameIndex++) {
+    const source = frames[frameIndex]
+    const read = await reads[frameIndex]
+    if (!read) continue
+    const [tree, inspection, owner] = read
     const nodes = Array.isArray(tree.nodes) ? tree.nodes.map(objectValue) : []
     const byId = new Map(nodes.map(node => [node.nodeId, node]))
     const ordered: CdpRecord[] = []
@@ -180,6 +204,24 @@ export async function readBrowserAX({ frames, viewport, send, register }: AXOpti
     for (const node of nodes) visit(node)
     const output: FrameLines = { owner, lines: [] }
     const emitted = new Set<unknown>()
+    // What a node passes to its descendants: how many listed ancestors they
+    // have with it (their depth) and the nearest one's text. Ancestors come
+    // first in `ordered`, so a node's entry is final once it is read.
+    const passed = new Map<unknown, { depth: number; ownerText?: string }>()
+    const inherited = (node: CdpRecord): { depth: number; ownerText?: string } => {
+      const chain: CdpRecord[] = []
+      let context: { depth: number; ownerText?: string } = { depth: 0 }
+      for (let at = byId.get(node.parentId); at && !chain.includes(at); at = byId.get(at.parentId)) {
+        const known = passed.get(at.nodeId)
+        if (known) { context = known; break }
+        chain.push(at)
+      }
+      for (const at of chain.reverse()) {
+        if (emitted.has(at.nodeId)) context = { depth: context.depth + 1, ownerText: `${String(objectValue(at.name).value ?? '')}\n${String(objectValue(at.value).value ?? '')}` }
+        passed.set(at.nodeId, context)
+      }
+      return context
+    }
     for (const node of ordered) {
       const role = String(objectValue(node.role).value ?? '')
       const backendNodeId = typeof node.backendDOMNodeId === 'number' ? node.backendDOMNodeId : undefined
@@ -192,22 +234,11 @@ export async function readBrowserAX({ frames, viewport, send, register }: AXOpti
       if (found?.visible !== true) continue
       const target = { backendNodeId, frameId: source.frameId, sessionId: source.sessionId }
       const name = String(objectValue(node.name).value ?? '')
-      // The nearest listed ancestor sets the depth and, for text, whether it
-      // only repeats that ancestor's name.
-      let depth = 0
-      let ownerText: string | undefined
+      // The listed ancestors set the depth and, for text, whether it only
+      // repeats the nearest one's name.
+      const { depth, ownerText } = inherited(node)
       // A label's text is already the name of the control it labels.
       const labelText = String(objectValue(byId.get(node.parentId)?.role).value ?? '') === 'LabelText'
-      let parent = byId.get(node.parentId)
-      const ancestors = new Set<unknown>()
-      while (parent && !ancestors.has(parent.nodeId)) {
-        ancestors.add(parent.nodeId)
-        if (emitted.has(parent.nodeId)) {
-          depth += 1
-          ownerText ??= `${String(objectValue(parent.name).value ?? '')}\n${String(objectValue(parent.value).value ?? '')}`
-        }
-        parent = byId.get(parent.parentId)
-      }
       if (!name.trim() && UNNAMED_SKIPPED.has(role)) continue
       if (role === 'StaticText' && (!name.trim() || labelText || ownerText?.includes(name.trim()))) continue
       const offscreen = found.offscreen === true

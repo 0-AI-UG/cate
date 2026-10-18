@@ -4,7 +4,7 @@
 // draws window stacks and canvas node mini docks (`compact`).
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Columns2 as Columns, Maximize2, Minimize2 } from 'lucide-react'
+import { ArrowUpFromLine, Columns2 as Columns, Maximize2, Minimize2 } from 'lucide-react'
 import {
   isCanvasDock,
   type DockNode,
@@ -12,13 +12,13 @@ import {
   type DockStack,
   type PanelRecord,
 } from '@workspace/document/contract'
-import { Tooltip } from '../../../kernel/interaction'
+import { Tooltip, useShortcutLabel } from '../../../kernel/interaction'
 import { clientStateFor } from '@client/document'
 import { useClientState, useDocument } from '../../document'
 import { PanelChromeProvider, type PanelChromeApi } from '../../host/panelChrome'
 import { PanelPlacementContext } from '../../host/PanelHost'
 import { PanelVisibilityContext } from '../../host/PanelSessionBoundary'
-import { activeTabOf, keepsMounted, panelDefinition } from '@client/host'
+import { activeTabOf, keepsMounted, moveIntoDock, panelDefinition } from '@client/host'
 import { registerDropZone } from '../drag/registry'
 import { useDragStore } from '../drag/store'
 import { useDragOp } from '../drag/useDragOp'
@@ -36,7 +36,7 @@ export interface DockTabStackProps {
   layout: DockNode
   /** Renders one panel's view (PanelHost by default in DockView). */
   renderPanel: (panelId: string) => React.ReactNode
-  /** Controls after the split and maximize buttons (a node's close). */
+  /** Controls after the tab bar's own buttons (a node's close). */
   trailingControls?: React.ReactNode
   newTabControl?: React.ReactNode
   /** Set by a host that drags the whole node from its tab bar; gets the tab
@@ -66,19 +66,16 @@ export function DockTabStack({
   const activeRecord = activePanelId ? recordOf(activePanelId) : undefined
   const stackRef = useRef<HTMLDivElement>(null)
   const onCanvas = isCanvasDock(dock)
+  const shortcutLabel = useShortcutLabel()
 
   // --- Maximize / restore -----------------------------------------------------------
-  // Client state: a window stack shows alone in its window, a canvas node
-  // fills its canvas. Nobody else's layout changes.
-  const restorable = useClientState(workspaceId, (s) => (isCanvasDock(dock)
-    ? s.maximizedNodes[dock.canvasId] === dock.nodeId
-    : s.maximizedStacks[dock.windowId] === stack.id))
-  const maximizable = !restorable && (onCanvas || layout.kind === 'split')
+  // Client state: a window stack shows alone in its window. Nobody else's
+  // layout changes. A canvas node's tab moves into the dock instead.
+  const restorable = useClientState(workspaceId, (s) => !isCanvasDock(dock) && s.maximizedStacks[dock.windowId] === stack.id)
+  const maximizable = !restorable && !onCanvas && layout.kind === 'split'
   const toggleMaximized = useCallback(() => {
-    const state = clientStateFor(workspaceId)
-    if (!state) return
-    if (isCanvasDock(dock)) state.setMaximizedNode(dock.canvasId, restorable ? null : dock.nodeId)
-    else state.setMaximizedStack(dock.windowId, restorable ? null : stack.id)
+    if (isCanvasDock(dock)) return
+    clientStateFor(workspaceId)?.setMaximizedStack(dock.windowId, restorable ? null : stack.id)
   }, [workspaceId, dock, restorable, stack.id])
 
   // --- Drop target -------------------------------------------------------------------
@@ -236,6 +233,20 @@ export function DockTabStack({
               onClick={toggleMaximized}
             >
               {restorable ? <Minimize2 size={compact ? 12 : 14} /> : <Maximize2 size={compact ? 12 : 14} />}
+            </button>
+          </Tooltip>
+        )}
+
+        {onCanvas && activePanelId && (
+          <Tooltip label={shortcutLabel('moveIntoDock', 'Move into Dock')}>
+            <button
+              type="button"
+              aria-label="Move into Dock"
+              className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={() => moveIntoDock(workspaceId, activePanelId)}
+            >
+              <ArrowUpFromLine size={compact ? 12 : 14} />
             </button>
           </Tooltip>
         )}

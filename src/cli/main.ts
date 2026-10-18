@@ -8,8 +8,8 @@ import { serveCommand, SERVE_SUMMARY } from './serve'
 import { connectSocket } from './socketPort'
 import { CATE_API } from '@panels/api'
 
-async function writeImage(base64: string): Promise<string> {
-  const path = join(await mkdtemp(join(tmpdir(), 'cate-browser-')), 'screenshot.png')
+async function writeImage(base64: string, mimeType: unknown): Promise<string> {
+  const path = join(await mkdtemp(join(tmpdir(), 'cate-browser-')), mimeType === 'image/jpeg' ? 'screenshot.jpg' : 'screenshot.png')
   await writeFile(path, Buffer.from(base64, 'base64'), { mode: 0o600 })
   return path
 }

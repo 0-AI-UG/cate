@@ -48,7 +48,10 @@ export interface UIActions {
   toggleSidebar(): void
   openJoinDialog(request?: JoinRequest): void
   closeJoinDialog(): void
-  setOpenDialogOpen(open: boolean): void
+  /** "Open Workspace…": the window shows no workspace (the welcome page)
+   *  with the workspace picker over it. */
+  openWorkspacePicker(): void
+  closeWorkspacePicker(): void
   openMachineFolder(machine: Machine | null): void
   openShare(workspaceId: string | null): void
 }
@@ -88,7 +91,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
   // to it; one that succeeds closes it.
   openJoinDialog: (request = {}) => set({ joinDialog: request, overlay: null }),
   closeJoinDialog: () => set({ joinDialog: null }),
-  setOpenDialogOpen: (openDialogOpen) => set(openDialogOpen ? { openDialogOpen, overlay: null } : { openDialogOpen }),
+  openWorkspacePicker: () => set({ selectedWorkspaceId: null, openDialogOpen: true, overlay: null }),
+  closeWorkspacePicker: () => set({ openDialogOpen: false }),
   openMachineFolder: (machineFolder) => set({ machineFolder }),
   openShare: (shareWorkspaceId) => set({ shareWorkspaceId }),
 }))

@@ -22,16 +22,19 @@ const call = (argv: string[]) => {
 }
 
 describe('commands from specs', () => {
-  it('derives command words and keeps code-cell methods off the CLI', () => {
+  it('derives command words', () => {
     const words = commands.map((c) => c.words.join(' '))
     expect(words).toEqual(expect.arrayContaining([
       'version', 'notify', 'panel list', 'panel create', 'panel set', 'panel close', 'editor open',
-      'terminal read', 'terminal type', 'terminal press', 'browser run', 'browser reset',
+      'terminal read', 'terminal type', 'terminal press',
       'review note add', 'review note resolve', 'agent wait', 'agent start',
     ]))
-    // Common page operations are commands; the rest stay with code cells.
-    expect(words).toEqual(expect.arrayContaining(['browser snapshot', 'browser click', 'browser fill', 'browser press', 'browser goto']))
-    expect(words).not.toContain('browser drag')
+    // Every browser method is a command.
+    expect(words).toEqual(expect.arrayContaining([
+      'browser snapshot', 'browser click', 'browser fill', 'browser press', 'browser goto', 'browser drag', 'browser find',
+      'browser tab list', 'browser tab new', 'browser tab select', 'browser tab close',
+    ]))
+    expect(words).not.toContain('browser run')
     expect(words).not.toContain('panel focus')
   })
 })
@@ -57,6 +60,25 @@ describe('parseCommandLine', () => {
     expect(call(['browser', 'check', '5', '--no-checked']).args).toEqual({ target: 5, checked: false })
     expect(call(['browser', 'wait', '--text', 'Saved', '--timeout', '3000']).args).toEqual({ text: 'Saved', timeoutMs: 3000 })
     expect(call(['browser', 'scroll', 'down', '--panel', 'b1']).args).toEqual({ direction: 'down', pages: 1, panelId: 'b1' })
+    expect(call(['browser', 'drag', '[1,2]', '[30,40]']).args).toEqual({ from: [1, 2], to: [30, 40] })
+    expect(call(['browser', 'attr', '42', 'href']).args).toEqual({ target: 42, attribute: 'href' })
+  })
+
+  it('leaves an optional element id out when a locator names the element', () => {
+    expect(call(['browser', 'click', '--role', 'button', '--name', 'Save']).args).toEqual({ role: 'button', name: 'Save' })
+    expect(call(['browser', 'fill', '--name', 'Email', 'me@x.test']).args).toEqual({ name: 'Email', value: 'me@x.test' })
+    expect(call(['browser', 'select', '--name', 'Country', 'de', 'fr']).args).toEqual({ name: 'Country', values: 'de fr' })
+    expect(call(['browser', 'upload', 'a.pdf']).args).toEqual({ files: [path.resolve('/work/repo/a.pdf')] })
+    expect(call(['browser', 'upload', '7', 'a.pdf']).args).toEqual({ target: 7, files: [path.resolve('/work/repo/a.pdf')] })
+    expect(call(['browser', 'attr', '--role', 'link', '--name', 'Docs', 'href']).args).toEqual({ role: 'link', name: 'Docs', attribute: 'href' })
+  })
+
+  it('parses tab commands with short handles', () => {
+    expect(call(['browser', 'tab', 'select', 't2'])).toMatchObject({ method: 'cate.browser.selectTab', args: { tabId: 't2' } })
+    expect(call(['browser', 'tab', 'new'])).toMatchObject({ method: 'cate.browser.createTab', args: {} })
+    expect(call(['browser', 'tab', 'close', '--mine']).args).toEqual({ mine: true })
+    expect(call(['browser', 'click', '3', '--tab', 't1']).args).toEqual({ target: 3, tabId: 't1' })
+    expect(() => parse(['browser', 'tab', 'select', '2'])).toThrow(/tab handles look like t2/)
   })
 
     it('parses flags anywhere, --flag=value, booleans and --no-', () => {
@@ -90,13 +112,6 @@ describe('parseCommandLine', () => {
     expect(call(['panel', 'create', 'editor', '--file', 'a.md']).args).toEqual({ type: 'editor', filePath: path.resolve('/work/repo/a.md') })
   })
 
-  it('keeps quoted JavaScript as one argument', () => {
-    expect(call(['browser', 'run', 'var tab = await cua.getTab({panelId:"x"});', '--panel', 'b1']).args).toEqual({
-      code: 'var tab = await cua.getTab({panelId:"x"});',
-      panelId: 'b1',
-    })
-  })
-
   it.each([
     [['nope'], /unknown command: nope/],
     [['panel', 'explode'], /unknown command: panel explode/],
@@ -108,7 +123,7 @@ describe('parseCommandLine', () => {
     [['terminal', 'read', '--lines', '0'], />= 1/],
     [['review', 'note', 'add', '--line', '3', '--body', 'b'], /missing --file/],
     [['review', 'note', 'add', '--file', 'f', '--line', '3', '--body', 'b', '--side', 'mid'], /old\|new/],
-    [['browser', 'run'], /missing <JavaScript>/],
+    [['browser', 'fill'], /missing <text>/],
   ])('rejects %j', (argv, message) => {
     expect(() => parse(argv)).toThrow(message)
   })
@@ -136,7 +151,7 @@ describe('parseCommandLine', () => {
     expect(parse(['help', 'panel', 'close'])).toMatchObject({ kind: 'help', text: expect.stringContaining('Usage:\n  cate panel close <panelId>') })
     expect(parse(['help', 'agent'])).toMatchObject({ kind: 'help', text: expect.stringContaining("Run 'cate agent <command> --help'") })
     expect(() => parse(['help', 'nope'])).toThrow(/unknown command: nope/)
-    expect(parse(['browser', 'run', '-h'])).toMatchObject({ kind: 'help', text: expect.stringContaining('<JavaScript>') })
+    expect(parse(['browser', 'click', '-h'])).toMatchObject({ kind: 'help', text: expect.stringContaining('--role') })
   })
 })
 
@@ -238,20 +253,21 @@ describe('runCli', () => {
     expect(out).toEqual(['{"text":"hi"}'])
   })
 
-  it('writes browser images to files for human output', async () => {
-    const value = { content: [{ type: 'text', text: 'state' }, { type: 'image', mimeType: 'image/png', data: 'AAAA' }] }
-    const writeImage = vi.fn(async () => '/tmp/shot.png')
-    const { d, out } = deps({ call: async () => value }, { writeImage })
-    expect(await runCli(['browser', 'run', 'await tab.getScreenshot()'], CATE_API, d)).toBe(0)
-    expect(writeImage).toHaveBeenCalledWith('AAAA')
-    expect(out[0]).toContain('state\nScreenshot: /tmp/shot.png')
-  })
-
   it('prints a page command result as text, its screenshot as a file and a long tree mostly in a file', async () => {
     const observation = { kind: 'ax', observationId: 'o2', url: 'https://example.test/', title: 'Example', viewport: {}, state: '- button "Save" [id=1]', elements: [], diff: false }
     const clicked = deps({ call: async () => ({ action: { method: 'click', status: 'dispatched' }, observation }) })
     expect(await runCli(['browser', 'click', '1'], CATE_API, clicked.d)).toBe(0)
     expect(clicked.out).toEqual(['click: dispatched\nPage: Example (https://example.test/)\n- button "Save" [id=1]'])
+
+    const noticed = deps({ call: async () => ({ ...observation, notices: ['The page in t1 opened tab t2 (https://login.test/).'] }) })
+    await runCli(['browser', 'snapshot'], CATE_API, noticed.d)
+    expect(noticed.out[0]).toBe('The page in t1 opened tab t2 (https://login.test/).\nPage: Example (https://example.test/)\n- button "Save" [id=1]')
+    const found = deps({ call: async () => ({ url: 'u', title: 't', elements: [{ id: 4, role: 'button', name: 'Save' }] }) })
+    await runCli(['browser', 'find', '--name', 'Save'], CATE_API, found.d)
+    expect(found.out).toEqual(['- button "Save" [id=4]'])
+    const attr = deps({ call: async () => ({ value: null, notices: ['Closed: tab t2.'] }) })
+    await runCli(['browser', 'attr', '1', 'href'], CATE_API, attr.d)
+    expect(attr.out).toEqual(['Closed: tab t2.\n(none)'])
 
     const writeImage = vi.fn(async () => '/tmp/shot.png')
     const shot = deps({ call: async () => ({ ...observation, kind: 'image', state: '', screenshot: { mimeType: 'image/png', data: 'AAAA', width: 1, height: 1 } }) }, { writeImage })
@@ -271,8 +287,6 @@ describe('runCli', () => {
     const failing = deps({ call: async () => { throw new RpcError('rejected', 'terminal-read-disabled: nope') } })
     expect(await runCli(['terminal', 'read'], CATE_API, failing.d)).toBe(1)
     expect(failing.err).toEqual(['cate: cate.terminal.read: terminal-read-disabled: nope'])
-    const cell = deps({ call: async () => ({ content: [], isError: true }) })
-    expect(await runCli(['browser', 'reset'], CATE_API, cell.d)).toBe(1)
   })
 
   it('exits 2 on usage errors without connecting, pointing at the right help', async () => {

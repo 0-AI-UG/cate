@@ -1,17 +1,19 @@
 // The actions ui/app owns: the palette, settings, the sidebar, overlays,
 // workspace switching, undo, opening, joining and sharing workspaces, the tour, the focused panel's
-// close, rename and claimed keys, and creating panels of every type (from the
+// close, rename, move into the dock and claimed keys, and creating panels of every type (from the
 // definitions, through client/host's panel actions).
 
 import { defineActions, storedShortcut, type ActionId } from '@kernel/interaction/contract'
 import { documentStoreFor } from '@client/document'
 import {
+  canMoveIntoDock,
   closePanel,
   createPanel,
   focusedLeafPanelId,
   focusedPanelId,
   panelDefinition,
   registerActions,
+  moveIntoDock,
   registerPanelActions,
   requestPanelRename,
   requestPanelShortcut,
@@ -51,6 +53,7 @@ export const BUILTIN_ACTIONS = defineActions({
   // No native accelerator: Cmd+R must still reach a focused browser.
   renamePanel: { title: 'Rename Focused Panel', key: key('r', { command: true }), menu: { bar: 'file', group: 'close' }, keys: { windowOnly: true } },
   closePanel: { title: 'Close Panel', key: key('w', { command: true }), menu: { bar: 'file', group: 'close' } },
+  moveIntoDock: { title: 'Move Panel into Dock', menu: { bar: 'window', group: 'dock' } },
   toggleFileExplorer: { title: 'Toggle File Explorer', key: key('x', { command: true, shift: true }), menu: { bar: 'view', group: 'panes' } },
   toggleSearch: { title: 'Find in Files', key: key('f', { command: true, shift: true }), menu: { bar: 'edit', group: 'find' } },
   skills: { title: 'Skills…', key: key('s', { command: true, option: true }) },
@@ -127,7 +130,7 @@ export function registerBuiltinActions(): () => void {
         run: () => { void pickAndOpenFolder() },
         enabled: () => !!desktopPort(),
       },
-      openWorkspace: { run: () => useUIStore.getState().setOpenDialogOpen(true) },
+      openWorkspace: { run: () => useUIStore.getState().openWorkspacePicker() },
       joinWorkspace: {
         run: () => useUIStore.getState().openJoinDialog(),
         enabled: () => !!tryClientApp()?.pair,
@@ -148,6 +151,16 @@ export function registerBuiltinActions(): () => void {
         async run({ workspaceId }) {
           const panelId = workspaceId ? focusedLeafPanelId(workspaceId) : null
           if (workspaceId && panelId) await closePanel(workspaceId, panelId)
+        },
+      },
+      moveIntoDock: {
+        run({ workspaceId }) {
+          const panelId = workspaceId ? focusedLeafPanelId(workspaceId) : null
+          if (workspaceId && panelId) moveIntoDock(workspaceId, panelId)
+        },
+        enabled({ workspaceId }) {
+          const panelId = workspaceId ? focusedLeafPanelId(workspaceId) : null
+          return !!workspaceId && !!panelId && canMoveIntoDock(workspaceId, panelId)
         },
       },
       toggleFileExplorer: focusedPanelClaim('toggleFileExplorer'),

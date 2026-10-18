@@ -5,8 +5,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { RotateCw as ArrowClockwise } from 'lucide-react'
-import { Spinner } from '../../kernel/interaction'
-import { CateLogo } from '../chrome/CateLogo'
+import { CateLogo, Spinner } from '../../kernel/interaction'
 import { useDesktopPort, type DesktopPort, type UpdateStatus } from '../desktop'
 import headerImg from '../assets/welcome-header.jpg'
 

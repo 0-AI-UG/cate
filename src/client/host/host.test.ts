@@ -12,6 +12,7 @@ import { documentStoreFor } from '@client/document'
 import { createPanel, newId } from './createPanel'
 import { creatableDefinitions, panelDefinition, registerPanelDefinitions } from './definitions'
 import { focusedLeafPanelId } from './focus'
+import { canMoveIntoDock, moveIntoDock } from './moveIntoDock'
 import { CANVAS_REVEAL_INTENT, revealPanel } from './reveal'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions()))
@@ -69,6 +70,21 @@ describe('createPanel', () => {
   it('an unknown type creates nothing', () => {
     ws = attachTestWorkspace('w')
     expect(createPanel('w', 'nope')).toBeNull()
+  })
+})
+
+describe('moveIntoDock', () => {
+  it('moves a canvas panel to right after its canvas panel, shown and focused; its emptied node goes', () => {
+    ws = attachTestWorkspace('w', fixture())
+    expect(canMoveIntoDock('w', 't1')).toBe(false)
+    expect(moveIntoDock('w', 't1')).toBe(false)
+    expect(canMoveIntoDock('w', 'a')).toBe(true)
+    expect(moveIntoDock('w', 'a')).toBe(true)
+    const doc = ws.confirmed()
+    expect(placementOf(doc, 'a')).toMatchObject({ dock: main, stackId: 's1', index: 1 })
+    expect(doc.canvases.C.nodes.N1).toBeUndefined()
+    expect(ws.state.getSnapshot().activeTabs.s1).toBe('a')
+    expect(ws.state.getSnapshot().focusedPanelId).toBe('a')
   })
 })
 

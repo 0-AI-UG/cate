@@ -1,7 +1,7 @@
 // client/host public entry: the panel side of the client core: definitions,
-// session handles, creating, closing, focusing and revealing panels, panel
-// targeting, opening links, creation menus and the action registry. No UI:
-// each shell hosts panels in its own UI.
+// session handles, creating, closing, focusing, revealing and moving panels
+// into the dock, panel targeting, opening links, creation menus and the
+// action registry. No UI: each shell hosts panels in its own UI.
 
 export {
   registerPanelDefinitions,
@@ -32,6 +32,7 @@ export { createPanel, clientPanelKit, inheritedCheckout, newId } from './createP
 export { openLink, panelShowingFile, type LinkTarget, type OpenLinkOptions } from './links'
 export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type ConfirmedClose } from './close'
 export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab } from './focus'
+export { canMoveIntoDock, moveIntoDock } from './moveIntoDock'
 export { revealPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
 export {
   registerActions,

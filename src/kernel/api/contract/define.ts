@@ -170,7 +170,7 @@ export function indexCateApi(namespaces: readonly CateApiNamespace[]): Map<strin
  *  clients are not (D3). */
 export interface ApiCaller {
   kind: 'cli' | 'client'
-  /** Stable key for per-caller state (sticky target, code sessions). */
+  /** Stable key for per-caller state (sticky target). */
   id: string
   /** The panel the caller runs in: the terminal of a CLI token. */
   panelId?: string
@@ -199,11 +199,6 @@ export interface ApiHandlerContext {
   signal: AbortSignal
   /** The caller's sticky target (`cate panel set`). */
   sticky: ApiStickyTarget
-  /** The panel implicit targeting would pick for `type`, without failing. */
-  defaultTarget(type: string): string | undefined
-  /** Calls another method as the same caller, through the same gates. Browser
-   *  code cells use it for page operations. */
-  invoke(method: string, args?: Record<string, unknown>): Promise<unknown>
 }
 
 export interface ApiSessionContext extends ApiHandlerContext {

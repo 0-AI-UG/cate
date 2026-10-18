@@ -57,7 +57,7 @@ cate panel list
 ```
 
 `*` marks the focused panel. The ID column shows short ids; `cate panel list
---json` gives full ids (needed inside browser JavaScript).
+--json` gives full ids.
 
 When working repeatedly with one panel, select it for the current terminal:
 
@@ -93,8 +93,10 @@ cate panel create browser
 
 Page operations run on the Cate window that most recently showed or used the
 panel, so a Cate window with the workspace open must be connected. There are
-no selectors and no page evaluation: you act on elements by the numeric ids
-of an accessibility snapshot.
+no CSS selectors and no page evaluation: you name an element by its numeric
+id from an accessibility snapshot, or by the role and name the snapshot
+shows. To script several steps, chain commands in your shell and parse
+`--json` output where you need values.
 
 ### Commands
 
@@ -103,27 +105,55 @@ Each command acts on the active tab of the target browser panel (`--panel
 prints what changed:
 
 ```bash
-cate browser snapshot              # accessibility tree with element ids
+# Tabs and navigation (see "Tabs" below)
+cate browser tab list              # tabs of every browser panel
+cate browser tab new https://example.com
+cate browser tab select t2
+cate browser goto https://example.com
+cate browser back                  # forward, reload
+
+# Reading the page
+cate browser snapshot              # accessibility tree with element ids (--screenshot adds an image)
+cate browser screenshot            # saves an image and prints its path
+cate browser find --role link      # only the matching elements, with their ids
+cate browser attr 42 href
+cate browser wait --text "Saved"   # or --url "**/done", --element 42 --state enabled,
+                                   # or --role button --name Save --state enabled
+
+# Acting on elements
 cate browser click 42              # or a point: cate browser click '[400,300]'
+cate browser click --role button --name "Save"   # by role and name instead of an id
 cate browser hover 42              # opens hover menus and tooltips
-cate browser fill 17 "user@example.com"
+cate browser fill 17 "user@example.com"   # or: fill --name Email "user@example.com"
 cate browser type "more text"      # inserts at the focused field
 cate browser press Enter           # keys and shortcuts: Escape, Tab, Meta+a
 cate browser select 34 de          # an option value, not its label
 cate browser check 5               # --no-checked to uncheck
 cate browser scroll down           # --target 12 scrolls an element
-cate browser wait --text "Saved"   # or --url "**/done", or --element 42 --state enabled
-cate browser goto https://example.com
-cate browser back                  # forward, reload
-cate browser screenshot            # saves a PNG and prints its path
-cate browser attr 42 href
+cate browser drag '[100,100]' '[300,200]'
+cate browser select-text 17 "word" # --cursor after puts the caret after it
 cate browser upload 42 report.pdf  # see "Files" below
 cate browser login                 # see "Signing in" below
 cate browser dialog accept         # answer an alert, confirm or prompt
+
+# Logs and files
 cate browser console --level error # the page's console messages and uncaught errors
 cate browser network --failed      # the page's requests (--filter api/ narrows)
-cate browser tabs                  # tabs of every browser panel; cate browser tab <id> shows one
+cate browser download              # the page, or a URL relative to it; cate browser downloads lists them
+
+# The panel
+cate browser viewport mobile       # desktop, compact (the panel's size), custom --width --height
+cate browser resize 900 700        # the panel's size on its canvas
 ```
+
+`--role` and `--name` find the element in a fresh snapshot: the role as the
+snapshot prints it (`button`, `link`, `textbox`, `checkbox`), and the name
+as the quoted text after it, matched as contained text in any case
+(`--exact` for the whole name, same case). They must match exactly one
+element: with several, the error lists them with their ids, so pick one or
+narrow with `--role` or `--exact`. When nothing matches yet, the command
+waits for it like a click waits for its element (up to 5 seconds,
+`--timeout`). `find` prints the matches and acts on nothing.
 
 A snapshot lists elements as `- role "name" [state] [id=N]`, nested under
 their landmarks; states appear only when they tell you something
@@ -152,6 +182,33 @@ URL the tab already shows loads the page again.
 Do not guess ids or coordinates. A dispatched click is not proof that a
 business operation completed: `wait` for its result or read the next state.
 Every error says what to do next.
+
+### Tabs
+
+Tabs have short handles in their panel: `t1`, `t2`, never reused. Commands
+act on the panel's active tab, the one it shows; `goto`, `back`, `forward`
+and `reload` change what that tab shows and never open or switch tabs:
+
+```bash
+cate browser tab list              # tabs of every browser panel: * marks each panel's active tab
+cate browser tab new https://example.com   # opens a tab and switches to it
+cate browser tab select t2         # switch the panel to t2
+cate browser tab close             # the active tab, or: tab close t3
+cate browser tab close --mine      # every tab you opened with tab new
+```
+
+`tab list` says who opened each tab: `you`, another `agent`, the `person`,
+or `page in t1` for a popup. A link or script that opens a new window
+(`target=_blank`, `window.open`) opens a tab in the same panel and the panel
+shows it. The person shares the panel and can switch, open and close tabs
+too. Either way, the next command's output starts with what changed since
+your last call, for example `The page in t1 opened tab t2
+(https://login.example.com/); the panel shows it now, so commands act on
+it.` Read those lines before you act. `--tab t1` on a page command makes it
+fail instead of acting on another tab if the active one is not `t1`; a
+command whose tab stops being the active one while it runs fails with
+`browser-tab-changed`, which says why. Close the tabs you opened when you
+are done (`tab close --mine`), unless the person should keep them.
 
 ### Files
 
@@ -196,86 +253,15 @@ tab.
 
 Screenshots need the panel on screen. When it is off screen (scrolled away
 on the canvas, or behind another tab), `screenshot` fails at once and says
-so; snapshots and actions keep working while hidden. Open the printed PNG
-path with your image-viewing tool; shell output cannot attach pixels to the
-model.
-
-### Code cells
-
-For several steps with logic in between (find an element by name, loop, branch),
-use `cate browser run` with persistent JavaScript. Each cell starts with `tab`,
-the active tab of the browser panel the commands above would act on (`--panel
-<id>` picks another), so a cell can act right away:
-
-```bash
-cate browser run 'var s = await tab.getAXState({emit:false}); var email = s.elements.find(e => e.name === "Email").id; await tab.setValue(email, "user@example.com"); await tab.pressKey("Enter");'
-cate browser snapshot
-cate browser run 'await tab.click(12); await tab.waitFor({text:"Saved"});'   # ids from the snapshot above
-```
-
-A cell works on the tabs of that one panel; code never names panels. `tab` is
-bound on its first use and stays on that tab for the rest of the cell: if the
-user switches tabs meanwhile, the calls fail instead of acting on another tab.
-The next cell gets the then-active tab again, also after a timeout or reset.
-Its first action uses the latest snapshot, from a command or an earlier cell.
-`await cua.listTabs()` lists the panel's tabs, `await cua.getTab({tabId})`
-switches to one and `await cua.createBrowserTab("https://example.com")` opens
-one; both make it the cell's `tab` and print its page.
-
-Each observation and action prints like the commands above. Every method takes
-a trailing options object; `{emit:false}` keeps its output out of the cell.
-Observations are also returned as objects: `kind`, `observationId`,
-`documentId`, `url`, `title`, `viewport`, `state` (the tree text) and
-`elements` (`{id, role, name, value, states}`) for code. `getAXState()`
-returns changes since the last observation; `{disableDiffing:true}` returns
-the full tree. `getScreenshot()` returns only pixels and keeps the current
-ids; `getAXStateAndScreenshot()` refreshes both, and still returns the tree
-(with the reason) when the panel is off screen. `{profile:true}` adds phase
-timings.
-
-```javascript
-const src = await tab.getAttribute(42, "src"); // string or null
-await tab.download(src);                       // relative URLs resolve against the current page
-await tab.click(42);                           // or [x,y]; {timeoutMs} for the actionability wait
-await tab.hover(42);
-await tab.setValue(17, "replacement");
-await tab.typeText("insert at selection");
-await tab.pressKey("Enter");
-await tab.selectText(17, "text", {selectionType:"cursor_after"});
-await tab.scroll([400,300], "down", 1);
-await tab.drag([100,100], [300,200]);
-await tab.setChecked(42, true);
-await tab.selectOption(42, "DE");              // or ["DE","FR"] for a multiple select
-await tab.upload(42, ["/workspace/a.pdf", "/workspace/b.pdf"]); // or one path; null answers an open chooser; {drop:true}
-await tab.login({username: "me@example.com"});  // a saved login; options optional
-await tab.dialog({accept: true, text: "answer"}); // accept:false dismisses
-const errors = await tab.console({level: "error"}); // {entries, total}
-const failed = await tab.network({failed: true});
-await tab.waitFor({text:"Saved"});
-await tab.waitFor({element:42, state:"enabled"});
-await tab.goto("https://example.com");
-await tab.back(); await tab.forward(); await tab.reload();
-await tab.setViewport({width:1280,height:800});
-await tab.resize({width:800,height:600});
-await tab.download();                          // current tab URL
-await tab.downloads();                         // download progress and completion
-await tab.close();
-```
-
-Use `var` for reusable bindings; top-level `await` is supported. The session
-has no Node.js, filesystem, network, or DOM evaluation access. Await every
-action. `nodeRepl.write(value)` adds text output. Each terminal (each
-`CATE_TOKEN`) has its own code session. A cell runs for at most 30 seconds;
-a timeout, an unawaited call or `cate browser reset` resets the session, which
-cancels queued and pending actions and drops your variables (the next cell
-still starts with `tab`). Input already dispatched cannot be undone. Each cell
-retains at most 16 million serialized observation characters; split long
-screenshot loops across cells.
+so; snapshots and actions keep working while hidden (`snapshot --screenshot`
+still prints the tree and says why the image is missing). Open the printed
+image path with your image-viewing tool; shell output cannot attach pixels
+to the model.
 
 Agent actions display a cursor and click ripples in the browser panel. User
-input takes control back and cancels pending automation. Responsive viewport
-size and canvas panel size are independent; `resize` applies only to canvas
-panels with a 400×300 minimum.
+input takes control back and cancels pending automation. The page's viewport
+(`viewport`) and the panel's size on the canvas (`cate browser resize <width>
+<height>`, canvas panels only, at least 400x300) are independent.
 
 ## Other surfaces
 

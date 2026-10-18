@@ -583,6 +583,8 @@ export class BrowserPageHost {
     }
   }
 
+  get isDisposed(): boolean { return this.disposed }
+
   dispose(): void {
     this.disposed = true
     this.unsubscribeDialogs()

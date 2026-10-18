@@ -50,21 +50,35 @@ export async function apiInvoke(page: Page, method: string, args: Record<string,
   }, { method: `cate.browser.${method}`, args, workspaceId: workspaceId ?? null })
 }
 
-/** Pins the tab once, so a popup or user tab switch cannot retarget a binding. */
+/** The panel's active tab. */
+async function activeTab(page: Page, browser: BrowserFixture): Promise<InvokeResult & { tabId?: string }> {
+  const listed = await apiInvoke(page, 'listTabs', { panelId: browser.panelId }, browser.workspaceId)
+  if (!listed.ok) return listed
+  const tabs = (listed.result as { tabs: Array<{ tabId: string; active: boolean }> }).tabs
+  return { ...listed, tabId: tabs.find((tab) => tab.active)?.tabId }
+}
+
+/** Pins the tab once, so a popup or user tab switch cannot retarget a binding.
+ *  `selectTab` without a tab shows the active one once its page is ready. */
 export async function browserInvoke(page: Page, browser: BrowserFixture, method: string, args: Record<string, unknown> = {}): Promise<InvokeResult> {
-  const untargeted = method === 'getTab' || method === 'listTabs' || method === 'createTab'
+  const untargeted = method === 'selectTab' || method === 'listTabs' || method === 'createTab' || method === 'closeTab'
+  if (method === 'selectTab' && !args.tabId) {
+    const active = await activeTab(page, browser)
+    if (!active.ok || !active.tabId) return { ok: false, error: active.error ?? 'no active tab' }
+    args = { ...args, tabId: active.tabId }
+  }
   if (!browser.tabId && !untargeted) {
-    const binding = await browserInvoke(page, browser, 'getTab')
+    const binding = await browserInvoke(page, browser, 'selectTab')
     if (!binding.ok) return binding
     browser.tabId = (binding.result as { tabId: string }).tabId
   }
   const outcome = await apiInvoke(page, method, { panelId: browser.panelId, ...(browser.tabId && !untargeted ? { tabId: browser.tabId } : {}), ...args }, browser.workspaceId)
-  if (method === 'getTab' && outcome.ok && !browser.tabId) browser.tabId = (outcome.result as { tabId: string }).tabId
+  if (method === 'selectTab' && outcome.ok && !browser.tabId) browser.tabId = (outcome.result as { tabId: string }).tabId
   return outcome
 }
 
 export async function observe(page: Page, browser: BrowserFixture, visual = false): Promise<BrowserObservation> {
-  const result = await browserInvoke(page, browser, visual ? 'getAXStateAndScreenshot' : 'getAXState', { disableDiffing: true })
+  const result = await browserInvoke(page, browser, 'getAXState', { disableDiffing: true, ...(visual ? { screenshot: true } : {}) })
   expect(result, `browser observation: ${result.error ?? ''}`).toMatchObject({ ok: true })
   return result.result as BrowserObservation
 }
@@ -89,7 +103,7 @@ export async function activeAction(page: Page, browser: BrowserFixture, method: 
 }
 
 export async function waitForText(page: Page, browser: BrowserFixture, text: string) {
-  return activeAction(page, browser, 'waitFor', { condition: { text }, timeoutMs: 5000 })
+  return activeAction(page, browser, 'waitFor', { text, timeoutMs: 5000 })
 }
 
 /** Independent test oracle/setup. Never goes through the public browser tool. */

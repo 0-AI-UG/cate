@@ -9,7 +9,12 @@ import type { AgentCursorKind } from '@services/browser/contract'
 
 export type { BrowserViewport }
 
+/** Who opened a tab: a page of another tab (`window.open`, target=_blank),
+ *  or a `cate` caller (its id); null for the person. */
+export type BrowserTabOpener = { page: string } | { caller: string } | null
+
 export type BrowserTab = {
+  /** A short handle, unique in the panel (`t2`). */
   id: string
   url: string
   title: string
@@ -23,6 +28,7 @@ export type BrowserTab = {
   /** The client whose webview reported the URL; null for an explicit
    *  navigation every client loads (address bar, `cate.browser.goto`). */
   navSource: string | null
+  openedBy: BrowserTabOpener
 }
 
 export type BrowserDownload = {
@@ -79,7 +85,8 @@ export type BrowserHistoryAction = 'back' | 'forward' | 'reload' | 'reloadHard'
 export type BrowserOp =
   /** Address bar input: a URL, an internal page or a search. */
   | { kind: 'navigate'; input: string; tabId?: string }
-  | { kind: 'newTab'; url?: string }
+  /** `openerTabId`: the tab whose page asked for it. */
+  | { kind: 'newTab'; url?: string; openerTabId?: string }
   | { kind: 'closeTab'; tabId: string }
   | { kind: 'selectTab'; tabId: string }
   | { kind: 'pin'; tabId: string; pinned?: boolean }
@@ -110,3 +117,9 @@ export function stepBrowserZoom(current: number, direction: 1 | -1): number {
 }
 
 export const COMPACT_VIEWPORT: BrowserViewport = { preset: 'compact' }
+
+/** The sizes the fixed presets emulate. */
+export const BROWSER_VIEWPORT_PRESETS = {
+  mobile: { width: 390, height: 844 },
+  desktop: { width: 1280, height: 800 },
+} as const

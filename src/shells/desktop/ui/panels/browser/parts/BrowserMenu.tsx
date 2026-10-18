@@ -6,7 +6,7 @@ import { POPOVER_SURFACE, useDismissableLayer } from '../../../kernel/interactio
 import type { BrowserBookmark } from '@services/browser/contract'
 import type { BrowserViewport } from '@panels/browser/contract'
 import { BrowserFavicon } from './BrowserFavicon'
-import { faviconForUrl } from '@panels/browser/contract'
+import { BROWSER_VIEWPORT_PRESETS, faviconForUrl } from '@panels/browser/contract'
 
 interface Props {
   bookmarks: BrowserBookmark[]
@@ -156,8 +156,7 @@ export function BrowserMenu({
           onChange={(event) => {
             const preset = event.target.value
             if (preset === 'compact') onViewportChange({ preset: 'compact' })
-            else if (preset === 'mobile') onViewportChange({ preset: 'mobile', width: 390, height: 844 })
-            else if (preset === 'desktop') onViewportChange({ preset: 'desktop', width: 1280, height: 800 })
+            else if (preset === 'mobile' || preset === 'desktop') onViewportChange({ preset, ...BROWSER_VIEWPORT_PRESETS[preset] })
             else onViewportChange({
               preset: 'custom',
               width: viewport.preset === 'compact' ? 1280 : viewport.width,

@@ -43,8 +43,6 @@ function ctx(callerPanelId?: string): ApiSessionContext {
     method: 'cate.review.x',
     signal: new AbortController().signal,
     sticky: { get: () => undefined, set: () => {}, clear: () => {} },
-    defaultTarget: () => undefined,
-    invoke: async () => undefined,
     panelId: 'review',
     exclusive: true,
   }

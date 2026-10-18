@@ -17,7 +17,7 @@ export interface BrowserViewportState {
 }
 
 export interface BrowserImage {
-  mimeType: 'image/png'
+  mimeType: 'image/jpeg' | 'image/png'
   data: string
   width: number
   height: number
@@ -33,8 +33,6 @@ export interface BrowserElement {
 }
 
 export interface BrowserObservation extends BrowserBinding {
-  /** Allows a multi-step controller to stop after user input between calls. */
-  userInputEpoch?: number
   /** Image observations do not refresh numeric element IDs or accessibility state. */
   kind: 'ax' | 'image'
   observationId: string
@@ -56,19 +54,12 @@ export interface BrowserObservationPerformance {
   frameWaitMs: number
   captureMs: number
   resizeMs: number
-  pngMs: number
+  encodeMs: number
   base64Ms: number
   totalMs: number
   imageBytes: number
   cacheEntries: number
   cacheEstimatedBytes: number
-}
-
-export type BrowserContent = { type: 'text'; text: string } | { type: 'image'; mimeType: 'image/png'; data: string }
-
-export interface BrowserCodeResult {
-  content: BrowserContent[]
-  isError?: boolean
 }
 
 /** A JavaScript dialog (`alert`, `confirm`, `prompt`) a page is waiting on. */
@@ -96,8 +87,6 @@ export const BROWSER_ELEMENT_READ_METHODS = new Set(['getAttribute'])
 export const BROWSER_ACTION_METHODS = new Set(['click', 'hover', 'setValue', 'typeText', 'pressKey', 'scroll', 'drag', 'selectText', 'setChecked', 'selectOption', 'upload', 'login'])
 /** The page's console messages and network requests, as the driver recorded them. */
 export const BROWSER_LOG_METHODS = new Set(['console', 'network'])
-const BROWSER_LIFECYCLE_METHODS = new Set(['getTab', 'listTabs', 'createTab', 'goto', 'back', 'forward', 'reload', 'close', 'setViewport', 'resize', 'download', 'downloads'])
-export const BROWSER_METHODS = new Set([...BROWSER_OBSERVATION_METHODS, ...BROWSER_ELEMENT_READ_METHODS, ...BROWSER_ACTION_METHODS, ...BROWSER_LOG_METHODS, ...BROWSER_LIFECYCLE_METHODS, 'waitFor', 'dialog'])
 
 export interface BrowserConsoleEntry {
   at: number

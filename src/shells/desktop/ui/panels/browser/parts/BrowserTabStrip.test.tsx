@@ -88,6 +88,47 @@ describe('BrowserTabStrip', () => {
     expect(onSelect).toHaveBeenCalledWith('tab-1')
   })
 
+  it('does not capture a press on a tab when the strip overflows', () => {
+    const onSelect = vi.fn()
+    act(() => {
+      root.render(
+        <BrowserTabStrip
+          tabs={[
+            { id: 'tab-1', url: 'https://one.example', title: 'One' },
+            { id: 'tab-2', url: 'https://two.example', title: 'Two' },
+          ]}
+          activeTabId="tab-1"
+          onSelect={onSelect}
+          onClose={vi.fn()}
+          onNewTab={vi.fn()}
+          onTogglePin={vi.fn()}
+        />,
+      )
+    })
+
+    const strip = host.querySelector('[aria-label="Browser tabs"]') as HTMLDivElement
+    const secondTab = host.querySelector('[title^="Two"]') as HTMLDivElement
+    const setPointerCapture = vi.fn()
+    Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: 600 })
+    Object.defineProperty(strip, 'clientWidth', { configurable: true, value: 300 })
+    Object.assign(strip, { setPointerCapture, releasePointerCapture: vi.fn() })
+
+    const pointer = (type: string, clientX: number): Event => Object.assign(
+      new MouseEvent(type, { bubbles: true, button: 0, clientX }),
+      { pointerId: 1 },
+    )
+    act(() => {
+      secondTab.dispatchEvent(pointer('pointerdown', 120))
+      strip.dispatchEvent(pointer('pointermove', 121))
+      secondTab.dispatchEvent(pointer('pointerup', 121))
+      secondTab.click()
+    })
+
+    // A captured press would send the click to the strip, not the tab.
+    expect(setPointerCapture).not.toHaveBeenCalled()
+    expect(onSelect).toHaveBeenCalledWith('tab-2')
+  })
+
   it('does not capture close-button clicks when the strip overflows', () => {
     const onClose = vi.fn()
     act(() => {

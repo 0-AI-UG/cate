@@ -49,7 +49,6 @@ export { WindowIdContext, useWindowId } from './state/windowContext'
 export {
   selectWorkspace,
   openLocalFolder,
-  pickAndOpenFolder,
   closeWorkspace,
   cycleWorkspace,
   revealPanel,
@@ -72,7 +71,6 @@ export { workspacePanelTree, sortByWorktree, type WorkspacePanelTree, type Windo
 export { ConnectionNotice, WorkspaceToggle } from './sidebar/connectionStatus'
 export { WelcomePage } from './chrome/WelcomePage'
 export { OverlayHeader, LeftSidebarReopen, useLeftChromeInset, useWindowControlsInset } from './chrome/chrome'
-export { CateLogo } from './chrome/CateLogo'
 export { UpdateButton } from './chrome/UpdateButton'
 export { WelcomeDialog } from './dialogs/WelcomeDialog'
 export { UpdateReadyDialog } from './dialogs/UpdateReadyDialog'
@@ -85,7 +83,8 @@ export { ONBOARDING_STEPS, type OnboardingStep } from './onboarding/steps'
 // workspace views registered into other modules' slots.
 export { openFile, openDroppedFiles } from './workspace/fileActions'
 export { FileViewsHost, WorkspaceScope, installReviewOpener, type ReviewOpener } from './workspace/hosts'
-export { ConnectionBlocker, useWorkspaceBlock } from './workspace/ConnectionBlocker'
+export { useWorkspaceBlock } from './workspace/ConnectionBlocker'
+export { WorkspaceGate } from './workspace/opening'
 export { registerWorkspaceViews } from './workspace/views'
 
 // Settings.
@@ -106,7 +105,6 @@ export { DEFAULT_SETTINGS_PAGES, registerDefaultSettingsPages } from './settings
 export { installBuiltinWallpapers, BUILTIN_WALLPAPER_PREFIX, type BuiltinWallpaper } from './settings/pages/CanvasPage'
 
 // Pairing.
-export { JoinWorkspaceDialog } from './pairing/JoinWorkspaceDialog'
 export { DevicesPage, PairingCode, WorkspaceDevices } from './pairing/DevicesPage'
 
 // Notifications (display of runtime notification events).

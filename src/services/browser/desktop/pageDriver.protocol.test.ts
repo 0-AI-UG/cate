@@ -6,8 +6,7 @@ import { domSnapshot } from './pageDriver.testSupport'
 
 it('returns numeric stable IDs, request-scoped diffs and actual image bytes', async () => {
   const events = new EventEmitter()
-  const png = Buffer.alloc(24); png.writeUInt32BE(800, 16); png.writeUInt32BE(600, 20)
-  const image = { toPNG: () => png, resize: vi.fn() }; image.resize.mockReturnValue(image)
+  const image = { toBitmap: () => Buffer.alloc(4, 255), toJPEG: () => Buffer.from('jpeg'), getSize: () => ({ width: 800, height: 600 }), resize: vi.fn() }; image.resize.mockReturnValue(image)
   const contents = {
     id: 500, once: vi.fn(), isDestroyed: () => false, getURL: () => 'https://example.test', getTitle: () => 'Example', getZoomFactor: () => 1,
     capturePage: vi.fn(async () => image), send: vi.fn(),
@@ -28,7 +27,7 @@ it('returns numeric stable IDs, request-scoped diffs and actual image bytes', as
   const identity = { panelId: 'p', tabId: 't' }
   const runtime = new PageDriverRegistry(); await runtime.attach(contents as never, identity)
   const first = await runtime.execute(500, identity, 'getAXStateAndScreenshot', {}) as { result: { elements: {id:number}[]; observationId:string; documentId:string; screenshot:{data:string}; state:string; diff:boolean } }
-  expect(first.result).toMatchObject({ elements: [{ id: expect.any(Number) }], screenshot: { data: png.toString('base64') }, diff: false })
+  expect(first.result).toMatchObject({ elements: [{ id: expect.any(Number) }], screenshot: { mimeType: 'image/jpeg', data: Buffer.from('jpeg').toString('base64'), width: 800 }, diff: false })
   const second = await runtime.execute(500, identity, 'getAXState', { observationId: first.result.observationId }) as typeof first
   expect(second.result.elements[0].id).toBe(first.result.elements[0].id)
   expect(second.result.diff).toBe(true)

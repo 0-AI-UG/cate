@@ -3,10 +3,13 @@
 
 import {
   describeBrowserAction,
+  describeBrowserElement,
   describeBrowserConsole,
   describeBrowserNetwork,
   describeBrowserObservation,
   type BrowserActionOutcome,
+  type BrowserDownloadEntry,
+  type BrowserElement,
   type BrowserObservation,
 } from '@services/browser/contract'
 
@@ -81,19 +84,6 @@ function conversation(value: unknown): string {
   return [header, ...(messages.length > 0 ? messages : ['(no messages)'])].join('\n\n')
 }
 
-function browserContent(value: unknown): string {
-  const content = asObject(value)?.content
-  if (!Array.isArray(content)) return generic(value)
-  return content.map((item) => {
-    const block = asObject(item)
-    if (block?.type === 'text') return String(block.text ?? '')
-    if (typeof block?.path === 'string') {
-      return `Screenshot: ${block.path}\n${SCREENSHOT_NOTE}`
-    }
-    return '[Browser image: use --json for image data]'
-  }).join('\n')
-}
-
 const SCREENSHOT_NOTE = 'Open this file with your image-viewing tool to inspect the page visually.'
 
 /** A page operation's result: an observation, an action with the observation
@@ -113,10 +103,25 @@ function browserTabs(value: unknown): string {
   const tabs = asObject(value)?.tabs
   if (!Array.isArray(tabs)) return generic(value)
   if (tabs.length === 0) return '(no tabs)'
-  return table(['', 'PANEL', 'TAB', 'URL', 'TITLE'], tabs.map((item) => {
+  return table(['', 'PANEL', 'TAB', 'OPENED BY', 'URL', 'TITLE'], tabs.map((item) => {
     const tab = asObject(item) ?? {}
-    return [tab.active ? '*' : '', shortId(text(tab.panelId)), text(tab.tabId), text(tab.url), text(tab.title)]
+    return [tab.active ? '*' : '', shortId(text(tab.panelId)), text(tab.tabId), text(tab.opener), text(tab.url), text(tab.title)]
   }))
+}
+
+/** `cate browser find`: the matching elements as snapshot lines. */
+function browserElements(value: unknown): string {
+  const elements = asObject(value)?.elements
+  if (!Array.isArray(elements)) return generic(value)
+  if (elements.length === 0) return '(no matching elements)'
+  return (elements as BrowserElement[]).map(describeBrowserElement).join('\n')
+}
+
+function browserDownloads(value: unknown): string {
+  const downloads = asObject(value)?.downloads
+  if (!Array.isArray(downloads)) return generic(value)
+  if (downloads.length === 0) return '(no downloads)'
+  return table(['STATE', 'FILE', 'PATH'], (downloads as BrowserDownloadEntry[]).map((entry) => [text(entry.state), text(entry.filename), text(entry.filePath)]))
 }
 
 /** Console messages or requests, with how many matched when not all are shown. */
@@ -139,9 +144,10 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
     return result?.timedOut === true ? `${runs}\n(timed out before every agent was ready)` : runs
   },
   conversation,
-  browserContent,
   browserObservation,
   browserTabs,
+  browserElements,
+  browserDownloads,
   browserConsole: browserLog(describeBrowserConsole),
   browserNetwork: browserLog(describeBrowserNetwork),
   prettyJson: (value) => JSON.stringify(value, null, 2),
@@ -159,15 +165,27 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
   },
 }
 
+/** A result's `notices` (what changed in the browser panel's tabs since the
+ *  last call), printed above the result itself. */
+function splitNotices(value: unknown): { value: unknown; notices: string[] } {
+  const object = asObject(value)
+  if (!object || !Array.isArray(object.notices) || !object.notices.every((notice) => typeof notice === 'string')) return { value, notices: [] }
+  const { notices, ...rest } = object
+  const keys = Object.keys(rest)
+  return { value: keys.length === 1 && keys[0] === 'value' ? rest.value : rest, notices: notices as string[] }
+}
+
 export function formatOutput(format: string | undefined, value: unknown): string {
+  const { value: shown, notices } = splitNotices(value)
   const formatter = format ? FORMATTERS[format] : undefined
-  return formatter ? formatter(value) : generic(value)
+  const text = formatter ? formatter(shown) : generic(shown)
+  return notices.length ? [...notices, text].join('\n') : text
 }
 
 /** Where human output puts what is too big or binary to print. */
 export interface OutputFiles {
-  /** Saves a base64 PNG and returns its path. */
-  image?: (base64: string) => Promise<string>
+  /** Saves a base64 image of `mimeType` and returns its path. */
+  image?: (base64: string, mimeType: unknown) => Promise<string>
   /** Saves text and returns its path. */
   text?: (text: string) => Promise<string>
 }
@@ -188,21 +206,11 @@ async function spill(text: string, files: OutputFiles): Promise<string> {
 /** Saves browser images and long browser text to files, so the human output
  *  prints their paths. */
 export async function prepareOutput(format: string | undefined, value: unknown, files: OutputFiles): Promise<void> {
-  if (format === 'browserObservation') {
-    const object = asObject(value)
-    const observation = asObject(object?.observation) ?? (typeof object?.observationId === 'string' ? object : null)
-    if (!observation) return
-    const shot = asObject(observation.screenshot)
-    if (shot && typeof shot.data === 'string' && files.image) shot.path = await files.image(shot.data)
-    if (typeof observation.state === 'string') observation.state = await spill(observation.state, files)
-    return
-  }
-  if (format !== 'browserContent') return
-  const content = asObject(value)?.content
-  if (!Array.isArray(content)) return
-  for (const item of content) {
-    const block = asObject(item)
-    if (block?.type === 'image' && typeof block.data === 'string' && files.image) block.path = await files.image(block.data)
-    if (block?.type === 'text' && typeof block.text === 'string') block.text = await spill(block.text, files)
-  }
+  if (format !== 'browserObservation') return
+  const object = asObject(value)
+  const observation = asObject(object?.observation) ?? (typeof object?.observationId === 'string' ? object : null)
+  if (!observation) return
+  const shot = asObject(observation.screenshot)
+  if (shot && typeof shot.data === 'string' && files.image) shot.path = await files.image(shot.data, shot.mimeType)
+  if (typeof observation.state === 'string') observation.state = await spill(observation.state, files)
 }

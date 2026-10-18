@@ -2,8 +2,8 @@
 // `cate.browser.*` page methods. Each runs on the panel's active tab, through
 // page operations on the driving client (`page.*`), and fails fast when a
 // person picks another tab meanwhile. The panel's session holds the tabs and
-// hands this its port; the methods about tabs and the panel itself (`getTab`,
-// `close`, `setViewport`, ...) stay the session's.
+// hands this its port; the methods about tabs and the panel itself
+// (`selectTab`, `closeTab`, `setViewport`, ...) stay the session's.
 
 import type { ApiSessionContext, CateSessionHandlers } from '@kernel/api/contract'
 import { RpcError } from '@kernel/rpc/contract'
@@ -33,6 +33,8 @@ export interface PageControlTab {
 export interface PageControlPanel {
   readonly panelId: string
   activeTabId(): string
+  /** What made the active tab active (`the person switched to it`), if known. */
+  activeTabCause(): string | null
   /** Throws `gone` for an unknown tab. */
   tab(tabId: string): PageControlTab
   isDisposed(): boolean
@@ -52,7 +54,7 @@ export interface PageControlDeps {
 }
 
 /** The session methods of `cate.browser.*` that page control answers. */
-export type PageControlHandlers = Omit<CateSessionHandlers<typeof browserApi>, 'getTab' | 'createTab' | 'downloads' | 'close' | 'setViewport' | 'resize'>
+export type PageControlHandlers = Omit<CateSessionHandlers<typeof browserApi>, 'selectTab' | 'createTab' | 'closeTab' | 'downloads' | 'setViewport' | 'resize'>
 
 export interface PageControl {
   handlers: PageControlHandlers
@@ -85,9 +87,9 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
   /** A bound tab that is no longer the panel's active one. */
   const tabChanged = (tabId: string): RpcError => {
     const active = panel.activeTabId()
-    return new RpcError('rejected', `browser-tab-changed: the panel now shows tab ${active}, not ${tabId}. `
-      + `Act on the active tab (omit --tab, or a new cell's \`tab\` in code), or switch back `
-      + `(cate browser tab ${tabId} --panel ${panel.panelId}, or cua.getTab({tabId:"${tabId}"}) in code).`)
+    const cause = panel.activeTabCause()
+    return new RpcError('rejected', `browser-tab-changed: the panel now shows tab ${active}, not ${tabId}${cause ? ` (${cause})` : ''}. `
+      + `Run the command again to act on ${active}, or switch back with cate browser tab select ${tabId} --panel ${panel.panelId}.`)
   }
 
   // A person's tab switch cancels work bound to the tab it left.
@@ -108,7 +110,8 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
   const execute = async (tabId: string, method: string, args: Record<string, unknown>, settle: boolean, call?: PageCall): Promise<unknown> => {
     const response: BrowserDriverResult = await panel.surface('page.execute', { tabId, method, args, ...(settle ? { settle } : {}) }, call)
     if (response.cursor) panel.showCursor(response.cursor)
-    if (response.error) throw new RpcError('rejected', response.recovery ? `${response.error}: ${response.recovery}` : response.error)
+    // A multi-line error (the matches of an ambiguous locator) gets its hint on a line of its own.
+    if (response.error) throw new RpcError('rejected', response.recovery ? `${response.error}${response.error.includes('\n') ? '\n' : ': '}${response.recovery}` : response.error)
     return response.result
   }
 
@@ -118,11 +121,6 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     const page = await panel.surface('page.ready', { tabId, nav: tab.nav }, call)
     still(tabId)
     return { panelId: panel.panelId, tabId, ...page }
-  }
-
-  /** Reruns an observation to fail fast when the user took over since `args` was observed. */
-  const checkUserInput = async (tabId: string, args: Record<string, unknown>, call: PageCall): Promise<void> => {
-    if (args._userInputEpoch !== undefined) await execute(tabId, 'getAXState', args, false, call)
   }
 
   const observeAfterNavigation = async (tabId: string, args: Record<string, unknown>, call: PageCall): Promise<unknown> => {
@@ -139,11 +137,6 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
 
   const historyMethod = async (action: 'back' | 'forward' | 'reload', args: Record<string, unknown>, call: PageCall): Promise<unknown> => {
     const tabId = boundTab(args.tabId).id
-    // A page too busy to observe can still be reloaded: that restarts it.
-    await checkUserInput(tabId, args, call).catch((error) => {
-      if (action !== 'reload' || !(error instanceof Error) || !error.message.startsWith('browser-page-unresponsive')) throw error
-    })
-    still(tabId)
     const { ok } = await panel.surface('page.history', { tabId, action }, call)
     if (!ok) throw new RpcError('rejected', 'no-history')
     still(tabId)
@@ -177,7 +170,7 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
         : `browser-login-no-saved-password: there is no saved password for ${host}. Ask the person to sign in, or to save the login in the browser panel.`)
     }
     if (matching.length > 1) {
-      throw new RpcError('rejected', `browser-login-ambiguous: ${host} has several saved logins (${names}); pick one with --user <name> (username in code)`)
+      throw new RpcError('rejected', `browser-login-ambiguous: ${host} has several saved logins (${names}); pick one with --user <name>`)
     }
     const [chosen] = matching
     if (policy === 'ask') {
@@ -195,9 +188,9 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
   }
 
   const handlers: PageControlHandlers = {
-    getAXState: (args, ctx) => pageMethod('getAXState', args, ctx),
+    getAXState: ({ screenshot, ...args }, ctx) => pageMethod(screenshot ? 'getAXStateAndScreenshot' : 'getAXState', args, ctx),
     getScreenshot: (args, ctx) => pageMethod('getScreenshot', args, ctx),
-    getAXStateAndScreenshot: (args, ctx) => pageMethod('getAXStateAndScreenshot', args, ctx),
+    find: (args, ctx) => pageMethod('find', args, ctx),
     getAttribute: (args, ctx) => pageMethod('getAttribute', args, ctx),
     waitFor: (args, ctx) => pageMethod('waitFor', args, ctx),
     click: (args, ctx) => pageMethod('click', args, ctx),
@@ -217,8 +210,6 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     login: (args, ctx) => login(args, ctx),
     goto: async (args, ctx) => {
       const tabId = boundTab(args.tabId).id
-      await checkUserInput(tabId, args, pageCall(ctx))
-      still(tabId)
       await panel.navigateTab(tabId, args.url)
       return observeAfterNavigation(tabId, args, pageCall(ctx))
     },
@@ -227,7 +218,6 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     reload: (args, ctx) => historyMethod('reload', args, pageCall(ctx)),
     download: async (args, ctx) => {
       const tab = boundTab(args.tabId)
-      await checkUserInput(tab.id, args, pageCall(ctx))
       const current = hasPage(tab) ? tab.url : ''
       if (!args.url && !current) throw new RpcError('rejected', 'url-required')
       let url: string

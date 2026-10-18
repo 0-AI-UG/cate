@@ -2,7 +2,7 @@
 // (`withSurface`, architecture 10.2). The client's view routes each one to
 // the webview of `tabId` and its page driver.
 
-import type { BrowserCodeResult, BrowserDriverResult } from './automation'
+import type { BrowserDriverResult } from './automation'
 
 export type BrowserSurfaceRequests = {
   /** Mounts the tab's page if needed, waits until the view has followed the
@@ -18,9 +18,6 @@ export type BrowserSurfaceRequests = {
   'page.confirm': { args: { message: string }; result: { ok: boolean } }
   /** Downloads `url` through the tab's partition. */
   'page.download': { args: { tabId: string; url: string }; result: { url: string } }
-  /** Runs a `cate.browser.run` cell in this client's code session for `key`. */
-  'code.run': { args: { key: string; cellId: string; code: string; deadlineMs: number }; result: BrowserCodeResult }
-  'code.reset': { args: { key: string }; result: void }
 }
 
 export type BrowserSurfaceOp = keyof BrowserSurfaceRequests
@@ -32,8 +29,6 @@ export const BROWSER_SURFACE_FEATURES = {
   'page.execute': 'pageDriver',
   'page.confirm': 'pageDriver',
   'page.download': 'pageDriver',
-  'code.run': 'pageDriver',
-  'code.reset': 'pageDriver',
 } as const satisfies Record<BrowserSurfaceOp, 'pageDriver'>
 export type BrowserSurfaceArgs<Op extends BrowserSurfaceOp> = BrowserSurfaceRequests[Op]['args']
 export type BrowserSurfaceResult<Op extends BrowserSurfaceOp> = BrowserSurfaceRequests[Op]['result']
