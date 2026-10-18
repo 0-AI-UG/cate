@@ -11,12 +11,12 @@ export const panelCliArea = defineCliArea({
   read: {
     key: 'cliPanelReadEnabled',
     code: 'panel-read-disabled',
-    detail: '`cate panel list`: enumerate the open panels, including each browser panel\'s url.',
+    detail: '`cate panel list / current / set / clear`: enumerate the open panels, including each browser panel\'s url, and pick the caller\'s own target panel.',
   },
   control: {
     key: 'cliPanelControlEnabled',
     code: 'panel-control-disabled',
-    detail: '`cate panel create / close`: add panels and close panels.',
+    detail: '`cate panel create / close / title`: add, close and rename panels.',
   },
 })
 

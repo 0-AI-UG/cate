@@ -13,7 +13,7 @@
 //     runtime/bin/rg[.exe]                 (bundled ripgrep for content search)
 //     cate/dist/cli.cjs                    (bundled `cate` in-terminal CLI)
 //     cate/bin/cate[.cmd]                  (launcher shims → bundled node)
-//     skills/<name>/SKILL.md               (bundled agent skills)
+//     skills/<name>/                       (bundled agent skills: SKILL.md, references/)
 //     BUILD                                (the build id: the install dir's
 //                                          name, ~/.cate/runtime/<build>/)
 //
