@@ -306,7 +306,7 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
         data-layout-id={layout.id}
         data-active={layoutActive || undefined}
         title={label}
-        className={`${ids.length === 0 ? CHIP : SEGMENT} ${ids.length === 0 ? chipTone(layoutActive) : `${layoutActive ? 'text-primary' : 'text-muted'} hover:text-primary hover:bg-surface-5`} ${ids.length > 0 && rename.renameId !== layout.id ? 'pr-2.5' : ''}`}
+        className={`${ids.length === 0 ? CHIP : SEGMENT} ${ids.length === 0 ? chipTone(layoutActive) : `${layoutActive ? 'text-primary' : 'text-muted'} hover:text-primary hover:bg-surface-5`} ${(ids.length > 0 ? rename.renameId !== layout.id : !closable) ? 'pr-2.5' : ''}`}
         style={NO_DRAG}
         // The second click of a double-click must not switch again: that would steal the focus from the rename it opens.
         onClick={(e) => { if (!wasDragged.current && e.detail < 2) switchLayout(workspaceId, host, layout.id) }}
@@ -319,11 +319,11 @@ export function WindowHeader({ workspaceId, window, activeLayoutId, leadingInset
         }}
         onContextMenu={(e) => { void onContextMenu(e, layout, ids.length > 0) }}
       >
-        <span className="shrink-0 text-muted"><LayoutGlyph dock={layout.dock} shown={layoutActive} focused={focused} /></span>
+        {ids.length > 0 && <span className="shrink-0 text-muted"><LayoutGlyph dock={layout.dock} shown={layoutActive} focused={focused} /></span>}
         {rename.renameId === layout.id ? (
           rename.input(layout.id, 'w-20 min-w-0 px-0')
         ) : ids.length === 0 ? (
-          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <span className="min-w-0 flex-1 whitespace-nowrap">{label}</span>
         ) : null}
         {ids.length === 0 && closable && <CloseButton label="Close tab" active={layoutActive} onClose={() => doClose(layout.id)} />}
       </div>
