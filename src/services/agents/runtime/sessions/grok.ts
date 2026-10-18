@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentConversationMessage } from '../../contract'
+import { parseJsonLine, tokenCount, totalTokens, totalsFromInclusiveInput } from '../usage/records'
 import { exists, findInWorkspaceBuckets, forEachJsonlRecord, isoTimestamp, object } from './storeFiles'
-import type { AgentSessionContext, AgentSessionStore } from './types'
+import type { AgentSessionContext, AgentSessionStore, AgentUsage, AgentUsageRecord } from './types'
 
 interface GrokSessionSummary {
   generated_title?: unknown
@@ -92,4 +93,76 @@ const files = async (context: AgentSessionContext): Promise<string[]> => {
   return file ? [file] : []
 }
 
-export const grokSessionStore: AgentSessionStore = { title, conversation, files }
+// --- Usage ---------------------------------------------------------------------------
+
+/** Grok records cost in ticks, `1 USD = 10^10` ticks. */
+const TICKS_PER_DOLLAR = 10_000_000_000
+const ticksToUsd = (ticks: unknown): number | null => typeof ticks === 'number' && Number.isFinite(ticks) && ticks >= 0 ? ticks / TICKS_PER_DOLLAR : null
+
+const grokTotals = (usage: Record<string, unknown>) => totalsFromInclusiveInput(
+  tokenCount(usage.inputTokens), tokenCount(usage.cachedReadTokens), tokenCount(usage.cacheCreationTokens),
+  tokenCount(usage.outputTokens), tokenCount(usage.reasoningTokens),
+)
+
+/**
+ * Grok Build 0.2.106 `updates.jsonl`: usage lands on `turn_completed`
+ * updates (`inputTokens` includes the cached part), split per model under
+ * `usage.modelUsage`. A model without its own cost gets a token-share slice
+ * of what the aggregate cost leaves. The session's cwd is its bucket folder.
+ */
+export function grokUsageRecords(text: string, cwd: string | null): AgentUsageRecord[] {
+  if (!text.includes('"turn_completed"')) return []
+  const record = parseJsonLine(text)
+  const params = object(record?.params)
+  const update = object(params?.update)
+  const usage = object(update?.usage)
+  if (!record || !params || update?.sessionUpdate !== 'turn_completed' || !usage) return []
+  const sessionId = typeof params.sessionId === 'string' ? params.sessionId : ''
+  const promptId = typeof update.prompt_id === 'string' ? update.prompt_id : null
+  const agentClock = object(params._meta)?.agentTimestampMs
+  const timestampMs = typeof agentClock === 'number' && Number.isFinite(agentClock) ? agentClock
+    : typeof record.timestamp === 'number' && Number.isFinite(record.timestamp) ? (record.timestamp > 1e12 ? record.timestamp : record.timestamp * 1000) : null
+  if (timestampMs === null) return []
+  const make = (model: string, usageOf: Record<string, unknown>, cost: number | null): AgentUsageRecord =>
+    ({ timestampMs, model, sessionId, cwd, totals: grokTotals(usageOf), reportedCostUsd: cost, dedupeKey: promptId === null ? null : `${sessionId}:${promptId}:${model}` })
+
+  const models = Object.entries(object(usage.modelUsage) ?? {}).flatMap(([model, raw]) => {
+    const usageOf = object(raw)
+    return model && usageOf && totalTokens(grokTotals(usageOf)) > 0 ? [{ model, usage: usageOf }] : []
+  })
+  if (models.length === 0) return totalTokens(grokTotals(usage)) > 0 ? [make('grok', usage, ticksToUsd(usage.costUsdTicks))] : []
+
+  const ticked = models.reduce((sum, m) => sum + (ticksToUsd(m.usage.costUsdTicks) ?? 0), 0)
+  const untickedTokens = models.reduce((sum, m) => sum + (ticksToUsd(m.usage.costUsdTicks) === null ? totalTokens(grokTotals(m.usage)) : 0), 0)
+  const aggregate = ticksToUsd(usage.costUsdTicks)
+  const remaining = aggregate === null ? null : Math.max(0, aggregate - ticked)
+  return models.map((m) => {
+    const own = ticksToUsd(m.usage.costUsdTicks)
+    const share = own ?? (remaining !== null && untickedTokens > 0 ? remaining * (totalTokens(grokTotals(m.usage)) / untickedTokens) : null)
+    return make(m.model, m.usage, share)
+  })
+}
+
+/** `<root>/<encodeURIComponent(cwd)>/<session>/updates.jsonl` names its cwd. */
+function bucketCwd(file: string): string | null {
+  try {
+    return decodeURIComponent(path.basename(path.dirname(path.dirname(file))))
+  } catch {
+    return null
+  }
+}
+
+const grokUsage: AgentUsage = {
+  source: {
+    kind: 'transcripts',
+    root: (homeDir) => path.join(homeDir, '.grok', 'sessions'),
+    fileName: 'updates.jsonl',
+    parser: (file, state) => {
+      if (state !== undefined && state !== null) return null
+      const cwd = bucketCwd(file)
+      return { line: (text) => grokUsageRecords(text, cwd), state: () => null }
+    },
+  },
+}
+
+export const grokSessionStore: AgentSessionStore = { title, conversation, files, usage: grokUsage }

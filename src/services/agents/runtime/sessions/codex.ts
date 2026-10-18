@@ -1,8 +1,10 @@
 import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { AgentConversationMessage } from '../../contract'
+import type { AgentConversationMessage, UsageAgentLimits, UsageLimitWindow } from '../../contract'
+import { isoInstant, parseJsonLine, tokenCount, totalTokens, totalsFromInclusiveInput } from '../usage/records'
+import { MONTH_WINDOW_MINS, SESSION_WINDOW_MINS, WEEK_WINDOW_MINS, clampPercent, probeJsonLines, sortLimitWindows } from '../usage/probe'
 import { SAFE_SESSION_ID, exists, forEachJsonlRecord, isoTimestamp, object, withReadOnlySqlite } from './storeFiles'
-import type { AgentSessionContext, AgentSessionStore } from './types'
+import type { AgentSessionContext, AgentSessionStore, AgentUsage, AgentUsageLineParser, AgentUsageRecord } from './types'
 
 interface CodexSessionIndexEntry {
   id: string
@@ -135,4 +137,178 @@ const files = async (context: AgentSessionContext): Promise<string[]> => {
   return file ? [file] : []
 }
 
-export const codexSessionStore: AgentSessionStore = { title, conversation, files }
+// --- Usage ---------------------------------------------------------------------------
+
+/** A rollout's reading state: `token_count` events carry no model or cwd, so
+ *  they carry forward from `session_meta` and `turn_context`. */
+export interface CodexUsageState {
+  model: string
+  sessionId: string
+  cwd: string | null
+  lastUsage: string | null
+  sawSessionMeta: boolean
+  /** While true, leading usage events are copies of a parent's history. */
+  inForkCopies: boolean
+  forkCopyAnchorMs: number
+}
+
+/** A forked or subagent rollout opens with the parent's history copied in one
+ *  burst (gaps of 0-40ms); the child's first real usage follows a model turn
+ *  (5s+). One second splits them, as in ccusage. */
+const FORK_COPY_MAX_GAP_MS = 1000
+
+function isCodexUsageState(value: unknown): value is CodexUsageState {
+  const s = object(value)
+  return !!s && typeof s.model === 'string' && typeof s.sessionId === 'string' && (s.cwd === null || typeof s.cwd === 'string')
+    && (s.lastUsage === null || typeof s.lastUsage === 'string') && typeof s.sawSessionMeta === 'boolean'
+    && typeof s.inForkCopies === 'boolean' && typeof s.forkCopyAnchorMs === 'number'
+}
+
+function isForkedSession(payload: Record<string, unknown>): boolean {
+  return typeof payload.forked_from_id === 'string'
+    || typeof object(object(object(payload.source)?.subagent)?.thread_spawn)?.parent_thread_id === 'string'
+}
+
+/**
+ * Codex 0.160 rollouts: usage deltas are `event_msg` `token_count` events'
+ * `info.last_token_usage` (`input_tokens` includes the cached part). Codex
+ * re-emits an unchanged event on some stream boundaries (dropped), and a fork
+ * copies its parent's events (already counted from the parent's file).
+ */
+export function codexUsageParser(saved?: CodexUsageState): AgentUsageLineParser {
+  const state: CodexUsageState = saved
+    ? { ...saved }
+    : { model: '', sessionId: '', cwd: null, lastUsage: null, sawSessionMeta: false, inForkCopies: false, forkCopyAnchorMs: 0 }
+  const line = (text: string): AgentUsageRecord[] => {
+    if (!text.includes('"token_count"') && !text.includes('"turn_context"') && !text.includes('"session_meta"')) return []
+    const record = parseJsonLine(text)
+    const payload = object(record?.payload)
+    if (!record || !payload) return []
+    const timestampMs = typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : NaN
+    if (record.type === 'session_meta') {
+      // Only the first meta is this file's session; a fork repeats its ancestors'.
+      if (state.sawSessionMeta) return []
+      state.sawSessionMeta = true
+      const id = payload.id ?? payload.session_id
+      if (typeof id === 'string') state.sessionId = id
+      if (typeof payload.cwd === 'string') state.cwd = payload.cwd
+      if (!Number.isNaN(timestampMs) && isForkedSession(payload)) {
+        state.inForkCopies = true
+        state.forkCopyAnchorMs = timestampMs
+      }
+      return []
+    }
+    if (record.type === 'turn_context') {
+      if (typeof payload.model === 'string') state.model = payload.model
+      if (typeof payload.cwd === 'string') state.cwd = payload.cwd
+      return []
+    }
+    const last = payload.type === 'token_count' ? object(object(payload.info)?.last_token_usage) : undefined
+    // An event before its turn_context (no model yet) must not consume the
+    // duplicate check, or its re-emission once the model is known is lost.
+    if (!last || Number.isNaN(timestampMs) || !state.model) return []
+    const signature = JSON.stringify(last)
+    if (signature === state.lastUsage) return []
+    state.lastUsage = signature
+    if (state.inForkCopies) {
+      if (timestampMs - state.forkCopyAnchorMs < FORK_COPY_MAX_GAP_MS) {
+        state.forkCopyAnchorMs = timestampMs
+        return []
+      }
+      state.inForkCopies = false
+    }
+    const totals = totalsFromInclusiveInput(
+      tokenCount(last.input_tokens), tokenCount(last.cached_input_tokens), tokenCount(last.cache_write_input_tokens),
+      tokenCount(last.output_tokens), tokenCount(last.reasoning_output_tokens),
+    )
+    if (totalTokens(totals) === 0) return []
+    return [{ timestampMs, model: state.model, sessionId: state.sessionId, cwd: state.cwd, totals, reportedCostUsd: null, dedupeKey: null }]
+  }
+  return { line, state: () => ({ ...state }) }
+}
+
+/** Codex's `planType` slugs as the plan ChatGPT shows. */
+export function codexPlanLabel(planType: unknown): string | undefined {
+  switch (planType) {
+    case 'free': return 'ChatGPT Free Subscription'
+    case 'go': return 'ChatGPT Go Subscription'
+    case 'plus': return 'ChatGPT Plus Subscription'
+    case 'pro': return 'ChatGPT Pro 20x Subscription'
+    case 'prolite': return 'ChatGPT Pro 5x Subscription'
+    case 'team': return 'ChatGPT Team Subscription'
+    case 'business': case 'self_serve_business_prolite': case 'self_serve_business_usage_based': return 'ChatGPT Business Subscription'
+    case 'enterprise': case 'ent26': case 'enterprise_cbp_automation': case 'enterprise_cbp_usage_based': return 'ChatGPT Enterprise Subscription'
+    case 'edu': case 'edu_plus': case 'edu_pro': return 'ChatGPT Edu Subscription'
+    case 'unknown': return 'ChatGPT Subscription'
+    default: return undefined
+  }
+}
+
+/** `account/read` and `account/rateLimits/read` answers. `primary` and
+ *  `secondary` are positions, not durations: without an explicit length, paid
+ *  plans have the five-hour and weekly pair and Free/Go a monthly allowance.
+ *  Only the main `codex` bucket is shown. */
+export function codexUsageLimits(accountAnswer: Record<string, unknown>, ratesAnswer: Record<string, unknown>, checkedAt: string): UsageAgentLimits {
+  const account = object(accountAnswer.account)
+  const email = typeof account?.email === 'string' ? account.email : undefined
+  const plan = codexPlanLabel(account?.planType)
+  const base = { agent: 'codex' as const, checkedAt, ...(email ? { email } : {}), ...(plan ? { plan } : {}) }
+  if (account?.type !== 'chatgpt') return { ...base, windows: [], unavailable: { reason: 'unsupported' } }
+  const snapshot = object(object(ratesAnswer.rateLimitsByLimitId)?.codex) ?? object(ratesAnswer.rateLimits) ?? {}
+  const windows: UsageLimitWindow[] = []
+  if (!snapshot.limitId || snapshot.limitId === 'codex') {
+    const monthly = snapshot.planType === 'free' || snapshot.planType === 'go'
+    for (const [id, fallbackMins] of [['primary', monthly ? MONTH_WINDOW_MINS : SESSION_WINDOW_MINS], ['secondary', WEEK_WINDOW_MINS]] as const) {
+      const window = object(snapshot[id])
+      if (typeof window?.usedPercent !== 'number') continue
+      const mins = typeof window.windowDurationMins === 'number' ? window.windowDurationMins : fallbackMins
+      const kind = mins >= MONTH_WINDOW_MINS ? 'monthly' : mins >= WEEK_WINDOW_MINS ? 'weekly' : 'session'
+      const resetsAt = isoInstant(window.resetsAt)
+      windows.push({ id, kind, label: kind === 'session' ? 'Session' : kind === 'weekly' ? 'Weekly' : 'Monthly', usedPercent: clampPercent(window.usedPercent), windowDurationMins: mins, ...(resetsAt ? { resetsAt } : {}) })
+    }
+  }
+  const credits = object(ratesAnswer.rateLimitResetCredits)
+  let resetCredits: UsageAgentLimits['resetCredits']
+  if (typeof credits?.availableCount === 'number') {
+    const expiries = (Array.isArray(credits.credits) ? credits.credits : []).flatMap((c) => object(c)?.status === 'available' && typeof object(c)?.expiresAt === 'number' ? [object(c)!.expiresAt as number] : [])
+    const nextExpiresAt = expiries.length > 0 ? isoInstant(Math.min(...expiries)) : undefined
+    resetCredits = { availableCount: Math.max(0, credits.availableCount), ...(nextExpiresAt ? { nextExpiresAt } : {}) }
+  }
+  return { ...base, windows: sortLimitWindows(windows), ...(resetCredits ? { resetCredits } : {}) }
+}
+
+const codexUsage: AgentUsage = {
+  source: {
+    kind: 'transcripts',
+    root: (homeDir) => path.join(homeDir, '.codex', 'sessions'),
+    parser: (_file, state) => state === undefined ? codexUsageParser() : isCodexUsageState(state) ? codexUsageParser(state) : null,
+  },
+  /** `codex app-server` JSON-RPC: initialize, then the account and its rate limits. */
+  async limits({ cwd, env, now }) {
+    let account: Record<string, unknown> = {}
+    const rates = await probeJsonLines<Record<string, unknown>>({
+      command: 'codex',
+      args: ['app-server'],
+      cwd,
+      env,
+      converse: (send, line) => {
+        if (!line) return send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'cate', title: 'Cate', version: '1.0.0' } } })
+        if (line.id !== 1) return
+        send({ method: 'initialized' })
+        send({ id: 2, method: 'account/read', params: {} })
+        send({ id: 3, method: 'account/rateLimits/read' })
+      },
+      answer: (line) => {
+        if (line.id === 2) account = object(line.result) ?? {}
+        if (line.id !== 3) return undefined
+        // Signed out: no account, so no limits (reported as unsupported).
+        if (line.error && !object(account.account)) return {}
+        if (line.error) throw new Error(`Codex could not read usage (JSON-RPC ${object(line.error)?.code ?? 'error'}).`)
+        return object(line.result) ?? {}
+      },
+    })
+    return codexUsageLimits(account, rates, now.toISOString())
+  },
+}
+
+export const codexSessionStore: AgentSessionStore = { title, conversation, files, usage: codexUsage }

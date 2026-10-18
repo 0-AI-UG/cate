@@ -1,7 +1,9 @@
+import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentConversationMessage } from '../../contract'
+import { recordedCost, tokenCount, totalTokens } from '../usage/records'
 import { isoTimestamp, withReadOnlySqlite } from './storeFiles'
-import type { AgentSessionContext, AgentSessionStore } from './types'
+import type { AgentSessionContext, AgentSessionStore, AgentUsage, AgentUsageRecord } from './types'
 
 const SAFE_PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
@@ -145,4 +147,81 @@ const files = async ({ session, homeDir }: AgentSessionContext): Promise<string[
   return database ? [database, `${database}-wal`] : []
 }
 
-export const hermesSessionStore: AgentSessionStore = { title, conversation, files }
+interface HermesUsageRow {
+  session_id: string
+  model: string
+  task: string
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  reasoning_tokens: number
+  estimated_cost_usd: number
+  actual_cost_usd: number
+  seen: number
+  cwd: string | null
+}
+
+/**
+ * Hermes (state.db v30) totals usage per session, model and task in
+ * `session_model_usage` (`input_tokens` excludes the cache), with the
+ * session's cwd on `sessions`. It keeps no per-turn rows, so a row lands on
+ * its `last_seen` instant: a session that spans days counts on its last.
+ */
+export function hermesUsageRecord(row: HermesUsageRow, profile: string): AgentUsageRecord | null {
+  const outputTokens = tokenCount(row.output_tokens)
+  const totals = {
+    uncachedInputTokens: tokenCount(row.input_tokens),
+    cachedInputTokens: tokenCount(row.cache_read_tokens),
+    cacheCreationTokens: tokenCount(row.cache_write_tokens),
+    outputTokens,
+    reasoningTokens: Math.min(outputTokens, tokenCount(row.reasoning_tokens)),
+  }
+  if (!row.model || typeof row.seen !== 'number' || totalTokens(totals) === 0) return null
+  return {
+    timestampMs: row.seen * 1000,
+    model: row.model,
+    sessionId: row.session_id,
+    cwd: row.cwd,
+    totals,
+    reportedCostUsd: recordedCost(row.actual_cost_usd, row.estimated_cost_usd),
+    dedupeKey: `${profile}:${row.session_id}:${row.model}:${row.task}`,
+  }
+}
+
+const USAGE_QUERY = `
+  SELECT u.session_id, u.model, u.task, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens,
+         u.reasoning_tokens, u.estimated_cost_usd, u.actual_cost_usd, COALESCE(u.last_seen, u.first_seen) AS seen, s.cwd
+  FROM session_model_usage u LEFT JOIN sessions s ON s.id = u.session_id
+  WHERE COALESCE(u.last_seen, u.first_seen, 0) * 1000 >= ?`
+
+/** Every profile's store: the default and `profiles/<name>/state.db`. */
+async function profiles(homeDir: string): Promise<string[]> {
+  try {
+    const entries = await readdir(path.join(homeDir, '.hermes', 'profiles'), { withFileTypes: true })
+    return ['default', ...entries.filter((e) => e.isDirectory() && SAFE_PROFILE_NAME.test(e.name)).map((e) => e.name)]
+  } catch {
+    return ['default']
+  }
+}
+
+const hermesUsage: AgentUsage = {
+  source: {
+    kind: 'store',
+    location: (homeDir) => path.join(homeDir, '.hermes'),
+    async records(homeDir, sinceMs) {
+      const records: AgentUsageRecord[] = []
+      for (const profile of await profiles(homeDir)) {
+        const file = databasePath(homeDir, profile)
+        const rows = file ? await withReadOnlySqlite(file, (database) => database.prepare(USAGE_QUERY).all(sinceMs) as unknown as HermesUsageRow[]) : null
+        for (const row of rows ?? []) {
+          const record = hermesUsageRecord(row, profile)
+          if (record) records.push(record)
+        }
+      }
+      return records
+    },
+  },
+}
+
+export const hermesSessionStore: AgentSessionStore = { title, conversation, files, usage: hermesUsage }

@@ -1,7 +1,8 @@
 import path from 'node:path'
 import type { AgentConversationMessage } from '../../contract'
+import { recordedCost, tokenCount, totalTokens } from '../usage/records'
 import { isoTimestamp, withReadOnlySqlite } from './storeFiles'
-import type { AgentSessionContext, AgentSessionStore } from './types'
+import type { AgentSessionContext, AgentSessionStore, AgentUsage, AgentUsageRecord } from './types'
 
 function databasePath(homeDir: string): string {
   return path.join(homeDir, '.local', 'share', 'opencode', 'opencode.db')
@@ -119,4 +120,49 @@ const files = async ({ homeDir }: AgentSessionContext): Promise<string[]> => {
   return [database, `${database}-wal`]
 }
 
-export const openCodeSessionStore: AgentSessionStore = { title, conversation, files }
+/**
+ * Each assistant `message` row's `data` carries `tokens` (`input` excludes the
+ * cache; `reasoning` is apart from `output`), `cost` (0 for subscription
+ * providers, priced instead), `modelID` and `path.cwd`.
+ */
+export function openCodeUsageRecord(row: { session_id: string; time_created: number; data: string }): AgentUsageRecord | null {
+  const data = parseJson(row.data)
+  const tokens = data?.tokens as Record<string, unknown> | undefined
+  if (!data || typeof data.modelID !== 'string' || !tokens || typeof tokens !== 'object') return null
+  const cache = (tokens.cache ?? {}) as Record<string, unknown>
+  const reasoning = tokenCount(tokens.reasoning)
+  const totals = {
+    uncachedInputTokens: tokenCount(tokens.input),
+    cachedInputTokens: tokenCount(cache.read),
+    cacheCreationTokens: tokenCount(cache.write),
+    outputTokens: tokenCount(tokens.output) + reasoning,
+    reasoningTokens: reasoning,
+  }
+  if (totalTokens(totals) === 0) return null
+  const completed = (data.time as Record<string, unknown> | undefined)?.completed
+  const cwd = (data.path as Record<string, unknown> | undefined)?.cwd
+  return {
+    timestampMs: typeof completed === 'number' && Number.isFinite(completed) ? completed : row.time_created,
+    model: data.modelID,
+    sessionId: row.session_id,
+    cwd: typeof cwd === 'string' ? cwd : null,
+    totals,
+    reportedCostUsd: recordedCost(data.cost),
+    dedupeKey: null,
+  }
+}
+
+const openCodeUsage: AgentUsage = {
+  source: {
+    kind: 'store',
+    location: databasePath,
+    async records(homeDir, sinceMs) {
+      const rows = await withReadOnlySqlite(databasePath(homeDir), (database) => database.prepare(
+        `SELECT session_id, time_created, data FROM message WHERE time_created >= ? AND json_extract(data, '$.role') = 'assistant'`,
+      ).all(sinceMs) as unknown as { session_id: string; time_created: number; data: string }[])
+      return rows?.flatMap((row) => openCodeUsageRecord(row) ?? []) ?? null
+    },
+  },
+}
+
+export const openCodeSessionStore: AgentSessionStore = { title, conversation, files, usage: openCodeUsage }

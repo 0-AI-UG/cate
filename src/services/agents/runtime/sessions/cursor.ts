@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentConversationMessage } from '../../contract'
 import { SAFE_SESSION_ID, exists, findInWorkspaceBuckets, firstInWorkspaceBuckets, forEachJsonlRecord, object } from './storeFiles'
-import type { AgentSessionContext, AgentSessionStore } from './types'
+import type { AgentSessionContext, AgentSessionStore, AgentUsage } from './types'
 
 interface CursorChatMeta {
   title?: unknown
@@ -127,4 +127,14 @@ const files = async (context: AgentSessionContext): Promise<string[]> => {
   return file ? [file] : []
 }
 
-export const cursorSessionStore: AgentSessionStore = { title, conversation, files }
+/** Cursor Agent keeps no token counts on disk: its chat stores and agent
+ *  transcripts hold messages only. */
+const cursorUsage: AgentUsage = {
+  source: {
+    kind: 'none',
+    location: (homeDir) => path.join(homeDir, '.cursor'),
+    note: async () => 'Cursor keeps no token counts on this machine.',
+  },
+}
+
+export const cursorSessionStore: AgentSessionStore = { title, conversation, files, usage: cursorUsage }

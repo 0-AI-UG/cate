@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
-import { readFile, realpath } from 'node:fs/promises'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentConversationMessage } from '../../contract'
 import { SAFE_SESSION_ID, exists, findInWorkspaceBuckets, firstInWorkspaceBuckets, forEachJsonlRecord, isoTimestamp } from './storeFiles'
-import type { AgentSessionContext, AgentSessionStore } from './types'
+import type { AgentSessionContext, AgentSessionStore, AgentUsage, AgentUsageScope } from './types'
 
 interface KiroSessionMetadata {
   id?: unknown
@@ -93,4 +93,57 @@ const files = async (context: AgentSessionContext): Promise<string[]> => {
   return file ? [file] : []
 }
 
-export const kiroSessionStore: AgentSessionStore = { title, conversation, files }
+/**
+ * Kiro CLI 2.19 records no tokens: a turn's `usage_summary` in
+ * `messages.jsonl` holds only the credits it cost, and `session.json`'s
+ * `workspacePaths` says where the session ran. The note totals the
+ * workspace's credits in the window.
+ */
+async function kiroCredits(homeDir: string, scope: AgentUsageScope): Promise<{ credits: number; sessions: number }> {
+  let credits = 0
+  let sessions = 0
+  const root = sessionsRoot(homeDir)
+  for (const bucket of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (!bucket.isDirectory()) continue
+    for (const session of await readdir(path.join(root, bucket.name), { withFileTypes: true }).catch(() => [])) {
+      const dir = path.join(root, bucket.name, session.name)
+      const file = path.join(dir, 'messages.jsonl')
+      if (!session.isDirectory() || ((await stat(file).catch(() => null))?.mtimeMs ?? 0) < scope.sinceMs) continue
+      let cwd: unknown
+      try {
+        cwd = (JSON.parse(await readFile(path.join(dir, 'session.json'), 'utf8')) as { workspacePaths?: unknown[] }).workspacePaths?.[0]
+      } catch {
+        continue
+      }
+      if (typeof cwd !== 'string' || !await scope.contains(cwd)) continue
+      let spent = 0
+      await forEachJsonlRecord(file, (record) => {
+        const payload = record.payload as { type?: unknown; promptTurnSummaries?: unknown } | undefined
+        const at = typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : NaN
+        if (payload?.type !== 'usage_summary' || !(at >= scope.sinceMs && at < scope.untilMs) || !Array.isArray(payload.promptTurnSummaries)) return
+        for (const turn of payload.promptTurnSummaries as Array<{ unit?: unknown; usage?: unknown }>) {
+          if (turn?.unit === 'credit' && typeof turn.usage === 'number' && Number.isFinite(turn.usage)) spent += turn.usage
+        }
+      })
+      if (spent > 0) {
+        credits += spent
+        sessions++
+      }
+    }
+  }
+  return { credits, sessions }
+}
+
+const kiroUsage: AgentUsage = {
+  source: {
+    kind: 'none',
+    location: sessionsRoot,
+    async note(homeDir, scope) {
+      const { credits, sessions } = await kiroCredits(homeDir, scope)
+      const spent = sessions === 0 ? '' : `: ${credits.toFixed(2)} credits across ${sessions} ${sessions === 1 ? 'session' : 'sessions'}`
+      return `Kiro records credits, not tokens${spent}.`
+    },
+  },
+}
+
+export const kiroSessionStore: AgentSessionStore = { title, conversation, files, usage: kiroUsage }

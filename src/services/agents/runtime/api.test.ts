@@ -64,7 +64,7 @@ beforeEach(() => {
     root: '/repo',
     agentsDir: dir,
     trust: { isTrusted: () => true, requireTrusted: () => {} },
-    settings: { agentHookInjection: () => ({}), panelRelationsEnabled: () => true },
+    settings: { agentHookInjection: () => ({}), panelRelationsEnabled: () => true, usagePriceOverrides: () => ({}) },
     relationRole: () => undefined,
     document: {
       panel: (id) => panels.find((panel) => panel.id === id),
@@ -183,7 +183,7 @@ describe('agents capability', () => {
   it('streams every agent panel\'s state as a snapshot, then changes', () => {
     terminal.set('term', {})
     const events: unknown[] = []
-    const impl = agentsCapabilityImpl(agents, {} as never)
+    const impl = agentsCapabilityImpl(agents, {} as never, {} as never)
     const stop = impl.panels(undefined as never, { emit: (event: unknown) => events.push(event) } as never, {} as never)
     terminal.set('term-2', { status: 'running' })
     expect(events).toEqual([
@@ -196,6 +196,6 @@ describe('agents capability', () => {
   it('reports running agents as busy', () => {
     terminal.set('term', { status: 'running' })
     terminal.set('term-2', {})
-    expect(agentsCapabilityImpl(agents, {} as never).busy(undefined as never, {} as never)).toEqual({ panelIds: ['term'] })
+    expect(agentsCapabilityImpl(agents, {} as never, {} as never).busy(undefined as never, {} as never)).toEqual({ panelIds: ['term'] })
   })
 })

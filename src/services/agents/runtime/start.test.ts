@@ -30,7 +30,7 @@ beforeEach(() => {
     root,
     agentsDir: path.join(root, '.agents-data'),
     trust: { isTrusted: () => true, requireTrusted: () => {} },
-    settings: { agentHookInjection: () => hookConfig, panelRelationsEnabled: () => true },
+    settings: { agentHookInjection: () => hookConfig, panelRelationsEnabled: () => true, usagePriceOverrides: () => ({}) },
     relationRole: () => undefined,
     document: {
       panel: (id) => panels.find((panel) => panel.id === id),

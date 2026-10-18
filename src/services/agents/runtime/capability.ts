@@ -3,9 +3,13 @@ import { applyAgentPanelStatesChange, type agentsCapability } from '../contract'
 import type { AgentsCore } from './core'
 import { interruptAgent, sendToAgent, startAgent } from './api'
 import type { AgentStarter } from './start'
+import type { AgentUsageService } from './usage/usage'
 
-export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter): CapabilityImpl<typeof agentsCapability> {
+export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter, usage: AgentUsageService): CapabilityImpl<typeof agentsCapability> {
   return {
+    usage: (input) => usage.summary(input),
+    refreshUsageRates: () => usage.refreshRates(),
+    usageLimits: (args) => usage.limits(args?.refresh === true),
     start: (request) => startAgent(starter, undefined, request),
     types: () => starter.types(),
     send: ({ panelId, prompt }) => sendToAgent(agents, panelId, prompt),

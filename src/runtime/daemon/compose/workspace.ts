@@ -274,7 +274,9 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     settings: {
       agentHookInjection: () => settings.get('agentHookInjection'),
       panelRelationsEnabled: () => settings.get('panelRelationsEnabled'),
+      usagePriceOverrides: () => settings.get('usagePriceOverrides'),
     },
+    env: baseEnv,
     document: agentsDocument(document),
     resolveCheckout,
     snapshot: snapshotProcessTree,

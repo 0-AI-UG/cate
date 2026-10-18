@@ -1,9 +1,9 @@
 // The workspace views the client registers into the slots other modules own:
-// the application overlays (skills, repository), tab decorations and
+// the application overlays (skills, repository, usage), tab decorations and
 // panel chrome overlays, canvas toolbar items and spawn flyouts, the canvas
 // and relation slots.
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { clientUi, errorMessage } from '@kernel/interaction'
@@ -22,8 +22,10 @@ import {
   type CanvasToolbarItemProps,
   type SpawnFlyoutProps,
 } from '../../client/layout/canvas'
-import { AgentChangesOverlay, AgentHooksOffOverlay, AgentSpawnFlyout, agentContextPreview, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
+import { AgentChangesOverlay, AgentHooksOffOverlay, AgentSpawnFlyout, UsageOverview, agentContextPreview, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
 import { SkillsDialog } from '../../workspace/skills'
+import { useWorkspaceList } from '../../client/workspaces'
+import { clientApp } from '../app'
 import {
   RepositoryOverview,
   WorktreePill,
@@ -81,6 +83,17 @@ function RepositoryPane({ workspaceId, tab, onTabChange }: { workspaceId: string
         if (!runtime || !(await openPullRequest(pr, host, runtime))) clientUi().showError(pullRequestNotOpenMessage(pr))
       }}
     />
+  )
+}
+
+function UsageOverlay({ workspaceId }: OverlayViewProps) {
+  const { entries } = useWorkspaceList(clientApp().workspaces)
+  const name = entries.find((e) => e.id === workspaceId)?.name
+  const workspace = useMemo(() => workspaceId && name !== undefined ? { id: workspaceId, label: name } : null, [workspaceId, name])
+  return (
+    <ContentOverlay>
+      <UsageOverview workspace={workspace} header={<OverlayHeader title="Usage" />} />
+    </ContentOverlay>
   )
 }
 
@@ -149,6 +162,7 @@ export function registerWorkspaceViews(): () => void {
   const stops = [
     registerOverlay('skills', SkillsOverlay),
     registerOverlay('pullRequests', RepositoryOverlay),
+    registerOverlay('usage', UsageOverlay),
     registerTabDecorations(useAgentTabDecorations),
     registerPanelChromeOverlay(WorktreeChip),
     registerPanelChromeOverlay(RelationToggle),

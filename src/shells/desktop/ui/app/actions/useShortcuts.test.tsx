@@ -82,8 +82,8 @@ describe('keyboard dispatch', () => {
 
 describe('ui state', () => {
   it('normalizes a hand-edited file and persists edits to the device', async () => {
-    expect(normalizeUiState({ minimapButtonCorner: 'middle', telemetryNoticeAcknowledgedVersion: -1, onboardingCompleted: 'yes' }))
-      .toEqual({ minimapButtonCorner: 'bottom-right', telemetryNoticeAcknowledgedVersion: 0, onboardingCompleted: false, sidebarTreeCollapsed: [], whatsNewSeenVersion: '' })
+    expect(normalizeUiState({ minimapButtonCorner: 'middle', telemetryNoticeAcknowledgedVersion: -1, onboardingCompleted: 'yes', usageMetric: 'spend', usageWindowDays: 14 }))
+      .toEqual({ minimapButtonCorner: 'bottom-right', telemetryNoticeAcknowledgedVersion: 0, onboardingCompleted: false, sidebarTreeCollapsed: [], whatsNewSeenVersion: '', usageMetric: 'cost', usageWindowDays: 30 })
     const device = createMemoryDeviceStore({ [UI_STATE_DOCUMENT]: { onboardingCompleted: true } })
     const store = createUiStateStore(device)
     expect(store.getSnapshot().loaded).toBe(false)
@@ -91,7 +91,7 @@ describe('ui state', () => {
     expect(store.getSnapshot()).toMatchObject({ loaded: true, onboardingCompleted: true })
     store.set('minimapButtonCorner', 'top-left')
     await Promise.resolve()
-    expect(await device.get(UI_STATE_DOCUMENT)).toEqual({ minimapButtonCorner: 'top-left', telemetryNoticeAcknowledgedVersion: 0, onboardingCompleted: true, sidebarTreeCollapsed: [], whatsNewSeenVersion: '' })
+    expect(await device.get(UI_STATE_DOCUMENT)).toEqual({ minimapButtonCorner: 'top-left', telemetryNoticeAcknowledgedVersion: 0, onboardingCompleted: true, sidebarTreeCollapsed: [], whatsNewSeenVersion: '', usageMetric: 'cost', usageWindowDays: 30 })
     device.change(UI_STATE_DOCUMENT, { onboardingCompleted: false })
     expect(store.getSnapshot().onboardingCompleted).toBe(false)
   })

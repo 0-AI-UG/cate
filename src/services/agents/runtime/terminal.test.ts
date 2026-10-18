@@ -130,7 +130,7 @@ beforeEach(() => {
     root,
     agentsDir: tmp('agents'),
     trust: { isTrusted: () => true, requireTrusted: () => {} },
-    settings: { agentHookInjection: () => hookConfig, panelRelationsEnabled: () => true },
+    settings: { agentHookInjection: () => hookConfig, panelRelationsEnabled: () => true, usagePriceOverrides: () => ({}) },
     relationRole: (type) => panelDefinition(type)?.relation,
     document: doc.document,
     resolveCheckout: async (cwd) => cwd ?? root,
@@ -139,7 +139,7 @@ beforeEach(() => {
     homeDir: tmp('home'),
     hookOptions: {
       titleRetryDelaysMs: [0],
-      sessionStores: { ...AGENT_SESSION_STORES, 'claude-code': { title: async () => 'Fix login bug', conversation: async () => [{ role: 'user', text: 'hi' }] } },
+      sessionStores: { ...AGENT_SESSION_STORES, 'claude-code': { ...AGENT_SESSION_STORES['claude-code'], title: async () => 'Fix login bug', conversation: async () => [{ role: 'user', text: 'hi' }] } },
     },
   }, (base) => agentTerminals = createTerminalAgents(base, terminal.service, { stampsFile }))
 })
