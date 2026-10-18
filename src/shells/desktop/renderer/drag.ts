@@ -14,7 +14,7 @@ export function createDragShell(api: DesktopApi, snapToGrid: () => boolean): Dra
   const start = (drag: CrossWindowDrag) => {
     let id = started.get(drag.dragId)
     if (!id) {
-      id = api.drag.start({ workspaceId: drag.workspaceId, panelId: drag.panelId, title: drag.title, size: drag.size }).catch(() => null)
+      id = api.drag.start({ workspaceId: drag.workspaceId, panelId: drag.panelId, title: drag.title, size: drag.size, ...(drag.layoutId ? { layoutId: drag.layoutId } : {}) }).catch(() => null)
       started.set(drag.dragId, id)
     }
     return id
@@ -34,6 +34,7 @@ export function createDragShell(api: DesktopApi, snapToGrid: () => boolean): Dra
     title: payload.title,
     size: payload.size ?? DEFAULT_SIZE,
     grab: RELAYED_GRAB,
+    ...(payload.layoutId ? { layoutId: payload.layoutId } : {}),
   })
 
   const ghost: DragGhostPort = {

@@ -129,6 +129,51 @@ describe('a relayed drag', () => {
   })
 })
 
+describe('a relayed layout drag', () => {
+  const layoutDrag = (): CrossWindowDrag => ({ ...drag(), panelId: 'far', title: 'Far', layoutId: 'W1-main' })
+  const open = (claim = true) => {
+    scene = renderScene({
+      doc: buildDocument([
+        add('p1', { to: 'stack', dock: main, stackId: 's1' }),
+        add('far', { to: 'window', windowId: 'W1', layoutId: 'W1-main', stackId: 'ws1' }),
+        add('far2', { to: 'split', dock: { layoutId: 'W1-main' }, beside: 'ws1', side: 'right', stackId: 'ws2', splitId: 'wsp' }),
+      ]),
+      stacks: { s1: { x: 0, y: 30, w: 1000, h: 570 } },
+      rects: {
+        '[data-window-view]': { x: 0, y: 0, w: 1000, h: 600 },
+        '[data-window-header]': { x: 0, y: 0, w: 1000, h: 24 },
+        '[data-strip-panel-id="p1"]': { x: 25, y: 0, w: 100, h: 24 },
+      },
+      window: true,
+    })
+    const r = relay(claim)
+    stop = setupCrossWindowDrops(r.port, () => domDropEnvironment(() => false))
+    return r
+  }
+
+  it('moves the whole layout, name and panes, into this window on an accepted claim', async () => {
+    const r = open()
+    r.move(layoutDrag(), { x: 900, y: 10 })
+    expect(scene!.drag().source?.origin).toMatchObject({ kind: 'layout', layoutId: 'W1-main' })
+    expect(scene!.drag().target).toMatchObject({ kind: 'tab-slot' })
+    r.end('d1')
+    await vi.waitFor(() => expect(scene!.doc().windows.W1).toBeUndefined())
+    const layouts = scene!.doc().windows[MAIN_WINDOW].layouts
+    expect(layouts.map((l) => l.id)).toEqual(['main', 'W1-main'])
+    expect(dockPanels(layouts[1].dock)).toEqual(['far', 'far2'])
+  })
+
+  it('a refused claim leaves the layout where it was', async () => {
+    const r = open(false)
+    const seq = scene!.workspace.document.seq
+    r.move(layoutDrag(), { x: 900, y: 10 })
+    r.end('d1')
+    await vi.waitFor(() => expect(r.port.claim).toHaveBeenCalled())
+    await Promise.resolve()
+    expect(scene!.workspace.document.seq).toBe(seq)
+  })
+})
+
 describe('shouldIgnoreDragEnd', () => {
   it('ignores an end for a different drag', () => {
     expect(shouldIgnoreDragEnd('a', 'b')).toBe(true)

@@ -5,6 +5,7 @@
 // panel's session never moves: both windows mirror the same document.
 
 import type { Point } from '@workspace/canvas/contract'
+import { createDocument, hostOf } from '@workspace/document/contract'
 import { newId } from '@client/host'
 import { documentStoreFor } from '@client/document'
 import { dropChanges } from './commit'
@@ -15,6 +16,12 @@ import { reduce, initial as runtimeInitial } from './runtime'
 import { useDragStore } from './store'
 import { applyBodyClassEffect, proposeDrop } from './useDragOp'
 import type { DragEvent, DragSource, RuntimeState } from './types'
+
+/** The other window's drag this source mirrors, if it does. */
+function remoteDragOf(source: DragSource): CrossWindowDrag | null {
+  const { origin } = source
+  return origin.kind === 'remote' ? origin.drag : origin.kind === 'layout' ? origin.remote ?? null : null
+}
 
 interface ActiveRemote {
   drag: CrossWindowDrag
@@ -38,8 +45,8 @@ export function setupCrossWindowDrops(port: CrossWindowPort, env: () => DropEnvi
     useDragStore.getState().applyDragState(next.state)
     for (const effect of next.effects) {
       if (effect.kind === 'set-body-class') applyBodyClassEffect(effect)
-      else if (effect.kind === 'commit' && effect.source.origin.kind === 'remote') {
-        const { drag } = effect.source.origin
+      else if (effect.kind === 'commit' && remoteDragOf(effect.source)) {
+        const drag = remoteDragOf(effect.source)!
         const target = effect.target
         const doc = documentStoreFor(drag.workspaceId)?.getSnapshot()
         const changes = doc && dropChanges(doc, effect.source, target, effect.panel, { newId })
@@ -54,11 +61,15 @@ export function setupCrossWindowDrops(port: CrossWindowPort, env: () => DropEnvi
     }
   }
 
-  const source = (drag: CrossWindowDrag): DragSource => ({
-    workspaceId: drag.workspaceId,
-    panelId: drag.panelId,
-    origin: { kind: 'remote', drag },
-  })
+  const source = (drag: CrossWindowDrag): DragSource => {
+    // A layout drag is the layout's own drag here, so it resolves and commits as one.
+    const host = drag.layoutId ? hostOf(documentStoreFor(drag.workspaceId)?.getSnapshot() ?? createDocument(), drag.layoutId) : null
+    return {
+      workspaceId: drag.workspaceId,
+      panelId: drag.panelId,
+      origin: drag.layoutId && host ? { kind: 'layout', host, layoutId: drag.layoutId, remote: drag } : { kind: 'remote', drag },
+    }
+  }
 
   const stopPointer = port.onPointer((drag, screen: Point) => {
     const client = { x: screen.x - window.screenX, y: screen.y - window.screenY }

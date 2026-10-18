@@ -98,6 +98,8 @@ export interface DragPayload {
   /** An inline `<svg>` icon, or empty. */
   iconSvg?: string
   size?: { width: number; height: number }
+  /** Set when the drag moves a whole layout; `panelId` is then one of its panels. */
+  layoutId?: string
 }
 
 export interface DragPointer {

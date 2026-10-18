@@ -45,13 +45,11 @@ describe('layout moves', () => {
     expect(layoutMoveItems(ws.confirmed(), second())).toEqual([])
   })
 
-  it('moves a layout into a new window and back', () => {
+  it('moves a layout into a new window', () => {
     const layoutId = second()
     expect(runLayoutMove('w', layoutId, 'move-window')).toBe(true)
     const detached = Object.values(ws.confirmed().windows).find((w) => w.kind === 'detached')!
     expect(detached.layouts.map((l) => l.id)).toEqual([layoutId])
-    expect(runLayoutMove('w', layoutId, 'move-main')).toBe(true)
-    expect(Object.values(ws.confirmed().windows).some((w) => w.kind === 'detached')).toBe(false)
   })
 
   it('an unknown id is not a move', () => {

@@ -5,7 +5,7 @@
 import type React from 'react'
 import { useCallback } from 'react'
 import { viewToCanvas, type Point, type Size } from '@workspace/canvas/contract'
-import { dockPanels, isNodeHost, layoutById, layoutsIn, placementOf, type DockLayout, type DockStack, type DocChange, type LayoutId, type WorkspaceDocument } from '@workspace/document/contract'
+import { dockPanels, isNodeHost, layoutById, layoutsIn, placementOf, windowOf, type DockLayout, type DockStack, type DocChange, type LayoutId, type WorkspaceDocument } from '@workspace/document/contract'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { activeTabOf, newId, panelDefaultSize, panelDropSize, showLayoutsOf } from '@client/host'
 import { windowsPort } from '../windows/ports'
@@ -186,6 +186,7 @@ function crossWindowDragFor(dispatch: ActiveDispatch): CrossWindowDrag {
     title: dispatch.panel.title,
     size: dispatch.ghostSize,
     grab: { x: dispatch.grab.x * dispatch.ghostZoom, y: dispatch.grab.y * dispatch.ghostZoom },
+    ...(dispatch.spec.kind === 'layout' ? { layoutId: dispatch.spec.layoutId } : {}),
   }
 }
 
@@ -240,7 +241,8 @@ export async function commitDrop(
       await movedOrTimeout(workspaceId, before, panel.id)
       return
     }
-    if (!canDetach() || source.from === 'sidebar') return
+    // A layout leaves for another window or stays; it opens no window of its own here.
+    if (!canDetach() || source.from === 'sidebar' || source.origin.kind === 'layout') return
     const grab = { x: geometry.grab.x * geometry.ghostZoom, y: geometry.grab.y * geometry.ghostZoom }
     const windowId = newId()
     openWindowAt(workspaceId, windowId, detachBounds(target.screen, grab, geometry.ghostSize))
@@ -255,12 +257,13 @@ export async function commitDrop(
 function movedOrTimeout(workspaceId: string, before: WorkspaceDocument | null, panelId: string, timeoutMs = 1500): Promise<void> {
   const store = documentStoreFor(workspaceId)
   const was = before ? placementOf(before, panelId) : null
+  const wasWindow = before ? windowOf(before, panelId) : null
   if (!store) return Promise.resolve()
   return new Promise((resolve) => {
     const done = () => { clearTimeout(timer); stop(); resolve() }
     const check = () => {
       const now = placementOf(store.getSnapshot(), panelId)
-      if (!now || !was || now.stackId !== was.stackId) done()
+      if (!now || !was || now.stackId !== was.stackId || windowOf(store.getSnapshot(), panelId) !== wasWindow) done()
     }
     const timer = setTimeout(done, timeoutMs)
     const stop = store.subscribe(check)
@@ -327,9 +330,8 @@ function onMouseMove(ev: MouseEvent): void {
   }
 
   const inside = cursorInsideWindow(client)
-  // A group never detaches, so it never shows the native ghost.
-  const grouped = (dispatch.spec.kind === 'canvas-node' && (!!dispatch.spec.members?.length || nodeIsGroup(dispatch.spec.workspaceId, dispatch.spec.canvasId, dispatch.spec.nodeId)))
-    || dispatch.spec.kind === 'layout'
+  // A canvas group never leaves the window; a layout may, to another window.
+  const grouped = dispatch.spec.kind === 'canvas-node' && (!!dispatch.spec.members?.length || nodeIsGroup(dispatch.spec.workspaceId, dispatch.spec.canvasId, dispatch.spec.nodeId))
   const wasInside = dispatch.runtime.state.cursor?.insideWindow ?? true
   const shell = dragShell()
   const crossing = !grouped && wasInside && !inside && !dispatch.runtime.crossWindowActive && (!!shell.ghost || !!shell.crossWindow)

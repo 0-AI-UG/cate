@@ -171,12 +171,12 @@ describe('resolveDrop on a tab strip', () => {
     expect(resolveDrop(cursor(20, 10), tabSource(), grab, size, 'terminal', { env: env([edge, zone]) })).toMatchObject({ kind: 'tab-slot' })
   })
 
-  it('a dragged layout only reaches strips, and nothing outside the window', () => {
+  it('a dragged layout only reaches strips; outside the window it is only offered to other windows', () => {
     const layout: DragSource = { workspaceId: 'ws', panelId: 'p', origin: { kind: 'layout', host, layoutId: 't' } }
     expect(over(100, layout)).toMatchObject({ kind: 'tab-slot' })
     const stack = stackEntry('s1', rect(0, 100, 400, 400))
     expect(resolveDrop(cursor(200, 150), layout, grab, size, 'terminal', { env: env([stack]) })).toBeNull()
-    expect(resolveDrop(cursor(-5, 10, false), layout, grab, size, 'terminal', { env: env([zone]) })).toBeNull()
+    expect(resolveDrop(cursor(-5, 10, false), layout, grab, size, 'terminal', { env: env([zone]) })).toMatchObject({ kind: 'detach' })
   })
 })
 

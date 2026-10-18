@@ -75,10 +75,10 @@ export function resolveDrop(
     const onCanvas = resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
     return onCanvas?.kind === 'canvas-reposition' ? onCanvas : null
   }
-  // A layout moves along a tab strip or onto a canvas, never into a dock or
-  // another window.
+  // A layout moves along a tab strip or onto a canvas, never into a dock. Outside the window it is offered to
+  // the other windows (the commit opens none of its own).
   if (source.origin.kind === 'layout') {
-    if (!cursor.insideWindow) return null
+    if (!cursor.insideWindow) return env.canDetach() ? { kind: 'detach', screen: cursor.screen } : null
     return resolveDockHit(cursor.client, source, panelType, env)
       ?? resolveCanvasHit(cursor, source, grab, ghostSize, panelType, env, snap)
   }

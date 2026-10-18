@@ -142,6 +142,31 @@ describe('leaving the window', () => {
     expect(scene.drag().pendingDetach).toEqual([])
   })
 
+  it('a layout dragged out carries its id to the other windows, and unclaimed it opens no window', async () => {
+    const ports = shell()
+    const doc = buildDocument([
+      add('a', { to: 'stack', dock: main, stackId: 's1' }),
+      add('b', { to: 'split', dock: main, beside: 's1', side: 'right', stackId: 's2', splitId: 'sp' }),
+      add('c', { to: 'tab', host: { windowId: MAIN_WINDOW }, layoutId: 'L2', stackId: 's3' }),
+    ])
+    scene = renderScene({
+      doc,
+      window: true,
+      features: ['windows'],
+      shell: ports,
+      rects: { '[data-window-view]': { x: 0, y: 0, w: 1000, h: 600 }, '[data-window-header]': { x: 0, y: 0, w: 1000, h: 24 }, '[data-window-header] [data-layout-id="main"]': { x: 0, y: 0, w: 24, h: 24 } },
+    })
+    scene.mouse.downOn('[data-window-header] [data-layout-id="main"]', { x: 10, y: 10 })
+    scene.mouse.dragBy({ x: 20, y: 5 })
+    scene.mouse.moveTo({ x: 2000, y: 400 })
+    expect(ports.crossWindow.begin).toHaveBeenCalledWith(expect.objectContaining({ layoutId: 'main' }), expect.anything())
+    scene.mouse.up()
+    await vi.waitFor(() => expect(ports.crossWindow.release).toHaveBeenCalled())
+    await Promise.resolve()
+    expect(Object.values(scene.doc().windows).some((w) => w.kind === 'detached')).toBe(false)
+    expect(scene.doc().windows[MAIN_WINDOW].layouts.map((l) => l.id)).toEqual(['main', 'L2'])
+  })
+
   it('a drop another window claimed sends nothing from here', async () => {
     const ports = shell()
     ;(ports.crossWindow.release as ReturnType<typeof vi.fn>).mockResolvedValue({ claimed: true })

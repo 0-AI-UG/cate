@@ -43,6 +43,8 @@ export interface DragSource {
         kind: 'layout'
         host: HostRef
         layoutId: LayoutId
+        /** Set when the drag started in another window: this one mirrors it. */
+        remote?: CrossWindowDrag
       }
     | {
         /** A drag that started in another window of this client; this window
