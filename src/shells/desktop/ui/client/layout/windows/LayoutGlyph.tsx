@@ -31,7 +31,7 @@ export function LayoutGlyph({ dock, shown, focused, size = 14 }: { dock: DockNod
   const boxes = glyphBoxes(dock, W, H, 1.5)
   const active = !shown ? undefined : (focused && dockStacks(dock).find((stack) => stack.panels.includes(focused))?.id) || boxes[0].stackId
   return (
-    <svg width={size * W / H} height={size} viewBox={`0 0 ${W} ${H}`} aria-hidden className="shrink-0">
+    <svg width={size * W / H} height={size} viewBox={`0 0 ${W} ${H}`} aria-hidden className="shrink-0 overflow-visible">
       {boxes.map((box) => (
         <rect
           key={box.stackId ?? 'empty'}
