@@ -131,24 +131,4 @@ describe('layout actions', () => {
     expect(BUILTIN_ACTIONS.selectPanel1.key).toEqual({ key: '1', command: false, shift: false, option: true, control: false })
     expect(BUILTIN_ACTIONS.selectPanel10.key).toEqual({ key: '0', command: false, shift: false, option: true, control: false })
   })
-
-  it('Ctrl+Alt+1..9 show the n-th tab of the focused panel\'s split group', async () => {
-    const L = { layoutId: 'main' }
-    ws = attachTestWorkspace('w', buildDocument([
-      add('a', { to: 'stack', dock: L, stackId: 's1' }),
-      add('b', { to: 'stack', dock: L, stackId: 's1' }),
-      add('c', { to: 'stack', dock: L, stackId: 's1' }),
-    ]))
-    stop = registerBuiltinActions()
-    ws.state.focus('a')
-    await runAction('selectTab2', { workspaceId: 'w' })
-    expect(ws!.state.getSnapshot().focusedPanelId).toBe('b')
-    expect(ws!.state.getSnapshot().activeTabs.s1).toBe('b')
-    await runAction('selectTab1', { workspaceId: 'w' })
-    expect(ws!.state.getSnapshot().activeTabs.s1).toBe('a')
-    // No such tab: nothing changes.
-    await runAction('selectTab5', { workspaceId: 'w' })
-    expect(ws!.state.getSnapshot().focusedPanelId).toBe('a')
-    expect(BUILTIN_ACTIONS.selectTab3.key).toEqual({ key: '3', command: false, shift: false, option: true, control: true })
-  })
 })

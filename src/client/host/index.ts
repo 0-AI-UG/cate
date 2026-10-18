@@ -41,7 +41,7 @@ export { keepMountedPanelIds, setEqual } from './keepMounted'
 export { createPanel, clientPanelKit, inheritedCheckout, newId } from './createPanel'
 export { openLink, panelShowingFile, type LinkTarget, type OpenLinkOptions } from './links'
 export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type ConfirmedClose } from './close'
-export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab, selectTabAt, focusPaneBeside, toggleExpandedPane } from './focus'
+export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab, focusPaneBeside, toggleExpandedPane } from './focus'
 export { revealOnce, revealPanel, selectPanelAt, stepPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
 export {
   registerActions,
