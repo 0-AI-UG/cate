@@ -9,7 +9,7 @@ import type { ByteDuplex } from '@kernel/rpc/contract'
 import { dialCateConnect } from '../../connect/client'
 import { DEFAULT_CATE_CONNECT_URL } from '../../connect/contract'
 import { decodePairingUri, parsePairingCode, type PairingMode } from '../../pairing/contract'
-import type { KnownRuntimes } from '../../pairing/client'
+import { pairWithRuntime, type KnownRuntimes } from '../../pairing/client'
 import { secureChannelDuplex, type KeyPair, type MessagePortLike } from '../../security/contract'
 import { formatAddress, pairingEndpoints, type NetworkEndpoint, type NetworkTarget, type PeerConnectionFactory, type WebSocketFactory } from '../contract'
 import { connectFailureOf, NetworkUnreachableError, sameNetworkFailureOf, type NetworkFailure } from './failure'
@@ -90,7 +90,6 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
     async dialNetwork(target) {
       const addresses = target.endpoints.flatMap((e) => (e.kind === 'lan' ? [formatAddress(e.address, e.port)] : []))
       const secure = async (port: MessagePortLike) => (await openSecureConnection(port, {
-        kind: 'connect',
         deviceKeys: deps.deviceKeys(),
         runtimeId: target.runtimeId,
         pins: deps.pins,
@@ -132,16 +131,14 @@ export function createNetworkDialer(deps: NetworkDialerDeps): NetworkDialer {
         ;({ runtimeId, secretId, secret } = parsePairingCode(link))
       }
       const { port, via } = await reach(runtimeId, addresses, mode !== 'sameNetwork')
-      const { channel } = await openSecureConnection(port, {
-        kind: 'pair',
+      // Pins the runtime key; the workspace connection then dials by key.
+      const publicKey = await pairWithRuntime(port, {
         deviceKeys: deps.deviceKeys(),
         deviceName: request.deviceName?.trim() || deps.deviceName(),
         target: { runtimeId, secretId, secret, ...(fingerprint ? { fingerprint } : {}) },
         pins: deps.pins,
       })
-      // Pinned now; the workspace connection dials again by key.
-      channel.close()
-      return { runtimeId, endpoints: pairingEndpoints(addresses, mode ?? via), publicKey: channel.remoteStatic }
+      return { runtimeId, endpoints: pairingEndpoints(addresses, mode ?? via), publicKey }
     },
   }
 }

@@ -13,13 +13,14 @@ import {
   openSecureChannel,
   type KeyPair,
 } from '../security/contract'
-import { acceptPeer, UnpairedPeerError } from '../security/runtime'
+import { acceptPeer } from '../security/runtime'
 import { connectToRuntime } from '../security/client'
 import {
   clientProof,
   decodePairingUri,
   encodePairingUri,
-  encodePairMessage,
+  encodeOpening,
+  encodePairAnswer,
   formatPairingCode,
   PAIRING_SECRET_TTL_MS,
   parsePairingCode,
@@ -70,7 +71,7 @@ async function attempt(
   runtimeId = RUNTIME_ID,
 ) {
   const [a, b] = createMemoryPortPair()
-  const accepted = acceptPeer(b, { runtimeKeys: ctx.runtimeKeys, policy: ctx.service })
+  const accepted = acceptPeer(b, { runtimeKeys: ctx.runtimeKeys }).then((channel) => ctx.service.admit(channel))
   const paired = pairWithRuntime(a, {
     deviceKeys,
     deviceName: 'Anton’s phone',
@@ -79,6 +80,15 @@ async function attempt(
   })
   const [client, runtime] = await Promise.allSettled([paired, accepted])
   return { client, runtime, deviceKeys }
+}
+
+/** Connects by key with the `connect` opening; resolves with the admission. */
+async function connect(ctx: ReturnType<typeof setup>, deviceKeys: KeyPair, opening = encodeOpening({ type: 'connect' })) {
+  const [a, b] = createMemoryPortPair()
+  const admitted = acceptPeer(b, { runtimeKeys: ctx.runtimeKeys }).then((channel) => ctx.service.admit(channel))
+  const client = await connectToRuntime(a, { deviceKeys, runtimeId: RUNTIME_ID, pins: ctx.pins })
+  client.send(opening)
+  return admitted
 }
 
 function secretOf(uri: string): Secret {
@@ -144,8 +154,8 @@ describe('pairing flow', () => {
     const created = ctx.service.createSecret('sameNetwork')
     expect(decodePairingUri(created.uri).addresses).toEqual(['192.168.1.4:4100'])
     const { client, runtime, deviceKeys } = await attempt(ctx, secretOf(created.uri), undefined, fingerprint(ctx.runtimeKeys.publicKey))
-    expect(client.status).toBe('fulfilled')
-    expect(runtime.status).toBe('fulfilled')
+    expect(client).toEqual({ status: 'fulfilled', value: ctx.runtimeKeys.publicKey })
+    expect(runtime).toEqual({ status: 'fulfilled', value: { kind: 'paired', deviceName: 'Anton’s phone' } })
 
     expect(ctx.service.isPaired(deviceKeys.publicKey)).toBe(true)
     const [device] = ctx.service.list()
@@ -153,28 +163,39 @@ describe('pairing flow', () => {
     expect(device.fingerprint).toBe(fingerprint(deviceKeys.publicKey))
     expect(bytesEqual((await ctx.pins.get(RUNTIME_ID))!, ctx.runtimeKeys.publicKey)).toBe(true)
 
-    // The channel stays open for hello.
-    if (client.status === 'fulfilled' && runtime.status === 'fulfilled') {
-      const got = new Promise<Uint8Array>((resolve) => runtime.value.onFrame(resolve))
-      client.value.send(Uint8Array.of(42))
-      expect((await got)[0]).toBe(42)
-    }
-
     // Single use.
     const again = await attempt(ctx, secretOf(created.uri))
     expect(again.client.status).toBe('rejected')
     expect((again.client as PromiseRejectedResult).reason.reason).toBe('no-secret')
   })
 
-  it('then reconnects by key with no secret', async () => {
+  it('then connects by key with no secret', async () => {
     const ctx = setup()
     const { deviceKeys } = await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri))
-    const [a, b] = createMemoryPortPair()
-    const [client, runtime] = await Promise.all([
-      connectToRuntime(a, { deviceKeys, runtimeId: RUNTIME_ID, pins: ctx.pins }),
-      acceptPeer(b, { runtimeKeys: ctx.runtimeKeys, policy: ctx.service }),
-    ])
-    expect(client.closed || runtime.closed).toBe(false)
+    expect(await connect(ctx, deviceKeys)).toEqual({ kind: 'connect' })
+  })
+
+  it('refuses a key that connects without having paired', async () => {
+    const ctx = setup()
+    await ctx.pins.pin(RUNTIME_ID, ctx.runtimeKeys.publicKey)
+    expect(await connect(ctx, generateKeyPair())).toEqual({ kind: 'unpaired' })
+  })
+
+  it('pairs a device that is already paired again with a new code', async () => {
+    const ctx = setup()
+    const deviceKeys = generateKeyPair()
+    await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri), deviceKeys)
+    await ctx.pins.forget(RUNTIME_ID)
+    const again = await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri), deviceKeys)
+    expect(again.runtime).toMatchObject({ status: 'fulfilled', value: { kind: 'paired' } })
+    expect(again.client.status).toBe('fulfilled')
+    expect(ctx.service.list()).toHaveLength(1)
+  })
+
+  it('admits nothing for an opening it does not understand', async () => {
+    const ctx = setup()
+    const { deviceKeys } = await attempt(ctx, secretOf(ctx.service.createSecret('sameNetwork').uri))
+    expect(await connect(ctx, deviceKeys, new TextEncoder().encode('{"t":"hello"}'))).toEqual({ kind: 'no-opening' })
   })
 
   it('records a device that connected as a user of the machine, which is then known on the network too', async () => {
@@ -237,7 +258,7 @@ describe('pairing flow', () => {
     for (let i = 0; i < 10; i++) {
       const wrong = await attempt(ctx, { secretId: first.secretId, secret: new Uint8Array(10).fill(i) })
       expect((wrong.client as PromiseRejectedResult).reason.reason).toBe('invalid-proof')
-      expect((wrong.runtime as PromiseRejectedResult).reason).toBeInstanceOf(UnpairedPeerError)
+      expect(wrong.runtime).toEqual({ status: 'fulfilled', value: { kind: 'pair-rejected', reason: 'invalid-proof' } })
     }
     const right = await attempt(ctx, first)
     expect(right.client.status).toBe('fulfilled')
@@ -289,7 +310,7 @@ describe('pairing flow', () => {
     const ctx = setup()
     const [a, b] = createMemoryPortPair()
     const fake = openSecureChannel(b, { role: 'responder', staticKeys: generateKeyPair() }).then((channel) => {
-      channel.onFrame(() => channel.send(encodePairMessage({ type: 'paired', proof: bytesToHex(new Uint8Array(32)) })))
+      channel.onFrame(() => channel.send(encodePairAnswer({ type: 'paired', proof: bytesToHex(new Uint8Array(32)) })))
     })
     const pairing = pairWithRuntime(a, {
       deviceKeys: generateKeyPair(),
@@ -312,11 +333,7 @@ describe('pairing flow', () => {
     expect(ctx.service.isPaired(deviceKeys.publicKey)).toBe(false)
     expect(ctx.service.revoke(bytesToHex(deviceKeys.publicKey))).toEqual({ removed: false })
 
-    const [a, b] = createMemoryPortPair()
-    const accepted = acceptPeer(b, { runtimeKeys: ctx.runtimeKeys, policy: ctx.service })
-    const client = await connectToRuntime(a, { deviceKeys, runtimeId: RUNTIME_ID, pins: ctx.pins })
-    client.send(Uint8Array.of(1))
-    await expect(accepted).rejects.toBeInstanceOf(UnpairedPeerError)
+    expect(await connect(ctx, deviceKeys)).toEqual({ kind: 'unpaired' })
   })
 
   it('forgetting a runtime deletes its pin', async () => {

@@ -1,17 +1,20 @@
 // Every network connection, whatever carried it, goes through here: the
-// Noise handshake and the pairing policy (runtime/security), then the rpc
-// frames. The `hello` must name the device key the handshake proved, and
-// revoking a device drops its connections, those still in their handshake
-// included (architecture 7.6).
+// Noise handshake (runtime/security), the opening that says what the device
+// wants (runtime/pairing admits it), then the rpc frames. The `hello` must
+// name the device key the handshake proved, and revoking a device drops its
+// connections, those still in their handshake included (architecture 7.6).
 
 import { RpcError, toWireError, type Frame, type FramePort, type HelloMessage } from '@kernel/rpc/contract'
 import type { RpcServer } from '@kernel/rpc/runtime'
 import type { Logger } from '@kernel/log/contract'
-import { bytesToHex, type KeyPair, type MessagePortLike, type SecureChannel } from '../../security/contract'
-import { acceptPeer, type PeerPolicy } from '../../security/runtime'
+import { bytesToHex, DEFAULT_MAX_FRAME, nextFrame, type KeyPair, type MessagePortLike, type SecureChannel } from '../../security/contract'
+import { acceptPeer } from '../../security/runtime'
+import { OPENING_TIMEOUT_MS, type Admission } from '../../pairing/contract'
 import { secureFramePort, type UnpairedRefusal } from '../contract'
 
-export interface NetworkPairing extends PeerPolicy {
+export interface NetworkPairing {
+  /** Reads the connection's opening and acts on it. */
+  admit(channel: SecureChannel): Promise<Admission>
   /** Called with the hex public key of a removed device. */
   onRevoked(listener: (publicKey: string) => void): () => void
 }
@@ -57,7 +60,7 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
   const live = new Map<SecureChannel, { key: string; transport: NetworkTransport }>()
   const maxUnproven = options.maxUnproven ?? 32
   const maxPerSource = options.maxUnprovenPerSource ?? 4
-  // Connections between accept and a proven key, by transport and by source.
+  // Connections between accept and their admission, by transport and by source.
   const unproven = new Map<MessagePortLike, NetworkTransport>()
   const unprovenBySource = new Map<string, number>()
   const unprovenOn = (transport: NetworkTransport) => [...unproven.values()].filter((t) => t === transport).length
@@ -67,6 +70,34 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
       if (entry.key === publicKey) channel.close(new Error('device removed'))
     }
   })
+
+  const serve = (channel: SecureChannel, transport: NetworkTransport) => {
+    const key = bytesToHex(channel.remoteStatic)
+    channel.setMaxFrameBytes(DEFAULT_MAX_FRAME)
+    live.set(channel, { key, transport })
+    channel.onClose(() => live.delete(channel))
+    options.rpc.serve(checkedHello(secureFramePort(channel), key, options.rpc))
+  }
+
+  /** Ends a connection that is not served, saying why in the log. */
+  const turnAway = async (channel: SecureChannel, admission: Exclude<Admission, { kind: 'connect' }>) => {
+    switch (admission.kind) {
+      case 'unpaired':
+        options.log?.info('refused a device that is not paired')
+        await refuse(channel, options.rpc)
+        break
+      case 'paired':
+        options.log?.info('paired device "%s"', admission.deviceName)
+        break
+      case 'pair-rejected':
+        options.log?.info('refused pairing: %s', admission.reason)
+        break
+      case 'no-opening':
+        options.log?.info('refused a network connection: no opening')
+        break
+    }
+    channel.close()
+  }
 
   return {
     async accept(port, from) {
@@ -79,17 +110,13 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
       }
       unproven.set(port, from.transport)
       if (source !== undefined) unprovenBySource.set(source, fromSource + 1)
-      let channel: SecureChannel
       try {
-        channel = await acceptPeer(port, {
-          runtimeKeys: options.runtimeKeys,
-          policy: options.pairing,
-          handshakeTimeoutMs: options.handshakeTimeoutMs,
-          refuse: (unpaired) => refuse(unpaired, options.rpc),
-        })
+        const channel = await acceptPeer(port, { runtimeKeys: options.runtimeKeys, handshakeTimeoutMs: options.handshakeTimeoutMs })
+        const admission = await options.pairing.admit(channel)
+        if (admission.kind === 'connect') serve(channel, from.transport)
+        else await turnAway(channel, admission)
       } catch (error) {
         options.log?.info('refused a network connection: %s', (error as Error).message)
-        return
       } finally {
         unproven.delete(port)
         if (source !== undefined) {
@@ -98,16 +125,6 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
           else unprovenBySource.delete(source)
         }
       }
-      const key = bytesToHex(channel.remoteStatic)
-      // A revoke can land while the handshake runs.
-      if (!(await options.pairing.isPaired(channel.remoteStatic))) {
-        refuse(channel, options.rpc)
-        channel.close(new Error('device removed'))
-        return
-      }
-      live.set(channel, { key, transport: from.transport })
-      channel.onClose(() => live.delete(channel))
-      options.rpc.serve(checkedHello(secureFramePort(channel), key, options.rpc))
     },
     connected: () => [...live.values()].map((entry) => entry.key),
     close(transport) {
@@ -129,11 +146,12 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
 
 /**
  * Answers an unpaired (never paired or removed) device's hello with a
- * refusal, so its client stops retrying and says why. It names no version:
- * an unpaired peer learns nothing about the runtime.
+ * refusal, so its client stops retrying and says why, and closes. It names no
+ * version: an unpaired peer learns nothing about the runtime.
  */
-function refuse(channel: SecureChannel, rpc: RpcServer): void {
-  secureFramePort(channel).send({
+async function refuse(channel: SecureChannel, rpc: RpcServer): Promise<void> {
+  // The refusal answers the hello, so the client is listening when it lands.
+  if (await nextFrame(channel, OPENING_TIMEOUT_MS) instanceof Uint8Array) secureFramePort(channel).send({
     kind: 'msg',
     msg: {
       t: 'hello',

@@ -1,16 +1,20 @@
-// Opens the secure channel on a network connection and hands back its rpc
-// frames: by pinned key for a known runtime, or by the pairing exchange the
-// first time.
+// Opens the secure channel to a paired runtime on a network connection and
+// hands back its rpc frames: the pinned key checked, then the `connect`
+// opening, then the protocol. Pairing opens with `pair` instead
+// (`pairWithRuntime`).
 
 import type { FramePort } from '@kernel/rpc/contract'
 import { connectToRuntime, type RuntimePins } from '../../security/client'
 import type { KeyPair, MessagePortLike, SecureChannel } from '../../security/contract'
-import { pairWithRuntime, type KnownRuntimes, type PairTarget } from '../../pairing/client'
+import { encodeOpening } from '../../pairing/contract'
 import { secureFramePort } from '../contract'
 
-export type SecureOpen =
-  | { kind: 'connect'; deviceKeys: KeyPair; runtimeId: string; pins: RuntimePins; timeoutMs?: number }
-  | { kind: 'pair'; deviceKeys: KeyPair; deviceName: string; target: PairTarget; pins: Pick<KnownRuntimes, 'pin'>; timeoutMs?: number }
+export interface SecureConnectOptions {
+  deviceKeys: KeyPair
+  runtimeId: string
+  pins: RuntimePins
+  timeoutMs?: number
+}
 
 export interface SecureConnection {
   channel: SecureChannel
@@ -18,20 +22,13 @@ export interface SecureConnection {
   frames: FramePort
 }
 
-export async function openSecureConnection(port: MessagePortLike, how: SecureOpen): Promise<SecureConnection> {
-  const channel = how.kind === 'connect'
-    ? await connectToRuntime(port, {
-      deviceKeys: how.deviceKeys,
-      runtimeId: how.runtimeId,
-      pins: how.pins,
-      handshakeTimeoutMs: how.timeoutMs,
-    })
-    : await pairWithRuntime(port, {
-      deviceKeys: how.deviceKeys,
-      deviceName: how.deviceName,
-      target: how.target,
-      pins: how.pins,
-      timeoutMs: how.timeoutMs,
-    })
+export async function openSecureConnection(port: MessagePortLike, options: SecureConnectOptions): Promise<SecureConnection> {
+  const channel = await connectToRuntime(port, {
+    deviceKeys: options.deviceKeys,
+    runtimeId: options.runtimeId,
+    pins: options.pins,
+    handshakeTimeoutMs: options.timeoutMs,
+  })
+  channel.send(encodeOpening({ type: 'connect' }))
   return { channel, frames: secureFramePort(channel) }
 }

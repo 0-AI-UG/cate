@@ -105,6 +105,22 @@ export function openSecureChannel(port: MessagePortLike, options: SecureChannelO
   })
 }
 
+/** The channel's next frame, or why none came: it closed, or not in time. */
+export function nextFrame(channel: SecureChannel, timeoutMs: number): Promise<Uint8Array | 'timeout' | 'closed'> {
+  if (channel.closed) return Promise.resolve('closed')
+  return new Promise((resolve) => {
+    const finish = (value: Uint8Array | 'timeout' | 'closed') => {
+      clearTimeout(timer)
+      offFrame()
+      offClose()
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish('timeout'), timeoutMs)
+    const offFrame = channel.onFrame((frame) => finish(frame))
+    const offClose = channel.onClose(() => finish('closed'))
+  })
+}
+
 class Channel implements SecureChannel {
   closed = false
   private readonly frameListeners = new Set<(frame: Uint8Array) => void>()

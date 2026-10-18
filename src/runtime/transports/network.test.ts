@@ -36,7 +36,7 @@ beforeEach(async () => {
     runtimePublicKey: runtimeKeys.publicKey,
     store: { get: () => file, update: (fn) => { file = fn(file) }, subscribe: () => () => {} },
     addresses: () => lan.addresses(),
-    pairTimeoutMs: 2_000,
+    openingTimeoutMs: 2_000,
   })
   rpc = new RpcServer({ version: 'test', lifecycle: createLifecycleBus() })
   rpc.register(pingCap, { ping: () => 'pong' })
@@ -77,12 +77,11 @@ function rpcClient(dev: Device, publicKey = encodePublicKey(dev.keys.publicKey))
 const dial = (addresses: string[] = lan.addresses()) =>
   dialSameNetwork({ runtimeId: RUNTIME_ID, addresses, webSocket: nodeWebSocketFactory, timeoutMs: 2_000 })
 
+/** Pairs from a new code's QR payload; resolves with the runtime's key. */
 async function pairByQr(dev: Device) {
   const payload = decodePairingUri(pairing.createSecret('sameNetwork').uri)
   expect(payload.addresses).toEqual(lan.addresses())
-  const port = await dial(payload.addresses)
-  return openSecureConnection(port, {
-    kind: 'pair',
+  return pairWithRuntime(await dial(payload.addresses), {
     deviceKeys: dev.keys,
     deviceName: dev.name,
     target: { runtimeId: payload.runtimeId, secretId: payload.secretId, secret: payload.secret, fingerprint: payload.fingerprint },
@@ -91,7 +90,13 @@ async function pairByQr(dev: Device) {
 }
 
 async function connectByKey(dev: Device) {
-  return openSecureConnection(await dial(), { kind: 'connect', deviceKeys: dev.keys, runtimeId: RUNTIME_ID, pins: dev.pins })
+  return openSecureConnection(await dial(), { deviceKeys: dev.keys, runtimeId: RUNTIME_ID, pins: dev.pins })
+}
+
+/** Pairs, then connects by key, as the app does. */
+async function joinByQr(dev: Device) {
+  await pairByQr(dev)
+  return connectByKey(dev)
 }
 
 const closed = (client: RpcClient) => new Promise<void>((resolve) => {
@@ -99,14 +104,18 @@ const closed = (client: RpcClient) => new Promise<void>((resolve) => {
 })
 
 describe('same network', () => {
-  it('pairs from the QR payload, calls the runtime, then reconnects by key', async () => {
+  it('pairs from the QR payload, then connects by key and calls the runtime', async () => {
     const phone = device()
-    const first = await pairByQr(phone)
+    expect(await pairByQr(phone)).toEqual(runtimeKeys.publicKey)
     expect(await phone.pins.get(RUNTIME_ID)).toEqual(runtimeKeys.publicKey)
+    expect(pairing.list()).toMatchObject([{ name: 'phone', fingerprint: fingerprint(phone.keys.publicKey) }])
+    // A pairing connection ends once answered.
+    expect(peers.connected()).toHaveLength(0)
+
+    const first = await connectByKey(phone)
     const client = rpcClient(phone)
     await client.attach(first.frames)
     expect(await createCapabilityProxy(client, pingCap).ping()).toBe('pong')
-    expect(pairing.list()).toMatchObject([{ name: 'phone', fingerprint: fingerprint(phone.keys.publicKey) }])
     client.detach()
     first.channel.close()
 
@@ -115,6 +124,18 @@ describe('same network', () => {
     await second.attach(again.frames)
     expect(await createCapabilityProxy(second, pingCap).ping()).toBe('pong')
     expect(peers.connected()).toHaveLength(1)
+  })
+
+  it('pairs a device that is already paired again, as after it lost the runtime\'s pin', async () => {
+    const phone = device()
+    await pairByQr(phone)
+    const lost = { ...phone, pins: new KnownRuntimes(createMemoryDeviceStore()) }
+    expect(await pairByQr(lost)).toEqual(runtimeKeys.publicKey)
+    expect(pairing.list()).toHaveLength(1)
+    const { frames } = await connectByKey(lost)
+    const client = rpcClient(lost)
+    await client.attach(frames)
+    expect(await createCapabilityProxy(client, pingCap).ping()).toBe('pong')
   })
 
   it('pairs from a typed code, finding the runtime by discovery', async () => {
@@ -128,9 +149,8 @@ describe('same network', () => {
       webSocket: nodeWebSocketFactory,
       timeoutMs: 2_000,
     })
-    const { frames } = await openSecureConnection(port, {
-      kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name, target: typed, pins: phone.pins,
-    })
+    await pairWithRuntime(port, { deviceKeys: phone.keys, deviceName: phone.name, target: typed, pins: phone.pins })
+    const { frames } = await connectByKey(phone)
     const client = rpcClient(phone)
     await client.attach(frames)
     expect(await createCapabilityProxy(client, pingCap).ping()).toBe('pong')
@@ -145,7 +165,7 @@ describe('same network', () => {
     })).rejects.toBeInstanceOf(SameNetworkUnreachableError)
   })
 
-  it('closes a connection from an unknown key that does not pair', async () => {
+  it('refuses an unknown key that connects, telling it it is not paired', async () => {
     const stranger = device('stranger')
     // It knows the runtime's key, but the runtime does not know its key.
     await stranger.pins.pin(RUNTIME_ID, runtimeKeys.publicKey)
@@ -187,7 +207,7 @@ describe('same network', () => {
     }
   })
 
-  it('gives an unknown key one attempt: a wrong proof is refused and closes, and the code still works', async () => {
+  it('refuses a wrong proof and ends the connection, and the code still works', async () => {
     const { uri } = pairing.createSecret('sameNetwork')
     const payload = decodePairingUri(uri)
     const guesser = device('guesser')
@@ -203,17 +223,16 @@ describe('same network', () => {
 
     // A wrong attempt does not spoil the real code.
     const phone = device()
-    const paired = await openSecureConnection(await dial(), {
-      kind: 'pair', deviceKeys: phone.keys, deviceName: phone.name,
+    await pairWithRuntime(await dial(), {
+      deviceKeys: phone.keys, deviceName: phone.name,
       target: { runtimeId: RUNTIME_ID, secretId: payload.secretId, secret: payload.secret, fingerprint: payload.fingerprint }, pins: phone.pins,
     })
-    paired.channel.close()
     expect(pairing.list().map((d) => d.name)).toEqual([phone.name])
   })
 
   it('drops a revoked device and refuses it on reconnect', async () => {
     const phone = device()
-    const { frames } = await pairByQr(phone)
+    const { frames } = await joinByQr(phone)
     const client = rpcClient(phone)
     await client.attach(frames)
     const gone = closed(client)
@@ -229,17 +248,27 @@ describe('same network', () => {
 
   it('refuses a hello whose device key is not the connection key', async () => {
     const phone = device()
-    const { frames } = await pairByQr(phone)
+    const { frames } = await joinByQr(phone)
     const liar = rpcClient(phone, encodePublicKey(generateKeyPair().publicKey))
     await expect(liar.attach(frames)).rejects.toThrow(/device key/)
   })
 
   it('refuses a caller token on a network connection', async () => {
     const phone = device()
-    const { channel } = await pairByQr(phone)
+    const { channel } = await joinByQr(phone)
     const caller = new RpcClient({ version: 'test', identity: { caller: { token: 'stolen' } }, helloTimeoutMs: 2_000 })
     clients.push(caller)
     await expect(caller.attach(secureFramePort(channel))).rejects.toThrow(/device key/)
+  })
+
+  it('ends a connection whose opening it does not understand', async () => {
+    const phone = device()
+    await pairByQr(phone)
+    const channel = await connectToRuntime(await dial(), { deviceKeys: phone.keys, runtimeId: RUNTIME_ID, pins: phone.pins })
+    const ended = new Promise<void>((resolve) => channel.onClose(() => resolve()))
+    channel.send(new TextEncoder().encode('{"type":"hello"}'))
+    await ended
+    expect(peers.connected()).toHaveLength(0)
   })
 
   it('a device pinned to another key refuses the runtime', async () => {

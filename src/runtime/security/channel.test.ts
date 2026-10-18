@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bytesEqual,
   createMemoryPortPair,
+  DEFAULT_MAX_FRAME,
   fingerprint,
   generateKeyPair,
   networkIdOf,
@@ -10,7 +11,7 @@ import {
   type SecureChannel,
 } from './contract'
 import { connectToRuntime, PinMismatchError, UnknownRuntimeError } from './client'
-import { acceptPeer, UNPAIRED_MAX_FRAME, UnpairedPeerError } from './runtime'
+import { acceptPeer, UNPAIRED_MAX_FRAME } from './runtime'
 
 function nextFrame(channel: SecureChannel): Promise<Uint8Array> {
   return new Promise((resolve) => {
@@ -124,10 +125,7 @@ describe('peer checks', () => {
     const pins = { get: async (id: string) => (id === runtimeId ? runtimeKeys.publicKey : undefined) }
     const [client, runtime] = await Promise.all([
       connectToRuntime(a, { deviceKeys, runtimeId, pins }),
-      acceptPeer(b, {
-        runtimeKeys,
-        policy: { isPaired: (key) => bytesEqual(key, deviceKeys.publicKey), pairUnknown: async () => false },
-      }),
+      acceptPeer(b, { runtimeKeys }),
     ])
     expect(fingerprint(client.remoteStatic)).toBe(fingerprint(runtimeKeys.publicKey))
     expect(bytesEqual(runtime.remoteStatic, deviceKeys.publicKey)).toBe(true)
@@ -153,77 +151,29 @@ describe('peer checks', () => {
     expect(a.closed).toBe(true)
   })
 
-  it('runtime gives an unknown key one pairing attempt, then closes', async () => {
+  it('closes a peer not yet admitted that streams a frame past the limit', async () => {
     const [a, b] = createMemoryPortPair()
-    let attempts = 0
-    const accepting = acceptPeer(b, {
-      runtimeKeys: generateKeyPair(),
-      policy: {
-        isPaired: () => false,
-        pairUnknown: async () => {
-          attempts++
-          return false
-        },
-      },
-    })
-    const client = await openSecureChannel(a, { role: 'initiator', staticKeys: generateKeyPair() })
-    await expect(accepting).rejects.toBeInstanceOf(UnpairedPeerError)
-    expect(attempts).toBe(1)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(client.closed).toBe(true)
-  })
-
-  it('closes an unpaired key that streams a frame past the unpaired limit', async () => {
-    const [a, b] = createMemoryPortPair()
-    let pairing: SecureChannel | null = null
-    const accepting = acceptPeer(b, {
-      runtimeKeys: generateKeyPair(),
-      policy: {
-        isPaired: () => false,
-        pairUnknown: (channel) => {
-          pairing = channel
-          return new Promise<boolean>((resolve) => channel.onClose(() => resolve(false)))
-        },
-      },
-    })
-    const client = await openSecureChannel(a, { role: 'initiator', staticKeys: generateKeyPair() })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    const closed = closedWith(pairing!)
+    const [client, runtime] = await Promise.all([
+      openSecureChannel(a, { role: 'initiator', staticKeys: generateKeyPair() }),
+      acceptPeer(b, { runtimeKeys: generateKeyPair() }),
+    ])
+    const closed = closedWith(runtime)
     // Sent in chunks; the first one is already past the limit.
     client.send(new Uint8Array(MAX_CHUNK + UNPAIRED_MAX_FRAME))
     expect((await closed)?.message).toMatch(/too large/)
-    await expect(accepting).rejects.toBeInstanceOf(UnpairedPeerError)
   })
 
-  it('lifts the unpaired limit for a paired key', async () => {
+  it('takes large frames once the peer is admitted', async () => {
     const [a, b] = createMemoryPortPair()
-    const deviceKeys = generateKeyPair()
     const [client, runtime] = await Promise.all([
-      openSecureChannel(a, { role: 'initiator', staticKeys: deviceKeys }),
-      acceptPeer(b, {
-        runtimeKeys: generateKeyPair(),
-        policy: { isPaired: (key) => bytesEqual(key, deviceKeys.publicKey), pairUnknown: async () => false },
-      }),
+      openSecureChannel(a, { role: 'initiator', staticKeys: generateKeyPair() }),
+      acceptPeer(b, { runtimeKeys: generateKeyPair() }),
     ])
+    runtime.setMaxFrameBytes(DEFAULT_MAX_FRAME)
     const big = new Uint8Array(MAX_CHUNK + UNPAIRED_MAX_FRAME).fill(5)
     const received = nextFrame(runtime)
     client.send(big)
     expect(await received).toEqual(big)
     expect(runtime.closed).toBe(false)
-  })
-
-  it('runtime admits an unknown key that pairs', async () => {
-    const [a, b] = createMemoryPortPair()
-    const accepting = acceptPeer(b, {
-      runtimeKeys: generateKeyPair(),
-      policy: { isPaired: () => false, pairUnknown: async () => true },
-    })
-    const client = await openSecureChannel(a, { role: 'initiator', staticKeys: generateKeyPair() })
-    const runtime = await accepting
-    // Paired now, so the unpaired limit is lifted.
-    const big = new Uint8Array(MAX_CHUNK + UNPAIRED_MAX_FRAME)
-    const received = nextFrame(runtime)
-    client.send(big)
-    expect((await received).length).toBe(big.length)
   })
 })
