@@ -115,7 +115,8 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
     // a row for each of its panels and the group's edges. Sized as one row, its last slot is out of reach.
     const groupSize = layout === null || !doc ? 0 : dockPanels(layoutById(doc, layout)?.dock).length * ROW_SIZE + 2 * GROUP_EDGE
     let size = childRect ? childRect.bottom - childRect.top : groupSize || ROW_SIZE
-    let grab = childRect ? pressY - childRect.top : size / 2
+    // Held where it was pressed on a row of the tree; dragged in from elsewhere (a canvas), by its middle.
+    let grab = childRect && pressed ? pressY - childRect.top : size / 2
     const wall = { start: 0, end: 0 }
     const scopes = all.map((w, k): Scope => {
       const has = own && (layout !== null
