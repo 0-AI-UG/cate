@@ -28,6 +28,7 @@ const terminalLike = defineCateApi(
     read: { access: 'read', handler: 'session', args: { lines: opt(str) } },
     type: { access: 'control', handler: 'session', target: 'sticky', args: { text: str } },
     slow: { access: 'read', handler: 'session', timeoutMs: 20 },
+    wipe: { access: 'control', handler: 'session', optIn: TEST_AREAS.notify },
   },
   { area: TEST_AREAS.terminal },
 )
@@ -93,6 +94,18 @@ describe('ApiRouter gating', () => {
     await expect(router.call(cli.caller, 'cate.terminal.type', { panelId: 'term-1', text: 'x' })).rejects.toThrow(
       /^terminal-input-disabled/,
     )
+  })
+
+  it('needs the opt-in cell on top of the area cell', async () => {
+    const { router, settings, cli } = setup([{ id: 'term-1', type: 'terminal' }])
+    const wipe = () => router.call(cli.caller, 'cate.terminal.wipe', { panelId: 'term-1' })
+    settings.cliNotifyEnabled = false
+    await expect(wipe()).rejects.toThrow(/^notify-disabled/)
+    settings.cliNotifyEnabled = true
+    settings.cliTerminalInputEnabled = false
+    await expect(wipe()).rejects.toThrow(/^terminal-input-disabled/)
+    settings.cliTerminalInputEnabled = true
+    await expect(wipe()).resolves.toEqual({ panelId: 'term-1', method: 'wipe' })
   })
 
   it('never gates client callers', async () => {

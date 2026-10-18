@@ -75,6 +75,7 @@ const RECOVERY: Record<string, string> = {
   'browser-target-or-locator': 'Name the element by an id or by --role/--name, not both.',
   'browser-locator-required': 'Pass --role, --name or both.',
   'browser-login-field-not-found': 'The page has no visible username or password field. Open the sign-in form, observe, then retry (or pass the field id).',
+  'browser-signup-field-not-found': 'The page has no visible empty password field. Open the sign-up form, observe, then retry (or pass the field id).',
 }
 
 /** What to do after a page-driver error. `inputSent`: the call had already

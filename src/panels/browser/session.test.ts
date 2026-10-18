@@ -17,7 +17,7 @@ import {
   type SurfaceCallOptions,
 } from '@panels/framework/runtime'
 import { createDocumentService, createPresence, type DocumentService } from '@workspace/document/runtime'
-import type { BrowserCredentialSuggestion, BrowserDownloadEntry } from '@services/browser/contract'
+import type { BrowserCredentialSaveInput, BrowserCredentialSuggestion, BrowserDownloadEntry } from '@services/browser/contract'
 import type { BrowserSnapshot } from './contract'
 import { browserPanel, browserServiceHandlers } from './runtime'
 import type { BrowserSessionDeps } from './session'
@@ -58,6 +58,8 @@ interface World {
   settings: Record<string, unknown>
   /** Saved passwords; each one's password is `hunter2`. */
   saved: BrowserCredentialSuggestion[]
+  /** What the session saved, passwords included. */
+  stored: BrowserCredentialSaveInput[]
   dispose(): void
 }
 
@@ -67,6 +69,7 @@ function world(surface?: Surface): World {
   const downloads = new Map<string, (entries: BrowserDownloadEntry[]) => void>()
   const settings: Record<string, unknown> = { browserSearchEngine: 'google', browserNewTabBehavior: 'startPage', browserHomepage: '' }
   const saved: BrowserCredentialSuggestion[] = []
+  const stored: BrowserCredentialSaveInput[] = []
   const savedFor = (url: string) => saved.filter((entry) => { try { return new URL(url).origin === entry.origin } catch { return false } })
   const deps: BrowserSessionDeps = {
     browserData: {
@@ -76,6 +79,11 @@ function world(surface?: Surface): World {
         forFill: (id, url) => {
           const entry = savedFor(url).find((candidate) => candidate.id === id)
           return entry ? { username: entry.username, password: 'hunter2', usernameElement: '' } : null
+        },
+        save: async (input) => {
+          stored.push(input)
+          const credential = { id: `c${stored.length}`, username: input.username, origin: input.origin }
+          return { action: 'created', credential }
         },
       },
       downloads: {
@@ -107,6 +115,7 @@ function world(surface?: Surface): World {
     downloads,
     settings,
     saved,
+    stored,
     create: (options = {}) => factory.createPanel('browser', options)!,
     snapshot: (panelId) => host.session(panelId)!.snapshot() as BrowserSnapshot,
     op: (panelId, op, clientId = 'client-a') => host.op(panelId, op, context(clientId)),
@@ -291,39 +300,20 @@ describe('browser session', () => {
     w.dispose()
   })
 
-  it('lets an agent fill a saved login only as the workspace setting allows', async () => {
+  it('hands the page driver the saved login, whatever the caller sends', async () => {
     const calls: Array<[string, any]> = []
-    let answer = true
     const w = world(async (_panelId, op, args) => {
       calls.push([op, args])
       if (op === 'page.ready') return { url: 'https://a.test/login', title: 'A' }
-      if (op === 'page.confirm') return { ok: answer }
       return { result: { ok: true } }
     })
     const id = w.create({ url: 'https://a.test/login' })
     await w.host.restore()
     const tabId = w.snapshot(id).activeTabId
     w.saved.push({ id: 'c1', username: 'me', origin: 'https://a.test' })
-    await expect(w.api(id, 'login', { tabId })).rejects.toThrow('browser-agent-passwords-off')
-    expect(calls).toEqual([])
-
-    // Asks the person on the driving client first; the password goes to the
-    // page driver only after they agree, whatever the caller sends.
-    w.settings.browserAgentPasswords = 'ask'
     await w.api(id, 'login', { tabId, credential: { username: 'x', password: 'forged', origin: 'https://evil.test' } })
-    expect(calls.map(([op]) => op)).toEqual(['page.ready', 'page.confirm', 'page.execute'])
-    expect(calls[1][1].message).toContain('sign in to a.test as me')
-    expect(calls[2][1]).toMatchObject({ method: 'login', args: { tabId, credential: { username: 'me', password: 'hunter2', origin: 'https://a.test' } } })
-
-    calls.length = 0
-    answer = false
-    await expect(w.api(id, 'login', { tabId })).rejects.toThrow('browser-login-declined')
-    expect(calls.map(([op]) => op)).toEqual(['page.ready', 'page.confirm'])
-
-    calls.length = 0
-    w.settings.browserAgentPasswords = 'allow'
-    await w.api(id, 'login', { tabId })
     expect(calls.map(([op]) => op)).toEqual(['page.ready', 'page.execute'])
+    expect(calls[1][1]).toMatchObject({ method: 'login', args: { tabId, credential: { username: 'me', password: 'hunter2', origin: 'https://a.test' } } })
     w.dispose()
   })
 
@@ -337,13 +327,43 @@ describe('browser session', () => {
     const id = w.create({ url: 'https://a.test/login' })
     await w.host.restore()
     const tabId = w.snapshot(id).activeTabId
-    w.settings.browserAgentPasswords = 'allow'
     await expect(w.api(id, 'login', { tabId })).rejects.toThrow('browser-login-no-saved-password: there is no saved password for a.test')
     w.saved.push({ id: 'c1', username: 'me', origin: 'https://a.test' }, { id: 'c2', username: 'ops', origin: 'https://a.test' }, { id: 'c3', username: 'x', origin: 'https://b.test' })
     await expect(w.api(id, 'login', { tabId })).rejects.toThrow('browser-login-ambiguous: a.test has several saved logins (me, ops)')
     await expect(w.api(id, 'login', { tabId, username: 'nobody' })).rejects.toThrow('browser-login-no-such-user: the saved logins for a.test are me, ops')
     await w.api(id, 'login', { tabId, username: 'ops' })
     expect(executed).toEqual([{ tabId, username: 'ops', credential: { username: 'ops', password: 'hunter2', origin: 'https://a.test' } }])
+    w.dispose()
+  })
+
+  it('fills a generated password into a sign-up form and saves it only once filled', async () => {
+    const calls: Array<[string, any]> = []
+    let driverError: string | undefined = 'browser-signup-field-not-found'
+    const w = world(async (_panelId, op, args) => {
+      calls.push([op, args])
+      if (op === 'page.ready') return { url: 'https://a.test/join', title: 'A' }
+      return driverError ? { error: driverError } : { result: { ok: true } }
+    })
+    const id = w.create({ url: 'https://a.test/join' })
+    await w.host.restore()
+    const tabId = w.snapshot(id).activeTabId
+
+    await expect(w.api(id, 'signup', { tabId, username: 'me' })).rejects.toThrow('browser-signup-field-not-found')
+    expect(w.stored).toEqual([])
+
+    driverError = undefined
+    calls.length = 0
+    const result = await w.api(id, 'signup', { tabId, username: 'me', credential: { password: 'forged', origin: 'https://evil.test' } })
+    expect(calls.map(([op]) => op)).toEqual(['page.ready', 'page.execute'])
+    const { credential } = calls[1][1].args
+    expect(credential.origin).toBe('https://a.test')
+    expect(credential.password).toMatch(/^.{20}$/)
+    expect(credential.password).not.toBe('forged')
+    expect(w.stored).toEqual([{ origin: 'https://a.test', username: 'me', password: credential.password }])
+    expect(JSON.stringify(result)).not.toContain(credential.password)
+
+    w.saved.push({ id: 'c1', username: 'me', origin: 'https://a.test' })
+    await expect(w.api(id, 'signup', { tabId, username: 'me' })).rejects.toThrow('browser-signup-exists')
     w.dispose()
   })
 

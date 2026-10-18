@@ -9,6 +9,8 @@ export const cateApiSettings = defineSettings({
     cliSkillInstallEnabled: setting(true),
     cliBrowserReadEnabled: setting(true),
     cliBrowserControlEnabled: setting(true),
+    /** Agents using and saving browser passwords (`cate browser login / signup`) is a separate opt-in. */
+    cliBrowserPasswordsEnabled: setting(false),
     cliTerminalReadEnabled: setting(true),
     /** Sending keystrokes to a live shell is a separate opt-in. */
     cliTerminalInputEnabled: setting(false),

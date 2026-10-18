@@ -1069,7 +1069,7 @@ or that changes shared state, is a **workspace** setting.
 | Desktop (`shells/desktop`) | `warnBeforeQuit`, `betaUpdatesEnabled`, `disableGpuRasterization` (applies after restart) | |
 | Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
 | Runtime (`runtime/daemon`) | | `runtimeLifetime`, `runtimeNetwork` |
-| `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliNotifyEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
+| `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliNotifyEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
 | Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`) |
 
 ## 9. Workspace
@@ -1388,12 +1388,14 @@ downloads list and its views, and hands page work to it.
   the tab restarts its renderer.
   A guest's `alert`, `confirm` and `prompt` wait on desktop main through the
   guest preload (Electron shows none itself); the panel shows the dialog and
-  an agent may answer it (`cate browser dialog`). An agent's `login` fills a
-  saved password only as the workspace setting `browserAgentPasswords`
-  allows (off, ask each time, always): the runtime picks the one saved login
-  for the page the driving client shows, has that client ask the person
-  through `ClientUi` (`page.confirm`) when the setting says so, and only then
-  hands the credential to the page driver, never to the agent. The driver
+  an agent may answer it (`cate browser dialog`). An agent's `login` needs a
+  CLI opt-in (`cliBrowserPasswordsEnabled`, off by default) on top of browser
+  control: the
+  runtime picks the one saved login for the page the driving client shows
+  and hands the credential to the page driver, never to the agent. Its
+  `signup`, behind the same opt-in, has the runtime generate a password,
+  the driver fill it into the sign-up form's empty password fields, and the
+  runtime then save it as the login for the username the agent names. The driver
   fills it only while the page still shows the login's origin. Passkeys are
   never stored by Cate: the native addon calls the OS, which keeps them in
   the user's keychain. It needs the signed app's entitlement, a window and
@@ -2067,7 +2069,9 @@ Everything outside the UI that drives Cate goes through one router.
 - **Access classes**: each method declares `read` or `control`. The workspace
   settings enable each class per area (the `cli*Enabled` keys; each module
   declares its area with its methods, `defineCliArea`; review shares the
-  agents' area), behind the
+  agents' area; a method may also need a further opt-in area, as
+  `browser.login` and `browser.signup` need browser passwords on top of
+  browser control), behind the
   `cliEnabled` master switch; they apply to CLI callers. Client
   callers are not gated (D3). These settings keep agents to what the user
   allows through the CLI; they are not a security boundary against programs

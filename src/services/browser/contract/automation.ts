@@ -84,7 +84,7 @@ export const BROWSER_WAIT_MAX_MS = 30_000
 
 export const BROWSER_OBSERVATION_METHODS = new Set(['getAXState', 'getScreenshot', 'getAXStateAndScreenshot'])
 export const BROWSER_ELEMENT_READ_METHODS = new Set(['getAttribute'])
-export const BROWSER_ACTION_METHODS = new Set(['click', 'hover', 'setValue', 'typeText', 'pressKey', 'scroll', 'drag', 'selectText', 'setChecked', 'selectOption', 'upload', 'login'])
+export const BROWSER_ACTION_METHODS = new Set(['click', 'hover', 'setValue', 'typeText', 'pressKey', 'scroll', 'drag', 'selectText', 'setChecked', 'selectOption', 'upload', 'login', 'signup'])
 /** The page's console messages and network requests, as the driver recorded them. */
 export const BROWSER_LOG_METHODS = new Set(['console', 'network'])
 

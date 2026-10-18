@@ -45,6 +45,9 @@ export interface CateApiMethodSpec<S extends ArgShape = ArgShape> {
   timeoutMs?: number | TimeoutFn<S>
   /** Output formatter id used by the CLI; unknown ids fall back to the generic one. */
   format?: string
+  /** A further permission area the method needs on top of the namespace's,
+   *  for a separate opt-in (`cate browser login`). */
+  optIn?: CliPermissionArea
   /** `session` methods only. Defaults to `auto`. Every session method takes
    *  the reserved `panelId` argument (CLI `--panel`) naming its target; the
    *  router resolves and strips it before the session sees the arguments. */

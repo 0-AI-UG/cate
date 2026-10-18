@@ -13,12 +13,10 @@ import type { BrowserPageHost } from '@panels/browser/desktop'
 export interface PageOpDeps {
   host: BrowserPageHost
   ops: PageOps
-  /** Asks the person (through `ClientUi`). */
-  confirm(message: string): Promise<boolean>
 }
 
 /** Runs a `page.*` operation on a mounted browser view. */
-export async function runPageOp({ host, ops, confirm }: PageOpDeps, request: SurfaceRequest): Promise<unknown> {
+export async function runPageOp({ host, ops }: PageOpDeps, request: SurfaceRequest): Promise<unknown> {
   switch (request.op as BrowserSurfaceOp) {
     case 'page.ready': return host.ready(request.args as BrowserSurfaceArgs<'page.ready'>)
     case 'page.history': return host.history(request.args as BrowserSurfaceArgs<'page.history'>)
@@ -31,7 +29,6 @@ export async function runPageOp({ host, ops, confirm }: PageOpDeps, request: Sur
       await ops.download(await host.target(tabId), url)
       return { url }
     }
-    case 'page.confirm': return { ok: await confirm((request.args as BrowserSurfaceArgs<'page.confirm'>).message) }
     default: throw new RpcError('unsupported', `unknown page operation ${request.op}`)
   }
 }

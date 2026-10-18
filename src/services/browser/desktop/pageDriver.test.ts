@@ -181,6 +181,34 @@ it('fills a saved login into the page and never returns the password', async () 
   expect(JSON.stringify(result)).not.toContain('hunter2')
 })
 
+it('fills a new password into every empty password field and never returns it', async () => {
+  const filled: string[] = []
+  const { execute } = await setupGuest(async (method, params) => {
+    // The password, then its confirmation; none once both are filled.
+    const empty = () => (filled.length < 2 ? { result: { objectId: String(30 + filled.length) } } : { result: { subtype: 'null' } })
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('!field.value')) return empty()
+    if (method !== 'Runtime.callFunctionOn') return
+    const fn = String(params.functionDeclaration)
+    if (fn.includes('!field.value')) return empty()
+    if (fn.includes('location.origin')) return { result: { value: 'https://example.test' } }
+    const text = fn.match(/const text=(".*?");/)
+    if (fn.includes('setter.call(this,text)') && text) { filled.push(JSON.parse(text[1])); return { result: { value: false } } }
+  })
+  const result = await execute('signup', { credential: { password: 'n3w-Pass', origin: 'https://example.test' } })
+  expect(result).toMatchObject({ result: { action: { method: 'signup', status: 'verified' } } })
+  expect(filled).toEqual(['n3w-Pass', 'n3w-Pass'])
+  expect(JSON.stringify(result)).not.toContain('n3w-Pass')
+  expect(JSON.stringify(result)).toContain('2 password fields')
+})
+
+it('refuses a new password for a page of another origin', async () => {
+  const { execute } = await setupGuest(async (method, params) => {
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('!field.value')) return { result: { objectId: '30' } }
+    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('location.origin')) return { result: { value: 'https://example.test' } }
+  })
+  expect(await execute('signup', { credential: { password: 'n3w-Pass', origin: 'https://bank.test' } })).toMatchObject({ error: 'browser-login-origin-mismatch' })
+})
+
 it('refuses a saved login for a field of another origin', async () => {
   const { execute } = await setupGuest(async (method, params) => {
     if (method === 'Runtime.evaluate' && String(params.expression).includes("querySelectorAll('input[type=password]')")) return { result: { objectId: '21' } }

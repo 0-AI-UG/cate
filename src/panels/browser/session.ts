@@ -48,7 +48,7 @@ export interface BrowserSessionDeps {
     }
   }
   /** Workspace settings: `browserSearchEngine`, `browserNewTabBehavior`,
-   *  `browserHomepage`, `browserAgentPasswords`. */
+   *  `browserHomepage`. */
   settings: { get(key: string): unknown }
   /** The workspace's files: a typed path or `file://` URL loads the
    *  workspace's file through `serveUrl`, never the client's disk. */
@@ -140,7 +140,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       navigateTab: (tabId, input) => this.navigateTab(tabId, input),
       surface: (op, args, call) => this.page(op, args, call),
       showCursor: (event) => this.showAgentCursor(event),
-    }, { settings: deps.settings, passwords: deps.browserData.passwords })
+    }, { passwords: deps.browserData.passwords })
     this.handleApi = this.api()
   }
 
