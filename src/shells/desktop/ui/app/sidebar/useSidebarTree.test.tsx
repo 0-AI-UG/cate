@@ -72,10 +72,17 @@ const rect = (left: number, right: number, top: number, bottom: number) =>
  *  (and layouts) touch at 32px; the tree spans x 0..200, y 0..400. */
 function measure(labelGap = 0) {
   let y = 0
+  let labelDone = false
   const leaves = new Map<Element, [number, number]>()
   for (const layout of host.querySelectorAll('[data-sb-key^="l:"]')) {
     // The "Other windows" label sits above the first layout of another window.
-    if (labelGap && (layout as HTMLElement).dataset.sbKey!.includes('W2')) y += labelGap
+    if (labelGap && (layout as HTMLElement).dataset.sbKey!.includes('W2') && !labelDone) {
+      const label = host.querySelector<HTMLElement>('[data-sb-key="other-windows"]')!
+      const top = y
+      label.getBoundingClientRect = () => rect(0, 200, top, top + labelGap)
+      y += labelGap
+      labelDone = true
+    }
     for (const leaf of layout.querySelectorAll('[data-panel-id]')) { leaves.set(leaf, [y + 2, y + 30]); y += 32 }
   }
   for (const [leaf, [top, bottom]] of leaves) (leaf as HTMLElement).getBoundingClientRect = () => rect(0, 200, top, bottom)
@@ -158,6 +165,23 @@ describe('the tree as a drop zone', () => {
     for (const sweep of [down, up]) {
       // main's end slot holds for a stretch of the label's height, then the next window's first slot takes over
       expect(sweep.filter((w) => w === `${MAIN_WINDOW}:2`).length).toBeGreaterThanOrEqual(3)
+      expect(sweep.indexOf('W2:0')).toBeGreaterThan(sweep.lastIndexOf(`${MAIN_WINDOW}:2`))
+    }
+  })
+
+  it('another window\'s only layout, lifted and gone from the tree, still has its slot below the label', () => {
+    act(() => { ws.document.propose(add('e', { to: 'window', windowId: 'W2', layoutId: 'W2-main', stackId: 'ws2' })) })
+    act(() => root.render(<Tree />))
+    measure(24)
+    // As the tree draws it once the layout is lifted: its row is gone, the label stays under main's rows (to 128).
+    host.querySelector('[data-sb-key="l:W2/W2-main"]')!.remove()
+    const source: DragSource = { workspaceId: 'w', panelId: 'e', from: 'sidebar', origin: { kind: 'layout', host: { windowId: 'W2' }, layoutId: 'W2-main' } }
+    const where = (y: number) => { const t = drop(source, y) as { host?: { windowId: string }; index?: number }; return `${t.host?.windowId}:${t.index}` }
+    const down = Array.from({ length: 30 }, (_, i) => where(90 + i * 4))
+    const up = Array.from({ length: 30 }, (_, i) => where(206 - i * 4)).reverse()
+    for (const sweep of [down, up]) {
+      expect(sweep).toContain(`${MAIN_WINDOW}:2`)
+      expect(sweep).toContain('W2:0')
       expect(sweep.indexOf('W2:0')).toBeGreaterThan(sweep.lastIndexOf(`${MAIN_WINDOW}:2`))
     }
   })

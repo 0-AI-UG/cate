@@ -14,6 +14,8 @@ export interface RowRect { top: number; bottom: number }
 export type RectOf = (key: string) => RowRect | null
 
 export const itemKey = (panelId: PanelId) => panelId
+/** The key of the "Other windows" label: the top of the first other window, even when its layouts are gone. */
+export const OTHER_WINDOWS_KEY = 'other-windows'
 export const layoutKey = (windowId: WindowId, layoutId: LayoutId) => `l:${windowId}/${layoutId}`
 
 /** Room between two layouts of the tree: none, a layout's rows carry their own margins. */
@@ -41,9 +43,10 @@ function canvasRowOf(record: PanelRecord, children: readonly PanelRecord[], lift
 
 /** A window's layouts as the axis model sees them, from the measured rects. A
  *  layout with no rect (an empty one: nothing is drawn) takes no room. With `canvases`, the
- *  canvases among them take drops: `lifted` is the panel being dragged (null: none leaves its place). */
-export function windowItems(window: WindowTree, rectOf: RectOf, canvases?: { lifted: PanelId | null }): AxisItem[] {
-  let edge = 0
+ *  canvases among them take drops: `lifted` is the panel being dragged (null: none leaves its place). `top` is where
+ *  the window's first layout starts: a first layout with no rect (the lifted one, gone from the tree) stands there. */
+export function windowItems(window: WindowTree, rectOf: RectOf, canvases?: { lifted: PanelId | null }, top = 0): AxisItem[] {
+  let edge = top
   const canvasOfRow = (row: ReturnType<typeof layoutRows>[number]) => (canvases && row.record.id !== canvases.lifted ? canvasRowOf(row.record, row.children, canvases.lifted, rectOf) : undefined)
   return window.layouts.map((layout) => {
     const rows = layoutRows(layout)

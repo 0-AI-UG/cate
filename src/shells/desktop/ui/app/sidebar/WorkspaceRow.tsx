@@ -27,7 +27,7 @@ import { WorkspaceToggle } from './connectionStatus'
 import { PresenceAvatars } from './PresenceAvatars'
 import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type LayoutTree, type WindowTree } from './panelTree'
-import { itemKey, layoutKey, layoutRows } from './sidebarDrag'
+import { OTHER_WINDOWS_KEY, itemKey, layoutKey, layoutRows } from './sidebarDrag'
 import { CANVAS_ORDER_KEY, GHOST_LOOK, beginDrag, groupLayoutOf, useDragOp, useDragSettled, useDragStore, type GapSpot } from '../../client/layout/drag'
 import { closeLayout, showLayoutMenu, showPanelMenu, useLayoutRename } from '../../client/layout/windows'
 import { DragFloat, type RowLook } from './GhostBlock'
@@ -472,7 +472,7 @@ export function WorkspaceRow({
           {renderWindow(tree.primary)}
           {tree.others.length > 0 && (
             <>
-              <div className="flex items-center gap-1.5 h-6 pl-7 pr-2 text-[11px] text-muted opacity-70">
+              <div data-sb-key={OTHER_WINDOWS_KEY} className="flex items-center gap-1.5 h-6 pl-7 pr-2 text-[11px] text-muted opacity-70">
                 <span className="truncate">Other windows</span>
               </div>
               {tree.others.map(renderWindow)}

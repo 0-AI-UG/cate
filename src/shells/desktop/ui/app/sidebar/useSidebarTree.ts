@@ -24,7 +24,7 @@ import {
   type TreeTarget,
 } from '../../client/layout/drag'
 import { type WindowTree } from './panelTree'
-import { CANVAS_EDGE, GROUP_EDGE, ROW_GAP, canvasOrderAt, itemKey, layoutRows, windowItems, type RectOf } from './sidebarDrag'
+import { CANVAS_EDGE, GROUP_EDGE, ROW_GAP, canvasOrderAt, itemKey, layoutRows, windowItems, OTHER_WINDOWS_KEY, type RectOf } from './sidebarDrag'
 
 export interface Float { left: number; top: number; width: number; height: number }
 
@@ -121,19 +121,23 @@ export function useSidebarTree(workspaceId: string, windows: readonly WindowTree
       const has = own && (layout !== null
         ? origin.kind === 'layout' && 'windowId' in origin.host && origin.host.windowId === w.windowId && w.layouts.some((l) => l.layoutId === layout)
         : inLayouts(w, source.panelId))
-      const rows = windowItems(w, rectOf, canvases)
+      // Where this window's rows start: the tree's top, or below the previous window (and the label before the others).
+      const top = k === 0 ? container.getBoundingClientRect().top : Math.max(wall.end, k === 1 ? rectOf(OTHER_WINDOWS_KEY)?.bottom ?? 0 : 0)
+      const rows = windowItems(w, rectOf, canvases, top)
       // The walls are the first and last rows as the tree stands, the lifted row included.
       if (k === 0) wall.start = rows[0]?.start ?? 0
       wall.end = rows[rows.length - 1]?.end ?? wall.end
       const items = rows.map((item) => moveItem(shiftPast(item, childGone), (v) => v - removed))
       const model = buildAxisModel(items, has ? (layout !== null ? { kind: 'layout', layoutId: layout } : { kind: 'panel', panelId: source.panelId }) : standing, pressY, undefined, { ...OPTIONS, sourceSize: size })
-      if (has) { removed += model.removed; size = model.size; grab = model.grab }
+      // A lifted layout already gone from the tree has no rect to size the ghost by: it keeps its group's size.
+      if (has) { removed += model.removed; if (model.size > 0) { size = model.size; grab = model.grab } }
       return { lifted: has, windowId: w.windowId, model, start: items[0]?.start ?? 0, end: (items[items.length - 1]?.end ?? 0) - (has ? model.removed : 0) }
     })
     // The walls give room past the last row, less the margin before the next workspace, so the ghost reaches
     // its end slot: its middle must pass the end of the last row. A lifted row is part of the rows (half
     // its size is room enough); a drag from outside has no room of its own in them, so it gets all of it.
-    wall.end += (scopes.some((s) => s.lifted) ? size / 2 : size) - WORKSPACE_MARGIN
+    // A lifted row that is already gone from the tree (no rect: it took no room) is a drag from outside too.
+    wall.end += (removed > 0 ? size / 2 : size) - WORKSPACE_MARGIN
     const bounds = box ?? container.getBoundingClientRect()
     return { source, scopes, active: -1, wall, size, grab, left: bounds.left, width: bounds.width, gap: null, ghostTop: 0 }
   }
