@@ -110,6 +110,23 @@ describe('document service', () => {
     doc.dispose()
   })
 
+  it('holds every op to its change guards, change by change through a batch', () => {
+    const doc = createDocumentService({ file })
+    doc.apply(addPanel('a'))
+    const stop = doc.guardChanges((change, current) =>
+      change.kind === 'addRelation' && !current.panels[change.relation.toPanelId] ? 'no such target' : null)
+    const relate: DocChange = { kind: 'addRelation', relation: { id: 'r', fromPanelId: 'a', toPanelId: 'b', kind: 'use' } }
+    expect(doc.submit(op('c1', 1, relate))).toMatchObject({ status: 'failed', error: { code: 'rejected', message: 'no such target' } })
+    expect(() => doc.apply(relate)).toThrow('no such target')
+    // The guard sees the panel the batch's first change adds.
+    const batch: DocOp = { kind: 'batch', changes: [addPanel('b'), relate], opId: { clientId: 'c1', counter: 2 } }
+    expect(doc.submit(batch)).toMatchObject({ status: 'applied' })
+    expect(doc.submit(batch)).toEqual({ status: 'duplicate' })
+    stop()
+    expect(doc.submit(op('c1', 3, { kind: 'removeRelation', id: 'r' }))).toMatchObject({ status: 'applied' })
+    doc.dispose()
+  })
+
   it('persists debounced with seq and counters, and a resend after restart is not applied twice', async () => {
     const doc = createDocumentService({ file, debounceMs: 5 })
     doc.submit(op('c1', 1, addPanel('a')))

@@ -1,5 +1,5 @@
 // Binds an xterm to a runtime terminal: attach, write the serialized screen,
-// then the live output, and send keystrokes, sizes and activity back. The
+// then the live output, and send keystrokes, visibility and fits back. The
 // view owns everything else (links, search, keymaps, clipboard, rendering).
 // Output is acknowledged once xterm has parsed it, so a slow view slows the
 // stream instead of piling bytes up in memory.
@@ -11,16 +11,13 @@ interface Disposable { dispose(): void }
 
 /** The part of an xterm `Terminal` the binding uses (browser or headless). */
 export interface XtermLike {
-  readonly cols: number
-  readonly rows: number
   write(data: string | Uint8Array, callback?: () => void): void
   reset(): void
   onData(listener: (data: string) => void): Disposable
   onBinary?(listener: (data: string) => void): Disposable
-  onResize(listener: (size: { cols: number; rows: number }) => void): Disposable
 }
 
-export type ProcessProxy = Pick<CapabilityProxy<typeof processCapability>, 'attach' | 'view'>
+export type ProcessProxy = Pick<CapabilityProxy<typeof processCapability>, 'attach' | 'view' | 'fit'>
 
 export interface BindTerminalOptions {
   terminal: XtermLike
@@ -31,11 +28,6 @@ export interface BindTerminalOptions {
   /** The most scrollback lines this view keeps; the attach's screen carries
    *  no more. Default: all of it. */
   scrollback?: number
-  /** The size this view would fit, when it differs from its terminal's: a
-   *  view that draws the PTY's grid (scaled into its frame) and reports the
-   *  grid its frame holds. Report changes with `resized`. Default: the
-   *  terminal's size, reported on its resizes. */
-  size?: () => { cols: number; rows: number }
   /** The PTY's grid: before the screen is written, and on every change. */
   onSize?: (size: { cols: number; rows: number }) => void
   /** The PTY exited; the screen stays. */
@@ -47,15 +39,15 @@ export interface BindTerminalOptions {
 export interface TerminalBinding {
   /** This viewer's id once attached. */
   readonly viewer: string | null
-  /** The view's `size` changed. */
-  resized(): void
+  /** Sizes the PTY to the grid this view holds, so it shows it whole. The
+   *  PTY's size changes only through a fit. */
+  fit(size: { cols: number; rows: number }): void
   setVisible(visible: boolean): void
   dispose(): void
 }
 
 export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
   const { terminal, process: proc, id } = options
-  const size = options.size ?? (() => ({ cols: terminal.cols, rows: terminal.rows }))
   const encoder = new TextEncoder()
   let visible = options.visible !== false
   let viewer: string | null = null
@@ -64,14 +56,14 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
 
   const view = (): void => {
     if (!viewer || disposed) return
-    proc.view({ id, viewer, ...size(), visible }).catch(() => {})
+    proc.view({ id, viewer, visible }).catch(() => {})
   }
 
   const attach = (): void => {
     viewer = null
     // `resume` re-opens the attach after a reconnect; it starts with a fresh
     // screen, so nothing is lost or doubled.
-    const current = proc.attach({ id, ...size(), visible, ...(options.scrollback !== undefined ? { scrollback: options.scrollback } : {}) }, { manualAck: true, resume: true })
+    const current = proc.attach({ id, visible, ...(options.scrollback !== undefined ? { scrollback: options.scrollback } : {}) }, { manualAck: true, resume: true })
     sub = current
     current.onEvent((event) => {
       if (event.kind === 'screen') {
@@ -79,7 +71,7 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
         options.onSize?.({ cols: event.cols, rows: event.rows })
         terminal.reset()
         if (event.data) terminal.write(event.data)
-        // The view may have been resized while the attach was in flight.
+        // The view may have been hidden while the attach was in flight.
         view()
       } else if (event.kind === 'size') {
         options.onSize?.({ cols: event.cols, rows: event.rows })
@@ -97,8 +89,6 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
   const send = (data: string): void => { sub?.write(encoder.encode(data)) }
   const subscriptions = [
     terminal.onData(send),
-    // With its own `size`, the terminal's resizes are the PTY's, not the view's.
-    ...(options.size ? [] : [terminal.onResize(() => view())]),
     ...(terminal.onBinary ? [terminal.onBinary(send)] : []),
   ]
 
@@ -106,7 +96,10 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
 
   return {
     get viewer() { return viewer },
-    resized: () => view(),
+    fit(size) {
+      if (disposed) return
+      proc.fit({ id, cols: size.cols, rows: size.rows }).catch(() => {})
+    },
     setVisible(next) {
       if (next === visible) return
       visible = next

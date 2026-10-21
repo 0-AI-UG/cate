@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { channel } from '@kernel/rpc/contract'
 import type { ApiSessionContext } from '@kernel/api/contract'
@@ -20,7 +20,7 @@ import { createDocumentService, createPresence, type DocumentService } from '@wo
 import type { BrowserCredentialSaveInput, BrowserCredentialSuggestion, BrowserDownloadEntry } from '@services/browser/contract'
 import type { BrowserSnapshot } from './contract'
 import { browserPanel, browserServiceHandlers } from './runtime'
-import type { BrowserSessionDeps } from './session'
+import { AGENT_CURSOR_IDLE_MS, type BrowserSessionDeps } from './session'
 
 const canvasDef = definePanel({
   type: 'canvas',
@@ -265,6 +265,30 @@ describe('browser session', () => {
     await w.host.handleApi(id, 'click', { tabId, target: 3 }, { panelId: id, signal: abort.signal, caller: { kind: 'cli', id: 'agent-1' } } as ApiSessionContext)
     // The broker's own 30 s timer is off; the API's signal ends the request.
     expect(seen).toEqual([{ timeoutMs: 0, signal: abort.signal, feature: 'pageDriver' }])
+  })
+
+  it('hides the agent cursor once the agent has been idle for a while', async () => {
+    const w = world(async (_panelId, op, args) => {
+      if (op === 'page.execute') return { result: { ok: args.method }, cursor: { kind: 'click', label: 'click', x: 5, y: 6 } }
+      return undefined
+    })
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    const tabId = w.snapshot(id).activeTabId
+    vi.useFakeTimers()
+    try {
+      await w.api(id, 'click', { tabId, target: 3 })
+      vi.advanceTimersByTime(AGENT_CURSOR_IDLE_MS - 1)
+      expect(w.snapshot(id).agentCursor?.event.kind).toBe('click')
+      // A next step restarts the wait.
+      await w.api(id, 'click', { tabId, target: 3 })
+      vi.advanceTimersByTime(AGENT_CURSOR_IDLE_MS - 1)
+      expect(w.snapshot(id).agentCursor?.event.kind).toBe('click')
+      vi.advanceTimersByTime(1)
+      expect(w.snapshot(id).agentCursor?.event).toMatchObject({ kind: 'done', x: null, y: null })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('runs page methods on the driving client and shows the agent cursor', async () => {

@@ -93,7 +93,7 @@ const LOCATOR_LISTED = 10
 /** Where a covered element is scrolled to on each retry. */
 const OBSCURED_SCROLL_ALIGNMENTS = ['center', 'start', 'end'] as const
 /** Errors an element can grow out of while the page settles. */
-const TRANSIENT_ELEMENT_ERRORS = ['element-not-stable', 'element-obscured', 'element-not-visible', 'element-disabled', 'element-has-no-actionable-box']
+const TRANSIENT_ELEMENT_ERRORS = ['element-not-stable', 'element-obscured', 'element-outside-viewport', 'element-not-visible', 'element-disabled', 'element-has-no-actionable-box']
 /** Requests an action may have started that its result should wait for. */
 const SETTLE_REQUEST_TYPES = new Set(['Document', 'XHR', 'Fetch'])
 /** Requests older than this no longer count for settling (it looks back 2.5 s)
@@ -852,7 +852,7 @@ export class PageDriver {
           };
           for(let target=this;target;) {
             const root=target.getRootNode(), hit=root.elementFromPoint(x,y);
-            if(!hit) return 'element-obscured';
+            if(!hit) return 'element-outside-viewport';
             if(hit!==target && !target.contains(hit)) {
               const cover=hit.closest('dialog,[role=dialog],[role=alertdialog],[aria-modal=true]')||hit;
               return 'element-obscured: covered by '+describe(cover);
@@ -870,7 +870,7 @@ export class PageDriver {
         if (!TRANSIENT_ELEMENT_ERRORS.includes(code) || Date.now() >= deadline) throw error
         // Scrolling into view can leave the element under a sticky header or
         // footer: try the other alignments before waiting for the cover to go.
-        if (code === 'element-obscured') {
+        if (code === 'element-obscured' || code === 'element-outside-viewport') {
           const block = OBSCURED_SCROLL_ALIGNMENTS[obscured++ % OBSCURED_SCROLL_ALIGNMENTS.length]
           await this.callOn(target, `function () { this.scrollIntoView({ block: ${JSON.stringify(block)}, inline: 'center' }); }`).catch(() => {})
         }
@@ -1075,15 +1075,18 @@ export class PageDriver {
   private get documentId(): string { return `${this.contents.id}:d${this.documentEpoch}` }
 
   private async viewport(): Promise<BrowserViewportState> {
-    const value = objectValue(await this.evaluate('({width:innerWidth,height:innerHeight,deviceScaleFactor:devicePixelRatio,scrollX,scrollY})'))
+    const value = objectValue(await this.evaluate('({width:innerWidth,height:innerHeight,deviceScaleFactor:devicePixelRatio,scrollX,scrollY,scrollWidth:document.documentElement?.scrollWidth??0,scrollHeight:document.documentElement?.scrollHeight??0})'))
     return {
       width: Number(value.width), height: Number(value.height), deviceScaleFactor: Number(value.deviceScaleFactor),
       zoom: this.contents.getZoomFactor(), scrollX: Number(value.scrollX), scrollY: Number(value.scrollY),
+      scrollWidth: Number(value.scrollWidth) || 0, scrollHeight: Number(value.scrollHeight) || 0,
     }
   }
 
+  /** Whether points mean the same thing in both: the page growing (lazy
+   *  content loading in) does not move what is on screen. */
   private sameViewport(a: BrowserViewportState, b: BrowserViewportState): boolean {
-    return Object.keys(a).every(key => a[key as keyof BrowserViewportState] === b[key as keyof BrowserViewportState])
+    return (['width', 'height', 'zoom', 'deviceScaleFactor', 'scrollX', 'scrollY'] as const).every(key => a[key] === b[key])
   }
 
   private async captureViewport(viewport: BrowserViewportState, profile?: BrowserObservationPerformance, hidden = false): Promise<BrowserImage> {

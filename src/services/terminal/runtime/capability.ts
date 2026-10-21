@@ -7,6 +7,7 @@ export function processCapabilityImpl(service: TerminalService): CapabilityImpl<
   return {
     spawn: (params) => service.spawn(params),
     view: (params) => service.view(params),
+    fit: (params) => service.fit(params),
     kill: ({ id }) => service.kill(id),
     close: ({ id }) => service.close(id),
     cwd: ({ id }) => service.cwd(id),

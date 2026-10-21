@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import type { ConnectionState, WorkspaceConnection } from '@client/connections'
 import { selectWorkspace } from '../navigation'
-import { WorkspaceToggle } from './connectionStatus'
+import { WorkspaceToggle, connectionDotClass } from './connectionStatus'
 
 vi.mock('../navigation', () => ({ selectWorkspace: vi.fn(async () => {}), openLocalFolder: vi.fn(async () => {}) }))
 
@@ -57,5 +57,13 @@ describe('WorkspaceToggle', () => {
     act(() => toggle.click())
     expect(selectWorkspace).toHaveBeenCalledWith('ws-1')
     expect(onToggle).not.toHaveBeenCalled()
+  })
+})
+
+describe('connectionDotClass', () => {
+  it('pulses while connecting, not while an offline connection waits to retry', () => {
+    expect(connectionDotClass({ kind: 'connecting' })).toContain('animate-pulse')
+    expect(connectionDotClass({ kind: 'offline', lastSeen: null, retrying: true })).toBe('bg-amber-400')
+    expect(connectionDotClass({ kind: 'offline', lastSeen: null, retrying: false })).toBe('bg-red-500')
   })
 })

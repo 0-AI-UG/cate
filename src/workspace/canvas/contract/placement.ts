@@ -7,6 +7,7 @@ import type { Box, Point, Rect, Size } from './geometry'
 import {
   CANVAS_GRID_SIZE,
   inflateRect,
+  originCentredOn,
   rectContains,
   rectsOverlap,
   snapScalar,
@@ -29,6 +30,39 @@ export interface PlacementCandidate {
   point: Point
   /** The size the ghost (and resulting node) would have. */
   size: Size
+}
+
+/** Where a new node goes: straight to a spot, or a choice among spots. */
+export type PlacementPlan =
+  | { kind: 'place'; point: Point; size: Size }
+  | { kind: 'pick'; candidates: PlacementCandidate[] }
+
+export interface PlacementPlanOptions {
+  /** The node the person works in; spots pack around it. */
+  focusedNodeId?: string | null
+  /** Canvas point (the pointer) that ranks the spots. */
+  anchor?: Point | null
+  /** The person picks among spots when there is a choice (default true). */
+  pick?: boolean
+}
+
+/**
+ * How every client places a new node of `size`. An empty canvas has nothing
+ * to choose between: the node goes centred where the person is looking.
+ * Otherwise the person picks among the recommended spots or, with picking
+ * off, it goes to the next free spot. Each point is final: apply it as is.
+ */
+export function planPlacement(nodes: Nodes, size: Size, viewport: Viewport, options: PlacementPlanOptions = {}): PlacementPlan {
+  const focused = options.focusedNodeId ?? null
+  if (Object.keys(nodes).length === 0) {
+    const { offset, zoom, containerSize } = viewport
+    const point = containerSize.width > 0 && containerSize.height > 0
+      ? originCentredOn(viewToCanvas({ x: containerSize.width / 2, y: containerSize.height / 2 }, zoom, offset), size)
+      : findFreePosition(nodes, focused, size)
+    return { kind: 'place', point, size }
+  }
+  if (options.pick === false) return { kind: 'place', point: findFreePosition(nodes, focused, size), size }
+  return { kind: 'pick', candidates: recommendPlacements(nodes, focused, size, viewport, options.anchor ?? null) }
 }
 
 /**

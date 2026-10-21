@@ -9,6 +9,8 @@ struct CoreState: Decodable, Equatable {
     /// A workspace that must be trusted before it runs anything; nil when
     /// nothing asks.
     var trustPrompt: TrustPrompt?
+    /// This device's library of custom relation labels.
+    var savedRelationLabels: [String] = []
 }
 
 /// A trust question (`trustPrompt`).
@@ -232,8 +234,39 @@ struct Relation: Decodable, Equatable, Hashable, Identifiable {
     let flow: Int?
     /// Its words for its pair: "Reference", "Send findings to".
     let label: String
+    /// Its own label, standing in for its kind's words; nil without.
+    let custom: String?
+    /// How it is drawn on the canvas both its panels sit on; nil when they
+    /// are on none together.
+    let curve: RelationCurve?
     /// The meanings it can take, the recommended one first.
     let options: [RelationOption]
+}
+
+/// A relation's curve (`MobileRelationCurve`), exactly as the desktop draws
+/// it, in canvas units: from `start` through cubic segments, its chip at
+/// `midpoint`.
+struct RelationCurve: Decodable, Equatable, Hashable {
+    let canvasId: String
+    let fromNodeId: String
+    let toNodeId: String
+    let start: CanvasPoint
+    let segments: [Segment]
+    let midpoint: CanvasPoint
+
+    struct Segment: Decodable, Equatable, Hashable {
+        let c1: CanvasPoint
+        let c2: CanvasPoint
+        let end: CanvasPoint
+    }
+}
+
+/// A point in canvas units, as the core sends it (`{x, y}`).
+struct CanvasPoint: Decodable, Equatable, Hashable {
+    let x: CGFloat
+    let y: CGFloat
+
+    var point: CGPoint { CGPoint(x: x, y: y) }
 }
 
 /// A meaning a new relation can take (`MobileRelationOption`), the
@@ -273,20 +306,27 @@ struct PanelChoice: Decodable, Identifiable, Hashable {
 }
 
 /// Where a new panel goes (`MobilePlacement`): on the canvas a canvas panel
-/// shows, centred on `point` (canvas coordinates) or where there is room.
-/// No placement is the dock.
+/// shows, exactly at a planned `spot`, else centred near `point` (canvas
+/// coordinates), else where there is room. No placement is the dock.
 struct Placement: Hashable {
     let canvasPanelId: String
     var point: CGPoint?
-    /// A picked spot's size; else the type's default.
-    var size: CGSize?
+    /// A spot from the core's plan (`canvas.plan`), taken as is.
+    var spot: CGRect?
 
     var params: [String: Any] {
         var params: [String: Any] = ["canvasPanelId": canvasPanelId]
         if let point { params["point"] = ["x": point.x, "y": point.y] }
-        if let size { params["size"] = ["width": size.width, "height": size.height] }
+        if let spot { params["spot"] = ["x": spot.minX, "y": spot.minY, "width": spot.width, "height": spot.height] }
         return params
     }
+}
+
+/// How a new panel gets its spot (`MobilePlacementPlan`): straight to
+/// `place`, or a pick among `pick`, best first.
+struct PlacementPlan: Decodable {
+    let place: CanvasRect?
+    let pick: [CanvasRect]?
 }
 
 /// A rect in canvas coordinates (`MobileCanvasRect`).

@@ -38,7 +38,7 @@ import { createRepositoryRuntime, vcsCapabilityImpl } from '@workspace/repositor
 import { skillsCapability, type SkillTarget } from '@workspace/skills/contract'
 import { createSkillsRuntime, skillsCapabilityImpl } from '@workspace/skills/runtime'
 import { createConnectedEditors, type SharedEditor } from '@workspace/relations/runtime'
-import { RELATION_CONTEXT_MODE_FIELD, type RelationRoleOf } from '@workspace/relations/contract'
+import { RELATION_CONTEXT_MODE_FIELD, relationChangeProblem, type RelationRoleOf } from '@workspace/relations/contract'
 import { processCapability } from '@services/terminal/contract'
 import {
   cateCliEnvContributor,
@@ -179,6 +179,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     editor: (panelId) => sharedEditor(sessionOf(panelId)),
     relationRole: (type) => relationRole(type),
   })
+  // Relations only between panels taking part in them, and never in a cycle.
+  document.guardChanges((change, doc) => relationChangeProblem(change, doc, relationRole))
 
   // ---- The `cate` API ---------------------------------------------------------
 

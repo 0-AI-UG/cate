@@ -23,7 +23,8 @@ import { setUiState, useUiState, type UsageMetric, type UsageWindowDays } from '
 import { UsageChart } from './UsageChart'
 import { UsageLimitsSection } from './UsageLimits'
 import { UsagePriceOverrides } from './UsagePriceOverrides'
-import { AGENT_COLORS, AgentMark, Metric, RefreshButton, Segmented, Skeleton, agentLabel, agentsWithUsage } from './presentation'
+import { AGENT_COLORS, Metric, RefreshButton, Segmented, Skeleton, agentLabel, agentsWithUsage } from './presentation'
+import { AgentMark } from '../AgentMark'
 
 const METRIC_OPTIONS = [
   { value: 'cost', label: 'Cost' },

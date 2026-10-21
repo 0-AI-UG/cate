@@ -20,6 +20,8 @@ final class CoreHost {
     private(set) var workspaces: [Workspace]
     /// A workspace that must be trusted before it runs anything.
     private(set) var trustPrompt: TrustPrompt?
+    /// This device's library of custom relation labels.
+    private(set) var savedRelationLabels: [String] = []
     private(set) var ready = false
     /// Set when the core could not start; the app shows it instead.
     private(set) var failure: String?
@@ -101,6 +103,7 @@ final class CoreHost {
         lastState = state
         if clientId != state.clientId { clientId = state.clientId }
         if trustPrompt != state.trustPrompt { trustPrompt = state.trustPrompt }
+        if savedRelationLabels != state.savedRelationLabels { savedRelationLabels = state.savedRelationLabels }
         let known = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let next = state.workspaces.map { item in
             guard let workspace = known[item.id] else { return Workspace(item) }
@@ -191,18 +194,18 @@ final class CoreHost {
 
     // MARK: Terminals
 
-    /// Shows a terminal panel in a view that holds `cols` x `rows`: `events`
-    /// gets the PTY's grid, screen and output until `closeTerminal`.
-    func openTerminal(_ terminalId: String, workspaceId: String, panelId: String, cols: Int, rows: Int, events: @escaping (TerminalEvent) -> Void) {
+    /// Shows a terminal panel in a view: `events` gets the PTY's grid,
+    /// screen and output until `closeTerminal`.
+    func openTerminal(_ terminalId: String, workspaceId: String, panelId: String, events: @escaping (TerminalEvent) -> Void) {
         terminals[terminalId] = events
         Task {
-            await call("terminal.open", ["terminalId": terminalId, "workspaceId": workspaceId, "panelId": panelId, "cols": cols, "rows": rows])
+            await call("terminal.open", ["terminalId": terminalId, "workspaceId": workspaceId, "panelId": panelId])
         }
     }
 
-    /// The grid the view holds changed.
-    func resizeTerminal(_ terminalId: String, cols: Int, rows: Int) {
-        Task { await call("terminal.resize", ["terminalId": terminalId, "cols": cols, "rows": rows]) }
+    /// Sizes the PTY to `cols` x `rows`, the grid the view holds.
+    func fitTerminal(_ terminalId: String, cols: Int, rows: Int) {
+        Task { await call("terminal.fit", ["terminalId": terminalId, "cols": cols, "rows": rows]) }
     }
 
     func terminalInput(_ terminalId: String, _ data: String) {

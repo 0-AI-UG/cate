@@ -15,7 +15,7 @@ it('returns numeric stable IDs, request-scoped diffs and actual image bytes', as
       if (method === 'Page.createIsolatedWorld') return { executionContextId: 1 }
       if (method === 'Runtime.evaluate') {
         if (String(params.expression).includes('requestAnimationFrame')) return { result: { value: true } }
-        return { result: { value: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 } } }
+        return { result: { value: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0, scrollWidth: 800, scrollHeight: 600 } } }
       }
       if (method === 'Accessibility.getFullAXTree') return { nodes: [{ backendDOMNodeId: 7, role: { value: 'button' }, name: { value: 'Save' } }] }
       if (method === 'DOMSnapshot.captureSnapshot') return domSnapshot([7])

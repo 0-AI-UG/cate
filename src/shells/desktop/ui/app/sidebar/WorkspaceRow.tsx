@@ -4,7 +4,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, Server } from 'lucide-react'
-import { Icon, Tooltip } from '../../kernel/interaction'
+import { Icon, ShimmerText, Tooltip } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
@@ -13,9 +13,9 @@ import { focusedLeafPanelId, panelRowLabel } from '@client/host'
 import type { WorkspaceEntry } from '@client/workspaces'
 import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
-import { useWorktreeColor, worktreeTitleStyle } from '../../workspace/repository'
+import { useWorktreeColor } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
-import { AwaitingIndicator, RunningIndicator, agentInfoTitle, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
+import { AwaitingIndicator, agentInfoTitle, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
 import { clientApp } from '../app'
 import { closePanels, closeWorkspace, detachPanel, renamePanel, revealPanel, selectWorkspace } from '../navigation'
 import { panelIcon } from '../panels'
@@ -368,19 +368,18 @@ export function WorkspacePanelRow({
           onCancel={rename.onCancel}
         />
       ) : (
-        <span
+        <ShimmerText
           className="min-w-0 flex-1 truncate"
-          style={worktreeTitleStyle(worktreeColor)}
+          active={running}
+          color={worktreeColor}
           onDoubleClick={(e) => { e.stopPropagation(); onBeginRename?.() }}
         >
           {label}
-        </span>
+        </ShimmerText>
       )}
       {awaiting ? (
         <AwaitingIndicator />
-      ) : running ? (
-        <RunningIndicator />
-      ) : hasPorts ? (
+      ) : !running && hasPorts ? (
         <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" aria-label="listening on a port" />
       ) : null}
     </button>

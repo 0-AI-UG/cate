@@ -39,14 +39,21 @@ export function RuntimeSettingsPage({ workspaceId, panelTitle, children }: Runti
   const runtime = useRuntime(workspaceId)
   const settings = useWorkspaceSettings(workspaceId)
   const [info, setInfo] = useState<RuntimeStatus | null>(null)
+  // A failed ask ends the wait: its message and a retry replace the spinner.
+  const [infoError, setInfoError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
   const [confirmingStop, setConfirmingStop] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setInfo(null)
-    runtime?.runtime.info().then((i) => { if (!cancelled) setInfo(i) }, () => {})
+    setInfoError(null)
+    runtime?.runtime.info().then(
+      (i) => { if (!cancelled) setInfo(i) },
+      (err) => { if (!cancelled) setInfoError(errorMessage(err, 'The runtime did not answer.')) },
+    )
     return () => { cancelled = true }
-  }, [runtime])
+  }, [runtime, attempt])
 
   if (!workspaceId || !runtime) return null
   const network = settings.runtimeNetwork
@@ -87,9 +94,11 @@ export function RuntimeSettingsPage({ workspaceId, panelTitle, children }: Runti
       <SettingRow
         label="Runtime version"
         keywords="version update pid"
-        description={info ? `${info.version} (protocol ${info.protocol.join('.')}), ${info.clients.length} connected client${info.clients.length === 1 ? '' : 's'}` : undefined}
+        description={info ? `${info.version} (protocol ${info.protocol.join('.')}), ${info.clients.length} connected client${info.clients.length === 1 ? '' : 's'}` : infoError ?? undefined}
       >
-        {info ? <span /> : <Spinner size={14} label="Asking the runtime" className="text-muted" />}
+        {info ? <span />
+          : infoError ? <SecondaryButton onClick={() => setAttempt((n) => n + 1)}>Retry</SecondaryButton>
+          : <Spinner size={14} label="Asking the runtime" className="text-muted" />}
       </SettingRow>
       {children}
       <SettingRow

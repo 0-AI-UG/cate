@@ -48,6 +48,8 @@ export default function TerminalView({
   const renderBoxRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<TerminalXterm | null>(null)
   const bindingRef = useRef<TerminalBinding | null>(null)
+  /** Sizes the PTY to the panel (the grid, below). */
+  const fitRef = useRef<() => void>(() => {})
   const snapshotRef = useRef(snapshot)
   snapshotRef.current = snapshot
   const [ready, setReady] = useState(false)
@@ -86,6 +88,7 @@ export default function TerminalView({
     xterm.open(renderBox)
     xtermRef.current = xterm
     const unregister = registerTerminalView(workspaceId, panelId, {
+      fit: () => fitRef.current(),
       resetRendering: () => xterm.resetRendering(),
     })
     const offTheme = subscribeTheme((theme) => xterm.setOptions({ theme: theme.terminal }))
@@ -115,6 +118,8 @@ export default function TerminalView({
       ...grid.bindingOptions(xterm),
     })
     bindingRef.current = binding
+    // A new PTY, or this view laid out again: it takes the panel's grid.
+    fitRef.current()
     return () => {
       if (bindingRef.current === binding) bindingRef.current = null
       binding.dispose()
@@ -214,7 +219,7 @@ export default function TerminalView({
   }, [zoom])
 
   // ---- The grid ----------------------------------------------------------------
-  // The xterm has the PTY's grid; the panel's grid goes to the runtime
+  // The xterm has the PTY's grid; the panel fits the PTY to its own grid
   // (parts/grid). Another view's grid is scaled or letterboxed into the panel.
 
   const grid = useTerminalGrid({
@@ -226,6 +231,7 @@ export default function TerminalView({
     busy: interacting,
     font: options,
   })
+  fitRef.current = grid.fit
   const gridScale = grid.layout?.scale ?? 1
 
   // ---- Pointer coordinates ------------------------------------------------------

@@ -27,7 +27,7 @@ import type { GitChangedFile, GitFileDiff } from '@workspace/repository/contract
 import { notesMarkdown, openFindings, reviewFilePath, reviewImageMime, type ReviewNote, type ReviewNoteSeverity, type ReviewSnapshot } from '@panels/review/contract'
 import { pickReviewTerminal } from './parts/pickTerminal'
 import { ReviewToolbar } from './ReviewToolbar'
-import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
+import { AgentActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewMenuButton, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { HunkView, collapsedHunkGaps, type NoteDraft } from './ReviewDiff'
 import { sendOrShow, useAgentPicker, useReviewDiffs, useReviewView, type ReviewSend } from './useReview'
 import { createPanelFrom } from '@client/host'
@@ -107,12 +107,18 @@ function LazyDiffBody({ diff, error, load, allowLarge, split, wordDiff, wrap, no
   expandFullFile: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  // A diff is fetched once its section nears the viewport. Until then the
+  // section is an empty box: a spinner there would run forever for every
+  // file never scrolled to.
+  const [requested, setRequested] = useState(false)
   useEffect(() => {
     if (diff || error) return
-    if (typeof IntersectionObserver === 'undefined') { load(); return }
+    setRequested(false)
+    const request = () => { setRequested(true); load() }
+    if (typeof IntersectionObserver === 'undefined') { request(); return }
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) {
-        load()
+        request()
         observer.disconnect()
       }
     }, { rootMargin: '600px' })
@@ -121,6 +127,7 @@ function LazyDiffBody({ diff, error, load, allowLarge, split, wordDiff, wrap, no
   }, [diff, error, load])
 
   if (!diff && error) return <div ref={ref} className="px-4 py-5 text-center text-[11px] text-red-400">{error}</div>
+  if (!diff && !requested) return <div ref={ref} className="h-20" />
   if (!diff) return <div ref={ref}><LoadingState label="Loading diff" className="h-20 text-[11px]" /></div>
   if (diff.binary) return <div ref={ref} className="px-4 py-6 text-center text-[11px] text-muted">Binary file changed</div>
   if (diff.tooLarge) {
@@ -226,7 +233,6 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
   const [agentAction, setAgentAction] = useState<AgentAction | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreMenuRef = useRef<HTMLDivElement>(null)
-  const agentPopoverRef = useRef<HTMLDivElement>(null)
   const ui = clientUi()
   const comparisonKey = JSON.stringify([review.repoPath, review.spec])
 
@@ -240,15 +246,6 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
   }, [moreOpen])
 
   useEffect(() => {
-    if (!agentAction) return
-    const close = (event: PointerEvent) => {
-      if (!agentBusy && !agentPopoverRef.current?.contains(event.target as Node)) setAgentAction(null)
-    }
-    window.addEventListener('pointerdown', close)
-    return () => window.removeEventListener('pointerdown', close)
-  }, [agentAction, agentBusy])
-
-  useEffect(() => {
     if (!focusedFile || !comparison) return
     requestAnimationFrame(() => {
       panelRef.current?.querySelector(`[data-review-file="${encodeURIComponent(focusedFile)}"]`)?.scrollIntoView({ block: 'start' })
@@ -259,7 +256,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
     setAgentAction({ kind })
     picker.show()
   }
-  const togglePicker = (kind: AgentAction['kind']) => (agentAction?.kind === kind ? setAgentAction(null) : openPicker(kind))
+  const setPickerOpen = (kind: AgentAction['kind']) => (open: boolean) => (open ? openPicker(kind) : agentAction?.kind === kind && setAgentAction(null))
   const reviewWithAgent = async (agentId: AgentId) => {
     const place = await pickReviewTerminal(workspaceId, panelId)
     if (place && await send({ kind: 'reviewWithAgent', agentId, ...place })) setAgentAction(null)
@@ -346,41 +343,30 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
           <ReviewRunStatus review={agentReview} />
           <ReviewStats files={comparison?.files.length ?? 0} additions={comparison?.additions ?? 0} deletions={comparison?.deletions ?? 0} />
           <ToolbarButton label="Refresh" onClick={() => void send({ kind: 'refresh' })} disabled={loading}>{loading ? <Spinner size={14} label="Refreshing changes" /> : <ArrowClockwise size={14} />}</ToolbarButton>
-          <div ref={agentAction?.kind === 'review' ? agentPopoverRef : undefined} className="relative">
-            <ReviewActionButton label="Review in terminal" onClick={() => togglePicker('review')} disabled={agentBusy || agentReview?.status === 'working'} />
-            {agentAction?.kind === 'review' && (
-              <AgentPickerPopover
-                action={agentAction}
-                choices={picker.choices}
-                selectedAgentId={picker.selected}
-                busy={agentBusy}
-                onSelect={picker.select}
-                onClose={() => !agentBusy && setAgentAction(null)}
-                onConfirm={() => picker.selected && void reviewWithAgent(picker.selected)}
-              />
-            )}
-          </div>
-          <div ref={agentAction?.kind === 'changes' ? agentPopoverRef : undefined} className="relative">
-            <ReviewActionButton
-              label={`Request changes${openNotes.length ? ` (${openNotes.length})` : ''}`}
-              title={openNotes.length === 0 ? 'Add an open review note before requesting changes' : 'Send open findings to an agent'}
-              onClick={() => (review.sourceAgent ? void requestChanges() : togglePicker('changes'))}
-              disabled={agentBusy || openNotes.length === 0}
-            >
-              <PaperPlaneTilt size={14} />
-            </ReviewActionButton>
-            {agentAction?.kind === 'changes' && (
-              <AgentPickerPopover
-                action={agentAction}
-                choices={picker.choices}
-                selectedAgentId={picker.selected}
-                busy={agentBusy}
-                onSelect={picker.select}
-                onClose={() => !agentBusy && setAgentAction(null)}
-                onConfirm={() => picker.selected && void requestChanges(picker.selected)}
-              />
-            )}
-          </div>
+          <AgentActionButton
+            action={{ kind: 'review' }}
+            label="Review in terminal"
+            disabled={agentBusy || agentReview?.status === 'working'}
+            busy={agentBusy}
+            open={agentAction?.kind === 'review'}
+            choices={picker.choices}
+            onOpenChange={setPickerOpen('review')}
+            onPick={(agentId) => void reviewWithAgent(agentId)}
+          />
+          <AgentActionButton
+            action={{ kind: 'changes' }}
+            label={`Request changes${openNotes.length ? ` (${openNotes.length})` : ''}`}
+            title={openNotes.length === 0 ? 'Add an open review note before requesting changes' : 'Send open findings to an agent'}
+            disabled={agentBusy || openNotes.length === 0}
+            busy={agentBusy}
+            open={agentAction?.kind === 'changes'}
+            choices={picker.choices}
+            onOpenChange={setPickerOpen('changes')}
+            onClick={review.sourceAgent ? () => void requestChanges() : undefined}
+            onPick={(agentId) => void requestChanges(agentId)}
+          >
+            <PaperPlaneTilt size={14} />
+          </AgentActionButton>
           <ToolbarButton label={display.split ? 'Switch to unified diff' : 'Switch to split diff'} onClick={() => view.updateDisplay({ split: !display.split })}>
             {display.split ? <Rows size={14} /> : <SplitHorizontal size={14} />}
           </ToolbarButton>

@@ -13,7 +13,7 @@ export async function connectPanelToExisting(workspaceId: string, sourcePanelId:
   const doc = relationUiHost().document(workspaceId)?.getSnapshot()
   const source = doc?.panels[sourcePanelId]
   if (!doc || !source) return
-  const targets = relationTargets(doc, sourcePanelId)
+  const targets = relationTargets(doc, sourcePanelId, relationRoleOf)
   const menu = relationUiPort().showMenu
   if (targets.length === 0) {
     await menu([{ label: 'No panels available to connect', enabled: false }])

@@ -1,33 +1,7 @@
 // Agent status marks drawn next to a panel's title (dock tabs, sidebar rows).
+// Running is the title's shimmer (ShimmerText), not a mark.
 
 const AWAIT_COLOR = 'color-mix(in srgb, var(--activity-orange) 70%, var(--text-primary))'
-
-/** Running agent: a static dashed ring. Waiting is the filled dot below; idle
- *  shows neither. No animation, so it costs no frames. */
-export function RunningIndicator({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      className={`cate-running-indicator shrink-0 ${className}`}
-      width={11}
-      height={11}
-      viewBox="0 0 24 24"
-      role="img"
-      aria-label="agent running"
-      style={{ color: 'var(--text-secondary)' }}
-    >
-      <circle
-        cx={12}
-        cy={12}
-        r={9}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2.6}
-        strokeDasharray="4.2 3.2"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
 
 export function AwaitingIndicator({ className = '' }: { className?: string }) {
   return (

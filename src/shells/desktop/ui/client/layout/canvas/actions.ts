@@ -74,7 +74,8 @@ export interface CanvasPlaceOptions {
 }
 
 /** Picks a spot for a new panel of `type` the way `createPanelOnCanvas` does
- *  (the placement picker when that setting is on, else the next free spot)
+ *  (as `planPlacement` plans it: the picker when that setting is on and the
+ *  canvas has nodes, else straight to the planned spot)
  *  and hands it to `make`, which creates the panel there and answers whether
  *  it did. `make` may run later, once the person picked. */
 export function placeOnCanvas(
@@ -95,7 +96,7 @@ export function placeOnCanvas(
     return at.nodeId
   }
 
-  if (options.position || !canvasSetting('placementPicker')) {
+  if (options.position) {
     place(options.position, size, !!options.exact)
     return
   }
@@ -104,7 +105,8 @@ export function placeOnCanvas(
     availability: 'new',
     existing: [],
     size,
-    // The picker's spots are already free and grid aligned.
+    pick: canvasSetting('placementPicker'),
+    // The planned spots are already free and grid aligned.
     place: (point, nodeSize) => place(point, nodeSize, true),
     onCancelled: () => {},
   })

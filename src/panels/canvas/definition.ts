@@ -22,9 +22,6 @@ export const canvasDefinition = definePanel({
   chrome: { floatingTabBar: true },
   defaultTitle: 'Canvas',
   channel: channel<JsonObject, Partial<JsonObject>, never>(),
-  relation: {
-    instruction: (kind) => `${kind === 'verify' ? 'Verify using its panels' : kind === 'use' ? 'Work through its panels' : 'Reference its panels'} when relevant.`,
-  },
   // The record names a new canvas; `addPanel` creates the canvas with it.
   create: (options: PanelCreateOptions, kit) => kit.add(
     kit.record('canvas', { id: kit.newId(), title: options.title, canvasId: kit.newId() }),

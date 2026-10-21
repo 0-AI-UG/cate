@@ -11,7 +11,7 @@ import { clientStateFor, documentStoreFor } from '@client/document'
 import { useClientState, useDocument } from '../../document'
 import { dockPanels, placementOf, stackOfPanel, findStack, type NodeId, type PanelId } from '@workspace/document/contract'
 import { panelCheckout } from '@workspace/repository/contract'
-import { PanelRelationHandle, connectPanelToExisting } from '../../../workspace/relations'
+import { PanelRelationHandle, connectPanelToExisting, relatable } from '../../../workspace/relations'
 import { canvasDrag, canvasHost, panelMinimumSize } from './ports'
 import { useWorkspaceSetting } from './settingsHooks'
 import { activeNodePanelId, type ViewNode } from './store'
@@ -142,7 +142,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const activePanelId = useClientState(workspaceId, (s) => (dock ? activeNodePanelId(dock, s.activeTabs) : null))
   const activePanel = useDocument(workspaceId, (d) => (activePanelId ? d.panels[activePanelId] : undefined))
   const relationsEnabled = useWorkspaceSetting(workspaceId, 'panelRelationsEnabled')
-  const canConnect = Boolean(relationsEnabled && activePanel)
+  const canConnect = Boolean(relationsEnabled && activePanel && relatable(activePanel.type))
 
   // --- Worktree identity follows the visible tab --------------------------------
   // Only with 2+ worktrees, so single-branch work shows no tint.

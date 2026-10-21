@@ -4,7 +4,7 @@
 
 import { documentStoreFor, subscribeDocumentStores } from '@client/document'
 import { registerTabMenuItems } from '../dock'
-import { connectPanelToExisting, installRelationUiHost } from '../../../workspace/relations'
+import { connectPanelToExisting, installRelationUiHost, relatable } from '../../../workspace/relations'
 import { canvasHost } from './ports'
 import { canvasSetting, setCanvasSetting, subscribeCanvasSettings, workspaceSettingsSource } from './settings'
 
@@ -26,7 +26,7 @@ export function installCanvasRelationHost(): () => void {
     createPanel: (workspaceId, type, options) => canvasHost().createPanel(workspaceId, type, options),
   })
   return registerTabMenuItems({
-    items: ({ workspaceId }) => (workspaceSettingsSource(workspaceId)?.get('panelRelationsEnabled') ?? true)
+    items: ({ workspaceId, record }) => (workspaceSettingsSource(workspaceId)?.get('panelRelationsEnabled') ?? true) && relatable(record.type)
       ? [{ id: 'connect', label: 'Connect to…' }]
       : [],
     run(id, { workspaceId, record }) {

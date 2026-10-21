@@ -3,8 +3,7 @@
 // binding the desktop view uses, behind an `XtermLike` whose screen is the
 // app's native terminal: output goes over the bridge as `terminal.event`s,
 // acknowledged once the app has drawn it. Like every view, it draws the PTY's
-// grid and reports the grid it holds (the PTY takes the smallest of its
-// visible views').
+// grid, and fits the PTY to the grid it holds when the person asks.
 
 import type { WorkspaceConnection, SessionHandle } from '@client/connections'
 import { openLink } from '@client/host'
@@ -15,8 +14,6 @@ import { bytesToBase64 } from '@workspace/files/contract'
 import type { MobileBridge, MobileTerminalEvent } from '../contract'
 import type { MobileClient } from './boot'
 
-type Grid = { cols: number; rows: number }
-
 /** The scrollback the app's terminal keeps (SwiftTerm's default): the
  *  screen it attaches with carries no more. */
 const APP_SCROLLBACK = 500
@@ -24,14 +21,14 @@ type Event = MobileTerminalEvent extends infer E ? E extends unknown ? Omit<E, '
 
 interface OpenTerminal {
   input(data: string): void
-  /** The grid the view holds changed. */
-  resize(cols: number, rows: number): void
+  /** Sizes the PTY to the grid the view holds. */
+  fit(cols: number, rows: number): void
   openLink(uri: string): void
   close(): void
 }
 
 export interface MobileTerminals {
-  open(params: { terminalId: string; workspaceId: string; panelId: string; cols: number; rows: number }): void
+  open(params: { terminalId: string; workspaceId: string; panelId: string }): void
   get(terminalId: string): OpenTerminal | undefined
 }
 
@@ -48,19 +45,14 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
   const open = new Map<string, OpenTerminal>()
   const encoder = new TextEncoder()
 
-  function openTerminal(params: { terminalId: string; workspaceId: string; panelId: string; cols: number; rows: number }): OpenTerminal {
+  function openTerminal(params: { terminalId: string; workspaceId: string; panelId: string }): OpenTerminal {
     const { terminalId, workspaceId, panelId } = params
-    let held: Grid = { cols: params.cols, rows: params.rows }
-    let pty: Grid | null = null
     let closed = false
     const emit = (event: Event) => closed
       ? Promise.resolve(null)
       : bridge('terminal.event', { terminalId, ...event } as MobileTerminalEvent)
     const dataListeners = new Set<(data: string) => void>()
-    // The app's terminal always has the PTY's grid.
     const screen: XtermLike = {
-      get cols() { return pty?.cols ?? held.cols },
-      get rows() { return pty?.rows ?? held.rows },
       write(data, callback) {
         const bytes = typeof data === 'string' ? encoder.encode(data) : data
         void emit({ kind: 'output', data: bytesToBase64(bytes) }).then(() => callback?.(), () => {})
@@ -70,13 +62,11 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
         dataListeners.add(listener)
         return { dispose: () => { dataListeners.delete(listener) } }
       },
-      // Only the PTY resizes it, and the binding reports `held` instead.
-      onResize: () => ({ dispose() {} }),
     }
+    // The app's terminal always has the PTY's grid.
     let told = ''
-    const tell = () => {
-      if (!pty) return
-      const event = { kind: 'size' as const, ...pty }
+    const tell = (size: { cols: number; rows: number }) => {
+      const event = { kind: 'size' as const, cols: size.cols, rows: size.rows }
       const key = JSON.stringify(event)
       if (key === told) return
       told = key
@@ -113,12 +103,8 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
         terminal: screen,
         process: connection.runtime.process,
         id: ptyId,
-        size: () => held,
         scrollback: APP_SCROLLBACK,
-        onSize: (size) => {
-          pty = { cols: size.cols, rows: size.rows }
-          tell()
-        },
+        onSize: tell,
       })
     }
     const follow = () => {
@@ -140,10 +126,8 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
 
     return {
       input(data) { for (const listener of [...dataListeners]) listener(data) },
-      resize(cols, rows) {
-        if (cols === held.cols && rows === held.rows) return
-        held = { cols, rows }
-        binding?.resized()
+      fit(cols, rows) {
+        binding?.fit({ cols, rows })
       },
       openLink(uri) {
         const target = osc8Target(uri)

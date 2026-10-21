@@ -30,6 +30,7 @@ export {
 } from './interactions'
 export {
   installRelationUiHost,
+  relatable,
   relationRoleOf,
   relationUiHost,
   RelationCanvasProvider,

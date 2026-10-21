@@ -89,6 +89,59 @@ it('fetches diffs on demand and refetches them when the epoch moves', async () =
   expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts', options: {} })
 })
 
+/** IntersectionObserver that reports nothing until `intersect()`. */
+function stubIntersections() {
+  const callbacks: Array<(entries: Array<{ isIntersecting: boolean }>) => void> = []
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) { callbacks.push(callback) }
+    observe() {}
+    disconnect() {}
+  })
+  return { intersect: () => act(() => callbacks.forEach((callback) => callback([{ isIntersecting: true }]))) }
+}
+
+it('spins only for diffs it has requested, not for files never scrolled to', async () => {
+  installMockClientUi()
+  const view = stubIntersections()
+  try {
+    send.mockImplementation(() => new Promise(() => {}))
+    render(gitSnapshot({ comparison: { ...gitSnapshot().comparison!, files: [file] } }))
+    await flush()
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'diff' }))
+    expect(host.textContent).not.toContain('Loading diff')
+    expect(host.querySelector('.animate-spin')).toBeNull()
+
+    view.intersect()
+    expect(send).toHaveBeenCalledWith({ kind: 'diff', path: 'src/a.ts', options: {} })
+    expect(host.textContent).toContain('Loading diff')
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
+it('spins only for recorded edits it has requested, not for files never scrolled to', async () => {
+  installMockClientUi()
+  const view = stubIntersections()
+  try {
+    send.mockImplementation(() => new Promise(() => {}))
+    render(gitSnapshot({
+      review: { ...gitSnapshot().review, agentChanges: {} },
+      comparison: null,
+      recorded: { loading: false, error: null, files: [{ recordId: 'rec', agentId: 'codex', panelIds: [], path: 'src/a.ts', additions: 1, deletions: 0, coverage: 'patch', lineCount: 1 }] },
+    }))
+    await flush()
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'recordedDiff' }))
+    expect(host.textContent).not.toContain('Loading recorded diff')
+    expect(host.querySelector('.animate-spin')).toBeNull()
+
+    view.intersect()
+    expect(send).toHaveBeenCalledWith({ kind: 'recordedDiff', recordId: 'rec', path: 'src/a.ts' })
+    expect(host.textContent).toContain('Loading recorded diff')
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
 it('says the folder is not a Git repository instead of showing an error', async () => {
   installMockClientUi()
   render(gitSnapshot({ comparison: null, notRepository: true }))
@@ -190,7 +243,24 @@ it('starts a terminal review with the agent the person picks', async () => {
   render(gitSnapshot())
   await act(async () => { button('Review in terminal').click() })
   expect(send).toHaveBeenCalledWith({ kind: 'reviewAgents' })
-  await act(async () => { [...host.querySelectorAll('button')].find((b) => b.textContent === 'Start review')!.click() })
+  await act(async () => { button('Review with Codex').click() })
   expect(pickPanelPlace).toHaveBeenCalledWith({ workspaceId: 'ws', panelType: 'terminal', availability: 'both', sourcePanelId: 'review' })
   expect(send).toHaveBeenCalledWith({ kind: 'reviewWithAgent', agentId: 'codex', terminalPanelId: 't1' })
+})
+
+it('opens the agent column on hover over request changes and sends to the picked agent', async () => {
+  installMockClientUi()
+  vi.useFakeTimers()
+  try {
+    send.mockImplementation(async (op: ReviewOp) => (op.kind === 'reviewAgents' ? [{ agentId: 'claude-code', ready: true }] : op.kind === 'requestChanges' ? 'done' : op.kind === 'diff' ? diff : undefined))
+    render(gitSnapshot({ review: { ...gitSnapshot().review, notes: [{ id: 'n1', path: 'src/a.ts', side: 'new', line: 1, body: 'Fix', context: '', resolvedBase: null, resolvedTarget: null, status: 'open', createdAt: '2026-01-01T00:00:00Z' }] } }))
+    const trigger = button('Request changes (1)')
+    act(() => { trigger.parentElement!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+    expect(send).toHaveBeenCalledWith({ kind: 'reviewAgents' })
+    await act(async () => { button('Send to Claude Code').click() })
+    expect(send).toHaveBeenCalledWith({ kind: 'requestChanges', agentId: 'claude-code', terminalPanelId: 't1' })
+  } finally {
+    vi.useRealTimers()
+  }
 })

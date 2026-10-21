@@ -1,13 +1,13 @@
 // Where the app puts a new panel (`MobilePlacement`): in the dock when it
-// names none, else on a canvas panel's canvas, centred on the point the
-// person picked or where there is room. The spots it offers are the
-// desktop's recommended ones (`recommendPlacements`).
+// names none, else on a canvas panel's canvas, at a planned spot, centred
+// near a point or where there is room. Spots are planned as on every client
+// (`planPlacement`).
 
 import { panelDefinition } from '@client/host'
 import type { PanelPlacementOptions } from '@panels/framework/contract'
-import { originCentredOn, recommendPlacements } from '@workspace/canvas/contract'
+import { originCentredOn, planPlacement, type Point, type Size } from '@workspace/canvas/contract'
 import type { WorkspaceDocument } from '@workspace/document/contract'
-import type { MobileCanvasRect, MobilePlacement } from '../contract'
+import type { MobileCanvasRect, MobilePlacement, MobilePlacementPlan } from '../contract'
 
 /** The desktop's size for a type that names none. */
 const FALLBACK_SIZE = { width: 640, height: 400 }
@@ -15,30 +15,31 @@ const FALLBACK_SIZE = { width: 640, height: 400 }
 /** The create options of a new panel of `type` placed at `placement`. */
 export function placementOptions(type: string, placement: MobilePlacement | null | undefined): PanelPlacementOptions {
   if (!placement) return {}
-  const size = placement.size ?? panelDefinition(type)?.defaultSize
-  const at = placement.point
-  const position = at && size ? originCentredOn(at, size) : undefined
-  return { near: placement.canvasPanelId, ...(position ? { position } : {}), ...(placement.size ? { size: placement.size } : {}) }
+  const near = placement.canvasPanelId
+  const { spot, point } = placement
+  if (spot) return { near, position: { x: spot.x, y: spot.y }, size: { width: spot.width, height: spot.height }, exact: true }
+  const size = panelDefinition(type)?.defaultSize
+  return point && size ? { near, position: originCentredOn(point, size) } : { near }
 }
 
-/** The spots a new panel of `type` could take on the canvas `canvasPanelId`
- *  shows, best first, for the part of it on screen. */
-export function suggestPlacements(
+/** How a new panel of `type` gets its spot on the canvas `canvasPanelId`
+ *  shows, for the part of it on screen; null without that canvas. */
+export function planPlacementOn(
   doc: WorkspaceDocument,
   canvasPanelId: string,
   type: string,
   visible: MobileCanvasRect,
-): MobileCanvasRect[] {
+): MobilePlacementPlan | null {
   const canvasId = doc.panels[canvasPanelId]?.canvasId
   const canvas = canvasId ? doc.canvases[canvasId] : undefined
-  if (!canvas) return []
+  if (!canvas) return null
   const size = panelDefinition(type)?.defaultSize ?? FALLBACK_SIZE
   // The visible rect as a viewport at zoom 1.
   const viewport = { offset: { x: -visible.x, y: -visible.y }, zoom: 1, containerSize: { width: visible.width, height: visible.height } }
-  return recommendPlacements(canvas.nodes, null, size, viewport, null).map(({ point, size }) => ({
-    x: point.x,
-    y: point.y,
-    width: size.width,
-    height: size.height,
-  }))
+  const plan = planPlacement(canvas.nodes, size, viewport)
+  return plan.kind === 'place' ? { place: rect(plan.point, plan.size) } : { pick: plan.candidates.map((c) => rect(c.point, c.size)) }
+}
+
+function rect(point: Point, size: Size): MobileCanvasRect {
+  return { x: point.x, y: point.y, width: size.width, height: size.height }
 }

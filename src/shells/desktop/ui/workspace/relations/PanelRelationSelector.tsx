@@ -3,9 +3,17 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Point } from '@workspace/canvas/contract'
 import type { PanelRecord, PanelRelation, RelationKind } from '@workspace/document/contract'
-import { panelRelationLabel, panelRelationOptions, relationPanelOf } from '@workspace/relations/contract'
-import { moveRelation, removeRelation, updateRelationMeaning } from './actions'
-import { relationRoleOf, relationUiHost, useRelationCanvas, useSavedRelationLabels } from './host'
+import { RELATION_LABEL_MAX, panelRelationLabel, panelRelationOptions, relationPanelOf } from '@workspace/relations/contract'
+import {
+  forgetRelationLabel,
+  labelRelation,
+  moveRelation,
+  rememberRelationLabel,
+  removeRelation,
+  renameRelationLabel,
+  updateRelationMeaning,
+} from './actions'
+import { relationRoleOf, useRelationCanvas, useSavedRelationLabels } from './host'
 import { useRelationUi } from './state'
 
 function RelationMenuPortal({ target, position, open, children }: {
@@ -39,12 +47,15 @@ export function PanelRelationSelector({
   sourcePanel,
   targetPanel,
   position,
+  muted = false,
 }: {
   workspaceId: string
   relation: PanelRelation
   sourcePanel: PanelRecord
   targetPanel: PanelRecord
   position: Point
+  /** Its flow's prompt context is off: drawn faded until hovered. */
+  muted?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [editingCustom, setEditingCustom] = useState(false)
@@ -110,13 +121,8 @@ export function PanelRelationSelector({
   const saveCustom = () => {
     const label = customLabel.trim()
     if (!label) return
-    updateRelationMeaning(workspaceId, relation.id, relation.kind, label)
-    relationUiHost().savedLabels.set([
-      label,
-      ...relationUiHost().savedLabels.get().filter(
-        (saved) => saved.toLocaleLowerCase() !== label.toLocaleLowerCase(),
-      ),
-    ])
+    labelRelation(workspaceId, relation.id, label)
+    rememberRelationLabel(label)
     setOpen(false)
     setEditingCustom(false)
   }
@@ -136,25 +142,19 @@ export function PanelRelationSelector({
   const saveSaved = () => {
     const label = customLabel.trim()
     if (!label || !editingSavedLabel) return
-    const renamed = relationUiHost().savedLabels.get()
-      .map((saved) => saved === editingSavedLabel ? label : saved)
-      .filter((saved, index, labels) => labels.findIndex(
-        (candidate) => candidate.toLocaleLowerCase() === saved.toLocaleLowerCase(),
-      ) === index)
-    relationUiHost().savedLabels.set(renamed)
-    if (relation.label === editingSavedLabel) {
-      updateRelationMeaning(workspaceId, relation.id, relation.kind, label)
-    }
+    renameRelationLabel(editingSavedLabel, label)
+    // This relation follows the label it has.
+    if (relation.label === editingSavedLabel) labelRelation(workspaceId, relation.id, label)
     setEditingSavedLabel(null)
   }
 
   const chooseSaved = (label: string) => {
-    updateRelationMeaning(workspaceId, relation.id, relation.kind, label)
+    labelRelation(workspaceId, relation.id, label)
     setOpen(false)
   }
 
   const deleteSaved = (label: string) => {
-    relationUiHost().savedLabels.set(relationUiHost().savedLabels.get().filter((saved) => saved !== label))
+    forgetRelationLabel(label)
   }
 
   const beginDrag = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -214,7 +214,7 @@ export function PanelRelationSelector({
       }}
       onClick={(event) => event.stopPropagation()}
     >
-      <div data-panel-relation-chip className="group flex h-[22px] cursor-grab animate-sidebar-view-in items-center rounded-full border border-subtle bg-surface-3/95 pl-2 pr-0.5 text-[10px] text-primary shadow-md backdrop-blur-md transition-[border-color,box-shadow,transform] duration-200 ease-out hover:border-focus hover:shadow-lg active:cursor-grabbing motion-reduce:animate-none motion-reduce:transition-none">
+      <div data-panel-relation-chip className={`group flex h-[22px] cursor-grab animate-sidebar-view-in items-center rounded-full border border-subtle bg-surface-3/95 pl-2 pr-0.5 text-[10px] text-primary shadow-md backdrop-blur-md transition-[border-color,box-shadow,transform,opacity] duration-200 ease-out hover:border-focus hover:shadow-lg active:cursor-grabbing motion-reduce:animate-none motion-reduce:transition-none${muted && !open ? ' opacity-50 hover:opacity-100' : ''}`}>
         <button
           type="button"
           data-panel-relation-trigger
@@ -298,7 +298,7 @@ export function PanelRelationSelector({
                         <input
                           ref={inputRef}
                           value={customLabel}
-                          maxLength={80}
+                          maxLength={RELATION_LABEL_MAX}
                           aria-label={`Edit saved relationship ${label}`}
                           className="h-7 min-w-0 flex-1 select-text rounded-md border border-subtle bg-surface-2 px-2 text-primary outline-none focus:border-focus focus:ring-1 focus:ring-focus-blue/30"
                           onChange={(event) => setCustomLabel(event.target.value)}
@@ -364,7 +364,7 @@ export function PanelRelationSelector({
                 data-panel-relation-custom-input
                 value={customLabel}
                 tabIndex={open && editingCustom ? 0 : -1}
-                maxLength={80}
+                maxLength={RELATION_LABEL_MAX}
                 aria-label="Custom connection meaning"
                 placeholder="e.g. summarizes for"
                 className="h-7 min-w-0 flex-1 select-text rounded-md border border-subtle bg-surface-2 px-2 text-primary outline-none placeholder:text-muted focus:border-focus focus:ring-1 focus:ring-focus-blue/30"

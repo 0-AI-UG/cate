@@ -14,6 +14,10 @@ export interface BrowserViewportState {
   deviceScaleFactor: number
   scrollX: number
   scrollY: number
+  /** The document's scrollable size in CSS pixels, so an agent knows how
+   *  much of the page lies outside the viewport. */
+  scrollWidth: number
+  scrollHeight: number
 }
 
 export interface BrowserImage {

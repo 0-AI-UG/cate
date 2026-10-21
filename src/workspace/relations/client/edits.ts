@@ -5,8 +5,9 @@ import type { Point } from '@workspace/canvas/contract'
 import type { DocBatch, DocChange, PanelRecord, RelationKind, RelationSide, WorkspaceDocument } from '@workspace/document/contract'
 import {
   RELATION_CONTEXT_MODE_FIELD,
-  wouldCreatePanelRelationCycle,
+  newRelationProblem,
   type RelationContextMode,
+  type RelationRoleOf,
 } from '../contract'
 
 /** The part of a document mirror the edits use (`documentStoreFor` fits). */
@@ -16,18 +17,19 @@ export interface RelationDocument {
 }
 
 /** Adds a relation, or re-points the existing one for the same pair. Returns
- *  its id, or null when the op failed. */
+ *  its id, or null when the relation may not be made (`newRelationProblem`)
+ *  or the op failed. */
 export function addRelation(
   store: RelationDocument,
+  roleOf: RelationRoleOf,
   fromPanelId: string,
   toPanelId: string,
   kind: RelationKind,
   fromSide?: RelationSide,
   toSide?: RelationSide,
 ): string | null {
-  if (fromPanelId === toPanelId) return null
   const doc = store.getSnapshot()
-  if (!doc.panels[fromPanelId] || !doc.panels[toPanelId]) return null
+  if (newRelationProblem(doc, roleOf, fromPanelId, toPanelId)) return null
   const existing = Object.values(doc.relations).find((r) => r.fromPanelId === fromPanelId && r.toPanelId === toPanelId)
   if (existing) {
     const result = store.propose({
@@ -63,9 +65,7 @@ export function setRelationContextMode(store: RelationDocument, panelId: string,
 }
 
 /** The panels `sourcePanelId` can connect to: every other panel a relation
- *  to would not close a cycle. */
-export function relationTargets(doc: WorkspaceDocument, sourcePanelId: string): PanelRecord[] {
-  const relations = Object.values(doc.relations)
-  return Object.values(doc.panels).filter((panel) =>
-    panel.id !== sourcePanelId && !wouldCreatePanelRelationCycle(relations, sourcePanelId, panel.id))
+ *  to may be made to (`newRelationProblem`). */
+export function relationTargets(doc: WorkspaceDocument, sourcePanelId: string, roleOf: RelationRoleOf): PanelRecord[] {
+  return Object.values(doc.panels).filter((panel) => !newRelationProblem(doc, roleOf, sourcePanelId, panel.id))
 }

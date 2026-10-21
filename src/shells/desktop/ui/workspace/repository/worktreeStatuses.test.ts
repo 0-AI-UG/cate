@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 import { BUILT_IN_THEMES } from '@kernel/interaction/contract'
 import { humanStatus } from './worktreeStatuses'
-import { worktreeColor, worktreePalette, worktreeTitleStyle } from './colors'
+import { worktreeColor, worktreePalette } from './colors'
 
 const status = { branch: 'b', dirty: false, ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0 }
 
@@ -22,9 +22,4 @@ it('maps palette keys through the theme', () => {
   const palette = worktreePalette(theme)
   expect(palette.length).toBeGreaterThan(3)
   expect(new Set(palette.map((p) => p.color.toLowerCase())).size).toBe(palette.length)
-})
-
-it('styles worktree titles', () => {
-  expect(worktreeTitleStyle(undefined)).toBeUndefined()
-  expect(worktreeTitleStyle('#f00')).toEqual({ color: '#f00' })
 })

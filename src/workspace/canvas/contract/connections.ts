@@ -169,21 +169,40 @@ function quinticDerivative(controls: readonly Point[], t: number): Point {
   })), t)
 }
 
-function quinticPath(controls: readonly Point[]): string {
-  const segments = 4
-  const step = 1 / segments
-  let path = `M ${controls[0].x} ${controls[0].y}`
-  for (let index = 0; index < segments; index += 1) {
+/** A connection's curve as data, the same on every client: from `start`
+ *  through cubic segments (the quintic drawn as four), with its interior
+ *  midpoint, where its relation's chip sits. */
+export interface PanelConnectionCurve {
+  start: Point
+  segments: Array<{ c1: Point; c2: Point; end: Point }>
+  midpoint: Point
+}
+
+function quinticSegments(controls: readonly Point[]): PanelConnectionCurve['segments'] {
+  const count = 4
+  const step = 1 / count
+  const scale = step / 3
+  return Array.from({ length: count }, (_, index) => {
     const t0 = index * step
     const t1 = (index + 1) * step
     const start = quinticPoint(controls, t0)
     const end = quinticPoint(controls, t1)
     const startDerivative = quinticDerivative(controls, t0)
     const endDerivative = quinticDerivative(controls, t1)
-    const scale = step / 3
-    path += ` C ${start.x + startDerivative.x * scale} ${start.y + startDerivative.y * scale}, ${end.x - endDerivative.x * scale} ${end.y - endDerivative.y * scale}, ${end.x} ${end.y}`
-  }
-  return path
+    return {
+      c1: { x: start.x + startDerivative.x * scale, y: start.y + startDerivative.y * scale },
+      c2: { x: end.x - endDerivative.x * scale, y: end.y - endDerivative.y * scale },
+      end,
+    }
+  })
+}
+
+/** The curve as an SVG path. */
+export function panelConnectionCurvePath(curve: PanelConnectionCurve): string {
+  return curve.segments.reduce(
+    (path, { c1, c2, end }) => `${path} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,
+    `M ${curve.start.x} ${curve.start.y}`,
+  )
 }
 
 function resolvePanelConnection(
@@ -231,7 +250,28 @@ function resolvePanelConnection(
   return { start, end, sourceSide: sourceResolvedSide, targetSide: targetResolvedSide }
 }
 
-/** A stable canvas-space quintic path between the nearest rectangle edges. */
+/** A stable canvas-space quintic curve between the nearest rectangle edges
+ *  (or the given sides), through `waypoint` at its midpoint. */
+export function panelConnectionCurve(
+  source: Rect,
+  target: Rect,
+  sourceSide?: PanelConnectionSide,
+  targetSide?: PanelConnectionSide,
+  waypoint?: Point,
+): PanelConnectionCurve | null {
+  const connection = resolvePanelConnection(source, target, sourceSide, targetSide)
+  if (!connection) return null
+  const controls = quinticControlPoints(
+    connection.start,
+    connection.end,
+    connection.sourceSide,
+    connection.targetSide,
+    waypoint,
+  )
+  return { start: controls[0], segments: quinticSegments(controls), midpoint: quinticPoint(controls, 0.5) }
+}
+
+/** `panelConnectionCurve` as an SVG path. */
 export function panelConnectionPath(
   source: Rect,
   target: Rect,
@@ -239,19 +279,11 @@ export function panelConnectionPath(
   targetSide?: PanelConnectionSide,
   waypoint?: Point,
 ): string | null {
-  const connection = resolvePanelConnection(source, target, sourceSide, targetSide)
-  if (!connection) return null
-  const controls = quinticControlPoints(
-    connection.start,
-    connection.end,
-    connection.sourceSide,
-    connection.targetSide,
-    waypoint,
-  )
-  return quinticPath(controls)
+  const curve = panelConnectionCurve(source, target, sourceSide, targetSide, waypoint)
+  return curve ? panelConnectionCurvePath(curve) : null
 }
 
-/** The interior t=.5 point on the quintic, used by relationship controls. */
+/** The interior t=.5 point on the curve, used by relationship controls. */
 export function panelConnectionMidpoint(
   source: Rect,
   target: Rect,
@@ -259,14 +291,5 @@ export function panelConnectionMidpoint(
   targetSide?: PanelConnectionSide,
   waypoint?: Point,
 ): Point | null {
-  const connection = resolvePanelConnection(source, target, sourceSide, targetSide)
-  if (!connection) return null
-  const controls = quinticControlPoints(
-    connection.start,
-    connection.end,
-    connection.sourceSide,
-    connection.targetSide,
-    waypoint,
-  )
-  return quinticPoint(controls, 0.5)
+  return panelConnectionCurve(source, target, sourceSide, targetSide, waypoint)?.midpoint ?? null
 }

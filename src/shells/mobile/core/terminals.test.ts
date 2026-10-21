@@ -12,8 +12,9 @@ const tick = () => new Promise((r) => setTimeout(r, 0))
 
 function fakeAttach() {
   const views: unknown[] = []
+  const fits: unknown[] = []
   const attaches: Array<{
-    params: { id: string; cols?: number; rows?: number}
+    params: { id: string; visible?: boolean }
     emit(event: unknown): void
     bytes(chunk: Uint8Array): void
     written: string[]
@@ -21,7 +22,7 @@ function fakeAttach() {
     cancelled: boolean
   }> = []
   const process = {
-    attach(params: { id: string; cols?: number; rows?: number}) {
+    attach(params: { id: string; visible?: boolean }) {
       const events = new Set<(e: unknown) => void>()
       const byteListeners = new Set<(b: Uint8Array) => void>()
       const entry = {
@@ -43,12 +44,13 @@ function fakeAttach() {
       }
     },
     view: async (params: unknown) => { views.push(params) },
+    fit: async (params: unknown) => { fits.push(params) },
   }
-  return { process, attaches, views }
+  return { process, attaches, views, fits }
 }
 
 function setup() {
-  const { process, attaches, views } = fakeAttach()
+  const { process, attaches, views, fits } = fakeAttach()
   let snapshot: TerminalSnapshot | null = null
   const sessionListeners = new Set<() => void>()
   const session = {
@@ -70,7 +72,7 @@ function setup() {
     snapshot = { ptyId: null, status: 'running', title: 'zsh', cwd: null, activity: { type: 'idle' }, exitCode: null, error: null, ...next }
     for (const l of sessionListeners) l()
   }
-  return { terminals: createMobileTerminals(client, bridge), attaches, views, events, session, setSnapshot }
+  return { terminals: createMobileTerminals(client, bridge), attaches, views, fits, events, session, setSnapshot }
 }
 
 const output = (events: MobileTerminalEvent[]) => events
@@ -81,9 +83,8 @@ describe('mobile terminals', () => {
   it('streams the panel PTY to the app and sends its keystrokes back', async () => {
     const t = setup()
     t.setSnapshot({ ptyId: 'pty-1' })
-    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
-    // Attaches with the grid the phone holds, as every viewer does.
-    expect(t.attaches.map((a) => [a.params.id, a.params.cols, a.params.rows])).toEqual([['pty-1', 45, 30]])
+    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1' })
+    expect(t.attaches.map((a) => a.params.id)).toEqual(['pty-1'])
 
     t.attaches[0].emit({ kind: 'screen', viewer: 'v1', data: 'prompt$ ', cols: 40, rows: 20 })
     t.attaches[0].bytes(new TextEncoder().encode('ls\r\n'))
@@ -99,7 +100,7 @@ describe('mobile terminals', () => {
   it('gives the app the PTY grid before the screen, and every change', async () => {
     const t = setup()
     t.setSnapshot({ ptyId: 'pty-1' })
-    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
+    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     t.attaches[0].emit({ kind: 'screen', viewer: 'v1', data: 'x', cols: 120, rows: 40 })
     t.attaches[0].emit({ kind: 'size', cols: 45, rows: 30 })
     await tick()
@@ -107,20 +108,20 @@ describe('mobile terminals', () => {
       .toEqual([[120, 40], 'reset', 'output', [45, 30]])
   })
 
-  it('reports the grid it holds', async () => {
+  it('fits the PTY to the grid it holds only when asked', async () => {
     const t = setup()
     t.setSnapshot({ ptyId: 'pty-1' })
-    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
+    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     t.attaches[0].emit({ kind: 'screen', viewer: 'v1', data: '', cols: 120, rows: 40 })
-    expect(t.views).toEqual([{ id: 'pty-1', viewer: 'v1', cols: 45, rows: 30, visible: true }])
-    t.terminals.get('v')!.resize(90, 20)
-    expect(t.views.at(-1)).toEqual({ id: 'pty-1', viewer: 'v1', cols: 90, rows: 20, visible: true })
+    expect(t.fits).toEqual([])
+    t.terminals.get('v')!.fit(45, 70)
+    expect(t.fits).toEqual([{ id: 'pty-1', cols: 45, rows: 70 }])
   })
 
   it('follows the panel to a new PTY and reports its state', async () => {
     const t = setup()
     t.setSnapshot({ ptyId: 'pty-1' })
-    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
+    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     t.setSnapshot({ ptyId: 'pty-1', status: 'exited', exitCode: 1 })
     t.setSnapshot({ ptyId: 'pty-2', status: 'running' })
     await tick()
@@ -135,7 +136,7 @@ describe('mobile terminals', () => {
   it('detaches and releases the session on close', () => {
     const t = setup()
     t.setSnapshot({ ptyId: 'pty-1' })
-    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
+    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     t.terminals.get('v')!.close()
     expect(t.attaches[0].cancelled).toBe(true)
     expect(t.session.released).toBe(true)
@@ -144,7 +145,7 @@ describe('mobile terminals', () => {
 
   it('opens a tapped link through openLink, from the panel, web URLs outside the app', () => {
     const t = setup()
-    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1', cols: 45, rows: 30 })
+    t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     opened.length = 0
     t.terminals.get('v')!.openLink('file:///repo/a.ts:3')
     t.terminals.get('v')!.openLink('https://example.com')

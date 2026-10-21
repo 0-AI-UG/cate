@@ -100,7 +100,7 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents, relations
         others: connection ? otherClientsOf(entry.id).map((client) => ({ clientId: client.clientId, name: client.device.name, attentive: client.attentive })) : [],
       }
     })
-  return { clientId: clientIdentity().clientId, workspaces, trustPrompt: trustStore.current() }
+  return { clientId: clientIdentity().clientId, workspaces, trustPrompt: trustStore.current(), savedRelationLabels: relations.savedLabels() }
 }
 
 /** The least time between two pushes: one per frame. */

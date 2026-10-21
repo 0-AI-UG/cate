@@ -62,9 +62,12 @@ export const editorDefinition = definePanel({
   chrome: { flushTabBar: true },
   relation: {
     produces: 'changes',
-    targetOptions: (source) => source.role.execution
-      ? ['use', 'context', 'verify']
-      : source.role.produces === 'notes' ? [['use', 'Address in'], 'context', 'verify'] : ['context', 'use', 'verify'],
+    targetOptions: {
+      execution: [['use', 'Work in'], ['context', 'Reference'], ['verify', 'Check against']],
+      changes: [['context', 'Reference alongside'], ['use', 'Also edit'], ['verify', 'Check against']],
+      findings: [['use', 'Fix in'], ['context', 'Reference'], ['verify', 'Check against']],
+      notes: [['use', 'Address in'], ['context', 'Reference'], ['verify', 'Check against']],
+    },
     instruction(kind, panel) {
       const file = filePathOf(panel.fields)
       if (!file) return undefined

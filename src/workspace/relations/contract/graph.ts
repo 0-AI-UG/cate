@@ -1,7 +1,7 @@
 // The relation graph between panels and `compileRelationContext`, which the
 // agents service uses for prompt context (architecture 9.7). Pure.
 
-import type { JsonObject, PanelRecord, PanelRelation, RelationKind } from '@workspace/document/contract'
+import type { DocChange, JsonObject, PanelRecord, PanelRelation, RelationKind, WorkspaceDocument } from '@workspace/document/contract'
 
 export type PanelRelationKind = RelationKind
 
@@ -17,9 +17,9 @@ export interface RelationRole {
   /** What it hands on through a relation: an edited file, page findings or
    *  review notes. Names the relation it starts and shapes what others offer. */
   produces?: 'changes' | 'findings' | 'notes'
-  /** Intents for a relation from `source` to a panel of this type, the
-   *  recommended one first. Default: context, use, verify. */
-  targetOptions?(source: RelationPanel): readonly RelationOptionSpec[]
+  /** Intents for a relation into a panel of this type, by what its source
+   *  is, the recommended one first. Default: context, use, verify. */
+  targetOptions?: Partial<Record<RelationSource, readonly RelationOptionSpec[]>>
   /** What an agent is told to do with this panel for a relation of `kind`,
    *  after the panel's name; undefined for the generic wording. */
   instruction?(kind: PanelRelationKind, panel: RelationPanel): string | undefined
@@ -27,8 +27,22 @@ export interface RelationRole {
   sharesFile?(panel: RelationPanel): boolean
 }
 
+/** What a relation's source is, for the intents its target offers: an
+ *  execution surface, what it produces, or neither. */
+export type RelationSource = 'execution' | NonNullable<RelationRole['produces']> | 'none'
+
+export function relationSourceOf(panel: Pick<RelationPanel, 'role'>): RelationSource {
+  return panel.role.execution ? 'execution' : panel.role.produces ?? 'none'
+}
+
 /** The relation role of a panel type; undefined for a type without one. */
 export type RelationRoleOf = (type: string) => RelationRole | undefined
+
+/** Only panel types with a relation role take part in relations: a type
+ *  without one (a canvas, a surface) is never a relation's end. */
+export function takesPartInRelations(type: string, roleOf: RelationRoleOf): boolean {
+  return roleOf(type) !== undefined
+}
 
 /** What the graph needs of a panel record. */
 export interface RelationPanel {
@@ -131,33 +145,25 @@ function option(kind: PanelRelationKind, label = PANEL_RELATION_LABELS[kind]): P
   return { kind, label, description: PANEL_RELATION_DESCRIPTIONS[kind] }
 }
 
-const SEND_LABELS: Record<NonNullable<RelationRole['produces']>, string> = {
-  changes: 'Send changes to',
-  findings: 'Send findings to',
-  notes: 'Send findings to',
-}
-
-function executionTargetOptions(source: RelationPanel): PanelRelationOption[] {
-  if (isExecutionSurface(source)) {
-    return [
-      option('trigger'),
-      option('context', 'Share context with'),
-      option('verify', 'Ask to verify'),
-    ]
-  }
-  return [
-    option('context', source.role.produces ? SEND_LABELS[source.role.produces] : 'Send context to'),
-    option('trigger', 'Continue in'),
-    option('verify', 'Ask to verify'),
-  ]
+/** Intents for a relation into an execution surface, by what the source
+ *  hands on. From another agent the default is a handoff; from a resource
+ *  panel it is sending what the panel produced. */
+const EXECUTION_TARGET_OPTIONS: Record<RelationSource, readonly RelationOptionSpec[]> = {
+  execution: [['trigger', 'Hand off to'], ['context', 'Share context with'], ['verify', 'Ask to verify']],
+  changes: [['context', 'Send changes to'], ['verify', 'Ask to review'], ['trigger', 'Continue in']],
+  findings: [['context', 'Send findings to'], ['trigger', 'Hand off fixes to'], ['verify', 'Ask to confirm']],
+  notes: [['context', 'Send notes to'], ['trigger', 'Hand off fixes to'], ['verify', 'Ask to verify fixes']],
+  none: [['context', 'Send context to'], ['trigger', 'Continue in'], ['verify', 'Ask to verify']],
 }
 
 const DEFAULT_TARGET_OPTIONS: readonly RelationOptionSpec[] = ['context', 'use', 'verify']
 
 /** Return exactly three pair-aware intents. The first is the recommendation. */
 export function panelRelationOptions(source: RelationPanel, target: RelationPanel): PanelRelationOption[] {
-  if (isExecutionSurface(target)) return executionTargetOptions(source)
-  const specs = target.role.targetOptions?.(source) ?? DEFAULT_TARGET_OPTIONS
+  const from = relationSourceOf(source)
+  const specs = isExecutionSurface(target)
+    ? EXECUTION_TARGET_OPTIONS[from]
+    : target.role.targetOptions?.[from] ?? DEFAULT_TARGET_OPTIONS
   return specs.map((spec) => (typeof spec === 'string' ? option(spec) : option(spec[0], spec[1])))
 }
 
@@ -176,6 +182,35 @@ export function panelRelationLabel(
     ? panelRelationOptions(source, target).find((candidate) => candidate.kind === relation.kind)?.label
       ?? PANEL_RELATION_LABELS[relation.kind]
     : PANEL_RELATION_LABELS[relation.kind]
+}
+
+/** Why a new relation from `fromPanelId` to `toPanelId` may not be made,
+ *  or null when it may: both panels exist and take part in relations, and
+ *  it closes no cycle. The runtime refuses every `addRelation` it names
+ *  (`relationChangeProblem`); clients ask it before offering or proposing
+ *  one. */
+export function newRelationProblem(
+  doc: Pick<WorkspaceDocument, 'panels' | 'relations'>,
+  roleOf: RelationRoleOf,
+  fromPanelId: string,
+  toPanelId: string,
+): string | null {
+  const from = doc.panels[fromPanelId]
+  const to = doc.panels[toPanelId]
+  if (!from || !to) return 'a panel of the relation is gone'
+  if (!takesPartInRelations(from.type, roleOf) || !takesPartInRelations(to.type, roleOf)) {
+    return 'only panels that take part in relations can be related'
+  }
+  if (wouldCreatePanelRelationCycle(Object.values(doc.relations), fromPanelId, toPanelId)) return 'the relation would close a cycle'
+  return null
+}
+
+/** The relation rule as a document change guard: an `addRelation` that
+ *  `newRelationProblem` names is refused. */
+export function relationChangeProblem(change: DocChange, doc: WorkspaceDocument, roleOf: RelationRoleOf): string | null {
+  return change.kind === 'addRelation'
+    ? newRelationProblem(doc, roleOf, change.relation.fromPanelId, change.relation.toPanelId)
+    : null
 }
 
 export function wouldCreatePanelRelationCycle(

@@ -1,10 +1,9 @@
-// How each agent appears in the usage overview: label, series colour and
-// logo. Declaration order is the reading order of every chart and table.
+// How each agent appears in the usage overview: label and series colour.
+// Declaration order is the reading order of every chart and table.
 
 import type { ReactNode } from 'react'
 import { RotateCw } from 'lucide-react'
 import { AGENT_DEFS, type AgentId } from '@services/agents/contract'
-import { agentLogo } from '../logos'
 
 export const AGENT_COLORS: Record<AgentId, string> = {
   codex: 'var(--text-primary)',
@@ -24,12 +23,6 @@ export const agentLabel = (agent: AgentId): string => AGENT_DEFS[agent].displayN
 export function agentsWithUsage(totals: ReadonlyArray<{ agent: AgentId; costUsd: number; totalTokens: number }>): AgentId[] {
   const active = new Set(totals.filter((t) => t.totalTokens > 0 || t.costUsd > 0).map((t) => t.agent))
   return AGENT_ORDER.filter((agent) => active.has(agent))
-}
-
-export function AgentMark({ agent, size }: { agent: AgentId; size: number }) {
-  const logo = agentLogo(agent)
-  if (!logo) return null
-  return <img src={logo} alt="" aria-hidden draggable={false} width={size} height={size} className="shrink-0" style={{ width: size, height: size, objectFit: 'contain' }} />
 }
 
 /** A segmented toggle (the upstream `ToggleGroup` look). */
@@ -84,7 +77,7 @@ export function RefreshButton({ label, refreshing, onClick }: { label: string; r
       onClick={onClick}
       className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-60"
     >
-      <RotateCw size={14} className={refreshing ? 'animate-spin motion-reduce:animate-none' : ''} />
+      <span className={`inline-flex ${refreshing ? 'animate-spin motion-reduce:animate-none' : ''}`}><RotateCw size={14} /></span>
     </button>
   )
 }

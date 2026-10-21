@@ -62,8 +62,6 @@ export type TerminalStatusChange = Record<string, TerminalStatus | null>
 
 export interface AttachParams {
   id: string
-  cols?: number
-  rows?: number
   visible?: boolean
   /** The most scrollback lines the screen carries: a viewer that keeps
    *  fewer asks for no more. Default: all of it. */
@@ -73,8 +71,7 @@ export interface AttachParams {
 /** An attach starts with `size` (a live PTY only) and the serialized screen;
  *  live output follows as binary chunks (UTF-8) with nothing lost or repeated
  *  between. `size` comes again on every change of the PTY's grid (the output
- *  after it is at that grid): the smallest cols and rows of the visible
- *  viewers. */
+ *  after it is at that grid): the grid the last `fit` asked for. */
 export type AttachEvent =
   | { kind: 'screen'; viewer: string; data: string; cols: number; rows: number }
   | { kind: 'size'; cols: number; rows: number }
@@ -90,9 +87,14 @@ export interface AttachEnd {
 export interface ViewParams {
   id: string
   viewer: string
-  cols?: number
-  rows?: number
   visible?: boolean
+}
+
+/** Sizes the PTY to a viewer's grid, so that viewer shows it whole. */
+export interface FitParams {
+  id: string
+  cols: number
+  rows: number
 }
 
 export interface ReadResult {
@@ -110,8 +112,9 @@ export interface ScreenSnapshot {
 export const processCapability = defineCapability('process', {
   methods: {
     spawn: method<SpawnParams, SpawnResult>({ mutates: true }),
-    /** Reports a viewer's size, visibility and activity. */
+    /** Reports a viewer's visibility. */
     view: method<ViewParams, void>(),
+    fit: method<FitParams, void>(),
     /** Kills the PTY; the screen stays readable until `close`. */
     kill: method<{ id: string }, void>({ mutates: true }),
     /** Kills the PTY and forgets the terminal and its log. */

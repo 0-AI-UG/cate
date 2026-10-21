@@ -15,7 +15,8 @@ import {
 } from '@services/agents/contract'
 import type { UsageReport } from '@services/agents/client'
 import { Tooltip } from '../../../kernel/interaction'
-import { AGENT_COLORS, AgentMark, Skeleton, agentLabel } from './presentation'
+import { AGENT_COLORS, Skeleton, agentLabel } from './presentation'
+import { AgentMark } from '../AgentMark'
 
 const PACE: Record<UsageLimitPace, { label: string; Icon: typeof Gauge }> = {
   ahead: { label: 'Ahead of pace: spending faster than the window elapses', Icon: TrendingUp },

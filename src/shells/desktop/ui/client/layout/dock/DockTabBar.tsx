@@ -4,11 +4,11 @@
 import React, { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import type { DockStack, PanelRecord, WorktreeMeta } from '@workspace/document/contract'
-import { Icon, Tooltip } from '../../../kernel/interaction'
+import { Icon, ShimmerText, Tooltip } from '../../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import { useDocument } from '../../document'
 import { panelDefinition } from '@client/host'
-import { useWorktreeColor, worktreeTitleStyle } from '../../../workspace/repository'
+import { useWorktreeColor } from '../../../workspace/repository'
 import { isMiddleClick } from '../drag/dom'
 import { useDragStore } from '../drag/store'
 import { useTabSourceVisibility } from '../drag/selectors'
@@ -53,17 +53,18 @@ export const TabPill = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTM
 })
 
 /** The title, tinted with its worktree's color when the workspace has
- *  several worktrees. */
-function TabTitle({ record, worktree, children }: {
+ *  several worktrees, shimmering while busy. */
+function TabTitle({ record, worktree, busy, children }: {
   record: PanelRecord | undefined
   worktree: WorktreeMeta | undefined
+  busy: boolean
   children: React.ReactNode
 }) {
   const color = useWorktreeColor(worktree?.color)
   return (
-    <span className="min-w-0 flex-1 truncate" style={worktreeTitleStyle(record ? color : undefined)}>
+    <ShimmerText className="min-w-0 flex-1 truncate" active={busy} color={record ? color : undefined}>
       {children}
-    </span>
+    </ShimmerText>
   )
 }
 
@@ -219,7 +220,7 @@ export function DockTabBar(props: DockTabBarProps) {
                 style={{ font: 'inherit' }}
               />
             ) : (
-              <TabTitle record={record} worktree={tintWorktrees && record?.worktreeId ? worktrees[record.worktreeId] : undefined}>
+              <TabTitle record={record} worktree={tintWorktrees && record?.worktreeId ? worktrees[record.worktreeId] : undefined} busy={!!decoration?.busy}>
                 {title}{decoration?.dirty ? ' •' : ''}
               </TabTitle>
             )}

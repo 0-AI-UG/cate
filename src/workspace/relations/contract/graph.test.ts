@@ -4,7 +4,9 @@ import { panelDefinition } from '@panels/definitions'
 import {
   compileRelationContext,
   defaultPanelRelationKind,
+  newRelationProblem,
   panelRelationOptions,
+  relationChangeProblem,
   relationPanelOf,
   wouldCreatePanelRelationCycle,
   type RelationPanel,
@@ -115,8 +117,26 @@ describe('panel relation prompt context', () => {
     expect(wouldCreatePanelRelationCycle(relations, 'c', 'd')).toBe(false)
   })
 
+  it('names why a relation may not be made: a gone panel, a type without a role, a cycle', () => {
+    const roleOf = (type: string) => panelDefinition(type)?.relation
+    const record = (id: string, type: string) => ({ id, type: type as PanelType, title: id, fields: {} })
+    const doc = {
+      panels: { a: record('a', 'terminal'), b: record('b', 'editor'), s: record('s', 'surface') },
+      relations: { one: { id: 'one', fromPanelId: 'a', toPanelId: 'b', kind: 'use' } as PanelRelation },
+    }
+    expect(newRelationProblem(doc, roleOf, 'a', 'b')).toBeNull()
+    expect(newRelationProblem(doc, roleOf, 'a', 'gone')).toMatch(/gone/)
+    expect(newRelationProblem(doc, roleOf, 'a', 's')).toMatch(/take part/)
+    expect(newRelationProblem(doc, roleOf, 'b', 'a')).toMatch(/cycle/)
+    const add = (fromPanelId: string, toPanelId: string) =>
+      ({ kind: 'addRelation' as const, relation: { id: 'new', fromPanelId, toPanelId, kind: 'use' as const } })
+    const full = { ...doc, windows: {}, canvases: {}, worktrees: {} } as unknown as Parameters<typeof relationChangeProblem>[1]
+    expect(relationChangeProblem(add('b', 'a'), full, roleOf)).toMatch(/cycle/)
+    expect(relationChangeProblem({ kind: 'removeRelation', id: 'one' }, full, roleOf)).toBeNull()
+  })
+
   it('offers exactly three pair-aware intents with one recommendation', () => {
-    const types: string[] = ['terminal', 'browser', 'editor', 'canvas', 'review', 'surface']
+    const types: string[] = ['terminal', 'browser', 'editor', 'review']
     for (const sourceType of types) {
       for (const targetType of types) {
         const source = panel(`source-${sourceType}`, sourceType)
@@ -129,9 +149,20 @@ describe('panel relation prompt context', () => {
     }
   })
 
+  it('gives no role to panel types that take no part in relations', () => {
+    expect(panelDefinition('canvas')?.relation).toBeUndefined()
+    expect(panelDefinition('surface')?.relation).toBeUndefined()
+  })
+
   it('uses the source and target together for recommendations', () => {
     expect(panelRelationOptions(panel('agent', 'terminal'), panel('terminal', 'terminal'))[0])
-      .toMatchObject({ kind: 'trigger', label: 'Hand off' })
+      .toMatchObject({ kind: 'trigger', label: 'Hand off to' })
+    expect(panelRelationOptions(panel('review', 'review'), panel('terminal', 'terminal'))[0])
+      .toMatchObject({ kind: 'context', label: 'Send notes to' })
+    expect(panelRelationOptions(panel('terminal', 'terminal'), panel('review', 'review'))[0])
+      .toMatchObject({ kind: 'verify', label: 'Review in' })
+    expect(panelRelationOptions(panel('browser', 'browser'), panel('editor', 'editor'))[0])
+      .toMatchObject({ kind: 'use', label: 'Fix in' })
     expect(panelRelationOptions(panel('browser', 'browser'), panel('terminal', 'terminal'))[0])
       .toMatchObject({ kind: 'context', label: 'Send findings to' })
     expect(panelRelationOptions(panel('editor', 'editor'), panel('browser', 'browser'))[0])

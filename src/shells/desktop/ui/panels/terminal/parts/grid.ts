@@ -1,8 +1,8 @@
-// The terminal view's grid. The xterm always has the PTY's grid: the smallest
-// cols and rows of its visible viewers (services/terminal). The view reports
-// the grid its panel holds and, when the PTY's grid is not the panel's, the
-// render box takes the grid's size, scaled down to the panel while it is
-// bigger (until the PTY follows a shrink).
+// The terminal view's grid. The xterm always has the PTY's grid: the grid the
+// last fit asked for, from any client (services/terminal). The view fits the
+// PTY to its panel whenever the panel's grid changes, on each new PTY and on
+// request (the tab menu); when another client fitted it since, the render box
+// takes the PTY's grid, scaled down to the panel while it is bigger.
 
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { BindTerminalOptions, TerminalBinding } from '@services/terminal/client'
@@ -48,8 +48,10 @@ export interface TerminalGridDeps {
 }
 
 export interface TerminalGrid {
-  /** What `bindTerminal` needs: the panel's grid and the PTY's. */
-  bindingOptions(xterm: TerminalXterm): Pick<BindTerminalOptions, 'size' | 'onSize'>
+  /** What `bindTerminal` needs: the PTY's grid. */
+  bindingOptions(xterm: TerminalXterm): Pick<BindTerminalOptions, 'onSize'>
+  /** Sizes the PTY to the panel. */
+  fit(): void
   /** Null while the render box fills the panel. */
   layout: GridLayout | null
 }
@@ -72,7 +74,12 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
     return xterm.current.gridFor({ width: box.clientWidth * scale.w, height: box.clientHeight * scale.h })
   }
 
-  // Report the panel's grid when it changes.
+  const fit = (): void => {
+    const next = panelRef.current ?? measure()
+    if (next) binding.current?.fit(next)
+  }
+
+  // Fit the PTY to the panel's grid when it changes.
   const scheduleRef = useRef<() => void>(() => {})
   useEffect(() => {
     const box = container.current
@@ -88,7 +95,7 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
       if (!next || sameGrid(next, panelRef.current)) return
       panelRef.current = next
       setPanel(next)
-      binding.current?.resized()
+      fit()
     }
     const schedule = () => {
       if (timer) clearTimeout(timer)
@@ -125,13 +132,13 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
 
   return {
     bindingOptions: (term) => ({
-      size: () => panelRef.current ?? measure() ?? { cols: term.terminal.cols, rows: term.terminal.rows },
       // Before the screen is written, so it lands on the PTY's grid.
       onSize: (next) => {
         resizeXterm(term, next)
         setPty(next)
       },
     }),
+    fit,
     layout,
   }
 }

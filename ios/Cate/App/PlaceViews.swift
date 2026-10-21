@@ -10,7 +10,8 @@
 // onto another to connect them; its `…` moves it to another worktree, sets
 // when it sends context, or closes it. Each worktree's tiles sit on its territory
 // (Worktrees). A new panel is placed on the map itself: it zooms out to the
-// desktop's recommended spots, and a tap on one puts the panel there.
+// spots the core plans as on every client, and a tap on one puts the panel
+// there.
 
 import SwiftUI
 import UIKit
@@ -72,9 +73,16 @@ enum TileMetrics {
     /// The room the badge and words take, which a smaller tile shrinks to.
     static let composition = CGSize(width: 420, height: 320)
     static let padding: CGFloat = 18
-    static let corner: CGFloat = 32
     static let menu: CGFloat = 76
     static let handle: CGFloat = 76
+    /// Concentric with the round menu and handle, inset `padding / 2` in
+    /// their corners.
+    static let corner: CGFloat = menu / 2 + padding / 2
+    /// A connection's chip: its words, their inset, and the dot a short
+    /// line gets in their place.
+    static let chipText: CGFloat = 26
+    static let chipPadding = CGSize(width: 20, height: 10)
+    static let chipDot: CGFloat = 22
 }
 
 /// A panel on the map as a tile, a place on the map rather than the panel
@@ -306,9 +314,11 @@ struct CanvasPlace: View {
     @Binding var center: CGPoint?
     /// The new panel's type, while it waits for its spot.
     @Binding var placing: PanelChoice?
+    @AppStorage(MapGrid.key) private var grid = MapGrid.lines
     @State private var touch = MapTouch()
-    /// A connection dropped on a card, waiting for its meaning.
-    @State private var pending: PendingLink?
+    /// A connection getting its own label, and the words typed so far.
+    @State private var labeling: Relation?
+    @State private var labelDraft = ""
     /// The part of the canvas on screen, in canvas units.
     @State private var visible: CGRect?
     /// The spots the placing panel can take, best first, in canvas units.
@@ -320,7 +330,8 @@ struct CanvasPlace: View {
         let workspace = core.workspace(workspaceId)
         let panels = Dictionary((workspace?.panels ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let agents = Dictionary((workspace?.agents ?? []).map { ($0.panelId, $0) }, uniquingKeysWith: { first, _ in first })
-        let relations = workspace?.relations ?? []
+        // The relations drawn on this canvas.
+        let relations = (workspace?.relations ?? []).filter { $0.curve?.canvasId == canvasPanel.canvas?.id }
         let relationsEnabled = workspace?.relationsEnabled == true
         let worktrees = workspace?.worktrees ?? []
         let nodes = canvasPanel.canvas?.nodes ?? []
@@ -343,6 +354,7 @@ struct CanvasPlace: View {
             }
             MapScroll(
                 nodes: nodes,
+                grid: grid,
                 spots: spots,
                 placing: placing != nil,
                 fit: fit,
@@ -362,7 +374,7 @@ struct CanvasPlace: View {
                 moved: { node, by, layout in move(node, by: by, scale: layout.scale) },
                 linked: { node, point, layout in
                     guard let from = node.panels.first, let target = layout.node(at: point), target.id != node.id, let to = target.panels.first else { return }
-                    connect(from: from, to: to, at: layout.canvasPoint(point))
+                    connect(from: from, to: to)
                 },
                 settled: { rect in
                     visible = rect
@@ -381,8 +393,13 @@ struct CanvasPlace: View {
                     // Chips sit with the lines, under the cards; their menus
                     // are system popovers over everything.
                     ForEach(relations) { relation in
-                        RelationChip(layout: layout, relation: relation, touch: touch) { kind in
+                        RelationChip(layout: layout, relation: relation, touch: touch, saved: core.savedRelationLabels) { kind in
                             call("relations.setKind", ["relationId": relation.id, "kind": kind])
+                        } setLabel: { label in
+                            call("relations.setLabel", ["relationId": relation.id, "label": label, "remember": false])
+                        } custom: {
+                            labelDraft = relation.custom ?? ""
+                            labeling = relation
                         } remove: {
                             call("relations.remove", ["relationId": relation.id])
                         }
@@ -413,22 +430,9 @@ struct CanvasPlace: View {
                                 .transition(.scale(scale: 0.9).combined(with: .opacity))
                         }
                     }
-                    if let pending {
-                        Color.clear
-                            .contentShape(.rect)
-                            .onTapGesture { self.pending = nil }
-                        LinkMenu(pending: pending, target: panels[pending.to]) { kind in
-                            self.pending = nil
-                            call("relations.connect", ["fromPanelId": pending.from, "toPanelId": pending.to, "kind": kind])
-                        }
-                        .position(layout.clamped(layout.viewPoint(pending.at), size: CGSize(width: 280, height: 220)))
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
-                    }
                 }
                 .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
-                .animation(.snappy(duration: 0.2), value: pending)
                 .animation(.snappy(duration: 0.25), value: spots)
-                .sensoryFeedback(.success, trigger: pending)
             }
             // Under the bars, which float over the map.
             .ignoresSafeArea()
@@ -457,37 +461,48 @@ struct CanvasPlace: View {
         }
         // On the empty canvas too, which places the panel straight away.
         .onChange(of: placing, initial: true) { suggest() }
+        .alert("Custom Connection", isPresented: Binding(get: { labeling != nil }, set: { if !$0 { labeling = nil } }), presenting: labeling) { relation in
+            TextField("e.g. summarizes for", text: $labelDraft)
+            Button("Save") {
+                call("relations.setLabel", ["relationId": relation.id, "label": labelDraft, "remember": true])
+            }
+            .disabled(labelDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Its own words in place of the meaning's. Saved for reuse on this device.")
+        }
     }
 
-    /// The spots for the placing panel, and the map zoomed out to show them;
-    /// on an empty canvas the panel goes straight where you are looking.
+    /// The core's plan for the placing panel (`planPlacement`, as on every
+    /// client): its spots and the map zoomed out to show them, or straight to
+    /// its one spot (an empty canvas).
     private func suggest() {
         guard let placing else {
             spots = []
             return
         }
-        guard canvasPanel.canvas?.nodes.isEmpty == false, let visible else {
-            create(placing, at: Placement(canvasPanelId: canvasPanel.id, point: center))
-            return
-        }
+        // An empty canvas draws no map, so nothing is on screen.
+        let shown = visible ?? .zero
         Task {
-            let found = (try? await core.call("canvas.suggest", [
+            let plan = try? await core.call("canvas.plan", [
                 "workspaceId": workspaceId, "canvasPanelId": canvasPanel.id, "type": placing.type,
-                "visible": ["x": visible.minX, "y": visible.minY, "width": visible.width, "height": visible.height],
-            ], as: [CanvasRect].self)) ?? []
+                "visible": ["x": shown.minX, "y": shown.minY, "width": shown.width, "height": shown.height],
+            ], as: PlacementPlan?.self)
             guard self.placing == placing else { return }
-            guard !found.isEmpty else {
+            if let pick = plan?.pick, !pick.isEmpty {
+                spots = pick.map(\.rect)
+                fit = MapFit(rect: spots.reduce(shown) { $0.union($1) }.insetBy(dx: -40, dy: -40))
+            } else if let spot = plan?.place {
+                place(at: spot.rect)
+            } else {
                 create(placing, at: Placement(canvasPanelId: canvasPanel.id, point: center))
-                return
             }
-            spots = found.map(\.rect)
-            fit = MapFit(rect: spots.reduce(visible) { $0.union($1) }.insetBy(dx: -40, dy: -40))
         }
     }
 
     private func place(at spot: CGRect) {
         guard let placing else { return }
-        create(placing, at: Placement(canvasPanelId: canvasPanel.id, point: CGPoint(x: spot.midX, y: spot.midY), size: spot.size))
+        create(placing, at: Placement(canvasPanelId: canvasPanel.id, spot: spot))
     }
 
     private func create(_ choice: PanelChoice, at placement: Placement) {
@@ -505,16 +520,17 @@ struct CanvasPlace: View {
         }
     }
 
-    /// A connection dropped on a card: its meanings, when it can be made.
-    private func connect(from: String, to: String, at point: CGPoint) {
+    /// A connection dropped on a card, when it can be made: with the
+    /// recommended meaning, which its chip's menu changes.
+    private func connect(from: String, to: String) {
         Task {
             let allowed = (try? await core.call("relations.targets", ["workspaceId": workspaceId, "panelId": from], as: [String].self)) ?? []
             guard allowed.contains(to) else { return }
             let options = (try? await core.call("relations.options", [
                 "workspaceId": workspaceId, "fromPanelId": from, "toPanelId": to,
             ], as: [RelationOption].self)) ?? []
-            guard !options.isEmpty else { return }
-            pending = PendingLink(from: from, to: to, at: point, options: options)
+            guard let kind = options.first?.kind else { return }
+            call("relations.connect", ["fromPanelId": from, "toPanelId": to, "kind": kind])
         }
     }
 
@@ -523,14 +539,6 @@ struct CanvasPlace: View {
         params["workspaceId"] = workspaceId
         Task { _ = try? await core.call(method, params, as: Bool.self) }
     }
-}
-
-private struct PendingLink: Equatable {
-    let from: String
-    let to: String
-    /// Where it was dropped, in canvas units: the map may zoom meanwhile.
-    let at: CGPoint
-    let options: [RelationOption]
 }
 
 /// A canvas rect the map zooms out (or in) to show; a new one each time.
@@ -642,8 +650,28 @@ final class MapTouch {
 /// with cards' text at its size) with the same canvas point in the middle. A
 /// long press on a card lifts it to move it; a touch on a card's `+` handle
 /// drags out a connection.
+/// The map's background grid, as on the desktop canvas (`canvasGridStyle`).
+enum MapGrid: String, CaseIterable {
+    case lines, dots, off
+
+    static let key = "canvas.grid"
+    /// Canvas units between lines (`CANVAS_GRID_SIZE`).
+    static let size: CGFloat = 20
+    /// Zoomed out, the spacing doubles until a step is this many points.
+    static let minStep: CGFloat = 16
+
+    var title: String {
+        switch self {
+        case .lines: "Lines"
+        case .dots: "Dots"
+        case .off: "None"
+        }
+    }
+}
+
 struct MapScroll<Content: View>: UIViewControllerRepresentable {
     let nodes: [CanvasModel.Node]
+    let grid: MapGrid
     /// Spots a new panel can take, in canvas units: the map reaches them.
     let spots: [CGRect]
     /// A new panel waits for its spot: a tap is all the map takes.
@@ -669,6 +697,7 @@ struct MapScroll<Content: View>: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: MapScrollController, context: Context) {
         controller.nodes = nodes
+        controller.grid = grid
         controller.spots = spots
         controller.placing = placing
         controller.fit = fit
@@ -688,6 +717,9 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
 
     let touch: MapTouch
     var nodes: [CanvasModel.Node] = []
+    var grid = MapGrid.lines {
+        didSet { if grid != oldValue { drawGrid() } }
+    }
     var spots: [CGRect] = []
     var placing = false
     var fit: MapFit?
@@ -699,6 +731,12 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
     var content: (MapLayout) -> AnyView = { _ in AnyView(EmptyView()) }
 
     private let scrollView = UIScrollView()
+    /// The grid behind the map, in screen space: its colour, masked by a
+    /// tiled pattern that slides with the pan.
+    private let gridView = UIView()
+    private let gridPattern = UIView()
+    /// The style and step the pattern's tile was drawn for.
+    private var gridTile: (grid: MapGrid, step: CGFloat)?
     private let host = UIHostingController(rootView: AnyView(EmptyView()))
     private let tap = UITapGestureRecognizer()
     private let press = UILongPressGestureRecognizer()
@@ -726,6 +764,11 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
+        gridView.frame = view.bounds
+        gridView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        gridView.isUserInteractionEnabled = false
+        gridView.mask = gridPattern
+        view.addSubview(gridView)
         scrollView.frame = view.bounds
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scrollView.delegate = self
@@ -821,6 +864,60 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
             fitted = fit.id
             DispatchQueue.main.async { [weak self] in self?.zoom(to: fit.rect) }
         }
+        drawGrid()
+    }
+
+    /// Lays the grid's pattern so its lines fall on the canvas's, at the
+    /// scale on screen (mid-pinch too).
+    private func drawGrid() {
+        guard isViewLoaded, let layout, grid != .off else {
+            gridView.isHidden = true
+            return
+        }
+        gridView.isHidden = false
+        gridView.backgroundColor = grid == .lines ? Self.lineColor : .tertiaryLabel
+        let zoom = layout.scale * scrollView.zoomScale
+        var units = MapGrid.size
+        while units * zoom < MapGrid.minStep { units *= 2 }
+        let step = units * zoom
+        if gridTile?.grid != grid || abs((gridTile?.step ?? 0) - step) > 0.01 {
+            gridTile = (grid, step)
+            gridPattern.backgroundColor = UIColor(patternImage: Self.tile(grid, step: step))
+        }
+        let origin = host.view.convert(layout.viewPoint(.zero), to: gridView)
+        // On whole device pixels, so the hairlines stay sharp.
+        let pixel = traitCollection.displayScale
+        let phase = { (value: CGFloat) -> CGFloat in
+            let rest = value.truncatingRemainder(dividingBy: step)
+            return ((rest > 0 ? rest - step : rest) * pixel).rounded() / pixel
+        }
+        gridPattern.frame = CGRect(x: phase(origin.x), y: phase(origin.y), width: gridView.bounds.width + step * 2, height: gridView.bounds.height + step * 2)
+    }
+
+    /// The desktop's faint `--grid-line`, a touch stronger for the thinner line.
+    private static let lineColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(white: 1, alpha: 0.06) : UIColor(white: 0, alpha: 0.07)
+    }
+
+    /// One step of the grid, opaque where it draws: a line along the top and
+    /// left edges, or a dot in the middle.
+    private static func tile(_ grid: MapGrid, step: CGFloat) -> UIImage {
+        let format = UIGraphicsImageRendererFormat.preferred()
+        format.opaque = false
+        // Lines one device pixel wide.
+        let hairline = 1 / format.scale
+        return UIGraphicsImageRenderer(size: CGSize(width: step, height: step), format: format).image { context in
+            UIColor.black.setFill()
+            switch grid {
+            case .lines:
+                context.fill(CGRect(x: 0, y: 0, width: step, height: hairline))
+                context.fill(CGRect(x: 0, y: 0, width: hairline, height: step))
+            case .dots:
+                context.cgContext.fillEllipse(in: CGRect(x: step / 2 - 1, y: step / 2 - 1, width: 2, height: 2))
+            case .off:
+                break
+            }
+        }
     }
 
     /// Zoomed out no further than the whole canvas (and the spots a new
@@ -882,6 +979,8 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { host.view }
 
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { drawGrid() }
+
     /// A map smaller than the screen stays centred while pinched.
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         guard scrollView.zoomScale != 1 else { return }
@@ -892,6 +991,7 @@ final class MapScrollController: UIViewController, UIScrollViewDelegate, UIGestu
             bottom: 0,
             right: 0
         )
+        drawGrid()
     }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale zoom: CGFloat) {
@@ -1112,24 +1212,31 @@ struct MapLayout {
         nodes.last { frame($0).contains(point) }
     }
 
-    /// Where a view of `size` centred at `point` stays inside the map.
-    func clamped(_ point: CGPoint, size: CGSize) -> CGPoint {
-        CGPoint(
-            x: min(max(point.x, size.width / 2 + 8), self.size.width - size.width / 2 - 8),
-            y: min(max(point.y, size.height / 2 + 8), self.size.height - size.height / 2 - 8)
+    /// A relation's curve in map points, as the core sends it; a node being
+    /// moved bends it along, its end most, until the document has the node's
+    /// new place. Nil without a curve.
+    @MainActor func line(_ relation: Relation, touch: MapTouch) -> MapCurve? {
+        guard let curve = relation.curve else { return nil }
+        let from = touch.offset(of: curve.fromNodeId)
+        let to = touch.offset(of: curve.toNodeId)
+        // `along`: 0 at the start, 1 at the end.
+        let place = { (point: CanvasPoint, along: CGFloat) -> CGPoint in
+            let at = viewPoint(point.point)
+            return CGPoint(x: at.x + from.width * (1 - along) + to.width * along, y: at.y + from.height * (1 - along) + to.height * along)
+        }
+        let count = CGFloat(curve.segments.count)
+        return MapCurve(
+            start: place(curve.start, 0),
+            segments: curve.segments.enumerated().map { index, segment in
+                let i = CGFloat(index)
+                return MapCurve.Segment(
+                    c1: place(segment.c1, (i + 1 / 3) / count),
+                    c2: place(segment.c2, (i + 2 / 3) / count),
+                    end: place(segment.end, (i + 1) / count)
+                )
+            },
+            middle: place(curve.midpoint, 0.5)
         )
-    }
-
-    /// A relation's line between the edges of its two nodes, each moved by
-    /// `offset`; nil when either panel is not on this canvas or both share a
-    /// node.
-    func line(_ relation: Relation, offset: (String) -> CGSize) -> (from: CGPoint, to: CGPoint)? {
-        guard let from = nodes.first(where: { $0.panels.contains(relation.fromPanelId) }),
-              let to = nodes.first(where: { $0.panels.contains(relation.toPanelId) }),
-              from.id != to.id else { return nil }
-        let a = frame(from).offsetBy(dx: offset(from.id).width, dy: offset(from.id).height)
-        let b = frame(to).offsetBy(dx: offset(to.id).width, dy: offset(to.id).height)
-        return (edge(of: a, toward: CGPoint(x: b.midX, y: b.midY)), edge(of: b, toward: CGPoint(x: a.midX, y: a.midY)))
     }
 
     /// Where the line from the rect's centre to `point` leaves the rect.
@@ -1143,6 +1250,36 @@ struct MapLayout {
 }
 
 // MARK: Connections
+
+/// A connection's curve in map points: from `start` through cubic segments.
+struct MapCurve {
+    let start: CGPoint
+    let segments: [Segment]
+    /// Where the chip sits.
+    let middle: CGPoint
+
+    struct Segment {
+        let c1: CGPoint
+        let c2: CGPoint
+        let end: CGPoint
+    }
+
+    var end: CGPoint { segments.last?.end ?? start }
+
+    var points: [CGPoint] { [start] + segments.flatMap { [$0.c1, $0.c2, $0.end] } }
+
+    var path: Path {
+        var path = Path()
+        path.move(to: start)
+        for segment in segments { path.addCurve(to: segment.end, control1: segment.c1, control2: segment.c2) }
+        return path
+    }
+
+    /// Where it arrives from, for the arrowhead's direction.
+    var arrival: CGPoint {
+        points.dropLast().last { $0 != end } ?? start
+    }
+}
 
 /// A relation's color, the same on the map and in lists: one per flow, as
 /// on the desktop (a golden-angle hue step), the accent outside any flow.
@@ -1172,14 +1309,11 @@ private struct RelationLine: View {
     let touch: MapTouch
 
     var body: some View {
-        if let line = layout.line(relation, offset: touch.offset(of:)) {
+        if let line = layout.line(relation, touch: touch) {
             let color = RelationStyle.color(relation)
-            Arrow(from: line.from, to: line.to) { context, from, to in
-                var path = Path()
-                path.move(to: from)
-                path.addLine(to: to)
-                context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 2.25, lineCap: .round, dash: [10, 8]))
-                context.fill(Self.arrowhead(at: to, from: from), with: .color(color))
+            Arrow(points: line.points) { context in
+                context.stroke(line.path, with: .color(color), style: StrokeStyle(lineWidth: 2.25, lineCap: .round, dash: [10, 8]))
+                context.fill(Self.arrowhead(at: line.end, from: line.arrival), with: .color(color))
             }
         }
     }
@@ -1207,7 +1341,9 @@ private struct DraftLine: View {
 
     var body: some View {
         if let link = touch.linking, let node = layout.nodes.first(where: { $0.id == link.fromNode }) {
-            Arrow(from: layout.edge(of: layout.frame(node), toward: link.point), to: link.point) { context, from, to in
+            let from = layout.edge(of: layout.frame(node), toward: link.point)
+            let to = link.point
+            Arrow(points: [from, to]) { context in
                 var path = Path()
                 path.move(to: from)
                 path.addLine(to: to)
@@ -1218,17 +1354,17 @@ private struct DraftLine: View {
     }
 }
 
-/// Draws between two map points in a box just around them.
+/// Draws in map points, in a box just around `points` (a curve's controls
+/// included).
 private struct Arrow: View {
-    let from: CGPoint
-    let to: CGPoint
-    let draw: (inout GraphicsContext, CGPoint, CGPoint) -> Void
+    let points: [CGPoint]
+    let draw: (inout GraphicsContext) -> Void
 
     var body: some View {
-        let box = CGRect(x: min(from.x, to.x), y: min(from.y, to.y), width: abs(to.x - from.x), height: abs(to.y - from.y)).insetBy(dx: -12, dy: -12)
+        let box = points.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }.insetBy(dx: -12, dy: -12)
         Canvas { context, _ in
-            let shift = CGPoint(x: -box.minX, y: -box.minY)
-            draw(&context, CGPoint(x: from.x + shift.x, y: from.y + shift.y), CGPoint(x: to.x + shift.x, y: to.y + shift.y))
+            context.translateBy(x: -box.minX, y: -box.minY)
+            draw(&context)
         }
         .frame(width: box.width, height: box.height)
         .position(x: box.midX, y: box.midY)
@@ -1237,28 +1373,33 @@ private struct Arrow: View {
 }
 
 /// A connection's meaning at the middle of its line, as a menu that changes
-/// the meaning or removes it. A line too short for its words gets a dot in
-/// its color.
+/// the meaning (a kind, a saved label or new words of its own) or removes
+/// it. A line too short for its words gets a dot in its color.
 private struct RelationChip: View {
     let layout: MapLayout
     let relation: Relation
     let touch: MapTouch
+    /// This device's saved labels.
+    let saved: [String]
     let setKind: (String) -> Void
+    let setLabel: (String) -> Void
+    /// Asks for words of its own.
+    let custom: () -> Void
     let remove: () -> Void
 
     var body: some View {
-        if let line = layout.line(relation, offset: touch.offset(of:)) {
+        if let line = layout.line(relation, touch: touch) {
             // Sized in canvas units, so it zooms with the map like the cards;
             // the words fit or not whatever the zoom.
             let s = layout.scale
-            let roomy = hypot(line.to.x - line.from.x, line.to.y - line.from.y) / s >= CGFloat(relation.label.count) * 6.5 + 24
+            let roomy = hypot(line.end.x - line.start.x, line.end.y - line.start.y) / s >= CGFloat(relation.label.count) * TileMetrics.chipText * 0.6 + TileMetrics.chipPadding.width * 4
             // Drawn at `draw` and shrunk whole below it, as the cards are.
             let draw = max(s, 0.5)
             Menu {
                 Section("Meaning") {
                     ForEach(relation.options) { option in
                         Button { setKind(option.kind) } label: {
-                            if option.kind == relation.kind {
+                            if relation.custom == nil, option.kind == relation.kind {
                                 Label(option.label, systemImage: "checkmark")
                             } else {
                                 Text(option.label)
@@ -1267,12 +1408,28 @@ private struct RelationChip: View {
                         }
                     }
                 }
-                Button("Remove Connection", systemImage: "trash", role: .destructive, action: remove)
+                if !saved.isEmpty {
+                    Section("Saved") {
+                        ForEach(saved, id: \.self) { label in
+                            Button { setLabel(label) } label: {
+                                if relation.custom == label {
+                                    Label(label, systemImage: "checkmark")
+                                } else {
+                                    Text(label)
+                                }
+                            }
+                        }
+                    }
+                }
+                Section {
+                    Button("Custom…", systemImage: "pencil", action: custom)
+                    Button("Remove Connection", systemImage: "trash", role: .destructive, action: remove)
+                }
             } label: {
                 chip(roomy: roomy, scale: draw)
                     .scaleEffect(s / draw)
             }
-            .position(x: (line.from.x + line.to.x) / 2, y: (line.from.y + line.to.y) / 2)
+            .position(line.middle)
         }
     }
 
@@ -1281,58 +1438,20 @@ private struct RelationChip: View {
         let color = RelationStyle.color(relation)
         if roomy {
             Text(relation.label)
-                .font(.system(size: 11 * scale, weight: .medium))
+                .font(.system(size: TileMetrics.chipText * scale, weight: .semibold))
                 .foregroundStyle(color)
-                .padding(.horizontal, 8 * scale)
-                .padding(.vertical, 4 * scale)
+                .padding(.horizontal, TileMetrics.chipPadding.width * scale)
+                .padding(.vertical, TileMetrics.chipPadding.height * scale)
                 .background(.regularMaterial, in: .capsule)
                 .fixedSize()
         } else {
             Circle()
                 .fill(color)
-                .frame(width: 10 * scale, height: 10 * scale)
-                .padding(7 * scale)
+                .frame(width: TileMetrics.chipDot * scale, height: TileMetrics.chipDot * scale)
+                .padding(TileMetrics.chipPadding.height * 1.5 * scale)
                 .background(.regularMaterial, in: .circle)
                 .accessibilityLabel(relation.label)
         }
-    }
-}
-
-/// The meanings a dropped connection can take, at the spot it was dropped.
-private struct LinkMenu: View {
-    let pending: PendingLink
-    let target: Panel?
-    let pick: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Connect to \(target?.title ?? "panel")")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 4)
-            ForEach(Array(pending.options.enumerated()), id: \.element.id) { index, option in
-                Button { pick(option.kind) } label: {
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: 6) {
-                            Text(option.label).font(.body.weight(.medium))
-                            if index == 0 {
-                                Text("Recommended").font(.caption2.weight(.semibold)).foregroundStyle(.tint)
-                            }
-                        }
-                        Text(option.description).font(.caption).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.vertical, 12)
-        .frame(width: 280)
-        .glassEffect(.regular, in: .rect(cornerRadius: 24))
     }
 }
 

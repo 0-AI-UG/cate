@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { MAIN_WINDOW, createDocument, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
-import { addRelation, beginPanelInteraction, clearPanelInteractions } from '../../../workspace/relations'
+import { addRelation, beginPanelInteraction, clearPanelInteractions, setRelationContextMode } from '../../../workspace/relations'
 import { openTestDocument, testRelationHost } from './testing'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { createCanvasView, type CanvasViewStore } from './store'
@@ -109,6 +109,22 @@ describe('PanelConnectionLayer', () => {
     expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(3)
     expect([...container.querySelectorAll('[role="menuitemradio"]')]
       .filter((item) => item.textContent?.includes('Recommended'))).toHaveLength(1)
+  })
+
+  it('dims the whole flow of a source whose prompt context is off', () => {
+    const doc = standardDocument()
+    doc.panels.agent = panel('agent', 'terminal', { relationContextMode: 'off' })
+    const view = open(doc, false)
+    addRelation(WS, 'agent', 'worker', 'trigger')
+    render(view)
+    const path = () => container.querySelector('[data-panel-connection="relation"]')
+    expect(path()?.getAttribute('data-panel-relation-context-off')).toBe('true')
+    expect(path()?.getAttribute('opacity')).toBe('0.3')
+    expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-50')).toBe(true)
+
+    act(() => { setRelationContextMode(WS, 'agent', 'always') })
+    expect(path()?.hasAttribute('data-panel-relation-context-off')).toBe(false)
+    expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-50')).toBe(false)
   })
 
   it('labels a browser-to-execution relation as sending findings', () => {

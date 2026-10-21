@@ -1,7 +1,7 @@
 // How browser observations and failures read to an agent: the text the CLI
 // prints, diffs between accessibility trees, and what to do after each
 // page-driver error.
-import type { BrowserActionOutcome, BrowserConsoleEntry, BrowserDialog, BrowserNetworkEntry, BrowserObservation } from './automation'
+import type { BrowserActionOutcome, BrowserConsoleEntry, BrowserDialog, BrowserNetworkEntry, BrowserObservation, BrowserViewportState } from './automation'
 
 const depthOf = (line: string): number => (line.length - line.trimStart().length) / 2
 
@@ -39,6 +39,7 @@ export function diffBrowserState(before: string, after: string): string {
 
 const RECOVERY: Record<string, string> = {
   'element-obscured': 'Another element covers the target. Close or dismiss it (a dialog, banner or menu), then retry.',
+  'element-outside-viewport': 'The element stayed outside the viewport after scrolling. Scroll its container (cate browser scroll down --target <id> of the container), observe, then retry.',
   'element-not-visible': 'The element stayed hidden. Open the menu, tab or section that shows it, observe, then retry.',
   'element-disabled': 'The element stayed disabled. Fill in what it depends on, or wait for it (cate browser wait --element <id> --state enabled).',
   'element-not-stable': 'The element kept moving. Wait for the animation to finish, then retry.',
@@ -50,6 +51,7 @@ const RECOVERY: Record<string, string> = {
   'browser-unknown-element': 'No element has that id. Use an id from a snapshot of the current page.',
   'browser-page-unresponsive': 'The page stopped responding (a script keeps it busy). Wait and retry, or restart it: cate browser reload.',
   'stale-browser-observation': 'The page navigated since that observation. Observe again and use the new ids.',
+  'browser-point-outside-viewport': 'That point is outside the viewport. Act on the element by id (actions scroll it into view), or scroll first and take a new screenshot.',
   'stale-browser-coordinates': 'The page scrolled or resized since those coordinates. Take a new screenshot first.',
   'browser-observation-required': 'Observe the tab first.',
   'browser-ax-observation-required': 'Element ids need an accessibility snapshot: run cate browser snapshot first.',
@@ -91,14 +93,29 @@ export function browserRecovery(error: string, inputSent: boolean): string | und
     : 'Observe the tab again before retrying.'
 }
 
+/** Where the viewport sits in the page and how much lies past each edge,
+ *  or nothing when the whole page fits and is not scrolled. */
+function describeBrowserViewport(viewport: BrowserViewportState | undefined): string | undefined {
+  if (!viewport) return undefined
+  const { width, height } = viewport
+  const x = Math.round(viewport.scrollX), y = Math.round(viewport.scrollY)
+  // innerWidth/innerHeight include scrollbars, so the page can measure a
+  // few pixels smaller than the viewport.
+  const pageWidth = Math.max(Math.round(viewport.scrollWidth), width), pageHeight = Math.max(Math.round(viewport.scrollHeight), height)
+  const past = [[y, 'above'], [pageHeight - y - height, 'below'], [x, 'left'], [pageWidth - x - width, 'right']] as const
+  const parts = past.filter(([pixels]) => pixels > 1).map(([pixels, edge]) => `${Math.round(pixels)}px ${edge}`)
+  if (!parts.length) return undefined
+  return `Viewport ${width}x${height} at ${x},${y} of a ${pageWidth}x${pageHeight} page (${parts.join(', ')})`
+}
+
 /** The text of an observation for an agent: the action's outcome, the page,
  *  and the accessibility tree or its changes. */
 export function describeBrowserObservation(observation: BrowserObservation, action?: BrowserActionOutcome): string {
   const lines: string[] = []
   if (action) lines.push(describeBrowserAction(action))
   lines.push(`Page: ${observation.title ? `${observation.title} (${observation.url})` : observation.url}`)
-  const { viewport } = observation
-  if (viewport && (viewport.scrollX || viewport.scrollY)) lines.push(`Scrolled to ${Math.round(viewport.scrollX)},${Math.round(viewport.scrollY)} in a ${viewport.width}x${viewport.height} viewport`)
+  const viewport = describeBrowserViewport(observation.viewport)
+  if (viewport) lines.push(viewport)
   if (observation.screenshotError) lines.push(`No screenshot (${observation.screenshotError}): ${browserRecovery(observation.screenshotError, false)}`)
   if (observation.kind === 'image') lines.push('Screenshot only: element ids are unchanged.')
   else if (observation.diff) lines.push('Changes since the last observation:', observation.state)

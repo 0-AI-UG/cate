@@ -1141,6 +1141,12 @@ interface DocWindow {
   with `dirty` unless `discard` names the panel (section 11.2, rule 6).
 - Container values (split ratios, rects, record fields) are last write
   wins.
+- Rules that need a module above the document are change guards: the
+  runtime holds every op, a client's and its own, to each guard
+  (`guardChanges`), change by change through a batch, and a change a guard
+  names a problem for fails with `rejected`. The composition root fills the
+  slot; the relations rule is one (section 9.7). Clients ask the same pure
+  rules before proposing, so their mirror rarely has to roll back.
 
 **Runtime side:** holds the document in memory, persists it to
 `document.json` (debounced, atomic, through `kernel/state`), assigns each
@@ -1188,7 +1194,9 @@ here" row in the workspace.
 
 **`workspace/canvas`**: canvas geometry in `contract.ts`: rects, free-slot
 placement (finding a rect for a new node), arrangement, and the curves
-between two rects that relations draw. It imports nothing. The canvas model
+between two rects that relations draw (`panelConnectionCurve`: the curve as
+data, cubic segments and its midpoint, which every shell draws as it is; the
+desktop as an SVG path). It imports nothing. The canvas model
 itself (`CanvasModel`, `CanvasNode`: nodes with a rect and a mini dock) is
 part of the document schema; the reducer only checks its rects, and
 placement code (panel creation in the core, each shell's canvas) runs this
@@ -1298,21 +1306,28 @@ testing the type name. Each shell draws it
 
 - **contract**: the typed relation graph between panels (`use`, `context`,
   `verify`, `trigger`; each panel type's role in it comes from its
-  definition), `relationReach` (the flow from an execution surface up to the
+  definition; a type without one, a canvas or a surface, is never a
+  relation's end), `relationReach` (the flow from an execution surface up to the
   next ones), `compileRelationContext` over it, which the agents service
   uses for prompt context, and the relation context mode (`once`, `always`,
   `off`: a record field with its one parser). It imports only contracts.
   What a prompt would take is the runtime's own preview
   (`agents.previewContext`); clients never compile it themselves, and count
-  connected panels with `relationReach`.
+  connected panels with `relationReach`. The relation rule
+  (`newRelationProblem`: both ends take part in relations, no cycle) is
+  here too: the runtime enforces it as a document change guard
+  (`relationChangeProblem`), and clients ask it before offering a target or
+  proposing a relation.
 - **runtime**: **connected editors**: an editor connected to an execution
   panel (a terminal)
   shares a working file with the agent (an untitled editor gets
   `.cate/tmp/<id>.md`), autosaves, and is flushed before a prompt is
   submitted (`docs/connected-editors.md`).
 - **client**: the relation edits every client makes on its document mirror
-  (add or re-point, meaning, waypoint, remove, context mode) and the panels a
-  panel can connect to (`relationTargets`: none that would close a cycle).
+  (add or re-point, meaning, its own words, waypoint, remove, context mode),
+  the panels a panel can connect to (`relationTargets`), and the edits of
+  the personal label library (`savedPanelRelationLabels`: remember, rename,
+  forget) over a client's settings.
 - **Desktop UI** (`shells/desktop/ui/workspace/relations`): the relation handle, selector and context toggle. Relation drawing
   is in the desktop UI (`shells/desktop/ui/client/layout/canvas`).
 
@@ -1334,11 +1349,13 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   terminal view attaches to it directly with the PTY id from its session's
   snapshot; the session channel carries no bytes.
   Input from every viewer goes to the same PTY, as in a shared tmux session.
-  The PTY takes the smallest cols and the smallest rows of its visible
-  viewers, as tmux does, and follows them; with none visible it keeps its
-  size. Every viewer is told the PTY's size (the `size` event) and the same
-  rules apply to all of them. Every view draws the PTY's grid at its own
-  font, in the corner of its frame when the frame holds more.
+  The PTY's size changes only through a fit (`process.fit`): a viewer asks
+  for the grid its frame holds, and the PTY takes it whole. Attaching,
+  hiding or leaving never resizes it. The desktop view fits on every change
+  of its panel's grid and from the tab menu; the phone fits when the person
+  taps Fit. Every viewer is told the PTY's size (the `size` event) and draws
+  the PTY's grid at its own font, scaled down to its frame when bigger, in
+  the corner of its frame when the frame holds more.
 - **Extension points** (so terminal never imports agents): PTY env
   contributors (the `cate` CLI on PATH with `CATE_SOCKET` and `CATE_TOKEN`,
   agent hook env), output, input, activity and exit observers, launch
@@ -2212,12 +2229,18 @@ shell, with `--json` when it parses results.
   tab follower, `acquireSession`, the trust question, shown as an alert). Its state carries each
   connected workspace's agents (panel states with what each asked for),
   keep-awake state and this device's push status, and its relations (each
-  with its words for its pair) with the `panelRelationsEnabled` setting. The
+  with its words for its pair, its own label, and its curve on the canvas,
+  computed with `panelConnectionCurve` so it is the desktop's) with the
+  `panelRelationsEnabled` setting, and this device's saved relation labels.
+  The app draws a relation's curve as it comes and computes no geometry of
+  its own; while a node is dragged it bends the curve along until the
+  document has the node's new place. The
   app shows a workspace the way Cate lays it out: one place at a time, the
   dock (one of its panels at a time) or a canvas (a map of its nodes where
   they sit, its relations drawn between them). On the map a tile moves with
   one `setNodeRects` op (`canvas.moveNode`) and relations are made, given
-  their meaning, set to a context mode and removed, all through the core's
+  their meaning or words of their own, set to a context mode and removed,
+  and saved labels renamed and forgotten, all through the core's
   `relations.*` methods over the shared relation edits. Every panel type
   has a native view (terminal, editor, browser with loopback routing,
   review, the surface picker), and worktrees can be switched. The app

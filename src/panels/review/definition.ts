@@ -52,7 +52,14 @@ export default definePanel({
   chrome: { worktreeChip: true },
   relation: {
     produces: 'notes',
-    targetOptions: (source) => source.type === 'review' ? ['context', 'verify', 'use'] : ['verify', 'context', 'use'],
-    instruction: (kind) => `${kind === 'verify' ? 'Verify with it' : kind === 'use' ? 'Work through it' : 'Reference it'} through Cate review commands.`,
+    targetOptions: {
+      execution: [['verify', 'Review in'], ['use', 'Address notes in'], ['context', 'Reference']],
+      changes: [['verify', 'Review in'], ['context', 'Reference'], ['use', 'Address notes in']],
+      findings: [['verify', 'Review in'], ['context', 'Reference'], ['use', 'Address notes in']],
+      notes: [['context', 'Compare with'], ['verify', 'Review in'], ['use', 'Address notes in']],
+    },
+    instruction: (kind) => `${kind === 'verify'
+      ? 'Review its diff and record findings as notes'
+      : kind === 'use' ? 'Work through its open notes and resolve them' : 'Read its diff and notes'} through Cate review commands.`,
   },
 })

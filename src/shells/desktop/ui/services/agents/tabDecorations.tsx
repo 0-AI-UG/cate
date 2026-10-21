@@ -7,15 +7,16 @@ import { AlertTriangle } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import type { PanelRecord } from '@workspace/document/contract'
 import { AgentChangesPill } from './AgentChangesPill'
-import { AwaitingIndicator, RunningIndicator } from './indicators'
+import { AwaitingIndicator } from './indicators'
 import { agentInfoTitle } from './panelInfo'
 import { useAgentInfoByPanel, useAgentPanelState } from './useAgentPanels'
 
-/** Agent status on tabs: logo, running ring or awaiting-input dot, title. */
+/** Agent status on tabs: logo, working shimmer, awaiting-input dot, title. */
 export function useAgentTabDecorations(workspaceId: string): Record<string, {
   logo: string | null
   logoAlt: string | null
   status: ReactNode
+  busy: boolean
   retitle: (title: string) => string
 }> {
   const info = useAgentInfoByPanel(workspaceId)
@@ -24,9 +25,8 @@ export function useAgentTabDecorations(workspaceId: string): Record<string, {
     out[panelId] = {
       logo: agent.logo,
       logoAlt: agent.name,
-      status: agent.status === 'waitingForInput'
-        ? <AwaitingIndicator />
-        : agent.status === 'running' ? <RunningIndicator /> : null,
+      status: agent.status === 'waitingForInput' ? <AwaitingIndicator /> : null,
+      busy: agent.status === 'running',
       retitle: (title) => agentInfoTitle(title, agent),
     }
   }
