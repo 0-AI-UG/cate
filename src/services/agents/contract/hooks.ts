@@ -1,7 +1,6 @@
 // Agent hook declarations: the per-CLI specs that turn each agent CLI's
 // hook, extension or plugin surface into one normalized event stream. Each
-// entry says how hooks are injected (workspace files or a profile plugin, plus
-// PTY env), how a raw payload normalizes into an AgentHookEvent, which
+// entry says how hooks are injected (workspace files plus PTY env), how a raw payload normalizes into an AgentHookEvent, which
 // completed tool call it reports for edit capture, and how a user interrupt
 // ends a turn. Raw payloads are read here and nowhere else.
 //
@@ -64,12 +63,6 @@ export interface AgentHookEvent {
   /** The transcript / rollout / session file backing the session, when the
    *  payload carries one. */
   transcriptPath?: string
-  /** Named CLI profile that owns the session, when the agent exposes one. */
-  profile?: string
-  /** Process that emitted an in-process hook; never persisted. */
-  sourcePid?: number
-  /** Monotonic process-start clock supplied by an in-process hook. */
-  sourceStartedAt?: string
   /** Present only for session-title events. */
   title?: string
   /** permission-check only: the CLI's resolved approval config, read on the
@@ -106,12 +99,7 @@ export interface AgentToolCall {
 }
 
 export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
-  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'profile' | 'permission'>>
-
-export function normalizeAgentSourceStartedAt(value: unknown): string | undefined {
-  if (typeof value !== 'string' || !/^[0-9]{1,32}$/.test(value)) return undefined
-  try { return BigInt(value) > 0n ? BigInt(value).toString() : undefined } catch { return undefined }
-}
+  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'permission'>>
 
 // ---------------------------------------------------------------------------
 // Injection declarations
@@ -197,9 +185,6 @@ export interface AgentHookSpec {
      */
     strip?(existing: string): AgentHookStrip
   }>
-  /** Profile-scoped plugin managed on the runtime host instead of in the
-   *  repo. The runtime installs it (and reports it as injected) by this id. */
-  externalPlugin?: { id: string }
   /** Extra env this CLI needs on every Cate PTY, given whether its hooks are
    *  enabled there. Never overrides a variable the user already set. */
   ptyEnv?(hooksEnabled: boolean): Record<string, string>
@@ -949,67 +934,6 @@ const kiroSpec: AgentHookSpec = {
 }
 
 // ---------------------------------------------------------------------------
-// Hermes — a profile-scoped Python plugin posts lifecycle and tool events to
-// Cate's authenticated per-PTY endpoint. The managed plugin is a no-op outside
-// Cate terminals and returns connected-panel context from pre_llm_call.
-// ---------------------------------------------------------------------------
-
-/** A Hermes tool result: JSON text, or already an object. */
-function hermesResult(value: unknown): Record<string, unknown> {
-  if (typeof value !== 'string') return obj(value)
-  try { return obj(JSON.parse(value)) } catch { return {} }
-}
-
-const HERMES_INTERACTIVE_PLATFORMS = new Set(['cli', 'tui'])
-
-const hermesSpec: AgentHookSpec = {
-  interrupt: { via: 'hook' },
-  externalPlugin: { id: 'cate-agent-state' },
-  // The profile-wide plugin reports only for terminals where it is enabled.
-  ptyEnv: (enabled) => ({ CATE_HERMES_HOOKS: enabled ? '1' : '0' }),
-  normalize: (p) => {
-    const platform = str(p.platform)
-    if (platform && !HERMES_INTERACTIVE_PLATFORMS.has(platform)) return null
-    const base = {
-      sessionId: str(p.session_id),
-      turnId: str(p.turn_id),
-      cwd: str(p.cwd) ?? undefined,
-      profile: str(p.profile) ?? undefined,
-    }
-    switch (p.hook_event_name) {
-      case 'on_session_start':
-      case 'on_session_reset': return { kind: 'session-start', ...base }
-      case 'pre_llm_call': return { kind: 'turn-start', ...base }
-      case 'on_session_end': return { kind: 'turn-end', ...base }
-      case 'pre_approval_request':
-        // Smart review and plugin transports may resolve without a human.
-        // Older bridges omit surface; absence is not proof of a human wait.
-        return { kind: p.surface === 'cli' ? 'permission-wait' : 'permission-check', ...base }
-      case 'post_approval_response': return { kind: 'turn-resume', ...base }
-      // Confirms execution resumed even if an older/custom approval flow did
-      // not emit post_approval_response; it also keeps status active across
-      // ordinary tool calls while edit ingestion consumes the raw payload.
-      case 'post_tool_call': return { kind: 'turn-resume', ...base }
-      case 'on_session_finalize': return { kind: 'session-end', ...base }
-      default: return null
-    }
-  },
-  // A call the person refused is reported too, as a blocked result: it did
-  // not run, so it is no call (other CLIs post nothing for one).
-  toolCall: (p) => p.hook_event_name === 'post_tool_call' && hermesResult(p.result).status !== 'blocked'
-    ? reportedToolCall(p, {
-        sessionId: str(p.session_id),
-        name: str(p.tool_name) ?? '',
-        input: p.args,
-        output: p.result,
-        callId: str(p.tool_call_id) ?? undefined,
-        cwd: str(p.cwd) ?? undefined,
-        parentSessionId: str(p.parent_session_id) ?? undefined,
-      })
-    : null,
-}
-
-// ---------------------------------------------------------------------------
 // Registry + normalization entry point
 // ---------------------------------------------------------------------------
 
@@ -1018,7 +942,6 @@ export const AGENT_HOOK_SPECS: Record<AgentId, AgentHookSpec> = {
   codex: codexSpec,
   cursor: cursorSpec,
   grok: grokSpec,
-  hermes: hermesSpec,
   kiro: kiroSpec,
   opencode: opencodeSpec,
 }

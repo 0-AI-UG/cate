@@ -9,13 +9,9 @@ case "${1:?Pass a supported agent id}" in
   grok) npm install --global @xai-official/grok@latest ;;
   opencode) npm install --global opencode-ai@latest ;;
   kiro) curl --fail --silent --show-error --location https://cli.kiro.dev/install | bash ;;
-  hermes)
-    curl --fail --silent --show-error --location https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh |
-      bash -s -- --non-interactive --skip-browser
-    ;;
   *) echo "Unknown agent id: $1" >&2; exit 2 ;;
 esac
 
 if [[ -n "${GITHUB_PATH:-}" ]]; then
-  printf '%s\n' "$HOME/.local/bin" "$HOME/.hermes/bin" >> "$GITHUB_PATH"
+  printf '%s\n' "$HOME/.local/bin" >> "$GITHUB_PATH"
 fi

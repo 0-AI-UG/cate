@@ -25,6 +25,8 @@ describe('browserRecovery', () => {
     expect(browserRecovery('element-obscured: covered by <div#consent>', true)).toMatch(/Input was already sent/)
     expect(browserRecovery('browser-option-values-required', false)).toBeUndefined()
     expect(browserRecovery('invalid-browser-scroll', false)).toBeUndefined()
+    expect(browserRecovery('browser-point-outside-viewport', false)).toMatch(/^That point is outside the viewport/)
+    expect(browserRecovery('element-outside-viewport', false)).toMatch(/outside the viewport after scrolling/)
     expect(browserRecovery('something-new', false)).toBe('Observe the tab again before retrying.')
   })
 })
@@ -32,14 +34,22 @@ describe('browserRecovery', () => {
 describe('describeBrowserObservation', () => {
   const observation = (patch: Partial<BrowserObservation> = {}): BrowserObservation => ({
     panelId: 'p', tabId: 't', kind: 'ax', observationId: 'o1', documentId: 'd1', url: 'https://example.test/', title: 'Example',
-    viewport: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 }, state: '- button "Save" [id=1]', elements: [], diff: false, ...patch,
+    viewport: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0, scrollWidth: 800, scrollHeight: 600 }, state: '- button "Save" [id=1]', elements: [], diff: false, ...patch,
   })
 
   it('reads as plain text: outcome, page, then the tree or its changes', () => {
     expect(describeBrowserObservation(observation(), { method: 'click', status: 'dispatched' }))
       .toBe('click: dispatched\nPage: Example (https://example.test/)\n- button "Save" [id=1]')
-    expect(describeBrowserObservation(observation({ diff: true, state: 'No changes.', viewport: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 240 } })))
-      .toBe('Page: Example (https://example.test/)\nScrolled to 0,240 in a 800x600 viewport\nChanges since the last observation:\nNo changes.')
+    expect(describeBrowserObservation(observation({ diff: true, state: 'No changes.', viewport: { ...observation().viewport, scrollY: 240, scrollHeight: 2680 } })))
+      .toBe('Page: Example (https://example.test/)\nViewport 800x600 at 0,240 of a 800x2680 page (240px above, 1840px below)\nChanges since the last observation:\nNo changes.')
+  })
+
+  it('says how much of the page lies past each edge of the viewport', () => {
+    const header = (patch: Partial<BrowserObservation['viewport']>) =>
+      describeBrowserObservation(observation({ viewport: { ...observation().viewport, ...patch } })).split('\n')[1]
+    expect(header({ scrollWidth: 1200, scrollHeight: 3000 })).toBe('Viewport 800x600 at 0,0 of a 1200x3000 page (2400px below, 400px right)')
+    expect(header({ scrollWidth: 785, scrollHeight: 585 })).toBe('- button "Save" [id=1]')
+    expect(header({ scrollY: 2400, scrollHeight: 2985 })).toBe('Viewport 800x600 at 0,2400 of a 800x2985 page (2400px above)')
   })
 
   it('says why a requested screenshot is missing', () => {

@@ -11,7 +11,8 @@ import {
   formatUsd,
   type UsagePeriodTotals,
 } from '@services/agents/contract'
-import { AGENT_COLORS, AGENT_ORDER, AgentMark, agentLabel } from './presentation'
+import { AGENT_COLORS, AGENT_ORDER, agentLabel } from './presentation'
+import { AgentMark } from '../AgentMark'
 
 const VIEW_WIDTH = 960
 const VIEW_HEIGHT = 260

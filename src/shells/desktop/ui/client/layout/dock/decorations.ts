@@ -1,5 +1,5 @@
 // What other modules add to dock tabs and panel chrome without the dock
-// knowing them: a tab's logo, status mark and title, a dirty mark, extra tab
+// knowing them: a tab's logo, status mark and title (shimmering while busy), a dirty mark, extra tab
 // menu items, and the overlays over a panel's top-right corner. Register at startup, before
 // the first dock renders: decoration hooks run as React hooks.
 
@@ -13,6 +13,8 @@ export interface TabDecoration {
   logoAlt?: string | null
   /** A status mark drawn after the title. */
   status?: ReactNode
+  /** The title shimmers (work in progress). */
+  busy?: boolean
   /** The title ends with a dot (unsaved changes). */
   dirty?: boolean
   /** The title to show for the record's title. */

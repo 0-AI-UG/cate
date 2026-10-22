@@ -81,7 +81,6 @@ function normalizeStamps(parsed: unknown): StampsFile {
       sessionId: stamp.sessionId,
       cwd: stamp.cwd,
       binding: stamp.binding,
-      ...(typeof stamp.profile === 'string' ? { profile: stamp.profile } : {}),
     }
   }
   return out
@@ -210,7 +209,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   offs.push(terminal.registerLaunchIntent(TERMINAL_RESTORE_LAUNCH.kind, (_params, { panelId }) => {
     const stamp = panelId ? stampsFile.get()[panelId] : undefined
     if (!stamp || stamp.binding !== bindingOf(document.panel(panelId!))) return {}
-    const command = resumeCommandForAgent(stamp.agentId, stamp.sessionId, stamp.profile ? { profile: stamp.profile } : undefined)
+    const command = resumeCommandForAgent(stamp.agentId, stamp.sessionId)
     return command ? { input: command } : {}
   }))
 
@@ -237,7 +236,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       hookAgent.delete(scan.terminalId)
       hookFiles.delete(scan.terminalId)
       hooks.noteAgentExited(scan.terminalId)
-      stamps.clear(scan.terminalId, hook.endedAgentPid, hook.endedAgentStartedAt)
+      stamps.clear(scan.terminalId)
     }
     // One rule for every agent CLI: open from launch, not from its first
     // prompt's hook.
@@ -290,7 +289,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
         sessionId: latest.sessionId,
         cwd: latest.cwd ?? terminals.get(terminalId!)?.cwd ?? agents.root,
         ...(worktreeId ? { worktreeId } : {}),
-        ...(latest.profile ? { profile: latest.profile } : {}),
       }
     }
     const stamp = stampsFile.get()[panelId]
@@ -300,7 +298,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
           sessionId: stamp.sessionId,
           cwd: stamp.cwd || agents.root,
           ...(worktreeId ? { worktreeId } : {}),
-          ...(stamp.profile ? { profile: stamp.profile } : {}),
         }
       : null
   }
@@ -407,7 +404,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
         agentId: session.agentId,
         sessionId: session.sessionId,
         cwd: session.cwd,
-        ...(session.profile ? { profile: session.profile } : {}),
       })
       return messages ? { session, messages } : null
     },
@@ -418,7 +414,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
         agentId: session.agentId,
         sessionId: session.sessionId,
         cwd: session.cwd,
-        ...(session.profile ? { profile: session.profile } : {}),
       })
     },
     async interrupt(panelId): Promise<AgentSendResult> {

@@ -25,7 +25,6 @@ describe('agent registry coverage', () => {
       codex: 'additional-context',
       cursor: null,
       grok: null,
-      hermes: 'plain-text',
       kiro: 'plain-text',
       opencode: 'endpoint',
     })
@@ -59,7 +58,7 @@ describe('agent registry coverage', () => {
   // restatement of the type.
   test('persisted SkillTargetId values never drift', () => {
     const expected: SkillTargetId[] = [
-      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'hermes', 'kiro',
+      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'kiro',
     ]
     expect(AGENTS.flatMap((a) => (a.skills ? [a.skills.targetId] : [])).sort()).toEqual([...expected].sort())
   })
@@ -70,7 +69,7 @@ describe('agent registry coverage', () => {
     for (const a of AGENTS) {
       const spec = AGENT_HOOK_SPECS[a.id]
       expect(spec, `${a.id} hook spec`).toBeTruthy()
-      expect(Boolean(spec.projectFiles?.length || spec.externalPlugin), `${a.id} has no injection channel`).toBe(true)
+      expect(Boolean(spec.projectFiles?.length), `${a.id} has no injection channel`).toBe(true)
     }
   })
 
@@ -82,7 +81,7 @@ describe('agent registry coverage', () => {
         `${a.id} does not detect its own command name`).toBe(true)
       // resumeArgs is nullable by design (a CLI may not resume by id) — assert
       // it is a real decision, and that the argv it builds is non-empty.
-      if (resume.args && a.id !== 'hermes') expect(resume.args('abc')?.length).toBeGreaterThan(0)
+      if (resume.args) expect(resume.args('abc')?.length).toBeGreaterThan(0)
     }
   })
 })
@@ -93,7 +92,6 @@ describe('agentForLaunchCommand', () => {
     expect(agentForLaunchCommand('/usr/local/bin/codex --some-flag')?.id).toBe('codex')
     expect(agentForLaunchCommand('"C:\\tools\\cursor-agent"')?.id).toBe('cursor')
     expect(agentForLaunchCommand('/usr/local/bin/kiro-cli chat')?.id).toBe('kiro')
-    expect(agentForLaunchCommand('hermes chat')?.id).toBe('hermes')
   })
 
   it('does not guess through compound shell syntax', () => {
@@ -110,7 +108,6 @@ describe('matchAgentDef', () => {
     expect(matchAgentDef('cursor-agent')?.id).toBe('cursor')
     expect(matchAgentDef('cursor')?.id).toBe('cursor')
     expect(matchAgentDef('kiro-cli')?.id).toBe('kiro')
-    expect(matchAgentDef('hermes')?.id).toBe('hermes')
     expect(matchAgentDef('node')).toBeNull()
   })
 
@@ -131,9 +128,6 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('grok', uuid)).toBe(`grok --resume ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
     expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
-    expect(resumeCommandForAgent('hermes', uuid, { profile: 'work' })).toBe(`hermes --profile work chat --resume ${uuid}`)
-    expect(resumeCommandForAgent('hermes', uuid)).toBeNull()
-    expect(resumeCommandForAgent('hermes', uuid, { profile: 'custom' })).toBeNull()
   })
 
   it('returns null for unknown agent ids', () => {

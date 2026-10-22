@@ -3,7 +3,6 @@ import { claudeSessionStore } from './claude'
 import { codexSessionStore } from './codex'
 import { cursorSessionStore } from './cursor'
 import { grokSessionStore } from './grok'
-import { hermesSessionStore } from './hermes'
 import { kiroSessionStore } from './kiro'
 import { openCodeSessionStore } from './opencode'
 
@@ -13,7 +12,6 @@ export const AGENT_SESSION_STORES: AgentSessionStores = {
   codex: codexSessionStore,
   cursor: cursorSessionStore,
   grok: grokSessionStore,
-  hermes: hermesSessionStore,
   kiro: kiroSessionStore,
   opencode: openCodeSessionStore,
 }

@@ -7,19 +7,17 @@ interface SpinnerProps {
   label?: string
 }
 
-/** The single indeterminate activity indicator used throughout the renderer. */
+/** The single indeterminate activity indicator used throughout the renderer.
+ *  The span spins, not the icon: an animation on an <svg> element restyles on
+ *  the main thread every frame, one on an HTML element runs on the compositor. */
 export function Spinner({ size = 16, className = '', label }: SpinnerProps) {
   return (
     <span
-      className={`inline-flex shrink-0 ${className}`}
+      className={`inline-flex shrink-0 animate-spin motion-reduce:animate-none ${className}`}
       role={label ? 'status' : undefined}
       aria-label={label}
     >
-      <CircleNotch
-        size={size}
-        aria-hidden="true"
-        className="animate-spin motion-reduce:animate-none"
-      />
+      <CircleNotch size={size} aria-hidden="true" />
     </span>
   )
 }

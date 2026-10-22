@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { ChevronsDown as CaretDoubleDown, ChevronsUp as CaretDoubleUp, Check, Code, FileSearch as FileMagnifyingGlass, Pin as PushPin, Terminal } from 'lucide-react'
-import { LoadingState, Spinner, POPOVER_SURFACE, Tooltip } from '../../kernel/interaction'
-import { agentDisplayName, type AgentId } from '@services/agents/contract'
+import { Spinner, Tooltip, useDismissableLayer, useHoverIntent } from '../../kernel/interaction'
+import type { AgentId } from '@services/agents/contract'
 import type { ReviewAgentChoice, ReviewAgentRun, ReviewDisplay } from '@panels/review/contract'
+import { AgentFlyout } from '../../services/agents'
 
 export type AgentAction = { kind: 'review' | 'changes' }
 
@@ -89,62 +90,63 @@ export function ReviewFileFilter({ value, onChange, allCollapsed, disabled, onTo
   </div>
 }
 
-export function AgentPickerPopover({
-  action,
-  choices,
-  selectedAgentId,
-  busy,
-  onSelect,
-  onClose,
-  onConfirm,
-}: {
+/** A review action whose agent CLIs spring open under it on hover, like the
+ *  agents over the new-terminal button; a pick starts that one. A click runs
+ *  `onClick` when given (a known agent), else opens the column at once. */
+export function AgentActionButton({ action, label, title, disabled = false, busy, open, choices, onOpenChange, onClick, onPick, children }: {
   action: AgentAction
-  choices: ReviewAgentChoice[] | null
-  selectedAgentId: AgentId | null
+  label: string
+  title?: string
+  disabled?: boolean
   busy: boolean
-  onSelect: (agentId: AgentId) => void
-  onClose: () => void
-  onConfirm: () => void
+  open: boolean
+  choices: ReviewAgentChoice[] | null
+  onOpenChange: (open: boolean) => void
+  onClick?: () => void
+  onPick: (agentId: AgentId) => void
+  children?: React.ReactNode
 }) {
+  const box = useRef<HTMLDivElement>(null)
+  const hover = useHoverIntent({
+    enabled: !disabled,
+    open: () => !open && onOpenChange(true),
+    close: () => open && !busy && onOpenChange(false),
+  })
+  useDismissableLayer({ open: open && !busy, contentRef: box, onDismiss: () => onOpenChange(false) })
+  const ready = choices?.filter((choice) => choice.ready).map((choice) => choice.agentId) ?? []
+  const review = action.kind === 'review'
   return (
-    <div role="dialog" aria-label={action.kind === 'review' ? 'Choose terminal review CLI' : 'Choose terminal changes CLI'} className={`absolute right-0 top-9 z-50 w-64 ${POPOVER_SURFACE} p-1.5`}>
-      <p className="px-1 pb-1.5 text-[10px] text-muted">
-        {action.kind === 'review'
-          ? 'Choose a terminal CLI to review this diff.'
-          : 'Choose a terminal CLI to address the open review notes.'}
-      </p>
-      {choices === null ? (
-        <LoadingState label="Checking terminal CLIs" size={14} className="py-4 text-[10px]" />
-      ) : (
-        <div role="radiogroup" aria-label="Terminal CLI" className="grid grid-cols-3 gap-1">
-          {choices.map(({ agentId, ready }) => {
-            const selected = selectedAgentId === agentId
-            const name = agentDisplayName(agentId)
-            return (
-              <button
-                key={agentId}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                disabled={!ready}
-                title={ready ? name : `${name}: hooks not enabled`}
-                onClick={() => onSelect(agentId)}
-                className={`relative h-12 min-w-0 rounded-md border px-1 py-1 flex flex-col items-center justify-center gap-0.5 transition-colors disabled:opacity-35 ${selected ? 'border-focus-blue bg-focus-blue/10' : 'border-transparent hover:bg-hover'}`}
-              >
-                <span className="w-4 h-4 shrink-0 rounded bg-surface-4 flex items-center justify-center text-[9px]">{name[0]}</span>
-                <span className="w-full truncate text-center text-[9px] text-primary">{name}</span>
-                {!ready && <span className="absolute right-1 top-1 w-1.5 h-1.5 rounded-full bg-amber-400" />}
-              </button>
-            )
-          })}
+    <div ref={box} className="relative" onMouseEnter={hover.enter} onMouseLeave={hover.leave}>
+      <ReviewActionButton
+        label={label}
+        title={open ? '' : title}
+        disabled={disabled}
+        onClick={() => {
+          hover.cancel()
+          if (onClick) onClick()
+          else onOpenChange(!open)
+        }}
+      >
+        {children}
+      </ReviewActionButton>
+      {open && (
+        <div className="absolute left-1/2 top-full z-50 pt-1.5 -translate-x-1/2">
+          <AgentFlyout
+            agents={ready}
+            side="down"
+            label={review ? 'Choose terminal review CLI' : 'Choose terminal changes CLI'}
+            itemLabel={(name) => (review ? `Review with ${name}` : `Send to ${name}`)}
+            disabled={busy}
+            onPick={onPick}
+          >
+            {choices === null || busy
+              ? <span className="h-9 w-9 flex items-center justify-center"><Spinner size={14} label={busy ? 'Starting agent' : 'Checking terminal CLIs'} /></span>
+              : ready.length === 0
+                ? <span className="px-3 py-2 whitespace-nowrap text-[10px] text-muted">No agent CLI has hooks on</span>
+                : undefined}
+          </AgentFlyout>
         </div>
       )}
-      <div className="mt-1.5 flex justify-end gap-1 border-t border-subtle pt-1.5">
-        <button type="button" onClick={onClose} disabled={busy} className="h-6 px-2 rounded text-[10px] text-muted hover:text-primary hover:bg-hover disabled:opacity-40">Cancel</button>
-        <button type="button" onClick={onConfirm} disabled={busy || !selectedAgentId} className="h-6 px-2 rounded bg-focus-blue text-white text-[10px] disabled:opacity-40">
-          {busy ? <Spinner size={14} label="Starting agent" /> : action.kind === 'review' ? 'Start review' : 'Send request'}
-        </button>
-      </div>
     </div>
   )
 }

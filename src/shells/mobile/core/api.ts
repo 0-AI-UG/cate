@@ -15,7 +15,7 @@ import type { MobileAgents } from './agents'
 import type { MobileBrowsers } from './browser'
 import type { MobileBuffers } from './buffers'
 import type { MobileConversations } from './conversations'
-import { placementOptions, suggestPlacements } from './placement'
+import { placementOptions, planPlacementOn } from './placement'
 import { createRelationHandlers } from './relations'
 import { createReviewHandlers } from './review'
 import { loopbackPort, type MobileStreams } from './streams'
@@ -50,7 +50,7 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
   const { terminals, views, browsers, buffers, streams, agents, conversations } = parts
   return {
     ...createActionHandlers(agents, conversations),
-    ...createRelationHandlers(),
+    ...createRelationHandlers(client.settings),
     ...createReviewHandlers(views),
     async 'app.setActive'({ active }) {
       client.setActive(active)
@@ -107,8 +107,8 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       terminals.get(terminalId)?.input(data)
       return null
     },
-    async 'terminal.resize'({ terminalId, cols, rows }) {
-      terminals.get(terminalId)?.resize(cols, rows)
+    async 'terminal.fit'({ terminalId, cols, rows }) {
+      terminals.get(terminalId)?.fit(cols, rows)
       return null
     },
     async 'terminal.close'({ terminalId }) {
@@ -146,9 +146,9 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       if (!store || !node) return false
       return store.propose({ kind: 'setNodeRects', canvasId, rects: [{ nodeId, rect: { origin, size: node.rect.size } }] }).ok
     },
-    async 'canvas.suggest'({ workspaceId, canvasPanelId, type, visible }) {
+    async 'canvas.plan'({ workspaceId, canvasPanelId, type, visible }) {
       const doc = documentStoreFor(workspaceId)?.getSnapshot()
-      return doc ? suggestPlacements(doc, canvasPanelId, type, visible) : []
+      return doc ? planPlacementOn(doc, canvasPanelId, type, visible) : null
     },
     async 'panel.setWorktree'({ workspaceId, panelId, worktreeId, discard }) {
       try {

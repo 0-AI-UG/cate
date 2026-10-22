@@ -29,7 +29,7 @@ export function placeTargetFor(
     if (!canvas || !definition.canLiveOnCanvas) return null
     const size = placement.size ?? definition.defaultSize
     const origin = placement.position
-      ? nudgeToFree(canvas.nodes, size, placement.position)
+      ? placement.exact ? placement.position : nudgeToFree(canvas.nodes, size, placement.position)
       : findFreePosition(canvas.nodes, beside, size)
     return { to: 'canvas', canvasId: canvas.id, nodeId: makeId(), stackId: makeId(), rect: { origin, size } }
   }

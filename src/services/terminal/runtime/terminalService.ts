@@ -1,8 +1,7 @@
 // The terminal service: PTYs in the runtime, each with a headless screen that
 // any number of viewers attach to. Output fans out to every viewer as a flow
 // controlled byte stream; input from any viewer goes to the same PTY; the PTY
-// takes the smallest cols and rows of its visible viewers, and every viewer
-// is told its size. Activity,
+// takes the grid the last `fit` asked for, and every viewer is told its size. Activity,
 // ports and cwd are scanned here and published as statuses. Everything that
 // runs a process asks `trust.requireTrusted()` first (9.2).
 
@@ -15,6 +14,7 @@ import type {
   AttachEnd,
   AttachParams,
   AttachEvent,
+  FitParams,
   LaunchIntent,
   ReadResult,
   ScreenSnapshot,
@@ -131,6 +131,7 @@ export interface TerminalService {
   spawn(params: SpawnParams): Promise<SpawnResult>
   write(id: string, data: string): void
   view(params: ViewParams): void
+  fit(params: FitParams): void
   /** Returns the detach function. */
   attach(params: AttachParams, sink: ViewerSink): () => void
   kill(id: string): void
@@ -172,8 +173,6 @@ const RESTORED_MARKER = '\r\n\x1b[90m--- restored session ---\x1b[0m\r\n'
 interface Viewer {
   id: string
   sink: ViewerSink
-  cols?: number
-  rows?: number
   visible: boolean
   /** The last `size` event sent, so each change is sent once. */
   told: string
@@ -326,22 +325,8 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     } catch { /* pty gone */ }
   }
 
-  /** Sizes the PTY to the smallest cols and rows of its visible viewers
-   *  (unchanged while none is visible) and tells every viewer the size. */
-  const resize = (term: Term): void => {
-    let cols = Infinity
-    let rows = Infinity
-    for (const v of term.viewers.values()) {
-      if (!v.visible || !validSize(v.cols) || !validSize(v.rows)) continue
-      cols = Math.min(cols, v.cols)
-      rows = Math.min(rows, v.rows)
-    }
-    if (cols !== Infinity && (cols !== term.screen.cols || rows !== term.screen.rows)) {
-      term.screen.resize(cols, rows)
-      if (term.alive) {
-        try { term.pty.resize(cols, rows) } catch { /* pty gone */ }
-      }
-    }
+  /** Tells every viewer the PTY's size, each change once. */
+  const tellSize = (term: Term): void => {
     const told = `${term.screen.cols}x${term.screen.rows}`
     for (const v of term.viewers.values()) {
       if (v.told === told) continue
@@ -355,7 +340,6 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     term.viewers.delete(viewer.id)
     if (viewer.lagTimer) clearTimeout(viewer.lagTimer)
     setPaused(term, `viewer:${viewer.id}`, false)
-    resize(term)
     syncTimers()
     touch(term)
   }
@@ -666,15 +650,21 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       const term = get(params.id)
       const viewer = term.viewers.get(params.viewer)
       if (!viewer) return
-      if (validSize(params.cols) && validSize(params.rows)) {
-        viewer.cols = params.cols
-        viewer.rows = params.rows
-      }
       if (typeof params.visible === 'boolean' && params.visible !== viewer.visible) {
         viewer.visible = params.visible
         if (viewer.visible) resume(term)
       }
-      resize(term)
+    },
+
+    fit(params) {
+      const term = get(params.id)
+      if (!validSize(params.cols) || !validSize(params.rows)) throw new RpcError('rejected', 'Invalid terminal size')
+      if (!term.alive) return
+      if (params.cols !== term.screen.cols || params.rows !== term.screen.rows) {
+        term.screen.resize(params.cols, params.rows)
+        try { term.pty.resize(params.cols, params.rows) } catch { /* pty gone */ }
+      }
+      tellSize(term)
     },
 
     attach(params, sink) {
@@ -682,7 +672,6 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       const viewer: Viewer = {
         id: `v${++viewerSeq}`,
         sink,
-        ...(validSize(params.cols) && validSize(params.rows) ? { cols: params.cols, rows: params.rows } : {}),
         visible: params.visible !== false,
         told: '',
         decoder: new TextDecoder(),
@@ -692,7 +681,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       // screen comes.
       if (term.alive) {
         term.viewers.set(viewer.id, viewer)
-        resize(term)
+        tellSize(term)
       }
       // Screen, then what is written but not yet in it, then live output:
       // all synchronous, so nothing falls between.

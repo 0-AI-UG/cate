@@ -38,9 +38,7 @@ describe.skipIf(!live)('installed agent hook smoke', () => {
       try {
         await mkdir(cwd)
         await runLiveCli('git', ['init', '-q'], { cwd, env })
-        // Hermes installs a managed plugin into a disposable named profile.
-        // prepareWorkspace installs into the default profile; don't touch it.
-        if (agentId !== 'hermes') await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
+        await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
         launch = await configureHookCli(agentId, directory, cwd, env, provider)
         const terminalIds = [0, 1].map((index) => `smoke-${agentId}-${index}-${randomUUID()}`)
         const completed = new Set<string>()
@@ -93,10 +91,8 @@ describe.skipIf(!live)('installed agent hook smoke', () => {
         unsubscribe()
         hooks.dispose()
         await provider.close()
-        try { await launch?.close?.() } finally {
-          // Kiro's child can finish its last state write just after PTY exit.
-          await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
-        }
+        // Kiro's child can finish its last state write just after PTY exit.
+        await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
       }
     })
   }

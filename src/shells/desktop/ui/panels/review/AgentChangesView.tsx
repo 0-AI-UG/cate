@@ -3,13 +3,13 @@ import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as C
 import { LoadingState, Spinner, POPOVER_SURFACE, PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from '../../kernel/interaction'
 import { useDocument } from '../../client/document'
 import { panelDefinition } from '@client/host'
-import { AGENTS, agentDisplayName, type AgentChangedFile, type AgentChangesFilter } from '@services/agents/contract'
+import { AGENTS, agentDisplayName, type AgentChangedFile, type AgentId, type AgentChangesFilter } from '@services/agents/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { AgentChangesFilterPatch, RecordedFileSummary, ReviewDisplay, ReviewNote, ReviewNoteSeverity, ReviewSnapshot } from '@panels/review/contract'
 import { revealPanel } from '@client/host'
 import { pickReviewTerminal } from './parts/pickTerminal'
 import { ReviewToolbar } from './ReviewToolbar'
-import { AgentPickerPopover, ReviewActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
+import { AgentActionButton, ReviewDisplayOptions, ReviewFileFilter, ReviewRunStatus, ReviewStats, ToolbarButton } from './ReviewControls'
 import { RecordedDiffHunk, type NoteDraft } from './ReviewDiff'
 import { useAgentPicker, useReviewView, type ReviewSend } from './useReview'
 
@@ -27,17 +27,20 @@ function RecordedReviewButton({ workspaceId, panelId, send, disabled, busy }: {
   busy: boolean
 }) {
   const picker = useAgentPicker(send)
-  const content = useRef<HTMLDivElement>(null)
-  useDismissableLayer({ open: picker.open && !busy, contentRef: content, onDismiss: picker.close })
-  const launch = async () => {
-    if (!picker.selected) return
+  const launch = async (agentId: AgentId) => {
     const place = await pickReviewTerminal(workspaceId, panelId)
-    if (place && await send({ kind: 'reviewWithAgent', agentId: picker.selected, ...place })) picker.close()
+    if (place && await send({ kind: 'reviewWithAgent', agentId, ...place })) picker.close()
   }
-  return <div ref={content} className="relative">
-    <ReviewActionButton label="Review in terminal" disabled={disabled || busy} onClick={() => (picker.open ? picker.close() : picker.show())} />
-    {picker.open && <AgentPickerPopover action={{ kind: 'review' }} choices={picker.choices} selectedAgentId={picker.selected} busy={busy} onSelect={picker.select} onClose={() => !busy && picker.close()} onConfirm={() => void launch()} />}
-  </div>
+  return <AgentActionButton
+    action={{ kind: 'review' }}
+    label="Review in terminal"
+    disabled={disabled || busy}
+    busy={busy}
+    open={picker.open}
+    choices={picker.choices}
+    onOpenChange={(open) => (open ? picker.show() : picker.close())}
+    onPick={(agentId) => void launch(agentId)}
+  />
 }
 
 export default function AgentChangesView({ workspaceId, panelId, snapshot, send }: {
@@ -208,6 +211,7 @@ function RecordedFileBody({ send, file, display, notes, noteDraft, setNoteDraft,
   return <div ref={root} className={`font-mono text-[11px] leading-[1.45] ${display.wrap ? 'w-full min-w-0 whitespace-pre-wrap break-all' : 'w-max min-w-full whitespace-pre'}`}>
     {large && !allowLarge ? <button className="m-3 rounded bg-surface-2 px-3 py-2" onClick={() => setAllowLarge(true)}>Load large recorded diff</button>
       : failed ? <p className="px-3 py-2 text-red-400">Could not load this recorded edit.</p>
+      : !body && !visible ? <div className="h-20" />
       : !body ? <LoadingState label="Loading recorded diff" className="h-20" />
       : <>
         {file.coverage === 'unavailable' && <p className="px-3 py-2 text-muted">No patch was reported for this file.</p>}

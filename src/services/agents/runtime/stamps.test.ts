@@ -13,8 +13,7 @@ let pendingCwd: Array<(cwd: string | null) => void> = []
 let sent: Array<{ terminalId: string; session: TerminalResumeStamp | null }> = []
 let stampsUnderTest: ResumeStamps
 const ingestAgentSessionStamp = (_runtime: unknown, event: AgentHookEvent): void => stampsUnderTest.ingest(event)
-const clearAgentSessionStamp = (terminalId: string, endedAgentPid?: number, endedAgentStartedAt?: string): void =>
-  stampsUnderTest.clear(terminalId, endedAgentPid, endedAgentStartedAt)
+const clearAgentSessionStamp = (terminalId: string): void => stampsUnderTest.clear(terminalId)
 const runtime = null
 
 /** Resolve every in-flight getCwd and let the .then() callbacks run. */
@@ -90,43 +89,12 @@ describe('kiro resumability gating', () => {
   })
 })
 
-describe('hermes profile-aware resumability', () => {
-  it('waits for the first turn and persists the exact profile', () => {
-    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-start', 'id-1', '/w'), profile: 'work' })
-    expect(stamps(tid)).toEqual([])
-    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'id-1', '/w'), profile: 'work' })
-    expect(stamps(tid)).toEqual([{ agentId: 'hermes', sessionId: 'id-1', cwd: '/w', profile: 'work' }])
-  })
-
-  it('does not let an older finalize clear a newer profile session', () => {
-    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'new', '/w'), profile: 'work', sourcePid: 22 })
-    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-end', 'old', '/w'), profile: 'default', sourcePid: 11 })
-    expect(stamps(tid)).toEqual([{ agentId: 'hermes', sessionId: 'new', cwd: '/w', profile: 'work' }])
-  })
-
-  it('clears the old stamp when a replacement session starts, then rejects the old finalize', () => {
-    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'turn-start', 'old', '/w'), profile: 'default', sourcePid: 11 })
-    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-start', 'new', '/w'), profile: 'work', sourcePid: 22 })
-    ingestAgentSessionStamp(runtime, { ...ev(tid, 'hermes', 'session-end', 'old', '/w'), profile: 'default', sourcePid: 11 })
-    expect(stamps(tid)).toEqual([
-      { agentId: 'hermes', sessionId: 'old', cwd: '/w', profile: 'default' },
-      null,
-    ])
-  })
-
-  it('does not let an old presence falling edge clear a newer process stamp', () => {
-    ingestAgentSessionStamp(runtime, {
-      ...ev(tid, 'hermes', 'turn-start', 'old', '/w'),
-      profile: 'default', sourcePid: 11, sourceStartedAt: '100',
-    })
-    ingestAgentSessionStamp(runtime, {
-      ...ev(tid, 'hermes', 'turn-start', 'new', '/w'),
-      profile: 'work', sourcePid: 22, sourceStartedAt: '200',
-    })
-    clearAgentSessionStamp(tid, 11, '100')
-    expect(stamps(tid).at(-1)).toEqual({
-      agentId: 'hermes', sessionId: 'new', cwd: '/w', profile: 'work',
-    })
+describe('a replacement session', () => {
+  it('clears the old stamp when a new session starts without ending it', () => {
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'turn-start', 'old', '/w'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-start', 'new', '/w'))
+    ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-end', 'old', '/w'))
+    expect(stamps(tid)).toEqual([{ agentId: 'claude-code', sessionId: 'old', cwd: '/w' }, null])
   })
 })
 

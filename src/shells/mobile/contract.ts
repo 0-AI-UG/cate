@@ -13,6 +13,7 @@ import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
 import type { AgentId, AgentStatus, AgentStep, AgentTypeInfo } from '@services/agents/contract'
 import type { RelationKind } from '@workspace/document/contract'
+import type { Point } from '@workspace/canvas/contract'
 import type { RelationContextMode } from '@workspace/relations/contract'
 
 export interface MobileAppInfo {
@@ -191,8 +192,26 @@ export interface MobileRelation {
   /** Its words for its pair: its own label, else the kind's ("Reference",
    *  "Send findings to"). */
   label: string
+  /** Its own label, which stands in for its kind's words; null without. */
+  custom: string | null
+  /** How it is drawn on the canvas both its panels sit on; null when they
+   *  are on none together, or share a node. */
+  curve: MobileRelationCurve | null
   /** The meanings it can take, the recommended one first. */
   options: MobileRelationOption[]
+}
+
+/** A relation's curve (`panelConnectionCurve`, exactly as the desktop draws
+ *  it), in canvas units: from `start` through cubic segments, its chip at
+ *  `midpoint`. While a node is dragged the app bends the curve along with it
+ *  until the document has the node's new place. */
+export interface MobileRelationCurve {
+  canvasId: string
+  fromNodeId: string
+  toNodeId: string
+  start: Point
+  segments: Array<{ c1: Point; c2: Point; end: Point }>
+  midpoint: Point
 }
 
 /** A meaning a new relation can take, the recommended one first. */
@@ -281,6 +300,9 @@ export interface MobileCoreState {
   /** A workspace that must be trusted before it runs anything (9.2); the app
    *  asks and answers `workspaces.answerTrust`. Null when nothing asks. */
   trustPrompt: { workspaceId: string; label: string } | null
+  /** This device's library of custom relation labels, reused across
+   *  workspaces (`savedPanelRelationLabels`). */
+  savedRelationLabels: string[]
 }
 
 /** The answer to an agent or git action: ok, or what went wrong in words. */
@@ -330,15 +352,19 @@ export interface MobileFileMatch {
  *  (`cate.agent.types`). */
 export type MobileAgentChoice = AgentTypeInfo
 
-/** Where a new panel goes: on the canvas a canvas panel shows, centred on
- *  `point` (canvas coordinates) or, without one, where there is room; at
- *  `size`, else its type's default size. A create without a placement goes
- *  to the dock. */
+/** Where a new panel goes: on the canvas a canvas panel shows, exactly at
+ *  `spot` (a planned one, `canvas.plan`), else centred near `point` (canvas
+ *  coordinates) at its type's default size, else where there is room. A
+ *  create without a placement goes to the dock. */
 export interface MobilePlacement {
   canvasPanelId: string
   point?: { x: number; y: number }
-  size?: { width: number; height: number }
+  spot?: MobileCanvasRect
 }
+
+/** How a new panel gets its spot (`planPlacement`): straight to `place`, or
+ *  the person picks one of `pick`, best first. */
+export type MobilePlacementPlan = { place: MobileCanvasRect } | { pick: MobileCanvasRect[] }
 
 /** A rect in canvas coordinates: its top-left and size. */
 export interface MobileCanvasRect {
@@ -369,14 +395,13 @@ export interface MobileCoreMethods {
   'workspaces.forget': { params: { workspaceId: string }; result: null }
   /** Shows a terminal panel in a view the app names `terminalId`: the PTY's
    *  grid, screen and live output, as `terminal.event`s, following the panel
-   *  to each new PTY until `terminal.close`. `cols` x `rows` is the grid the
-   *  view holds, as for every viewer: the PTY takes the smallest cols and
-   *  rows of the visible viewers. */
-  'terminal.open': { params: { terminalId: string; workspaceId: string; panelId: string; cols: number; rows: number }; result: null }
+   *  to each new PTY until `terminal.close`. */
+  'terminal.open': { params: { terminalId: string; workspaceId: string; panelId: string }; result: null }
   /** Keystrokes, exactly as typed. */
   'terminal.input': { params: { terminalId: string; data: string }; result: null }
-  /** The grid the view holds changed. */
-  'terminal.resize': { params: { terminalId: string; cols: number; rows: number }; result: null }
+  /** Sizes the PTY to `cols` x `rows`, the grid the view holds, so it shows
+   *  it whole. The PTY's size changes only through a fit (from any client). */
+  'terminal.fit': { params: { terminalId: string; cols: number; rows: number }; result: null }
   'terminal.close': { params: { terminalId: string }; result: null }
   /** A link the person tapped in the terminal (an OSC 8 hyperlink's URI): a
    *  file opens in Cate, a web URL outside the app, except a loopback one,
@@ -479,8 +504,15 @@ export interface MobileCoreMethods {
   /** Connects two panels, or gives their relation a new meaning; false when
    *  the op failed. */
   'relations.connect': { params: { workspaceId: string; fromPanelId: string; toPanelId: string; kind: RelationKind }; result: boolean }
-  /** Gives a relation another meaning; its own label stays. */
+  /** Gives a relation another meaning, dropping its own label. */
   'relations.setKind': { params: { workspaceId: string; relationId: string; kind: RelationKind }; result: boolean }
+  /** Gives a relation words of its own, its kind kept; `remember` puts them
+   *  first in the library (new words, not a saved label picked). */
+  'relations.setLabel': { params: { workspaceId: string; relationId: string; label: string; remember: boolean }; result: boolean }
+  /** Renames a saved label in the library. */
+  'relations.renameLabel': { params: { label: string; to: string }; result: null }
+  /** Removes a saved label from the library; relations keep theirs. */
+  'relations.forgetLabel': { params: { label: string }; result: null }
   'relations.remove': { params: { workspaceId: string; relationId: string }; result: boolean }
   /** When the panel's prompts take its relations' context. */
   'relations.setContextMode': { params: { workspaceId: string; panelId: string; mode: RelationContextMode }; result: boolean }
@@ -505,12 +537,13 @@ export interface MobileCoreMethods {
   /** Moves a canvas node to `origin` (canvas coordinates), keeping its
    *  size; false when the op failed. */
   'canvas.moveNode': { params: { workspaceId: string; canvasId: string; nodeId: string; origin: { x: number; y: number } }; result: boolean }
-  /** Where a new panel of `type` could go on the canvas a canvas panel
-   *  shows, the desktop's recommended spots (`recommendPlacements`) for the
-   *  part of it on screen (`visible`), best first. */
-  'canvas.suggest': {
+  /** Where a new panel of `type` goes on the canvas a canvas panel shows,
+   *  planned as on every client (`planPlacement`) for the part of it on
+   *  screen (`visible`, empty when nothing is drawn). Null without that
+   *  canvas. */
+  'canvas.plan': {
     params: { workspaceId: string; canvasPanelId: string; type: string; visible: MobileCanvasRect }
-    result: MobileCanvasRect[]
+    result: MobilePlacementPlan | null
   }
 
   /** Keeps the runtime's machine awake for a while (`power.set`). */

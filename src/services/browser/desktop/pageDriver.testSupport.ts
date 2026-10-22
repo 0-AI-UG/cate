@@ -30,7 +30,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
   const events = new EventEmitter()
   const state = {
     nodes: [{ nodeId: 'button', backendDOMNodeId: 7, role: { value: 'button' }, name: { value: 'Save' } }] as Record<string, unknown>[],
-    viewport: { width: 800, height: 600, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 },
+    viewport: { width: 800, height: 600, deviceScaleFactor: 2, scrollX: 0, scrollY: 0, scrollWidth: 800, scrollHeight: 600 },
     checked: false, text: 'Busy', value: '',
     dom: {} as Parameters<typeof domSnapshot>[1],
   }

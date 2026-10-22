@@ -27,9 +27,10 @@ describe('Spinner', () => {
 
   it('owns the shared spin and reduced-motion treatment', () => {
     const view = render(<Spinner size={20} />)
-    const icon = view.querySelector('svg')
-    expect(icon?.classList.contains('animate-spin')).toBe(true)
-    expect(icon?.classList.contains('motion-reduce:animate-none')).toBe(true)
+    const spinning = view.querySelector('.animate-spin')
+    expect(spinning?.tagName).toBe('SPAN')
+    expect(spinning?.classList.contains('motion-reduce:animate-none')).toBe(true)
+    expect(spinning?.querySelector('svg')).not.toBeNull()
   })
 
   it('renders an accessible labelled loading state', () => {

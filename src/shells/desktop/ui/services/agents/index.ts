@@ -1,8 +1,10 @@
-// services/agents ui: agent logos, per-panel agent status selectors, the
+// services/agents ui: agent logos and marks, per-panel agent status selectors, the
 // status marks, the tab decorations and changes overlay, the changes pill, the hooks-off warning, the relation context transport, the agents over the new-terminal button and the
 // agents settings page and the usage overview.
 
 export { agentLogo } from './logos'
+export { AgentMark } from './AgentMark'
+export { AgentFlyout } from './AgentFlyout'
 export {
   agentPanelInfo,
   agentInfoByPanel,
@@ -16,7 +18,7 @@ export {
   useAgentPanelTitle,
   useAgentInfoByPanel,
 } from './useAgentPanels'
-export { AwaitingIndicator, RunningIndicator } from './indicators'
+export { AwaitingIndicator } from './indicators'
 export { useAgentTabDecorations, AgentChangesOverlay, AgentHooksOffOverlay } from './tabDecorations'
 export { AgentChangesPill } from './AgentChangesPill'
 export { agentContextPreview, useAgentContextTransport } from './contextTransport'

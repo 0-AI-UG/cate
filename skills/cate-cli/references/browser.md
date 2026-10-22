@@ -82,6 +82,15 @@ their landmarks; states appear only when they tell you something
 (`[checked]`, `[disabled]`, `[collapsed]`, `[focused]`). A frame's elements
 are listed under its `Iframe` line.
 
+A snapshot covers the whole page, not only what is on screen. `[offscreen]`
+marks elements outside the viewport: act on them by id anyway, since every
+action scrolls its element into view first. Never ask the user to scroll for
+you. When the page is taller or wider than the viewport, the observation says
+so (`Viewport 800x600 at 0,0 of a 800x2680 page (2080px below)`); use
+`cate browser scroll` only for content that is not in the snapshot yet, such
+as lazy-loaded or virtualized lists, then snapshot again. Screenshots and
+`[x,y]` points cover the viewport only: prefer ids.
+
 Ids stay the same for an element while the page keeps its document; after a
 navigation, use the ids of the new tree. A long tree (a big page after
 `goto`) prints its first part and saves the whole tree to a file whose path

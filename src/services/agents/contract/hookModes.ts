@@ -25,7 +25,7 @@ export function agentHooksEnabled(mode: AgentHookMode, inUse: boolean): boolean 
 
 /** THE 'auto' in-use signal, shared by hook injection and started-agent
  *  readiness: a launch as that agent, or its config folder in the checkout (or
- *  the base checkout). A profile-wide install (Hermes' plugin) is not use. */
+ *  the base checkout). */
 export function agentHookInUse(
   agentId: AgentId,
   signals: { folderPresent: boolean; launchedAgentId?: AgentId },

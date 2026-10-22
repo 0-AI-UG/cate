@@ -1,7 +1,7 @@
 // Worktree colors are theme palette keys (`green`, `brightCyan`); each client
 // maps a key to its active theme's terminal color.
 
-import { useSyncExternalStore, type CSSProperties } from 'react'
+import { useSyncExternalStore } from 'react'
 import { getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import type { Theme } from '@kernel/interaction/contract'
 import { WORKTREE_COLORS } from '@workspace/repository/contract'
@@ -38,11 +38,4 @@ export function useTheme(): Theme {
 
 export function useWorktreeColor(key: string | undefined): string | undefined {
   return worktreeColor(key, useTheme())
-}
-
-// Title-text styling for a panel that belongs to a worktree. The title is
-// tinted rather than the icon: the icon may be an agent logo (an <img>, which
-// ignores `color`). Without a color it returns undefined (the default color).
-export function worktreeTitleStyle(color: string | undefined): CSSProperties | undefined {
-  return color ? { color } : undefined
 }

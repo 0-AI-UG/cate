@@ -107,7 +107,7 @@ describe.skipIf(!live)('agent CLI terminal links', () => {
           await mkdir(path.join(cwd, path.dirname(FILE)), { recursive: true })
           await writeFile(path.join(cwd, FILE), 'export {}\n')
           await runLiveCli('git', ['init', '-q'], { cwd, env })
-          if (agentId !== 'hermes') await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
+          await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
           launch = await configureHookCli(agentId, directory, cwd, env, provider, PROMPT)
           let lastOutput = Date.now()
           await runLiveTui(command, launch.args, {
@@ -129,9 +129,7 @@ describe.skipIf(!live)('agent CLI terminal links', () => {
           terminal.dispose()
           hooks.dispose()
           await provider.close()
-          try { await launch?.close?.() } finally {
-            await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
-          }
+          await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
         }
       })
     }

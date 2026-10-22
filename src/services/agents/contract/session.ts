@@ -15,7 +15,6 @@ export interface AgentSession {
   /** Absolute path of the checkout the session runs in. */
   cwd: string
   worktreeId?: string
-  profile?: string
 }
 
 /** Whether relation context reaches an agent (a CLI without a prompt
@@ -58,7 +57,6 @@ export interface TerminalResumeStamp {
   agentId: AgentId
   sessionId: string
   cwd: string
-  profile?: string
 }
 
 
@@ -79,8 +77,8 @@ export function agentAttentionNotification(options: {
 export type TerminalActivity = { type: 'idle' } | { type: 'running'; processName: string }
 
 /** The agent CLI open in a terminal. An agent is open from launch, before its
- *  first prompt: either its hooks proved it (claude and cursor at launch,
- *  hermes when it loads Cate's plugin), or the foreground program is its
+ *  first prompt: either its hooks proved it (claude and cursor at launch),
+ *  or the foreground program is its
  *  command (codex, grok, opencode and kiro fire no hook until the first
  *  prompt). */
 export function openTerminalAgent(

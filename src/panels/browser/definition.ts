@@ -42,11 +42,12 @@ export default definePanel({
   describe: (record) => (typeof record.fields.url === 'string' ? record.fields.url : undefined),
   relation: {
     produces: 'findings',
-    targetOptions: (source) => source.role.execution
-      ? ['use', 'verify', 'context']
-      : source.role.produces === 'changes' || source.role.produces === 'notes'
-        ? [['verify', 'Verify in'], 'use', 'context']
-        : ['context', 'verify', 'use'],
+    targetOptions: {
+      execution: [['use', 'Work in'], ['verify', 'Test in'], ['context', 'Reference']],
+      changes: [['verify', 'Verify in'], ['use', 'Continue in'], ['context', 'Reference']],
+      findings: [['context', 'Compare with'], ['verify', 'Check against'], ['use', 'Continue in']],
+      notes: [['verify', 'Verify fixes in'], ['use', 'Reproduce in'], ['context', 'Reference']],
+    },
     instruction: (kind) => `${kind === 'verify' ? 'Verify with it' : kind === 'context' ? 'Use it as supporting context' : 'Use it'} through Cate browser automation; don't open another browser.`,
   },
 })

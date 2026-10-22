@@ -44,12 +44,6 @@ const fixtures: AgentLifecycleFixture[] = [
     turnEnd: { hookEventName: 'stop', sessionId: SESSION },
   },
   {
-    agentId: 'hermes',
-    sessionStart: { hook_event_name: 'on_session_start', session_id: SESSION, profile: 'default', platform: 'cli' },
-    turnStart: { hook_event_name: 'pre_llm_call', session_id: SESSION, profile: 'default', platform: 'cli' },
-    turnEnd: { hook_event_name: 'on_session_end', session_id: SESSION, profile: 'default', platform: 'cli' },
-  },
-  {
     agentId: 'opencode',
     sessionStart: { type: 'session.created', sessionID: SESSION },
     turnStart: { type: 'session.status', sessionID: SESSION, status: { type: 'busy' } },
@@ -89,13 +83,6 @@ const permissionFixtures: PermissionFixture[] = [
       hookEventName: 'notification',
       notificationType: 'permission_prompt',
       sessionId: SESSION,
-    },
-  },
-  {
-    agentId: 'hermes',
-    turnStart: { hook_event_name: 'pre_llm_call', session_id: SESSION, profile: 'default', platform: 'cli' },
-    permissionWait: {
-      hook_event_name: 'pre_approval_request', session_id: SESSION, profile: 'default', platform: 'cli', surface: 'cli',
     },
   },
   {
@@ -203,14 +190,11 @@ describe('coding-agent hook status integration', () => {
   it.each([
     { agentId: 'codex', hook_event_name: 'PermissionRequest' },
     { agentId: 'claude-code', hook_event_name: 'PermissionRequest' },
-    { agentId: 'hermes', hook_event_name: 'pre_approval_request', surface: 'smart' },
-    { agentId: 'hermes', hook_event_name: 'pre_approval_request', surface: 'transport:reviewer' },
-    { agentId: 'hermes', hook_event_name: 'pre_approval_request' },
-  ] as const)('$agentId ambiguous/automatic approvals never announce readiness ($surface)', (raw) => {
+  ] as const)('$agentId ambiguous/automatic approvals never announce readiness', (raw) => {
     const fixture = fixtures.find((f) => f.agentId === raw.agentId)!
     emit(raw.agentId, fixture.turnStart)
     for (let i = 0; i < 3; i++) {
-      emit(raw.agentId, { ...raw, session_id: SESSION, profile: 'default', platform: 'cli' })
+      emit(raw.agentId, { ...raw, session_id: SESSION })
       machine.notePresence(PTY, true, false, null)
       expect(state()).toBe('running')
       expect(machine.canReceivePrompt(PTY)).toBe(false)
@@ -223,18 +207,12 @@ describe('coding-agent hook status integration', () => {
     expect(attention).toHaveLength(1)
   })
 
-  it.each(['claude-code', 'hermes'] as const)('%s notifies only when a check escalates to a human', (agentId) => {
-    const extra = { session_id: SESSION, profile: 'default', platform: 'cli' }
+  it('claude-code notifies only when a check escalates to a human', () => {
+    const agentId = 'claude-code'
     emit(agentId, fixtures.find((f) => f.agentId === agentId)!.turnStart)
-    const check = agentId === 'claude-code'
-      ? { hook_event_name: 'PermissionRequest' }
-      : { hook_event_name: 'pre_approval_request', surface: 'smart' }
-    emit(agentId, { ...check, ...extra })
+    emit(agentId, { hook_event_name: 'PermissionRequest', session_id: SESSION })
     expect(attention).toEqual([])
-    const human = agentId === 'claude-code'
-      ? { hook_event_name: 'Notification', notification_type: 'permission_prompt' }
-      : { hook_event_name: 'pre_approval_request', surface: 'cli' }
-    emit(agentId, { ...human, ...extra })
+    emit(agentId, { hook_event_name: 'Notification', notification_type: 'permission_prompt', session_id: SESSION })
     expect(state()).toBe('waitingForInput')
     expect(machine.canReceivePrompt(PTY)).toBe(false)
     expect(attention).toHaveLength(1)

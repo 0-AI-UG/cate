@@ -11,6 +11,7 @@ import { applyOp, type WorkspaceDocument } from '@workspace/document/contract'
 import { canvasViewFor, resetCanvasViews, setCanvasAnimations } from './registry'
 import { installCanvasDrag, type CanvasDragPort, type CanvasDragState, type CanvasNodeDragSource, type CanvasTabDragSource } from './ports'
 import { canvasDocument } from './testing.canvas'
+import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { openTestDocument, testRelationHost } from './testing'
 import { focusedNodeId } from './selection'
 import type { CanvasViewStore } from './store'
@@ -83,7 +84,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   setCanvasAnimations(false)
   installCanvasSlots({ NodeDock: FakeDock })
-  relations = testRelationHost()
+  relations = testRelationHost({ definitions: [...PANEL_DEFINITIONS] })
   drag = fakeDrag()
   installCanvasDrag(drag)
   container = document.createElement('div')

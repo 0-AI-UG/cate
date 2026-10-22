@@ -11,7 +11,7 @@ import {
   wouldCreatePanelRelationCycle,
 } from '@workspace/relations/contract'
 import { addRelation } from './actions'
-import { relationRoleOf, relationUiHost, useRelationCanvas } from './host'
+import { relatable, relationRoleOf, relationUiHost, useRelationCanvas } from './host'
 import { relationUiPort } from './port'
 import { useRelationUi } from './state'
 
@@ -53,9 +53,10 @@ interface CreateMenuItem {
   icon: string
 }
 
-/** Types offered for a new linked panel: those people create on a canvas. */
+/** Types offered for a new linked panel: those people create on a canvas
+ *  that take part in relations. */
 function createMenuItems(): CreateMenuItem[] {
-  return relationUiHost().creatable().map((d) => ({ type: d.type, label: d.label, icon: d.icon }))
+  return relationUiHost().creatable().filter((d) => d.relation).map((d) => ({ type: d.type, label: d.label, icon: d.icon }))
 }
 
 function portsForRect(rect: DOMRect): Port[] {
@@ -67,13 +68,14 @@ function portsForRect(rect: DOMRect): Port[] {
   ]
 }
 
-function nearestTarget(sourcePanelId: string, x: number, y: number, canvasRoot: HTMLElement | null): SnapTarget | null {
+function nearestTarget(workspaceId: string, sourcePanelId: string, x: number, y: number, canvasRoot: HTMLElement | null): SnapTarget | null {
+  const panels = relationUiHost().document(workspaceId)?.getSnapshot().panels ?? {}
   let nearest: SnapTarget | null = null
   let nearestDistance = SNAP_DISTANCE
   for (const node of document.querySelectorAll<HTMLElement>('[data-node-id][data-active-panel-id]')) {
     if (canvasRoot && node.closest('[data-canvas-container]') !== canvasRoot) continue
     const panelId = node.dataset.activePanelId
-    if (!panelId || panelId === sourcePanelId) continue
+    if (!panelId || panelId === sourcePanelId || !panels[panelId] || !relatable(panels[panelId].type)) continue
     const ports = portsForRect(node.getBoundingClientRect())
     for (const port of ports) {
       const distance = Math.hypot(x - port.x, y - port.y)
@@ -112,7 +114,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
   const update = (x: number, y: number) => {
     setDrag((current) => {
       if (!current) return null
-      const target = nearestTarget(sourcePanelId, x, y, current.canvasRoot)
+      const target = nearestTarget(workspaceId, sourcePanelId, x, y, current.canvasRoot)
       return { ...current, end: target ? { x: target.x, y: target.y } : { x, y }, target }
     })
   }
@@ -120,7 +122,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
   const finish = async (x: number, y: number) => {
     const current = drag
     const target = current
-      ? nearestTarget(sourcePanelId, x, y, current.canvasRoot) ?? current.target
+      ? nearestTarget(workspaceId, sourcePanelId, x, y, current.canvasRoot) ?? current.target
       : null
     setDrag(null)
     if (!current) return

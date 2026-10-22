@@ -145,6 +145,5 @@ export interface AgentSessionLocator {
   agentId: AgentId
   sessionId: string
   cwd?: string
-  profile?: string
   transcriptPath?: string
 }

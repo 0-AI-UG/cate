@@ -329,7 +329,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     <main className="relative h-full min-w-0 flex-1 flex flex-col bg-canvas-bg text-primary pointer-events-auto">
       <LeftSidebarReopen />
       <OverlayHeader title="Settings">
-        {desktop && (
+        {desktop && scope === 'client' && (
           <button
             onClick={() => void openSettingsFile()}
             title="Open this device's settings.json"

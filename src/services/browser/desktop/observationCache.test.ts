@@ -5,7 +5,7 @@ import { BrowserObservationCache } from './observationCache'
 const observation = (id: string): BrowserObservation => ({
   panelId: 'p', tabId: 't', observationId: id, documentId: 'd', kind: 'ax',
   url: 'https://example.test', title: 'Example', state: 'diff', diff: true,
-  viewport: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0 },
+  viewport: { width: 800, height: 600, zoom: 1, deviceScaleFactor: 2, scrollX: 0, scrollY: 0, scrollWidth: 800, scrollHeight: 600 },
   elements: [{ id: 7, role: 'textbox', name: 'Name', value: 'large value', states: { focused: true } }],
   screenshot: { mimeType: 'image/jpeg', data: 'large image', width: 800, height: 600 },
 })

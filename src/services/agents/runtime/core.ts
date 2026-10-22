@@ -60,7 +60,7 @@ export interface AgentsCoreDeps {
   log?: Logger
   /** Tests: the host home dir and hook internals. */
   homeDir?: string
-  hookOptions?: Partial<Pick<AgentHooksDeps, 'nodePath' | 'interruptPollMs' | 'sessionStores' | 'titleRetryDelaysMs' | 'externalPlugins'>>
+  hookOptions?: Partial<Pick<AgentHooksDeps, 'nodePath' | 'interruptPollMs' | 'sessionStores' | 'titleRetryDelaysMs'>>
   isAlive?: (pid: number) => boolean
 }
 
@@ -116,8 +116,8 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
     changesDir: path.join(deps.agentsDir, 'changes'),
     homeDir: deps.homeDir,
     ...deps.hookOptions,
-    onPost: ({ terminalId, agentId, pid, sourceStartedAt }) =>
-      presence.notePost(terminalId, agentId, pid, sourceStartedAt),
+    onPost: ({ terminalId, agentId, pid }) =>
+      presence.notePost(terminalId, agentId, pid),
     onChangeError: (error) => deps.log?.warn('could not save a reported agent edit', error),
   })
   const notifications = { publish: (event: NotificationEvent) => deps.notify(event) }
@@ -147,7 +147,6 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
     conversations,
     resolveCheckout: (cwd) => deps.resolveCheckout(cwd),
     async inspectHooks(cwd) {
-      // Inspection runs the Hermes CLI for its plugin state.
       deps.trust.requireTrusted()
       return hooks.inspectWorkspace(await deps.resolveCheckout(cwd), { approvals: true })
     },

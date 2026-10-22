@@ -38,7 +38,6 @@ function relocatedStore(agentId: AgentId, env: Record<string, string>): [string,
     // Kiro V3 keeps them under KIRO_HOME; earlier versions under HOME.
     case 'kiro': return ['.kiro/sessions', existsSync(path.join(env.KIRO_HOME, 'sessions')) ? path.join(env.KIRO_HOME, 'sessions') : path.join(env.HOME, '.kiro', 'sessions')]
     case 'opencode': return ['.local/share/opencode', path.join(env.XDG_DATA_HOME, 'opencode')]
-    case 'hermes': return null
   }
 }
 
@@ -57,7 +56,7 @@ async function readSession(agentId: AgentId, env: Record<string, string>, direct
     await symlink(relocated[1], target).catch(() => {})
   }
   return AGENT_SESSION_STORES[agentId].conversation({
-    session: { agentId, sessionId: session.sessionId!, cwd: session.cwd, profile: session.profile },
+    session: { agentId, sessionId: session.sessionId!, cwd: session.cwd },
     homeDir,
   })
 }
@@ -102,7 +101,6 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           codex: { name: 'apply_patch', arguments: '*** Begin Patch\n*** Add File: created.txt\n+after\n*** End Patch' },
           grok: { name: 'write', arguments: { file_path: path.join(cwd, 'created.txt'), content: 'after\n' } },
           opencode: { name: 'write', arguments: { filePath: path.join(cwd, 'created.txt'), content: 'after\n' } },
-          hermes: { name: 'write_file', arguments: { path: path.join(cwd, 'created.txt'), content: 'after\n' } },
           kiro: { name: 'fs_write', arguments: { path: path.join(cwd, 'created.txt'), text: 'after\n' } },
           cursor: { name: 'Write', arguments: { path: path.join(cwd, 'created.txt'), text: 'after\n' } },
         }[agentId]
@@ -114,7 +112,6 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           codex: { name: 'exec_command', arguments: { cmd: command, sandbox_permissions: 'require_escalated', justification: 'Run the disposable lifecycle fixture command?' } },
           grok: { name: 'run_terminal_command', arguments: { command, description: 'Lifecycle fixture command' } },
           opencode: { name: 'bash', arguments: { command, description: 'Lifecycle fixture command' } },
-          hermes: { name: 'terminal', arguments: { command, workdir: cwd } },
           kiro: { name: 'execute_bash', arguments: { command } },
           cursor: { name: 'Shell', arguments: { command } },
         }[agentId]
@@ -122,7 +119,6 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const provider = await createHookMockProvider({ reply: (input, protocol) => {
           const data = JSON.stringify(input)
           if (scenario === 'automatic-approval' && agentId === 'codex' && data.includes('risk_level')) return { type: 'text', text: JSON.stringify({ risk_level: 'low', user_authorization: 'high', outcome: 'allow', rationale: 'Only the disposable fixture file is removed.' }) }
-          if (scenario === 'automatic-approval' && agentId === 'hermes' && data.includes('APPROVE, DENY, or ESCALATE')) return { type: 'text', text: 'APPROVE' }
           if (['resume', 'session-end', 'session-reset'].includes(scenario)) return { type: 'text', text: followupAnswer }
           if (scenario === 'interrupt') return { type: 'text', text: followupAnswer, hold: !recovering && (data.includes('CATE_LIFECYCLE') || protocol.endsWith('/RunSSE')) }
           if (scenario === 'provider-failure' && data.includes('CATE_LIFECYCLE')) return { type: 'error' }
@@ -150,20 +146,15 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           await writeFile(path.join(cwd, 'permission-target.txt'), 'disposable\n')
           await writeFile(path.join(directory, 'permission-target.txt'), 'disposable\n')
           await runLiveCli('git', ['init', '-q'], { cwd, env })
-          if (agentId !== 'hermes') await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
+          await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
           launch = await configureHookCli(agentId, directory, cwd, env, provider, 'CATE_LIFECYCLE: edit target.txt then finish.')
           // Claude's default permission mode changed to auto (2.1.296), whose
           // classifier answers prompts itself: name the mode each scenario needs.
           if (agentId === 'claude-code') launch.args.unshift('--permission-mode', scenario === 'automatic-denial' ? 'auto' : 'default')
           if (scenario === 'automatic-denial') launch.args[3] = 'sonnet'
-          if (scenario === 'automatic-approval') {
-            if (agentId === 'codex') {
-              const configPath = path.join(env.CODEX_HOME, 'config.toml')
-              await writeFile(configPath, 'approvals_reviewer = "auto_review"\n' + await readFile(configPath, 'utf8'))
-            } else {
-              const config = await runLiveCli('hermes', [...launch.args.slice(0, 2), 'config', 'path'], { cwd, env })
-              await writeFile(config.stdout.trim(), '\napprovals:\n  mode: smart\n', { flag: 'a' })
-            }
+          if (scenario === 'automatic-approval' && agentId === 'codex') {
+            const configPath = path.join(env.CODEX_HOME, 'config.toml')
+            await writeFile(configPath, 'approvals_reviewer = "auto_review"\n' + await readFile(configPath, 'utf8'))
           }
           if (agentId === 'opencode' && scenario !== 'edit') {
             const configPath = path.join(cwd, 'opencode.json')
@@ -194,11 +185,10 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 if (Date.now() - billingNoticeAt > 1500) { billingNoticeAcknowledged = true; return '\r' }
               }
               if (scenario === 'session-end' || scenario === 'session-reset') {
-                if (agentId === 'hermes' && scenario === 'session-reset' && !approved && screen.includes('Approve Once') && screen.includes('destroys conversation state')) { approved = true; return '\r' }
                 if (!sessionReadyAt && events.some((event) => event.kind === 'turn-end') && screen.replace(/\s/g, '').includes(provider.answer)) sessionReadyAt = Date.now()
                 if (!sessionCommandAt && sessionReadyAt && Date.now() - sessionReadyAt > 1500) {
                   sessionCommandAt = Date.now()
-                  return scenario === 'session-reset' ? agentId === 'hermes' ? '/new' : '/clear' : '/exit'
+                  return scenario === 'session-reset' ? '/clear' : '/exit'
                 }
                 if (sessionCommandAt && !sessionCommandSent && Date.now() - sessionCommandAt > 500) { sessionCommandSent = true; return '\r' }
                 return undefined
@@ -237,7 +227,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 // the number it shows.
                 const claudeNo = screen.match(/(\d)\.\s+No\b/)?.[1]
                 const keys = scenario === 'permission-deny'
-                  ? agentId === 'grok' ? '4\r' : agentId === 'hermes' ? '\x1b[B\x1b[B\x1b[B\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r'
+                  ? agentId === 'grok' ? '4\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r'
                     : agentId === 'claude-code' && claudeNo ? claudeNo : '\x1b[B\x1b[B\r'
                   : agentId === 'grok' ? '3\r' : '\r'
                 if (keys.length > 1) {
@@ -277,8 +267,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             expect(nativeHooks, `missing native hook: ${name}`).toContain(name)
             const expected = NATIVE_HOOK_KINDS[name]
             if (expected === 'stored-edit') continue
-            const kind = expected === 'approval-surface' ? scenario === 'automatic-approval' ? 'permission-check' : 'permission-wait' : expected
-            expect(events.some((event) => event.kind === kind && (event.raw.hook_event_name ?? event.raw.hookEventName ?? event.raw.type) === name), `Cate normalized ${name} as ${kind}`).toBe(true)
+            expect(events.some((event) => event.kind === expected && (event.raw.hook_event_name ?? event.raw.hookEventName ?? event.raw.type) === name), `Cate normalized ${name} as ${expected}`).toBe(true)
           }
           if (scenario === 'interrupt') {
             expect(events.some((event) => event.kind === 'turn-end'), 'native cancellation or runtime interrupt recovery').toBe(true)
@@ -290,11 +279,10 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           if (scenario === 'resume') {
             const session = events.find((event) => event.sessionId)?.sessionId
             expect(session).toBeTruthy()
-            const resumeArgs = AGENT_DEFS[agentId].resume.args!(session!, { profile: events.find((event) => event.profile)?.profile })!
+            const resumeArgs = AGENT_DEFS[agentId].resume.args!(session!)!
             const commonArgs = launch.args.slice(0, -1)
             let args: string[]
             if (agentId === 'codex' || agentId === 'kiro') args = [...resumeArgs, 'CATE_RESUMED']
-            else if (agentId === 'hermes') args = [...resumeArgs, '--cli', '--provider', 'custom', '--model', 'cate-mock', '--query', 'CATE_RESUMED']
             else if (agentId === 'opencode') args = [...commonArgs.slice(0, -1), ...resumeArgs]
             else args = [...commonArgs, ...resumeArgs, 'CATE_RESUMED']
             const boundary = events.length
@@ -389,7 +377,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         } finally {
           unsubscribe(); offSteps(); hooks.dispose()
           proxy.closeAllConnections(); await new Promise<void>((resolve) => proxy.close(() => resolve()))
-          await provider.close(); await launch?.close?.()
+          await provider.close()
           await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
         }
       })

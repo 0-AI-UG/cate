@@ -55,6 +55,13 @@ it('rejects coordinate actions after viewport changes before dispatching input',
   expect(contents.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
 })
 
+it('keeps coordinates valid while the page grows', async () => {
+  const { observe, execute, state } = await setupGuest()
+  const observation = await observe(); state.viewport.scrollHeight = 2400
+  expect(await execute('click', { target: [20, 20], observationId: observation.observationId }))
+    .toMatchObject({ result: { action: { status: 'dispatched' }, observation: { viewport: { scrollHeight: 2400 } } } })
+})
+
 it('keeps cross-origin frame IDs bound to their CDP session', async () => {
   const { observe, execute, events, contents } = await setupGuest(async (method, params, sessionId) => {
     if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main' }, childFrames: [{ frame: { id: 'cross', parentId: 'main' } }] } }

@@ -174,60 +174,36 @@ describe('terminal service', () => {
     vb.binding.dispose()
   })
 
-  it('sizes the PTY to the smallest visible viewer, and tells every viewer', async () => {
+  it('sizes the PTY only on a fit, and tells every viewer', async () => {
     const { ptys, connect } = setup()
     const a = await connect()
     const b = await connect()
     const { id } = await a.spawn({ cols: 80, rows: 24 })
     const va = await viewer(a, id, 100, 30)
-    // The first viewer has the size from the start.
-    await until(() => ptys[0].sizes.at(-1)?.[0] === 100)
     let size = { cols: 0, rows: 0 }
     const termB = new Terminal({ cols: 120, rows: 20, allowProposedApi: true })
     const vb = bindTerminal({ terminal: termB, process: b, id, onSize: (next) => { size = next } })
-    // Cols and rows each take the smallest.
-    await until(() => ptys[0].sizes.at(-1)?.[1] === 20)
-    expect(ptys[0].sizes.at(-1)).toEqual([100, 20])
-    await until(() => size.rows === 20)
-    expect(size).toEqual({ cols: 100, rows: 20 })
-    // Shrinking a viewer shrinks the PTY; growing it gives back up to the other's.
-    va.term.resize(90, 30)
-    await until(() => ptys[0].sizes.at(-1)?.[0] === 90)
-    expect(ptys[0].sizes.at(-1)).toEqual([90, 20])
-    va.term.resize(150, 50)
-    await until(() => ptys[0].sizes.at(-1)?.[0] === 120)
-    expect(ptys[0].sizes.at(-1)).toEqual([120, 20])
-    // A hidden viewer does not count.
-    vb.setVisible(false)
-    await until(() => ptys[0].sizes.at(-1)?.[1] === 50)
-    expect(ptys[0].sizes.at(-1)).toEqual([150, 50])
-    await until(() => size.cols === 150)
-    vb.setVisible(true)
-    await until(() => ptys[0].sizes.at(-1)?.[1] === 20)
-    // A viewer leaving gives its share back.
-    vb.dispose()
-    await until(() => ptys[0].sizes.at(-1)?.[1] === 50)
-    va.binding.dispose()
-  })
-
-  it('reports a view size of its own, apart from its terminal', async () => {
-    const { ptys, connect } = setup()
-    const a = await connect()
-    const { id } = await a.spawn({ cols: 80, rows: 24 })
-    let own = { cols: 100, rows: 30 }
-    const term = new Terminal({ cols: 80, rows: 24, allowProposedApi: true })
-    const binding = bindTerminal({
-      terminal: term, process: a, id, size: () => own,
-      onSize: ({ cols, rows }) => term.resize(cols, rows),
-    })
-    // The PTY takes the size it reports, and its terminal takes the PTY's.
-    await until(() => term.cols === 100)
+    // Attaching keeps the PTY's grid, whatever the viewer's.
+    await until(() => size.cols === 80)
+    expect(size).toEqual({ cols: 80, rows: 24 })
+    expect(ptys[0].sizes).toEqual([])
+    // A fit from any viewer gives the PTY its grid, whole.
+    va.binding.fit({ cols: 100, rows: 30 })
+    await until(() => size.cols === 100)
     expect(ptys[0].sizes.at(-1)).toEqual([100, 30])
-    own = { cols: 60, rows: 20 }
-    binding.resized()
-    await until(() => term.cols === 60)
+    expect(size).toEqual({ cols: 100, rows: 30 })
+    vb.fit({ cols: 60, rows: 20 })
+    await until(() => ptys[0].sizes.at(-1)?.[0] === 60)
     expect(ptys[0].sizes.at(-1)).toEqual([60, 20])
-    binding.dispose()
+    // Hiding or leaving resizes nothing.
+    const fits = ptys[0].sizes.length
+    vb.setVisible(false)
+    vb.dispose()
+    va.binding.fit({ cols: 90, rows: 25 })
+    await until(() => ptys[0].sizes.at(-1)?.[0] === 90)
+    expect(ptys[0].sizes.length).toBe(fits + 1)
+    await expect(a.fit({ id, cols: 0, rows: 25 })).rejects.toThrow()
+    va.binding.dispose()
   })
 
   it('applies env contributors at spawn, including the cate CLI', async () => {

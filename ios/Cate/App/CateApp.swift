@@ -90,7 +90,7 @@ extension View {
             .navigationDestination(for: AgentRoute.self) { AgentChatView(workspaceId: $0.workspaceId, panelId: $0.panelId) }
             .navigationDestination(for: NewAgentRoute.self) { AgentChatView(workspaceId: $0.workspaceId, panelId: nil, placement: $0.placement) }
             .navigationDestination(for: AgentsRoute.self) { AgentsView(workspaceId: $0.workspaceId) }
-            .navigationDestination(for: WorkspaceInfoRoute.self) { WorkspaceInfoView(workspaceId: $0.workspaceId) }
+            .navigationDestination(for: SettingsRoute.self) { SettingsView(workspaceId: $0.workspaceId) }
     }
 }
 

@@ -123,40 +123,11 @@ describe('notePost → presenceFor', () => {
     expect(tracker.presenceFor(T, both)).toEqual({ agentId: 'codex', agentPresent: true })
   })
 
-  test('Hermes uses its authenticated in-process pid and rejects an older generation', async () => {
-    const processes = tree([[90, 10, 'python3'], [91, 10, 'python3']])
-    const { tracker } = makeTracker(processes)
-    await tracker.notePost(T, 'hermes', 90, '100')
-    expect(tracker.presenceFor(T, processes)).toEqual({ agentId: 'hermes', agentPresent: true })
-    await tracker.notePost(T, 'hermes', 91, '200')
-    await tracker.notePost(T, 'hermes', 90, '100')
-    const onlyNew = tree([[91, 10, 'python3']])
-    expect(tracker.presenceFor(T, onlyNew)).toEqual({ agentId: 'hermes', agentPresent: true })
-  })
-
-  test('a slower old Hermes lookup cannot overwrite a newer generation', async () => {
-    const oldTree = tree([[90, 10, 'python3']])
-    const newTree = tree([[91, 10, 'python3']])
-    let resolveOld!: (value: ProcTree) => void
-    const oldSnapshot = new Promise<ProcTree>((resolve) => { resolveOld = resolve })
-    const snapshot = vi.fn()
-      .mockReturnValueOnce(oldSnapshot)
-      .mockResolvedValueOnce(newTree)
-    const tracker = createAgentPresenceTracker({ snapshot, isAlive: () => true })
-
-    const oldPost = tracker.notePost(T, 'hermes', 90, '100')
-    await tracker.notePost(T, 'hermes', 91, '200')
-    resolveOld(oldTree)
-    await oldPost
-
-    expect(tracker.presenceFor(T, newTree)).toEqual({ agentId: 'hermes', agentPresent: true })
-  })
-
   test('a process missing from a stale snapshot remains present when it is alive', async () => {
-    const processes = tree([[90, 10, 'python3']])
+    const processes = tree([[10, 1, 'zsh'], [40, 10, 'claude'], [41, 40, 'sh']])
     const { tracker } = makeTracker(processes, { alive: () => true })
-    await tracker.notePost(T, 'hermes', 90, '100')
-    expect(tracker.presenceFor(T, tree([]))).toEqual({ agentId: 'hermes', agentPresent: true })
+    await tracker.notePost(T, 'claude-code', 41)
+    expect(tracker.presenceFor(T, tree([]))).toEqual({ agentId: 'claude-code', agentPresent: true })
   })
 
   test('a cyclic parent chain terminates', async () => {

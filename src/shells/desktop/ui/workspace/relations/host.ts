@@ -6,7 +6,7 @@
 import { createContext, createElement, useCallback, useContext, useSyncExternalStore, type ReactNode } from 'react'
 import type { Point, Size } from '@workspace/canvas/contract'
 import type { DocBatch, DocChange, PlaceTarget, WorkspaceDocument } from '@workspace/document/contract'
-import type { RelationRole } from '@workspace/relations/contract'
+import { takesPartInRelations, type RelationRole } from '@workspace/relations/contract'
 
 export interface RelationDocument {
   getSnapshot(): WorkspaceDocument
@@ -79,6 +79,12 @@ function subscribeHost(listener: () => void): () => void {
 /** A panel type's relation role, from its definition. */
 export function relationRoleOf(type: string): RelationRole | undefined {
   return host.definitions().find((definition) => definition.type === type)?.relation
+}
+
+/** Whether panels of a type take part in relations: only those get a
+ *  handle, "Connect to…" or a relation's end. */
+export function relatable(type: string): boolean {
+  return takesPartInRelations(type, relationRoleOf)
 }
 
 export function relationsEnabled(workspaceId: string): boolean {

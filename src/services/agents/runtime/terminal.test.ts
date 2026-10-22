@@ -350,10 +350,6 @@ const TOOL_POSTS: Record<AgentId, { edit: (file: string) => Record<string, unkno
     edit: (file) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'e', toolName: 'write', toolInput: { file_path: file, content: 'after\n' }, toolResponse: {} }),
     shell: (command) => ({ hookEventName: 'post_tool_use', sessionId: 's', toolUseId: 'b', toolName: 'run_terminal_command', toolInput: { command, description: 'Run it' }, toolResponse: {} }),
   },
-  hermes: {
-    edit: (file) => ({ hook_event_name: 'post_tool_call', session_id: 's', tool_call_id: 'e', tool_name: 'write_file', args: { path: file, content: 'after\n' }, result: '{}', status: 'completed', platform: 'cli' }),
-    shell: (command) => ({ hook_event_name: 'post_tool_call', session_id: 's', tool_call_id: 'b', tool_name: 'terminal', args: { command, workdir: '.' }, result: '{}', status: 'completed', platform: 'cli' }),
-  },
   kiro: {
     edit: (file) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'e', tool_name: 'fs_write', tool_input: { path: file, text: 'after\n' }, tool_response: {} }),
     shell: (command) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'b', tool_name: 'execute_bash', tool_input: { command }, tool_response: {} }),
@@ -386,23 +382,9 @@ describe('terminal agents steps', () => {
     const file = path.join(fs.realpathSync(root), 'failed.txt')
     // Each CLI's own failure spelling, where it has one.
     await post(env, 'claude-code', { ...TOOL_POSTS['claude-code'].edit(file), hook_event_name: 'PostToolUseFailure', error: 'denied by the file system' })
-    await post(env, 'hermes', { ...TOOL_POSTS.hermes.edit(file), status: 'failed' })
     await post(env, 'kiro', { ...TOOL_POSTS.kiro.edit(file), tool_response: { is_error: true } })
-    expect(steps.map((step) => step.subject)).toEqual(['failed.txt', 'failed.txt', 'failed.txt'])
+    expect(steps.map((step) => step.subject)).toEqual(['failed.txt', 'failed.txt'])
     await expect(agents.changes(root)).resolves.toMatchObject({ records: [] })
-  })
-
-  it('a command the person refused is no step, one that failed is', async () => {
-    const steps: AgentStep[] = []
-    agentTerminals.onStep((_panelId, step) => steps.push(step))
-    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
-    // Hermes 0.21 reports both through post_tool_call (captured live).
-    const hermes = (command: string, result: Record<string, unknown>) => ({
-      ...TOOL_POSTS.hermes.shell(command), status: 'error', error_type: 'tool_error', result: JSON.stringify(result),
-    })
-    await post(env, 'hermes', hermes('rm -rf -- target.txt', { output: '', exit_code: -1, error: 'BLOCKED: User denied this command.', status: 'blocked' }))
-    await post(env, 'hermes', hermes('exit 7', { output: '', exit_code: 7, error: null }))
-    expect(steps.map((step) => step.subject)).toEqual(['exit 7'])
   })
 
   it('a post for another terminal, or without a valid token, is no step', async () => {
@@ -483,7 +465,6 @@ describe('terminal agentTerminals input and hook ordering', () => {
     { agentId: 'codex', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
     { agentId: 'claude-code', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
     { agentId: 'grok', start: { hookEventName: 'user_prompt_submit' }, wait: { hookEventName: 'notification', notificationType: 'permission_prompt' } },
-    { agentId: 'hermes', start: { hook_event_name: 'pre_llm_call', platform: 'cli' }, wait: { hook_event_name: 'pre_approval_request', platform: 'cli', surface: 'cli' } },
     { agentId: 'opencode', start: { type: 'session.status', status: { type: 'busy' } }, wait: { type: 'permission.asked' } },
     // These CLIs have no permission-wait hook. Input must preserve their running state.
     { agentId: 'cursor', start: { hook_event_name: 'beforeSubmitPrompt' }, wait: null },

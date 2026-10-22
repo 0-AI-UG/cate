@@ -17,7 +17,7 @@ import {
   findFreePosition,
   findNodeInDirection,
   nudgeToFree,
-  recommendPlacements,
+  planPlacement,
   sameRect,
   stackRects,
   tidyGridRects,
@@ -25,6 +25,7 @@ import {
   type Direction,
   type NodeRect,
   type PlacementCandidate,
+  type PlacementPlan,
   type Point,
   type Rect,
   type Size,
@@ -99,6 +100,9 @@ export interface PanelTargetRequest {
   onSelected?: (choice: CanvasPanelTargetChoice) => void
   onCancelled: () => void
   size?: Size
+  /** The person picks among spots when there is a choice (default true);
+   *  off, a new panel goes to the next free spot. */
+  pick?: boolean
 }
 
 export interface PendingPanelTarget {
@@ -448,15 +452,10 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
     }
 
     // --- Panel target helpers ---
-    const computeCandidates = (size: Size): PlacementCandidate[] => {
+    const planFor = (size: Size, pick?: boolean): PlacementPlan => {
       const s = get()
-      return recommendPlacements(
-        liveBoxes(),
-        focusedNodeId(s),
-        size,
-        { offset: s.viewportOffset, zoom: s.zoomLevel, containerSize: s.containerSize },
-        pointer,
-      )
+      const viewport = { offset: s.viewportOffset, zoom: s.zoomLevel, containerSize: s.containerSize }
+      return planPlacement(liveBoxes(), size, viewport, { focusedNodeId: focusedNodeId(s), anchor: pointer, pick })
     }
     const existingRects = (pending: PendingPanelTarget): Rect[] => {
       const { nodes } = get()
@@ -487,9 +486,8 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
       pending.onSelected?.({ kind: 'new', point, size })
       return null
     }
-    const beginTarget = (request: PanelTargetRequest & { size: Size }): boolean => {
+    const beginTarget = (request: PanelTargetRequest & { size: Size }, candidates: PlacementCandidate[]): boolean => {
       const s = get()
-      const candidates = request.availability !== 'existing' ? computeCandidates(request.size) : []
       const nodes = liveNodes()
       const existing = request.availability !== 'new'
         ? request.existing.flatMap((c) => {
@@ -958,7 +956,8 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
       refreshPlacement() {
         const pending = get().pendingPanelTarget
         if (!pending || pending.freeArmed) return
-        const candidates = pending.availability === 'existing' ? [] : computeCandidates(pending.size)
+        const plan = pending.availability === 'existing' ? null : planFor(pending.size)
+        const candidates = plan?.kind === 'pick' ? plan.candidates : []
         if (candidates.length === 0 && pending.existing.length === 0) return
         const camera = fitCamera(candidates, existingRects(pending))
         set({ pendingPanelTarget: { ...pending, candidates, hoveredIndex: null }, zoomLevel: camera.zoom, viewportOffset: camera.offset })
@@ -999,18 +998,15 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
           endTarget(previous, false)
           if (!request.panelId || previous.panelId !== request.panelId) previous.onCancelled()
         }
-        const s = get()
         const size = request.size ?? panelDefaultSize(request.panelType)
-        // An empty canvas has nothing to choose between: place at the centre.
-        if (request.availability === 'new' && liveNodes().length === 0) {
-          const cs = s.containerSize
-          const center = cs.width > 0 && cs.height > 0 ? get().viewToCanvas({ x: cs.width / 2, y: cs.height / 2 }) : null
-          const origin = center ? { x: center.x - size.width / 2, y: center.y - size.height / 2 } : undefined
-          if (request.place) return request.place(origin, size) !== null
-          request.onSelected?.({ kind: 'new', point: origin ?? get().placeTarget(size).rect.origin, size })
+        const plan = request.availability === 'existing' ? null : planFor(size, request.pick)
+        // Nothing to choose between (an empty canvas, or picking off).
+        if (plan?.kind === 'place') {
+          if (request.place) return request.place(plan.point, size) !== null
+          request.onSelected?.({ kind: 'new', point: plan.point, size })
           return true
         }
-        return beginTarget({ ...request, size })
+        return beginTarget({ ...request, size }, plan?.candidates ?? [])
       },
 
       selectNewPanelTarget(index) {

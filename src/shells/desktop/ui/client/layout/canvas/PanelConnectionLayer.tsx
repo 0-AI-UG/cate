@@ -1,8 +1,8 @@
 import { useId, useMemo } from 'react'
 import type { Point } from '@workspace/canvas/contract'
-import { dockStacks, type DockNode, type PanelId, type PanelRelation } from '@workspace/document/contract'
+import { dockStacks, type DockNode, type PanelId, type PanelRecord, type PanelRelation } from '@workspace/document/contract'
 import { panelConnectionMidpoint, panelConnectionPath } from '@workspace/canvas/contract'
-import { relationFlows } from '@workspace/relations/contract'
+import { isExecutionSurface, relationContextMode, relationFlows, relationPanels, relationReach } from '@workspace/relations/contract'
 import {
   PanelRelationSelector,
   RelationCanvasProvider,
@@ -23,6 +23,8 @@ interface RenderedConnection {
   source: ViewNode
   target: ViewNode
   flowIndex?: number
+  /** Its flow's source has prompt context turned off. */
+  contextOff?: boolean
   interaction?: PanelInteraction
   relation?: PanelRelation
 }
@@ -32,6 +34,21 @@ const FLOW_HUE_STEP = 137.508
 
 function flowColor(index: number): string {
   return `hsl(${Math.round((211 + index * FLOW_HUE_STEP) % 360)} 72% 58%)`
+}
+
+/** The relations in flows whose source has prompt context off: what
+ *  its agent would not be told about. */
+function contextOffRelationIds(
+  relations: readonly PanelRelation[],
+  panels: Readonly<Record<string, PanelRecord>>,
+): Set<string> {
+  const off = new Set<string>()
+  const graph = relationPanels(Object.values(panels), relationRoleOf)
+  for (const source of Object.values(graph)) {
+    if (!isExecutionSurface(source) || relationContextMode(source.fields) !== 'off') continue
+    for (const step of relationReach(source.id, graph, relations) ?? []) off.add(step.relation.id)
+  }
+  return off
 }
 
 /** The panel each stack shows: its active tab, else its first. */
@@ -61,6 +78,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
   const connections = useMemo(() => {
     const enabledRelations = panelRelationsEnabled ? relations : EMPTY_RELATIONS
     const flowIndexes = relationFlows(enabledRelations, panels, relationRoleOf)
+    const contextOff = contextOffRelationIds(enabledRelations, panels)
     const panelToNode = new Map<string, ViewNode>()
     for (const node of Object.values(nodes)) {
       if (node.animationState === 'exiting') continue
@@ -92,6 +110,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         source,
         target,
         flowIndex: relation ? flowIndexes.get(relation.id) : previous?.flowIndex,
+        contextOff: relation ? contextOff.has(relation.id) : previous?.contextOff,
         interaction: !interaction
           ? previous?.interaction
           : !previous?.interaction || interaction.updatedAt >= previous.interaction.updatedAt
@@ -140,6 +159,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         sourcePanel={sourcePanel}
         targetPanel={targetPanel}
         position={position}
+        muted={connection.contextOff}
       />
     )
   })
@@ -201,6 +221,8 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
           const visualState = phase ?? 'relation'
           const markerState = phase ?? 'active'
           const relationColor = connection.flowIndex === undefined ? undefined : flowColor(connection.flowIndex)
+          // Live activity shows in full even on a relation whose context is off.
+          const dimmed = connection.contextOff && !phase
           return (
             <path
               key={connection.key}
@@ -208,10 +230,12 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
               data-panel-connection-base={connection.relation ? 'relation' : undefined}
               data-panel-relation-id={connection.relation?.id}
               data-panel-flow={connection.flowIndex}
+              data-panel-relation-context-off={dimmed || undefined}
               d={path}
               fill="none"
               stroke={phase === 'failed' ? 'var(--git-deleted)' : relationColor ?? 'var(--focus-blue)'}
               strokeWidth={2.25}
+              opacity={dimmed ? 0.3 : undefined}
               strokeLinecap="round"
               markerEnd={`url(#${relationColor && phase !== 'failed'
                 ? flowMarker(connection.flowIndex!)

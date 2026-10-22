@@ -4,12 +4,13 @@
 // edits (workspace/relations client) on the document mirror.
 
 import { runtimeFor } from '@kernel/rpc/client'
-import { createWorkspaceSettingsMirror, type WorkspaceSettingsMirror } from '@kernel/settings/client'
+import { createWorkspaceSettingsMirror, type ClientSettingsStore, type WorkspaceSettingsMirror } from '@kernel/settings/client'
 import { eachConnection } from '@client/connections'
 import { documentStoreFor } from '@client/document'
 import { panelDefinition } from '@panels/definitions'
-import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
-import type { PanelRecord, WorkspaceDocument } from '@workspace/document/contract'
+import { workspaceSettingsTable, type SharedClientSettings, type WorkspaceSettings } from '@panels/settings'
+import { panelConnectionCurve } from '@workspace/canvas/contract'
+import { dockPanels, type CanvasNode, type PanelRecord, type PanelRelation, type WorkspaceDocument } from '@workspace/document/contract'
 import {
   isExecutionSurface,
   panelRelationLabel,
@@ -21,12 +22,17 @@ import {
 } from '@workspace/relations/contract'
 import {
   addRelation,
+  forgetRelationLabel,
+  labelRelation,
   relationTargets,
+  rememberRelationLabel,
   removeRelation,
+  renameRelationLabel,
   setRelationContextMode,
   updateRelationMeaning,
+  type RelationLabelLibrary,
 } from '@workspace/relations/client'
-import type { MobileCoreMethods, MobilePanel, MobileRelation } from '../contract'
+import type { MobileCoreMethods, MobilePanel, MobileRelation, MobileRelationCurve } from '../contract'
 import type { MobileClient } from './boot'
 
 type Handlers<M extends keyof MobileCoreMethods> = {
@@ -36,10 +42,13 @@ type Handlers<M extends keyof MobileCoreMethods> = {
 export type RelationMethod =
   | 'relations.targets' | 'relations.options' | 'relations.connect' | 'relations.setKind'
   | 'relations.remove' | 'relations.setContextMode' | 'relations.preview'
+  | 'relations.setLabel' | 'relations.renameLabel' | 'relations.forgetLabel'
 
 export interface MobileRelations {
   /** The workspace setting `panelRelationsEnabled`; on until it is known. */
   enabled(workspaceId: string): boolean
+  /** The client setting `savedPanelRelationLabels`. */
+  savedLabels(): string[]
   subscribe(listener: () => void): () => void
 }
 
@@ -51,6 +60,22 @@ export function relationFieldsOf(record: PanelRecord): Pick<MobilePanel, 'execut
     execution: isExecutionSurface(relationPanelOf(record, roleOf)),
     contextMode: relationContextMode(record.fields),
   }
+}
+
+/** The relation's curve on the canvas whose nodes hold both its panels,
+ *  as the desktop draws it. */
+function curveOf(doc: WorkspaceDocument, relation: PanelRelation): MobileRelationCurve | null {
+  for (const canvas of Object.values(doc.canvases)) {
+    const nodeOf = (panelId: string): CanvasNode | undefined =>
+      Object.values(canvas.nodes).find((node) => dockPanels(node.dock).includes(panelId))
+    const from = nodeOf(relation.fromPanelId)
+    const to = nodeOf(relation.toPanelId)
+    if (!from || !to) continue
+    if (from.id === to.id) return null
+    const curve = panelConnectionCurve(from.rect, to.rect, relation.fromSide, relation.toSide, relation.waypoint)
+    return curve && { canvasId: canvas.id, fromNodeId: from.id, toNodeId: to.id, ...curve }
+  }
+  return null
 }
 
 /** The document's relations as the app shows them. */
@@ -70,6 +95,8 @@ export function relationsOf(doc: WorkspaceDocument): MobileRelation[] {
       kind: relation.kind,
       flow: flows.get(relation.id) ?? null,
       label: panelRelationLabel(relation, source, target),
+      custom: relation.label?.trim() || null,
+      curve: curveOf(doc, relation),
       options: panelRelationOptions(source, target),
     }]
   })
@@ -94,8 +121,11 @@ export function createMobileRelations(client: MobileClient): MobileRelations {
     }
   })
 
+  client.settings.subscribe(changed)
+
   return {
     enabled: (workspaceId) => settings.get(workspaceId)?.get('panelRelationsEnabled') ?? true,
+    savedLabels: () => client.settings.get('savedPanelRelationLabels'),
     subscribe(listener) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
@@ -103,12 +133,16 @@ export function createMobileRelations(client: MobileClient): MobileRelations {
   }
 }
 
-export function createRelationHandlers(): Handlers<RelationMethod> {
+export function createRelationHandlers(settings: ClientSettingsStore<SharedClientSettings>): Handlers<RelationMethod> {
   const store = (workspaceId: string) => documentStoreFor(workspaceId)
+  const library: RelationLabelLibrary = {
+    get: () => settings.get('savedPanelRelationLabels'),
+    set: (labels) => { settings.set('savedPanelRelationLabels', labels) },
+  }
   return {
     async 'relations.targets'({ workspaceId, panelId }) {
       const doc = store(workspaceId)?.getSnapshot()
-      return doc?.panels[panelId] ? relationTargets(doc, panelId).map((panel) => panel.id) : []
+      return doc?.panels[panelId] ? relationTargets(doc, panelId, roleOf).map((panel) => panel.id) : []
     },
     async 'relations.options'({ workspaceId, fromPanelId, toPanelId }) {
       const doc = store(workspaceId)?.getSnapshot()
@@ -118,12 +152,26 @@ export function createRelationHandlers(): Handlers<RelationMethod> {
     },
     async 'relations.connect'({ workspaceId, fromPanelId, toPanelId, kind }) {
       const doc = store(workspaceId)
-      return !!doc && addRelation(doc, fromPanelId, toPanelId, kind) !== null
+      return !!doc && addRelation(doc, roleOf, fromPanelId, toPanelId, kind) !== null
     },
     async 'relations.setKind'({ workspaceId, relationId, kind }) {
       const doc = store(workspaceId)
       const relation = doc?.getSnapshot().relations[relationId]
-      return !!doc && !!relation && updateRelationMeaning(doc, relationId, kind, relation.label)
+      return !!doc && !!relation && updateRelationMeaning(doc, relationId, kind)
+    },
+    async 'relations.setLabel'({ workspaceId, relationId, label, remember }) {
+      const doc = store(workspaceId)
+      if (!doc || !labelRelation(doc, relationId, label)) return false
+      if (remember) rememberRelationLabel(library, label)
+      return true
+    },
+    async 'relations.renameLabel'({ label, to }) {
+      renameRelationLabel(library, label, to)
+      return null
+    },
+    async 'relations.forgetLabel'({ label }) {
+      forgetRelationLabel(library, label)
+      return null
     },
     async 'relations.remove'({ workspaceId, relationId }) {
       const doc = store(workspaceId)

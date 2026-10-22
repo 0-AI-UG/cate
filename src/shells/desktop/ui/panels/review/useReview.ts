@@ -9,7 +9,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clientUi } from '@kernel/interaction'
 import { setClientSetting, useClientSetting } from '../../kernel/settings'
 import { usePanelView } from '../../client/document'
-import type { AgentId } from '@services/agents/contract'
 import type { GitFileDiff } from '@workspace/repository/contract'
 import type { DiffOptions, ReviewAgentChoice, ReviewDisplay, ReviewOp, ReviewSnapshot } from '@panels/review/contract'
 
@@ -94,28 +93,20 @@ export function useReviewDiffs(
 export interface AgentPicker {
   open: boolean
   choices: ReviewAgentChoice[] | null
-  selected: AgentId | null
-  select(agentId: AgentId): void
   show(): void
   close(): void
 }
 
-/** Asks the session which agent CLIs are ready, and keeps the choice. */
+/** Asks the session which agent CLIs are ready. */
 export function useAgentPicker(send: ReviewSend): AgentPicker {
   const [open, setOpen] = useState(false)
   const [choices, setChoices] = useState<ReviewAgentChoice[] | null>(null)
-  const [selected, setSelected] = useState<AgentId | null>(null)
   const show = useCallback(() => {
     setOpen(true)
-    setChoices(null)
-    setSelected(null)
-    void send({ kind: 'reviewAgents' }).then((result) => {
-      const list = result as ReviewAgentChoice[]
-      setChoices(list)
-      setSelected(list.find((choice) => choice.ready)?.agentId ?? null)
-    }, () => setChoices([]))
+    // The last answer stays up while the session checks again.
+    void send({ kind: 'reviewAgents' }).then((result) => setChoices(result as ReviewAgentChoice[]), () => setChoices([]))
   }, [send])
-  return { open, choices, selected, select: setSelected, show, close: useCallback(() => setOpen(false), []) }
+  return { open, choices, show, close: useCallback(() => setOpen(false), []) }
 }
 
 /** Runs an op whose failure the person should see. */

@@ -1,4 +1,4 @@
-export { createDocumentService, type AppliedEvent, type DocumentService, type DocumentServiceOptions } from './documentService'
+export { createDocumentService, type AppliedEvent, type ChangeGuard, type DocumentService, type DocumentServiceOptions } from './documentService'
 export { createPresence, type PresenceService } from './presence'
 export { documentCapabilityImpl, presenceCapabilityImpl } from './capabilities'
 export {

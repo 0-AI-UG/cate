@@ -13,6 +13,9 @@ import { creatableDefinitions } from '@client/host'
  *  (in canvas space). Null outside a canvas. */
 export const DockMenuPortalContext = createContext<HTMLElement | null>(null)
 
+/** Frames without movement after which the menu stops following its button. */
+const ANCHOR_STILL_FRAMES = 30
+
 export type NewTabItem = { type: string; label: string; icon: IconName }
 
 /** The types a dock's new-tab menu offers, in creation order. */
@@ -133,22 +136,40 @@ export function NewTabButton({ compact, canvasAttached, items, onPick }: {
   }, [portalTarget])
   const buttonRef = useRef<HTMLButtonElement>(null)
   const [position, setPosition] = useState<{ top: number; right: number } | null>(null)
+  const positionRef = useRef(position)
+  positionRef.current = position
   const open = !!position
   useLayoutEffect(() => {
     if (!open) return
-    let frame: number
-    // Canvas pan/zoom uses transforms, which do not trigger resize observers.
+    // Canvas pan/zoom uses transforms, which do not trigger resize observers,
+    // so the menu follows its button frame by frame, but only while it moves:
+    // after a still spell the loop stops, and input that can move the canvas
+    // (wheel, pointer, keys, and the inertia after them) starts it again.
+    let frame: number | null = null
+    let still = 0
     const trackAnchor = () => {
+      frame = null
       const rect = buttonRef.current?.getBoundingClientRect()
       if (rect) {
         const { top, right } = getPosition(rect)
-        setPosition(current => !current || (current.top === top && current.right === right)
-          ? current : { top, right })
+        const current = positionRef.current
+        const moved = !!current && (current.top !== top || current.right !== right)
+        if (moved) setPosition(positionRef.current = { top, right })
+        still = moved ? 0 : still + 1
       }
-      frame = requestAnimationFrame(trackAnchor)
+      if (still < ANCHOR_STILL_FRAMES) frame = requestAnimationFrame(trackAnchor)
     }
+    const wake = () => {
+      still = 0
+      if (frame === null) frame = requestAnimationFrame(trackAnchor)
+    }
+    const events = ['wheel', 'pointermove', 'pointerup', 'keydown'] as const
+    for (const event of events) window.addEventListener(event, wake, { capture: true, passive: true })
     trackAnchor()
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      for (const event of events) window.removeEventListener(event, wake, { capture: true })
+    }
   }, [open, getPosition])
   const close = useCallback(() => {
     setPosition(null)

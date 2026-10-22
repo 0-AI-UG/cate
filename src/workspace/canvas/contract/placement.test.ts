@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest'
 import {
+  planPlacement,
   recommendPlacements,
   findFreePosition,
   nudgeToFree,
@@ -70,6 +71,34 @@ function expectGridAligned(p: Point) {
   expect(Math.abs(p.x % CANVAS_GRID_SIZE)).toBe(0)
   expect(Math.abs(p.y % CANVAS_GRID_SIZE)).toBe(0)
 }
+
+describe('planPlacement', () => {
+  it('places straight at the centre of the view on an empty canvas, picking or not', () => {
+    const centred = { kind: 'place', point: { x: 600 - TERMINAL.width / 2, y: 400 - TERMINAL.height / 2 }, size: TERMINAL }
+    expect(planPlacement({}, TERMINAL, VIEWPORT)).toEqual(centred)
+    expect(planPlacement({}, TERMINAL, VIEWPORT, { pick: false })).toEqual(centred)
+  })
+
+  it('places at the next free spot on an empty canvas not yet measured', () => {
+    const unmeasured = { ...VIEWPORT, containerSize: { width: 0, height: 0 } }
+    expect(planPlacement({}, TERMINAL, unmeasured)).toEqual({ kind: 'place', point: findFreePosition({}, null, TERMINAL), size: TERMINAL })
+  })
+
+  it('offers the recommended spots when there are nodes', () => {
+    const nodes = nodeMap(node('a', 0, 0))
+    expect(planPlacement(nodes, TERMINAL, VIEWPORT, { focusedNodeId: 'a' })).toEqual({
+      kind: 'pick',
+      candidates: recommendPlacements(nodes, 'a', TERMINAL, VIEWPORT, null),
+    })
+  })
+
+  it('places at the next free spot with picking off', () => {
+    const nodes = nodeMap(node('a', 0, 0))
+    expect(planPlacement(nodes, TERMINAL, VIEWPORT, { focusedNodeId: 'a', pick: false })).toEqual({
+      kind: 'place', point: findFreePosition(nodes, 'a', TERMINAL), size: TERMINAL,
+    })
+  })
+})
 
 describe('recommendPlacements — empty canvas', () => {
   it('returns a small set of differently-SIZED spots centred on the anchor, default best first', () => {

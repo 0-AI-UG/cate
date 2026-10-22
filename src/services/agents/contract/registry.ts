@@ -8,7 +8,7 @@
 //   - the CLI in a PTY: its command, resume argv, where its session store
 //     lives and how a started agent is launched. Its hook spec is
 //     AGENT_HOOK_SPECS (hooks.ts).
-//   - matchProcess / hookProcess: identity verification of a hook post's pid.
+//   - matchProcess: identity verification of a hook post's pid.
 //   - promptContextHook / promptGuidance: how relation context reaches a turn.
 //   - skills: where the agent reads project skills.
 //
@@ -22,7 +22,6 @@ export type AgentId =
   | 'codex'
   | 'cursor'
   | 'grok'
-  | 'hermes'
   | 'kiro'
   | 'opencode'
 
@@ -64,7 +63,7 @@ export interface AgentDef {
   resume: {
     /** Argv (after `command`) that re-attaches to `sessionId` on a terminal
      *  restore, or null when this CLI cannot resume by id. */
-    args: ((sessionId: string, context?: { profile?: string }) => string[] | null) | null
+    args: ((sessionId: string) => string[] | null) | null
     /** Whether a session is resumable when its session-start hook arrives.
      *  False when the CLI announces an id before persisting anything, so the
      *  session is only stamped from its first turn event. */
@@ -83,9 +82,6 @@ export interface AgentDef {
   interruptKeys: readonly AgentInterruptKey[]
   /** True when a process with this (lowercased) name is this agent. */
   matchProcess: (procName: string) => boolean
-  /** In-process hooks prove identity from the authenticated posting pid even
-   *  when the interpreter hides the CLI name in `ps comm`. */
-  hookProcess?: 'self'
   /** Native post-submit extension point that adds relation context without
    *  touching PTY input: the turn-start hook response as JSON
    *  `additionalContext` or plain text, or an in-process plugin that fetches it
@@ -201,30 +197,6 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     promptGuidance: null,
     skills: folderSkills('opencode', ['.opencode', 'skills']),
   },
-  hermes: {
-    id: 'hermes',
-    displayName: 'Hermes',
-    command: 'hermes',
-    // Profiles have independent session stores, so an exact resume carries
-    // the profile. `custom` names a HERMES_HOME Cate cannot reproduce.
-    // Hermes creates the record before its first persisted user turn.
-    resume: {
-      args: (sid, context) => context?.profile && context.profile !== 'custom'
-        ? ['--profile', context.profile, 'chat', '--resume', sid]
-        : null,
-      fromSessionStart: false,
-    },
-    sessionStore: '.hermes/state.db',
-    // Hermes >=0.21 keeps `chat -q` interactive when attached to a PTY.
-    promptArgs: (prompt) => ['chat', '-q', prompt],
-    startArgs: ['chat'],
-    interruptKeys: ['ctrl-c'],
-    matchProcess: (n) => n === 'hermes' || n === 'hermes.exe',
-    hookProcess: 'self',
-    promptContextHook: 'plain-text',
-    promptGuidance: null,
-    skills: folderSkills('hermes', ['.hermes', 'skills']),
-  },
   // Kiro CLI with its v3 engine: standalone workspace hooks require it, so it
   // is selected explicitly for fresh and resumed sessions.
   kiro: {
@@ -290,19 +262,16 @@ export function matchAgentDef(procName: string): AgentDef | null {
 // validated to be a bare token first. Session ids come from hook posts any
 // terminal process can forge; a dash-led "id" would be joined in as a flag.
 const SAFE_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
-const SAFE_PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 /** The full shell command that resumes `sessionId`, or null when the agent
  *  cannot resume by id (or the id is not a bare token). */
 export function resumeCommandForAgent(
   agentId: string,
   sessionId: string,
-  context?: { profile?: string },
 ): string | null {
   const def = agentDef(agentId)
   const args = def?.resume.args
   if (!def || !args || !SAFE_SESSION_ID.test(sessionId)) return null
-  if (context?.profile !== undefined && !SAFE_PROFILE_NAME.test(context.profile)) return null
-  const argv = args(sessionId, context)
+  const argv = args(sessionId)
   return argv ? [def.command, ...argv].join(' ') : null
 }

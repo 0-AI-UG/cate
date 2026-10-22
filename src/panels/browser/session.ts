@@ -70,6 +70,11 @@ type Persisted = {
 /** A caller's view of the tabs after its last call. */
 type TabsSeen = { activeTabId: string; tabIds: string[] }
 
+/** How long the agent cursor stays after the agent's last page action: long
+ *  enough to bridge an agent's steps, short enough not to linger once it is
+ *  done (no command says that it is). */
+export const AGENT_CURSOR_IDLE_MS = 10_000
+
 /** Methods whose own effect on the tabs is their result, not a notice. */
 const TAB_METHODS = new Set(['selectTab', 'createTab', 'closeTab'])
 
@@ -103,6 +108,7 @@ function validViewport(value: unknown): value is BrowserViewport {
 
 export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private stopDownloads: (() => void) | undefined
+  private cursorIdle: ReturnType<typeof setTimeout> | undefined
   private readonly control: PageControl
   /** The last tab handle issued: tabs are `t1`, `t2`, ... */
   private tabCounter = 0
@@ -190,6 +196,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   protected override release(): void {
     this.stopDownloads?.()
     this.stopDownloads = undefined
+    clearTimeout(this.cursorIdle)
   }
 
   // ---- State ---------------------------------------------------------------
@@ -264,6 +271,8 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
   private showAgentCursor(event: AgentCursorEvent): void {
     const previous = this.state.agentCursor
     const keep = event.kind !== 'done'
+    clearTimeout(this.cursorIdle)
+    if (keep) this.cursorIdle = setTimeout(() => this.showAgentCursor({ kind: 'done', label: '' }), AGENT_CURSOR_IDLE_MS)
     this.publish({
       agentCursor: {
         event: {

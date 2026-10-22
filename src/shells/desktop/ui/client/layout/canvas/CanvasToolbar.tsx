@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { Hand, Map as MapTrifold, Minus, MousePointer2 as Cursor, Plus, X } from 'lucide-react'
-import { Icon, Tooltip } from '../../../kernel/interaction'
+import { Icon, Tooltip, useHoverIntent } from '../../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import { newPanelActionId } from '@client/host'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
@@ -38,11 +38,6 @@ function DefinitionIcon({ definition, size }: { definition: AnyPanelDefinition; 
   return isIconName(definition.icon) ? <Icon name={definition.icon} size={size} /> : <Plus size={size} />
 }
 
-/** Hover intent: open after a short rest, close after a short grace so the
- *  pointer can travel from the button into the flyout. */
-const FLYOUT_OPEN_MS = 140
-const FLYOUT_CLOSE_MS = 180
-
 // A new-panel button with drag-to-place: a click opens the placement picker,
 // a drag onto a canvas drops the panel centred on the cursor. Resting on it
 // shows the type's spawn flyout, when a module registered one.
@@ -60,32 +55,18 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [flyoutAnchor, setFlyoutAnchor] = useState<DOMRect | null>(null)
   const [flyoutShown, setFlyoutShown] = useState(false)
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const flyoutSide = placement === 'top' ? 'up' : 'left'
 
-  const clearHoverTimer = () => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current)
-    hoverTimer.current = null
-  }
+  const hover = useHoverIntent({
+    enabled: !!flyout,
+    open: () => setFlyoutAnchor((anchor) => anchor ?? wrapperRef.current?.getBoundingClientRect() ?? null),
+    close: () => closeFlyout(),
+  })
   const closeFlyout = () => {
-    clearHoverTimer()
+    hover.cancel()
     setFlyoutAnchor(null)
     setFlyoutShown(false)
   }
-  const hoverIn = () => {
-    if (!flyout) return
-    clearHoverTimer()
-    if (flyoutAnchor) return
-    hoverTimer.current = setTimeout(() => {
-      const rect = wrapperRef.current?.getBoundingClientRect()
-      if (rect) setFlyoutAnchor(rect)
-    }, FLYOUT_OPEN_MS)
-  }
-  const hoverOut = () => {
-    clearHoverTimer()
-    hoverTimer.current = setTimeout(closeFlyout, FLYOUT_CLOSE_MS)
-  }
-  useEffect(() => clearHoverTimer, [])
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
@@ -122,7 +103,7 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   }
 
   return (
-    <div ref={wrapperRef} className="flex shrink-0" onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
+    <div ref={wrapperRef} className="flex shrink-0" onMouseEnter={hover.enter} onMouseLeave={hover.leave}>
       <CanvasToolbarButton
         onClick={() => {
           closeFlyout()
@@ -144,8 +125,8 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
           style={flyoutSide === 'up'
             ? { left: flyoutAnchor.left + flyoutAnchor.width / 2, bottom: window.innerHeight - flyoutAnchor.top, transform: 'translateX(-50%)', paddingBottom: 10 }
             : { right: window.innerWidth - flyoutAnchor.left, bottom: window.innerHeight - flyoutAnchor.bottom, paddingRight: 10 }}
-          onMouseEnter={clearHoverTimer}
-          onMouseLeave={hoverOut}
+          onMouseEnter={hover.cancel}
+          onMouseLeave={hover.leave}
         >
           <flyout.Component workspaceId={workspaceId} canvasId={canvasId} side={flyoutSide} onClose={closeFlyout} onShown={setFlyoutShown} />
         </div>,

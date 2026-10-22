@@ -10,12 +10,14 @@ import { tryClientApp } from '../app'
 import { closeWorkspace, openLocalFolder, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
 
-/** The dot color of a connection state. */
+/** The dot color of a connection state. It pulses only while connecting:
+ *  an offline connection that keeps retrying is a steady amber, since it
+ *  retries for as long as the workspace is open and mostly waits. */
 export function connectionDotClass(state: ConnectionState): string {
-  const busy = state.kind === 'connecting' || (state.kind === 'offline' && state.retrying)
   if (state.kind === 'incompatible') return 'bg-amber-400'
   if (state.kind === 'stopped') return 'bg-zinc-400'
-  return busy ? 'bg-amber-400 animate-pulse motion-reduce:animate-none' : 'bg-red-500'
+  if (state.kind === 'connecting') return 'bg-amber-400 animate-pulse motion-reduce:animate-none'
+  return state.kind === 'offline' && state.retrying ? 'bg-amber-400' : 'bg-red-500'
 }
 
 /** The connection's state in words; null when connected or there is no

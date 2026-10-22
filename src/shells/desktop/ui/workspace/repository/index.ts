@@ -5,7 +5,7 @@
 export { RepositoryUiProvider, useRepositoryUi } from './context'
 export { gitStatusStoreFor, useGitStatus } from './gitStatus'
 export { useJoinedWorktrees, useWorktrees, worktreeLabel } from './worktrees'
-export { worktreeColor, worktreePalette, useTheme, useWorktreeColor, worktreeTitleStyle } from './colors'
+export { worktreeColor, worktreePalette, useTheme, useWorktreeColor } from './colors'
 export { humanStatus, useWorktreeStatuses, type WorktreeStatuses } from './worktreeStatuses'
 export { useParallelWork, runWorktreeContextMenu, type CardCallbacks, type ParallelWork } from './parallelWork'
 export { CreateWorktreeForm, type PrListItem } from './CreateWorktreeForm'

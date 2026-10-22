@@ -99,18 +99,6 @@ const FIXTURES: Record<AgentId, TitleFixture> = {
       writeFile(path.join(path.dirname(transcript), 'summary.json'), JSON.stringify({ generated_title: title, title_is_manual: false }))
     },
   },
-  hermes: {
-    sessionId: '20260928_101500_a1b2c3',
-    sqlite: true,
-    prompt: (env) => ({ hook_event_name: 'pre_llm_call', session_id: env.sessionId, cwd: env.cwd, profile: 'default', platform: 'cli' }),
-    writeTitle(env, title) {
-      sqlite(
-        path.join(env.home, '.hermes', 'state.db'),
-        'CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, title TEXT, title_source TEXT)',
-        (db) => db.prepare('INSERT OR REPLACE INTO sessions (id, title, title_source) VALUES (?, ?, ?)').run(env.sessionId, title, 'llm'),
-      )
-    },
-  },
   kiro: {
     sessionId: 'sess_12345678-1234-4123-8123-123456789abc',
     prompt: (env) => ({ hook_event_name: 'userPromptSubmit', session_id: env.sessionId, cwd: env.cwd }),

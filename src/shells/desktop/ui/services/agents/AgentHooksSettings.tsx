@@ -111,7 +111,7 @@ export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null
   }
 
   return (
-    <SearchableBlock keywords="agent hooks injection claude codex cursor grok hermes kiro opencode status presence auto on off approval automatic manual permissions">
+    <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro opencode status presence auto on off approval automatic manual permissions">
       <button type="button" className="text-xs text-muted hover:text-primary" onClick={() => setRefresh((value) => value + 1)}>Refresh detection</button>
       {rows === null && <LoadingState label="Loading agent hooks" size={14} className="justify-start py-3 text-xs" />}
       {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Refresh detection to try again.</p>}

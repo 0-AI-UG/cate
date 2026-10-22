@@ -11,6 +11,7 @@ import {
   DOCUMENT_FILE_VERSION,
   RUNTIME_CLIENT_ID,
   createDocument,
+  applyOp,
   createSequencer,
   opChanges,
   panelsInWindow,
@@ -52,6 +53,10 @@ export interface DocumentService {
    *  gets the whole removal set and the panels whose work may go, and throws
    *  an `RpcError` to refuse. One guard; the last one set wins. */
   guardRemovals(guard: RemovalGuard | null): void
+  /** Adds a rule every op is held to, its clients' and the runtime's own: a
+   *  change it names a problem for fails `rejected`, its batch with it. The
+   *  slot a module above the document fills (the relations rule). */
+  guardChanges(guard: ChangeGuard): () => void
   /** An op the runtime makes itself, with a runtime opId. Returns its seq;
    *  throws `RpcError` (`gone`, `rejected`) when it fails. */
   apply(change: DocChange | DocBatch): number
@@ -67,6 +72,10 @@ export interface DocumentService {
 }
 
 export type RemovalGuard = (removing: ReadonlySet<PanelId>, discard: ReadonlySet<PanelId>) => void
+
+/** Why `change` may not apply to `doc` (the document as the op's earlier
+ *  changes left it), or null when it may. */
+export type ChangeGuard = (change: DocChange, doc: WorkspaceDocument) => string | null
 
 export interface DocumentServiceOptions {
   /** `dataPaths(dir).document`. */
@@ -136,6 +145,7 @@ export function createDocumentService(options: DocumentServiceOptions): Document
   const persistedListeners = new Set<(seq: number) => void>()
   let persistedSeq = initial.seq
   let removalGuard: RemovalGuard | null = null
+  const changeGuards = new Set<ChangeGuard>()
   let runtimeCounter = sequencer.counters.get(RUNTIME_CLIENT_ID) ?? 0
 
   let disposed = false
@@ -172,6 +182,18 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     if (disposed) return { status: 'failed', error: { code: 'rejected', message: 'the runtime is stopping' } }
     const before = sequencer.doc
     if (op?.opId?.clientId) lastSeen.set(op.opId.clientId, Date.now())
+    // A resend of an applied op is the sequencer's duplicate, never refused.
+    const resent = !!op?.opId && op.opId.counter <= (sequencer.counters.get(op.opId.clientId) ?? 0)
+    if (changeGuards.size > 0 && !resent) {
+      let doc = before
+      for (const change of opChanges(op)) {
+        for (const guard of changeGuards) {
+          const problem = guard(change, doc)
+          if (problem) return { status: 'failed', error: { code: 'rejected', message: problem } }
+        }
+        doc = applyOp(doc, change).doc
+      }
+    }
     const result = sequencer.submit(op)
     if (result.status === 'duplicate') return result
     schedule()
@@ -222,6 +244,10 @@ export function createDocumentService(options: DocumentServiceOptions): Document
       return submit(op)
     },
     guardRemovals(guard) { removalGuard = guard },
+    guardChanges(guard) {
+      changeGuards.add(guard)
+      return () => { changeGuards.delete(guard) }
+    },
     apply(change) {
       const op = { ...change, opId: { clientId: RUNTIME_CLIENT_ID, counter: ++runtimeCounter } } as DocOp
       const result = submit(op)

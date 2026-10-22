@@ -1,8 +1,8 @@
 // A terminal panel, live: SwiftTerm draws the screen the core streams
 // (`terminal.*` in the core API) and sends keystrokes back. As every view, it
-// reports the grid it holds (the screen at a readable font) and draws the
-// PTY's grid, the smallest of its visible views': whole, with the font
-// fitted to the screen, and pinching zooms in.
+// draws the PTY's grid, whichever client last fitted it: whole, with the font
+// fitted to the screen, and pinching zooms in. Fit sizes the PTY to the grid
+// the screen holds at a readable font.
 
 import SwiftTerm
 import SwiftUI
@@ -31,6 +31,9 @@ struct TerminalPanelView: View {
             .toolbar {
                 if onScreen {
                     ToolbarItem(placement: .primaryAction) {
+                        Button("Fit to screen", systemImage: "arrow.up.left.and.arrow.down.right", action: controller.fit)
+                    }
+                    ToolbarItem(placement: .primaryAction) {
                         Button(
                             controller.typing ? "Hide keyboard" : "Show keyboard",
                             systemImage: controller.typing ? "keyboard.chevron.compact.down" : "keyboard",
@@ -51,6 +54,9 @@ final class TerminalController {
     /// The keyboard is up.
     fileprivate(set) var typing = false
     @ObservationIgnored fileprivate weak var viewport: TerminalViewport?
+    @ObservationIgnored fileprivate var onFit: (() -> Void)?
+
+    func fit() { onFit?() }
 
     func toggleKeyboard() {
         guard let terminal = viewport?.terminal else { return }
@@ -75,6 +81,7 @@ private struct TerminalScreen: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.connect(viewport, core: core, controller: controller, workspaceId: workspaceId, panelId: panelId)
         controller.viewport = viewport
+        controller.onFit = { [weak coordinator] in coordinator?.fit() }
         viewport.terminal.terminalDelegate = coordinator
         viewport.terminal.onFirstResponder = { [controller] in controller.typing = $0 }
         viewport.onHeldGrid = { [weak coordinator] in coordinator?.held($0) }
@@ -93,9 +100,7 @@ private struct TerminalScreen: UIViewRepresentable {
         private var core: CoreHost?
         private weak var viewport: TerminalViewport?
         private weak var controller: TerminalController?
-        private var workspaceId = ""
-        private var panelId = ""
-        private var opened = false
+        private var heldGrid: Grid?
         /// The person typed: bring the cursor into view with the echo.
         private var followCursor = false
 
@@ -103,22 +108,20 @@ private struct TerminalScreen: UIViewRepresentable {
             self.viewport = viewport
             self.core = core
             self.controller = controller
-            self.workspaceId = workspaceId
-            self.panelId = panelId
+            core.openTerminal(terminalId, workspaceId: workspaceId, panelId: panelId) { [weak self] in
+                self?.handle($0)
+            }
         }
 
-        /// The grid the screen holds, once laid out and on every change: the
-        /// terminal opens with it.
+        /// The grid the screen holds, once laid out and on every change.
         func held(_ grid: Grid) {
-            guard let core else { return }
-            if !opened {
-                opened = true
-                core.openTerminal(terminalId, workspaceId: workspaceId, panelId: panelId, cols: grid.cols, rows: grid.rows) { [weak self] in
-                    self?.handle($0)
-                }
-            } else {
-                core.resizeTerminal(terminalId, cols: grid.cols, rows: grid.rows)
-            }
+            heldGrid = grid
+        }
+
+        /// Sizes the PTY to the grid the screen holds.
+        func fit() {
+            guard let core, let heldGrid else { return }
+            core.fitTerminal(terminalId, cols: heldGrid.cols, rows: heldGrid.rows)
         }
 
         private func handle(_ event: TerminalEvent) {
@@ -141,7 +144,7 @@ private struct TerminalScreen: UIViewRepresentable {
         }
 
         func close() {
-            if opened { core?.closeTerminal(terminalId) }
+            core?.closeTerminal(terminalId)
             core = nil
         }
 
@@ -185,6 +188,8 @@ final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
     /// seen at that width, so the keyboard coming up does not shrink it.
     private var basis = CGSize.zero
     private var fittedTo: CGSize?
+    /// The height last laid out, to see the keyboard come up.
+    private var laidOutHeight: CGFloat = 0
     private static let largestFont: CGFloat = 18
     /// The cell of the font the grid this view holds is measured in, as
     /// SwiftTerm measures it. Fixed, so refitting the font never moves it.
@@ -237,6 +242,10 @@ final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
         if fittedTo != basis { fit() }
         arrange()
         reportHeldGrid()
+        // The keyboard came up over the grid: keep the cursor in view.
+        let shrank = bounds.height < laidOutHeight - 0.5
+        laidOutHeight = bounds.height
+        if shrank && terminal.isFirstResponder { scrollToCursor() }
     }
 
     private func reportHeldGrid() {
