@@ -2,18 +2,18 @@ import type { AgentHookEventKind, AgentId } from '../../contract'
 
 // Independent expectations: observing an HTTP post is insufficient if Cate
 // stops normalizing it. OpenCode's tool-part event is verified through storage.
-export const NATIVE_HOOK_KINDS: Record<string, AgentHookEventKind | 'approval-surface' | 'stored-edit'> = {
+export const NATIVE_HOOK_KINDS: Record<string, AgentHookEventKind | 'stored-edit'> = {
   SessionStart: 'session-start', sessionStart: 'session-start',
-  'session.created': 'session-start', on_session_start: 'session-start', on_session_reset: 'session-start',
-  UserPromptSubmit: 'turn-start', beforeSubmitPrompt: 'turn-start', pre_llm_call: 'turn-start',
+  'session.created': 'session-start',
+  UserPromptSubmit: 'turn-start', beforeSubmitPrompt: 'turn-start',
   PermissionRequest: 'permission-check', Notification: 'permission-wait',
-  'permission.asked': 'permission-wait', pre_approval_request: 'approval-surface',
+  'permission.asked': 'permission-wait',
   PreToolUse: 'turn-resume', PostToolUse: 'turn-resume', PostToolUseFailure: 'turn-resume',
   PermissionDenied: 'turn-resume', postToolUse: 'turn-resume', afterFileEdit: 'turn-resume',
-  'permission.replied': 'turn-resume', post_approval_response: 'turn-resume', post_tool_call: 'turn-resume',
+  'permission.replied': 'turn-resume',
   Stop: 'turn-end', StopFailure: 'turn-end', StopCancelled: 'turn-end', Interrupt: 'turn-end',
-  stop: 'turn-end', on_session_end: 'turn-end',
-  SessionEnd: 'session-end', sessionEnd: 'session-end', on_session_finalize: 'session-end',
+  stop: 'turn-end',
+  SessionEnd: 'session-end', sessionEnd: 'session-end',
   'session.status': 'turn-start', // The same native event with status=idle must also end the turn.
   'message.part.updated': 'stored-edit',
 }
@@ -65,17 +65,6 @@ export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
     'permission-allow': ['permission.asked', 'permission.replied', 'message.part.updated'],
     'permission-deny': ['permission.asked', 'permission.replied'],
     'tool-failure': ['message.part.updated', 'session.status'],
-  },
-  hermes: {
-    edit: ['on_session_start', 'pre_llm_call', 'post_tool_call', 'on_session_end'],
-    interrupt: ['on_session_end'],
-    resume: ['on_session_start', 'pre_llm_call', 'on_session_end'],
-    'session-end': ['on_session_finalize'],
-    'session-reset': ['on_session_reset'],
-    'permission-allow': ['pre_approval_request', 'post_approval_response', 'post_tool_call'],
-    'permission-deny': ['pre_approval_request', 'post_approval_response', 'post_tool_call'],
-    'automatic-approval': ['pre_approval_request', 'post_approval_response', 'post_tool_call'],
-    'tool-failure': ['post_tool_call', 'on_session_end'],
   },
   kiro: {
     edit: ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop'],

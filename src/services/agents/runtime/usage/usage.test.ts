@@ -157,12 +157,6 @@ describe('workspace usage', () => {
         `INSERT INTO message VALUES ('m', 'oc', ${at}, ${at}, '${opencode(root)}')`,
         `INSERT INTO message VALUES ('n', 'oc2', ${at}, ${at}, '${opencode(elsewhere)}')`,
       ]),
-      seedSqlite(path.join(home, '.hermes', 'state.db'), [
-        'CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT)',
-        `INSERT INTO sessions VALUES ('h', '${root}')`,
-        'CREATE TABLE session_model_usage (session_id TEXT, model TEXT, task TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, reasoning_tokens INTEGER, estimated_cost_usd REAL, actual_cost_usd REAL, first_seen REAL, last_seen REAL)',
-        `INSERT INTO session_model_usage VALUES ('h', 'gpt-4.1', '', 200, 20, 0, 0, 0, 0, 0, ${at / 1000}, ${at / 1000})`,
-      ]),
     ])
   }
 
@@ -178,7 +172,7 @@ describe('workspace usage', () => {
     const summary = await service().summary(input)
 
     expect(Object.fromEntries(summary.stores.map((a) => [a.agent, [a.status, a.sessions]]))).toEqual({
-      'claude-code': ['ok', 2], codex: ['ok', 1], grok: ['ok', 1], opencode: ['ok', 1], hermes: ['ok', 1], kiro: ['unsupported', 0], cursor: ['unsupported', 0],
+      'claude-code': ['ok', 2], codex: ['ok', 1], grok: ['ok', 1], opencode: ['ok', 1], kiro: ['unsupported', 0], cursor: ['unsupported', 0],
     })
     expect(summary.stores.find((a) => a.agent === 'kiro')?.note).toBe('Kiro records credits, not tokens: 0.50 credits across 1 session.')
 
@@ -193,8 +187,7 @@ describe('workspace usage', () => {
     expect(byAgent.opencode.totalTokens).toBe(165)
     // A zero cost from a subscription provider is priced by the rate table.
     expect(byAgent.opencode.costUsd).toBeGreaterThan(0)
-    expect(byAgent.hermes.totalTokens).toBe(220)
-    expect(summary.sessions).toBe(6)
+    expect(summary.sessions).toBe(5)
     expect(summary.costUsd).toBeCloseTo(summary.agents.reduce((sum, a) => sum + a.costUsd, 0))
     expect(summary.daily.map((d) => d.day)).toEqual(['2026-10-10'])
     expect(summary.daily[0].byAgent.codex?.costUsd).toBeCloseTo(byAgent.codex.costUsd)

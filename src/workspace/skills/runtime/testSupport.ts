@@ -14,7 +14,6 @@ export const TEST_TARGETS: SkillTarget[] = [
   folder('cursor', 'Cursor', '.cursor'),
   folder('grok', 'Grok', '.grok'),
   folder('opencode', 'OpenCode', '.opencode'),
-  folder('hermes', 'Hermes', '.hermes'),
   folder('kiro', 'Kiro', '.kiro', { nameMatchesDir: true }),
 ]
 

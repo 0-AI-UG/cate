@@ -108,7 +108,7 @@ No UI is shared between shells.
 
 | Concept | Meaning | Examples |
 |---|---|---|
-| **Agent** | A provider identity, static data in one registry (`AGENTS`). | claude-code, codex, cursor, grok, hermes, kiro, opencode |
+| **Agent** | A provider identity, static data in one registry (`AGENTS`). | claude-code, codex, cursor, grok, kiro, opencode |
 | **Agent session** | One conversation of an agent CLI running in a terminal panel's PTY, observed through injected hooks and pid presence: `{agentId, sessionId, cwd, worktreeId}`. It reports status, takes a prompt, reads its conversation, lists its changes and resumes. | "claude-code in a terminal" |
 
 Every agent runs as its CLI in a terminal panel; the terminal panel shows
@@ -262,7 +262,7 @@ The split follows the client test (section 3).
 | Terminals: PTYs, shell resolution, login env, activity, ports, cwd, idle suspend |
 | Terminal screen state and scrollback (headless terminal per PTY) |
 | Terminal logs, shell env |
-| Agents: hook ingestion, pid presence, change history, session stores, conversation reads, Hermes |
+| Agents: hook ingestion, pid presence, change history, session stores, conversation reads |
 | Agents: status state machine, resume stamps, driver selection |
 | Starting agents in a terminal panel |
 | Browser data: history, bookmarks, passwords, downloads |
@@ -368,8 +368,6 @@ Rules:
   `~/.codex`). Those belong to the CLI, not to Cate, and Cate never writes
   user-global agent files, so a terminal agent is logged in wherever the
   machine user is. Cate writes only repo-local agent files (hooks, skills).
-  The one exception is the Hermes plugin, which Hermes only loads from its
-  user config; it is installed there by the agents service.
 
 ## 6. Kernel
 
@@ -1499,8 +1497,7 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     conversation;
   - change history per checkout (from terminal hooks) in
     `agents/changes/`;
-  - session store readers per agent, conversation reads, Hermes
-    integration;
+  - session store readers per agent, conversation reads;
   - resume stamps, persisted in `agents/stamps.json` with the checkout each
     was taken in: a restored terminal panel spawns with the terminal
     service's restore launch, which the terminal agents resolve to the
@@ -1517,7 +1514,7 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     methods): what the agent CLIs used in this workspace. Each session store
     declares where its CLI records usage (`AgentSessionStore.usage`):
     append-only transcripts with a line parser (Claude Code, Codex, Grok),
-    a store queried per window (OpenCode, Hermes), or none, with a note on
+    a store queried per window (OpenCode), or none, with a note on
     what it keeps instead (Kiro's credits, Cursor). The engine reads them
     all with no per-agent code, keeps the records whose session cwd is the
     root or under it (its worktrees), drops repeats, and prices and buckets

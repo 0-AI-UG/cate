@@ -12,7 +12,6 @@ describe('agentLaunchCommand', () => {
       { id: 'cursor', command: { executable: 'cursor-agent', args: [prefixed] } },
       { id: 'grok', command: { executable: 'grok', args: [prefixed] } },
       { id: 'opencode', command: { executable: 'opencode', args: ['--prompt', prefixed] } },
-      { id: 'hermes', command: { executable: 'hermes', args: ['chat', '-q', prefixed] } },
       { id: 'kiro', command: { executable: 'kiro-cli', args: ['chat', '--v3', prefixed] } },
     ])
   })
@@ -31,7 +30,6 @@ describe('agentLaunchCommand', () => {
       { id: 'cursor', command: { executable: 'cursor-agent', args: [] } },
       { id: 'grok', command: { executable: 'grok', args: [] } },
       { id: 'opencode', command: { executable: 'opencode', args: [] } },
-      { id: 'hermes', command: { executable: 'hermes', args: ['chat'] } },
       { id: 'kiro', command: { executable: 'kiro-cli', args: ['chat', '--v3'] } },
     ])
   })

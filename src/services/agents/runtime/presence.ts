@@ -29,7 +29,7 @@
 // process. Electron-free; shared by the local and remote daemons.
 // =============================================================================
 
-import { AGENT_DEFS, normalizeAgentSourceStartedAt, type AgentId } from '../contract'
+import { AGENT_DEFS, type AgentId } from '../contract'
 
 /** A process-table snapshot: the terminal service's scan provides it. */
 export interface ProcTree {
@@ -40,11 +40,8 @@ export interface ProcTree {
 export interface AgentPresence {
   agentId: AgentId | null
   agentPresent: boolean
-  /** Identity of the registration that just fell. The terminal agents pass
-   *  this through when clearing a resume stamp so a delayed scan cannot
-   *  erase a newer Hermes process's session. */
+  /** Pid of the registration that just fell: set only on the falling edge. */
   endedAgentPid?: number
-  endedAgentStartedAt?: string
 }
 
 export interface AgentPresenceTracker {
@@ -52,7 +49,7 @@ export interface AgentPresenceTracker {
    *  re-resolves after an agent relaunch) the registered agent pid for the
    *  terminal. Await it before answering the post — the bridge's ancestry
    *  chain is only guaranteed alive while the post is in flight. */
-  notePost(terminalId: string, agentId: AgentId, pid: number | undefined, sourceStartedAt?: string): Promise<void>
+  notePost(terminalId: string, agentId: AgentId, pid: number | undefined): Promise<void>
   /** Liveness verdict against a process-table snapshot (the scan tick's own).
    *  A registered pid that vanished — or changed comm (pid reuse) — is
    *  deregistered and reads absent: the falling edge. */
@@ -79,7 +76,6 @@ interface Registration {
   /** comm at registration time — presenceFor requires it unchanged, so a
    *  recycled pid can't impersonate the agent. */
   comm: string
-  sourceStartedAt?: string
 }
 
 function defaultIsAlive(pid: number): boolean {
@@ -105,42 +101,22 @@ function parentMap(tree: ProcTree): Map<number, number> {
 export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresenceTracker {
   const isAlive = deps.isAlive ?? defaultIsAlive
   const registrations = new Map<string, Registration>()
-  const sourceStartedHighWater = new Map<string, bigint>()
 
   return {
-    async notePost(terminalId, agentId, pid, sourceStartedAt) {
+    async notePost(terminalId, agentId, pid) {
       // Reject anything that isn't a plain positive pid: posts are made by
       // processes inside the terminal, so the value is untrusted input (and
       // pid 0 / negatives address process GROUPS in kill()).
       if (pid === undefined || !Number.isInteger(pid) || pid <= 0) return
       const def = AGENT_DEFS[agentId]
       if (!def) return
-      const canonicalStartedAt = normalizeAgentSourceStartedAt(sourceStartedAt)
-      if (def.hookProcess === 'self' && canonicalStartedAt) {
-        const incoming = BigInt(canonicalStartedAt)
-        const current = sourceStartedHighWater.get(terminalId)
-        if (current !== undefined && incoming < current) return
-        sourceStartedHighWater.set(terminalId, incoming)
-      }
 
       // Fast path: this terminal's agent is already registered and alive —
       // the common per-tool-call event needs no snapshot.
       const existing = registrations.get(terminalId)
-      if (existing && existing.agentId === agentId && isAlive(existing.pid)
-        && (def.hookProcess !== 'self' || existing.pid === pid)) return
+      if (existing && existing.agentId === agentId && isAlive(existing.pid)) return
 
       const tree = await deps.snapshot()
-      if (def.hookProcess === 'self') {
-        // A slower lookup from an older Hermes process must not overwrite the
-        // registration installed by a newer hook post while this awaited.
-        if (canonicalStartedAt) {
-          const current = sourceStartedHighWater.get(terminalId)
-          if (current !== undefined && BigInt(canonicalStartedAt) < current) return
-        }
-        const comm = tree.nameByPid.get(pid)
-        if (comm) registrations.set(terminalId, { agentId, pid, comm, sourceStartedAt: canonicalStartedAt })
-        return
-      }
       const parent = parentMap(tree)
       const visited = new Set<number>()
       // Inclusive walk: an in-process plugin posts the agent's own pid; the
@@ -174,19 +150,13 @@ export function createAgentPresenceTracker(deps: AgentPresenceDeps): AgentPresen
       // Pid gone (or recycled under a different comm) — the falling edge.
       // The next agent run re-registers itself through fresh hook posts.
       registrations.delete(terminalId)
-      return {
-        agentId: null,
-        agentPresent: false,
-        endedAgentPid: reg.pid,
-        ...(reg.sourceStartedAt ? { endedAgentStartedAt: reg.sourceStartedAt } : {}),
-      }
+      return { agentId: null, agentPresent: false, endedAgentPid: reg.pid }
     },
 
     registeredAgent: (terminalId) => registrations.get(terminalId)?.agentId ?? null,
 
     drop(terminalId) {
       registrations.delete(terminalId)
-      sourceStartedHighWater.delete(terminalId)
     },
   }
 }

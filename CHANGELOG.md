@@ -8,11 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- **Usage**: the Usage button is back in the sidebar (⌘⌥U). It shows what Claude Code, Codex, Grok, OpenCode and Hermes used in the shown workspace, as its runtime totals it (tokens and API-equivalent cost, by day or hour, agent and model), read from the CLIs' own session stores, plus the Claude Code and Codex subscription limits. Kiro records only credits and Cursor no token counts; the overview says so. Custom model prices are a workspace setting.
+- **Usage**: the Usage button is back in the sidebar (⌘⌥U). It shows what Claude Code, Codex, Grok and OpenCode used in the shown workspace, as its runtime totals it (tokens and API-equivalent cost, by day or hour, agent and model), read from the CLIs' own session stores, plus the Claude Code and Codex subscription limits. Kiro records only credits and Cursor no token counts; the overview says so. Custom model prices are a workspace setting.
 
 ### Changed
 
 - **cate-cli skill**: split into a short `SKILL.md` and `references/browser.md` and `references/agents.md`, so agents load the browser and agent guides only when they need them, with a description that says when to use it. Unedited installed copies update themselves.
+
+### Removed
+
+- **Hermes**: Cate no longer integrates Hermes Agent. Hermes 0.22 runs every chat in one shared background process per profile, so its hooks can no longer tell which terminal a session belongs to. Hermes still runs in a terminal as a plain program, without status, edit tracking, context or session restore.
 
 ## [2.1.0-beta.1] - 2026-10-17
 

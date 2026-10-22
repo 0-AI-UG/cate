@@ -6,7 +6,6 @@ import claudeLogo from './logos/claude.svg?url'
 import codexLogo from './logos/codex.svg?url'
 import cursorLogo from './logos/cursor.svg?url'
 import grokLogo from './logos/grok.svg?url'
-import hermesLogo from './logos/hermes.svg?url'
 import kiroLogo from './logos/kiro.svg?url'
 import opencodeLogo from './logos/opencode.svg?url'
 
@@ -15,7 +14,6 @@ const AGENT_LOGOS: Record<AgentId, string> = {
   codex: codexLogo,
   cursor: cursorLogo,
   grok: grokLogo,
-  hermes: hermesLogo,
   kiro: kiroLogo,
   opencode: opencodeLogo,
 }

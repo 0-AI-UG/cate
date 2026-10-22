@@ -10,7 +10,6 @@ export const AGENT_COLORS: Record<AgentId, string> = {
   'claude-code': '#d97757',
   grok: 'color-mix(in oklab, var(--text-primary) 72%, var(--canvas-bg))',
   opencode: '#5b9cf5',
-  hermes: '#c9a227',
   kiro: '#9046ff',
   cursor: 'var(--text-secondary)',
 }

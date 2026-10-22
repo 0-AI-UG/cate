@@ -67,9 +67,7 @@ async function launch(): Promise<void> {
   }))
 }
 
-/** `cate agent start`, given the call's own budget: the first hook
- *  inspection runs each agent CLI's own check (Hermes' plugin list), which
- *  is slow where that CLI is installed. */
+/** `cate agent start`, given the call's own budget. */
 async function start(prompt: string, ...flags: string[]): Promise<Started> {
   const { code, output } = await runInTerminal(page, control, cate('agent', '--json', 'start', '--agent', 'codex', ...flags, '--', prompt), 90_000)
   expect(code, output).toBe(0)

@@ -71,7 +71,6 @@ export function createAgentTitleTracker(options: AgentTitleTrackerOptions): Agen
             agentId,
             sessionId,
             cwd: event.cwd,
-            profile: event.profile,
             transcriptPath: event.transcriptPath,
           },
           homeDir: options.homeDir,

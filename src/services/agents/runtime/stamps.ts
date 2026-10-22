@@ -11,7 +11,7 @@
 // id before its transcript exists and Kiro before its first turn is saved;
 // both are stamped from their first turn event (resume.fromSessionStart).
 
-import { AGENT_DEFS, normalizeAgentSourceStartedAt, type AgentHookEvent, type AgentId, type TerminalResumeStamp } from '../contract'
+import { AGENT_DEFS, type AgentHookEvent, type AgentId, type TerminalResumeStamp } from '../contract'
 
 interface StampState {
   /** Dedup key of the last emitted stamp. */
@@ -19,13 +19,8 @@ interface StampState {
   latest?: {
     agentId: AgentId
     sessionId: string
-    profile?: string
     cwd?: string
-    sourcePid?: number
-    sourceStartedAt?: string
   }
-  /** Newest process start clock seen from an in-process (`hookProcess: 'self'`) agent. */
-  sourceStartedHighWater?: bigint
   /** Ingest counter: an async cwd lookup drops its result when a newer event
    *  (or a clear) landed while it was in flight. */
   seq: number
@@ -41,9 +36,9 @@ export interface ResumeStampsDeps {
 export interface ResumeStamps {
   ingest(event: AgentHookEvent): void
   /** Presence falling edge: the agent exited while the terminal lives on. */
-  clear(terminalId: string, endedAgentPid?: number, endedAgentStartedAt?: string): void
+  clear(terminalId: string): void
   /** The session the terminal's hooks last named, stamped or not. */
-  latest(terminalId: string): { agentId: AgentId; sessionId: string; profile?: string; cwd?: string } | undefined
+  latest(terminalId: string): { agentId: AgentId; sessionId: string; cwd?: string } | undefined
   drop(terminalId: string): void
 }
 
@@ -61,7 +56,7 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
 
   const emit = (terminalId: string, stamp: TerminalResumeStamp | null): void => {
     const st = stateFor(terminalId)
-    const key = stamp ? `${stamp.agentId}\0${stamp.sessionId}\0${stamp.cwd}\0${stamp.profile ?? ''}` : null
+    const key = stamp ? `${stamp.agentId}\0${stamp.sessionId}\0${stamp.cwd}` : null
     if (st.key === key) return
     st.key = key
     deps.emit(terminalId, stamp)
@@ -80,25 +75,11 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
       if (event.kind === 'session-title' || event.kind === 'input-submit') return
       const st = stateFor(terminalId)
       const agent = AGENT_DEFS[event.agentId]
-      // An in-process hook stamps each event with its process start clock;
-      // drop events from an older process of the agent in this terminal.
-      if (agent?.hookProcess === 'self') {
-        const startedAt = normalizeAgentSourceStartedAt(event.sourceStartedAt)
-        if (!startedAt && st.sourceStartedHighWater !== undefined) return
-        if (startedAt) {
-          const incoming = BigInt(startedAt)
-          if (st.sourceStartedHighWater !== undefined && incoming < st.sourceStartedHighWater) return
-          st.sourceStartedHighWater = incoming
-        }
-      }
       if (event.kind === 'session-end') {
         if (!event.sessionId) return
         if (st.latest && (
           st.latest.agentId !== event.agentId ||
-          st.latest.sessionId !== event.sessionId ||
-          (event.profile !== undefined && st.latest.profile !== event.profile) ||
-          (event.sourcePid !== undefined && st.latest.sourcePid !== undefined && st.latest.sourcePid !== event.sourcePid) ||
-          (event.sourceStartedAt !== undefined && st.latest.sourceStartedAt !== undefined && st.latest.sourceStartedAt !== event.sourceStartedAt)
+          st.latest.sessionId !== event.sessionId
         )) return
         st.seq++
         st.latest = undefined
@@ -108,47 +89,31 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
       if (event.sessionId == null) return
       st.seq++
       const { agentId, sessionId } = event
-      const profile = event.profile ? { profile: event.profile } : {}
-      const identity = {
-        agentId,
-        sessionId,
-        ...profile,
-        ...(event.cwd ? { cwd: event.cwd } : {}),
-        ...(event.sourcePid ? { sourcePid: event.sourcePid } : {}),
-        ...(event.sourceStartedAt ? { sourceStartedAt: event.sourceStartedAt } : {}),
-      }
+      const identity = { agentId, sessionId, ...(event.cwd ? { cwd: event.cwd } : {}) }
       if (event.kind === 'session-start' && !agent?.resume.fromSessionStart) {
         const previous = st.latest
         st.latest = identity
-        // A new session replaced the stamped one without ending it first
-        // (Hermes's session reset): the old stamp no longer runs here.
-        if (previous?.agentId === agentId && (
-          previous.sessionId !== sessionId || previous.profile !== event.profile
-        )) emit(terminalId, null)
+        // A new session replaced the stamped one without ending it first:
+        // the old stamp no longer runs here.
+        if (previous?.agentId === agentId && previous.sessionId !== sessionId) emit(terminalId, null)
         return
       }
       st.latest = identity
       if (event.cwd) {
-        emit(terminalId, { agentId, sessionId, cwd: event.cwd, ...profile })
+        emit(terminalId, { agentId, sessionId, cwd: event.cwd })
         return
       }
       const seq = st.seq
       void deps.getCwd(terminalId)
         .then((cwd) => {
           if (states.get(terminalId)?.seq !== seq) return // superseded while in flight
-          emit(terminalId, { agentId, sessionId, cwd: cwd ?? '', ...profile })
+          emit(terminalId, { agentId, sessionId, cwd: cwd ?? '' })
         })
         .catch(() => { /* terminal gone: no stamp beats a cwd-less guess */ })
     },
 
-    clear(terminalId, endedAgentPid, endedAgentStartedAt) {
+    clear(terminalId) {
       const st = stateFor(terminalId)
-      if (endedAgentPid !== undefined && st.latest?.sourcePid !== undefined && st.latest.sourcePid !== endedAgentPid) return
-      if (
-        endedAgentStartedAt !== undefined &&
-        st.latest?.sourceStartedAt !== undefined &&
-        st.latest.sourceStartedAt !== endedAgentStartedAt
-      ) return
       st.seq++
       st.latest = undefined
       emit(terminalId, null)
@@ -160,7 +125,6 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
       return {
         agentId: latest.agentId,
         sessionId: latest.sessionId,
-        ...(latest.profile ? { profile: latest.profile } : {}),
         ...(latest.cwd ? { cwd: latest.cwd } : {}),
       }
     },

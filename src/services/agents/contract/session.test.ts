@@ -15,11 +15,6 @@ describe('openTerminalAgent', () => {
     })
   }
 
-  it('Hermes runs as python3, so only its hook opens it', () => {
-    expect(openTerminalAgent({ type: 'running', processName: 'python3' }, null, false)).toBeNull()
-    expect(openTerminalAgent({ type: 'running', processName: 'python3' }, 'hermes', true)?.id).toBe('hermes')
-  })
-
   it('a plain shell or another program is not an agent', () => {
     expect(openTerminalAgent({ type: 'idle' }, null, false)).toBeNull()
     expect(openTerminalAgent({ type: 'running', processName: 'vim' }, null, false)).toBeNull()

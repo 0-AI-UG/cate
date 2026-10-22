@@ -1,11 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentId } from '../../contract'
 import { codexTrustedHash } from './codexTrust'
-import { ensureHermesIntegration } from '../hooks/hermes'
-import { runLiveCli } from '../changes/liveHarness'
 import type { createHookMockProvider } from './hookMockProvider'
 
 export const HOOK_SMOKE_PROMPT = 'Reply with only the number 41872 plus one. Do not use any tools.'
@@ -13,13 +11,10 @@ export const HOOK_SMOKE_PROMPT = 'Reply with only the number 41872 plus one. Do 
 export function cleanHookEnv(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter(([key, value]) => value !== undefined
     && /^(PATH|HOME|USER|LOGNAME|SHELL|LANG|LC_.*|TERM.*|TMPDIR|TMP|TEMP|SystemRoot|ComSpec|PATHEXT)$/i.test(key)
-    && !/^(CATE_HOOK_|CATE_TERMINAL_ID$|CLAUDE|ANTHROPIC|CODEX|GROK_|HERMES_HOME$)/.test(key))) as Record<string, string>
+    && !/^(CATE_HOOK_|CATE_TERMINAL_ID$|CLAUDE|ANTHROPIC|CODEX|GROK_)/.test(key))) as Record<string, string>
 }
 
-export async function configureHookCli(agentId: AgentId, directory: string, cwd: string, env: Record<string, string>, provider: Awaited<ReturnType<typeof createHookMockProvider>>, initialPrompt = HOOK_SMOKE_PROMPT): Promise<{
-  args: string[]
-  close?: () => Promise<void>
-}> {
+export async function configureHookCli(agentId: AgentId, directory: string, cwd: string, env: Record<string, string>, provider: Awaited<ReturnType<typeof createHookMockProvider>>, initialPrompt = HOOK_SMOKE_PROMPT): Promise<{ args: string[] }> {
   const mockUrl = provider.url
   switch (agentId) {
     case 'claude-code': {
@@ -109,26 +104,5 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
         provider: { cate: { npm: '@ai-sdk/openai-compatible', name: 'Cate mock', options: { baseURL: `${mockUrl}/v1`, apiKey: 'cate-fake-key' }, models: { 'cate-mock': { name: 'Cate mock' } } } },
       }))
       return { args: ['--model', 'cate/cate-mock', '--prompt', initialPrompt] }
-    case 'hermes': {
-      const profile = `cate-ci-${randomUUID().slice(0, 8)}`
-      await runLiveCli('hermes', ['profile', 'create', profile, '--no-alias', '--no-skills'], { cwd, env })
-      const config = await runLiveCli('hermes', ['--profile', profile, 'config', 'path'], { cwd, env })
-      const profileDir = path.dirname(config.stdout.trim())
-      if (!path.isAbsolute(profileDir) || path.basename(profileDir) !== profile) throw new Error('Unexpected disposable Hermes profile path')
-      // No alias, copied account state, or gateway is created. Delete only our
-      // exact disposable directory; upstream profile delete currently reports
-      // a purge-identity error after it has already removed that directory.
-      const close = () => rm(profileDir, { recursive: true, force: true })
-      try {
-        await ensureHermesIntegration(profile)
-        // The endpoint lives in the profile's config: current Hermes no longer
-        // hands CUSTOM_API_KEY to a bare custom provider.
-        for (const [key, value] of [['model.provider', 'custom'], ['model.base_url', `${mockUrl}/v1`], ['model.api_key', 'cate-fake-key']]) {
-          await runLiveCli('hermes', ['--profile', profile, 'config', 'set', key, value], { cwd, env })
-        }
-        return { args: ['--profile', profile, 'chat', '--cli', '--provider', 'custom',
-          '--model', 'cate-mock', '--query', initialPrompt], close }
-      } catch (error) { await close(); throw error }
-    }
   }
 }

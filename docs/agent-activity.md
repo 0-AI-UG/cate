@@ -15,7 +15,6 @@ them separately from confirmed human prompts:
 | --- | --- |
 | Codex | `PermissionRequest` runs before reviewer routing. Its `permission_mode` cannot distinguish automatic review from a human prompt. Cate reads resolved configuration through the host's Codex `config/read` API. |
 | Claude Code | `PermissionRequest` is a check; `Notification` with `permission_prompt` confirms a human prompt. Claude delays that notification by about six seconds. Automatic denials and failed tools resume via `PermissionDenied` and `PostToolUseFailure`. |
-| Hermes | Preserve `surface` through the managed plugin. `cli` confirms the local human prompt; `smart`, custom transports, and missing/unknown surfaces are checks. `post_approval_response` resumes either path. |
 | Grok | `Notification` with `permission_prompt` confirms a human prompt. Ordinary pre-tool hooks do not. |
 | OpenCode | `permission.asked` and `permission.replied` delimit a pending permission request. Automatically allowed tools do not create this wait. |
 | Cursor / Kiro | Their current hooks do not distinguish a human permission prompt from ordinary tool checks. Keep the turn running; do not manufacture an attention notification. |
@@ -50,8 +49,7 @@ approval events.
 
 Regression coverage (`src/services/agents/`): `runtime/status.integration.test.ts`
 covers all registered CLIs and notification behavior;
-`runtime/terminal.test.ts` exercises ordered hook/PTY delivery;
-`runtime/hooks/hermes.test.ts` executes the generated Python bridge when Python
-is installed; the fake-provider lifecycle suite
+`runtime/terminal.test.ts` exercises ordered hook/PTY delivery; the
+fake-provider lifecycle suite
 (`runtime/live/hookLifecycle.itest.ts`) verifies the human permission
 notification against each installed CLI.

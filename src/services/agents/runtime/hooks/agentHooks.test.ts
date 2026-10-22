@@ -105,7 +105,7 @@ describe('agentHooks capability', () => {
     const states = await cap.inspectWorkspace(cwd, { approvals: true })
     expect(reader).toHaveBeenCalledWith(cwd, { env: undefined })
     expect(states.find((state) => state.agentId === 'codex')?.approvalDetection).toEqual(detection)
-    expect(states.filter((state) => state.approvalDetection?.source === 'signal').map((state) => state.agentId).sort()).toEqual(['claude-code', 'grok', 'hermes', 'opencode'])
+    expect(states.filter((state) => state.approvalDetection?.source === 'signal').map((state) => state.agentId).sort()).toEqual(['claude-code', 'grok', 'opencode'])
     expect(states.filter((state) => state.approvalDetection?.source === 'unavailable').map((state) => state.agentId).sort()).toEqual(['cursor', 'kiro'])
   })
 
@@ -785,15 +785,13 @@ describe('agentHooks capability', () => {
     expect(states.every((s) => s.displayName.length > 0)).toBe(true)
   })
 
-  test('inspectFolders reads only the config folders, never an external plugin\'s CLI', async () => {
-    const inspect = vi.fn(async () => true)
-    const cap = makeCap({ externalPlugins: { [AGENT_HOOK_SPECS.hermes.externalPlugin!.id]: { ensure: async () => {}, inspect } } })
+  test('inspectFolders reads only the config folders', async () => {
+    const cap = makeCap()
     const cwd = tmpDir('ws-folders')
     mkdirSync(path.join(cwd, '.codex'))
     const states = await cap.inspectFolders(cwd)
     expect(states.filter((s) => s.folderPresent).map((s) => s.agentId)).toEqual(['codex'])
     expect(await cap.inspectFolders(os.homedir())).toSatisfy((list: typeof states) => list.every((s) => !s.folderPresent))
-    expect(inspect).not.toHaveBeenCalled()
   })
 
   test('inspectWorkspace touches no files for a home / relative cwd', async () => {
@@ -1014,7 +1012,6 @@ describe('withoutInheritedHookIdentity', () => {
     expect(withoutInheritedHookIdentity({
       PATH: '/bin',
       CATE_TERMINAL_ID: 'pty-1',
-      CATE_HERMES_HOOKS: '0',
       CODEX_EXEC_SERVER_URL: '',
       UNSET: undefined,
     })).toEqual({ PATH: '/bin' })

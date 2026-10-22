@@ -32,7 +32,6 @@ import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promis
 import { createAgentChangesStore, type AgentChangeTerminal, type StoredAgentChange, type StoredChangesSnapshot } from '../changes/store'
 import { AGENT_SESSION_STORES, createAgentTitleTracker } from '../sessions'
 import type { AgentSessionStores } from '../sessions/types'
-import { HERMES_PLUGIN_ID, ensureHermesIntegration, inspectHermesIntegration } from './hermes'
 import { APPROVAL_CONFIG_READERS, type ApprovalConfigReader } from './approvalConfig'
 import {
   AGENTS,
@@ -47,7 +46,6 @@ import {
   agentHookInUse,
   agentHooksEnabled,
   normalizeAgentHookPayload,
-  normalizeAgentSourceStartedAt,
   resolveAgentHookMode,
   type AgentApprovalDetection,
   type AgentHookAgentState,
@@ -59,13 +57,6 @@ import {
   type AgentToolCall,
   type HookInjectionContext,
 } from '../../contract'
-
-/** Installers for AgentHookSpec.externalPlugin, keyed by plugin id. The Hermes
- *  plugin is the one user-global file Cate installs: Hermes loads plugins only
- *  from its user config. */
-const EXTERNAL_PLUGINS: Record<string, ExternalPluginInstaller> = {
-  [HERMES_PLUGIN_ID]: { ensure: () => ensureHermesIntegration(), inspect: () => inspectHermesIntegration() },
-}
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 
@@ -111,7 +102,7 @@ export interface AgentHooks {
   inspectWorkspace(cwd: string, options?: { approvals?: boolean }): Promise<AgentHookAgentState[]>
   /** Whether each agent's repo-local config folder is in a checkout (the
    *  'auto' in-use signal): all readiness needs. Filesystem only, unlike
-   *  inspectWorkspace, whose injection check can run an agent's CLI. */
+   *  inspectWorkspace, whose approvals check can run an agent's CLI. */
   inspectFolders(cwd: string): Promise<Array<Pick<AgentHookAgentState, 'agentId' | 'folderPresent'>>>
   /** Whether Cate's hooks for one agent are installed for a checkout (its
    *  `injected` in inspectWorkspace), without inspecting the others. */
@@ -161,7 +152,7 @@ export interface AgentHooksDeps {
    *  when the poster didn't send one). AWAITED before the HTTP response goes
    *  out: the presence tracker's ancestry walk needs the bridge's process
    *  chain alive, and the bridge holds it exactly until it hears back. */
-  onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number; sourceStartedAt?: string }) => void | Promise<void>
+  onPost?: (post: { terminalId: string; agentId: AgentId; pid?: number }) => void | Promise<void>
   /** Tests may replace the filesystem-backed CLI session stores. */
   sessionStores?: AgentSessionStores
   /** Runtime-host home containing each CLI's session store. */
@@ -170,13 +161,9 @@ export interface AgentHooksDeps {
   titleRetryDelaysMs?: readonly number[]
   /** A reported edit could not be saved. */
   onChangeError?: (error: unknown) => void
-  /** Installers for AgentHookSpec.externalPlugin (tests replace Hermes). */
-  externalPlugins?: Record<string, ExternalPluginInstaller>
   /** Readers of each config-detected CLI's approval config (tests replace them). */
   approvalConfigReaders?: Partial<Record<AgentId, ApprovalConfigReader>>
 }
-
-interface ExternalPluginInstaller { ensure(): Promise<void>; inspect(): Promise<boolean> }
 
 interface HookState {
   dir: string
@@ -314,7 +301,6 @@ setTimeout(() => process.exit(0), 10000)
 export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
   const changes = createAgentChangesStore(deps.changesDir)
   const homeDir = deps.homeDir ?? os.homedir()
-  const externalPlugins = deps.externalPlugins ?? EXTERNAL_PLUGINS
   const listeners = new Set<(event: AgentHookEvent) => void>()
   const toolCallListeners = new Set<(terminalId: string, call: AgentToolCall) => void>()
   let ready: Promise<HookState> | null = null
@@ -530,7 +516,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
             agentId?: unknown
             terminalId?: unknown
             pid?: unknown
-            processStartedAt?: unknown
             payload?: unknown
           }
           if (req.url === '/prompt-context') {
@@ -576,9 +561,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
                     terminalId,
                     agentId: agentId as AgentId,
                     pid: typeof body.pid === 'number' ? body.pid : undefined,
-                    ...(normalizeAgentSourceStartedAt(body.processStartedAt)
-                      ? { sourceStartedAt: normalizeAgentSourceStartedAt(body.processStartedAt) }
-                      : {}),
                   })
                 } catch { /* presence tracking must never fail the hook */ }
               }
@@ -589,14 +571,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
                   ? (await approvalConfig(event.agentId, event.cwd, approvalEnvs.get(terminalId))).mode : 'unknown'
               }
               if (disposed) return
-              // An in-process hook posts from the agent itself, so its pid and
-              // start clock identify which agent process the event came from.
               const spec = AGENT_HOOK_SPECS[agentId as AgentId]
-              if (event && AGENT_DEFS[event.agentId].hookProcess === 'self'
-                && typeof body.pid === 'number' && Number.isInteger(body.pid) && body.pid > 0) {
-                event.sourcePid = body.pid
-                event.sourceStartedAt = normalizeAgentSourceStartedAt(body.processStartedAt)
-              }
               const call = spec ? spec.toolCall(body.payload as Record<string, unknown>) : null
               if (spec) {
                 try { await changes.ingestHook(terminalId, agentId as AgentId, event, call) }
@@ -700,8 +675,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     return { dir, url: `http://127.0.0.1:${port}`, secret, server, contexts }
   }
 
-  /** A repo hook file carrying Cate's marker, or the agent's external
-   *  plugin enabled. */
+  /** A repo hook file carrying Cate's marker. */
   const injectedIn = async (agentId: AgentId, cwd: string): Promise<boolean> => {
     const spec = AGENT_HOOK_SPECS[agentId]
     for (const pf of spec.projectFiles ?? []) {
@@ -709,7 +683,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         if ((await readFile(path.join(cwd, pf.relPath), 'utf-8')).includes(CATE_HOOK_MARKER)) return true
       } catch { /* absent — not injected via this path */ }
     }
-    return spec.externalPlugin ? await externalPlugins[spec.externalPlugin.id]?.inspect() ?? false : false
+    return false
   }
 
   return {
@@ -795,12 +769,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         const spec = AGENT_HOOK_SPECS[agent.id]
         const mode = resolveAgentHookMode(config, agent.id)
         const enabled = await hooksEnabled(agent.id, config, cwd, autoBaseCwd, launchedAgentId)
-        if (spec.externalPlugin) {
-          if (enabled) {
-            try { await externalPlugins[spec.externalPlugin.id]?.ensure() } catch { /* hooks must not block a terminal */ }
-          }
-          continue
-        }
         if (!spec.projectFiles) continue
         // 'off': reclaim anything we previously injected, then move on.
         if (mode === 'off') {
@@ -859,7 +827,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       const store = sessionStores[session.agentId]
       if (!store?.files) return null
       // Locating can query a CLI's index: once found, a session's files stay.
-      const key = `${session.agentId}\0${session.sessionId}\0${session.cwd ?? ''}\0${session.profile ?? ''}`
+      const key = `${session.agentId}\0${session.sessionId}\0${session.cwd ?? ''}`
       let files = conversationFiles.get(key)
       if (!files) {
         files = await store.files({ session, homeDir }).catch(() => [])

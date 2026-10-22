@@ -29,6 +29,6 @@ export async function createMockChangeFixture(agentId: AgentId, tools: (cwd: str
   catch (error) { await provider.close(); await fixture.close(); throw error }
   return {
     ...fixture, provider, args: launch.args,
-    close: async () => { await provider.close(); await launch.close?.(); await fixture.close() },
+    close: async () => { await provider.close(); await fixture.close() },
   }
 }

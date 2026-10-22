@@ -1,7 +1,7 @@
 # Installed agent hook regression CI
 
-`Agent CLI hooks` installs the latest Claude Code, Codex, Cursor, Grok, Hermes,
-Kiro, and OpenCode on Linux. It runs on main pushes, pull requests to any branch (including
+`Agent CLI hooks` installs the latest Claude Code, Codex, Cursor, Grok, Kiro,
+and OpenCode on Linux. It runs on main pushes, pull requests to any branch (including
 forks and stacked PRs), merge queues, daily at 06:23 UTC, and manual dispatch. The daily run
 catches upstream changes without waiting for a Cate commit. Each job prints
 the installed version and uploads a JUnit report.
@@ -41,7 +41,6 @@ prompt context must reach the model request for each CLI that supports it.
 | Codex | Manual approval/rejection, automatic review, tool failure |
 | Cursor | Session exit; `afterFileEdit` and `postToolUse` are both required |
 | Grok | Manual approval/rejection, tool/API failures, session exit |
-| Hermes | Manual approval/rejection, smart review, tool failure, session exit/reset |
 | OpenCode | Permission request/reply, tool failure, completed tool-part ingestion |
 | Kiro V3 | Native tool completion and terminal-input interrupt recovery |
 
@@ -52,7 +51,7 @@ manually rejecting a permission dialog, which interrupts Claude instead.
 
 The terminal status must be Running during execution, waiting but unavailable for a new
 prompt during human approval, and ready after completion. Actual Codex automatic
-review and Hermes smart review must stay Running without a permission notification.
+review must stay Running without a permission notification.
 Codex's installed app-server also resolves manual, auto-review, guardian-review,
 and never-ask configurations, including their source files. Unit tests cover stale
 turn events and the settings display. There are no user-set approval overrides.
@@ -82,14 +81,13 @@ and `.`) is two pieces on the screen and is not checked.
 | --- | --- |
 | Claude Code | Anthropic Messages SSE |
 | Codex | OpenAI Responses SSE |
-| Grok, Hermes, OpenCode | OpenAI Chat Completions SSE |
+| Grok, OpenCode | OpenAI Chat Completions SSE |
 | Cursor | Local authentication, model discovery, and Connect RPC response stream |
 | Kiro V3 | Local control-plane catalog and AWS event-stream response |
 
 The child environment excludes inherited credentials in mock mode. Configuration
 is disposable; Cursor uses its in-memory credential store so macOS Keychain is
-never read or modified. Hermes uses a disposable named profile with the production
-managed-plugin installer. Kiro runs its installed V3 engine against loopback
+never read or modified. Kiro runs its installed V3 engine against loopback
 endpoints; its older `KIRO_MOCK_CHAT_RESPONSE` setting does not mock V3.
 
 Codex launches without `-c`, `--profile`, `--no-daemon`, or hook-trust bypass flags:

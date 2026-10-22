@@ -63,7 +63,7 @@ export const agentApi = defineCateApi(
       args: {
         prompt: str.nonEmpty().maxLength(50_000).rest('prompt').help('The first prompt'),
         agentId: opt(str).flag('agent', 'id')
-          .help('Agent CLI: claude-code, codex, cursor, grok, hermes, kiro or opencode (default: one set up in this workspace)'),
+          .help('Agent CLI: claude-code, codex, cursor, grok, kiro or opencode (default: one set up in this workspace)'),
         title: opt(str.maxLength(80)).help('Panel title, at most 80 characters'),
         worktreeId: opt(str).flag('worktree', 'id').help('Run in this existing worktree (default: the calling panel\'s checkout)'),
         newWorktree: opt(str).flag('new-worktree', 'name').help('Create a worktree with this name and run in it'),
@@ -78,8 +78,8 @@ export const agentApi = defineCateApi(
       access: 'read',
       handler: 'service',
       summary: 'List the agent CLIs: whether each can start in a terminal here (its Cate hooks are on)',
-      // The first hook inspection runs each installed CLI's own check
-      // (Hermes' plugin list can take over 10 s), as start does.
+      // The first hook inspection can run an installed CLI's own check, as
+      // start does.
       timeoutMs: 90_000,
       format: 'prettyJson',
     },
