@@ -121,8 +121,11 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       const close = () => rm(profileDir, { recursive: true, force: true })
       try {
         await ensureHermesIntegration(profile)
-        env.CUSTOM_BASE_URL = `${mockUrl}/v1`
-        env.CUSTOM_API_KEY = 'cate-fake-key'
+        // The endpoint lives in the profile's config: current Hermes no longer
+        // hands CUSTOM_API_KEY to a bare custom provider.
+        for (const [key, value] of [['model.provider', 'custom'], ['model.base_url', `${mockUrl}/v1`], ['model.api_key', 'cate-fake-key']]) {
+          await runLiveCli('hermes', ['--profile', profile, 'config', 'set', key, value], { cwd, env })
+        }
         return { args: ['--profile', profile, 'chat', '--cli', '--provider', 'custom',
           '--model', 'cate-mock', '--query', initialPrompt], close }
       } catch (error) { await close(); throw error }
