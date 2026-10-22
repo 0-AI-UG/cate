@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentId } from '../../contract'
@@ -93,6 +93,11 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       env.KIRO_KAS_ENDPOINT = mockUrl
       env.KIRO_KAS_CONTROL_PLANE_ENDPOINT = mockUrl
       env.KIRO_NO_AUTO_UPDATE = '1'
+      // Kiro V3 asks to trust a new workspace; it keeps the answer under
+      // workspace-roots/<first 16 hex of sha256(cwd)>, verified live.
+      const root = path.join(env.KIRO_HOME, 'workspace-roots', createHash('sha256').update(cwd).digest('hex').slice(0, 16))
+      await mkdir(root, { recursive: true })
+      await writeFile(path.join(root, 'permissions.yaml'), 'rules: []\nworkspaceTrusted: true\n')
       return { args: ['chat', '--v3', initialPrompt] }
     }
     case 'opencode':
