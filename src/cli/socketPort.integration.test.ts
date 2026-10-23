@@ -38,7 +38,7 @@ async function startRuntime(settings: Record<string, unknown>) {
     settings: { get: (key) => settings[key] },
     tokens,
   })
-  registerKernelApi(router, { publishNotification: () => {} })
+  registerKernelApi(router)
   const rpc = new RpcServer({ lifecycle: createLifecycleBus(), version: 'test', acceptHello: (hello) => acceptCallerHello(router, hello) })
   rpc.register(apiCapability, apiCapabilityImpl(router))
   const server = net.createServer((socket) => rpc.serve(framePortOver(serverDuplex(socket), 'stream')))
@@ -71,7 +71,7 @@ describe('cate CLI over the local socket', () => {
     const { token } = tokens.issue({ kind: 'cli', panelId: 'term-123456789' })
     const env = { CATE_SOCKET: socketPath, CATE_TOKEN: token }
 
-    expect(await cli(['version'], env)).toMatchObject({ code: 0, out: ['10'] })
+    expect(await cli(['version'], env)).toMatchObject({ code: 0, out: ['11'] })
     expect(await cli(['terminal', 'read', '--panel', 'term-1', '--lines', '3'], env)).toMatchObject({
       code: 0,
       out: ['term-123456789 read {"lines":3}'],

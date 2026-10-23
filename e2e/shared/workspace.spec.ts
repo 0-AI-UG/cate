@@ -107,7 +107,6 @@ describeShared('workspace', (pair) => {
 
     await run('panel', 'title', 'Titled by CLI', '--panel', panelId)
     await expect.poll(async () => (await doc(a))?.panels[panelId]?.title).toBe('Titled by CLI')
-    await run('notify', 'hello from the shared runtime')
 
     // The CLI permission is a workspace setting: turned off from A, B's CLI is refused.
     await call(a, 'settings', 'set', { key: 'cliPanelReadEnabled', value: false })
