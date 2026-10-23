@@ -52,18 +52,19 @@ function MainApp({ client }: { client: DesktopClient }) {
     return () => { document.body.style.background = previous }
   }, [platform])
 
-  // The surfaces sit outside the shown workspace's scope: it remounts on a
-  // workspace switch, and surfaces (webviews) must outlive that. Each
-  // workspace's surfaces get their own scope instead.
+  // The shown workspace's scope remounts on a workspace switch, so only its
+  // content and the overlays sit inside it: the sidebar, the chrome and the
+  // surfaces (webviews) outlive a switch. Each workspace's surfaces get their
+  // own scope instead.
   return (
     <>
-      <WorkspaceScope workspaceId={workspaceId}>
-        <div className={`h-screen w-screen flex flex-col ${platform === 'darwin' ? '' : 'bg-canvas-bg'}`}>
-          <TitleBar api={client.api} platform={platform} />
-          <MacTrafficLightStrip api={client.api} platform={platform} />
-          <div className="relative flex-1 min-h-0 min-w-0">
-            <div className="absolute inset-0 flex flex-row">
-              <div data-app-sidebar="left" className="flex-shrink-0 h-full"><Sidebar /></div>
+      <div className={`h-screen w-screen flex flex-col ${platform === 'darwin' ? '' : 'bg-canvas-bg'}`}>
+        <TitleBar api={client.api} platform={platform} />
+        <MacTrafficLightStrip api={client.api} platform={platform} />
+        <div className="relative flex-1 min-h-0 min-w-0">
+          <div className="absolute inset-0 flex flex-row">
+            <div data-app-sidebar="left" className="flex-shrink-0 h-full"><Sidebar /></div>
+            <WorkspaceScope workspaceId={workspaceId}>
               <div className="relative flex-1 min-h-0 min-w-0 bg-canvas-bg" data-app-content>
                 <div className="h-full" hidden={!!overlay}>
                   {workspaceId
@@ -73,13 +74,13 @@ function MainApp({ client }: { client: DesktopClient }) {
                 <div id="settings-content-slot" className="absolute inset-0 z-[100001] pointer-events-none empty:hidden" />
                 {!overlay && <LeftSidebarReopen />}
               </div>
-            </div>
-            <FileDropOverlay />
-            <ClientOverlays />
-            <PerfHud api={client.api} connections={client.connections} />
+            </WorkspaceScope>
           </div>
+          <FileDropOverlay />
+          <WorkspaceScope workspaceId={workspaceId}><ClientOverlays /></WorkspaceScope>
+          <PerfHud api={client.api} connections={client.connections} />
         </div>
-      </WorkspaceScope>
+      </div>
       <FileViewsHost>
         <Surfaces
           client={client}
