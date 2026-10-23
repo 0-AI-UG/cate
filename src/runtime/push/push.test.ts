@@ -40,7 +40,7 @@ describe('push', () => {
     expect(file().targets).toHaveLength(1)
 
     await service.notify({ kind: 'agent.needsInput', panelId: 'claude', title: 'Claude Code needs input', body: 'Claude Code is waiting for your response.' })
-    await service.notify({ kind: 'cate.ui.notify', title: 'Build done', body: 'All green' })
+    await service.notify({ kind: 'runtime.warning', title: 'Build done', body: 'All green' })
     expect(sent.map((push) => [push.target, push.collapseId])).toEqual([
       [`apns:production:${'cd'.repeat(32)}`, 'aaaaaaaaaaaaaaaa.claude'],
       [`apns:production:${'cd'.repeat(32)}`, 'aaaaaaaaaaaaaaaa.notice.5'],
@@ -54,7 +54,7 @@ describe('push', () => {
   it('drops a target the service no longer delivers to, and a device that was unpaired', async () => {
     const gone = setup({ result: 'bad-target' })
     gone.service.register('phone', { target, key: encodeBase64(key) })
-    await gone.service.notify({ kind: 'cate.ui.notify', title: 't', body: 'b' })
+    await gone.service.notify({ kind: 'runtime.warning', title: 't', body: 'b' })
     expect(gone.file().targets).toEqual([])
 
     const { service, file } = setup()

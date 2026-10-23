@@ -251,16 +251,15 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     paths: { validate: (p) => files.paths.strict(p) },
   })
 
-  // Notification events: agents and `cate.ui.notify` publish, clients and
+  // Notification events: agents and the runtime publish, clients and
   // push delivery follow.
   const notifications = createNotifications()
   // A state file that could not be read was reset; the person hears of it,
   // with where the old one went, even when no client was there yet.
   const quarantineWarning = ({ file, backup }: Quarantined): void => notifications.keep({
-    kind: 'cate.ui.notify',
+    kind: 'runtime.warning',
     title: 'A Cate file could not be read',
     body: `${file} was reset to its defaults. The unreadable file was kept as ${backup}.`,
-    level: 'warning',
   })
   for (const entry of quarantinedFiles()) quarantineWarning(entry)
   offs.push(onQuarantine(quarantineWarning))
@@ -304,8 +303,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   offs.push(deps.busy.contribute(() => terminal.busy()))
   offs.push(deps.busy.contribute(() => agentsRuntime.busy().length > 0))
 
-  // `cate.ui.notify` reaches clients on the agents notification stream.
-  offs.push(registerKernelApi(router, { publishNotification: (event) => notifications.publish(event) }))
+  offs.push(registerKernelApi(router))
   offs.push(router.registerService(agentApi, agentsRuntime.apiHandlers()))
 
   // ---- Panels -----------------------------------------------------------------

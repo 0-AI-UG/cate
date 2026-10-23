@@ -66,7 +66,7 @@ export function createNotificationDisplay(deps: NotificationDisplayDeps): Notifi
     toasts.show({
       title: event.title,
       body: event.body,
-      ...('level' in event && event.level ? { level: event.level } : {}),
+      ...(event.kind === 'runtime.warning' ? { level: 'warning' as const } : {}),
       ...(action ? { onClick: () => runNotificationAction(action) } : {}),
     })
   }

@@ -25,7 +25,7 @@ describe('commands from specs', () => {
   it('derives command words', () => {
     const words = commands.map((c) => c.words.join(' '))
     expect(words).toEqual(expect.arrayContaining([
-      'version', 'notify', 'panel list', 'panel create', 'panel set', 'panel close', 'editor open',
+      'version', 'panel list', 'panel create', 'panel set', 'panel close', 'editor open',
       'terminal read', 'terminal type', 'terminal press',
       'review note add', 'review note resolve', 'agent wait', 'agent start',
     ]))
@@ -325,7 +325,7 @@ describe('runCli', () => {
     await runCli(['panel', 'close', 'a'], CATE_API, closed.d)
     expect(closed.out).toEqual(['panelIds  a, b'])
     const ok = deps({ call: async () => ({ ok: true }) })
-    await runCli(['notify', 'hi'], CATE_API, ok.d)
+    await runCli(['panel', 'title', 'hi'], CATE_API, ok.d)
     expect(ok.out).toEqual(['ok'])
   })
 
