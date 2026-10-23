@@ -65,7 +65,7 @@ export interface MobileNotification {
   workspaceId: string
   panelId: string | null
   /** The event's kind: `agent.needsInput`, `agent.needsPermission`,
-   *  `cate.ui.notify`, ... */
+   *  `runtime.warning` */
   kind: string
   title: string
   body: string

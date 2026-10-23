@@ -20,7 +20,7 @@ import {
   str,
   validateCateArgs,
 } from '../contract'
-import { uiApi, versionApi } from './api'
+import { versionApi } from './api'
 
 // Areas as modules declare them (the kernel knows none).
 const TEST_AREAS = {
@@ -73,7 +73,6 @@ describe('defineCateApi', () => {
     expect(demo.methods.run.panelType).toBeUndefined()
     expect(demo.methods.run.area).toBe(TEST_AREAS.terminal)
     expect(versionApi.methods.version.method).toBe('cate.version')
-    expect(uiApi.methods.notify.method).toBe('cate.ui.notify')
   })
 
   it('lists a method\'s opt-in area with the namespaces\' areas', () => {

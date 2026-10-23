@@ -1074,7 +1074,7 @@ or that changes shared state, is a **workspace** setting.
 | Desktop (`shells/desktop`) | `warnBeforeQuit`, `betaUpdatesEnabled`, `disableGpuRasterization` (applies after restart) | |
 | Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
 | Runtime (`runtime/daemon`) | | `runtimeLifetime`, `runtimeNetwork` |
-| `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliNotifyEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
+| `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
 | Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
 
 ## 9. Workspace
@@ -1561,9 +1561,8 @@ agents.
 
 `workspace/notifications` owns notification events (a kind, the panel,
 a title and a body: an agent needs input or a permission, or a
-`cate.ui.notify` with its level; a warning is one at level `warning`).
-Agents and `cate.ui.notify` publish through the runtime side (`publish`),
-and the composition root keeps (`keep`) a warning raised before any client
+`runtime.warning` the runtime raises itself). Agents publish through the
+runtime side (`publish`), and the composition root keeps (`keep`) a warning raised before any client
 was there, such as a state file `kernel/state` quarantined; clients follow
 the `notifications` capability's stream, and the composition root hands
 every event to push delivery for devices that are away (section 7.9).

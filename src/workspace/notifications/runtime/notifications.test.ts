@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 import type { NotificationEvent } from '../contract'
 import { createNotifications, notificationsCapabilityImpl } from './notifications'
 
-const event = (body: string): NotificationEvent => ({ kind: 'cate.ui.notify', title: 'Cate', body })
+const event = (body: string): NotificationEvent => ({ kind: 'runtime.warning', title: 'Cate', body })
 
 it('replays kept events to a client that subscribes later, then follows live ones', () => {
   const notifications = createNotifications()

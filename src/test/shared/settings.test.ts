@@ -49,9 +49,9 @@ describe.skipIf(process.platform === 'win32')('shared workspace: settings', () =
     await untilState(ws.a, 'offline')
     ws.a.online()
     await untilState(ws.a, 'connected')
-    const expected = !mirror.get('cliNotifyEnabled')
-    await settings(ws.b).set({ key: 'cliNotifyEnabled', value: expected })
-    await until(() => (mirror.get('cliNotifyEnabled') === expected ? true : undefined), 5_000, 'A sees the change')
+    const expected = !mirror.get('cliEditorControlEnabled')
+    await settings(ws.b).set({ key: 'cliEditorControlEnabled', value: expected })
+    await until(() => (mirror.get('cliEditorControlEnabled') === expected ? true : undefined), 5_000, 'A sees the change')
     mirror.dispose()
   })
 
@@ -64,24 +64,24 @@ describe.skipIf(process.platform === 'win32')('shared workspace: settings', () =
     })
     await new Promise((r) => setTimeout(r, 50))
 
-    await settings(ws.b).set({ key: 'cliNotifyEnabled', value: false })
-    expect((await settings(ws.a).getAll()).cliNotifyEnabled).toBe(false)
-    await until(() => (changes.some((c) => c.cliNotifyEnabled === false) ? true : undefined), 5_000, 'change pushed to A')
+    await settings(ws.b).set({ key: 'cliEditorControlEnabled', value: false })
+    expect((await settings(ws.a).getAll()).cliEditorControlEnabled).toBe(false)
+    await until(() => (changes.some((c) => c.cliEditorControlEnabled === false) ? true : undefined), 5_000, 'change pushed to A')
 
-    expect(await code(settings(ws.b).set({ key: 'cliNotifyEnabled', value: 'yes' as never }))).toBe('rejected')
+    expect(await code(settings(ws.b).set({ key: 'cliEditorControlEnabled', value: 'yes' as never }))).toBe('rejected')
     expect(await code(settings(ws.a).set({ key: 'noSuchSetting' as never, value: true as never }))).toBe('rejected')
-    expect((await settings(ws.a).getAll()).cliNotifyEnabled).toBe(false)
+    expect((await settings(ws.a).getAll()).cliEditorControlEnabled).toBe(false)
     sub.cancel()
   })
 
   it('concurrent sets from both clients end on one value for both', async () => {
     ws.b.slow({ latencyMs: 60, jitterMs: 40 })
     await Promise.all(Array.from({ length: 10 }, (_, i) => [
-      settings(ws.a).set({ key: 'cliNotifyEnabled', value: i % 2 === 0 }),
-      settings(ws.b).set({ key: 'cliNotifyEnabled', value: i % 2 === 1 }),
+      settings(ws.a).set({ key: 'cliEditorControlEnabled', value: i % 2 === 0 }),
+      settings(ws.b).set({ key: 'cliEditorControlEnabled', value: i % 2 === 1 }),
     ]).flat())
     const [a, b] = await Promise.all([settings(ws.a).getAll(), settings(ws.b).getAll()])
-    expect(a.cliNotifyEnabled).toBe(b.cliNotifyEnabled)
+    expect(a.cliEditorControlEnabled).toBe(b.cliEditorControlEnabled)
   }, 20_000)
 
   for (const terminalOf of ['a', 'b'] as const) {

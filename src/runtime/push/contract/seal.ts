@@ -15,7 +15,7 @@ export interface PushMessage {
   runtimeId: string
   /** The workspace folder's name. */
   workspace: string
-  /** The event's kind (`agent.needsInput`, `cate.ui.notify`, ...). */
+  /** The event's kind (`agent.needsInput`, `runtime.warning`, ...). */
   kind: string
   panelId: string | null
   title: string

@@ -22,14 +22,14 @@ Read the one for your task before its first command:
   prompts, waiting for and reading their answers, and typing into terminals
   that have no agent.
 
-Panels, terminals, editors, Review panels and notifications are covered
+Panels, terminals, editors and Review panels are covered
 below.
 
 ## Permissions
 
 Each area needs its permission in the workspace's Settings → CLI: the master
 switch "Command-line control (cate CLI)" plus a Read and a Control cell per
-area (Browser, Browser passwords, Terminal, Panels, Files, Notifications,
+area (Browser, Browser passwords, Terminal, Panels, Files,
 Agents & reviews). Sending keystrokes to terminals (Terminal, Control) and
 using saved browser passwords are off by default. A denied call fails with an error naming the setting: tell the
 person which one to turn on instead of working around it.
@@ -88,7 +88,7 @@ they need `--panel` or a selection.
 There is no `panel focus`: focus belongs to each person's window, not to the
 workspace.
 
-## Panels, editors and notifications
+## Panels and editors
 
 ```bash
 cate panel create browser https://example.com   # the URL is optional
@@ -100,7 +100,6 @@ cate panel close <id>                    # fails with dirty on unsaved work or a
 cate panel close <id> --discard          # drops unsaved work, stops the program
 cate editor open src/app.tsx:42          # reuses an editor that already shows the file
 cate editor active                       # which file the target editor shows
-cate notify "Build finished" --level info
 ```
 
 `panel create` and `editor open` print the new panel's short id. New panels
