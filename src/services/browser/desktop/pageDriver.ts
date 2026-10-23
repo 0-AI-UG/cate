@@ -17,6 +17,7 @@ import {
   describeBrowserLocator,
   matchBrowserElements,
   browserRecovery,
+  browserStateWithin,
   diffBrowserState,
   type BrowserActionOutcome,
   type BrowserDriverResult,
@@ -781,15 +782,16 @@ export class PageDriver {
 
   private async box(target: ElementTarget, scroll = true): Promise<{ x: number; y: number; width: number; height: number }> {
     if (scroll) await this.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: target.backendNodeId }, target.sessionId)
-    const response = await this.send('DOM.getBoxModel', { backendNodeId: target.backendNodeId }, target.sessionId)
-    const content = objectValue(response.model).content
-    if (!Array.isArray(content) || content.length < 8) throw new Error('element-has-no-actionable-box')
-    const xs = [Number(content[0]), Number(content[2]), Number(content[4]), Number(content[6])]
-    const ys = [Number(content[1]), Number(content[3]), Number(content[5]), Number(content[7])]
-    const local = {
-      x: Math.min(...xs), y: Math.min(...ys),
-      width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys),
-    }
+    // The first non-empty fragment: a link wrapped across lines has one per
+    // line, and the middle of their union can be empty space beside them.
+    const response = await this.send('DOM.getContentQuads', { backendNodeId: target.backendNodeId }, target.sessionId)
+    const quads = Array.isArray(response.quads) ? response.quads as number[][] : []
+    const local = quads.map((quad) => {
+      const xs = [Number(quad[0]), Number(quad[2]), Number(quad[4]), Number(quad[6])]
+      const ys = [Number(quad[1]), Number(quad[3]), Number(quad[5]), Number(quad[7])]
+      return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) }
+    }).find((rect) => rect.width > 0 && rect.height > 0)
+    if (!local) throw new Error('element-has-no-actionable-box')
     if (!target.sessionId || !target.frameId) return local
     const offset = await this.frameOffset(target.frameId, scroll)
     return { ...local, x: local.x + offset.x, y: local.y + offset.y }
@@ -843,8 +845,9 @@ export class PageDriver {
         const actionable = await this.callOn(target, `function () {
           if (!this.isConnected || !this.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return 'element-not-visible';
           if (this.matches(':disabled') || this.closest('[aria-disabled="true"],[inert]')) return 'element-disabled';
-          const rect=this.getBoundingClientRect(), x=rect.x+rect.width/2, y=rect.y+rect.height/2;
-          if (rect.width<=0 || rect.height<=0) return 'element-has-no-actionable-box';
+          const rect=Array.from(this.getClientRects()).find(r=>r.width>0 && r.height>0);
+          if (!rect) return 'element-has-no-actionable-box';
+          const x=rect.x+rect.width/2, y=rect.y+rect.height/2;
           const describe=(node)=>{
             const role=node.getAttribute('role'), label=node.getAttribute('aria-label')||node.innerText||node.textContent||'';
             const text=label.replace(/\\s+/g,' ').trim().slice(0,60);
@@ -872,7 +875,7 @@ export class PageDriver {
         // footer: try the other alignments before waiting for the cover to go.
         if (code === 'element-obscured' || code === 'element-outside-viewport') {
           const block = OBSCURED_SCROLL_ALIGNMENTS[obscured++ % OBSCURED_SCROLL_ALIGNMENTS.length]
-          await this.callOn(target, `function () { this.scrollIntoView({ block: ${JSON.stringify(block)}, inline: 'center' }); }`).catch(() => {})
+          await this.callOn(target, `function () { this.scrollIntoView({ block: ${JSON.stringify(block)}, inline: 'center', behavior: 'instant' }); }`).catch(() => {})
         }
         await sleep(Math.min(100 * 2 ** attempt, 500))
       }
@@ -1198,7 +1201,11 @@ export class PageDriver {
       const after = await this.viewport()
       if (documentId !== this.documentId || !this.sameViewport(before, after)) continue
       let state = ax.state
-      const diff = !imageOnly && args.disableDiffing !== true && baseline?.kind === 'ax' && baseline.documentId === documentId
+      // A part of the page prints whole, never as changes.
+      const within = typeof args.within === 'number' ? browserStateWithin(state, args.within) : undefined
+      if (within === null) throw new Error('element-not-found')
+      if (within !== undefined) state = within
+      const diff = within === undefined && !imageOnly && args.disableDiffing !== true && baseline?.kind === 'ax' && baseline.documentId === documentId
       if (diff) state = diffBrowserState(baseline.state, state)
       const observation: BrowserObservation = {
         kind: imageOnly ? 'image' : 'ax',

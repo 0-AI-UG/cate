@@ -21,13 +21,13 @@ export interface PageCall {
   signal?: AbortSignal
 }
 
-/** A tab as page control sees it. `internal`: a page the view draws itself
- *  (history, passwords), which has no web page to act on. */
+/** A tab as page control sees it. `internal`: the name of a page the view
+ *  draws itself (History, Password manager), which has no web page to act on. */
 export interface PageControlTab {
   id: string
   url: string
   nav: number
-  internal: boolean
+  internal: string | null
 }
 
 /** What the panel's session hands page control. */
@@ -91,13 +91,19 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
       + `Run the command again to act on ${active}, or switch back with cate browser tab select ${tabId} --panel ${panel.panelId}.`)
   }
 
+  const noPage = (tab: PageControlTab): RpcError => {
+    const cause = tab.id === panel.activeTabId() ? panel.activeTabCause() : null
+    return new RpcError('rejected', `browser-tab-no-page: tab ${tab.id} is the ${tab.internal} page, which has no web page${cause ? ` (${cause})` : ''}. `
+      + `Switch to another tab with cate browser tab select <tab> --panel ${panel.panelId}, or open one with cate browser tab new <url> --panel ${panel.panelId}.`)
+  }
+
   // A person's tab switch cancels work bound to the tab it left.
   const boundTab = (tabId: unknown): PageControlTab => {
     if (tabId !== undefined && typeof tabId !== 'string') throw new RpcError('rejected', 'tabId-required')
     const active = panel.activeTabId()
     if (tabId !== undefined && tabId !== active) throw tabChanged(tabId)
     const tab = panel.tab(active)
-    if (tab.internal) throw new RpcError('rejected', 'The active tab has no web page')
+    if (tab.internal) throw noPage(tab)
     return tab
   }
 
@@ -116,7 +122,7 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
 
   const pageInfo = async (tabId: string, call: PageCall) => {
     const tab = panel.tab(tabId)
-    if (tab.internal) throw new RpcError('rejected', 'The active tab has no web page')
+    if (tab.internal) throw noPage(tab)
     const page = await panel.surface('page.ready', { tabId, nav: tab.nav }, call)
     still(tabId)
     return { panelId: panel.panelId, tabId, ...page }

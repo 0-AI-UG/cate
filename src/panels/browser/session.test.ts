@@ -18,7 +18,7 @@ import {
 } from '@panels/framework/runtime'
 import { createDocumentService, createPresence, type DocumentService } from '@workspace/document/runtime'
 import type { BrowserCredentialSaveInput, BrowserCredentialSuggestion, BrowserDownloadEntry } from '@services/browser/contract'
-import type { BrowserSnapshot } from './contract'
+import { BROWSER_PASSWORD_MANAGER_URL, type BrowserSnapshot } from './contract'
 import { browserPanel, browserServiceHandlers } from './runtime'
 import { AGENT_CURSOR_IDLE_MS, type BrowserSessionDeps } from './session'
 
@@ -388,6 +388,17 @@ describe('browser session', () => {
 
     w.saved.push({ id: 'c1', username: 'me', origin: 'https://a.test' })
     await expect(w.api(id, 'signup', { tabId, username: 'me' })).rejects.toThrow('browser-signup-exists')
+    w.dispose()
+  })
+
+  it('names the page a tab without a web page shows, who opened it and how to move on', async () => {
+    const w = world(async () => ({ result: {} }))
+    const id = w.create({ url: 'https://a.test/' })
+    await w.host.restore()
+    await w.op(id, { kind: 'newTab', url: BROWSER_PASSWORD_MANAGER_URL })
+    await expect(w.api(id, 'getAXState')).rejects.toThrow(
+      `browser-tab-no-page: tab t2 is the Password manager page, which has no web page (the person opened it). Switch to another tab with cate browser tab select <tab> --panel ${id}`,
+    )
     w.dispose()
   })
 

@@ -5,11 +5,20 @@ import { setupGuest } from './pageDriver.testSupport'
 it('rejects moving targets before dispatching input', async () => {
   let boxes = 0
   const { observe, execute, contents } = await setupGuest(async method => {
-    if (method === 'DOM.getBoxModel') { const x = ++boxes * 10; return { model: { content: [x, 0, x + 100, 0, x + 100, 40, x, 40] } } }
+    if (method === 'DOM.getContentQuads') { const x = ++boxes * 10; return { quads: [[x, 0, x + 100, 0, x + 100, 40, x, 40]] } }
   })
   const observation = await observe()
   expect(await execute('click', { target: observation.elements[0].id, observationId: observation.observationId, timeoutMs: 0 })).toMatchObject({ error: 'element-not-stable' })
   expect(contents.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchMouseEvent')).toBe(false)
+})
+
+it('clicks the first line of an element wrapped across lines', async () => {
+  const { observe, execute, contents } = await setupGuest(async method => {
+    if (method === 'DOM.getContentQuads') return { quads: [[0, 0, 0, 0, 0, 0, 0, 0], [20, 20, 300, 20, 300, 40, 20, 40], [20, 40, 50, 40, 50, 60, 20, 60]] }
+  })
+  const observation = await observe()
+  expect(await execute('click', { target: observation.elements[0].id, observationId: observation.observationId })).toMatchObject({ cursor: { x: 160, y: 30 } })
+  expect(contents.debugger.sendCommand.mock.calls.find(([method]) => method === 'Input.dispatchMouseEvent')?.[1]).toMatchObject({ x: 160, y: 30 })
 })
 
 it('waits for a covering element to go away and names it while it stays', async () => {

@@ -1,6 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { browserRecovery, describeBrowserObservation, diffBrowserState } from './observationText'
+import { browserRecovery, browserStateWithin, describeBrowserObservation, diffBrowserState } from './observationText'
 import type { BrowserObservation } from './automation'
+
+describe('browserStateWithin', () => {
+  const state = [
+    '- navigation "Kursindex" [id=3]',
+    '  - link "Topic 1" [id=4]',
+    '- main [id=5]',
+    '  - heading "Exercise 1" [id=6]',
+    '    - StaticText "Exercise 1" [id=7]',
+    '  - link "exercise_1.pdf" [id=8]',
+    '- link "Impressum" [id=9]',
+  ].join('\n')
+
+  it('keeps an element and what is nested under it, de-indented', () => {
+    expect(browserStateWithin(state, 5)).toBe([
+      '- main [id=5]',
+      '  - heading "Exercise 1" [id=6]',
+      '    - StaticText "Exercise 1" [id=7]',
+      '  - link "exercise_1.pdf" [id=8]',
+    ].join('\n'))
+    expect(browserStateWithin(state, 6)).toBe('- heading "Exercise 1" [id=6]\n  - StaticText "Exercise 1" [id=7]')
+  })
+
+  it('does not take id 1 for id 10 and reports a missing element', () => {
+    expect(browserStateWithin(state, 1)).toBeNull()
+  })
+})
 
 describe('diffBrowserState', () => {
   it('shows changed lines under the ancestors that locate them', () => {
