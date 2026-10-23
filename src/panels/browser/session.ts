@@ -140,7 +140,7 @@ export class BrowserSession extends PanelSession<BrowserSnapshot, BrowserOp> {
       activeTabCause: () => this.activeCause,
       tab: (tabId) => {
         const { id, url, nav } = this.tab(tabId)
-        return { id, url, nav, internal: isBrowserInternalPage(url) }
+        return { id, url, nav, internal: isBrowserInternalPage(url) ? browserInternalPageTitle(url) : null }
       },
       isDisposed: () => this.isDisposed,
       navigateTab: (tabId, input) => this.navigateTab(tabId, input),

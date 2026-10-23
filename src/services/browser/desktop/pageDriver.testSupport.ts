@@ -56,6 +56,7 @@ export async function setupGuest(hook?: (method: string, params: Record<string, 
         if (method === 'DOM.resolveNode') return { object: { objectId: String(params.backendNodeId) } }
         if (method === 'DOM.describeNode') return { node: { backendNodeId: /^\d+$/.test(String(params.objectId)) ? Number(params.objectId) : 7, attributes: [] } }
         if (method === 'DOM.getBoxModel') return { model: { content: [20, 20, 120, 20, 120, 60, 20, 60] } }
+        if (method === 'DOM.getContentQuads') return { quads: [[20, 20, 120, 20, 120, 60, 20, 60]] }
         if (method === 'Runtime.callFunctionOn') {
           const fn = String(params.functionDeclaration)
           if (fn.includes('this.isContentEditable ? this.innerText : this.value')) return { result: { value: state.value } }

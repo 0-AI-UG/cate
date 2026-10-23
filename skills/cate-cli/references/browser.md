@@ -40,6 +40,7 @@ cate browser back                  # forward, reload
 
 # Reading the page
 cate browser snapshot              # accessibility tree with element ids (--screenshot adds an image)
+cate browser snapshot 84           # only element 84 and what is inside it (the main landmark, say)
 cate browser screenshot            # saves an image and prints its path
 cate browser find --role link      # only the matching elements, with their ids
 cate browser attr 42 href
@@ -90,6 +91,11 @@ so (`Viewport 800x600 at 0,0 of a 800x2680 page (2080px below)`); use
 `cate browser scroll` only for content that is not in the snapshot yet, such
 as lazy-loaded or virtualized lists, then snapshot again. Screenshots and
 `[x,y]` points cover the viewport only: prefer ids.
+
+Sites often repeat long menus and sidebars on every page before the content.
+Once you know the id of the part you want (usually `- main [id=N]`), print
+just that part with `cate browser snapshot <id>`; ids stay valid until the
+page navigates.
 
 Ids stay the same for an element while the page keeps its document; after a
 navigation, use the ids of the new tree. A long tree (a big page after
