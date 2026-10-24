@@ -1,6 +1,7 @@
 // The paired workspaces with their connection state, the app's home. It
 // connects to every workspace, so their agents' notifications arrive while
-// the app runs. The list shows as remembered while the core starts.
+// the app runs. The list shows as remembered while the core starts. This
+// device's settings open from here: they hold for every workspace.
 
 import SwiftUI
 
@@ -46,12 +47,94 @@ struct WorkspacesView: View {
         .navigationTitle("Cate")
         .disconnectDialog($disconnecting)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                NavigationLink(value: DeviceSettingsRoute()) {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Join a workspace", systemImage: "plus", action: join).disabled(!core.ready)
             }
         }
         .task(id: core.ready) { if core.ready { await core.openAll() } }
         .onChange(of: core.workspaces.isEmpty, initial: true) { _, empty in if !empty { notifier.askIfNeeded() } }
+    }
+}
+
+struct DeviceSettingsRoute: Hashable {}
+
+/// This device's settings, the same in every workspace: the canvas grid,
+/// where tapped links open and the saved connection labels.
+struct DeviceSettingsView: View {
+    @Environment(CoreHost.self) private var core
+    @AppStorage(MapGrid.key) private var grid = MapGrid.lines
+
+    var body: some View {
+        List {
+            Section {
+                Picker(selection: $grid) {
+                    ForEach(MapGrid.allCases, id: \.self) { Text($0.title).tag($0) }
+                } label: {
+                    Label("Canvas grid", systemImage: "grid")
+                }
+                Picker(selection: Binding(get: { core.linkOpenTarget }, set: { core.setLinkOpenTarget($0) })) {
+                    Text("Ask Each Time").tag("ask")
+                    Text("In Cate").tag("cate")
+                    Text("In Safari").tag("external")
+                } label: {
+                    Label("Open links", systemImage: "link")
+                }
+                NavigationLink {
+                    SavedRelationLabels()
+                } label: {
+                    LabeledContent {
+                        Text("\(core.savedRelationLabels.count)")
+                    } label: {
+                        Label("Saved connections", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    }
+                }
+            }
+        }
+        .navigationTitle("Settings")
+    }
+}
+
+/// This device's saved connection labels: renamed with a tap, removed with a
+/// swipe. Connections keep the labels they have.
+private struct SavedRelationLabels: View {
+    @Environment(CoreHost.self) private var core
+    @State private var renaming: String?
+    @State private var draft = ""
+
+    var body: some View {
+        List {
+            ForEach(core.savedRelationLabels, id: \.self) { label in
+                Button(label) {
+                    draft = label
+                    renaming = label
+                }
+                .foregroundStyle(.primary)
+            }
+            .onDelete { offsets in
+                for label in offsets.map({ core.savedRelationLabels[$0] }) {
+                    Task { await core.call("relations.forgetLabel", ["label": label]) }
+                }
+            }
+        }
+        .overlay {
+            if core.savedRelationLabels.isEmpty {
+                ContentUnavailableView("No saved connections", systemImage: "point.topleft.down.to.point.bottomright.curvepath", description: Text("Give a connection words of its own with Custom… in its menu."))
+            }
+        }
+        .navigationTitle("Saved Connections")
+        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { label in
+            TextField("Label", text: $draft)
+            Button("Save") {
+                Task { await core.call("relations.renameLabel", ["label": label, "to": draft]) }
+            }
+            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
 

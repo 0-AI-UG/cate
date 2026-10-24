@@ -32,6 +32,7 @@ struct RootView: View {
         NavigationStack(path: $path) {
             WorkspacesView(join: { joining = JoinRequest(link: nil) })
                 .navigationDestination(for: String.self) { WorkspaceView(workspaceId: $0) }
+                .navigationDestination(for: DeviceSettingsRoute.self) { _ in DeviceSettingsView() }
                 .agentDestinations()
         }
         .environment(\.joinWorkspace) { joining = JoinRequest(link: nil) }
