@@ -285,7 +285,7 @@ it.each(['setValue', 'typeText'])('returns positional typing feedback for %s wit
 
 it('keeps a successful edit when the field no longer has cursor geometry', async () => {
   const { observe, execute } = await setupGuest(async method => {
-    if (method === 'DOM.getBoxModel') throw new Error('Node has been removed')
+    if (method === 'DOM.getContentQuads') throw new Error('Node has been removed')
   })
   const observation = await observe()
   expect(await execute('setValue', { observationId: observation.observationId, target: observation.elements[0].id, value: 'text' }))

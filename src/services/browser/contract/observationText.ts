@@ -37,6 +37,18 @@ export function diffBrowserState(before: string, after: string): string {
   return lines.length ? lines.join('\n') : 'No changes.'
 }
 
+/** The line of element `id` and the lines nested under it, de-indented, or
+ *  null when the tree has no such element. */
+export function browserStateWithin(state: string, id: number): string | null {
+  const lines = state.split('\n')
+  const start = lines.findIndex(line => line.endsWith(` [id=${id}]`))
+  if (start < 0) return null
+  const indent = lines[start].length - lines[start].trimStart().length
+  let end = start + 1
+  while (end < lines.length && lines[end].length - lines[end].trimStart().length > indent) end++
+  return lines.slice(start, end).map(line => line.slice(indent)).join('\n')
+}
+
 const RECOVERY: Record<string, string> = {
   'element-obscured': 'Another element covers the target. Close or dismiss it (a dialog, banner or menu), then retry.',
   'element-outside-viewport': 'The element stayed outside the viewport after scrolling. Scroll its container (cate browser scroll down --target <id> of the container), observe, then retry.',

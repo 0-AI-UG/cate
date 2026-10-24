@@ -174,6 +174,7 @@ export const browserApi = defineCateApi(
     reload: page('control', {}, command('reload', 'Reload the page')),
 
     getAXState: page('read', {
+      within: opt(num.int()).pos('id').help('Print only this element and what is inside it (an id from an earlier snapshot, such as the main landmark)'),
       screenshot: opt(bool).help('Also save a screenshot (needs the panel on screen)'),
       profile: opt(bool).help('Add phase timings'),
     }, command('snapshot', 'Print the accessibility tree with element ids')),

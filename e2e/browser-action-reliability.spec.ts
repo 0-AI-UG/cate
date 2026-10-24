@@ -68,6 +68,29 @@ test('click rejects obstructed and disabled targets without clicking the obstruc
   expect(await act(page, browser, 'click', 'Disabled button')).toMatchObject({ ok: false })
 })
 
+test('click lands on a link that wraps across lines on a smooth-scrolling page', async () => {
+  // A wrapped inline link's bounding box is mostly empty space around its
+  // short last lines, and the page animates every scroll (Moodle's course cards).
+  const html = `<title>Wrapped link</title><style>:root{scroll-behavior:smooth}</style>
+    <div style="width:400px;font:16px sans-serif;padding-top:200px"><a href="#course" onclick="document.body.dataset.clicked='yes';return false">Fundamentals of Artificial Intelligence<br>(IN<br>2406)</a> details</div>
+    <div style="height:3000px"></div>`
+  expect(await browserInvoke(page, browser, 'goto', { url: `data:text/html,${encodeURIComponent(html)}` })).toMatchObject({ ok: true })
+  expect(await act(page, browser, 'click', 'Fundamentals of Artificial Intelligence (IN 2406)', {}, 'link')).toMatchObject({ ok: true })
+  expect(await evaluate(`document.body.dataset.clicked ?? null`)).toBe('yes')
+})
+
+test('a snapshot can print one element and what is inside it', async () => {
+  const html = `<title>Scoped</title><nav aria-label="Course menu"><a href="#a">Topic 1</a></nav><main><h1>Exercise 1</h1><a href="#pdf">exercise_1.pdf</a></main>`
+  expect(await browserInvoke(page, browser, 'goto', { url: `data:text/html,${encodeURIComponent(html)}` })).toMatchObject({ ok: true })
+  const main = (await observe(page, browser)).elements.find((element) => element.role === 'main')!
+  const scoped = await browserInvoke(page, browser, 'getAXState', { within: main.id })
+  const state = (scoped.result as { state: string }).state
+  expect(state.split('\n')[0]).toBe(`- main [id=${main.id}]`)
+  expect(state).toContain('exercise_1.pdf')
+  expect(state).not.toContain('Topic 1')
+  expect(await browserInvoke(page, browser, 'getAXState', { within: 99999 })).toMatchObject({ ok: false, error: expect.stringContaining('element-not-found') })
+})
+
 test('setChecked reports a failed checked-state postcondition', async () => {
   expect(await act(page, browser, 'setChecked', 'Cancelled checkbox', { checked: true })).toMatchObject({ ok: false })
   expect(await evaluate(`document.querySelector('#cancelCheck').checked`)).toBe(false)
