@@ -16,6 +16,7 @@ import type { NotificationAction } from '@kernel/interaction/contract'
 import { eachConnection, watchForWake, type WorkspaceConnections } from '@client/connections'
 import { startClientCore } from '@client/core'
 import { documentStoreFor, setClientAttentive } from '@client/document'
+import { installLinkSettings } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
 import {
   BUILTIN_WALLPAPERS,
@@ -107,6 +108,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   const settings = createClientSettingsStore(device, clientSettingsTable)
   await settings.load()
   installClientSettings(settings)
+  installLinkSettings(settings)
 
   installAppearanceHost({
     themeSettings: () => ({

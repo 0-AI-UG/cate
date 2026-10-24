@@ -16,7 +16,9 @@ import {
   agentAttentionNotification,
   agentForLaunchCommand,
   agentLaunchCommand,
+  agentPromptInput,
   isAgentId,
+  isPromptAttachments,
   openTerminalAgent,
   resumeCommandForAgent,
   type AgentConversationMessage,
@@ -31,12 +33,14 @@ import type { AgentsBase, AgentTerminals } from './core'
 import { createAgentStatusMachine, type AgentStatusMachine } from './status'
 import { createResumeStamps, type ResumeStamps } from './stamps'
 import { agentStepOf } from './steps'
+import { typePrompt } from './promptInput'
 
 /** The part of the terminal service the terminal agents use. */
 export type AgentTerminalService = Pick<TerminalService,
   | 'registerEnvContributor'
   | 'registerLaunchIntent'
   | 'onInput'
+  | 'onOutput'
   | 'onExit'
   | 'onActivity'
   | 'write'
@@ -91,7 +95,6 @@ interface TerminalInfo {
   cwd: string
 }
 
-const ENTER_DELAY_MS = 0
 /** How long a sent prompt has to start a turn before the send reports it was
  *  not taken: the CLI showed a dialog that the Enter answered instead, or the
  *  text went to something else on the screen. */
@@ -114,6 +117,9 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   const sentContext = new Map<string, string | null>()
   /** The agent a hook came from in each terminal since its agent started. */
   const hookAgent = new Map<string, AgentId>()
+  /** The attachments of the prompt each terminal's agent takes next, for its
+   *  submit hook (taken by the turn that starts). */
+  const attachmentContext = new Map<string, string>()
   /** Whether each terminal's agent has Cate's hook files where it runs,
    *  inspected once per agent run (absent while unknown). */
   const hookFiles = new Map<string, { agentId: AgentId; installed: boolean | null }>()
@@ -155,7 +161,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const panelId = panelOf(terminalId)
     if (!panelId) return
     const agentId = status.agentId(terminalId)
-    const context = agentId && !AGENT_DEFS[agentId].promptContextHook ? null : promptContext.peek(panelId, agentId)
+    const relations = agentId && !AGENT_DEFS[agentId].promptContextHook ? null : promptContext.peek(panelId, agentId)
+    const context = [relations, attachmentContext.get(terminalId)].filter(Boolean).join('\n\n') || null
     if (sentContext.has(terminalId) && sentContext.get(terminalId) === context) return
     sentContext.set(terminalId, context)
     hooks.setPromptContext(terminalId, context)
@@ -169,6 +176,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     status.forget(terminalId)
     stamps.drop(terminalId)
     sentContext.delete(terminalId)
+    attachmentContext.delete(terminalId)
     hookAgent.delete(terminalId)
     hookFiles.delete(terminalId)
     terminals.delete(terminalId)
@@ -188,6 +196,12 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       : agentForLaunchCommand(spawn.executable)
     terminals.set(spawn.terminalId, { panelId: spawn.panelId, cwd })
     if (spawn.panelId) panelTerminal.set(spawn.panelId, spawn.terminalId)
+    // A started agent's first prompt takes its attachments through the hook.
+    const startParams = spawn.launch?.kind === AGENT_LAUNCH.start ? spawn.launch.params as { prompt?: unknown; attachments?: unknown } : null
+    if (launched && typeof startParams?.prompt === 'string' && isPromptAttachments(startParams.attachments)) {
+      const { context } = agentPromptInput(launched.id, startParams.prompt, startParams.attachments)
+      if (context) attachmentContext.set(spawn.terminalId, context)
+    }
     hooks.registerChangeTerminal(spawn.terminalId, { cwd, panelId: spawn.panelId ?? undefined })
     const config = agents.settings.agentHookInjection()
     // A worktree checkout's agent folders may exist only in the base checkout.
@@ -199,9 +213,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }))
 
   offs.push(terminal.registerLaunchIntent(AGENT_LAUNCH.start, (params) => {
-    const { agentId, prompt } = (params ?? {}) as { agentId?: unknown; prompt?: unknown }
+    const { agentId, prompt, attachments } = (params ?? {}) as { agentId?: unknown; prompt?: unknown; attachments?: unknown }
     if (!isAgentId(agentId) || (prompt !== undefined && typeof prompt !== 'string')) throw new Error('Invalid agent launch')
-    return { command: agentLaunchCommand({ agentId, prompt }) }
+    if (attachments !== undefined && (prompt === undefined || !isPromptAttachments(attachments))) throw new Error('Invalid agent launch')
+    return { command: agentLaunchCommand({ agentId, prompt: prompt === undefined ? undefined : agentPromptInput(agentId, prompt, attachments).text }) }
   }))
 
   // A restored terminal panel types its stamped session's resume command,
@@ -264,6 +279,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     }
     if (event.kind === 'turn-start' && AGENT_DEFS[event.agentId].promptContextHook != null) {
       promptContext.consume(panelId, event.agentId)
+      attachmentContext.delete(event.terminalId)
     }
     stamps.ingest(event)
     status.noteHookEvent(event)
@@ -351,12 +367,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     try {
       // A native submit hook reads the context: publish it before Enter.
       syncPromptContext(terminalId)
-      const text = prompt.replace(/\r?\n/g, '\r')
-      const bracketed = terminal.bracketedPaste?.(terminalId) ?? true
-      terminal.write(terminalId, bracketed ? `\x1b[200~${text}\x1b[201~` : text)
-      // Let the program take the paste before the trailing Enter.
-      await new Promise<void>((resolve) => setTimeout(resolve, ENTER_DELAY_MS))
-      terminal.write(terminalId, '\r')
+      await typePrompt({
+        write: (data) => terminal.write(terminalId, data),
+        onOutput: (listener) => terminal.onOutput((id) => { if (id === terminalId) listener() }),
+      }, prompt, terminal.bracketedPaste?.(terminalId) ?? true)
       return true
     } catch {
       return false
@@ -380,22 +394,29 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   return {
     state,
     panelIds: () => panelTerminal.keys(),
-    async send(panelId, prompt): Promise<AgentSendResult> {
+    async send(panelId, prompt, attachments = []): Promise<AgentSendResult> {
       const terminalId = liveTerminal(panelId)
       if (!terminalId || !status.present(terminalId)) return { ok: false, error: 'agent-not-running' }
       if (!status.canReceivePrompt(terminalId)) return { ok: false, error: 'agent-busy' }
+      const input = agentPromptInput(status.agentId(terminalId), prompt, attachments)
       // The agent's submit hook takes the context and its turn-start
       // consumes it; consuming here would clear it before the hook reads it.
       await agents.promptContext.flush(panelId).catch(() => {})
       // Delivered means a turn started: a prompt typed into a dialog the CLI
       // opened after its last turn is lost without one. A slash command is
       // the CLI's own and may start none (`/compact`, `/clear`).
-      const command = prompt.trimStart().startsWith('/')
+      const command = attachments.length === 0 && prompt.trimStart().startsWith('/')
       const started = command ? Promise.resolve(true) : nextTurnStart(terminalId)
-      if (!await submit(panelId, prompt)) return { ok: false, error: 'agent-panel-unavailable' }
-      return await started
-        ? { ok: true }
-        : { ok: false, error: 'agent-prompt-not-taken: the agent started no turn; it may be showing a dialog. Check its screen with cate terminal read' }
+      if (input.context) attachmentContext.set(terminalId, input.context)
+      const result: AgentSendResult = !await submit(panelId, input.text) ? { ok: false, error: 'agent-panel-unavailable' }
+        : await started ? { ok: true }
+        : { ok: false, error: 'agent-prompt-not-taken: the agent started no turn; it may be showing a dialog. Check its screen with cate terminal read', typed: true }
+      // Not taken: the attachments do not go with a later prompt.
+      if (!result.ok && input.context && attachmentContext.get(terminalId) === input.context) {
+        attachmentContext.delete(terminalId)
+        syncPromptContext(terminalId)
+      }
+      return result
     },
     async conversation(panelId): Promise<{ session: AgentSession; messages: AgentConversationMessage[] } | null> {
       const session = sessionOf(panelId, liveTerminal(panelId))

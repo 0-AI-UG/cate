@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RpcError } from '@kernel/rpc/contract'
-import { CATE_API_VERSION, defineCateApi, defineCliArea, opt, arr, panel, str, uiApi, versionApi, type ApiSessionContext } from '../contract'
+import { CATE_API_VERSION, defineCateApi, defineCliArea, opt, arr, panel, str, versionApi, type ApiSessionContext } from '../contract'
 import { ApiRouter, ApiTokenRegistry, registerKernelApi, resolveTarget, type ApiPanelInfo } from './index'
 
 // Areas as modules declare them (the kernel knows none).
@@ -63,7 +63,7 @@ function setup(panels: ApiPanelInfo[] = []) {
   })
   const tokens = new ApiTokenRegistry(() => `tok-${Math.random()}`)
   const router = new ApiRouter({
-    namespaces: [versionApi, uiApi, terminalLike, panelLike],
+    namespaces: [versionApi, terminalLike, panelLike],
     document: {
       panel: (id) => panels.find((p) => p.id === id),
       panels: () => panels,
@@ -172,17 +172,8 @@ describe('ApiRouter dispatch', () => {
 
   it('serves the kernel methods', async () => {
     const { router, cli } = setup()
-    const publishNotification = vi.fn()
-    registerKernelApi(router, { publishNotification })
+    registerKernelApi(router)
     await expect(router.call(cli.caller, 'cate.version', {})).resolves.toBe(CATE_API_VERSION)
-    await expect(router.call(cli.caller, 'cate.ui.notify', { message: 'done' })).resolves.toEqual({ ok: true })
-    expect(publishNotification).toHaveBeenCalledWith({
-      kind: 'cate.ui.notify',
-      panelId: 'term-caller',
-      title: 'Cate',
-      body: 'done',
-      level: 'info',
-    })
   })
 })
 

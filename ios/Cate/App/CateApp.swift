@@ -59,6 +59,13 @@ struct RootView: View {
         } message: {
             Text("\(core.trustPrompt?.label ?? "This workspace") runs terminals, agents and git only once it is trusted. Trusting it applies for everyone who opens it.")
         }
+        .confirmationDialog("Open link", isPresented: Binding(get: { core.linkPrompt != nil }, set: { _ in }), titleVisibility: .visible, presenting: core.linkPrompt) { _ in
+            Button("In Cate") { core.answerLinkPrompt("cate") }
+            Button("In Safari") { core.answerLinkPrompt("external") }
+            Button("Cancel", role: .cancel) { core.answerLinkPrompt("cancel") }
+        } message: { prompt in
+            Text("\(prompt.url)\n\nYou can change this later in Settings.")
+        }
         .alert("Not sent", isPresented: Binding(get: { notifier.failure != nil }, set: { if !$0 { notifier.failure = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {

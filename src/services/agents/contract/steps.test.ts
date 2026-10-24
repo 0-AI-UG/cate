@@ -6,7 +6,7 @@ const at = (second: number) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toIS
 const step = (tool: string, second: number): AgentStep => ({ tool, at: at(second) })
 
 function conversation(overrides: Partial<AgentConversation>): AgentConversation {
-  return { status: 'waitingForInput', canReceivePrompt: true, messages: [], steps: [], stepsSince: at(0), ...overrides }
+  return { status: 'waitingForInput', canReceivePrompt: true, messages: [], steps: [], stepsSince: at(0), prompts: [], ...overrides }
 }
 
 describe('agent step groups', () => {

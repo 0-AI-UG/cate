@@ -15,6 +15,7 @@ import type { MobileAgents } from './agents'
 import type { MobileBrowsers } from './browser'
 import type { MobileBuffers } from './buffers'
 import type { MobileConversations } from './conversations'
+import { createLinkHandlers, type MobileLinks } from './links'
 import { placementOptions, planPlacementOn } from './placement'
 import { createRelationHandlers } from './relations'
 import { createReviewHandlers } from './review'
@@ -35,6 +36,7 @@ export interface CoreParts {
   streams: MobileStreams
   agents: MobileAgents
   conversations: MobileConversations
+  links: MobileLinks
 }
 
 const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
@@ -47,10 +49,11 @@ const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
 export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers {
   const { workspaces, connections } = client
   const open = (workspaceId: string) => openTrusted({ workspaces, connections }, workspaceId)
-  const { terminals, views, browsers, buffers, streams, agents, conversations } = parts
+  const { terminals, views, browsers, buffers, streams, agents, conversations, links } = parts
   return {
     ...createActionHandlers(agents, conversations),
     ...createRelationHandlers(client.settings),
+    ...createLinkHandlers(client, links),
     ...createReviewHandlers(views),
     async 'app.setActive'({ active }) {
       client.setActive(active)

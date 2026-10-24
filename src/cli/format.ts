@@ -61,12 +61,23 @@ function panelList(value: unknown): string {
   }))
 }
 
+/** An agent panel's prompts on their way, by state (`1 queued, 1 failed`). */
+function promptCounts(prompts: unknown): string {
+  if (!Array.isArray(prompts)) return ''
+  const counts = new Map<string, number>()
+  for (const prompt of prompts) {
+    const state = text(asObject(prompt)?.state) || '?'
+    counts.set(state, (counts.get(state) ?? 0) + 1)
+  }
+  return [...counts].map(([state, count]) => `${count} ${state}`).join(', ')
+}
+
 function agentRuns(value: unknown): string {
   if (!Array.isArray(value)) return generic(value)
   if (value.length === 0) return '(no agent runs)'
-  return table(['ID', 'STATE', 'TITLE'], value.map((item) => {
+  return table(['ID', 'STATE', 'PROMPTS', 'TITLE'], value.map((item) => {
     const run = asObject(item) ?? {}
-    return [shortId(text(run.panelId ?? run.id) || '?'), text(run.state ?? run.status) || '?', text(run.title ?? run.agentName ?? run.agentId)]
+    return [shortId(text(run.panelId ?? run.id) || '?'), text(run.state ?? run.status) || '?', promptCounts(run.prompts), text(run.title ?? run.agentName ?? run.agentId)]
   }))
 }
 
@@ -81,7 +92,13 @@ function conversation(value: unknown): string {
     const meta = [message.role ?? '?', message.createdAt].filter(Boolean).join(' · ')
     return `[${meta}]\n${message.text ?? ''}`
   })
-  return [header, ...(messages.length > 0 ? messages : ['(no messages)'])].join('\n\n')
+  // Prompts on their way: queued, being sent, or not taken with why.
+  const prompts = (Array.isArray(object.prompts) ? object.prompts : []).map((item) => {
+    const prompt = asObject(item) ?? {}
+    const meta = ['prompt', text(prompt.state), shortId(text(prompt.id))].filter(Boolean).join(' · ')
+    return `[${meta}]\n${text(prompt.text)}${prompt.error ? `\n(${text(prompt.error)})` : ''}`
+  })
+  return [header, ...(messages.length > 0 ? messages : ['(no messages)']), ...prompts].join('\n\n')
 }
 
 const SCREENSHOT_NOTE = 'Open this file with your image-viewing tool to inspect the page visually.'
@@ -158,6 +175,14 @@ const FORMATTERS: Record<string, (value: unknown) => string> = {
   createdPanel: (value) => {
     const panelId = asObject(value)?.panelId
     return typeof panelId === 'string' ? shortId(panelId) : generic(value)
+  },
+  promptId: (value) => {
+    const promptId = asObject(value)?.promptId
+    return typeof promptId === 'string' ? promptId : generic(value)
+  },
+  withdrawnPrompt: (value) => {
+    const prompt = asObject(value)?.prompt
+    return typeof prompt === 'string' ? prompt : generic(value)
   },
   panelTarget: (value) => {
     const panelId = asObject(value)?.panelId

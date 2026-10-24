@@ -4,6 +4,7 @@
 
 import type { ShellTransports, WorkspaceConnections } from '@client/connections'
 import { startClientCore } from '@client/core'
+import { installLinkSettings } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
 import type { WorkspaceList } from '@client/workspaces'
 import { knownFeatures } from '@kernel/rpc/contract'
@@ -53,6 +54,7 @@ export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClie
   })
   const settings = createClientSettingsStore(device, sharedClientSettingsTable)
   await settings.load()
+  installLinkSettings(settings)
   let active = true
   return {
     connections,

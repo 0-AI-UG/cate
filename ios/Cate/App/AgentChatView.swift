@@ -6,7 +6,10 @@
 // follows the agent; a conversation that takes a moment to load shows a
 // spinner in the middle, one shown before shows at once. Each turn's steps
 // show between the replies they came between. What you send while the agent
-// works waits in a queue until it can take it. A permission or question is answered in the panel it runs in
+// works waits in the runtime's queue until it can take it, even with this app
+// away; a prompt the agent did not take shows as failed, as it may still be
+// in its terminal's input, and holds the queue until a turn starts or it is
+// taken back. A permission or question is answered in the panel it runs in
 // (the live terminal), one tap away in the toolbar.
 // Review opens the workspace's review panel filtered to this agent's panel.
 // The runtime pushes the conversation as it changes (AgentConversation);
@@ -85,6 +88,11 @@ struct AgentChatView: View {
             .task(id: startedAt) { await expireStart() }
             .onChange(of: panelId, initial: true) { _, id in watch(id) }
             .onDisappear { unwatch() }
+            // A link in a reply opens where the core says, never by itself.
+            .environment(\.openURL, OpenURLAction { url in
+                core.openMarkdownLink(url.absoluteString, workspaceId: workspaceId, panelId: panelId)
+                return .handled
+            })
     }
 
     private func loadOptions(_ connected: Bool) async {
@@ -129,7 +137,8 @@ struct AgentChatView: View {
             startFailure: startFailure,
             attention: agent?.needsYou == true ? agent : nil,
             workspaceId: workspaceId,
-            input: input
+            input: input,
+            attachments: attachments
         )
         .overlay { DelayedSpinner(active: loading(workspace)) }
         .scrollDismissesKeyboard(.interactively)
@@ -205,7 +214,7 @@ struct AgentChatView: View {
                 typing: $typing
             )
         } else {
-            let canSend = connected && (conversation?.canReceivePrompt == true || canQueue(agent))
+            let canSend = connected && agent?.present == true && conversation?.status != nil
             let stop: (() -> Void)? = connected && conversation?.working == true ? { interrupt() } : nil
             AgentComposer(
                 text: $input.text,
@@ -222,17 +231,11 @@ struct AgentChatView: View {
         }
     }
 
-    /// The agent is there but busy: a prompt waits until it can take it.
-    private func canQueue(_ agent: Agent?) -> Bool {
-        guard let agent, agent.present, conversation?.status != nil else { return false }
-        return conversation?.canReceivePrompt != true
-    }
-
     private func composerHint(_ agent: Agent?) -> String {
         guard let agent else { return "Reply" }
+        guard agent.present, conversation?.status != nil else { return "The agent is not running" }
         if conversation?.canReceivePrompt == true { return "Reply to \(agent.name)" }
-        if canQueue(agent) { return agent.needsYou ? "Queue a reply for after you answer" : "Queue a reply" }
-        return "The agent is not at its prompt"
+        return agent.needsYou ? "Queue a reply for after you answer" : "Queue a reply"
     }
 
     @ToolbarContentBuilder
@@ -255,10 +258,10 @@ struct AgentChatView: View {
     /// Starts the agent; its panel goes where the chat was asked from.
     private func start() {
         guard let agentId = options.ready?.agentId, attachments.ready else { return }
-        let typed = input.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let prompt = attachments.prompt(typed)
-        guard !prompt.isEmpty else { return }
-        starting = prompt
+        let prompt = input.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let paths = attachments.paths
+        guard !prompt.isEmpty || !paths.isEmpty else { return }
+        starting = prompt.isEmpty ? ComposerAttachments.onlyPrompt : prompt
         input.text = ""
         attachments.clear()
         startFailure = nil
@@ -267,6 +270,7 @@ struct AgentChatView: View {
             var params: [String: Any] = [
                 "workspaceId": workspaceId,
                 "prompt": prompt,
+                "attachments": paths,
                 "agentId": agentId,
                 "worktree": worktree,
             ]
@@ -280,6 +284,7 @@ struct AgentChatView: View {
             } else {
                 starting = nil
                 input.text = prompt
+                attachments.restore(paths)
                 startFailure = result.message ?? "The agent could not start."
             }
         }
@@ -287,25 +292,22 @@ struct AgentChatView: View {
 
     private func reply() {
         guard let panelId, let conversation, attachments.ready else { return }
-        let prompt = attachments.prompt(input.text.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard !prompt.isEmpty else { return }
+        let prompt = input.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let paths = attachments.paths
+        guard !prompt.isEmpty || !paths.isEmpty else { return }
         input.text = ""
         attachments.clear()
-        // Busy: it waits in the core until the agent can take it.
-        guard conversation.canReceivePrompt else {
-            Task { await core.call("agents.queue", ["viewId": conversation.viewId, "prompt": prompt]) }
-            return
-        }
-        // Shown at once (pending in the core); back in the box if it does
-        // not go through.
+        // The runtime sends it once the agent can take it and the chat shows
+        // where it is; back in the box only if no agent can take it.
         sending = true
         Task {
             let result = await core.action("agents.send", [
-                "viewId": conversation.viewId, "workspaceId": workspaceId, "panelId": panelId, "prompt": prompt,
+                "workspaceId": workspaceId, "panelId": panelId, "prompt": prompt, "attachments": paths,
             ])
             sending = false
             if !result.ok {
                 if input.text.isEmpty { input.text = prompt }
+                attachments.restore(paths)
                 failure = OpFailure(message: result.message ?? "The prompt did not go through.")
             }
         }
@@ -348,7 +350,7 @@ final class ChatInput {
 }
 
 /// The conversation: its items (prompts, replies, each turn's steps between
-/// them), what the agent does, the prompt queued. Its own view, so typing and
+/// them), what the agent does, the prompts not taken and the one queued. Its own view, so typing and
 /// the keyboard redraw the composer and leave this be.
 private struct ConversationList: View {
     @Environment(CoreHost.self) private var core
@@ -361,6 +363,7 @@ private struct ConversationList: View {
     let attention: Agent?
     let workspaceId: String
     let input: ChatInput
+    let attachments: ComposerAttachments
     /// The chat follows its end: what comes in stays in view. Only your
     /// scrolling changes it (up: off; back to the end: on), never the chat
     /// growing past the screen.
@@ -399,8 +402,11 @@ private struct ConversationList: View {
                         UserBubble(text: starting)
                     }
                     TailSlot(wanted: tail)
-                    if let queued = conversation?.queued {
-                        QueuedBubble(text: queued) { unqueue() }
+                    ForEach(conversation?.failed ?? []) { prompt in
+                        FailedBubble(prompt: prompt, edit: { withdraw(prompt.id, edit: true) }, dismiss: { withdraw(prompt.id, edit: false) })
+                    }
+                    ForEach(conversation?.queued ?? []) { queued in
+                        QueuedBubble(text: queued.text) { withdraw(queued.id, edit: true) }
                     }
                     if let startFailure {
                         Label(startFailure, systemImage: "exclamationmark.triangle")
@@ -467,12 +473,16 @@ private struct ConversationList: View {
         }
     }
 
-    /// The queued prompt back in the box.
-    private func unqueue() {
+    /// Takes a queued or failed prompt back from the runtime; `edit` puts it
+    /// back in the box.
+    private func withdraw(_ promptId: String, edit: Bool) {
         guard let conversation else { return }
         Task {
-            let prompt = try? await core.call("agents.unqueue", ["viewId": conversation.viewId], as: String?.self)
-            if let prompt { input.text = input.text.isEmpty ? prompt : "\(prompt)\n\n\(input.text)" }
+            let params = ["workspaceId": workspaceId, "panelId": conversation.panelId, "promptId": promptId]
+            guard let queued = try? await core.call("agents.withdraw", params, as: QueuedPrompt?.self), edit else { return }
+            let prompt = queued.prompt
+            if !prompt.isEmpty { input.text = input.text.isEmpty ? prompt : "\(prompt)\n\n\(input.text)" }
+            attachments.restore(queued.attachments)
         }
     }
 }
@@ -580,6 +590,37 @@ private struct QueuedBubble: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
+/// A prompt the agent did not take: it may still be in its terminal's input,
+/// and nothing more is typed there until a turn starts or it is taken back.
+/// Edit puts it back in the box; Dismiss lets it go. Either way the text may
+/// still be in the terminal, to clear there.
+private struct FailedBubble: View {
+    let prompt: OutgoingPrompt
+    let edit: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            UserBubble(text: prompt.text).opacity(0.55)
+            Group {
+                Label(prompt.message ?? "The agent did not take it.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.trailing)
+                Text("If you edit or dismiss it, clear it from the terminal too.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                HStack(spacing: 12) {
+                    Button("Edit", action: edit)
+                    Button("Dismiss", action: dismiss)
+                }
+                .buttonStyle(.borderless)
+            }
+            .font(.caption)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
     }

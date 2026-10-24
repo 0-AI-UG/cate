@@ -119,7 +119,7 @@ struct EditorPanelView: View {
                     if snapshot.documentType != nil {
                         FilePreview(workspaceId: workspaceId, path: path)
                     } else {
-                        BufferEditor(workspaceId: workspaceId, path: path, preview: showsPreview(snapshot))
+                        BufferEditor(workspaceId: workspaceId, panelId: panel.id, path: path, preview: showsPreview(snapshot))
                             .id(path)
                     }
                 } else if snapshot.loading {
@@ -369,6 +369,7 @@ final class BufferModel {
 private struct BufferEditor: View {
     @Environment(CoreHost.self) private var core
     let workspaceId: String
+    let panelId: String
     let path: String
     let preview: TextPreview?
     @State private var model = BufferModel()
@@ -383,6 +384,12 @@ private struct BufferEditor: View {
                     ScrollView {
                         MarkdownText(text: text).padding()
                     }
+                    // A link opens where the core says: a relative one is a
+                    // file next to this one.
+                    .environment(\.openURL, OpenURLAction { url in
+                        core.openMarkdownLink(url.absoluteString, workspaceId: workspaceId, panelId: panelId, filePath: path)
+                        return .handled
+                    })
                 case .html:
                     HTMLPreview(workspaceId: workspaceId, path: path, html: text)
                 case .table(let separator):

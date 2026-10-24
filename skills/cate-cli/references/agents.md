@@ -16,8 +16,8 @@ cate agent read "$id"
 cate agent send "$id" "Also add a regression test"
 ```
 
-`wait` returns once every listed panel is ready for a prompt; a long task
-needs several calls. After context compaction, `cate agent list` finds the
+`wait` returns once every listed panel is ready for a prompt and the prompts
+sent to it went out (or one was not taken); a long task needs several calls. After context compaction, `cate agent list` finds the
 panel ids again.
 
 ## Starting an agent
@@ -38,7 +38,7 @@ From then on it is an agent panel like any other.
 
 ```bash
 cate agent list                                       # live agent panels and their states
-cate agent send <panel-id> "Please add the missing regression test"
+cate agent send <panel-id> "Please add the missing regression test"   # prints the prompt id
 cate agent wait <panel-id> [<panel-id>...] --wait-timeout 10000
 ```
 
@@ -46,13 +46,24 @@ Panel ids may be the unique short ids `agent list` prints. `wait` accepts
 5000 to 60000 milliseconds and, with no ids, monitors every live agent panel;
 it exits 1 when it timed out, after printing the states.
 
-Send bounded prompts. A successful `send` delivers the prompt exactly once
-and returns once the agent started its turn. The target must be at its
-normal prompt, not busy or waiting on structured input. When it starts no
-turn within 10 seconds (it showed a dialog that took the Enter), `send` fails
-with `agent-prompt-not-taken`: read its screen with `cate terminal read`
-before sending again. A terminal with no agent in it fails with
-`no-agent-in-terminal`; type into it instead (below).
+Send bounded prompts. `send` hands the prompt to the runtime and prints its
+id at once, busy agent or not: the runtime types it once the agent is at its
+prompt, after the prompts sent before it, one at a time, exactly once. A
+person's chat on another device sends through the same path, so their
+prompts queue with yours. Each panel's prompts show in `agent list` (the
+PROMPTS column) and `agent read` (and `--json` as `prompts`), each `queued`,
+`sending` or `failed`; a taken prompt leaves the list and shows as a message.
+A prompt typed that started no turn within 10 seconds (the agent showed a
+dialog that took the Enter) is `failed` with `agent-prompt-not-taken`: its
+text may still be in the agent's input, so nothing more is typed there until
+a turn starts (someone pressed Enter) or it is taken back: in the app, or
+with `cate agent withdraw <panel-id> <prompt-id>`, which also takes back a
+queued prompt and prints its text. Read the failed prompt's screen with
+`cate terminal read` and tell the person; withdraw it only once its text is
+out of the agent's input. `send` fails
+only when no agent can take the prompt: `agent-not-running`,
+`agent-starting`, or `no-agent-in-terminal` for a terminal with no agent in
+it; type into that instead (below).
 
 ## Reading answers
 
@@ -61,7 +72,8 @@ CLI's own session store. With `--json`:
 
 ```
 { panelId, title, agentId, agentName, state, canReceivePrompt, session,
-  messages: [{ role, text, createdAt }] }
+  messages: [{ role, text, createdAt }],
+  prompts: [{ id, text, state, error }] }
 ```
 
 A terminal whose agent has not reported a session yet fails with

@@ -1,56 +1,59 @@
 // An agent chat as the app shows it (`agents.watch`): one list of items with
-// ids that stay while the conversation grows, and whether a turn is open.
+// ids that stay while the conversation grows, whether a turn is open, and the
+// prompts on their way as the runtime keeps them (queued, sending, failed).
 // The conversation comes from two places at their own pace (the agent's
 // state from its hooks, its messages from its session store), so this keeps
 // what is on screen steady:
-// - A message's id is its place (`m3`), and the prompt sent from here waits
-//   under the id it will have, so it stays where it is once it shows.
+// - A message's id is its place (`m3`), and the prompt being sent waits
+//   under the id it will have, so it stays where it is once it shows. The
+//   runtime lets go of a prompt when its turn starts, which may be a moment
+//   before the store shows it: it stays on screen until the conversation
+//   has a new message.
 // - A step stays in the group it first showed in; a message read late does
 //   not move steps already on screen.
-// - A turn is open from the prompt going out until the agent ended it (the
-//   runtime sends a turn's end with its reply), and for a moment after the
-//   prompt shows, while the agent has not said it took it up.
+// - A turn is open while a prompt is being sent and while the agent works.
+// A new agent's first prompt (passed at launch) shows as being sent until
+// the conversation has a prompt of the person's.
 
-import { agentStepGroups, type AgentStep } from '@services/agents/contract'
-import type { AgentChat } from '@services/agents/client'
+import { ATTACHMENTS_ONLY_PROMPT, agentStepGroups, type AgentConversation, type AgentPrompt, type AgentStep } from '@services/agents/contract'
 import type { MobileChat, MobileChatItem } from '../contract'
 
-/** How long a prompt the conversation shows keeps its turn open while the
- *  agent has not said it is working on it. */
-export const TAKE_UP_MS = 8_000
+/** Why a failed prompt was not taken, as the app says it. */
+export const NOT_TAKEN = 'The agent did not take it. It may still be in its terminal\'s input.'
 
 export interface ChatTimeline {
-  /** The chat at `now`, and when it changes with no news (a prompt's
-   *  take-up ran out), or null. */
-  update(chat: AgentChat, now: number): { chat: MobileChat; recheckAt: number | null }
+  update(conversation: AgentConversation | null): MobileChat
 }
 
 const stepKey = (step: AgentStep): string => `${step.at}\0${step.tool}\0${step.subject ?? ''}`
 
-export function createChatTimeline(): ChatTimeline {
+/** A prompt of only attachments reads as the runtime types it. */
+const promptText = ({ text, attachments }: AgentPrompt): string =>
+  text.trim() || attachments.length === 0 ? text : ATTACHMENTS_ONLY_PROMPT
+
+/** `first`: a new agent's first prompt, on its way with the agent. */
+export function createChatTimeline(first: string | null = null): ChatTimeline {
   /** Where each step shows: before the message at this index. */
   let anchors = new Map<string, number>()
-  let lastPending: string | null = null
-  /** How many messages there were when the prompt went out. */
-  let pendingFrom = 0
-  /** A prompt showed while the agent had not taken it up, until then. */
-  let takeUp: number | null = null
+  /** The prompt being sent (or just taken): its text and the message count
+   *  when it was seen first. */
+  let held: { id: string; text: string; from: number } | null = null
 
   return {
-    update({ conversation, pending, queued }, now) {
+    update(conversation) {
       const messages = conversation?.messages ?? []
+      const prompts = conversation?.prompts ?? []
       const status = conversation?.status ?? null
       const running = status === 'running'
 
-      // The prompt sent from here shows in the conversation now.
-      const arrived = lastPending !== null && pending === null
-        && messages.slice(pendingFrom).some((message) => message.role === 'user')
-      if (arrived && !running) takeUp = now + TAKE_UP_MS
-      if (pending !== null && lastPending === null) pendingFrom = messages.length
-      lastPending = pending
-      const lastUser = messages.findLastIndex((message) => message.role === 'user')
-      const replied = lastUser >= 0 && messages.slice(lastUser + 1).some((message) => message.role === 'assistant')
-      if (takeUp !== null && (running || replied || now >= takeUp)) takeUp = null
+      if (first !== null && messages.some((message) => message.role === 'user')) first = null
+      const sending = prompts.find((prompt) => prompt.state === 'sending')
+      if (sending) {
+        if (held?.id !== sending.id) held = { id: sending.id, text: promptText(sending), from: messages.length }
+      } else if (held && (prompts.some((prompt) => prompt.id === held!.id) || messages.length > held.from)) {
+        // Not taken (failed, or waiting again), or shown in the conversation.
+        held = null
+      }
 
       // Steps, each where it first showed.
       const groups = conversation ? agentStepGroups(conversation) : []
@@ -86,20 +89,20 @@ export function createChatTimeline(): ChatTimeline {
           : { kind: 'reply', id: `m${index}`, text: message.text })
       })
       stepsAt(messages.length)
-      if (pending !== null) items.push({ kind: 'prompt', id: `m${messages.length}`, text: pending, sent: false })
+      const outgoing = held?.text ?? first
+      if (outgoing !== null) items.push({ kind: 'prompt', id: `m${messages.length}`, text: outgoing, sent: false })
 
-      const open = pending !== null || running || takeUp !== null
+      const open = outgoing !== null || running
       const step = running && lastStep && lastStep.before === messages.length ? lastStep.step : null
       return {
-        chat: {
-          loaded: conversation !== null,
-          status,
-          canReceivePrompt: conversation?.canReceivePrompt ?? false,
-          queued,
-          turn: open ? { step } : null,
-          items,
-        },
-        recheckAt: takeUp,
+        loaded: conversation !== null,
+        status,
+        canReceivePrompt: conversation?.canReceivePrompt ?? false,
+        queued: prompts.filter((prompt) => prompt.state === 'queued').map((prompt) => ({ id: prompt.id, text: promptText(prompt) })),
+        failed: prompts.filter((prompt) => prompt.state === 'failed')
+          .map((prompt) => ({ id: prompt.id, text: promptText(prompt), message: NOT_TAKEN })),
+        turn: open ? { step } : null,
+        items,
       }
     },
   }

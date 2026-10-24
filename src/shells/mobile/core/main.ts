@@ -17,6 +17,7 @@ import { createMobileConversations } from './conversations'
 import { createMobileRelations } from './relations'
 import { installClientUi } from '@kernel/interaction'
 import { createMobileClientUi } from './clientUi'
+import { createMobileLinks } from './links'
 
 declare global {
   interface Window {
@@ -26,7 +27,8 @@ declare global {
 
 async function start(): Promise<void> {
   const bridge = nativeBridge()
-  installClientUi(createMobileClientUi(bridge))
+  const links = createMobileLinks()
+  installClientUi(createMobileClientUi(bridge, links))
   const client = await bootMobileClient(bridge)
   const views = createMobileViews(bridge)
   const agents = createMobileAgents(client, bridge)
@@ -39,6 +41,7 @@ async function start(): Promise<void> {
     streams: createMobileStreams(client, bridge),
     agents,
     conversations: createMobileConversations(bridge),
+    links,
   })
   window.cateCore = {
     async call(method, paramsJson) {
@@ -50,12 +53,12 @@ async function start(): Promise<void> {
   // A change that leaves the state as it was is not pushed.
   let pushed = ''
   const push = () => {
-    const json = JSON.stringify(snapshotOf(client, agents, relations))
+    const json = JSON.stringify(snapshotOf(client, agents, relations, links))
     if (json === pushed) return
     pushed = json
     void bridge('core.state', { json })
   }
-  watchState(client, agents, relations, push)
+  watchState(client, agents, relations, links, push)
   push()
   await bridge('core.ready', {})
 }

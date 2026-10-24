@@ -10,11 +10,10 @@ import type { CateServiceHandlers } from '@kernel/api/contract'
 import type {
   AgentChangesSnapshot,
   AgentId,
-  AgentSendResult,
   agentsCapability,
 } from '../contract'
 import type { agentApi } from '../contract/api'
-import { createAgentApiHandlers } from './api'
+import { createAgentApiHandlers, sendToAgent } from './api'
 import { agentsCapabilityImpl } from './capability'
 import { createAgentsCore, type AgentsCoreDeps } from './core'
 import { evaluateAgentCliHooks, inspectAgentCliHooks } from './hooks/readiness'
@@ -37,7 +36,8 @@ export interface AgentsRuntimeDeps extends AgentsCoreDeps {
 export interface AgentsRuntime {
   /** Starts an agent for `callerPanelId` (undefined for a client). */
   start(callerPanelId: string | undefined, args: AgentStartArgs): Promise<{ panelId: string; agentId: AgentId }>
-  send(panelId: string, prompt: string): Promise<AgentSendResult>
+  /** `cate agent send`'s function: throws when no agent can take it. */
+  send(panelId: string, prompt: string): { promptId: string }
   /** Panels whose agent is running a turn. */
   busy(): string[]
   /** Recorded agent edits in a checkout, each with the panels that showed
@@ -71,7 +71,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
 
   return {
     start: (callerPanelId, args) => starter.start(callerPanelId, args),
-    send: (panelId, prompt) => core.send(panelId, prompt),
+    send: (panelId, prompt) => sendToAgent(core, starter, panelId, prompt),
     busy: () => core.busy(),
     changes: (cwd, knownRevision) => core.changes(cwd, knownRevision),
     async readiness(cwd) {

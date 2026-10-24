@@ -41,7 +41,8 @@ final class AgentChoiceOptions {
 }
 
 /// Photos and files going with the next prompt: each is stored on the
-/// runtime's machine as soon as it is picked, and the prompt names its path.
+/// runtime's machine as soon as it is picked, and goes with the prompt as an
+/// attachment (the runtime decides how its agent gets it).
 @MainActor
 @Observable
 final class ComposerAttachments {
@@ -80,11 +81,16 @@ final class ComposerAttachments {
         items.removeAll { $0.id == id }
     }
 
-    /// The prompt with the stored files' paths, one per line after it.
-    func prompt(_ text: String) -> String {
-        let paths = items.compactMap(\.path)
-        guard !paths.isEmpty else { return text }
-        return ([text].filter { !$0.isEmpty } + [paths.joined(separator: "\n")]).joined(separator: "\n\n")
+    /// What a prompt of only attachments reads as: the runtime types it so
+    /// (`ATTACHMENTS_ONLY_PROMPT`).
+    static let onlyPrompt = "See the attached files."
+
+    /// The stored files' paths, the prompt's `attachments`.
+    var paths: [String] { items.compactMap(\.path) }
+
+    /// Stored files back with the next prompt (one that did not go out).
+    func restore(_ paths: [String]) {
+        items += paths.map { Item(name: URL(fileURLWithPath: $0).lastPathComponent, thumbnail: nil, path: $0) }
     }
 
     func clear() {
@@ -458,9 +464,6 @@ private struct AgentPicker: View {
 /// change of text can stop it; a new text crossfades.
 struct ShimmerText: View {
     let text: String
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private static let period: TimeInterval = 1.5
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -471,22 +474,45 @@ struct ShimmerText: View {
     }
 
     private var line: some View {
-        Text(text)
-            .foregroundStyle(.secondary)
-            .overlay {
-                if !reduceMotion {
-                    TimelineView(.animation) { timeline in
-                        let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
-                        GeometryReader { geometry in
-                            let band = max(geometry.size.width * 0.5, 40)
-                            LinearGradient(colors: [.clear, .primary, .clear], startPoint: .leading, endPoint: .trailing)
-                                .frame(width: band)
-                                .offset(x: -band + (geometry.size.width + band) * phase)
+        Text(text).shimmering()
+    }
+}
+
+extension View {
+    /// Dims the view and sweeps a highlight over it while `active`, as the
+    /// desktop shimmers a running agent's title.
+    func shimmering(_ active: Bool = true) -> some View {
+        modifier(Shimmer(active: active))
+    }
+}
+
+private struct Shimmer: ViewModifier {
+    let active: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let period: TimeInterval = 1.5
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .foregroundStyle(.secondary)
+                .overlay {
+                    if !reduceMotion {
+                        TimelineView(.animation) { timeline in
+                            let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
+                            GeometryReader { geometry in
+                                let band = max(geometry.size.width * 0.5, 40)
+                                LinearGradient(colors: [.clear, .primary, .clear], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: band)
+                                    .offset(x: -band + (geometry.size.width + band) * phase)
+                            }
                         }
+                        .mask { content }
+                        .allowsHitTesting(false)
                     }
-                    .mask { Text(text) }
-                    .allowsHitTesting(false)
                 }
-            }
+        } else {
+            content
+        }
     }
 }

@@ -12,6 +12,9 @@ import type { UsageLimitsReport, UsagePricing, UsageSummary, UsageSummaryInput }
  *  prompt the agent opens its interactive session. */
 export interface AgentStartRequest {
   prompt?: string
+  /** Files that go with the prompt: absolute paths on the runtime's machine
+   *  (a prompt of only attachments may be empty). */
+  attachments?: string[]
   agentId?: AgentId
   title?: string
   worktreeId?: string
@@ -52,7 +55,15 @@ export const agentsCapability = defineCapability('agents', {
     /** The same functions as `cate agent start / types / send / interrupt`. */
     start: method<AgentStartRequest, { panelId: string; agentId: AgentId | null }>({ mutates: true, timeoutMs: 90_000 }),
     types: method<void, AgentTypeInfo[]>(),
-    send: method<{ panelId: string; prompt: string }, { ok: true }>({ mutates: true, timeoutMs: 20_000 }),
+    /** The same function as `cate agent send`: the runtime takes the prompt
+     *  and sends it once the agent can take one, after those before it; its
+     *  outcome shows in the conversation's prompts. `attachments`: files that
+     *  go with it, absolute paths on the runtime's machine (a prompt of only
+     *  attachments may be empty). */
+    send: method<{ panelId: string; prompt: string; attachments?: string[] }, { promptId: string }>({ mutates: true }),
+    /** Takes back a queued or failed prompt (its text and attachments, for
+     *  the composer); null when there is none. */
+    withdraw: method<{ panelId: string; promptId: string }, { prompt: string; attachments: string[] }>({ mutates: true }),
     interrupt: method<{ panelId: string }, { ok: true }>({ mutates: true }),
     /** The agent CLIs' usage in this workspace for a window, totalled per
      *  agent, model and period (a cold 90-day scan reads every transcript

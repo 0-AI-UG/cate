@@ -293,6 +293,13 @@ struct SettingsView: View {
                 } label: {
                     Label("Canvas grid", systemImage: "grid")
                 }
+                Picker(selection: Binding(get: { core.linkOpenTarget }, set: { core.setLinkOpenTarget($0) })) {
+                    Text("Ask Each Time").tag("ask")
+                    Text("In Cate").tag("cate")
+                    Text("In Safari").tag("external")
+                } label: {
+                    Label("Open links", systemImage: "link")
+                }
                 NavigationLink {
                     SavedRelationLabels()
                 } label: {

@@ -11,6 +11,16 @@ struct CoreState: Decodable, Equatable {
     var trustPrompt: TrustPrompt?
     /// This device's library of custom relation labels.
     var savedRelationLabels: [String] = []
+    /// Where a tapped web link opens on this device: `ask`, `cate` or
+    /// `external`.
+    var linkOpenTarget = "ask"
+    /// A tapped web link waiting for where it opens; nil when nothing asks.
+    var linkPrompt: LinkPrompt?
+}
+
+/// Where a tapped web link opens (`linkPrompt`).
+struct LinkPrompt: Decodable, Equatable {
+    let url: String
 }
 
 /// A trust question (`trustPrompt`).
@@ -385,6 +395,20 @@ struct StartedAgent: Decodable {
     let message: String?
 }
 
+/// A queued or failed prompt taken back (`agents.withdraw`).
+struct QueuedPrompt: Decodable {
+    let prompt: String
+    let attachments: [String]
+}
+
+/// A prompt on its way that a chat shows on its own (`MobileOutgoingPrompt`):
+/// queued, or failed with why.
+struct OutgoingPrompt: Decodable, Hashable, Sendable, Identifiable {
+    let id: String
+    let text: String
+    let message: String?
+}
+
 /// A tool call an agent completed, as its hooks reported it.
 struct AgentStep: Codable, Hashable, Sendable {
     /// The tool's name as the CLI calls it.
@@ -422,7 +446,11 @@ struct ChatEvent: Decodable, Sendable {
     /// Nil while the panel hosts no agent.
     let status: String?
     let canReceivePrompt: Bool
-    let queued: String?
+    /// Prompts the runtime sends in order once the agent can take one.
+    let queued: [OutgoingPrompt]
+    /// Typed and not taken: may still be in the terminal's input; they hold
+    /// the queue.
+    let failed: [OutgoingPrompt]
     /// Nil between turns.
     let turn: ChatTurn?
     let items: [ChatItemData]

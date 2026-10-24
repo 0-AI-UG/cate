@@ -121,8 +121,7 @@ const review: PanelRuntime<'root' | 'repository' | 'files' | 'agents'> = (servic
         return { panelId }
       },
       async send(panelId, prompt) {
-        const result = await agents.send(panelId, prompt)
-        if (!result.ok) throw new Error(result.error)
+        agents.send(panelId, prompt)
       },
       onExit: (listener) => agents.onSessionEnded(listener),
     },

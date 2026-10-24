@@ -5,16 +5,41 @@
 // which only a loopback-routed webview reaches, so it never leaves Cate. A
 // file opens in the panel already showing it, else in a new panel of the type
 // that opens files. A new panel is placed from the panel the link was clicked
-// in (`createPanelFrom`).
+// in (`createPanelFrom`). A clicked web link opens where this client's
+// `linkOpenTarget` setting says, asking on the first click and remembering
+// the answer (`openClickedLink`).
 
 import { clientUi } from '@kernel/interaction'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { isLoopbackUrl } from '@runtime/tunnel/contract'
+import type { LinkOpenTarget } from '@services/browser/contract'
 import type { PanelId } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
 import { panelDefinition, panelTypeOpening } from './definitions'
 import { createPanelFrom } from './panelTargetPicker'
 import { revealPanel } from './reveal'
+
+declare module '@kernel/interaction/contract' {
+  interface ClientUi {
+    /** Where a clicked web link opens; the answer is remembered. */
+    promptLinkOpen(url: string): Promise<'cate' | 'external' | 'cancel'>
+  }
+}
+
+/** The slice of the client settings store link opening uses
+ *  (`ClientSettingsStore` from kernel/settings satisfies it). */
+export interface LinkSettings {
+  get(key: 'linkOpenTarget'): LinkOpenTarget
+  set(key: 'linkOpenTarget', value: LinkOpenTarget): unknown
+}
+
+let linkSettings: LinkSettings | null = null
+
+/** The shell installs its client settings store at start. Without one every
+ *  clicked web link asks. */
+export function installLinkSettings(next: LinkSettings | null): void {
+  linkSettings = next
+}
 
 export type LinkTarget =
   | { kind: 'url'; url: string }
@@ -52,6 +77,24 @@ export async function openLink(workspaceId: string, target: LinkTarget, options:
     void tryRuntimeFor(workspaceId)?.session.op({ panelId, op }).catch(() => {})
   }
   return true
+}
+
+/** A link the person clicked or tapped: a web URL opens where the
+ *  `linkOpenTarget` setting says (asking the first time and remembering);
+ *  `external` forces the system browser (Cmd/Ctrl+Shift+click). False when
+ *  nothing opened. */
+export async function openClickedLink(workspaceId: string, target: LinkTarget, options: OpenLinkOptions = {}): Promise<boolean> {
+  if (target.kind === 'url' && !options.external && !isLoopbackUrl(target.url)) {
+    let where = linkSettings?.get('linkOpenTarget') ?? 'ask'
+    if (where === 'ask') {
+      const choice = await clientUi().promptLinkOpen(target.url)
+      if (choice === 'cancel') return false
+      linkSettings?.set('linkOpenTarget', choice)
+      where = choice
+    }
+    return openLink(workspaceId, target, { ...options, external: where === 'external' })
+  }
+  return openLink(workspaceId, target, options)
 }
 
 /** The panel of `type` already working on `path`, if any. */

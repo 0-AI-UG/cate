@@ -12,6 +12,7 @@
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
 import type { AgentId, AgentStatus, AgentStep, AgentTypeInfo } from '@services/agents/contract'
+import type { LinkOpenTarget } from '@services/browser/contract'
 import type { RelationKind } from '@workspace/document/contract'
 import type { Point } from '@workspace/canvas/contract'
 import type { RelationContextMode } from '@workspace/relations/contract'
@@ -65,7 +66,7 @@ export interface MobileNotification {
   workspaceId: string
   panelId: string | null
   /** The event's kind: `agent.needsInput`, `agent.needsPermission`,
-   *  `cate.ui.notify`, ... */
+   *  `runtime.warning` */
   kind: string
   title: string
   body: string
@@ -303,6 +304,11 @@ export interface MobileCoreState {
   /** This device's library of custom relation labels, reused across
    *  workspaces (`savedPanelRelationLabels`). */
   savedRelationLabels: string[]
+  /** Where a tapped web link opens on this device (`linkOpenTarget`). */
+  linkOpenTarget: LinkOpenTarget
+  /** A tapped web link waiting for the person to say where it opens; the
+   *  app asks and answers `links.answer`. Null when nothing asks. */
+  linkPrompt: { url: string } | null
 }
 
 /** The answer to an agent or git action: ok, or what went wrong in words. */
@@ -312,6 +318,14 @@ export type MobileActionResult = { ok: true } | { ok: false; message: string }
  *  switching would stop what runs; the app asks, then sends `discard`. */
 export type MobileSwitchResult = MobileActionResult | { ok: false; message: string; dirty: true }
 
+/** A prompt on its way that the chat shows on its own (queued, failed),
+ *  withdrawn by its id (`agents.withdraw`). `message`: why it failed. */
+export interface MobileOutgoingPrompt {
+  id: string
+  text: string
+  message?: string
+}
+
 /** An agent chat as the app shows it (`chatTimeline.ts`). */
 export interface MobileChat {
   /** The conversation was read: false while it is on its way. */
@@ -319,8 +333,12 @@ export interface MobileChat {
   /** The agent's state; null while the panel hosts no agent. */
   status: AgentStatus | null
   canReceivePrompt: boolean
-  /** A prompt waiting for the agent to be at its prompt. */
-  queued: string | null
+  /** Prompts the runtime sends in order once the agent can take one. */
+  queued: MobileOutgoingPrompt[]
+  /** Prompts typed that started no turn: they may still be in the
+   *  terminal's input, and hold the queue until a turn starts or they are
+   *  withdrawn. */
+  failed: MobileOutgoingPrompt[]
   /** The turn in progress, from the prompt going out until the agent ended
    *  it, with the step it last completed; null between turns. */
   turn: { step: AgentStep | null } | null
@@ -330,8 +348,8 @@ export interface MobileChat {
 /** A chat's item. Ids stay while the chat grows: a message's is its place,
  *  a step group's the message it shows before. */
 export type MobileChatItem =
-  /** The person's prompt; `sent` false while the conversation does not
-   *  show it yet. */
+  /** The person's prompt; `sent` false while it is on its way (the
+   *  runtime is sending it) and the conversation does not show it yet. */
   | { kind: 'prompt'; id: string; text: string; sent: boolean }
   | { kind: 'reply'; id: string; text: string }
   /** Steps the agent took; a ghost stands for steps from before the runtime
@@ -404,9 +422,20 @@ export interface MobileCoreMethods {
   'terminal.fit': { params: { terminalId: string; cols: number; rows: number }; result: null }
   'terminal.close': { params: { terminalId: string }; result: null }
   /** A link the person tapped in the terminal (an OSC 8 hyperlink's URI): a
-   *  file opens in Cate, a web URL outside the app, except a loopback one,
-   *  which only Cate reaches. */
+   *  file opens in Cate, a web URL where `linkOpenTarget` says (asking with
+   *  `linkPrompt`), a loopback one always in Cate, which only Cate reaches. */
   'terminal.openLink': { params: { terminalId: string; uri: string }; result: null }
+  /** A link the person tapped in rendered markdown (a file's preview, an
+   *  agent's reply), opened like a terminal's from `panelId` (a new panel is
+   *  placed from it); a relative
+   *  `href` names a file relative to the markdown file `filePath`. False
+   *  when it opens nothing (an anchor, another scheme, a cancelled question). */
+  'links.open': { params: { workspaceId: string; panelId?: string; href: string; filePath?: string }; result: boolean }
+  /** The answer to `linkPrompt`: where the link opens, remembered as
+   *  `linkOpenTarget`. */
+  'links.answer': { params: { choice: 'cate' | 'external' | 'cancel' }; result: null }
+  /** This device's `linkOpenTarget`. */
+  'links.setTarget': { params: { target: LinkOpenTarget }; result: null }
 
   /** Follows a panel's session in a view the app names `viewId`: its
    *  snapshot as `snapshot` events until `panel.close`. */
@@ -463,21 +492,23 @@ export interface MobileCoreMethods {
   'browser.loading': { params: { viewId: string; tabId: string; loading: boolean; loadError: string | null }; result: null }
   'browser.title': { params: { viewId: string; tabId: string; title: string }; result: null }
 
-  /** Follows a panel's agent conversation as `conversation` events for
-   *  `viewId` until `agents.unwatch`; `pending` is a first prompt on its way. */
+  /** Follows a panel's agent conversation as `chat` events for `viewId`
+   *  until `agents.unwatch`; `pending` is a new agent's first prompt, on its
+   *  way with the agent. */
   'agents.watch': { params: { viewId: string; workspaceId: string; panelId: string; pending?: string }; result: null }
   'agents.unwatch': { params: { viewId: string }; result: null }
-  /** Sends a prompt from the view `viewId` follows: pending there until the
-   *  conversation has it. */
-  'agents.send': { params: { viewId: string; workspaceId: string; panelId: string; prompt: string }; result: MobileActionResult }
-  /** Sends a prompt from the view `viewId` follows once the agent can take
-   *  it (replacing one queued there). */
-  'agents.queue': { params: { viewId: string; prompt: string }; result: null }
-  /** Takes the view's queued prompt back; null when none waits. */
-  'agents.unqueue': { params: { viewId: string }; result: string | null }
+  /** Sends a prompt to the agent (`cate agent send`): the runtime sends it
+   *  once the agent can take one, whether or not the app is still there,
+   *  and every chat of it shows where it is. `attachments`: paths
+   *  `agents.attach` answered, which go with it (the prompt may then be
+   *  empty). Fails only when no agent can take it. */
+  'agents.send': { params: { workspaceId: string; panelId: string; prompt: string; attachments?: string[] }; result: MobileActionResult }
+  /** Takes back a queued or failed prompt, for the composer; null when it
+   *  is gone. */
+  'agents.withdraw': { params: { workspaceId: string; panelId: string; promptId: string }; result: { prompt: string; attachments: string[] } | null }
   /** Stores a photo (`image`) or another file in the workspace's data on the
-   *  runtime's machine, for a prompt to name; `data` is base64. Answers with
-   *  its path there. */
+   *  runtime's machine, for a prompt's `attachments`; `data` is base64.
+   *  Answers with its path there. */
   'agents.attach': {
     params: { workspaceId: string; name: string; kind: 'image' | 'file'; data: string }
     result: { ok: true; path: string } | { ok: false; message: string }
@@ -490,7 +521,7 @@ export interface MobileCoreMethods {
    *  runs it in a new worktree named after the prompt, `placement` puts its
    *  panel on a canvas. Answers with the panel that hosts it. */
   'agents.start': {
-    params: { workspaceId: string; prompt: string; agentId: AgentId; worktree: boolean; placement?: MobilePlacement }
+    params: { workspaceId: string; prompt: string; attachments?: string[]; agentId: AgentId; worktree: boolean; placement?: MobilePlacement }
     result: { ok: true; panelId: string } | { ok: false; message: string }
   }
   /** Shows the changes of the agent a panel hosts in a review panel filtered

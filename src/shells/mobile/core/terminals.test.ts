@@ -6,7 +6,7 @@ import type { MobileClient } from './boot'
 import { createMobileTerminals } from './terminals'
 
 const opened = vi.hoisted(() => [] as unknown[][])
-vi.mock('@client/host', () => ({ openLink: async (...args: unknown[]) => { opened.push(args) } }))
+vi.mock('@client/host', () => ({ openClickedLink: async (...args: unknown[]) => { opened.push(args) } }))
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
 
@@ -143,7 +143,7 @@ describe('mobile terminals', () => {
     expect(t.terminals.get('v')).toBeUndefined()
   })
 
-  it('opens a tapped link through openLink, from the panel, web URLs outside the app', () => {
+  it('opens a tapped link as a clicked link, from the panel', () => {
     const t = setup()
     t.terminals.open({ terminalId: 'v', workspaceId: 'ws1', panelId: 'p1' })
     opened.length = 0
@@ -151,8 +151,8 @@ describe('mobile terminals', () => {
     t.terminals.get('v')!.openLink('https://example.com')
     t.terminals.get('v')!.openLink('vscode://x')
     expect(opened).toEqual([
-      ['ws1', { kind: 'file', path: '/repo/a.ts', line: 3 }, { from: 'p1', external: true }],
-      ['ws1', { kind: 'url', url: 'https://example.com' }, { from: 'p1', external: true }],
+      ['ws1', { kind: 'file', path: '/repo/a.ts', line: 3 }, { from: 'p1' }],
+      ['ws1', { kind: 'url', url: 'https://example.com' }, { from: 'p1' }],
     ])
   })
 })

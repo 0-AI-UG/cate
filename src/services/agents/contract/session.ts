@@ -48,7 +48,9 @@ export interface PanelAgentState {
   hooksMissing?: true
 }
 
-export type AgentSendResult = { ok: true } | { ok: false; error: string }
+/** `typed`: the prompt was typed but no turn started, so it may still be in
+ *  the terminal's input. */
+export type AgentSendResult = { ok: true } | { ok: false; error: string; typed?: true }
 
 /** A terminal's resume stamp: the agent session typed back as a resume
  *  command when the terminal is restored. Session state of the terminal
