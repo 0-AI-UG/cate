@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.3] - 2026-10-25
+
+### Added
+
+- **iOS**: a workspace's settings have the same "When you close Cate" choice as the desktop, and say when this phone can no longer reach the workspace.
+
+### Changed
+
+- **When you close Cate**: the Runtime settings page is now Availability and asks one question with three choices: finish what's running (with or without terminal commands), always stay available, or stop with Cate. The page shows where the workspace runs and who is connected. On a server, staying available comes first and nothing talks about sleep. When paired devices would lose the workspace once it stops or the computer sleeps, the page says so. A `keepRunningWhile` edited by hand shows as Custom. Network access is set in Share.
+- "Stop workspace runtime" is now "Stop workspace".
+
 ## [2.1.0-beta.2] - 2026-10-25
 
 ### Added
