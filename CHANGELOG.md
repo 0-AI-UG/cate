@@ -6,17 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.2] - 2026-10-25
+
 ### Added
 
-- **Usage**: the Usage button is back in the sidebar (⌘⌥U). It shows what Claude Code, Codex, Grok and OpenCode used in the shown workspace, as its runtime totals it (tokens and API-equivalent cost, by day or hour, agent and model), read from the CLIs' own session stores, plus the Claude Code and Codex subscription limits. Kiro records only credits and Cursor no token counts; the overview says so. Custom model prices are a workspace setting.
+- **`cate agent withdraw`** takes back a queued or failed prompt.
+- **Agent attachments**: photos and files are their own field on `cate agent start` and `cate agent send`. Claude Code, Codex, OpenCode and Kiro get them through their submit hook; Cursor and Grok get them typed after the text.
+- **`cate browser snapshot <id>`** prints only that element and its subtree, so agents can skip the menus a site repeats on every page.
+- **iOS**: links ask before they open, and this device's settings (canvas grid, where links open, saved connection labels) moved to the workspace list.
 
 ### Changed
 
-- **cate-cli skill**: split into a short `SKILL.md` and `references/browser.md` and `references/agents.md`, so agents load the browser and agent guides only when they need them, with a description that says when to use it. Unedited installed copies update themselves.
+- **Keep running while**: the runtime lifetime setting is now a set of triggers: while agents work, while commands run, while a device is in use (default on) and always. While a picked trigger holds, the runtime keeps running and its machine stays awake. An agent idle at its prompt no longer counts, so an idle agent in a terminal no longer keeps the Mac awake all night, and network access no longer forces the runtime to run forever.
+- **The runtime owns sent prompts**: every prompt sent to an agent (queued, sending, failed) lives in the runtime, with one queue per panel, so the CLI, the review panel and the iOS app see the same queue and nothing is typed over a failed prompt.
+- A browser page call on the History or Password manager tab now says which page it is and how to switch to a web page.
+
+### Fixed
+
+- The sidebar no longer resets its width, collapses its rows and replays its animation on every workspace switch.
+- Browser clicks on links that wrap across lines hit the link instead of empty space, and retry scrolls are instant on pages with smooth scrolling.
+- Prompts sent to Cursor no longer lose their Enter.
 
 ### Removed
 
-- **Hermes**: Cate no longer integrates Hermes Agent. Hermes 0.22 runs every chat in one shared background process per profile, so its hooks can no longer tell which terminal a session belongs to. Hermes still runs in a terminal as a plain program, without status, edit tracking, context or session restore.
+- **`cate notify`** (`cate.ui.notify`) and its `cliNotifyEnabled` setting.
 
 ## [2.1.0-beta.1] - 2026-10-17
 
@@ -61,6 +74,10 @@ This beta rebuilds Cate around workspace runtimes. Each open workspace now runs 
 - A terminal running an agent shows under the agent's name on every client.
 - A "Hooks off" chip shows on a panel whose agent has hooks disabled.
 
+#### Usage
+
+- **Usage**: the Usage button is back in the sidebar (⌘⌥U). It shows what Claude Code, Codex, Grok and OpenCode used in the shown workspace, as its runtime totals it (tokens and API-equivalent cost, by day or hour, agent and model), read from the CLIs' own session stores, plus the Claude Code and Codex subscription limits. Kiro records only credits and Cursor no token counts; the overview says so. Custom model prices are a workspace setting.
+
 #### Browser
 
 - **Page dialogs**: `alert`, `confirm` and `prompt` dialogs are visible to automation, and can be accepted, dismissed or answered from the CLI.
@@ -87,6 +104,7 @@ This beta rebuilds Cate around workspace runtimes. Each open workspace now runs 
 - **Notifications** belong to the workspace rather than to agents: a notification an agent asked for is withdrawn when it starts working again.
 - **Terminal links** are detected in the runtime, so every client sees the same links.
 - **Lighter agent indicators**: a running agent shows a static indicator instead of an animated title shimmer, and the waiting dot takes its color from the theme.
+- **cate-cli skill**: split into a short `SKILL.md` and `references/browser.md` and `references/agents.md`, so agents load the browser and agent guides only when they need them, with a description that says when to use it. Unedited installed copies update themselves.
 
 ### Fixed
 
@@ -119,6 +137,7 @@ This beta rebuilds Cate around workspace runtimes. Each open workspace now runs 
 - **T3 Code**: the T3 Code chat panel, its provider settings, usage overview and conversation menu are gone, and the runtime no longer bundles the T3 harness. Agents run as CLIs in terminals: `cate agent start` lost `--runner`, `--instance` and `--model`, and `cate agent` JSON output no longer has a `runner` field.
 - **Missions** and `cate codingAgent.*`, replaced by `cate agent start`.
 - **Recent workspaces**, replaced by the list of open workspaces.
+- **Hermes**: Cate no longer integrates Hermes Agent. Hermes 0.22 runs every chat in one shared background process per profile, so its hooks can no longer tell which terminal a session belongs to. Hermes still runs in a terminal as a plain program, without status, edit tracking, context or session restore.
 
 ### Security
 
