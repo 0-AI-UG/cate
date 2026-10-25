@@ -4,11 +4,10 @@
 // edits (workspace/relations client) on the document mirror.
 
 import { runtimeFor } from '@kernel/rpc/client'
-import { createWorkspaceSettingsMirror, type ClientSettingsStore, type WorkspaceSettingsMirror } from '@kernel/settings/client'
-import { eachConnection } from '@client/connections'
+import type { ClientSettingsStore } from '@kernel/settings/client'
 import { documentStoreFor } from '@client/document'
 import { panelDefinition } from '@panels/definitions'
-import { workspaceSettingsTable, type SharedClientSettings, type WorkspaceSettings } from '@panels/settings'
+import type { SharedClientSettings } from '@panels/settings'
 import { panelConnectionCurve } from '@workspace/canvas/contract'
 import { dockPanels, type CanvasNode, type PanelRecord, type PanelRelation, type WorkspaceDocument } from '@workspace/document/contract'
 import {
@@ -34,6 +33,7 @@ import {
 } from '@workspace/relations/client'
 import type { MobileCoreMethods, MobilePanel, MobileRelation, MobileRelationCurve } from '../contract'
 import type { MobileClient } from './boot'
+import type { MobileWorkspaceSettings } from './workspaceSettings'
 
 type Handlers<M extends keyof MobileCoreMethods> = {
   [K in M]: (params: MobileCoreMethods[K]['params']) => Promise<MobileCoreMethods[K]['result']>
@@ -102,33 +102,14 @@ export function relationsOf(doc: WorkspaceDocument): MobileRelation[] {
   })
 }
 
-export function createMobileRelations(client: MobileClient): MobileRelations {
-  const settings = new Map<string, WorkspaceSettingsMirror<WorkspaceSettings>>()
-  const listeners = new Set<() => void>()
-  const changed = () => {
-    for (const listener of [...listeners]) listener()
-  }
-
-  eachConnection(client.connections, ({ workspaceId, runtime }) => {
-    const mirror = createWorkspaceSettingsMirror(runtime.settings, workspaceSettingsTable)
-    settings.set(workspaceId, mirror)
-    const off = mirror.subscribe(changed)
-    return () => {
-      off()
-      mirror.dispose()
-      if (settings.get(workspaceId) === mirror) settings.delete(workspaceId)
-      changed()
-    }
-  })
-
-  client.settings.subscribe(changed)
-
+export function createMobileRelations(client: MobileClient, settings: MobileWorkspaceSettings): MobileRelations {
   return {
-    enabled: (workspaceId) => settings.get(workspaceId)?.get('panelRelationsEnabled') ?? true,
+    enabled: (workspaceId) => settings.of(workspaceId)?.get('panelRelationsEnabled') ?? true,
     savedLabels: () => client.settings.get('savedPanelRelationLabels'),
     subscribe(listener) {
-      listeners.add(listener)
-      return () => { listeners.delete(listener) }
+      const offWorkspace = settings.subscribe(listener)
+      const offClient = client.settings.subscribe(listener)
+      return () => { offWorkspace(); offClient() }
     },
   }
 }

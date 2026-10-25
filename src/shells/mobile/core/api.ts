@@ -18,6 +18,8 @@ import type { MobileConversations } from './conversations'
 import { createLinkHandlers, type MobileLinks } from './links'
 import { placementOptions, planPlacementOn } from './placement'
 import { createRelationHandlers } from './relations'
+import { createAvailabilityHandlers } from './availability'
+import type { MobileWorkspaceSettings } from './workspaceSettings'
 import { createReviewHandlers } from './review'
 import { loopbackPort, type MobileStreams } from './streams'
 import type { MobileTerminals } from './terminals'
@@ -37,6 +39,7 @@ export interface CoreParts {
   agents: MobileAgents
   conversations: MobileConversations
   links: MobileLinks
+  workspaceSettings: MobileWorkspaceSettings
 }
 
 const choice = (definition: AnyPanelDefinition): MobilePanelChoice => ({
@@ -53,6 +56,7 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
   return {
     ...createActionHandlers(agents, conversations),
     ...createRelationHandlers(client.settings),
+    ...createAvailabilityHandlers(parts.workspaceSettings),
     ...createLinkHandlers(client, links),
     ...createReviewHandlers(views),
     async 'app.setActive'({ active }) {

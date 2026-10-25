@@ -278,6 +278,9 @@ struct SettingsView: View {
                         PresenceRow(others: workspace.others)
                     }
                 }
+                if let whenClosed = workspace.whenClosed {
+                    AvailabilitySection(workspaceId: workspace.id, whenClosed: whenClosed)
+                }
                 if workspace.power != nil || workspace.push != nil {
                     ComputerSection(workspace: workspace)
                 }
@@ -338,6 +341,82 @@ private struct PresenceRow: View {
     }
 }
 
+/// What happens to the workspace when the person closes Cate, as the
+/// desktop's Availability page offers it: finish what's running, always stay
+/// available or stop with Cate, worded for the machine (one that sleeps, or a
+/// server). This phone reaches it only while it runs.
+private struct AvailabilitySection: View {
+    @Environment(CoreHost.self) private var core
+    let workspaceId: String
+    let whenClosed: WhenClosed
+    @State private var failure: OpFailure?
+
+    private var machine: String { whenClosed.machine ?? "the computer" }
+    private var server: Bool { !whenClosed.machineSleeps }
+
+    private var choices: [(value: String, label: String)] {
+        let always = (value: "always", label: server ? "Always stay available (recommended)" : "Always stay available")
+        // A server is meant to stay available: that comes first.
+        var list = server ? [always] : []
+        list.append((value: "finish", label: "Finish what's running, then stop"))
+        if !server { list.append(always) }
+        list.append((value: "stop", label: "Stop with Cate"))
+        if whenClosed.choice == "custom" { list.append((value: "custom", label: "Custom")) }
+        return list
+    }
+
+    private var description: String {
+        let work = whenClosed.commands ? "Agents and commands" : "Agents"
+        switch whenClosed.choice {
+        case "finish":
+            return server
+                ? "\(work) keep going until they are done, then it stops. Opening it over SSH starts it again."
+                : "\(work) keep going until they are done. \(machine) stays awake until then, then sleeps as usual."
+        case "always":
+            return server
+                ? "Keeps running so you can connect from any device at any time."
+                : "Keeps running and keeps \(machine) awake, so this phone can connect at any time. Uses more battery."
+        case "stop":
+            return "Everything stops 5 minutes after the last window closes."
+        default:
+            return "Set by hand in the workspace's settings.json. Picking another option replaces it."
+        }
+    }
+
+    var body: some View {
+        Section {
+            Picker("When you close Cate", selection: Binding(
+                get: { whenClosed.choice },
+                set: { choice in if choice != "custom" { set(choice, commands: true) } }
+            )) {
+                ForEach(choices, id: \.value) { Text($0.label).tag($0.value) }
+            }
+            if whenClosed.choice == "finish" {
+                Toggle("Include terminal commands", isOn: Binding(
+                    get: { whenClosed.commands },
+                    set: { set("finish", commands: $0) }
+                ))
+            }
+        } header: {
+            Text("Availability")
+        } footer: {
+            if whenClosed.choice == "always" {
+                Text(description)
+            } else {
+                Text("\(description) This phone cannot connect once the workspace stops\(server ? "" : " or \(machine) sleeps").")
+            }
+        }
+        .alert(item: $failure) { Alert(title: Text($0.message)) }
+    }
+
+    private func set(_ choice: String, commands: Bool) {
+        Task {
+            let result = await core.action("runtime.setWhenClosed", ["workspaceId": workspaceId, "choice": choice, "commands": commands])
+            if !result.ok { failure = OpFailure(message: result.message ?? "Could not change the setting.") }
+        }
+    }
+}
+
 /// The runtime's machine: keep it awake while you are away, and whether this
 /// phone gets alerts from the workspace when the app is closed.
 private struct ComputerSection: View {
@@ -391,7 +470,7 @@ private struct ComputerSection: View {
             } else if workspace.push?.blocked == "serviceUnavailable" {
                 Text("Cate Connect is not sending alerts right now. Agents still show here while the app is open.")
             } else if workspace.power?.busy == true {
-                Text("Kept awake by the workspace's keep running settings.")
+                Text("Kept awake by what happens when you close Cate.")
             }
         }
         .alert(item: $failure) { Alert(title: Text($0.message)) }

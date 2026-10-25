@@ -13,3 +13,27 @@ export const runtimeSettings = defineSettings({
     runtimeNetwork: setting<RuntimeNetwork>('off', oneOf('off', 'sameNetwork', 'cateConnect')),
   },
 })
+
+/** What happens when the person closes Cate, as clients offer
+ *  `keepRunningWhile`: finish what's running (agents, and commands unless
+ *  left out), always stay available, or stop with Cate. Every choice keeps
+ *  `clients`: a device in use keeps the machine from sleeping under it. Any
+ *  other list is custom. */
+export type CloseChoice = 'finish' | 'always' | 'stop'
+
+export function closeChoiceTriggers(choice: CloseChoice, commands = true): KeepRunningTrigger[] {
+  switch (choice) {
+    case 'finish': return commands ? ['agents', 'commands', 'clients'] : ['agents', 'clients']
+    case 'always': return ['always']
+    case 'stop': return ['clients']
+  }
+}
+
+/** The choice `triggers` is, regardless of order, or 'custom'. */
+export function closeChoiceOf(triggers: readonly KeepRunningTrigger[]): CloseChoice | 'custom' {
+  if (triggers.includes('always')) return 'always'
+  const is = (set: readonly KeepRunningTrigger[]) => set.length === triggers.length && set.every((t) => triggers.includes(t))
+  if (is(closeChoiceTriggers('finish')) || is(closeChoiceTriggers('finish', false))) return 'finish'
+  if (is(closeChoiceTriggers('stop'))) return 'stop'
+  return 'custom'
+}

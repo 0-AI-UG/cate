@@ -1,7 +1,7 @@
 // "Share": who can join a workspace (its network access), a one-time code
 // for the next device (each one confirmed first), and the devices that joined. Picking wider access is
 // the person's consent; narrower access asks first, since it cuts devices
-// off (Runtime settings' `changeNetwork`).
+// off (`changeNetwork`).
 
 import { useState } from 'react'
 import { Users } from 'lucide-react'

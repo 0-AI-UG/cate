@@ -7,12 +7,14 @@
 
 import { CliSettingsPage } from '../../kernel/api'
 import { workspaceSettingsFor } from '../../kernel/settings'
-import { RuntimeSettingsPage } from '../../runtime/daemon'
+import { AvailabilitySettings } from '../../runtime/daemon'
 import { GitHubSettings, WorktreeSettings } from '../../workspace/repository'
 import { SkillsSettings } from '../../workspace/skills'
 import { AgentHooksSettings } from '../../services/agents'
 import { documentStoreFor } from '@client/document'
 import { useUIStore } from '../state/uiStore'
+import { useOtherClients } from '../../client/document'
+import { clientIdentity } from '@client/connections'
 import { tryClientApp } from '../app'
 import { DevicesPage } from '../pairing/DevicesPage'
 import { ConnectionNotice } from '../sidebar/connectionStatus'
@@ -23,15 +25,22 @@ import { BrowserPage, EditorPage, NotificationsPage, SidebarPage, TerminalPage, 
 import { registerSettingsPage, type SettingsPage, type SettingsPageProps } from './registry'
 
 function RuntimePage({ workspaceId }: SettingsPageProps): JSX.Element | null {
-  if (!workspaceId) return null
+  return workspaceId ? <AvailabilityPage workspaceId={workspaceId} /> : null
+}
+
+function AvailabilityPage({ workspaceId }: { workspaceId: string }): JSX.Element {
   const connection = tryClientApp()?.connections.get(workspaceId)
+  const others = useOtherClients(workspaceId)
+  const ownKey = clientIdentity().device.publicKey
   return (
-    <RuntimeSettingsPage
+    <AvailabilitySettings
       workspaceId={workspaceId}
       panelTitle={(panelId) => documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]?.title}
+      connected={['this device', ...new Set(others.filter((c) => c.device.publicKey !== ownKey).map((c) => c.device.name))]}
+      onAddDevice={() => useUIStore.getState().openShare(workspaceId)}
     >
       <ConnectionNotice connection={connection} />
-    </RuntimeSettingsPage>
+    </AvailabilitySettings>
   )
 }
 
@@ -64,7 +73,7 @@ export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'browser', title: 'Browser', scope: 'client', group: 'tools', order: 30, component: BrowserPage },
   { id: 'shortcuts', title: 'Shortcuts', scope: 'client', group: 'tools', order: 40, component: ShortcutsPage },
   // The active workspace.
-  { id: 'runtime', title: 'Runtime', scope: 'workspace', group: 'runtime', order: 10, component: RuntimePage },
+  { id: 'runtime', title: 'Availability', scope: 'workspace', group: 'runtime', order: 10, component: RuntimePage },
   { id: 'devices', title: 'Devices', scope: 'workspace', group: 'runtime', order: 20, component: DevicesPage },
   { id: 'workspace-terminal', title: 'Terminal', scope: 'workspace', group: 'tools', order: 10, component: WorkspaceTerminalPage },
   { id: 'workspace-browser', title: 'Browser', scope: 'workspace', group: 'tools', order: 20, component: WorkspaceBrowserPage },

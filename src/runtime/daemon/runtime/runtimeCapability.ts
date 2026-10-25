@@ -9,6 +9,8 @@ export interface RuntimeCapabilityDeps {
   root: string
   /** The machine's name, shown to paired devices. */
   machineName: string
+  /** The machine sleeps on its own. */
+  machineSleeps: boolean
   version: string
   rpc: RpcServer
   perf: PerfSampler
@@ -40,6 +42,7 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
       runtimeId: deps.runtimeId,
       root: deps.root,
       machineName: deps.machineName,
+      machineSleeps: deps.machineSleeps,
       version: deps.version,
       protocol: deps.rpc.protocol,
       pid: process.pid,
