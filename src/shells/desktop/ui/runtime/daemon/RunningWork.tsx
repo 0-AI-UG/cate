@@ -41,7 +41,7 @@ export async function listRunningWork(
 
 export interface RunningWorkConfirmProps {
   runtime: RuntimeProxy
-  /** "Stop runtime", "Update and restart". */
+  /** "Stop workspace", "Update and restart". */
   actionLabel: string
   /** What happens, in one sentence. */
   consequence: string

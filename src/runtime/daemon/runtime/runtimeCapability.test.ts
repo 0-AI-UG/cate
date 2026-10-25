@@ -16,7 +16,7 @@ function setup(opts: { clients?: number[]; busy?: boolean } = {}) {
     connections: () => (opts.clients ?? [1]).map((id) => ({ id, client: { clientId: `c${id}`, device: { name: 'd', publicKey: 'f' }, features: [] } })),
   } as unknown as RpcServer
   const impl = runtimeCapabilityImpl({
-    runtimeId: 'r', root: '/w', machineName: 'm', version: '2.0.4', rpc, perf: {} as PerfSampler,
+    runtimeId: 'r', root: '/w', machineName: 'm', machineSleeps: true, version: '2.0.4', rpc, perf: {} as PerfSampler,
     endpoints: () => [{ kind: 'lan', address: '10.0.0.2', port: 4000 }],
     busy: () => opts.busy ?? false,
     stop: () => {},

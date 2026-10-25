@@ -32,7 +32,7 @@ import { DEFAULT_CATE_CONNECT_URL } from '@runtime/connect/contract'
 import { pairingCapability } from '@runtime/pairing/contract'
 import { openDevicesFile, PairingService, pairingCapabilityImpl } from '@runtime/pairing/runtime'
 import { powerCapability } from '@runtime/power/contract'
-import { createPowerService, powerCapabilityImpl } from '@runtime/power/runtime'
+import { createPowerService, machineSleeps, powerCapabilityImpl } from '@runtime/power/runtime'
 import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
 import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
@@ -301,6 +301,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     runtimeId,
     root,
     machineName: machineName(),
+    machineSleeps: machineSleeps(),
     version,
     rpc,
     perf,

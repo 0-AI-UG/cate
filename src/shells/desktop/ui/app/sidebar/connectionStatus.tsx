@@ -94,7 +94,7 @@ export function WorkspaceToggle({ connection, canExpand, expanded, onToggle }: {
   )
 }
 
-/** The connection's trouble as one line (the Runtime settings page). Connecting says nothing: it is usually over in a beat. */
+/** The connection's trouble as one line (the Availability settings page). Connecting says nothing: it is usually over in a beat. */
 export function ConnectionNotice({ connection }: { connection: WorkspaceConnection | undefined }): JSX.Element | null {
   const state = useConnectionState(connection)
   const status = statusOf(connection, state)

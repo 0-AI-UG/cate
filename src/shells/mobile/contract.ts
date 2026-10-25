@@ -9,6 +9,7 @@
 //   `window.cateCore.call(method, paramsJson)`, answered with JSON text; and
 //   the core's state, pushed to the app as one snapshot on every change.
 
+import type { CloseChoice } from '@runtime/daemon/contract'
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
 import type { AgentId, AgentStatus, AgentStep, AgentTypeInfo } from '@services/agents/contract'
@@ -277,11 +278,26 @@ export interface MobileWorkspace {
   agents: MobileAgent[]
   /** Keep-awake on the runtime's machine; null while not connected. */
   power: PowerState | null
+  /** What happens when the person closes Cate; null while not connected. */
+  whenClosed: MobileWhenClosed | null
   /** This device's pushes from the workspace; null while not connected or
    *  before the app gave the core a push token. */
   push: PushStatus | null
   /** The other clients in the workspace (presence); empty while not connected. */
   others: MobileOtherClient[]
+}
+
+/** The workspace setting `keepRunningWhile` as a close choice (the
+ *  desktop's Availability page): finish what's running, always stay
+ *  available, stop with Cate, or custom (set by hand). */
+export interface MobileWhenClosed {
+  choice: CloseChoice | 'custom'
+  /** Terminal commands count when finishing what's running. */
+  commands: boolean
+  /** The runtime's machine (its host name); null until known. */
+  machine: string | null
+  /** False on a server, which never sleeps; true until known. */
+  machineSleeps: boolean
 }
 
 /** Another client in a workspace, as the app shows it. */
@@ -577,6 +593,9 @@ export interface MobileCoreMethods {
     result: MobilePlacementPlan | null
   }
 
+  /** Sets what happens when the person closes Cate (`keepRunningWhile`);
+   *  `commands` counts with `finish` only. */
+  'runtime.setWhenClosed': { params: { workspaceId: string; choice: CloseChoice; commands: boolean }; result: MobileActionResult }
   /** Keeps the runtime's machine awake for a while (`power.set`). */
   'power.set': { params: { workspaceId: string; duration: KeepAwakeDuration }; result: MobileActionResult }
   /** Where this device's pushes go and the key they are sealed with

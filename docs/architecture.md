@@ -635,6 +635,19 @@ rule for every client, wherever it runs.
 | `clients` | a client is in use: it has the person's attention (`attentive`) and acted in the last 10 minutes (`lastActiveAt`, presence, 9.1) | on |
 | `always` | always | off |
 
+Clients offer the setting as one question, "When you close Cate", with
+three close choices (`closeChoiceOf` / `closeChoiceTriggers` in the
+runtime/daemon contract): finish what's running (`agents`, `commands` unless
+left out, `clients`; the default), always stay available (`always`) and stop
+with Cate (`clients`); any other list shows as custom. The runtime tells
+clients whether its machine sleeps on its own (`runtime.info`
+`machineSleeps`: macOS and Windows do; Linux with a battery, a graphical
+session or under WSL; a server does not), so each shell words the choices for
+that machine and, on a server, offers always first. Since a paired device
+cannot start a stopped workspace, both say so: the desktop's Availability
+page when devices are paired, the iOS app's workspace settings for the phone
+itself (`whenClosed` in the mobile state, set with `runtime.setWhenClosed`).
+
 A connected client keeps the runtime running too (its views need it), but
 not the machine awake: a window left open overnight lets the machine sleep.
 With no client connected and nothing holding, the runtime stops after a 5
@@ -644,7 +657,7 @@ throttled to once a minute), so typing in a terminal counts. A stopped
 workspace is started by a client on its machine when it opens or restores
 the workspace.
 
-"Stop workspace runtime" lists the running terminals and agents, asks for
+"Stop workspace" lists the running terminals and agents, asks for
 confirmation in the view, and then sends `runtime.stop`. Before its connections
 close the runtime tells every client why (`runtime.lifecycle`): after a
 deliberate stop each client shows the workspace as stopped and does not

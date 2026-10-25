@@ -6,3 +6,4 @@ export {
   type PowerDeps,
   type PowerService,
 } from './power'
+export { machineSleeps, type MachineSleepsDeps } from './sleeps'

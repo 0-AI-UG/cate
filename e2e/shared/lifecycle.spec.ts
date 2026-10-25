@@ -94,7 +94,7 @@ for (const transport of TRANSPORTS) {
 
       await p.b.page.evaluate(() => window.__cateE2E!.openSettings('runtime'))
       await p.b.page.getByRole('button', { name: 'Stop…' }).click()
-      await p.b.page.getByRole('button', { name: 'Stop runtime' }).click()
+      await p.b.page.getByRole('button', { name: 'Stop workspace' }).click()
 
       const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
       await expect.poll(() => alive(pid), { timeout: 20_000 }).toBe(false)

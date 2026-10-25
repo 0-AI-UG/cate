@@ -15,6 +15,9 @@ export interface RuntimeStatus {
   /** The machine it runs on, as its owner knows it (its host name). Absent
    *  from older runtimes. */
   machineName?: string
+  /** The machine sleeps on its own (a laptop or desktop, not a server), so
+   *  keeping it awake means something. Absent from older runtimes. */
+  machineSleeps?: boolean
   version: string
   protocol: ProtocolVersion
   pid: number

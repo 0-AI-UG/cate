@@ -15,6 +15,7 @@ import type { MobileClient } from './boot'
 import type { MobileAgents } from './agents'
 import type { MobileLinks } from './links'
 import { relationFieldsOf, relationsOf, type MobileRelations } from './relations'
+import type { MobileAvailability } from './availability'
 
 const MOBILE_ACTIONS: Partial<Record<ConnectionRemedy, MobileConnectionAction>> = {
   retry: 'retry',
@@ -79,7 +80,7 @@ function panelsOf(workspaceId: string): MobilePanel[] | null {
   })
 }
 
-export function snapshotOf(client: MobileClient, agents: MobileAgents, relations: MobileRelations, links: MobileLinks): MobileCoreState {
+export function snapshotOf(client: MobileClient, agents: MobileAgents, relations: MobileRelations, availability: MobileAvailability, links: MobileLinks): MobileCoreState {
   const workspaces: MobileWorkspace[] = client.workspaces.getSnapshot().entries
     .filter((entry): entry is PairedWorkspace => entry.kind === 'paired')
     .map((entry) => {
@@ -97,6 +98,7 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents, relations
         relationsEnabled,
         agents: agents.agents(entry.id),
         power: agents.power(entry.id),
+        whenClosed: availability.whenClosed(entry.id),
         push: agents.push(entry.id),
         others: connection ? otherClientsOf(entry.id).map((client) => ({ clientId: client.clientId, name: client.device.name, attentive: client.attentive })) : [],
       }
@@ -115,7 +117,7 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents, relations
 export const PUSH_MS = 16
 
 /** Calls `onChange` (coalesced) whenever the snapshot may have changed. */
-export function watchState(client: MobileClient, agents: MobileAgents, relations: MobileRelations, links: MobileLinks, onChange: () => void): () => void {
+export function watchState(client: MobileClient, agents: MobileAgents, relations: MobileRelations, availability: MobileAvailability, links: MobileLinks, onChange: () => void): () => void {
   let queued: ReturnType<typeof setTimeout> | null = null
   const schedule = () => {
     if (queued) return
@@ -153,6 +155,7 @@ export function watchState(client: MobileClient, agents: MobileAgents, relations
     subscribeDocumentStores(schedule),
     agents.subscribe(schedule),
     relations.subscribe(schedule),
+    availability.subscribe(schedule),
     links.subscribe(schedule),
     client.settings.subscribe(schedule),
   ]

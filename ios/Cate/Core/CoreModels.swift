@@ -42,6 +42,7 @@ struct WorkspaceState: Decodable, Equatable {
     let relationsEnabled: Bool
     let agents: [Agent]
     let power: PowerState?
+    let whenClosed: WhenClosed?
     let push: PushStatus?
     let others: [OtherClient]
 }
@@ -68,6 +69,8 @@ final class Workspace: Identifiable {
     private(set) var agents: [Agent]
     /// Keep-awake on the runtime's machine; nil while not connected.
     private(set) var power: PowerState?
+    /// What happens when the person closes Cate; nil while not connected.
+    private(set) var whenClosed: WhenClosed?
     /// This device's pushes from the workspace; nil until registered.
     private(set) var push: PushStatus?
     /// The other clients in the workspace; empty while not connected.
@@ -84,6 +87,7 @@ final class Workspace: Identifiable {
         relationsEnabled = state.relationsEnabled
         agents = state.agents
         power = state.power
+        whenClosed = state.whenClosed
         push = state.push
         others = state.others
     }
@@ -99,6 +103,7 @@ final class Workspace: Identifiable {
         if relationsEnabled != state.relationsEnabled { relationsEnabled = state.relationsEnabled }
         if agents != state.agents { agents = state.agents }
         if power != state.power { power = state.power }
+        if whenClosed != state.whenClosed { whenClosed = state.whenClosed }
         if push != state.push { push = state.push }
         if others != state.others { others = state.others }
     }
@@ -116,7 +121,7 @@ struct RememberedWorkspace: Codable, Equatable {
             id: id, name: name, runtimeId: runtimeId,
             connection: Connection(kind: .connecting, title: "", text: "Connecting…", actions: []),
             panels: nil, worktrees: [], relations: [], relationsEnabled: false, agents: [],
-            power: nil, push: nil, others: []
+            power: nil, whenClosed: nil, push: nil, others: []
         )
     }
 }
@@ -172,6 +177,19 @@ struct PowerState: Decodable, Equatable, Hashable {
     let endsAt: Double?
     let busy: Bool
     let holding: Bool
+}
+
+/// The workspace setting `keepRunningWhile` as a close choice
+/// (`MobileWhenClosed`).
+struct WhenClosed: Decodable, Equatable, Hashable {
+    /// `finish`, `always`, `stop` or `custom` (set by hand).
+    let choice: String
+    /// Terminal commands count when finishing what's running.
+    let commands: Bool
+    /// The runtime's machine; nil until known.
+    let machine: String?
+    /// False on a server, which never sleeps.
+    let machineSleeps: Bool
 }
 
 /// The runtime's `push` status for this phone.

@@ -15,6 +15,8 @@ import { createMobileStreams } from './streams'
 import { createMobileAgents } from './agents'
 import { createMobileConversations } from './conversations'
 import { createMobileRelations } from './relations'
+import { createMobileAvailability } from './availability'
+import { createMobileWorkspaceSettings } from './workspaceSettings'
 import { installClientUi } from '@kernel/interaction'
 import { createMobileClientUi } from './clientUi'
 import { createMobileLinks } from './links'
@@ -33,7 +35,9 @@ async function start(): Promise<void> {
   const client = await bootMobileClient(bridge)
   const views = createMobileViews(bridge)
   const agents = createMobileAgents(client, bridge)
-  const relations = createMobileRelations(client)
+  const workspaceSettings = createMobileWorkspaceSettings(client)
+  const relations = createMobileRelations(client, workspaceSettings)
+  const availability = createMobileAvailability(client, workspaceSettings)
   const api = createCoreApi(client, {
     terminals: createMobileTerminals(client, bridge),
     views,
@@ -43,6 +47,7 @@ async function start(): Promise<void> {
     agents,
     conversations: createMobileConversations(bridge),
     links,
+    workspaceSettings,
   })
   window.cateCore = {
     async call(method, paramsJson) {
@@ -56,12 +61,12 @@ async function start(): Promise<void> {
   // A change that leaves the state as it was is not pushed.
   let pushed = ''
   const push = () => {
-    const json = JSON.stringify(snapshotOf(client, agents, relations, links))
+    const json = JSON.stringify(snapshotOf(client, agents, relations, availability, links))
     if (json === pushed) return
     pushed = json
     void bridge('core.state', { json })
   }
-  watchState(client, agents, relations, links, push)
+  watchState(client, agents, relations, availability, links, push)
   push()
   await bridge('core.ready', {})
 }
