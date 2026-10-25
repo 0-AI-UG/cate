@@ -1,4 +1,6 @@
-import { browserInvoke, browserWebContentsId, createBrowser, observe, act, activeAction, fixtureEvaluate, inspectFixture } from './fixtures/browser-control'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { browserInvoke, browserWebContentsId, createBrowser, observe, act, activeAction, fixtureEvaluate, inspectFixture, target } from './fixtures/browser-control'
 import { expect, test } from '@playwright/test'
 import type { ElectronApplication, Page } from 'playwright'
 import { closeApp, launchApp, makeProject, openWorkspace } from './fixtures/electron-app'
@@ -43,8 +45,8 @@ test('target-bound browser input preserves renderer and workspace focus', async 
   if (!firstFill.ok) throw new Error(`browser fill failed: ${firstFill.error}`)
   await expect(rendererFocusTarget).toBeFocused()
 
-  // A click and a key press focus the guest while they run, then hand focus
-  // back, so a user typing elsewhere keeps typing there.
+  // A click and a key press never keep the guest focused, so a user typing
+  // elsewhere keeps typing there.
   await expect(act(page, browser, 'click', 'Name')).resolves.toMatchObject({ ok: true })
   await expect(rendererFocusTarget).toBeFocused()
   await expect(activeAction(page, browser, 'pressKey', { key: '!' })).resolves.toMatchObject({ ok: true })
@@ -188,4 +190,81 @@ test('snapshots omit hidden and boxless links while keeping off-screen links cli
       expect(await inspectFixture(app!, page, browser, "document.querySelector(\"body\")?.getAttribute(\"data-clicked\")")).toMatchObject({ ok: true, result: { value: index === 0 ? 'yes' : 'offscreen' } })
     }
   }
+})
+
+/** A page whose button keeps the click that pressed it waiting ~2.5 s (its
+ *  request), so a test can type while an agent's action is in flight. */
+async function slowPage(): Promise<{ url: string; close(): void }> {
+  const server = http.createServer((req, res) => {
+    if (req.url === '/slow') { setTimeout(() => res.end('ok'), 2500); return }
+    res.setHeader('content-type', 'text/html')
+    res.end('<title>Slow</title><input id="name" aria-label="Name"><button onclick="fetch(\'/slow\')">Slow</button>')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`, close: () => server.close() }
+}
+
+/** A host input the person types into, focused. */
+async function hostInput(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const input = document.createElement('input')
+    input.id = 'e2e-host-input'
+    Object.assign(input.style, { position: 'fixed', left: '10px', bottom: '10px', zIndex: '99999' })
+    document.body.appendChild(input)
+    input.focus()
+  })
+}
+
+for (const where of ['this workspace', 'another workspace'] as const) {
+  test(`a person typing in ${where} while an agent clicks keeps their keys, and the agent keeps going`, async () => {
+    test.setTimeout(60_000)
+    const slow = await slowPage()
+    try {
+      const browser = await createBrowser(page, slow.url, { x: 120, y: 120 })
+      const button = await target(page, browser, 'Slow')
+      if (where === 'another workspace') await openWorkspace(page, makeProject(home, { name: 'other' }))
+      await hostInput(page)
+      const click = browserInvoke(page, browser, 'click', button)
+      await page.waitForTimeout(500)
+      await expect(page.locator('#e2e-host-input')).toBeFocused()
+      await page.keyboard.type('mine')
+      await expect(click).resolves.toMatchObject({ ok: true })
+      await expect(page.locator('#e2e-host-input')).toHaveValue('mine')
+      await expect(page.locator('#e2e-host-input')).toBeFocused()
+      await expect(inspectFixture(app, page, browser, 'document.querySelector("#name").value')).resolves.toMatchObject({ result: { value: '' } })
+    } finally {
+      slow.close()
+    }
+  })
+}
+
+test('an agent screenshots a browser parked in another workspace, unseen', async () => {
+  test.setTimeout(60_000)
+  const browser = await createBrowser(page, `data:text/html,${encodeURIComponent('<title>Parked</title><body style="background:#c00"><h1>Parked page</h1>')}`, { x: 120, y: 120 })
+  await openWorkspace(page, makeProject(home, { name: 'other' }))
+  const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
+  await expect(surface).toHaveAttribute('data-browser-surface-visible', 'false')
+  const observation = await observe(page, browser, true)
+  expect(observation.screenshotError).toBeUndefined()
+  expect(observation.screenshot).toMatchObject({ width: expect.any(Number), height: expect.any(Number) })
+  // Released again: parked and hidden.
+  await expect(surface).toHaveCSS('visibility', 'hidden')
+})
+
+test('agents pick native select options by label, value or option id, never through the OS menu', async () => {
+  const url = `data:text/html,${encodeURIComponent(`<title>Select</title><label>Country <select id="country" onchange="document.body.dataset.changed=this.value">
+    <option value="">Pick one</option><optgroup label="Europe"><option value="de">Germany</option></optgroup><option value="us">United States</option>
+  </select></label>`)}`
+  const browser = await createBrowser(page, url, { x: 120, y: 120 })
+  const value = () => fixtureEvaluate(app, page, browser, 'document.querySelector("#country").value + "|" + (document.body.dataset.changed ?? "")')
+  const observation = await observe(page, browser)
+  expect(observation.state).toContain('option "United States" value="us"')
+  const country = await target(page, browser, 'Country', 'combobox')
+  await expect(browserInvoke(page, browser, 'selectOption', { ...country, values: 'Germany' })).resolves.toMatchObject({ ok: true })
+  expect(await value()).toBe('de|de')
+  await expect(browserInvoke(page, browser, 'selectOption', { ...(await target(page, browser, 'Country', 'combobox')), values: 'us' })).resolves.toMatchObject({ ok: true })
+  expect(await value()).toBe('us|us')
+  await expect(act(page, browser, 'click', 'Pick one', {}, 'option')).resolves.toMatchObject({ ok: true })
+  expect(await value()).toBe('|')
+  await expect(act(page, browser, 'click', 'Country', {}, 'combobox')).resolves.toMatchObject({ ok: false, error: expect.stringContaining('browser-native-select') })
 })

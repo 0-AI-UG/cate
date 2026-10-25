@@ -127,6 +127,32 @@ it('says what a file input takes', async () => {
   expect(result.state).toBe('- button "Node 1" value="value 1" [file input] [id=1]\n- button "Node 2" value="value 2" [file input, multiple] [id=2]')
 })
 
+it('lists a closed dropdown\'s boxless options under it, with values that differ from labels', async () => {
+  const option = (id: number, name: string, parentId: number, selected = false) => ({
+    nodeId: String(id), parentId: String(parentId), backendDOMNodeId: id, role: { value: 'option' }, name: { value: name },
+    properties: [{ name: 'selected', value: { value: selected } }],
+  })
+  const send = cdp({ main: [
+    { nodeId: '1', backendDOMNodeId: 1, role: { value: 'combobox' }, name: { value: 'Country' }, value: { value: 'Germany' }, childIds: ['2'] },
+    { nodeId: '2', parentId: '1', backendDOMNodeId: 2, role: { value: 'MenuListPopup' }, name: { value: '' }, childIds: ['3', '4'] },
+    option(3, 'Germany', 2, true), option(4, 'United States', 2),
+    { nodeId: '5', backendDOMNodeId: 5, role: { value: 'combobox' }, name: { value: 'Hidden' }, childIds: ['6'] },
+    option(6, 'Gone', 5),
+  ] }, { root: snapshot({ nodes: [
+    { id: 1, tag: 'SELECT', rect: box },
+    { id: 3, tag: 'OPTION', parent: 1, attrs: { value: 'Germany' } },
+    { id: 4, tag: 'OPTION', parent: 1, attrs: { value: 'us' } },
+    { id: 5, tag: 'SELECT' },
+    { id: 6, tag: 'OPTION', parent: 5 },
+  ] }) })
+  const result = await readBrowserAX({ frames: [{}], viewport, send, register: target => target.backendNodeId })
+  expect(result.state).toBe([
+    '- combobox "Country" value="Germany" [id=1]',
+    '  - option "Germany" [selected] [id=3]',
+    '  - option "United States" value="us" [id=4]',
+  ].join('\n'))
+})
+
 it('isolates backend identities by session and tolerates detached frames', async () => {
   const send = cdp({ main: [node(1), node(2)], oopif: [node(1)] }, { root: visibleDom(1, 2), oopif: visibleDom(1) })
   const targets: unknown[] = []

@@ -1425,11 +1425,28 @@ downloads list and its views, and hands page work to it.
   (`persist:ws-<runtimeId>`, cookies are per device) routed through loopback
   routing (section 12.3), the **page ops** (`desktop/renderer`: a `page.*`
   request run on the guest the panel's page host has ready, staging a
-  file input's uploads on this client and returning the person's focus),
+  file input's uploads on this client, rendering a parked page unseen for
+  the operation, and keeping the person's focus),
   the **page driver** (the CDP engine: accessibility
   snapshots, actions, screenshots, waits, file choosers and uploads, the
   page's console and network log, locators), the guest preload, the password
   autofill bridge, JavaScript dialogs, and **passkeys**.
+  **Agents never take the person's input.** The page keeps its own focus
+  (the driver emulates it, and sends keys to the guest's own widget), so the
+  window's focus stays where the person put it: an agent's click focuses its
+  guest in the window, and the page ops hand that focus straight back to the
+  element that lost it while the action runs. Only the person's own click or
+  key in the page an agent drives takes it over (the guest preload's signal
+  cancels the agent's pending work); scrolling to watch does not.
+  **Parked pages render for agents.** Chromium paints no frames for a guest
+  that is hidden or off screen, so a page op on a parked surface (another
+  workspace, off the canvas, behind a tab) stages it: the surface registry
+  puts it in the window, transparent and without pointer input, until the op
+  ends, and screenshots work wherever the panel is.
+  **Native dropdowns** open an OS menu page control cannot drive: snapshots
+  list a `<select>`'s options under it (with a `value` that differs from the
+  label), `select` takes a label or a value, a click on an option chooses
+  it, and a click on the dropdown itself fails with `browser-native-select`.
   A page whose script never yields answers no CDP command: after 10 s its
   calls fail with `browser-page-unresponsive`, and reloading or navigating
   the tab restarts its renderer.

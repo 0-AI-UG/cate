@@ -18,8 +18,9 @@ interface AXOptions {
   send(method: string, params?: CdpRecord, sessionId?: string): Promise<CdpRecord>
   register(target: AXTarget): number
 }
-/** What the DOM snapshot says about one element. */
-interface Inspection { visible: boolean; offscreen?: boolean; password?: boolean; file?: 'single' | 'multiple' }
+/** What the DOM snapshot says about one element. `option`: an option of a
+ *  native dropdown (no box of its own), its select and its value attribute. */
+interface Inspection { visible: boolean; offscreen?: boolean; password?: boolean; file?: 'single' | 'multiple'; option?: { select: number; value?: string } }
 
 const objectValue = (value: unknown): CdpRecord => value !== null && typeof value === 'object' ? value as CdpRecord : {}
 const numbers = (value: unknown): number[] => Array.isArray(value) ? value as number[] : []
@@ -36,6 +37,8 @@ const UNNAMED_SKIPPED = new Set([
 const ALWAYS_SKIPPED = new Set(['ListMarker'])
 // Only states that tell the agent something; a false boolean is the default.
 const STATE_PROPERTIES = ['checked', 'selected', 'expanded', 'disabled', 'required', 'readonly', 'pressed', 'level', 'focused']
+// A dropdown lists this many options; the rest are chosen by label.
+const MAX_DROPDOWN_OPTIONS = 50
 
 /** Visibility, viewport and input type of every element of one CDP
  *  session's documents (its frame and the same-process frames inside it),
@@ -117,7 +120,19 @@ async function inspectSession(send: AXOptions['send'], sessionId: string | undef
       }
       return [...found, ...labelsFor.get(id) ?? []]
     }
+    // A dropdown's options have no box while it is closed: they show with it.
+    const dropdown = (node: number): number | undefined => {
+      let at = parent[node]
+      if (names[at] === 'OPTGROUP') at = parent[at]
+      if (names[at] !== 'SELECT' || attributes[at]?.has('multiple') || Number(attributes[at]?.get('size') ?? 0) > 1) return undefined
+      return at
+    }
     names.forEach((name, node) => {
+      const select = name === 'OPTION' ? dropdown(node) : undefined
+      if (select !== undefined) {
+        out.set(backend[node], shown(select) ? { visible: true, option: { select: backend[select], value: attributes[node]?.get('value') } } : { visible: false })
+        return
+      }
       const type = name === 'INPUT' ? (attributes[node]?.get('type') ?? 'text').toLowerCase() : ''
       let rect = shown(node)
       // Styled checkboxes, radios and file inputs hide the native input behind a visible label.
@@ -204,6 +219,7 @@ export async function readBrowserAX({ frames, viewport, send, register }: AXOpti
     for (const node of nodes) visit(node)
     const output: FrameLines = { owner, lines: [] }
     const emitted = new Set<unknown>()
+    const dropdownOptions = new Map<number, number>()
     // What a node passes to its descendants: how many listed ancestors they
     // have with it (their depth) and the nearest one's text. Ancestors come
     // first in `ordered`, so a node's entry is final once it is read.
@@ -242,8 +258,18 @@ export async function readBrowserAX({ frames, viewport, send, register }: AXOpti
       if (!name.trim() && UNNAMED_SKIPPED.has(role)) continue
       if (role === 'StaticText' && (!name.trim() || labelText || ownerText?.includes(name.trim()))) continue
       const offscreen = found.offscreen === true
+      if (found.option) {
+        const listed = (dropdownOptions.get(found.option.select) ?? 0) + 1
+        dropdownOptions.set(found.option.select, listed)
+        if (listed > MAX_DROPDOWN_OPTIONS) {
+          if (listed === MAX_DROPDOWN_OPTIONS + 1) output.lines.push({ depth, target: identity, text: '… more options: choose one by label (cate browser select <id> <label>)' })
+          continue
+        }
+      }
       const id = register(target)
       let value = objectValue(node.value).value
+      // An option whose value differs from its label says it: select takes either.
+      if (found.option?.value !== undefined && found.option.value !== name.trim()) value = found.option.value
       // Unknown type is fail-closed: never expose a potentially protected value.
       if ((role === 'textbox' || role === 'searchbox') && found.password !== false) value = '••••••••'
       const states: CdpRecord = {}

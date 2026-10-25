@@ -54,7 +54,7 @@ cate browser hover 42              # opens hover menus and tooltips
 cate browser fill 17 "user@example.com"   # or: fill --name Email "user@example.com"
 cate browser type "more text"      # inserts at the focused field
 cate browser press Enter           # keys and shortcuts: Escape, Tab, Meta+a
-cate browser select 34 de          # an option value, not its label
+cate browser select 34 Germany     # an option's label or value; or click an option's id
 cate browser check 5               # --no-checked to uncheck
 cate browser scroll down           # --target 12 scrolls an element
 cate browser drag '[100,100]' '[300,200]'
@@ -91,6 +91,10 @@ so (`Viewport 800x600 at 0,0 of a 800x2680 page (2080px below)`); use
 `cate browser scroll` only for content that is not in the snapshot yet, such
 as lazy-loaded or virtualized lists, then snapshot again. Screenshots and
 `[x,y]` points cover the viewport only: prefer ids.
+
+A native dropdown (`combobox` with `option` lines under it) opens an OS menu
+that page control cannot use: choose with `cate browser select <id> <label>`
+or click an option's id, never the combobox itself.
 
 Sites often repeat long menus and sidebars on every page before the content.
 Once you know the id of the part you want (usually `- main [id=N]`), print
@@ -209,14 +213,14 @@ tab, so run one before reproducing a problem.
 
 ## Screenshots and the panel
 
-Screenshots need the panel on screen. When it is off screen (scrolled away
-on the canvas, or behind another tab), `screenshot` fails at once and says
-so; snapshots and actions keep working while hidden (`snapshot --screenshot`
-still prints the tree and says why the image is missing). Open the printed
+Screenshots, snapshots and actions work while the panel is off screen
+(scrolled away on the canvas, behind another tab, or in another workspace):
+Cate renders the page unseen for the call. Open the printed
 image path with your image-viewing tool; shell output cannot attach pixels
 to the model.
 
-Agent actions display a cursor and click ripples in the panel. User input
-takes control back and cancels pending automation. The page's viewport
+Agent actions display a cursor and click ripples in the panel. They never
+take the user's keyboard focus. The user clicking or typing in the page
+itself takes control back and cancels pending automation. The page's viewport
 (`viewport`) and the panel's size on the canvas (`resize <width> <height>`,
 canvas panels only, at least 400x300) are independent.

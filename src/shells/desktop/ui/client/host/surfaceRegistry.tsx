@@ -41,6 +41,8 @@ interface SurfaceEntry {
   container: HTMLDivElement
   styles: Partial<SurfaceStyles>
   backgroundRoot: HTMLDivElement | null
+  /** Page operations that need the parked surface rendered (`stageSurface`). */
+  staged: number
 }
 
 const slots = new Map<string, HTMLDivElement>()
@@ -266,10 +268,29 @@ function writeSurface(surface: SurfaceEntry, visible: boolean, styles: Partial<S
 }
 
 function parkSurface(surface: SurfaceEntry): void {
+  // Chromium paints no frames for a guest that is hidden or off screen; a
+  // staged one sits in the window, transparent and out of input's way.
+  const staged = surface.staged > 0
   writeSurface(surface, false, {
-    position: 'fixed', left: '-20000px', top: '0', width: surface.styles.width ?? '1200px', height: surface.styles.height ?? '800px',
-    transform: 'none', clipPath: 'none', opacity: '0', pointerEvents: 'none', visibility: 'hidden',
+    position: 'fixed', left: staged ? '0' : '-20000px', top: '0', width: surface.styles.width ?? '1200px', height: surface.styles.height ?? '800px',
+    transform: 'none', clipPath: 'none', opacity: '0', pointerEvents: 'none', visibility: staged ? 'visible' : 'hidden',
   })
+}
+
+/** Renders the panel's surface while it is parked, still unseen, so a page
+ *  operation can capture it. Returns the release. */
+export function stageSurface(panelId: string): () => void {
+  const surface = surfaces.get(panelId)
+  if (!surface) return () => {}
+  surface.staged++
+  if (!isSurfaceVisible(panelId)) parkSurface(surface)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    surface.staged--
+    if (surface.staged === 0 && surfaces.get(panelId) === surface && !isSurfaceVisible(panelId)) parkSurface(surface)
+  }
 }
 
 function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
@@ -479,7 +500,7 @@ export function registerPanelSurface(
   backgroundRoot: HTMLDivElement | null,
 ): () => void {
   if (backgroundRoot && container.parentElement !== backgroundRoot) backgroundRoot.appendChild(container)
-  const surface: SurfaceEntry = { panelId, container, styles: {}, backgroundRoot }
+  const surface: SurfaceEntry = { panelId, container, styles: {}, backgroundRoot, staged: 0 }
   surfaces.set(panelId, surface)
   refreshSurfaces(panelId)
   return () => {

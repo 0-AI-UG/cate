@@ -184,6 +184,26 @@ describe('BrowserPageHost', () => {
     await expect(execute({ tabId: 'other', method: 'click', args: {} })).rejects.toThrow('browser-tab-changed')
   })
 
+  it('renders a parked page while an operation runs on it, instead of flagging it hidden', async () => {
+    const bridge = { attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
+    const staged: string[] = []
+    const host = new BrowserPageHost({
+      panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
+      stage: () => { staged.push('stage'); return () => staged.push('release') },
+    })
+    host.update(snapshot([tab()]))
+    const webview = guest(42)
+    host.attachGuest('t1', webview)
+    webview.fire('dom-ready')
+    bridge.execute.mockImplementationOnce(async () => { staged.push('execute'); return { result: 'ok' } })
+    await pageOp(host, 'page.execute', { tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } }, { bridge: bridge as never })
+    expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'getScreenshot', { tabId: 't1' })
+    expect(staged).toEqual(['stage', 'execute', 'release'])
+    host.visible = true
+    await pageOp(host, 'page.execute', { tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } }, { bridge: bridge as never })
+    expect(staged).toEqual(['stage', 'execute', 'release'])
+  })
+
   it('shows the session\'s active tab before a page operation runs on it', async () => {
     const bridge = { attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
     const revealed: string[] = []

@@ -222,8 +222,8 @@ export const browserApi = defineCateApi(
       ...located,
       values: custom('value or values', (v): v is unknown => v !== undefined).rest('value')
         .parseCli((raw) => (raw.startsWith('[') ? parseJsonWord(raw, 'JSON array of values') : raw))
-        .help('Option value, or a JSON array for a multiple select'),
-    }, command('select', 'Choose an option of a select by value')),
+        .help('Option label or value, or a JSON array for a multiple select'),
+    }, command('select', 'Choose an option of a select by label or value')),
     upload: page('control', {
       target: opt(uploadTarget).pos('id').help('The file input, its label, or the button or drop area that opens the file chooser; "chooser" for the chooser an action opened'),
       ...locator,
