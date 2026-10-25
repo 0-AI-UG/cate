@@ -929,6 +929,36 @@ export class PageDriver {
     }`)
   }
 
+  /** Chooses options of the <select> `select` evaluates to from `target`:
+   *  each value names an option by value, or else by its label; null chooses
+   *  `target` itself (an <option>). Fires input and change like a person's pick. */
+  private async chooseOptions(target: ElementTarget, select: string, values: string[] | null): Promise<void> {
+    const result = await this.callOn(target, `function () {
+      const select = ${select};
+      if (!(select instanceof HTMLSelectElement)) return 'browser-select-required';
+      if (select.matches(':disabled')) return 'element-disabled';
+      const options = Array.from(select.options).filter(option => !option.disabled);
+      const label = option => option.label.replace(/\\s+/g, ' ').trim();
+      const wanted = [];
+      for (const value of ${values ? JSON.stringify(values) : 'null'} ?? [this]) {
+        if (typeof value !== 'string') { if (!options.includes(value)) return 'browser-option-not-found'; wanted.push(value); continue; }
+        const byValue = options.find(option => option.value === value);
+        const byLabel = options.filter(option => label(option) === value.replace(/\\s+/g, ' ').trim());
+        if (!byValue && byLabel.length > 1) return 'browser-ambiguous-option';
+        const option = byValue ?? byLabel[0];
+        if (!option) return 'browser-option-not-found';
+        wanted.push(option);
+      }
+      if (!select.multiple && wanted.length !== 1) return 'browser-single-select-requires-one-value';
+      for (const option of select.options) option.selected = wanted.includes(option);
+      select.dispatchEvent(new Event('input', { bubbles: true })); select.dispatchEvent(new Event('change', { bubbles: true }));
+      return wanted.every(option => option.selected);
+    }`)
+    // A string is a check that failed before any option changed.
+    this.inputSent = typeof result.value !== 'string'
+    if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'browser-select-postcondition-failed')
+  }
+
   private async focusElement(target: ElementTarget): Promise<void> {
     await this.send('DOM.focus', { backendNodeId: target.backendNodeId }, target.sessionId)
   }
@@ -1417,7 +1447,19 @@ export class PageDriver {
       } else {
         const timeout = args.timeoutMs === undefined ? undefined : Number(args.timeoutMs)
         if (timeout !== undefined && (!Number.isFinite(timeout) || timeout < 0 || timeout > BROWSER_WAIT_MAX_MS)) throw new Error('invalid-browser-timeout')
-        cursor = await this.clickElement(this.element(args.target, observation), Number(count), String(button), timeout)
+        const target = this.element(args.target, observation)
+        // A native dropdown opens an OS menu outside the page: its options
+        // are chosen in the page instead, never by a click.
+        const dropdown = (await this.callOn(target, `function () {
+          const select = this instanceof HTMLOptionElement ? this.closest('select') : this instanceof HTMLSelectElement ? this : null;
+          if (!select || select.multiple || select.size > 1) return null;
+          return this === select ? 'select' : 'option';
+        }`)).value
+        if (dropdown === 'select') throw new Error('browser-native-select')
+        if (dropdown === 'option') {
+          await this.chooseOptions(target, `this.closest('select')`, null)
+          verified = true
+        } else cursor = await this.clickElement(target, Number(count), String(button), timeout)
       }
     } else if (method === 'hover') {
       let x: number, y: number
@@ -1455,20 +1497,7 @@ export class PageDriver {
     } else if (method === 'selectOption') {
       const values = typeof args.values === 'string' ? [args.values] : args.values
       if (!Array.isArray(values) || !values.every(value => typeof value === 'string')) throw new Error('browser-option-values-required')
-      const target = this.element(args.target, observation)
-      const result = await this.callOn(target, `function () {
-        if(!(this instanceof HTMLSelectElement)) return 'browser-select-required';
-        if(this.matches(':disabled')) return 'element-disabled';
-        const values=${JSON.stringify(values)};
-        if(!this.multiple && values.length!==1) return 'browser-single-select-requires-one-value';
-        if(values.some(value=>!Array.from(this.options).some(option=>option.value===value && !option.disabled))) return 'browser-option-not-found';
-        for(const option of this.options) option.selected=values.includes(option.value);
-        this.dispatchEvent(new Event('input',{bubbles:true}));this.dispatchEvent(new Event('change',{bubbles:true}));
-        return Array.from(this.selectedOptions).map(option=>option.value).sort().join('\\0')===values.slice().sort().join('\\0');
-      }`)
-      // A string is a check that failed before any option changed.
-      this.inputSent = typeof result.value !== 'string'
-      if (result.value !== true) throw new Error(typeof result.value === 'string' ? result.value : 'browser-select-postcondition-failed')
+      await this.chooseOptions(this.element(args.target, observation), 'this', values)
       verified = true
     } else if (method === 'upload') {
       const files = args.files

@@ -22,6 +22,7 @@ import { useRuntime } from '../../kernel/rpc'
 import { clientIdentity } from '@client/connections'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
+import { stageSurface } from '../../client/host/surfaceRegistry'
 import { BROWSER_NEW_TAB_URL, queryBrowserHistoryEntries, type BrowserShortcutAction } from '@services/browser/contract'
 import { browserLocalDownloads, browserPageBridge, browserPartition, createPageOps, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
 import { fsClient } from '@workspace/files/client'
@@ -180,6 +181,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     clientId: clientIdentity().clientId,
     send: (op) => live.current.send(op),
     reveal: (tabId) => live.current.setShown(tabId),
+    stage: () => stageSurface(panelId),
     bridge,
     guestCss: guestScrollbarCss,
     confirmSave: (message) => clientUi().confirm(message),

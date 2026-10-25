@@ -69,6 +69,8 @@ interface PageHostDeps {
   send(op: BrowserOp): Promise<unknown>
   /** Shows a tab on this client (a page operation runs on it). */
   reveal?(tabId: string): void
+  /** Renders the panel's parked pages, unseen, until the returned call. */
+  stage?(): () => void
   bridge: BrowserPageBridge | null
   /** Saved passwords come from the runtime. */
   passwords?: {
@@ -466,6 +468,7 @@ export class BrowserPageHost {
       guest: this.guestRef(tabId, page),
       document: page.webview.ownerDocument,
       hidden: !this.visible,
+      ...(this.deps.stage ? { stage: this.deps.stage } : {}),
       check: () => { this.requireActive(tabId) },
     }
   }

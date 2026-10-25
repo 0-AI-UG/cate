@@ -79,7 +79,8 @@ ipcRenderer.on(AUTOMATION_INPUT_CHANNEL, (_event, active: unknown) => {
 // This is a cancellation signal, not an input transport. Pointer and keyboard
 // events continue through Chromium's native webview path; main uses the signal
 // only to preempt automation that was already in flight for this guest.
-for (const eventName of ['pointerdown', 'keydown', 'wheel'] as const) {
+// Scrolling to watch an agent is not taking over.
+for (const eventName of ['pointerdown', 'keydown'] as const) {
   document.addEventListener(eventName, (event) => {
     if (event.isTrusted && !automationInput) ipcRenderer.send(USER_INPUT_CHANNEL)
   }, true)
