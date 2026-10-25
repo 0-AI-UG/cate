@@ -274,7 +274,7 @@ The split follows the client test (section 3).
 | Workspace settings (section 8) |
 | Skills: installs, mirror, sources, registry |
 | Trust, granted paths, terminal logs, screenshots |
-| Keep awake while work runs |
+| Keeping the workspace running and its machine awake (`keepRunningWhile`) |
 | Notification events (deciding that something happened) and the warnings kept for later clients |
 | Presence: which clients view and focus which panel |
 | Pairing, the network transports, the security layer, Cate Connect registration |
@@ -623,16 +623,26 @@ persisted session and document file. It is created with mode `0700`.
 
 ### 7.4 Lifetime
 
-How long a runtime runs is the workspace setting `runtimeLifetime`:
+What keeps a workspace available is one workspace setting,
+`keepRunningWhile`: a list of triggers. While a picked trigger holds, the
+runtime keeps running and keeps its machine awake (`power`, 7.9); the same
+rule for every client, wherever it runs.
 
-| Value | Behaviour |
-|---|---|
-| `stopWhenIdle` (default) | Stops when no client is connected and no work runs (no busy terminal, no running agent), after a 5 minute grace period. |
-| `keepRunning` | Never stops on its own. |
+| Trigger | Holds while | Default |
+|---|---|---|
+| `agents` | an agent runs a turn (one waiting at its prompt does not count) | on |
+| `commands` | a terminal runs a program other than its shell and other than an agent | on |
+| `clients` | a client is in use: it has the person's attention (`attentive`) and acted in the last 10 minutes (`lastActiveAt`, presence, 9.1) | on |
+| `always` | always | off |
 
-A workspace with network access on always keeps running, so it stays
-reachable. A stopped workspace is started by a client on its machine when
-it opens or restores the workspace.
+A connected client keeps the runtime running too (its views need it), but
+not the machine awake: a window left open overnight lets the machine sleep.
+With no client connected and nothing holding, the runtime stops after a 5
+minute grace period. A keep-awake request (`power.set`) holds like `always`
+until it lapses. Clients report input as presence activity (`active`,
+throttled to once a minute), so typing in a terminal counts. A stopped
+workspace is started by a client on its machine when it opens or restores
+the workspace.
 
 "Stop workspace runtime" lists the running terminals and agents, asks for
 confirmation in the view, and then sends `runtime.stop`. Before its connections
@@ -949,8 +959,8 @@ Capabilities not owned by a feature module, in `runtime/`:
   stream. It backs loopback routing (section 12.3): every connection but
   the local one reaches a port on the runtime's machine only through it (a
   local client is on that machine). It never connects to other hosts.
-- `power`: keep the machine awake while the workspace's work runs, or for a
-  time a person asks for (`set {duration}`, watched through `subscribe`),
+- `power`: keep the machine awake while a `keepRunningWhile` trigger holds
+  (7.4), or for a time a person asks for (`set {duration}`, watched through `subscribe`),
   through a platform helper process (`caffeinate -i -w <pid>` on macOS,
   `systemd-inhibit` on Linux, `SetThreadExecutionState` through PowerShell on
   Windows).
@@ -1073,7 +1083,7 @@ or that changes shared state, is a **workspace** setting.
 | Shortcuts (`kernel/interaction`) | `customShortcuts` | |
 | Desktop (`shells/desktop`) | `warnBeforeQuit`, `betaUpdatesEnabled`, `disableGpuRasterization` (applies after restart) | |
 | Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
-| Runtime (`runtime/daemon`) | | `runtimeLifetime`, `runtimeNetwork` |
+| Runtime (`runtime/daemon`) | | `keepRunningWhile`, `runtimeNetwork` |
 | `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
 | Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
 
@@ -1156,7 +1166,9 @@ and key, `clientId`, declared features), the panel each one views and
 focuses, which client was active last (the `cate` API's targeting reads it,
 section 14), and whether the client's app has the user's attention (the
 terminal service scans at a background cadence when no client does). Clients
-report their own view, focus and attention; presence is never persisted.
+report their own view, focus and attention, and that the person gives
+input (throttled; a client in use keeps the workspace running, 7.4);
+presence is never persisted.
 The client core watches the other clients of each open workspace
 (`otherClientsOf` in `client/document`), and each shell shows them: the
 desktop as small avatars on the workspace's sidebar row, iOS as an "Also
@@ -1168,7 +1180,7 @@ here" row in the workspace.
 
 - **Open and close.** Opening a workspace is connecting to its runtime (and
   starting it on this machine if needed). Closing it in a client disconnects;
-  the runtime follows `runtimeLifetime`.
+  the runtime follows `keepRunningWhile` (7.4).
 - **Trust** is one decision per workspace, stored in `trust.json`. Until the
   workspace is trusted, the runtime serves the document and files, but runs
   no process at all (terminals, agents, hooks, content search, and git,
@@ -2287,7 +2299,7 @@ shell, with `--json` when it parses results.
   with the key the app keeps in a Keychain group they share.
 
 Quitting the desktop app closes its windows and connections. Each runtime then
-follows its `runtimeLifetime`, so the desktop shell's quit blockers only guard
+follows its `keepRunningWhile`, so the desktop shell's quit blockers only guard
 client-local work (a file drop still importing).
 
 ## 16. Persistence

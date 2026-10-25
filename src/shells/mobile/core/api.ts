@@ -4,7 +4,7 @@ import { runtimeFor } from '@kernel/rpc/client'
 import { isRpcError } from '@kernel/rpc/contract'
 import { openTrusted, joinErrorMessage, joinWorkspace, trustStore } from '@client/workspaces'
 import { acquireSession, closePanel, createPanel, creatableDefinitions } from '@client/host'
-import { documentStoreFor } from '@client/document'
+import { documentStoreFor, setClientAttentive } from '@client/document'
 import { surfaceChoices, surfaceReplacement } from '@panels/definitions'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import { isPanelType } from '@workspace/document/contract'
@@ -57,6 +57,7 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
     ...createReviewHandlers(views),
     async 'app.setActive'({ active }) {
       client.setActive(active)
+      setClientAttentive(active)
       // Back in front: a connection may have died while the app was away.
       if (active) connections.checkAll()
       return null

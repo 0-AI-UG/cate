@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({ info: vi.fn() }))
 const runtime = vi.hoisted(() => ({ runtime: { info: h.info } }))
 vi.mock('../../kernel/rpc', () => ({ useRuntime: () => runtime }))
 vi.mock('../../kernel/settings', () => ({
-  useWorkspaceSettings: () => ({ runtimeNetwork: 'off', runtimeLifetime: 'stopWhenIdle' }),
+  useWorkspaceSettings: () => ({ runtimeNetwork: 'off', keepRunningWhile: ['agents', 'commands', 'clients'] }),
   setWorkspaceSetting: vi.fn(),
 }))
 

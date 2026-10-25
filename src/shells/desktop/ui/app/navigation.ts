@@ -48,7 +48,7 @@ export async function pickAndOpenFolder(): Promise<boolean> {
 }
 
 /** Closes workspaces: disconnects this client (the runtime follows
- *  `runtimeLifetime`) and drops them from the list. Paired ones ask first,
+ *  `keepRunningWhile`) and drops them from the list. Paired ones ask first,
  *  once, since opening one again takes a new code. When the shown one is
  *  closed, its nearest neighbour left in the list shows next. */
 export async function closeWorkspaces(workspaceIds: readonly string[]): Promise<boolean> {

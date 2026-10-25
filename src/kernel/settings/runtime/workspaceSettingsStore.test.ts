@@ -17,12 +17,12 @@ const readFile = () => JSON.parse(fs.readFileSync(path.join(dataDir, 'settings.j
 it('seeds defaults, sets one key and persists it', async () => {
   const store = createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable })
   expect(readFile()).toEqual(workspaceSettingsTable.defaults)
-  store.set('runtimeLifetime', 'keepRunning')
-  expect(store.get('runtimeLifetime')).toBe('keepRunning')
+  store.set('runtimeNetwork', 'sameNetwork')
+  expect(store.get('runtimeNetwork')).toBe('sameNetwork')
   await store.flushDurable()
-  expect(readFile().runtimeLifetime).toBe('keepRunning')
+  expect(readFile().runtimeNetwork).toBe('sameNetwork')
   store.dispose()
-  expect(createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable }).getAll().runtimeLifetime).toBe('keepRunning')
+  expect(createWorkspaceSettingsStore({ dataDir, table: workspaceSettingsTable }).getAll().runtimeNetwork).toBe('sameNetwork')
 })
 
 it('refuses unknown keys and invalid values with rejected', () => {

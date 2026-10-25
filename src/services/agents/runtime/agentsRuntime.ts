@@ -40,6 +40,8 @@ export interface AgentsRuntime {
   send(panelId: string, prompt: string): { promptId: string }
   /** Panels whose agent is running a turn. */
   busy(): string[]
+  /** Panels an agent is present in, busy or not. */
+  hosting(): string[]
   /** Recorded agent edits in a checkout, each with the panels that showed
    *  its session; an unchanged revision omits records. */
   changes(cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot>
@@ -73,6 +75,7 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     start: (callerPanelId, args) => starter.start(callerPanelId, args),
     send: (panelId, prompt) => sendToAgent(core, starter, panelId, prompt),
     busy: () => core.busy(),
+    hosting: () => core.hosting(),
     changes: (cwd, knownRevision) => core.changes(cwd, knownRevision),
     async readiness(cwd) {
       const states = await inspectAgentCliHooks((dir) => core.hooks.inspectFolders(dir), cwd)

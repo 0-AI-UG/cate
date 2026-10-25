@@ -16,7 +16,7 @@ export {
   type Intent,
   type Viewport,
 } from './clientState'
-export { reportPresence, setClientAttentive, watchOtherClients, type PresenceLink } from './presence'
+export { noteClientActivity, reportPresence, setClientAttentive, watchOtherClients, type PresenceLink } from './presence'
 export {
   attachDocument,
   attachDocuments,

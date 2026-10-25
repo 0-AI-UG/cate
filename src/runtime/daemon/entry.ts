@@ -48,6 +48,7 @@ import { composeWorkspace, type Workspace } from './compose/workspace'
 import { ensureRuntimeInstalled } from './node'
 import {
   createBusyRegistry,
+  createKeepRunning,
   createLifetime,
   createNetworkAccess,
   createPerfSampler,
@@ -223,7 +224,12 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
   })
   workspace = ws
 
-  const power = createPowerService({ busy: busy.busy, onError: (err) => log.warn('keep-awake helper failed: %s', err.message) })
+  const keepRunning = createKeepRunning({
+    triggers: () => settings.get('keepRunningWhile'),
+    work: busy,
+    clients: () => ws.presence.clients(),
+  })
+  const power = createPowerService({ busy: keepRunning, onError: (err) => log.warn('keep-awake helper failed: %s', err.message) })
 
   // Agent notifications reach paired devices through Cate Connect while
   // they are away; an unpaired device stops getting them.
@@ -321,12 +327,8 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
 
   const clients = () => rpc.connections().filter((c) => c.client !== null).length
   const lifetime = createLifetime({
-    settings: {
-      runtimeLifetime: () => settings.get('runtimeLifetime'),
-      runtimeNetwork: () => settings.get('runtimeNetwork'),
-      subscribe: (cb) => settings.subscribe(() => cb()),
-    },
-    busy: busy.busy,
+    held: () => keepRunning() || power.state().requested,
+    onSettingsChanged: (cb) => settings.subscribe(() => cb()),
     clients,
     // The rpc server announces a gone client before dropping its connection,
     // so count once it is gone.

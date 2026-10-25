@@ -1,6 +1,6 @@
 // The `power` host capability (architecture 7.9): keep the runtime's machine
 // awake. A person can ask for it for a while or until turned off; the runtime
-// also holds it on its own while work runs.
+// also holds it on its own while a `keepRunningWhile` trigger holds.
 
 import { channelStream, defineCapability, method } from '@kernel/rpc/contract'
 
@@ -18,7 +18,8 @@ export interface PowerState {
   requested: boolean
   /** Unix ms when the request lapses; null while unlimited or off. */
   endsAt: number | null
-  /** Work is running, so the runtime holds the machine awake on its own. */
+  /** A `keepRunningWhile` trigger holds (work runs, a client is in use), so
+   *  the runtime holds the machine awake on its own. */
   busy: boolean
   /** The platform helper is holding the machine awake right now. */
   holding: boolean

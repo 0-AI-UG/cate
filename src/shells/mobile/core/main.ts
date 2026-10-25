@@ -18,6 +18,7 @@ import { createMobileRelations } from './relations'
 import { installClientUi } from '@kernel/interaction'
 import { createMobileClientUi } from './clientUi'
 import { createMobileLinks } from './links'
+import { noteClientActivity } from '@client/document'
 
 declare global {
   interface Window {
@@ -47,6 +48,8 @@ async function start(): Promise<void> {
     async call(method, paramsJson) {
       const handler = api[method as MobileCoreMethod] as ((params: unknown) => Promise<unknown>) | undefined
       if (!handler) throw new Error(`unknown core method ${method}`)
+      // The app calls the core as the person uses it: the client is in use.
+      if (method !== 'app.setActive') noteClientActivity()
       return JSON.stringify(await handler(JSON.parse(paramsJson)))
     },
   }

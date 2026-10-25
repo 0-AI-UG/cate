@@ -1,13 +1,14 @@
-// Runtime settings page (runtime/daemon's slice): how long the workspace
-// runtime runs, its network access, its version, and "Stop workspace runtime".
+// Runtime settings page (runtime/daemon's slice): what keeps the workspace
+// runtime running and its machine awake, its network access, its version, and
+// "Stop workspace runtime".
 // The settings window hands it the workspace; the client adds what only it
 // knows (its own version and the connection's state) through props.
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { useRuntime } from '../../kernel/rpc'
-import { SecondaryButton, Select, SettingRow, Spinner } from '../../kernel/interaction'
+import { SearchableBlock, SecondaryButton, Select, SettingRow, Spinner, Toggle } from '../../kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSettings } from '../../kernel/settings'
-import type { RuntimeLifetime, RuntimeNetwork, RuntimeStatus } from '@runtime/daemon/contract'
+import type { KeepRunningTrigger, RuntimeNetwork, RuntimeStatus } from '@runtime/daemon/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { RunningWorkConfirm } from './RunningWork'
 
@@ -26,6 +27,13 @@ export async function changeNetwork(workspaceId: string, from: RuntimeNetwork, t
 }
 
 const showError = (fallback: string) => (err: unknown) => clientUi().showError(errorMessage(err, fallback))
+
+const TRIGGERS: { trigger: KeepRunningTrigger; label: string; description: string; keywords: string }[] = [
+  { trigger: 'agents', label: 'While agents work', description: 'An agent is running a turn. An agent waiting at its prompt does not count.', keywords: 'agent turn' },
+  { trigger: 'commands', label: 'While commands run', description: 'A program other than an agent runs in a terminal: a build, a dev server, a script.', keywords: 'terminal command build server' },
+  { trigger: 'clients', label: 'While a device is in use', description: 'Someone used a window or device of this workspace in the last 10 minutes.', keywords: 'client device phone in use' },
+  { trigger: 'always', label: 'Always', description: 'Never stops on its own, and the machine never sleeps on its own.', keywords: 'always forever never stop' },
+]
 
 export interface RuntimeSettingsPageProps {
   workspaceId: string | null
@@ -57,25 +65,26 @@ export function RuntimeSettingsPage({ workspaceId, panelTitle, children }: Runti
 
   if (!workspaceId || !runtime) return null
   const network = settings.runtimeNetwork
+  const triggers = settings.keepRunningWhile
 
   return (
     <div className="flex flex-col gap-1">
-      <SettingRow
-        label="Keep running"
-        keywords="lifetime stop idle background"
-        description={network !== 'off'
-          ? 'Always on while network access is on, so other devices can reach it.'
-          : 'Whether terminals and agents keep running after every window of this workspace is closed.'}
-      >
-        <Select
-          value={settings.runtimeLifetime}
-          onChange={(v) => { void setWorkspaceSetting(workspaceId, 'runtimeLifetime', v as RuntimeLifetime).catch(showError('Could not change the setting.')) }}
-          options={[
-            { value: 'stopWhenIdle', label: 'Stop when idle' },
-            { value: 'keepRunning', label: 'Keep running' },
-          ]}
-        />
-      </SettingRow>
+      <SearchableBlock keywords="keep running awake sleep lifetime stop idle background">
+        <div className="pt-2 pb-1 text-xs text-muted">
+          Keep the runtime running and this machine awake. With none of these, the runtime stops 5 minutes after its last window closes.
+        </div>
+      </SearchableBlock>
+      {TRIGGERS.map(({ trigger, label, description, keywords }) => (
+        <SettingRow key={trigger} label={label} description={description} keywords={`keep running awake sleep ${keywords}`}>
+          <Toggle
+            checked={triggers.includes(trigger)}
+            onChange={(on) => {
+              const next = on ? [...triggers, trigger] : triggers.filter((t) => t !== trigger)
+              void setWorkspaceSetting(workspaceId, 'keepRunningWhile', next).catch(showError('Could not change the setting.'))
+            }}
+          />
+        </SettingRow>
+      ))}
       <SettingRow
         label="Network access"
         keywords="pairing devices remote cate connect same network lan"

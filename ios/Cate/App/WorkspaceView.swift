@@ -391,7 +391,7 @@ private struct ComputerSection: View {
             } else if workspace.push?.blocked == "serviceUnavailable" {
                 Text("Cate Connect is not sending alerts right now. Agents still show here while the app is open.")
             } else if workspace.power?.busy == true {
-                Text("Kept awake while agents and terminals are busy.")
+                Text("Kept awake by the workspace's keep running settings.")
             }
         }
         .alert(item: $failure) { Alert(title: Text($0.message)) }
@@ -404,7 +404,7 @@ private struct ComputerSection: View {
         } else if power.requested {
             Text("On")
         } else if power.busy {
-            Text("While busy")
+            Text("Automatic")
         } else {
             Text("Off")
         }

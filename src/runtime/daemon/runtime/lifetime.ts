@@ -1,21 +1,13 @@
-// How long the runtime runs (architecture 7.4). `stopWhenIdle` stops it after
-// a grace period with no client and no work; `keepRunning`, or network access
-// on, keeps it running.
-
-import type { RuntimeLifetime, RuntimeNetwork } from '../contract'
+// How long the runtime runs (architecture 7.4): it stops after a grace period
+// with no client connected and nothing keeping it running.
 
 export const IDLE_GRACE_MS = 5 * 60_000
 
-export interface LifetimeSettings {
-  runtimeLifetime(): RuntimeLifetime
-  runtimeNetwork(): RuntimeNetwork
-  /** Called on any settings change. */
-  subscribe(listener: () => void): () => void
-}
-
 export interface LifetimeDeps {
-  settings: LifetimeSettings
-  busy: () => boolean
+  /** A `keepRunningWhile` trigger or a keep-awake request holds. */
+  held: () => boolean
+  /** Settings changed; returns the unsubscribe. */
+  onSettingsChanged: (listener: () => void) => () => void
   /** Connected clients (not callers such as the CLI or T3). */
   clients: () => number
   /** Client connected or gone; returns the unsubscribe. */
@@ -23,7 +15,7 @@ export interface LifetimeDeps {
   /** Stops the runtime. Called at most once. */
   stop: () => void
   graceMs?: number
-  /** How often `busy` is re-read. Default 30 s. */
+  /** How often `held` is re-read. Default 30 s. */
   pollMs?: number
 }
 
@@ -40,11 +32,7 @@ export function createLifetime(deps: LifetimeDeps): Lifetime {
   let timer: ReturnType<typeof setTimeout> | null = null
   let stopped = false
 
-  const idle = () =>
-    deps.settings.runtimeLifetime() === 'stopWhenIdle'
-    && deps.settings.runtimeNetwork() === 'off'
-    && deps.clients() === 0
-    && !deps.busy()
+  const idle = () => deps.clients() === 0 && !deps.held()
 
   const check = () => {
     if (stopped) return
@@ -62,7 +50,7 @@ export function createLifetime(deps: LifetimeDeps): Lifetime {
     }, graceMs)
   }
 
-  const offSettings = deps.settings.subscribe(check)
+  const offSettings = deps.onSettingsChanged(check)
   const offClients = deps.onClientsChanged(check)
   const poll = setInterval(check, deps.pollMs ?? 30_000)
   poll.unref?.()

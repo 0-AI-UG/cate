@@ -143,8 +143,9 @@ export interface TerminalService {
   list(): TerminalStatus[]
   statuses(): TerminalStatuses
   onStatusChange(listener: (change: TerminalStatusChange) => void): () => void
-  /** A live terminal with a foreground program other than its shell. */
-  busy(): boolean
+  /** A live terminal with a foreground program other than its shell, among
+   *  the terminals of panels not in `skipPanels`. */
+  busy(skipPanels?: ReadonlySet<string>): boolean
   /** Runs the activity, ports and cwd scans now. */
   scan(): Promise<void>
 
@@ -772,7 +773,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       return () => statusListeners.delete(listener)
     },
 
-    busy: () => liveTerms().some((t) => t.activity.type === 'running'),
+    busy: (skipPanels) => liveTerms().some((t) => t.activity.type === 'running' && !(t.panelId && skipPanels?.has(t.panelId))),
 
     scan: () => runScan(true, true),
 
