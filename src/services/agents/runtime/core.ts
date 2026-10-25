@@ -1,6 +1,6 @@
 // The agents service core (architecture 10.3): hook ingestion, pid presence,
-// change history, prompt context, the terminal agents (terminal.ts) and the
-// panel states over them. Agents publish their notification events through
+// change history, prompt context, the terminal agents (terminal.ts), the
+// panel states over them and the prompts on their way to them (prompts.ts). Agents publish their notification events through
 // the workspace's notifications.
 
 import type { RelationRoleOf } from '@workspace/relations/contract'
@@ -9,6 +9,7 @@ import type { Logger } from '@kernel/log/contract'
 import type {
   AgentChangesSnapshot,
   AgentConversationMessage,
+  AgentPrompt,
   AgentHookAgentState,
   AgentHookConfig,
   AgentSendResult,
@@ -23,6 +24,7 @@ import { createAgentPresenceTracker, type AgentPresenceTracker, type ProcTree } 
 import { createAgentPanels, type AgentPanels, type AgentPanelSource } from './panels'
 import type { NotificationEvent } from '@workspace/notifications/contract'
 import { createAgentConversations, type AgentConversations } from './conversations'
+import { createAgentPrompts, type AgentPrompts } from './prompts'
 import { createPromptContext, type AgentsDocument, type PromptContext } from './promptContext'
 
 export interface TrustGate {
@@ -77,8 +79,8 @@ export interface AgentsBase {
 
 /** What the core asks of the terminal agents. */
 export interface AgentTerminals extends AgentPanelSource {
-  /** Submits a prompt as the user would. */
-  send(panelId: string, prompt: string): Promise<AgentSendResult>
+  /** Submits a prompt as the user would, with files that go with it. */
+  send(panelId: string, prompt: string, attachments?: readonly string[]): Promise<AgentSendResult>
   /** Stops the agent's turn as the person would (Esc, Ctrl-C). */
   interrupt(panelId: string): Promise<AgentSendResult>
   conversation(panelId: string): Promise<{ session: AgentSession; messages: AgentConversationMessage[] } | null>
@@ -95,10 +97,15 @@ export interface AgentsCore extends AgentsBase {
   readonly terminals: AgentTerminals
   readonly panels: AgentPanels
   readonly conversations: AgentConversations
+  readonly prompts: AgentPrompts
   resolveCheckout(cwd: string | undefined): Promise<string>
   inspectHooks(cwd?: string): Promise<AgentHookAgentState[]>
   panel(panelId: string): PanelAgentState | null
-  send(panelId: string, prompt: string): Promise<AgentSendResult>
+  /** Hands a prompt to the panel's prompts (prompts.ts): it goes out once
+   *  the agent can take one. The caller checked that an agent is there. */
+  send(panelId: string, prompt: string, attachments?: readonly string[]): AgentPrompt
+  /** Takes back a queued or failed prompt; null when there is none. */
+  withdraw(panelId: string, promptId: string): { prompt: string; attachments: string[] } | null
   /** Stops the turn of the panel's agent. */
   interrupt(panelId: string): Promise<AgentSendResult>
   /** Panels whose agent is running a turn. */
@@ -131,7 +138,8 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
   const terminals = createTerminals(base)
   const panels = createAgentPanels(terminals, { contextSentAt: (panelId) => promptContext.sentAt(panelId) })
   promptContext.onSent((panelId) => panels.refresh(panelId))
-  const conversations = createAgentConversations({ panels, terminals })
+  const prompts = createAgentPrompts({ panels, terminals })
+  const conversations = createAgentConversations({ panels, terminals, prompts })
 
   const resolve = ({ terminalId: _terminalId, panelId, ...rest }: StoredAgentChange) => ({ ...rest, panelIds: panelId ? [panelId] : [] })
   const changes = async (cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot> => {
@@ -145,16 +153,20 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
     terminals,
     panels,
     conversations,
+    prompts,
     resolveCheckout: (cwd) => deps.resolveCheckout(cwd),
     async inspectHooks(cwd) {
       deps.trust.requireTrusted()
       return hooks.inspectWorkspace(await deps.resolveCheckout(cwd), { approvals: true })
     },
     panel: (panelId) => panels.state(panelId),
-    async send(panelId, prompt) {
+    send(panelId, prompt, attachments) {
       deps.trust.requireTrusted()
-      if (!panels.state(panelId)) return { ok: false, error: 'agent-panel-not-found' }
-      return terminals.send(panelId, prompt)
+      return prompts.send(panelId, prompt, attachments)
+    },
+    withdraw(panelId, promptId) {
+      deps.trust.requireTrusted()
+      return prompts.withdraw(panelId, promptId)
     },
     async interrupt(panelId) {
       deps.trust.requireTrusted()
@@ -165,6 +177,7 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
     changes,
     dispose() {
       conversations.dispose()
+      prompts.dispose()
       panels.dispose()
       terminals.dispose()
       hooks.dispose()

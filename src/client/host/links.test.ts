@@ -5,7 +5,7 @@ import { MAIN_WINDOW, placementOf } from '@workspace/document/contract'
 import { installMockClientUi } from '../../test/clientUi'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../test/clientWorkspace'
 import { registerPanelDefinitions } from './definitions'
-import { openLink } from './links'
+import { installLinkSettings, openClickedLink, openLink } from './links'
 import { installCanvasTargetPicker, type CanvasTargetRequest } from './panelTargetPicker'
 
 beforeAll(() => registerPanelDefinitions(testPanelDefinitions().map((definition) => definition.type === 'editor'
@@ -29,6 +29,7 @@ afterEach(() => {
   ws?.detach()
   ws = null
   installCanvasTargetPicker(null)
+  installLinkSettings(null)
   setRuntimeResolver(null)
   ops.mockClear()
 })
@@ -89,5 +90,51 @@ describe('openLink', () => {
     expect(newOf(w, 'editor')).toHaveLength(1)
     expect(ops).toHaveBeenCalledWith({ panelId: 'e1', op: { kind: 'openFile', path: '/repo/open.ts', line: 3, column: 1 } })
     expect(w.state.getSnapshot().activeTabs.s1).toBe('e1')
+  })
+})
+
+describe('openClickedLink', () => {
+  const url = { kind: 'url', url: 'https://example.com' } as const
+  const memorySettings = () => {
+    let value: 'ask' | 'cate' | 'external' = 'ask'
+    return { get: () => value, set: (_key: 'linkOpenTarget', next: typeof value) => { value = next } }
+  }
+
+  it('asks where a web link opens the first time and remembers the answer', async () => {
+    const settings = memorySettings()
+    installLinkSettings(settings)
+    const ui = installMockClientUi({ promptLinkOpen: vi.fn(async () => 'external' as const) })
+    const w = attach()
+    await openClickedLink('w', url, { from: 't1' })
+    await openClickedLink('w', url, { from: 't1' })
+    expect(ui.promptLinkOpen).toHaveBeenCalledTimes(1)
+    expect(settings.get()).toBe('external')
+    expect(ui.openExternal).toHaveBeenCalledTimes(2)
+    expect(newOf(w, 'browser')).toEqual([])
+  })
+
+  it('opens in a panel when the setting says Cate', async () => {
+    installLinkSettings({ get: () => 'cate', set: () => {} })
+    const ui = installMockClientUi()
+    const w = attach()
+    await openClickedLink('w', url, { from: 't1' })
+    expect(ui.openExternal).not.toHaveBeenCalled()
+    expect(newOf(w, 'browser')).toHaveLength(1)
+  })
+
+  it('opens nothing when the person cancels, and never asks for loopback, files or Shift', async () => {
+    const settings = memorySettings()
+    installLinkSettings(settings)
+    const ui = installMockClientUi({ promptLinkOpen: vi.fn(async () => 'cancel' as const) })
+    const w = attach()
+    expect(await openClickedLink('w', url, { from: 't1' })).toBe(false)
+    expect(newOf(w, 'browser')).toEqual([])
+    await openClickedLink('w', { kind: 'url', url: 'http://localhost:3000' }, { from: 't1' })
+    await openClickedLink('w', { kind: 'file', path: '/repo/a.ts' }, { from: 't1' })
+    await openClickedLink('w', url, { from: 't1', external: true })
+    expect(ui.promptLinkOpen).toHaveBeenCalledTimes(1)
+    expect(ui.openExternal).toHaveBeenCalledTimes(1)
+    expect(newOf(w, 'browser')).toHaveLength(1)
+    expect(settings.get()).toBe('ask')
   })
 })

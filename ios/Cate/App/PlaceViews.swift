@@ -128,6 +128,8 @@ struct PanelTile<Menu: View>: View {
                     .font(.system(size: TileMetrics.title * s, weight: .semibold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
+                    .shimmering(agent?.status == "running")
+                    .accessibilityValue(agent?.status == "running" ? "Agent running" : "")
             }
             if let place = place {
                 Text(place)
@@ -180,28 +182,20 @@ struct PanelTile<Menu: View>: View {
     }
 }
 
-/// An agent's status as the desktop marks it on tabs: a dashed ring while it
-/// runs, an orange dot while it waits for the person, nothing otherwise.
+/// An agent's status mark as the desktop draws it on tabs: an orange dot
+/// while it waits for the person, nothing otherwise. A running agent's title
+/// shimmers instead (`shimmering`).
 struct AgentStatusMark: View {
     let status: String
     let size: CGFloat
 
     var body: some View {
-        switch status {
-        case "running":
-            Circle()
-                .inset(by: size * 0.125)
-                .stroke(.secondary, style: StrokeStyle(lineWidth: size * 0.11, lineCap: .round, dash: [size * 0.175, size * 0.133]))
-                .frame(width: size, height: size)
-                .accessibilityLabel("Agent running")
-        case "waitingForInput":
+        if status == "waitingForInput" {
             Circle()
                 .fill(Color.orange.mix(with: .primary, by: 0.3))
                 .padding(size * 0.2)
                 .frame(width: size, height: size)
                 .accessibilityLabel("Awaiting input")
-        default:
-            EmptyView()
         }
     }
 }

@@ -22,6 +22,10 @@ final class CoreHost {
     private(set) var trustPrompt: TrustPrompt?
     /// This device's library of custom relation labels.
     private(set) var savedRelationLabels: [String] = []
+    /// Where a tapped web link opens (`ask`, `cate`, `external`).
+    private(set) var linkOpenTarget = "ask"
+    /// A tapped web link waiting for where it opens.
+    private(set) var linkPrompt: LinkPrompt?
     private(set) var ready = false
     /// Set when the core could not start; the app shows it instead.
     private(set) var failure: String?
@@ -104,6 +108,8 @@ final class CoreHost {
         if clientId != state.clientId { clientId = state.clientId }
         if trustPrompt != state.trustPrompt { trustPrompt = state.trustPrompt }
         if savedRelationLabels != state.savedRelationLabels { savedRelationLabels = state.savedRelationLabels }
+        if linkOpenTarget != state.linkOpenTarget { linkOpenTarget = state.linkOpenTarget }
+        if linkPrompt != state.linkPrompt { linkPrompt = state.linkPrompt }
         let known = Dictionary(workspaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let next = state.workspaces.map { item in
             guard let workspace = known[item.id] else { return Workspace(item) }
@@ -218,6 +224,24 @@ final class CoreHost {
     /// A link tapped in the terminal: the core opens it where it belongs.
     func openTerminalLink(_ terminalId: String, uri: String) {
         Task { await call("terminal.openLink", ["terminalId": terminalId, "uri": uri]) }
+    }
+
+    /// A link tapped in rendered markdown, opened from `panelId`; a relative
+    /// one names a file relative to the markdown file `filePath`.
+    func openMarkdownLink(_ href: String, workspaceId: String, panelId: String?, filePath: String? = nil) {
+        var params: [String: Any] = ["workspaceId": workspaceId, "href": href]
+        if let panelId { params["panelId"] = panelId }
+        if let filePath { params["filePath"] = filePath }
+        Task { await call("links.open", params) }
+    }
+
+    /// The answer to `linkPrompt`: `cate`, `external` or `cancel`.
+    func answerLinkPrompt(_ choice: String) {
+        Task { await call("links.answer", ["choice": choice]) }
+    }
+
+    func setLinkOpenTarget(_ target: String) {
+        Task { await call("links.setTarget", ["target": target]) }
     }
 
     func closeTerminal(_ terminalId: String) {

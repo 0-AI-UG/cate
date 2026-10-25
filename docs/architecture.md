@@ -335,7 +335,7 @@ Every piece of state belongs to exactly one class.
 | Class | Owner | Examples | Shared with |
 |---|---|---|---|
 | **Document** | the runtime | panel records, windows and dock trees, canvases, nodes and geometry, node mini docks, relations, worktree metadata | every client of the workspace |
-| **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, a review's comparison, notes and agent review, agent status | every client viewing the panel |
+| **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, a review's comparison, notes and agent review, agent status and the prompts on their way to the agent | every client viewing the panel |
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes | through the runtime |
 | **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), browser history and bookmarks, skill sources, trust, granted paths, devices | every client of the workspace |
 | **Device** | one client device | client settings, workspace list, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
@@ -1065,7 +1065,7 @@ or that changes shared state, is a **workspace** setting.
 | Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
-| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
+| Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
 | Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines`, `reviewFullFiles`, `reviewImagePreviews` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
@@ -1506,7 +1506,31 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     reads the conversation together with the agent's state, so a turn that
     ended goes out with its reply; it looks again on every state change and
     while the agent works, reading the store only when its files moved, and
-    sends the messages from the first one that changed;
+    sends the messages from the first one that changed, with the panel's
+    prompts on their way as they change;
+  - the **prompts** on their way to each panel's agent (`prompts.ts`), in
+    memory, since the agents run in this process. Every prompt takes one
+    path, `sendToAgent`: `cate agent send`, the capability's `send` (every
+    client) and other modules (the review). It refuses only when nothing
+    could ever take the prompt (no agent, one still starting, untrusted,
+    invalid attachments) and otherwise answers at once with the prompt's id;
+    a busy agent is no refusal. From then on the runtime alone owns the
+    prompt, so no caller guesses its fate from the transcript, and its
+    outcome is state every caller observes: the conversation channel, and
+    the `prompts` of `cate agent list / read / wait`. Each has a runtime id,
+    its text and attachments and a state: `queued` (in order, first in
+    first out), `sending` (typed, waiting for its turn to start; one at a
+    time) or `failed` (typed and no turn started within the confirm window,
+    with the error). The first queued prompt goes out when the agent can
+    take one, nothing is on its way and no prompt failed, with no caller
+    connected; refused before it was typed, it waits again first in line.
+    A failed prompt's text may still be in the CLI's input, so nothing more
+    is typed into it until a turn starts (someone pressed Enter: the input
+    went with that turn) or it is withdrawn (`withdraw`, which also takes
+    back a queued prompt, with its text and attachments). A prompt that was
+    taken is gone: the conversation shows it. A panel whose agent is gone
+    loses its prompts. `cate agent wait` waits for an agent at its prompt
+    with its prompts gone out, or one failed;
   - the panel states (`panels.ts`): what each terminal panel hosts, with
     when relation context last went with its prompt, published as changes;
   - prompt context from relations, and agent notification events;
@@ -1542,9 +1566,9 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   status, resume, prompt submission into the PTY, interrupt with the CLI's
   own key).
 - **client**: the agent panel states mirror, an agent chat
-  (`watchAgentChat`: the conversation channel, a prompt sent from the
-  client pending until the conversation shows it, and a prompt sent while
-  the agent works queued until it is back at its prompt), and a workspace's
+  (`watchAgentChat`: the conversation channel mirrored across reconnects,
+  shown as the runtime says, with its prompts on their way; prompts are
+  sent and withdrawn through the capability), and a workspace's
   usage and limits reports, kept per workspace and window
   (`createUsageReports`).
 - **Desktop UI** (`shells/desktop/ui/services/agents`): the changes pill, activity title, logos, hook settings, the
@@ -1856,12 +1880,16 @@ the runtime's machine on every client.
   loopback is the runtime's machine too, and connects to the address it
   checked.
 - **Opening links.** Every clicked link (a terminal's URL, file path or OSC 8
-  hyperlink, a markdown preview's link, a URL opened with the app) goes
+  hyperlink, a link in rendered markdown, a URL opened with the app) goes
   through one `openLink` (`client/host`). A web URL opens in a panel that
-  opens URLs, or through `ClientUi.openExternal` when the shell asks for it
-  (the desktop decides from its `linkOpenTarget` setting, asking where it
-  says so, or Cmd/Ctrl+Shift in a terminal); a loopback URL always opens in
-  a panel. A file opens in the panel already
+  opens URLs, or through `ClientUi.openExternal`; a loopback URL always opens
+  in a panel. A link the person clicked or tapped goes through
+  `openClickedLink`, which decides from the client's `linkOpenTarget`
+  setting (installed by the shell with `installLinkSettings`), asking with
+  `ClientUi.promptLinkOpen` where it says so and remembering the answer; a
+  shell may force the system browser (Cmd/Ctrl+Shift in a desktop
+  terminal). `markdownLinkTarget` reads what a markdown link names, a file
+  relative to the markdown file. A file opens in the panel already
   showing it, else in a new one, at its line. A new panel is placed from
   the panel the link was clicked in through `createPanelFrom`, the one
   placement path for a panel another panel opens: on that panel's canvas a
@@ -1873,9 +1901,9 @@ the runtime's machine on every client.
   pieces, as in any terminal). A URL cut short with `…` is not a link.
   Programs that name their links (OSC 8) get them exactly, in the view's
   own terminal (`osc8Target` reads the target); PTYs get
-  `FORCE_HYPERLINK=1` so programs that check send them. The iOS app's
-  terminal hands its taps to the core (`terminal.openLink`), which opens a
-  web URL outside the app, except a loopback one.
+  `FORCE_HYPERLINK=1` so programs that check send them. The iOS app hands
+  its taps to the core (`terminal.openLink`, and `links.open` for markdown);
+  the core's question waits in its state (`linkPrompt`) for the app to ask.
 - **The web proxy.** Each client with `webview` runs one web proxy per open
   workspace and routes that workspace's webviews through it. It supports
   plain HTTP, `CONNECT` (HTTPS) and upgrades (WebSocket, for hot reload). For
@@ -2242,7 +2270,12 @@ shell, with `--json` when it parses results.
   review, the surface picker), and worktrees can be switched. The app
   shows each agent of a workspace as a chat (the conversation pushed as it
   changes through `agents.watch`, replies, what it is doing while it works,
-  stopping its turn; permissions are answered in the
+  the prompts the runtime keeps on their way: every reply goes through
+  `agents.send`, busy agent or not, and shows as being sent, queued in
+  order with Edit to take it back into the box, or not taken with Edit and
+  Dismiss and a note to clear it from the terminal's input; a taken prompt
+  stays on screen until the conversation shows it; stopping its turn;
+  permissions are answered in the
   agent's own panel, one tap away), and a
   new agent as an empty chat whose box picks what runs it, started with
   `cate.agent.start` in the dock or on a canvas the person picks. The core

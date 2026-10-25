@@ -32,6 +32,7 @@ struct RootView: View {
         NavigationStack(path: $path) {
             WorkspacesView(join: { joining = JoinRequest(link: nil) })
                 .navigationDestination(for: String.self) { WorkspaceView(workspaceId: $0) }
+                .navigationDestination(for: DeviceSettingsRoute.self) { _ in DeviceSettingsView() }
                 .agentDestinations()
         }
         .environment(\.joinWorkspace) { joining = JoinRequest(link: nil) }
@@ -58,6 +59,13 @@ struct RootView: View {
             Button("Not Now", role: .cancel) { Task { _ = await core.action("workspaces.answerTrust", ["trusted": false]) } }
         } message: {
             Text("\(core.trustPrompt?.label ?? "This workspace") runs terminals, agents and git only once it is trusted. Trusting it applies for everyone who opens it.")
+        }
+        .confirmationDialog("Open link", isPresented: Binding(get: { core.linkPrompt != nil }, set: { _ in }), titleVisibility: .visible, presenting: core.linkPrompt) { _ in
+            Button("In Cate") { core.answerLinkPrompt("cate") }
+            Button("In Safari") { core.answerLinkPrompt("external") }
+            Button("Cancel", role: .cancel) { core.answerLinkPrompt("cancel") }
+        } message: { prompt in
+            Text("\(prompt.url)\n\nYou can change this later in Settings.")
         }
         .alert("Not sent", isPresented: Binding(get: { notifier.failure != nil }, set: { if !$0 { notifier.failure = nil } })) {
             Button("OK", role: .cancel) {}

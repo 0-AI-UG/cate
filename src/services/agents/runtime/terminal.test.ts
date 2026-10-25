@@ -7,7 +7,7 @@ import { createTerminalService, type ActivityScan, type EnvContributor, type Lau
 import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, type AgentId, type AgentStep } from '../contract'
+import { AGENT_DEFS, AGENT_LAUNCH, ATTACHMENTS_ONLY_PROMPT, agentLaunchCommand, type AgentId, type AgentStep } from '../contract'
 import { createAgentsCore, type AgentsCore } from './core'
 import type { AgentsDocument } from './promptContext'
 import type { RelationContextMode } from '@workspace/relations/contract'
@@ -22,15 +22,23 @@ function fakeTerminal() {
   const inputs = new Set<(id: string, data: string) => void>()
   const exits = new Set<(id: string, code: number) => void>()
   const activity = new Set<(scan: ActivityScan) => void>()
+  const outputs = new Set<(id: string, data: string) => void>()
   const writes: Array<{ id: string; data: string }> = []
+  /** The program draws what is typed, as an agent TUI does. */
+  const program = { echo: true }
   const add = <T>(set: Set<T>, value: T) => { set.add(value); return () => { set.delete(value) } }
   const service: AgentTerminalService = {
     registerEnvContributor: (c) => add(contributors, c),
     registerLaunchIntent: (kind, resolver) => { intents.set(kind, resolver); return () => { intents.delete(kind) } },
     onInput: (o) => add(inputs, o),
+    onOutput: (o) => add(outputs, o),
     onExit: (o) => add(exits, o),
     onActivity: (o) => add(activity, o),
-    write: (id, data) => { writes.push({ id, data }); for (const o of inputs) o(id, data) },
+    write: (id, data) => {
+      writes.push({ id, data })
+      for (const o of inputs) o(id, data)
+      if (program.echo) queueMicrotask(() => { for (const o of outputs) o(id, data) })
+    },
     cwd: async () => '/fallback-cwd',
     read: async () => ({ alt: false, text: '' }),
     statuses: () => ({}),
@@ -38,6 +46,10 @@ function fakeTerminal() {
   return {
     service,
     writes,
+    program,
+    output(id: string, data: string): void {
+      for (const o of outputs) o(id, data)
+    },
     intents,
     async spawn(info: Partial<SpawnInfo> & { terminalId: string; panelId: string; cwd: string }): Promise<Record<string, string>> {
       let env: Record<string, string> = { PATH: '/usr/bin' }
@@ -228,13 +240,13 @@ describe('terminal agents', () => {
     await expect(agentTerminals.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-not-running' })
     terminal.scan('pty-1', 'term', 'claude')
     await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
-    await expect(agents.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-busy' })
+    await expect(agentTerminals.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-busy' })
     await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root })
     // The first turn took the one-shot context; arm it again for the send.
     doc.document.setRelationContextMode('term', 'once')
     doc.modes.delete('term')
 
-    const sent = agents.send('term', 'line one\nline two')
+    const sent = agentTerminals.send('term', 'line one\nline two')
     await vi.waitFor(() => expect(terminal.writes).toEqual([
       { id: 'pty-1', data: '\x1b[200~line one\rline two\x1b[201~' },
       { id: 'pty-1', data: '\r' },
@@ -248,13 +260,88 @@ describe('terminal agents', () => {
     await expect(sent).resolves.toEqual({ ok: true })
   })
 
+  it('sends Enter only once the program answered the paste', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    terminal.program.echo = false
+    const sent = agentTerminals.send('term', 'hello')
+    await vi.waitFor(() => expect(terminal.writes).toEqual([{ id: 'pty-1', data: '\x1b[200~hello\x1b[201~' }]))
+    terminal.output('pty-2', 'another terminal')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(terminal.writes).toHaveLength(1)
+    terminal.output('pty-1', 'hello')
+    await vi.waitFor(() => expect(terminal.writes.at(-1)).toEqual({ id: 'pty-1', data: '\r' }))
+    await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    await expect(sent).resolves.toEqual({ ok: true })
+  })
+
+  it('gives attachments to an agent\'s submit hook, never typing their paths', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    const sent = agentTerminals.send('term', '', ['/data/photo.jpg'])
+    await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
+    expect(terminal.writes[0].data).toBe(`\x1b[200~${ATTACHMENTS_ONLY_PROMPT}\x1b[201~`)
+    const output = JSON.parse(await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root }))
+    expect(output.hookSpecificOutput.additionalContext).toContain('Browser')
+    expect(output.hookSpecificOutput.additionalContext).toContain('- /data/photo.jpg')
+    await expect(sent).resolves.toEqual({ ok: true })
+    // The turn took them: the next prompt goes without.
+    await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root })
+    const next = await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    expect(next).not.toContain('photo.jpg')
+  })
+
+  it('types attachment paths after the prompt for an agent without a submit hook', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'cursor-agent')
+    await post(env, 'cursor', { hook_event_name: 'sessionStart', session_id: 'sess-1', cwd: root })
+    const sent = agentTerminals.send('term', 'what is this', ['/data/photo.jpg'])
+    await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
+    expect(terminal.writes[0].data).toBe('\x1b[200~what is this\r\r/data/photo.jpg\x1b[201~')
+    await post(env, 'cursor', { hook_event_name: 'beforeSubmitPrompt', session_id: 'sess-1', cwd: root })
+    await expect(sent).resolves.toEqual({ ok: true })
+  })
+
+  it('drops attachments of a prompt the agent did not take', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const sent = agentTerminals.send('term', '/compact', ['/data/photo.jpg'])
+      await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
+      // With attachments a slash-looking prompt still has to start a turn.
+      await vi.advanceTimersByTimeAsync(10_000)
+      await expect(sent).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/^agent-prompt-not-taken/) })
+    } finally {
+      vi.useRealTimers()
+    }
+    const output = await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    expect(output).not.toContain('photo.jpg')
+  })
+
+  it('starts an agent with attachments: its first turn takes them through the hook', async () => {
+    const launch = { kind: AGENT_LAUNCH.start, params: { agentId: 'claude-code', prompt: '', attachments: ['/data/photo.jpg'] } }
+    expect(await terminal.intents.get(AGENT_LAUNCH.start)!(launch.params, { cwd: root, panelId: 'term' }))
+      .toEqual({ command: agentLaunchCommand({ agentId: 'claude-code', prompt: ATTACHMENTS_ONLY_PROMPT }) })
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root, launch })
+    const output = JSON.parse(await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root }))
+    expect(output.hookSpecificOutput.additionalContext).toContain('- /data/photo.jpg')
+    // Without a submit hook the paths are in the launch prompt.
+    expect(await terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'cursor', prompt: 'what is this', attachments: ['/data/photo.jpg'] }, { cwd: root, panelId: 'w' }))
+      .toEqual({ command: agentLaunchCommand({ agentId: 'cursor', prompt: 'what is this\n\n/data/photo.jpg' }) })
+    expect(() => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'cursor', prompt: 'x', attachments: ['relative.jpg'] }, { cwd: root, panelId: 'w' })).toThrow()
+  })
+
   it('fails a send whose prompt starts no turn (a dialog took the Enter)', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     terminal.scan('pty-1', 'term', 'claude')
     await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const sent = agents.send('term', 'hello')
+      const sent = agentTerminals.send('term', 'hello')
       await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
       await vi.advanceTimersByTimeAsync(10_000)
       await expect(sent).resolves.toMatchObject({ ok: false, error: expect.stringMatching(/^agent-prompt-not-taken/) })
@@ -263,13 +350,52 @@ describe('terminal agents', () => {
     }
   })
 
+  it('counts a turn someone else\'s Enter started as taking the prompt being sent', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    expect(agents.send('term', 'look at /data/photo.jpg')).toMatchObject({ state: 'sending' })
+    await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
+    // The Enter was lost; the person presses it on another client. The CLI
+    // writes the prompt its own way, so nothing matches its text.
+    terminal.service.write('pty-1', '\r')
+    await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root, prompt: '[Image #1]' })
+    await vi.waitFor(() => expect(agents.prompts.of('term')).toEqual([]))
+  })
+
+  it('keeps a prompt that started no turn as failed, typing nothing over it until a turn starts', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      agents.send('term', 'hello')
+      agents.send('term', 'next')
+      await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
+      await vi.advanceTimersByTimeAsync(10_000)
+      await vi.waitFor(() => expect(agents.prompts.of('term')).toMatchObject([
+        { text: 'hello', state: 'failed', error: expect.stringMatching(/^agent-prompt-not-taken/) },
+        { text: 'next', state: 'queued' },
+      ]))
+      expect(terminal.writes).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+    // Enter pressed late, in the terminal: what sat in the input went.
+    await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    await vi.waitFor(() => expect(agents.prompts.of('term')).toMatchObject([{ text: 'next', state: 'queued' }]))
+    // The turn ends: the queue goes on.
+    await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root })
+    await vi.waitFor(() => expect(agents.prompts.of('term')).toMatchObject([{ text: 'next', state: 'sending' }]))
+  })
+
   it('does not wait for a turn after a slash command, which may start none', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     terminal.scan('pty-1', 'term', 'claude')
     await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const sent = agents.send('term', '/compact')
+      const sent = agentTerminals.send('term', '/compact')
       await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
       await vi.advanceTimersByTimeAsync(10_000)
       await expect(sent).resolves.toEqual({ ok: true })

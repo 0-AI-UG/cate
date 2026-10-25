@@ -10,15 +10,18 @@
 // conversation still reads as running, and the reply and the end go out
 // together. The steps (tool calls the hooks
 // report) are kept for every panel that hosts an agent, watched or not, in
-// memory only, and go out as they come.
+// memory only, and go out as they come, and so do the prompts on their way
+// to the agent (prompts.ts).
 
 import { diffAgentConversation, type AgentConversation, type AgentConversationChange, type AgentStep } from '../contract'
 import type { AgentTerminals } from './core'
 import type { AgentPanels } from './panels'
+import type { AgentPrompts } from './prompts'
 
 export interface AgentConversationsDeps {
   panels: Pick<AgentPanels, 'state' | 'subscribe'>
   terminals: Pick<AgentTerminals, 'conversation' | 'conversationStamp' | 'onStep'>
+  prompts: Pick<AgentPrompts, 'of' | 'onChange'>
   /** Tests: the look cadence while working and otherwise, the looks after a
    *  state change, and how long a turn's end waits for its reply. */
   workingMs?: number
@@ -72,7 +75,7 @@ function replied({ messages, steps }: AgentConversation): boolean {
 }
 
 export function createAgentConversations(deps: AgentConversationsDeps): AgentConversations {
-  const { panels, terminals } = deps
+  const { panels, terminals, prompts } = deps
   const workingMs = deps.workingMs ?? WORKING_MS
   const presentMs = deps.presentMs ?? PRESENT_MS
   const settleMs = deps.settleMs ?? SETTLE_MS
@@ -119,7 +122,14 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
         }
       }
     }
-    const next = { status: state?.status ?? null, canReceivePrompt: state?.canReceivePrompt ?? false, messages, steps: stepsOf(panelId), stepsSince }
+    const next = {
+      status: state?.status ?? null,
+      canReceivePrompt: state?.canReceivePrompt ?? false,
+      messages,
+      steps: stepsOf(panelId),
+      stepsSince,
+      prompts: prompts.of(panelId),
+    }
     // The turn ended and its reply is not read yet: it still runs.
     if (watch.current.status === 'running' && next.status !== 'running' && !replied(next)) {
       watch.ending ??= Date.now()
@@ -175,6 +185,11 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
     if (watch?.ready) publish(watch, { ...watch.current, steps: stepsOf(panelId) })
   })
 
+  const offPrompts = prompts.onChange((panelId) => {
+    const watch = watches.get(panelId)
+    if (watch?.ready) publish(watch, { ...watch.current, prompts: prompts.of(panelId) })
+  })
+
   const stop = (panelId: string, watch: Watch): void => {
     if (watch.tick) clearTimeout(watch.tick)
     for (const timer of watch.settles) clearTimeout(timer)
@@ -187,7 +202,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
       if (!watch) {
         watch = {
           listeners: new Set(),
-          current: { status: null, canReceivePrompt: false, messages: [], steps: [], stepsSince },
+          current: { status: null, canReceivePrompt: false, messages: [], steps: [], stepsSince, prompts: [] },
           ready: false,
           stamp: undefined,
           reading: false,
@@ -212,6 +227,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
     dispose() {
       offPanels()
       offSteps()
+      offPrompts()
       for (const [panelId, watch] of [...watches]) stop(panelId, watch)
     },
   }

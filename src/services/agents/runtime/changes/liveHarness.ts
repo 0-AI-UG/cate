@@ -94,6 +94,8 @@ export async function runLiveTui(binary: string, args: string[], options: {
   rows?: number
   /** Every chunk of output, as the PTY wrote it. */
   onData?: (chunk: string) => void
+  /** The PTY's input, for a caller that types on its own schedule. */
+  onSpawn?: (terminal: { write(data: string): void }) => void
   complete: (screen: string) => boolean | Promise<boolean>
   respond?: (screen: string) => string | undefined
 }): Promise<void> {
@@ -116,6 +118,7 @@ export async function runLiveTui(binary: string, args: string[], options: {
     options.onData?.(chunk)
   })
   const exit = terminal.onExit(() => { exited = true })
+  options.onSpawn?.({ write: (input) => { if (!exited) terminal.write(input) } })
   try {
     const deadline = Date.now() + (options.timeout ?? 120_000)
     while (true) {

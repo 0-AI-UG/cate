@@ -4,9 +4,14 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { CateServiceHandlers } from '@kernel/api/contract'
 import type { agentApi } from '../contract/api'
-import { AGENT_DEFS, type AgentId, type AgentStartRequest, type PanelAgentState } from '../contract'
+import { AGENT_DEFS, isPromptAttachments, type AgentId, type AgentStartRequest, type PanelAgentState } from '../contract'
 import type { AgentsCore } from './core'
 import type { AgentStarter } from './start'
+
+/** The panel's prompts on their way, without their attachments. */
+function promptsOf(agents: AgentsCore, panelId: string) {
+  return agents.prompts.of(panelId).map(({ attachments: _attachments, ...prompt }) => prompt)
+}
 
 function summary(agents: AgentsCore, state: PanelAgentState) {
   return {
@@ -16,6 +21,7 @@ function summary(agents: AgentsCore, state: PanelAgentState) {
     agentName: state.agentName,
     state: state.status,
     canReceivePrompt: state.canReceivePrompt,
+    prompts: promptsOf(agents, state.panelId),
   }
 }
 
@@ -29,6 +35,7 @@ function startingSummary(agents: AgentsCore, { panelId, agentId }: { panelId: st
     agentName: AGENT_DEFS[agentId].displayName,
     state: 'starting',
     canReceivePrompt: false,
+    prompts: promptsOf(agents, panelId),
   }
 }
 
@@ -73,12 +80,27 @@ export function startAgent(starter: AgentStarter, callerPanelId: string | undefi
   return starter.start(callerPanelId, { ...args, ...(placement ? { placement } : {}) })
 }
 
-/** A prompt to a live agent panel: `cate agent send` and the capability. */
-export async function sendToAgent(agents: AgentsCore, panelId: string, prompt: string): Promise<{ ok: true }> {
+/** A prompt to a live agent panel, the one path for every caller
+ *  (`cate agent send`, the capability, other modules): the runtime takes it
+ *  and sends it once the agent can take one. Refused only when nothing ever
+ *  could take it; what happens next shows in the panel's prompts. */
+export function sendToAgent(agents: AgentsCore, starter: AgentStarter, panelId: string, prompt: string, attachments?: string[]): { promptId: string } {
+  refuseStarting(starter, panelId)
+  const state = live(agents, panelId)
+  if (!state.present) throw new RpcError('gone', 'agent-not-running')
+  if (attachments !== undefined && !isPromptAttachments(attachments)) throw new RpcError('rejected', 'invalid-attachments')
+  return { promptId: agents.send(panelId, prompt, attachments).id }
+}
+
+/** Takes back a queued or failed prompt, the one path for every caller
+ *  (`cate agent withdraw`, the capability): its text and attachments. A
+ *  failed prompt's text may still be in the agent's input. */
+export function withdrawFromAgent(agents: AgentsCore, starter: AgentStarter, panelId: string, promptId: string): { prompt: string; attachments: string[] } {
+  refuseStarting(starter, panelId)
   live(agents, panelId)
-  const result = await agents.send(panelId, prompt)
-  if (!result.ok) throw new RpcError('rejected', result.error)
-  return { ok: true }
+  const withdrawn = agents.withdraw(panelId, promptId)
+  if (!withdrawn) throw new RpcError('gone', 'prompt-not-found')
+  return withdrawn
 }
 
 /** Stops a live agent panel's turn: `cate agent interrupt` and the capability. */
@@ -113,10 +135,9 @@ export function createAgentApiHandlers(agents: AgentsCore, starter: AgentStarter
 
     wait: ({ panelIds, timeoutSeconds }, ctx) => waitForAgents(agents, starter, panelIds ?? [], timeoutSeconds, ctx.signal),
 
-    send: async ({ targetPanelId, prompt }) => {
-      refuseStarting(starter, targetPanelId)
-      return sendToAgent(agents, targetPanelId, prompt)
-    },
+    send: async ({ targetPanelId, prompt }) => sendToAgent(agents, starter, targetPanelId, prompt),
+
+    withdraw: async ({ targetPanelId, promptId }) => withdrawFromAgent(agents, starter, targetPanelId, promptId),
 
     interrupt: async ({ targetPanelId }) => {
       refuseStarting(starter, targetPanelId)
@@ -145,13 +166,19 @@ function waitForAgents(agents: AgentsCore, starter: AgentStarter, panelIds: stri
       const picked = panelIds.map((id) => available.find((entry) => entry.panelId === id))
       return picked.every(Boolean) ? picked as AgentSummary[] : null
     }
+    // Ready: at its prompt with its prompts gone out, or one not taken
+    // holding them (it shows why).
+    const ready = (entry: AgentSummary): boolean =>
+      entry.canReceivePrompt && (entry.prompts.length === 0 || entry.prompts.some((prompt) => prompt.state === 'failed'))
     const check = (): void => {
       const entries = selected()
       if (!entries) { finish(new RpcError('gone', 'agent-panel-not-found')); return }
-      if (entries.every((entry) => entry.canReceivePrompt)) finish({ agents: entries, timedOut: false })
+      if (entries.every(ready)) finish({ agents: entries, timedOut: false })
     }
     const onAbort = (): void => finish(new RpcError('timeout', 'wait cancelled'))
-    const off = agents.panels.subscribe(check)
+    const offPanels = agents.panels.subscribe(check)
+    const offPrompts = agents.prompts.onChange(check)
+    const off = (): void => { offPanels(); offPrompts() }
     const timer = setTimeout(() => {
       const available = agentSummaries(agents, starter)
       const entries = panelIds.length > 0 ? available.filter((entry) => panelIds.includes(entry.panelId)) : available

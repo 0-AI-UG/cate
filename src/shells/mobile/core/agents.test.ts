@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
-import type { ChannelEvent } from '@kernel/rpc/contract'
+import { RpcError, type ChannelEvent } from '@kernel/rpc/contract'
 import type { PowerState } from '@runtime/power/contract'
 import { fakeStream } from '@services/agents/client/testing'
 import type { AgentConversation, AgentConversationChange, AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '@services/agents/contract'
@@ -10,6 +10,7 @@ import type { MobileClient } from './boot'
 import { registerPanelDefinitions } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { createActionHandlers, agentWorktreeName, wordsFor } from './actions'
+import { NOT_TAKEN } from './chatTimeline'
 import { createMobileAgents } from './agents'
 import { createMobileConversations } from './conversations'
 import { add, attachTestWorkspace, buildDocument } from '../../../test/clientWorkspace'
@@ -136,12 +137,13 @@ describe('mobile agents', () => {
 })
 
 describe('mobile actions', () => {
-  it('follows a conversation as deltas, with the prompt sent pending until it shows', async () => {
+  it('follows a conversation as deltas, with the prompts the runtime keeps', async () => {
     const conversation = fakeStream<ChannelEvent<AgentConversation, AgentConversationChange>>()
-    const send = vi.fn(async () => ({ ok: true }))
+    const send = vi.fn(async (_: unknown) => ({ promptId: 'a' }))
+    const withdraw = vi.fn(async () => ({ prompt: 'later', attachments: ['/data/photo.jpg'] }))
     const interrupt = vi.fn(async () => { throw new Error('agent-not-running') })
     // Earlier tests' agent panel mirrors follow the resolver too.
-    const runtime = { agents: { panels: () => fakeStream().sub, conversation: vi.fn(() => conversation.sub), send, interrupt } }
+    const runtime = { agents: { panels: () => fakeStream().sub, conversation: vi.fn(() => conversation.sub), send, withdraw, interrupt } }
     const cleanupResolver = setRuntimeResolver((id) => (id === 'ws' ? (runtime as never) : null))
     const events: MobileViewEvent[] = []
     const bridge = (async (method: string, params: { json: string }) => {
@@ -158,42 +160,56 @@ describe('mobile actions', () => {
         messages: [{ role: 'user', text: 'Complete this coding task:\n\nSay hi', createdAt: '2026-01-01T00:00:01.000Z' }, { role: 'assistant', text: 'Hi.' }],
         steps: [],
         stepsSince: '2026-01-01T00:00:00.000Z',
+        prompts: [],
       } })
       expect(events.at(-1)).toEqual({
-        kind: 'chat', loaded: true, status: 'waitingForInput', canReceivePrompt: true, queued: null, turn: null, from: 0,
+        kind: 'chat', loaded: true, status: 'waitingForInput', canReceivePrompt: true, queued: [], failed: [], turn: null, from: 0,
         items: [
           { kind: 'prompt', id: 'm0', text: 'Say hi', sent: true },
           { kind: 'reply', id: 'm1', text: 'Hi.' },
         ],
       })
 
-      await expect(actions['agents.send']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1', prompt: 'go' })).resolves.toEqual({ ok: true })
+      await expect(actions['agents.send']({ workspaceId: 'ws', panelId: 'p1', prompt: 'go' })).resolves.toEqual({ ok: true })
       expect(send).toHaveBeenCalledWith({ panelId: 'p1', prompt: 'go' })
+      // The runtime says it is on its way.
+      conversation.emit({ kind: 'change', rev: 1, change: { prompts: [{ id: 'a', text: 'go', attachments: [], state: 'sending' }] } })
       expect(events.at(-1)).toMatchObject({ turn: { step: null }, from: 2, items: [{ kind: 'prompt', id: 'm2', text: 'go', sent: false }] })
 
-      // The turn shows with the prompt: one event, the same item sent.
-      conversation.emit({ kind: 'change', rev: 1, change: { status: 'running', canReceivePrompt: false, from: 2, messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }] } })
+      // Taken, and the turn shows with the prompt: one event, the same item sent.
+      conversation.emit({ kind: 'change', rev: 2, change: {
+        status: 'running', canReceivePrompt: false, prompts: [], from: 2, messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }],
+      } })
       expect(events.at(-1)).toEqual({
-        kind: 'chat', loaded: true, status: 'running', canReceivePrompt: false, queued: null, turn: { step: null }, from: 2,
+        kind: 'chat', loaded: true, status: 'running', canReceivePrompt: false, queued: [], failed: [], turn: { step: null }, from: 2,
         items: [{ kind: 'prompt', id: 'm2', text: 'go', sent: true }],
       })
 
       // A step of the running turn shows at its end and as what it is doing.
       const step = { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:05.000Z' }
-      conversation.emit({ kind: 'change', rev: 2, change: { stepsFrom: 0, steps: [step] } })
+      conversation.emit({ kind: 'change', rev: 3, change: { stepsFrom: 0, steps: [step] } })
       expect(events.at(-1)).toMatchObject({ from: 3, items: [{ kind: 'steps', id: 's3', steps: [step], ghost: false }], turn: { step } })
 
-      // Queued while it works, sent once it can take a prompt.
-      await actions['agents.queue']({ viewId: 'v', prompt: 'next' })
-      expect(events.at(-1)).toMatchObject({ queued: 'next', from: 4, items: [] })
-      expect(send).toHaveBeenCalledTimes(1)
-      conversation.emit({ kind: 'change', rev: 3, change: { status: 'waitingForInput', canReceivePrompt: true } })
-      expect(send).toHaveBeenLastCalledWith({ panelId: 'p1', prompt: 'next' })
-      expect(events.at(-1)).toMatchObject({
-        queued: null, turn: { step: null }, from: 4, items: [{ kind: 'prompt', id: 'm3', text: 'next', sent: false }],
-      })
-      await actions['agents.queue']({ viewId: 'v', prompt: 'later' })
-      await expect(actions['agents.unqueue']({ viewId: 'v' })).resolves.toBe('later')
+      // Sent while it works: the runtime keeps it queued and shows it to every chat.
+      await expect(actions['agents.send']({ workspaceId: 'ws', panelId: 'p1', prompt: 'later', attachments: ['/data/photo.jpg'] }))
+        .resolves.toEqual({ ok: true })
+      expect(send).toHaveBeenLastCalledWith({ panelId: 'p1', prompt: 'later', attachments: ['/data/photo.jpg'] })
+      conversation.emit({ kind: 'change', rev: 4, change: { prompts: [
+        { id: 'q1', text: 'later', attachments: ['/data/photo.jpg'], state: 'queued' },
+        { id: 'q2', text: '', attachments: ['/data/photo.jpg'], state: 'queued' },
+      ] } })
+      expect(events.at(-1)).toMatchObject({ queued: [{ id: 'q1', text: 'later' }, { id: 'q2', text: 'See the attached files.' }], from: 4, items: [] })
+      await expect(actions['agents.withdraw']({ workspaceId: 'ws', panelId: 'p1', promptId: 'q1' }))
+        .resolves.toEqual({ prompt: 'later', attachments: ['/data/photo.jpg'] })
+      expect(withdraw).toHaveBeenCalledWith({ panelId: 'p1', promptId: 'q1' })
+
+      // Not taken: the chat shows it failed, with what to do.
+      conversation.emit({ kind: 'change', rev: 5, change: { prompts: [{ id: 'b', text: 'again', attachments: [], state: 'failed', error: 'agent-prompt-not-taken: no turn' }] } })
+      expect(events.at(-1)).toMatchObject({ queued: [], failed: [{ id: 'b', text: 'again', message: NOT_TAKEN }] })
+      // Refused only when no agent can take it.
+      send.mockRejectedValueOnce(new RpcError('gone', 'agent-not-running'))
+      await expect(actions['agents.send']({ workspaceId: 'ws', panelId: 'p1', prompt: 'again' }))
+        .resolves.toEqual({ ok: false, message: 'The agent is not running.' })
 
       await expect(actions['agents.interrupt']({ workspaceId: 'ws', panelId: 'p1' }))
         .resolves.toEqual({ ok: false, message: 'The agent is not running.' })
@@ -222,6 +238,8 @@ describe('mobile actions', () => {
     expect(t.runtime.agents.start).toHaveBeenLastCalledWith({
       prompt: 'Fix it', agentId: 'codex', newWorktree: expect.stringMatching(/^agent-fix-it-/),
     })
+    await actions['agents.start']({ workspaceId: 'ws', prompt: '', attachments: ['/data/photo.jpg'], agentId: 'codex', worktree: false })
+    expect(t.runtime.agents.start).toHaveBeenLastCalledWith({ prompt: '', attachments: ['/data/photo.jpg'], agentId: 'codex' })
   })
 
   it('names a new agent worktree after its prompt', () => {
@@ -231,6 +249,7 @@ describe('mobile actions', () => {
 
   it('puts runtime error codes in words', () => {
     expect(wordsFor('agent-busy')).toBe('The agent is in the middle of a turn.')
+    expect(wordsFor(new Error('agent-prompt-not-taken: the agent started no turn'))).toBe(NOT_TAKEN)
     expect(wordsFor(new Error('Something else'))).toBe('Something else')
   })
 })

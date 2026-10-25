@@ -1,6 +1,7 @@
 // A followed agent chat (`agents.watch`): its items as the core lays them out
-// (`chatTimeline.ts`), the agent's state, the prompt queued until the agent
-// can take it, and the turn in progress. Each item is its own object under an
+// (`chatTimeline.ts`), the agent's state, the prompts the runtime keeps on
+// their way (queued until the agent can take one, failed when not taken),
+// and the turn in progress. Each item is its own object under an
 // id that stays while the chat grows: a reply that grows changes that one
 // item's text, so only its row redraws, and the prompt sent from here is the
 // same row once the conversation shows it. Events are decoded off the main
@@ -56,7 +57,8 @@ final class AgentConversation {
     /// The agent's state; nil while the panel hosts no agent.
     private(set) var status: String?
     private(set) var canReceivePrompt = false
-    private(set) var queued: String?
+    private(set) var queued: [OutgoingPrompt] = []
+    private(set) var failed: [OutgoingPrompt] = []
     /// The turn in progress; nil between turns.
     private(set) var turn: ChatTurn?
     /// The runtime's conversation came in (what shows before may be cached).
@@ -105,6 +107,7 @@ final class AgentConversation {
         if status != event.status { status = event.status }
         if canReceivePrompt != event.canReceivePrompt { canReceivePrompt = event.canReceivePrompt }
         if queued != event.queued { queued = event.queued }
+        if failed != event.failed { failed = event.failed }
         if turn != event.turn { turn = event.turn }
         // While it is not read, the items are the prompt on its way at most:
         // what is cached stays.

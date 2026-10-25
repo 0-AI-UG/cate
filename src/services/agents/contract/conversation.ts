@@ -32,6 +32,26 @@ export interface AgentStepGroup {
   ghost: boolean
 }
 
+/** A prompt on its way to a panel's agent, kept by the runtime from the moment
+ *  a client sends it until the agent takes it (then it is gone: the
+ *  conversation shows it as a message) or does not. Runtime memory only. */
+export interface AgentPrompt {
+  /** The runtime's id for it. */
+  id: string
+  /** As it was sent (empty for a prompt of only attachments). */
+  text: string
+  /** Files that go with it: absolute paths on the runtime's machine. */
+  attachments: string[]
+  /** `queued`: waits, in order, for the agent to be able to take a prompt.
+   *  `sending`: typed, waiting for its turn to start (at most one).
+   *  `failed`: typed and no turn started; it may still be in the terminal's
+   *  input, so nothing more is typed until a turn starts or it is
+   *  withdrawn. */
+  state: 'queued' | 'sending' | 'failed'
+  /** Why a `failed` prompt was not taken. */
+  error?: string
+}
+
 /** A panel's agent conversation as the `agents.conversation` channel carries
  *  it: the messages and the agent's state, read together, so a turn that
  *  ended arrives with its reply. A message's id is its index. */
@@ -44,11 +64,13 @@ export interface AgentConversation {
   steps: AgentStep[]
   /** When the runtime began keeping steps (ISO): turns before it have none. */
   stepsSince: string
+  /** The prompts on their way to the agent, oldest first. */
+  prompts: AgentPrompt[]
 }
 
 /** A change to an `AgentConversation`: the messages from index `from` on are
- *  replaced by `messages` (a reply growing, a turn appended), and the steps
- *  from `stepsFrom` on by `steps`. */
+ *  replaced by `messages` (a reply growing, a turn appended), the steps
+ *  from `stepsFrom` on by `steps`, and the prompts all at once. */
 export interface AgentConversationChange {
   status?: AgentStatus | null
   canReceivePrompt?: boolean
@@ -57,6 +79,7 @@ export interface AgentConversationChange {
   stepsFrom?: number
   steps?: AgentStep[]
   stepsSince?: string
+  prompts?: AgentPrompt[]
 }
 
 const sameMessage = (a: AgentConversationMessage, b: AgentConversationMessage): boolean =>
@@ -120,6 +143,7 @@ export function diffAgentConversation(before: AgentConversation, after: AgentCon
     change.steps = after.steps.slice(stepsFrom)
   }
   if (before.stepsSince !== after.stepsSince) change.stepsSince = after.stepsSince
+  if (JSON.stringify(before.prompts) !== JSON.stringify(after.prompts)) change.prompts = after.prompts
   return Object.keys(change).length > 0 ? change : null
 }
 
@@ -134,6 +158,7 @@ export function applyAgentConversationChange(conversation: AgentConversation, ch
       ? [...conversation.steps.slice(0, change.stepsFrom), ...(change.steps ?? [])]
       : conversation.steps,
     stepsSince: change.stepsSince ?? conversation.stepsSince,
+    prompts: change.prompts ?? conversation.prompts,
   }
 }
 

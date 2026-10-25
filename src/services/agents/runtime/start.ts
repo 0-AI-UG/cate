@@ -8,7 +8,7 @@
 import { RpcError } from '@kernel/rpc/contract'
 import type { Point } from '@workspace/canvas/contract'
 import type { PlaceTarget } from '@workspace/document/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, AGENTS, isAgentId, type AgentId, type AgentTypeInfo } from '../contract'
+import { AGENT_DEFS, AGENT_LAUNCH, AGENTS, isAgentId, isPromptAttachments, type AgentId, type AgentTypeInfo } from '../contract'
 import type { AgentsCore } from './core'
 import { evaluateAgentCliHooks, inspectAgentCliHooks, resolveDriverAgent } from './hooks/readiness'
 
@@ -46,6 +46,8 @@ export interface AgentStartPorts {
 export interface AgentStartArgs {
   /** Absent: the agent's interactive session, waiting for its first prompt. */
   prompt?: string
+  /** Files that go with the prompt (then the prompt may be empty). */
+  attachments?: string[]
   agentId?: string
   title?: string
   worktreeId?: string
@@ -121,8 +123,10 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
   return {
     async start(callerPanelId, input) {
       agents.trust.requireTrusted()
-      const prompt = input.prompt?.trim()
-      if (prompt === '') fail('prompt-required')
+      const attachments = input.attachments?.length ? input.attachments : undefined
+      if (attachments && !isPromptAttachments(attachments)) fail('invalid-attachments')
+      const prompt = input.prompt?.trim() ?? (attachments ? '' : undefined)
+      if (prompt === '' && !attachments) fail('prompt-required')
       if (prompt?.includes('\0')) fail('invalid-prompt')
       if (input.agentId !== undefined && !isAgentId(input.agentId)) fail('unsupported-agent')
       if (input.worktreeId && input.newWorktree) fail('choose-worktreeId-or-newWorktree')
@@ -137,7 +141,7 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
 
       const created = args.newWorktree ? await ports.worktrees.create(args.newWorktree) : null
       const checkout = created ? { cwd: created.path, worktreeId: created.id } : existing!
-      const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt ? { prompt } : {}) } }
+      const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt !== undefined ? { prompt } : {}), ...(attachments ? { attachments } : {}) } }
       try {
         if (args.terminalPanelId) {
           // Reuse the panel, not its shell process: restarting the PTY

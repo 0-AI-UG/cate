@@ -1,13 +1,15 @@
 // The iOS core's ClientUi: links leave through the app's system browser.
 // The app asks its own questions natively, never through the core, so the
-// kernel's questions have their safe answers here. The desktop views' own
-// questions (closing a terminal, a link's target, a save path) are asked
-// only by those views and are not part of this one.
+// kernel's questions have their safe answers here; where a tapped link opens
+// waits in the state for the app to ask (`MobileLinks`). The desktop views'
+// own questions (closing a terminal, a save path) are asked only by those
+// views and are not part of this one.
 
 import type { ClientUi } from '@kernel/interaction/contract'
 import type { MobileBridge } from '../contract'
+import type { MobileLinks } from './links'
 
-export function createMobileClientUi(bridge: MobileBridge): ClientUi {
+export function createMobileClientUi(bridge: MobileBridge, links: MobileLinks): ClientUi {
   const ui = {
     openExternal: (url: string) => { void bridge('app.openUrl', { url }).catch(() => {}) },
     openSettings: () => {},
@@ -15,6 +17,7 @@ export function createMobileClientUi(bridge: MobileBridge): ClientUi {
     showError: (message: string) => { console.warn(message) },
     showContextMenu: async () => null,
     confirmUnsavedChanges: async () => 'cancel' as const,
+    promptLinkOpen: (url: string) => links.ask(url),
   }
   return ui as unknown as ClientUi
 }

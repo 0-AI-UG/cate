@@ -1,7 +1,7 @@
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import { applyAgentPanelStatesChange, type agentsCapability } from '../contract'
 import type { AgentsCore } from './core'
-import { interruptAgent, sendToAgent, startAgent } from './api'
+import { interruptAgent, sendToAgent, startAgent, withdrawFromAgent } from './api'
 import type { AgentStarter } from './start'
 import type { AgentUsageService } from './usage/usage'
 
@@ -12,7 +12,8 @@ export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter, 
     usageLimits: (args) => usage.limits(args?.refresh === true),
     start: (request) => startAgent(starter, undefined, request),
     types: () => starter.types(),
-    send: ({ panelId, prompt }) => sendToAgent(agents, panelId, prompt),
+    send: ({ panelId, prompt, attachments }) => sendToAgent(agents, starter, panelId, prompt, attachments),
+    withdraw: ({ panelId, promptId }) => withdrawFromAgent(agents, starter, panelId, promptId),
     interrupt: ({ panelId }) => interruptAgent(agents, panelId),
     inspectHooks: ({ cwd }) => agents.inspectHooks(cwd),
     panel: ({ panelId }) => agents.panel(panelId),

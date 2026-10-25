@@ -2,8 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type MouseEven
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fsClient } from '@workspace/files/client'
-import type { LinkTarget } from '@client/host'
-import { openClickedLink } from '../../app/links'
+import { markdownLinkTarget, markdownPath, openClickedLink } from '@client/host'
 import MarkdownCodeBlock from './MarkdownCodeBlock'
 
 /** Where the previewed file lives: its images and links are workspace files
@@ -13,22 +12,6 @@ const PreviewFile = createContext<{ workspaceId: string; panelId: string; filePa
 const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
   svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif',
-}
-
-/** The workspace path an image `src` or a link names, relative to the
- *  markdown file; null for web and inline images, which load as they are. */
-export function markdownPath(src: string, filePath: string): string | null {
-  if (/^(https?:|data:|blob:)/i.test(src)) return null
-  let path = src.replace(/[?#].*$/, '')
-  try { path = decodeURI(path) } catch { /* keep it as written */ }
-  if (/^file:\/\//i.test(path)) path = path.slice('file://'.length).replace(/^\/([A-Za-z]:)/, '$1')
-  if (path.startsWith('/') || /^[A-Za-z]:[/\\]/.test(path)) return path
-  const segments = filePath.replace(/\\/g, '/').split('/').slice(0, -1)
-  for (const part of path.replace(/\\/g, '/').split('/')) {
-    if (part === '..') segments.pop()
-    else if (part && part !== '.') segments.push(part)
-  }
-  return segments.join('/')
 }
 
 /** A markdown image: workspace files are read through the workspace's
@@ -55,15 +38,6 @@ function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   }, [path, file])
   const shown = path ? url : src
   return shown ? <img src={shown} alt={alt ?? ''} className="max-w-full rounded-md my-2" /> : <span className="text-muted">{alt}</span>
-}
-
-/** What a clicked `href` opens: a web page, or a file relative to the
- *  markdown file. Null for an in-page anchor and other schemes. */
-export function markdownLinkTarget(href: string, filePath: string): LinkTarget | null {
-  if (/^https?:/i.test(href)) return { kind: 'url', url: href }
-  if (href.startsWith('#') || (/^[a-z][a-z\d+.-]+:/i.test(href) && !/^file:/i.test(href))) return null
-  const path = markdownPath(href, filePath)
-  return path ? { kind: 'file', path } : null
 }
 
 /** A markdown link: it opens through the app's link handling, never by

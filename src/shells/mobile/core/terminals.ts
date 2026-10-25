@@ -6,7 +6,7 @@
 // grid, and fits the PTY to the grid it holds when the person asks.
 
 import type { WorkspaceConnection, SessionHandle } from '@client/connections'
-import { openLink } from '@client/host'
+import { openClickedLink } from '@client/host'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
 import { bindTerminal, type TerminalBinding, type XtermLike } from '@services/terminal/client'
 import { osc8Target } from '@services/terminal/contract'
@@ -131,7 +131,7 @@ export function createMobileTerminals(client: MobileClient, bridge: MobileBridge
       },
       openLink(uri) {
         const target = osc8Target(uri)
-        if (target) void openLink(workspaceId, target, { from: panelId, external: true }).catch(() => {})
+        if (target) void openClickedLink(workspaceId, target, { from: panelId }).catch(() => {})
       },
       close() {
         if (closed) return

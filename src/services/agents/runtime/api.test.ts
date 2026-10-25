@@ -105,7 +105,7 @@ describe('cate.agent.*', () => {
     terminal.set('term', { status: 'running', canReceivePrompt: false })
     terminal.set('idle-shell', { status: 'notRunning', present: true })
     expect(await handlers.list({}, ctx())).toEqual([
-      { panelId: 'term', title: 'Backend', agentId: 'codex', agentName: 'Codex', state: 'running', canReceivePrompt: false },
+      { panelId: 'term', title: 'Backend', agentId: 'codex', agentName: 'Codex', state: 'running', canReceivePrompt: false, prompts: [] },
     ])
   })
 
@@ -119,12 +119,64 @@ describe('cate.agent.*', () => {
     await expect(rpcError(handlers.read({ panelId: 'none' }, ctx()))).resolves.toBe('agent-panel-not-found')
   })
 
-  it('sends to the terminal and turns a refusal into an error', async () => {
-    terminal.set('term', {})
-    await expect(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx())).resolves.toEqual({ ok: true })
-    expect(terminal.terminals.send).toHaveBeenCalledWith('term', 'go')
-    vi.mocked(terminal.terminals.send).mockResolvedValueOnce({ ok: false, error: 'agent-busy' })
-    await expect(rpcError(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx()))).resolves.toBe('agent-busy')
+  it('takes a prompt and shows its outcome as the panel\'s prompts', async () => {
+    terminal.set('term', { status: 'running', canReceivePrompt: false })
+    // Busy is no refusal: it waits for the agent.
+    const { promptId } = await handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx()) as { promptId: string }
+    expect(terminal.terminals.send).not.toHaveBeenCalled()
+    expect(await handlers.list({}, ctx())).toMatchObject([{ panelId: 'term', prompts: [{ id: promptId, text: 'go', state: 'queued' }] }])
+    // Typed and not taken: read shows it failed, with why.
+    vi.mocked(terminal.terminals.send).mockResolvedValueOnce({ ok: false, error: 'agent-prompt-not-taken', typed: true })
+    terminal.set('term', { status: 'waitingForInput', canReceivePrompt: true, session: { agentId: 'codex', sessionId: 's', cwd: '/repo' } })
+    expect(terminal.terminals.send).toHaveBeenCalledWith('term', 'go', [])
+    await vi.waitFor(async () => expect((await handlers.read({ panelId: 'term' }, ctx()) as { prompts: unknown }).prompts)
+      .toEqual([{ id: promptId, text: 'go', state: 'failed', error: 'agent-prompt-not-taken' }]))
+    // Refused only when nothing could ever take it.
+    terminal.set('gone', { status: 'waitingForInput', present: false })
+    await expect(rpcError(handlers.send({ targetPanelId: 'gone', prompt: 'go' }, ctx()))).resolves.toBe('agent-not-running')
+  })
+
+  it('sends from the CLI and from a client through the same function, with the same result', async () => {
+    terminal.set('term', { status: 'running', canReceivePrompt: false })
+    const impl = agentsCapabilityImpl(agents, starter, {} as never)
+    const fromCli = await handlers.send({ targetPanelId: 'term', prompt: 'one' }, ctx()) as { promptId: string }
+    const fromClient = await impl.send({ panelId: 'term', prompt: 'two' }, {} as never)
+    expect(Object.keys(fromCli)).toEqual(['promptId'])
+    expect(Object.keys(fromClient)).toEqual(['promptId'])
+    expect(agents.prompts.of('term').map((prompt) => [prompt.id, prompt.text, prompt.state]))
+      .toEqual([[fromCli.promptId, 'one', 'queued'], [fromClient.promptId, 'two', 'queued']])
+    // And both refuse an agent that is still starting the same way.
+    vi.mocked(starter.starting).mockReturnValue([{ panelId: 'term', agentId: 'codex' }])
+    await expect(rpcError(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx()))).resolves.toMatch(/^agent-starting/)
+    await expect(rpcError(Promise.resolve().then(() => impl.send({ panelId: 'term', prompt: 'go' }, {} as never)))).resolves.toMatch(/^agent-starting/)
+  })
+
+  it('takes a prompt back from the CLI and from a client through the same function', async () => {
+    terminal.set('term', { status: 'running', canReceivePrompt: false })
+    const impl = agentsCapabilityImpl(agents, starter, {} as never)
+    const one = await handlers.send({ targetPanelId: 'term', prompt: 'one' }, ctx()) as { promptId: string }
+    const two = await impl.send({ panelId: 'term', prompt: 'two', attachments: ['/data/photo.jpg'] }, {} as never)
+    await expect(handlers.withdraw({ targetPanelId: 'term', promptId: two.promptId }, ctx())).resolves.toEqual({ prompt: 'two', attachments: ['/data/photo.jpg'] })
+    await expect(Promise.resolve(impl.withdraw({ panelId: 'term', promptId: one.promptId }, {} as never))).resolves.toEqual({ prompt: 'one', attachments: [] })
+    expect(agents.prompts.of('term')).toEqual([])
+    await expect(rpcError(handlers.withdraw({ targetPanelId: 'term', promptId: one.promptId }, ctx()))).resolves.toBe('prompt-not-found')
+    await expect(rpcError(Promise.resolve().then(() => impl.withdraw({ panelId: 'term', promptId: one.promptId }, {} as never)))).resolves.toBe('prompt-not-found')
+  })
+
+  it('waits until the prompts sent went out, or one was not taken', async () => {
+    terminal.set('term', { status: 'running', canReceivePrompt: false })
+    await handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx())
+    let done = false
+    const waiting = handlers.wait({ panelIds: ['term'], timeoutSeconds: 5 }, ctx())
+    void Promise.resolve(waiting).then(() => { done = true })
+    let settle = (_: { ok: false; error: string; typed: true }) => {}
+    vi.mocked(terminal.terminals.send).mockImplementationOnce(() => new Promise((resolve) => { settle = resolve }))
+    terminal.set('term', { status: 'waitingForInput', canReceivePrompt: true })
+    // At its prompt, but the prompt is on its way: not ready yet.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(done).toBe(false)
+    settle({ ok: false, error: 'agent-prompt-not-taken', typed: true })
+    await expect(waiting).resolves.toMatchObject({ timedOut: false, agents: [{ prompts: [{ text: 'go', state: 'failed' }] }] })
   })
 
   it('tells a terminal with no agent apart from a missing panel', async () => {
@@ -136,7 +188,7 @@ describe('cate.agent.*', () => {
   it('lists a started agent as starting and waits for it until its CLI is up', async () => {
     vi.mocked(starter.starting).mockReturnValue([{ panelId: 'term', agentId: 'codex' }])
     expect(await handlers.list({}, ctx())).toEqual([
-      { panelId: 'term', title: 'Backend', agentId: 'codex', agentName: 'Codex', state: 'starting', canReceivePrompt: false },
+      { panelId: 'term', title: 'Backend', agentId: 'codex', agentName: 'Codex', state: 'starting', canReceivePrompt: false, prompts: [] },
     ])
     await expect(rpcError(handlers.send({ targetPanelId: 'term', prompt: 'go' }, ctx()))).resolves.toMatch(/^agent-starting/)
 

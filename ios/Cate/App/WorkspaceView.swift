@@ -253,13 +253,13 @@ struct SettingsRoute: Hashable {
     let workspaceId: String
 }
 
-/// Settings: the workspace's connection, who else is here, the computer it
-/// runs on and disconnecting; then this device's own.
+/// A workspace's settings: its connection, who else is here, the computer it
+/// runs on and disconnecting. This device's own are on the home screen
+/// (`DeviceSettingsView`).
 struct SettingsView: View {
     @Environment(CoreHost.self) private var core
     let workspaceId: String
     @State private var disconnecting: String?
-    @AppStorage(MapGrid.key) private var grid = MapGrid.lines
 
     var body: some View {
         let workspace = core.workspace(workspaceId)
@@ -287,64 +287,9 @@ struct SettingsView: View {
                     }
                 }
             }
-            Section("This device") {
-                Picker(selection: $grid) {
-                    ForEach(MapGrid.allCases, id: \.self) { Text($0.title).tag($0) }
-                } label: {
-                    Label("Canvas grid", systemImage: "grid")
-                }
-                NavigationLink {
-                    SavedRelationLabels()
-                } label: {
-                    LabeledContent {
-                        Text("\(core.savedRelationLabels.count)")
-                    } label: {
-                        Label("Saved connections", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                    }
-                }
-            }
         }
         .navigationTitle("Settings")
         .disconnectDialog($disconnecting)
-    }
-}
-
-/// This device's saved connection labels: renamed with a tap, removed with a
-/// swipe. Connections keep the labels they have.
-private struct SavedRelationLabels: View {
-    @Environment(CoreHost.self) private var core
-    @State private var renaming: String?
-    @State private var draft = ""
-
-    var body: some View {
-        List {
-            ForEach(core.savedRelationLabels, id: \.self) { label in
-                Button(label) {
-                    draft = label
-                    renaming = label
-                }
-                .foregroundStyle(.primary)
-            }
-            .onDelete { offsets in
-                for label in offsets.map({ core.savedRelationLabels[$0] }) {
-                    Task { await core.call("relations.forgetLabel", ["label": label]) }
-                }
-            }
-        }
-        .overlay {
-            if core.savedRelationLabels.isEmpty {
-                ContentUnavailableView("No saved connections", systemImage: "point.topleft.down.to.point.bottomright.curvepath", description: Text("Give a connection words of its own with Custom… in its menu."))
-            }
-        }
-        .navigationTitle("Saved Connections")
-        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }), presenting: renaming) { label in
-            TextField("Label", text: $draft)
-            Button("Save") {
-                Task { await core.call("relations.renameLabel", ["label": label, "to": draft]) }
-            }
-            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-            Button("Cancel", role: .cancel) {}
-        }
     }
 }
 

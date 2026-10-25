@@ -317,6 +317,20 @@ describe('runCli', () => {
     expect(out).toEqual(['panel-01'])
   })
 
+  it('sends a prompt and prints its id; list and read show the prompts on their way', async () => {
+    const sent = deps({ call: vi.fn(async () => ({ promptId: 'prompt-1' })) })
+    await runCli(['agent', 'send', 'panel-1', 'Add', 'a', 'test'], CATE_API, sent.d)
+    expect(sent.out).toEqual(['prompt-1'])
+    const prompts = [{ id: 'prompt-1abcdef', text: 'Add a test', state: 'failed', error: 'agent-prompt-not-taken' }, { id: 'prompt-2', text: 'Then docs', state: 'queued' }]
+    const listed = deps({ call: async () => [{ panelId: 'panel-0123456789', title: 'Backend', state: 'waitingForInput', prompts }] })
+    await runCli(['agent', 'list'], CATE_API, listed.d)
+    expect(listed.out[0]).toMatch(/PROMPTS[\s\S]*1 failed, 1 queued/)
+    const read = deps({ call: async () => ({ panelId: 'panel-1', state: 'waitingForInput', messages: [], prompts }) })
+    await runCli(['agent', 'read', 'panel-1'], CATE_API, read.d)
+    expect(read.out[0]).toContain('[prompt · failed · prompt-1]\nAdd a test\n(agent-prompt-not-taken)')
+    expect(read.out[0]).toContain('[prompt · queued · prompt-2]\nThen docs')
+  })
+
   it('formats plain results as key and value lines', async () => {
     const titled = deps({ call: async () => ({ panelId: 'p-1', title: 'API tests' }) })
     await runCli(['panel', 'title', 'API', 'tests'], CATE_API, titled.d)

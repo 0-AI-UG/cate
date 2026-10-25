@@ -126,6 +126,8 @@ private struct PanelTitle: ViewModifier {
                                 .frame(width: 18, height: 18)
                             if let agent = mark.agent { AgentStatusMark(status: agent.status, size: 11) }
                             Text(words).font(.headline).lineLimit(1)
+                                .shimmering(mark.agent?.status == "running")
+                                .accessibilityValue(mark.agent?.status == "running" ? "Agent running" : "")
                         }
                         .accessibilityElement(children: .combine)
                     }

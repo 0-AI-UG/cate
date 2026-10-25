@@ -99,7 +99,7 @@ export const agentApi = defineCateApi(
     wait: {
       access: 'read',
       handler: 'service',
-      summary: 'Wait until the agent panels are ready for a prompt',
+      summary: 'Wait until the agent panels are ready for a prompt and the prompts sent to them went out (or one was not taken)',
       args: {
         panelIds: opt(arr(panel())).rest('panelId').help('Agent panels to wait for (default: every live agent panel)'),
         timeoutSeconds: waitSeconds(AGENT_WAIT_DEFAULT_SECONDS)
@@ -114,13 +114,22 @@ export const agentApi = defineCateApi(
     send: {
       access: 'control',
       handler: 'service',
-      summary: 'Send a prompt to an agent panel at its prompt; succeeds once the agent started its turn',
+      summary: 'Send a prompt to an agent panel: it goes out once the agent can take one, after those before it; prints its id',
       args: {
         targetPanelId: panel().pos('panelId').flag('panel').help('Agent panel id or unique prefix, from cate agent list'),
         prompt: str.nonEmpty().rest('prompt').help('The prompt'),
       },
-      // Waits up to 10 s for the agent's turn to start.
-      timeoutMs: 20_000,
+      format: 'promptId',
+    },
+    withdraw: {
+      access: 'control',
+      handler: 'service',
+      summary: 'Take back a queued or failed prompt (a failed one\'s text may still be in the agent\'s input); prints its text',
+      args: {
+        targetPanelId: panel().pos('panelId').flag('panel').help('Agent panel id or unique prefix, from cate agent list'),
+        promptId: str.nonEmpty().pos('promptId').help('The prompt id, from cate agent send or cate agent read'),
+      },
+      format: 'withdrawnPrompt',
     },
     interrupt: {
       access: 'control',

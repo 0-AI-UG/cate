@@ -13,6 +13,7 @@ import {
 import { createAgentConversations } from './conversations'
 import type { AgentTerminals } from './core'
 import { createAgentPanels } from './panels'
+import { createAgentPrompts } from './prompts'
 
 const session = { agentId: 'claude-code' as const, sessionId: 's1', cwd: '/repo' }
 
@@ -36,6 +37,7 @@ function setup() {
   }
   const step = (panelId: string, next: AgentStep) => { for (const listener of stepListeners) listener(panelId, next) }
   const panels = createAgentPanels(terminals)
+  const prompts = createAgentPrompts({ panels, terminals })
   const setStatus = (status: AgentStatus) => {
     states.set('p1', {
       panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', contextPolicy: null, status,
@@ -52,7 +54,7 @@ function setup() {
     states.delete('p1')
     for (const listener of listeners) listener('p1')
   }
-  return { panels, terminals, conversation, setStatus, write, step, remove }
+  return { panels, terminals, prompts, conversation, setStatus, write, step, remove }
 }
 
 describe('agent conversations', () => {
@@ -60,15 +62,15 @@ describe('agent conversations', () => {
   afterEach(() => { vi.useRealTimers() })
 
   it('sends the conversation once read, then each change while the agent works', async () => {
-    const { panels, terminals, setStatus, write } = setup()
+    const { panels, terminals, prompts, setStatus, write } = setup()
     setStatus('running')
     write([{ role: 'user', text: 'fix it' }])
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 100, settleMs: [] })
     const seen: Array<{ conversation: AgentConversation; change: AgentConversationChange | null }> = []
     conversations.watch('p1', (conversation, change) => { seen.push({ conversation, change }) })
     await vi.advanceTimersByTimeAsync(0)
     expect(seen).toEqual([{
-      conversation: { status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'fix it' }], steps: [], stepsSince: expect.any(String) },
+      conversation: { status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'fix it' }], steps: [], stepsSince: expect.any(String), prompts: [] },
       change: null,
     }])
 
@@ -83,9 +85,9 @@ describe('agent conversations', () => {
   })
 
   it('sends a turn that ended with its reply', async () => {
-    const { panels, terminals, setStatus, write } = setup()
+    const { panels, terminals, prompts, setStatus, write } = setup()
     setStatus('running')
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 10_000, settleMs: [] })
     const changes: AgentConversationChange[] = []
     conversations.watch('p1', (_conversation, change) => { if (change) changes.push(change) })
     await vi.advanceTimersByTimeAsync(0)
@@ -97,10 +99,10 @@ describe('agent conversations', () => {
   })
 
   it('holds a turn\'s end until its reply is read, then sends both together', async () => {
-    const { panels, terminals, setStatus, write } = setup()
+    const { panels, terminals, prompts, setStatus, write } = setup()
     setStatus('running')
     write([{ role: 'user', text: 'fix it' }])
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [], endMs: 1_000 })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 100, settleMs: [], endMs: 1_000 })
     const changes: AgentConversationChange[] = []
     conversations.watch('p1', (_conversation, change) => { if (change) changes.push(change) })
     await vi.advanceTimersByTimeAsync(0)
@@ -114,10 +116,10 @@ describe('agent conversations', () => {
   })
 
   it('waits for a reply after the last step, and ends without one after a while', async () => {
-    const { panels, terminals, setStatus, write, step } = setup()
+    const { panels, terminals, prompts, setStatus, write, step } = setup()
     setStatus('running')
     write([{ role: 'user', text: 'fix it', createdAt: '2026-01-01T00:00:00.000Z' }, { role: 'assistant', text: 'Looking', createdAt: '2026-01-01T00:00:01.000Z' }])
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [], endMs: 1_000 })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 100, settleMs: [], endMs: 1_000 })
     const changes: AgentConversationChange[] = []
     conversations.watch('p1', (_conversation, change) => { if (change) changes.push(change) })
     await vi.advanceTimersByTimeAsync(0)
@@ -132,9 +134,9 @@ describe('agent conversations', () => {
   })
 
   it('keeps the steps of every panel and sends them as they come', async () => {
-    const { panels, terminals, conversation, setStatus, step } = setup()
+    const { panels, terminals, prompts, conversation, setStatus, step } = setup()
     setStatus('running')
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 10_000, settleMs: [] })
     const first: AgentStep = { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:01.000Z' }
     step('p1', first)
     const changes: AgentConversationChange[] = []
@@ -152,10 +154,25 @@ describe('agent conversations', () => {
     conversations.dispose()
   })
 
-  it('drops the steps of a panel that hosts no agent any more', async () => {
-    const { panels, terminals, setStatus, step, remove } = setup()
+  it('sends the prompts on their way to the agent as they change, without reading the store', async () => {
+    const { panels, terminals, prompts, conversation, setStatus } = setup()
     setStatus('running')
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 10_000, settleMs: [] })
+    const changes: AgentConversationChange[] = []
+    conversations.watch('p1', (_conversation, change) => { if (change) changes.push(change) })
+    await vi.advanceTimersByTimeAsync(0)
+    const queued = prompts.send('p1', 'next')
+    expect(changes).toEqual([{ prompts: [queued] }])
+    prompts.withdraw('p1', queued.id)
+    expect(changes.at(-1)).toEqual({ prompts: [] })
+    expect(conversation).toHaveBeenCalledTimes(1)
+    conversations.dispose()
+  })
+
+  it('drops the steps of a panel that hosts no agent any more', async () => {
+    const { panels, terminals, prompts, setStatus, step, remove } = setup()
+    setStatus('running')
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 10_000, settleMs: [] })
     step('p1', { tool: 'Bash', subject: 'npm test', at: '2026-01-01T00:00:01.000Z' })
     remove()
     let read: AgentConversation | null = null
@@ -166,9 +183,9 @@ describe('agent conversations', () => {
   })
 
   it('past the kept steps, a new step does not send them all again', async () => {
-    const { panels, terminals, setStatus, step } = setup()
+    const { panels, terminals, prompts, setStatus, step } = setup()
     setStatus('running')
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 10_000, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 10_000, settleMs: [] })
     const changes: AgentConversationChange[] = []
     let read: AgentConversation | null = null
     conversations.watch('p1', (conversation, change) => {
@@ -187,9 +204,9 @@ describe('agent conversations', () => {
   })
 
   it('reads the store only when its stamp moved', async () => {
-    const { panels, terminals, conversation, setStatus } = setup()
+    const { panels, terminals, prompts, conversation, setStatus } = setup()
     setStatus('running')
-    const conversations = createAgentConversations({ panels, terminals, workingMs: 100, settleMs: [] })
+    const conversations = createAgentConversations({ panels, terminals, prompts, workingMs: 100, settleMs: [] })
     const stop = conversations.watch('p1', () => {})
     await vi.advanceTimersByTimeAsync(500)
     expect(conversation).toHaveBeenCalledTimes(1)
@@ -201,7 +218,7 @@ describe('agent conversations', () => {
 
 describe('conversation changes', () => {
   const base: AgentConversation = {
-    status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'b' }], steps: [], stepsSince: 'x',
+    status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'b' }], steps: [], stepsSince: 'x', prompts: [],
   }
 
   it('round-trips through apply', () => {
