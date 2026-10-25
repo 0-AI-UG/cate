@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.4] - 2026-10-25
+
+### Changed
+
+- **Browser control**: an agent working in a browser no longer takes your keyboard focus, so typing in a terminal or editor, in the same workspace or another, stays there and no longer cancels the agent. Scrolling a page an agent is using doesn't cancel it either; clicking or typing in that page still takes over.
+- **Browser screenshots** work while the browser is off screen (in another workspace, scrolled off the canvas, or behind another tab). The page is drawn unseen for the call.
+- **Dropdowns**: agents see a dropdown's options in snapshots and pick one by its label or value (`cate browser select`), or by clicking the option. They no longer open the system menu.
+
 ## [2.1.0-beta.3] - 2026-10-25
 
 ### Added
