@@ -275,9 +275,14 @@ describe('presence', () => {
     expect(presence.activeClient()?.clientId).toBe('cb')
     expect(presence.clients().find((c) => c.clientId === 'ca')).toMatchObject({ attentive: false, focused: 'p1' })
 
+    // Input the person gave is activity.
+    now = 4000
+    await a.presence.report({ active: true })
+    expect(presence.activeClient()).toMatchObject({ clientId: 'ca', lastActiveAt: 4000, focused: 'p1' })
+
     // Sending a document op is activity too.
-    await a.doc.apply({ op: op('ca', 1, addPanel('p9')) })
-    expect(presence.activeClient()?.clientId).toBe('ca')
+    await b.doc.apply({ op: op('cb', 1, addPanel('p9')) })
+    expect(presence.activeClient()?.clientId).toBe('cb')
 
     const events: string[][] = []
     b.presence.subscribe().onEvent((e) => events.push(e.clients.map((c) => c.clientId)))

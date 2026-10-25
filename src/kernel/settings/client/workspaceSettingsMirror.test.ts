@@ -41,18 +41,18 @@ describe('workspace settings mirror', () => {
     const mirror = createWorkspaceSettingsMirror(remote, workspaceSettingsTable)
     await mirror.ready
     const seen = vi.fn()
-    mirror.subscribe((v) => seen(v.runtimeLifetime))
+    mirror.subscribe((v) => seen(v.runtimeNetwork))
 
-    const done = mirror.set('runtimeLifetime', 'keepRunning')
-    expect(mirror.get('runtimeLifetime')).toBe('keepRunning')
+    const done = mirror.set('runtimeNetwork', 'sameNetwork')
+    expect(mirror.get('runtimeNetwork')).toBe('sameNetwork')
     // Another client's change to the same key does not override the pending edit.
-    change({ runtimeLifetime: 'stopWhenIdle' })
-    expect(mirror.get('runtimeLifetime')).toBe('keepRunning')
-    change({ runtimeLifetime: 'keepRunning' })
+    change({ runtimeNetwork: 'cateConnect' })
+    expect(mirror.get('runtimeNetwork')).toBe('sameNetwork')
+    change({ runtimeNetwork: 'sameNetwork' })
     calls[0].resolve()
     await done
-    expect(mirror.get('runtimeLifetime')).toBe('keepRunning')
-    expect(seen).toHaveBeenCalledWith('keepRunning')
+    expect(mirror.get('runtimeNetwork')).toBe('sameNetwork')
+    expect(seen).toHaveBeenCalledWith('sameNetwork')
   })
 
   it('reverts a refused edit', async () => {

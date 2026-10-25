@@ -38,7 +38,7 @@ export function powerHelperCommand(platform: NodeJS.Platform, pid: number): Help
 }
 
 export interface PowerDeps {
-  /** True while work runs (busy terminals, running agents). */
+  /** True while a `keepRunningWhile` trigger holds (architecture 7.4). */
   busy: () => boolean
   platform?: NodeJS.Platform
   pid?: number

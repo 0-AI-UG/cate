@@ -1,31 +1,23 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { RuntimeLifetime, RuntimeNetwork } from '../contract'
-import { createBusyRegistry } from './busy'
 import { createLifetime, IDLE_GRACE_MS } from './lifetime'
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
-function setup(initial: { lifetime?: RuntimeLifetime; network?: RuntimeNetwork; clients?: number } = {}) {
-  const state = { lifetime: initial.lifetime ?? 'stopWhenIdle', network: initial.network ?? 'off', clients: initial.clients ?? 0 }
+function setup(initial: { held?: boolean; clients?: number } = {}) {
+  const state = { held: initial.held ?? false, clients: initial.clients ?? 0 }
   const settingsListeners = new Set<() => void>()
   const clientListeners = new Set<() => void>()
-  const busy = createBusyRegistry()
   const stop = vi.fn()
   const lifetime = createLifetime({
-    settings: {
-      runtimeLifetime: () => state.lifetime as RuntimeLifetime,
-      runtimeNetwork: () => state.network as RuntimeNetwork,
-      subscribe: (cb) => { settingsListeners.add(cb); return () => settingsListeners.delete(cb) },
-    },
-    busy: busy.busy,
+    held: () => state.held,
+    onSettingsChanged: (cb) => { settingsListeners.add(cb); return () => settingsListeners.delete(cb) },
     clients: () => state.clients,
     onClientsChanged: (cb) => { clientListeners.add(cb); return () => clientListeners.delete(cb) },
     stop,
   })
   return {
     state,
-    busy,
     stop,
     lifetime,
     settingsChanged: () => settingsListeners.forEach((cb) => cb()),
@@ -57,39 +49,32 @@ it('a client connecting cancels the countdown; leaving restarts it', () => {
   expect(t.stop).toHaveBeenCalledTimes(1)
 })
 
-it('running work keeps it alive, noticed by the poll', () => {
-  const t = setup({ clients: 1 })
-  let working = true
-  t.busy.contribute(() => working)
+it('holding keeps it alive, noticed by the poll', () => {
+  const t = setup({ clients: 1, held: true })
   t.state.clients = 0
   t.clientsChanged()
   vi.advanceTimersByTime(IDLE_GRACE_MS * 3)
   expect(t.stop).not.toHaveBeenCalled()
-  working = false
+  t.state.held = false
   // The next poll starts the countdown.
   vi.advanceTimersByTime(30_000 + IDLE_GRACE_MS)
   expect(t.stop).toHaveBeenCalledTimes(1)
 })
 
-it('work that starts during the countdown is re-checked before stopping', () => {
+it('a hold that starts during the countdown is re-checked before stopping', () => {
   const t = setup()
-  let working = false
-  t.busy.contribute(() => working)
   vi.advanceTimersByTime(IDLE_GRACE_MS - 10)
-  working = true
+  t.state.held = true
   vi.advanceTimersByTime(10)
   expect(t.stop).not.toHaveBeenCalled()
 })
 
-it('keepRunning and network access never stop', () => {
-  const keep = setup({ lifetime: 'keepRunning' })
-  const network = setup({ network: 'sameNetwork' })
+it('a settings change re-checks at once', () => {
+  const t = setup({ held: true })
   vi.advanceTimersByTime(IDLE_GRACE_MS * 10)
-  expect(keep.stop).not.toHaveBeenCalled()
-  expect(network.stop).not.toHaveBeenCalled()
-
-  keep.state.lifetime = 'stopWhenIdle'
-  keep.settingsChanged()
+  expect(t.stop).not.toHaveBeenCalled()
+  t.state.held = false
+  t.settingsChanged()
   vi.advanceTimersByTime(IDLE_GRACE_MS)
-  expect(keep.stop).toHaveBeenCalledTimes(1)
+  expect(t.stop).toHaveBeenCalledTimes(1)
 })

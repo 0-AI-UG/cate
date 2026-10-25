@@ -110,6 +110,8 @@ export interface AgentsCore extends AgentsBase {
   interrupt(panelId: string): Promise<AgentSendResult>
   /** Panels whose agent is running a turn. */
   busy(): string[]
+  /** Panels an agent is present in, busy or not. */
+  hosting(): string[]
   /** Recorded agent edits in a checkout, each with the panels that showed
    *  its session; an unchanged revision omits records. */
   changes(cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot>
@@ -174,6 +176,7 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
       return terminals.interrupt(panelId)
     },
     busy: () => Object.values(panels.all()).filter((state) => state.status === 'running').map((state) => state.panelId),
+    hosting: () => Object.values(panels.all()).filter((state) => state.present).map((state) => state.panelId),
     changes,
     dispose() {
       conversations.dispose()

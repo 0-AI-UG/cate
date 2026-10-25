@@ -56,6 +56,8 @@ export interface PresenceReport {
   /** Not activity by itself: a window losing focus does not make its client
    *  the most recently active one. */
   attentive?: boolean
+  /** The person gave input (sent throttled); counts as activity. */
+  active?: true
 }
 
 export type PresenceEvent = { clients: PresenceClient[]; activeClientId: ClientId | null }

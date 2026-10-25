@@ -1,5 +1,5 @@
 // Quitting closes windows and connections only; every runtime then follows
-// its `runtimeLifetime` (architecture 15). So the only quit blockers are
+// its `keepRunningWhile` (architecture 15). So the only quit blockers are
 // client-local work (a file drop still importing), which renderers report, and
 // the "Warn before quit" setting.
 

@@ -93,7 +93,7 @@ export function createPresence(deps: { lifecycle: LifecycleBus; now?: () => numb
         ? entry.info.focused
         : typeof report.focused === 'string' ? report.focused : null
       const attentive = typeof report.attentive === 'boolean' ? report.attentive : entry.info.attentive
-      if (report.viewing !== undefined || report.focused !== undefined) activate(entry)
+      if (report.viewing !== undefined || report.focused !== undefined || report.active === true) activate(entry)
       for (const panelId of viewing) if (!entry.info.viewing.includes(panelId)) entry.panelTicks.set(panelId, tick)
       if (focused && focused !== entry.info.focused) entry.panelTicks.set(focused, tick)
       entry.info = { ...entry.info, viewing, focused, attentive }

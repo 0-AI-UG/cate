@@ -1,6 +1,7 @@
-// Reports this client's viewed and focused panel, and whether it has the
-// person's attention (its app has OS focus), to the runtime's presence.
-// Presence is not persisted, so the report goes again after each reconnect.
+// Reports this client's viewed and focused panel, whether it has the
+// person's attention (its app has OS focus) and that the person gives input,
+// to the runtime's presence. Presence is not persisted, so the report goes
+// again after each reconnect.
 
 import type { ClientStateStore } from './clientState'
 import type { PresenceClient, PresenceEvent, PresenceReport } from '@workspace/document/contract'
@@ -21,12 +22,26 @@ export function setClientAttentive(next: boolean): void {
   for (const listener of [...attentionListeners]) listener()
 }
 
+/** Input more often than this is reported once. */
+export const ACTIVITY_REPORT_MS = 60_000
+
+let lastActivityAt = -Infinity
+const activityListeners = new Set<() => void>()
+
+/** The shell tells that the person gave input (a key, a click, a tap). The
+ *  runtime keeps the workspace running while a client is in use. */
+export function noteClientActivity(now = Date.now()): void {
+  if (now - lastActivityAt < ACTIVITY_REPORT_MS) return
+  lastActivityAt = now
+  for (const listener of [...activityListeners]) listener()
+}
+
 export function reportPresence(state: ClientStateStore, link: PresenceLink): () => void {
-  let sent: Required<PresenceReport> | null = null
+  let sent: Required<Omit<PresenceReport, 'active'>> | null = null
   let queued = false
   let stopped = false
 
-  const current = (): Required<PresenceReport> => {
+  const current = (): Required<Omit<PresenceReport, 'active'>> => {
     const s = state.getSnapshot()
     return { viewing: [...s.viewing], focused: s.focusedPanelId, attentive }
   }
@@ -45,8 +60,11 @@ export function reportPresence(state: ClientStateStore, link: PresenceLink): () 
     })
   }
 
+  const active = () => { link.report({ active: true }).catch(() => {}) }
+
   const stopState = state.subscribe(flush)
   attentionListeners.add(flush)
+  activityListeners.add(active)
   const stopReady = link.onReady(({ reconnect }) => {
     if (!reconnect) return
     sent = null
@@ -58,6 +76,7 @@ export function reportPresence(state: ClientStateStore, link: PresenceLink): () 
     stopped = true
     stopState()
     attentionListeners.delete(flush)
+    activityListeners.delete(active)
     stopReady()
   }
 }

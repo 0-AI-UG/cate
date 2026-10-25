@@ -300,8 +300,10 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     },
   })
 
-  offs.push(deps.busy.contribute(() => terminal.busy()))
-  offs.push(deps.busy.contribute(() => agentsRuntime.busy().length > 0))
+  offs.push(deps.busy.contribute('agents', () => agentsRuntime.busy().length > 0))
+  // A program in a terminal, unless it is an agent: the agent counts while
+  // it runs a turn, not while it waits at its prompt.
+  offs.push(deps.busy.contribute('commands', () => terminal.busy(new Set(agentsRuntime.hosting()))))
 
   offs.push(registerKernelApi(router))
   offs.push(router.registerService(agentApi, agentsRuntime.apiHandlers()))

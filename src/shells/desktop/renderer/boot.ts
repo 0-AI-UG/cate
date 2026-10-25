@@ -15,7 +15,7 @@ import { createShortcutRegistry, installClientUi, installShortcutRegistry } from
 import type { NotificationAction } from '@kernel/interaction/contract'
 import { eachConnection, watchForWake, type WorkspaceConnections } from '@client/connections'
 import { startClientCore } from '@client/core'
-import { documentStoreFor, setClientAttentive } from '@client/document'
+import { documentStoreFor, noteClientActivity, setClientAttentive } from '@client/document'
 import { installLinkSettings } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
 import {
@@ -148,6 +148,11 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   })
   const { identity, connections, workspaces } = core
   stops.push(api.app.onAttention(setClientAttentive))
+  // Input in this window tells the runtimes the client is in use.
+  const active = () => noteClientActivity()
+  const inputs = ['keydown', 'pointerdown', 'wheel'] as const
+  for (const type of inputs) globalThis.addEventListener(type, active, { capture: true, passive: true })
+  stops.push(() => { for (const type of inputs) globalThis.removeEventListener(type, active, { capture: true }) })
   const partitions = prepareWebviewPartitions(api, connections)
   stops.push(() => partitions.dispose())
   stops.push(serveLoopbackRequests((runtimeId) => {

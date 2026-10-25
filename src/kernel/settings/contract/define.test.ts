@@ -35,7 +35,9 @@ describe('composed slices', () => {
   })
 
   it('default the runtime keys and validate agentHookInjection as one value', () => {
-    expect(workspaceSettingsTable.defaults.runtimeLifetime).toBe('stopWhenIdle')
+    expect(workspaceSettingsTable.defaults.keepRunningWhile).toEqual(['agents', 'commands', 'clients'])
+    expect(workspaceSettingsTable.validate('keepRunningWhile', ['agents', 'always'])).toBe(true)
+    expect(workspaceSettingsTable.validate('keepRunningWhile', ['sometimes'])).toBe(false)
     expect(workspaceSettingsTable.defaults.runtimeNetwork).toBe('off')
     expect(workspaceSettingsTable.validate('agentHookInjection', { claude: 'on', codex: 'off' })).toBe(true)
     expect(workspaceSettingsTable.validate('agentHookInjection', { ws1: { claude: 'on' } })).toBe(false)
