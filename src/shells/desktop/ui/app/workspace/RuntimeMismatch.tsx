@@ -1,105 +1,29 @@
-// The question an incompatible workspace runtime raises (7.10): another
-// protocol major than this app. Every call fails until the runtime is
-// updated, which ends its
-// terminals and agents. When nothing else uses the runtime (no other client,
-// no running work) the update happens without asking; otherwise the card
-// asks first. It cannot list the work: an incompatible runtime answers only
-// `runtime.info` and `runtime.update`. A runtime newer than this app is never
-// moved back; the card asks to update the app instead.
+// The workspace's card for a runtime of another version (7.10). The client
+// core runs the update (`RuntimeUpdates`: updating an unused runtime without
+// asking, the update itself, its progress and the restart); this card draws
+// it: the question when the runtime is older and in use (updating ends its
+// terminals and running agents), "update Cate" when the runtime is newer,
+// and the update's progress until the runtime answers again.
 //
 // It is the incompatible workspace's ConnectionBlocker card: it covers that
 // workspace only, never the app (the sidebar and other workspaces stay
-// usable). An update in flight outlives the card's state: it shows the
-// download and install, then holds the card through the restart until the
-// new runtime answers, instead of a "can't connect" cover.
+// usable).
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { ModalCard, ProgressBar, btn, Spinner } from '../../kernel/interaction'
-import { errorMessage } from '@kernel/interaction'
-import { compareSemver, type RuntimeUpdateProgress } from '@runtime/daemon/contract'
-import type { WorkspaceConnection } from '@client/connections'
+import { runtimeMismatch, type RuntimeUpdateRun, type WorkspaceConnection } from '@client/connections'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
 import { runWindowAction } from '../actions/run'
 
-/** How long a restarting runtime may take to drop the connection. */
-const RESTART_TIMEOUT_MS = 10_000
-/** How long the restarted runtime may take to answer again. */
-const RECONNECT_TIMEOUT_MS = 60_000
-const PROGRESS_POLL_MS = 250
-
-/** Resolves true once `done(state)` holds, false after `ms`. */
-function waitFor(connection: WorkspaceConnection, done: (kind: string) => boolean, ms: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const finish = (ok: boolean) => { clearTimeout(timer); off(); resolve(ok) }
-    const timer = setTimeout(() => finish(false), ms)
-    const off = connection.subscribe(() => { if (done(connection.state.kind)) finish(true) })
-    if (done(connection.state.kind)) finish(true)
-  })
-}
-
-/** An update this client runs: installing (with the runtime's progress, null
- *  until it reports one), then restarting until the connection is back. */
-export type RuntimeUpdateRun =
-  | { phase: 'installing'; progress: RuntimeUpdateProgress | null }
-  | { phase: 'restarting' }
-
-const runs = new Map<WorkspaceConnection, RuntimeUpdateRun>()
-const runListeners = new Set<() => void>()
-const subscribeRuns = (listener: () => void) => { runListeners.add(listener); return () => { runListeners.delete(listener) } }
-function setRun(connection: WorkspaceConnection, run: RuntimeUpdateRun | null): void {
-  if (run) runs.set(connection, run)
-  else runs.delete(connection)
-  for (const listener of [...runListeners]) listener()
-}
+const noop = () => () => {}
 
 /** The update this client runs on `connection`, if any. */
 export function useRuntimeUpdate(connection: WorkspaceConnection | undefined): RuntimeUpdateRun | null {
-  return useSyncExternalStore(subscribeRuns, () => (connection ? runs.get(connection) ?? null : null))
+  const updates = tryClientApp()?.runtimeUpdates
+  return useSyncExternalStore(updates?.subscribe ?? noop, () => (connection && updates ? updates.run(connection) : null))
 }
-
-/**
- * Updates the runtime and waits until it answers again. Resolves null once
- * connected, else why not. Meanwhile `useRuntimeUpdate` tells the phase.
- */
-async function runUpdate(connection: WorkspaceConnection, target: { version: string; build?: string; ifIdle?: boolean }): Promise<string | null> {
-  if (runs.has(connection)) return 'An update is already running.'
-  const api = connection.runtime.runtime
-  setRun(connection, { phase: 'installing', progress: null })
-  // A runtime without `updateProgress` (older) just shows no figures.
-  const poll = setInterval(() => {
-    api.updateProgress().then(
-      (progress) => { if (runs.get(connection)?.phase === 'installing') setRun(connection, { phase: 'installing', progress }) },
-      () => clearInterval(poll),
-    )
-  }, PROGRESS_POLL_MS)
-  try {
-    await api.update(target)
-  } catch (err) {
-    setRun(connection, null)
-    return errorMessage(err, 'The runtime did not answer.')
-  } finally {
-    clearInterval(poll)
-  }
-  setRun(connection, { phase: 'restarting' })
-  if (!await waitFor(connection, (kind) => kind !== 'incompatible', RESTART_TIMEOUT_MS)) {
-    setRun(connection, null)
-    const pid = await api.info().then((info) => info.pid, () => null)
-    return pid
-      ? `The runtime did not restart. Stop it (process ${pid}) and open the workspace again.`
-      : 'The runtime did not restart. Stop it and open the workspace again.'
-  }
-  const settled = (kind: string) => kind === 'connected' || kind === 'incompatible' || kind === 'refused' || kind === 'stopped' || kind === 'closed'
-  await waitFor(connection, settled, RECONNECT_TIMEOUT_MS)
-  setRun(connection, null)
-  if (connection.state.kind === 'incompatible') return 'The runtime restarted but still does not match this app.'
-  return null
-}
-
-/** Connections whose idle update was tried in their current incompatible
- *  episode (the card remounts when the workspace is shown again). */
-const triedIdle = new Set<WorkspaceConnection>()
 
 const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1)
 
@@ -140,7 +64,6 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
   const run = useRuntimeUpdate(connection)
   const app = tryClientApp()
   const [error, setError] = useState<string | null>(null)
-  const [idleTry, setIdleTry] = useState(() => !triedIdle.has(connection) && !runs.has(connection))
   const mounted = useRef(true)
   // Set on every mount: StrictMode unmounts and remounts once in dev.
   useEffect(() => {
@@ -148,44 +71,19 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
     return () => { mounted.current = false }
   }, [])
 
-  const incompatible = state.kind === 'incompatible' ? state : null
   const version = app?.version ?? ''
-  const target = incompatible ? { version, ...(app?.build ? { build: app.build } : {}) } : null
-  // Never move a runtime back to an older release (another device may need it).
-  const newer = incompatible !== null && compareSemver(incompatible.runtimeVersion, version) > 0
-
-  // A connection that left the state asks again next time.
-  useEffect(() => {
-    if (state.kind !== 'incompatible') triedIdle.delete(connection)
-  }, [state.kind, connection])
-
-  // Nothing else uses the runtime: update it without asking.
-  useEffect(() => {
-    if (!idleTry || !target || newer) {
-      setIdleTry(false)
-      return
-    }
-    triedIdle.add(connection)
-    void runUpdate(connection, { ...target, ifIdle: true }).then(() => { if (mounted.current) setIdleTry(false) })
-    // Once per mount; `triedIdle` keeps it once per incompatible episode.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   if (run) return <UpdateProgressCard run={run} version={version} />
-  if (!incompatible || !app || !target) return null
+  const mismatch = runtimeMismatch(state, version)
+  if (!mismatch || !app) return null
   const name = app.workspaces.get(connection.workspaceId)?.name ?? connection.workspaceId
   const icon = <AlertTriangle size={16} className="text-amber-400" />
 
-  // The idle try is refused at once when something uses the runtime; until
-  // then show nothing to decide.
-  if (idleTry) return <UpdateProgressCard run={{ phase: 'installing', progress: null }} version={version} />
-
-  if (newer) {
+  if (mismatch.update === 'app') {
     return (
       <ModalCard className="w-[440px] max-w-[92%]" icon={icon} title="Update Cate to use this workspace" showClose={false} bodyClassName="px-5 py-4">
         <p className="text-[13px] leading-relaxed text-secondary">
           <span className="text-primary font-medium">{name}</span>
-          {` runs Cate runtime ${incompatible.runtimeVersion}, which is newer than this app (${version}). Update Cate to use the workspace.`}
+          {` runs Cate runtime ${mismatch.runtimeVersion}, which is newer than this app (${version}). Update Cate to use the workspace.`}
         </p>
         <div className="mt-4 flex justify-end">
           <button type="button" className={btn.primary} onClick={() => runWindowAction('checkForUpdates')}>Check for Updates…</button>
@@ -196,7 +94,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
 
   const confirm = async () => {
     setError(null)
-    const failed = await runUpdate(connection, target)
+    const failed = await app.runtimeUpdates.update(connection)
     if (failed && mounted.current) setError(failed)
   }
 
@@ -210,14 +108,14 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
     >
       <p className="text-[13px] leading-relaxed text-secondary">
         <span className="text-primary font-medium">{name}</span>
-        {` runs Cate runtime ${incompatible.runtimeVersion}, which this app can't talk to. Update it to ${version} to use the workspace.`}
+        {` runs Cate runtime ${mismatch.runtimeVersion}, which this app can't talk to. Update it to ${version} to use the workspace.`}
       </p>
 
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2.5 py-2 rounded-md bg-surface-5 border border-subtle text-[12px]">
         <dt className="text-muted">This app</dt>
         <dd className="font-mono text-secondary break-all">{version}</dd>
         <dt className="text-muted">Runtime</dt>
-        <dd className="font-mono text-secondary break-all">{incompatible.runtimeVersion}</dd>
+        <dd className="font-mono text-secondary break-all">{mismatch.runtimeVersion}</dd>
       </dl>
 
       <p className="mt-3 text-[12px] leading-relaxed text-muted">

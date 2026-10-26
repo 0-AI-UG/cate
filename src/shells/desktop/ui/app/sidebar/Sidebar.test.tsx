@@ -5,6 +5,7 @@ import type { WorkspaceEntry, WorkspaceList, WorkspaceListSnapshot } from '@clie
 import { installClientApp, type ClientApp } from '../app'
 import { INITIAL_UI_STATE, useUIStore } from '../state/uiStore'
 import { Sidebar } from './Sidebar'
+import { noRuntimeUpdates } from '@client/connections/testing'
 
 let host: HTMLDivElement
 let root: Root
@@ -50,6 +51,7 @@ beforeEach(() => {
   root = createRoot(host)
   list = fakeList()
   installClientApp({
+    runtimeUpdates: noRuntimeUpdates,
     workspaces: list as unknown as WorkspaceList,
     connections: { get: () => undefined } as unknown as ClientApp['connections'],
     version: '2.1.0',
@@ -68,6 +70,7 @@ describe('Sidebar', () => {
     const none: WorkspaceListSnapshot = { entries: [], open: [] }
     const empty = { ...list, getSnapshot: () => none }
     installClientApp({
+      runtimeUpdates: noRuntimeUpdates,
       workspaces: empty as unknown as WorkspaceList,
       connections: { get: () => undefined } as unknown as ClientApp['connections'],
       version: '2.1.0',

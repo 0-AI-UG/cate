@@ -6,6 +6,7 @@ import { installClientApp, type ClientApp } from '../app'
 import { registerActions } from '@client/host'
 import { INITIAL_UI_STATE, useUIStore } from '../state/uiStore'
 import { CommandPalette } from './CommandPalette'
+import { noRuntimeUpdates } from '@client/connections/testing'
 
 let host: HTMLDivElement
 let root: Root
@@ -32,6 +33,7 @@ beforeEach(() => {
   document.body.appendChild(host)
   root = createRoot(host)
   installClientApp({
+    runtimeUpdates: noRuntimeUpdates,
     workspaces: fakeWorkspaces({
       entries: [{ kind: 'local', id: 'local:/p/cate', root: '/p/cate', name: 'cate', lastOpenedAt: 1 }],
       open: [],

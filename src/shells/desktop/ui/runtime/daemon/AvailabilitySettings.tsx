@@ -125,7 +125,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAdd
   const connectedLine = connected && connected.length > 0
     ? `Connected: ${connected.join(', ')}`
     : info ? `${info.clients.length} device${info.clients.length === 1 ? '' : 's'} connected` : null
-  const version = info ? `Cate ${info.version} (protocol ${info.protocol.join('.')})` : null
+  const version = info ? `Cate ${info.version}` : null
 
   return (
     <div className="flex flex-col gap-1">
@@ -149,7 +149,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAdd
       <SettingRow
         label={info ? `Running on ${machine}${server ? ' (server)' : ''}` : 'Running'}
         description={[connectedLine, version ?? infoError].filter(Boolean).join(' · ') || undefined}
-        keywords="runtime machine server connected devices clients version protocol stop quit kill terminals agents"
+        keywords="runtime machine server connected devices clients version stop quit kill terminals agents"
       >
         <div className="flex items-center gap-2">
           {!info && (infoError

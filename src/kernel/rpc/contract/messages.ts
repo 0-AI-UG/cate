@@ -5,11 +5,6 @@
 
 import type { WireError } from './errors'
 
-/** Same major is compatible; minors only add optional things. */
-export const PROTOCOL = [1, 0] as const satisfies readonly [number, number]
-
-export type ProtocolVersion = readonly [major: number, minor: number]
-
 export interface DeviceInfo {
   name: string
   /** The device's hex X25519 public key; '' for a connection that is no
@@ -33,8 +28,8 @@ export interface CallerHello {
 
 export interface HelloMessage {
   t: 'hello'
-  protocol: ProtocolVersion
-  /** App or daemon release version. */
+  /** App or daemon release version. A client and a runtime talk only at
+   *  the same version (7.10). */
   version: string
   /** Runtime only: the build it runs (version plus a source hash). */
   build?: string
@@ -85,8 +80,9 @@ export type Frame =
   | { kind: 'msg'; msg: Message }
   | { kind: 'bytes'; streamId: number; bytes: Uint8Array }
 
-export function isCompatible(a: ProtocolVersion, b: ProtocolVersion): boolean {
-  return a[0] === b[0]
+/** A client and a runtime talk only at the same version (7.10). */
+export function isCompatible(a: string, b: string): boolean {
+  return a === b
 }
 
 const MESSAGE_TYPES: ReadonlySet<string> = new Set(['hello', 'req', 'res', 'evt', 'cancel', 'ack'])

@@ -15,6 +15,7 @@ import { MAIN_WINDOW, documentCapability, type DocOp } from '@workspace/document
 import { sessionCapability } from '@panels/framework/contract'
 import { agentsCapability } from '@services/agents/contract'
 import { serveWorkspace, type Daemon } from './entry'
+import { RUNTIME_VERSION } from '@runtime/daemon/contract'
 
 let tmp: string
 let home: string
@@ -46,7 +47,7 @@ afterEach(async () => {
 })
 
 async function connect(endpoint: string, identity: ConstructorParameters<typeof RpcClient>[0]['identity']) {
-  const client = new RpcClient({ version: 'test', identity })
+  const client = new RpcClient({ version: RUNTIME_VERSION, identity })
   clients.push(client)
   await client.attach(framePortOver(await dialLocal(endpoint), 'stream'))
   return client

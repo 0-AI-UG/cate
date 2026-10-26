@@ -1,6 +1,6 @@
 // The `runtime` host capability (architecture 7.9, 7.10).
 
-import { defineCapability, method, stream, type ClientFeature, type DeviceInfo, type ProtocolVersion } from '@kernel/rpc/contract'
+import { defineCapability, method, stream, type ClientFeature, type DeviceInfo } from '@kernel/rpc/contract'
 import type { NetworkEndpoint } from '@runtime/transports/contract'
 
 export interface RuntimeClientInfo {
@@ -19,7 +19,6 @@ export interface RuntimeStatus {
    *  keeping it awake means something. Absent from older runtimes. */
   machineSleeps?: boolean
   version: string
-  protocol: ProtocolVersion
   pid: number
   clients: RuntimeClientInfo[]
   /** Where paired devices reach it now (its addresses change with the
@@ -53,19 +52,19 @@ export type RuntimeInstallProgress =
 
 export const runtimeCapability = defineCapability('runtime', {
   methods: {
-    /** Answered on every protocol major, so a client can tell what it talks to. */
-    info: method<void, RuntimeStatus>({ crossMajor: true }),
+    /** Answered at any version, so a client can tell what it talks to. */
+    info: method<void, RuntimeStatus>({ anyVersion: true }),
     /** Stops the runtime and everything it runs. */
     stop: method<void, void>({ mutates: true }),
     /** Restarts into the install of `build` (the client's), or of release
      *  `version` downloaded from GitHub Releases when that build is not on
      *  this machine; a release of another build is refused. Also for its own
-     *  version (a stale build). With `ifIdle`, fails `dirty` while other
-     *  clients are connected or work runs. Crosses majors so an incompatible
-     *  runtime can still be brought in line. */
-    update: method<{ version: string; build?: string; ifIdle?: boolean }, void>({ mutates: true, crossMajor: true, timeoutMs: 0 }),
+     *  version (another build of it). With `ifIdle`, fails `dirty` while
+     *  other clients are connected or work runs. Answered at any version, so
+     *  a runtime of another one can still be brought in line. */
+    update: method<{ version: string; build?: string; ifIdle?: boolean }, void>({ mutates: true, anyVersion: true, timeoutMs: 0 }),
     /** Where the running `update` is (null: none), for a progress bar. */
-    updateProgress: method<void, RuntimeUpdateProgress | null>({ crossMajor: true }),
+    updateProgress: method<void, RuntimeUpdateProgress | null>({ anyVersion: true }),
     /** The first call starts sampling and returns an empty window. */
     perf: method<void, RuntimePerfSample>(),
   },

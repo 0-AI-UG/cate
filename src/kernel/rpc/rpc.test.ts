@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import {
   CancelledError,
   ConnectionClosedError,
-  IncompatibleProtocolError,
+  IncompatibleVersionError,
   RpcError,
   channelStream,
   createMemoryPortPair,
@@ -23,7 +23,7 @@ const testCap = defineCapability('test', {
     read: method<{ path: string }, string>(),
     bump: method<{ by: number }, number>({ mutates: true }),
     wait: method<void, string>(),
-    info: method<void, { version: string }>({ crossMajor: true }),
+    info: method<void, { version: string }>({ anyVersion: true }),
     whoami: method<void, { clientId: string | null; canvas: boolean; token: string | null }>(),
   },
   streams: {
@@ -172,20 +172,31 @@ describe('rpc server and client', () => {
     expect(plain.message).toBe('disk on fire')
   })
 
-  it('refuses a different protocol major but still allows crossMajor methods', async () => {
-    const { api, client, connect } = setup({ server: { protocol: [2, 0] } })
-    const queued = api.read({ path: '/a' })
-    await connect().ready
-    expect(client.state).toBe('incompatible')
-    await expect(queued).rejects.toBeInstanceOf(IncompatibleProtocolError)
-    await expect(api.read({ path: '/b' })).rejects.toBeInstanceOf(IncompatibleProtocolError)
-    await expect(api.info()).resolves.toEqual({ version: '9.9.9' })
+  it('refuses a runtime of another version but still allows anyVersion methods', async () => {
+    for (const version of ['1.0.1', '1.0.0-beta.1', '0.9.0']) {
+      const { api, client, connect } = setup({ server: { version } })
+      const queued = api.read({ path: '/a' })
+      await connect().ready
+      expect(client.state).toBe('incompatible')
+      await expect(queued).rejects.toBeInstanceOf(IncompatibleVersionError)
+      await expect(api.read({ path: '/b' })).rejects.toBeInstanceOf(IncompatibleVersionError)
+      await expect(api.info()).resolves.toEqual({ version: '9.9.9' })
+    }
   })
 
-  it('accepts a different minor', async () => {
-    const { api, connect } = setup({ server: { protocol: [1, 7] } })
-    await connect().ready
-    await expect(api.read({ path: '/a' })).resolves.toBe('contents of /a')
+  it('refuses a client of another version except for anyVersion methods', async () => {
+    const { server } = setup()
+    const [serverPort, clientPort] = createMemoryPortPair()
+    server.serve(serverPort)
+    const replies: Array<Record<string, unknown>> = []
+    clientPort.onFrame((f) => { if (f.kind === 'msg') replies.push(f.msg as never) })
+    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '0.9.0', client: { clientId: 'old', device: { name: 'mac', publicKey: 'fp' }, features: [] } } })
+    clientPort.send({ kind: 'msg', msg: { t: 'req', id: 1, cap: 'test', method: 'read', params: { path: '/' } } })
+    clientPort.send({ kind: 'msg', msg: { t: 'req', id: 2, cap: 'test', method: 'info' } })
+    await vi.waitFor(() => expect(replies).toHaveLength(3))
+    expect(replies[0]).toMatchObject({ t: 'hello', version: '1.0.0' })
+    expect(replies[1]).toMatchObject({ t: 'res', id: 1, error: { code: 'unsupported' } })
+    expect(replies[2]).toEqual({ t: 'res', id: 2, result: { version: '9.9.9' } })
   })
 
   it('cancels a call through its signal and aborts the handler', async () => {
@@ -420,7 +431,7 @@ describe('rpc server and client', () => {
     const replies: unknown[] = []
     clientPort.onFrame((f) => { if (f.kind === 'msg') replies.push(f.msg) })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 1, cap: 'test', method: 'read', params: { path: '/' } } })
-    clientPort.send({ kind: 'msg', msg: { t: 'hello', protocol: [1, 0], version: 'x', caller: { token: 't' } } })
+    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '1.0.0', caller: { token: 't' } } })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 2, cap: 'test', method: 'bump', params: { by: 1 }, opId: 'c9:1' } })
     await vi.waitFor(() => expect(replies).toHaveLength(3))
     expect(replies[0]).toMatchObject({ t: 'res', id: 1, error: { code: 'rejected' } })

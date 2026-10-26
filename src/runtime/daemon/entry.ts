@@ -175,7 +175,6 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     pid: process.pid,
     version,
     ...(RUNTIME_BUILD ? { build: RUNTIME_BUILD } : {}),
-    protocol: [rpc.protocol[0], rpc.protocol[1]],
     endpoints: { local: endpoint, ...remote },
   })
   // Written now, not once the workspace has restored: nesting checks and

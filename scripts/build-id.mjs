@@ -1,10 +1,10 @@
 // The build id baked into the daemon bundle and the desktop app as
 // `__CATE_BUILD__`: the package version plus a hash of everything the runtime
 // install is made from: the source tree, the bundled skills and the
-// lockfile. Both sides compute it from the same files, so a client sees a
-// runtime built from other inputs as `stale` even when the versions are
-// equal. Shell code (src/shells, apart from settings slices) is
-// not in the runtime and is left out.
+// lockfile. It names the install a client asks a runtime to run
+// (`runtime.update`); compatibility is the version alone. Shell code
+// (src/shells, apart from settings slices) is not in the runtime and is left
+// out.
 
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'

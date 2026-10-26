@@ -3,7 +3,7 @@
 // token in `hello`.
 
 import net from 'node:net'
-import { framePortOver, IncompatibleProtocolError, type ByteDuplex } from '@kernel/rpc/contract'
+import { framePortOver, IncompatibleVersionError, type ByteDuplex } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { apiCapability } from '@kernel/api/contract'
 import { EnvError, type ApiCallPort } from './engine'
@@ -37,8 +37,7 @@ export function connectSocket(socketPath: string, token: string, version: string
         throw new EnvError(`cannot reach the workspace runtime at ${socketPath}: ${err instanceof Error ? err.message : String(err)}`)
       }
       if (client.state === 'incompatible') {
-        const remote = client.remote
-        throw new EnvError(new IncompatibleProtocolError(client.protocol, remote?.protocol ?? [0, 0], remote?.version ?? 'unknown').message)
+        throw new EnvError(new IncompatibleVersionError(version, client.remote?.version ?? 'unknown').message)
       }
       return api.call({ method, args }, { timeoutMs })
     },

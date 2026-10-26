@@ -7,10 +7,11 @@ import { framePortOver, type ByteDuplex } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
 import { apiCapability } from '@kernel/api/contract'
 import { ApiRouter, ApiTokenRegistry, acceptCallerHello, apiCapabilityImpl, registerKernelApi } from '@kernel/api/runtime'
-import { CLI_VERSION, runCli, type CliDeps } from './engine'
+import { runCli, type CliDeps } from './engine'
 import { connectSocket } from './socketPort'
 import { CATE_API } from '@panels/api'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
+import { RUNTIME_VERSION } from '@runtime/daemon/contract'
 
 function serverDuplex(socket: net.Socket): ByteDuplex {
   return {
@@ -39,7 +40,7 @@ async function startRuntime(settings: Record<string, unknown>) {
     tokens,
   })
   registerKernelApi(router)
-  const rpc = new RpcServer({ lifecycle: createLifecycleBus(), version: 'test', acceptHello: (hello) => acceptCallerHello(router, hello) })
+  const rpc = new RpcServer({ lifecycle: createLifecycleBus(), version: RUNTIME_VERSION, acceptHello: (hello) => acceptCallerHello(router, hello) })
   rpc.register(apiCapability, apiCapabilityImpl(router))
   const server = net.createServer((socket) => rpc.serve(framePortOver(serverDuplex(socket), 'stream')))
   await new Promise<void>((resolve) => server.listen(socketPath, resolve))
@@ -59,7 +60,7 @@ async function cli(argv: string[], env: Record<string, string | undefined>) {
     cwd: '/',
     stdout: (t) => out.push(t),
     stderr: (t) => err.push(t),
-    connect: (socketPath, token) => connectSocket(socketPath, token, CLI_VERSION),
+    connect: (socketPath, token) => connectSocket(socketPath, token, RUNTIME_VERSION),
   }
   const code = await runCli(argv, CATE_API, deps)
   return { code, out, err }

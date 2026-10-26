@@ -7,6 +7,7 @@ import { ChevronRight as CaretRight } from 'lucide-react'
 import { useConnectionState } from '../../client/connections'
 import { connectionStatus, type ConnectionRemedy, type ConnectionState, type ConnectionStatus, type WorkspaceConnection } from '@client/connections'
 import { tryClientApp } from '../app'
+import { runWindowAction } from '../actions/run'
 import { closeWorkspace, openLocalFolder, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
 
@@ -23,7 +24,7 @@ export function connectionDotClass(state: ConnectionState): string {
 /** The connection's state in words; null when connected or there is no
  *  connection. */
 export function statusOf(connection: WorkspaceConnection | undefined, state: ConnectionState): ConnectionStatus | null {
-  return connection ? connectionStatus(state, { startsRuntime: connection.startsRuntime }) : null
+  return connection ? connectionStatus(state, { startsRuntime: connection.startsRuntime, version: tryClientApp()?.version ?? '' }) : null
 }
 
 export interface ConnectionAction {
@@ -35,7 +36,9 @@ function remedyAction(connection: WorkspaceConnection, state: ConnectionState, r
   const workspaces = tryClientApp()?.workspaces
   const id = connection.workspaceId
   switch (remedy) {
-    case 'resolve': return { label: 'Resolve…', run: () => void selectWorkspace(id) }
+    // The workspace's card runs the update and says what it ends.
+    case 'updateRuntime': return { label: 'Update…', run: () => void selectWorkspace(id) }
+    case 'updateApp': return { label: 'Check for Updates…', run: () => runWindowAction('checkForUpdates') }
     case 'retry': return { label: 'Try again', run: () => connection.retryNow() }
     case 'start': return { label: 'Start again', run: () => connection.retryNow() }
     // A paired one asks first.

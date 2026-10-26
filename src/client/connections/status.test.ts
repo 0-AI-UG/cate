@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { connectionStatus, relativeTime } from './status'
 
-const starts = { startsRuntime: true }
-const paired = { startsRuntime: false }
+const starts = { startsRuntime: true, version: '2.0.0' }
+const paired = { startsRuntime: false, version: '2.0.0' }
 
 describe('connection status', () => {
   it('says when an offline runtime was last seen', () => {
@@ -52,8 +52,9 @@ describe('connection status', () => {
     expect(connectionStatus({ kind: 'refused', message: 'no' }, paired)?.remedies).toEqual(['retry'])
   })
 
-  it('resolves an incompatible runtime and stays quiet when connected', () => {
-    expect(connectionStatus({ kind: 'incompatible', runtimeVersion: '1.9.0' }, paired)).toMatchObject({ message: expect.stringContaining('1.9.0'), remedies: ['resolve'] })
+  it('updates whichever side of a mismatch is older and stays quiet when connected', () => {
+    expect(connectionStatus({ kind: 'incompatible', runtimeVersion: '1.9.0' }, paired)).toMatchObject({ message: expect.stringContaining('1.9.0'), remedies: ['updateRuntime'] })
+    expect(connectionStatus({ kind: 'incompatible', runtimeVersion: '9.0.0' }, paired)).toMatchObject({ message: expect.stringContaining('9.0.0'), remedies: ['updateApp'] })
     expect(connectionStatus({ kind: 'connected' }, paired)).toBeNull()
   })
 })

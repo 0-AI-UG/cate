@@ -11,7 +11,7 @@ import { encodePublicKey, generateKeyPair } from '@runtime/security/contract'
 import { runtimeIdFor } from '@runtime/data/node'
 import { socketAnswers } from '@runtime/data/runtime'
 import { dialLocal } from '@runtime/transports/node'
-import { runtimeCapability } from './contract'
+import { RUNTIME_VERSION, runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
 
 // Short paths: a Unix socket path must fit in ~104 bytes.
@@ -46,7 +46,7 @@ async function start(graceMs?: number) {
 
 async function connect(endpoint: string) {
   const client = new RpcClient({
-    version: 'test',
+    version: RUNTIME_VERSION,
     identity: { client: { clientId: 'c1', device: { name: 'laptop', publicKey: 'fp' }, features: ['canvas', 'nope'] } },
   })
   await client.attach(framePortOver(await dialLocal(endpoint), 'stream'))
@@ -135,7 +135,7 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     const dir = path.join(home, '.cate', 'workspaces', outerId)
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, 'runtime.json'), JSON.stringify({
-      runtimeId: outerId, root: fs.realpathSync(root), pid: process.pid, version: '0', protocol: [1, 0],
+      runtimeId: outerId, root: fs.realpathSync(root), pid: process.pid, version: '0',
       endpoints: { local: path.join(dir, 'runtime.sock') },
     }))
     const inner = path.join(root, 'sub')
@@ -180,7 +180,7 @@ describe.skipIf(process.platform === 'win32')('daemon', () => {
     let exitedAt = 0
     previous.once('exit', () => { exitedAt = Date.now() })
     fs.writeFileSync(path.join(dir, 'runtime.json'), JSON.stringify({
-      runtimeId, root: fs.realpathSync(root), pid: previous.pid, version: '0', protocol: [1, 0], endpoints: { local: path.join(dir, 'runtime.sock') },
+      runtimeId, root: fs.realpathSync(root), pid: previous.pid, version: '0', endpoints: { local: path.join(dir, 'runtime.sock') },
     }))
 
     const result = await start()

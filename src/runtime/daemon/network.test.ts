@@ -17,7 +17,7 @@ import { KnownRuntimes, pairWithRuntime, type PairTarget } from '@runtime/pairin
 import { readRuntimeInfo } from '@runtime/data/runtime'
 import { dialSameNetwork, openSecureConnection } from '@runtime/transports/client'
 import { dialLocal, nodeWebSocketFactory } from '@runtime/transports/node'
-import { runtimeCapability } from './contract'
+import { RUNTIME_VERSION, runtimeCapability } from './contract'
 import { serveWorkspace, type Daemon } from './entry'
 import { seedWorkspaceSettings } from '../../test/workspaceSettings'
 
@@ -58,7 +58,7 @@ async function start(network?: 'sameNetwork') {
 }
 
 function client(identity: ConstructorParameters<typeof RpcClient>[0]['identity']) {
-  const c = new RpcClient({ version: 'test', identity, helloTimeoutMs: 3_000 })
+  const c = new RpcClient({ version: RUNTIME_VERSION, identity, helloTimeoutMs: 3_000 })
   clients.push(c)
   return c
 }

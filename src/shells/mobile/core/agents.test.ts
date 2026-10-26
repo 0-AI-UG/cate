@@ -163,7 +163,7 @@ describe('mobile actions', () => {
         prompts: [],
       } })
       expect(events.at(-1)).toEqual({
-        kind: 'chat', loaded: true, status: 'waitingForInput', canReceivePrompt: true, queued: [], failed: [], turn: null, from: 0,
+        kind: 'chat', loaded: true, status: 'waitingForInput', canReceivePrompt: true, queued: [], failed: [], turn: null, from: 0, earlier: false,
         items: [
           { kind: 'prompt', id: 'm0', text: 'Say hi', sent: true },
           { kind: 'reply', id: 'm1', text: 'Hi.' },
@@ -181,7 +181,7 @@ describe('mobile actions', () => {
         status: 'running', canReceivePrompt: false, prompts: [], from: 2, messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }],
       } })
       expect(events.at(-1)).toEqual({
-        kind: 'chat', loaded: true, status: 'running', canReceivePrompt: false, queued: [], failed: [], turn: { step: null }, from: 2,
+        kind: 'chat', loaded: true, status: 'running', canReceivePrompt: false, queued: [], failed: [], turn: { step: null }, from: 2, earlier: false,
         items: [{ kind: 'prompt', id: 'm2', text: 'go', sent: true }],
       })
 

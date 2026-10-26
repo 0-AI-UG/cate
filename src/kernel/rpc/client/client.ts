@@ -9,8 +9,7 @@
 import {
   CancelledError,
   ConnectionClosedError,
-  IncompatibleProtocolError,
-  PROTOCOL,
+  IncompatibleVersionError,
   RpcError,
   fromWireError,
   isCompatible,
@@ -21,7 +20,6 @@ import {
   type FramePort,
   type HelloMessage,
   type Message,
-  type ProtocolVersion,
   type ReqMessage,
   type SubscribeOptions,
   type Subscription,
@@ -41,7 +39,6 @@ export interface RpcClientOptions {
    *  the connection: a new client with the same `clientId` continues it.
    *  Default: a counter of this client alone (a one-shot `clientId`). */
   nextOpCounter?: () => number
-  protocol?: ProtocolVersion
   timeoutMs?: number
   helloTimeoutMs?: number
 }
@@ -50,7 +47,7 @@ export interface CallSpec {
   mutates?: boolean
   idempotent?: boolean
   timeoutMs?: number
-  crossMajor?: boolean
+  anyVersion?: boolean
 }
 
 export interface ReadyInfo {
@@ -61,7 +58,7 @@ export interface ReadyInfo {
 
 interface PendingCall {
   req: ReqMessage
-  crossMajor: boolean
+  anyVersion: boolean
   idempotent: boolean
   sent: boolean
   /** The runtime epoch it was last sent to. */
@@ -86,10 +83,8 @@ export class RpcClient {
   private readonly streams = new Map<number, ClientStream>()
   private readonly readyListeners = new Set<Listener<ReadyInfo>>()
   private readonly stateListeners = new Set<Listener<RpcClientState>>()
-  readonly protocol: ProtocolVersion
 
   constructor(private readonly opts: RpcClientOptions) {
-    this.protocol = opts.protocol ?? PROTOCOL
     let counter = 0
     this.nextOpCounter = opts.nextOpCounter ?? (() => ++counter)
   }
@@ -132,7 +127,7 @@ export class RpcClient {
     this.helloTimer = setTimeout(() => {
       if (this.port === port) port.close('Runtime handshake timed out')
     }, this.opts.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS)
-    port.send({ kind: 'msg', msg: { t: 'hello', protocol: this.protocol, version: this.opts.version, ...this.opts.identity } })
+    port.send({ kind: 'msg', msg: { t: 'hello', version: this.opts.version, ...this.opts.identity } })
     return done
   }
 
@@ -169,7 +164,7 @@ export class RpcClient {
       opts.signal?.addEventListener('abort', onAbort, { once: true })
       const call: PendingCall = {
         req,
-        crossMajor: spec.crossMajor === true,
+        anyVersion: spec.anyVersion === true,
         idempotent: spec.idempotent === true,
         sent: false,
         resolve,
@@ -236,7 +231,7 @@ export class RpcClient {
 
   private flushCall(call: PendingCall): void {
     if (call.sent) return
-    if (this._state === 'incompatible' && !call.crossMajor) {
+    if (this._state === 'incompatible' && !call.anyVersion) {
       this.settleCall(call.req.id, this.incompatibleError(), false)
       return
     }
@@ -297,7 +292,7 @@ export class RpcClient {
       this.failAll(() => err)
       return
     }
-    const compatible = isCompatible(hello.protocol, this.protocol)
+    const compatible = isCompatible(hello.version, this.opts.version)
     this.setState(compatible ? 'ready' : 'incompatible')
     const waiter = this.attachWaiter
     this.clearHello(null)
@@ -358,8 +353,7 @@ export class RpcClient {
   }
 
   private incompatibleError(): Error {
-    const remote = this._remote
-    return new IncompatibleProtocolError(this.protocol, remote?.protocol ?? [0, 0], remote?.version ?? 'unknown')
+    return new IncompatibleVersionError(this.opts.version, this._remote?.version ?? 'unknown')
   }
 
   private setState(state: RpcClientState): void {

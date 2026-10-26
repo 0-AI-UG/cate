@@ -7,6 +7,7 @@
 // same row once the conversation shows it. Events are decoded off the main
 // thread, in order. What was last shown is kept (`ChatCache`), so a chat
 // opened again shows at once and the runtime's answer updates it in place.
+// A long chat comes as its latest items; earlier ones on request (`more`).
 
 import SwiftUI
 
@@ -54,6 +55,8 @@ final class AgentConversation {
     }
 
     private(set) var items: [Item] = []
+    /// The items are the latest ones; earlier ones come on request (`more`).
+    private(set) var earlier = false
     /// The agent's state; nil while the panel hosts no agent.
     private(set) var status: String?
     private(set) var canReceivePrompt = false
@@ -75,6 +78,12 @@ final class AgentConversation {
     }
 
     var working: Bool { status == "running" }
+
+    /// Asks for the page before the items.
+    func more(_ core: CoreHost) {
+        guard earlier else { return }
+        core.moreAgent(viewId)
+    }
 
     /// Follows the panel's conversation until cancelled.
     func run(_ core: CoreHost, workspaceId: String, pending: String?) async {
@@ -109,18 +118,21 @@ final class AgentConversation {
         if queued != event.queued { queued = event.queued }
         if failed != event.failed { failed = event.failed }
         if turn != event.turn { turn = event.turn }
+        if earlier != event.earlier { earlier = event.earlier }
         // While it is not read, the items are the prompt on its way at most:
         // what is cached stays.
         if !event.loaded, event.items.isEmpty { return }
         let from = min(event.from, items.count)
         var old: [String: Item] = [:]
         for item in items[from...] { old[item.id] = item }
-        let tail = event.items.compactMap { data -> Item? in
+        // Earlier items, added above what shows, were there all along.
+        let above = from == 0 ? event.items.firstIndex { $0.id == items.first?.id } ?? 0 : 0
+        let tail = event.items.enumerated().compactMap { index, data -> Item? in
             if let item = old[data.id], item.kind.rawValue == data.kind {
                 item.update(data)
                 return item
             }
-            return Item(data, live: live)
+            return Item(data, live: live && index >= above)
         }
         if items[from...].map(\.id) != tail.map(\.id) || zip(items[from...], tail).contains(where: { $0 !== $1 }) {
             items = Array(items[..<from]) + tail

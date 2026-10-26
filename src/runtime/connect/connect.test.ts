@@ -21,7 +21,7 @@ import { KnownRuntimes, PairingError, pairWithRuntime } from '../pairing/client'
 import type { IceServer, PeerConnectionFactory, PeerConnectionLike } from '../transports/contract'
 import { openSecureConnection } from '../transports/client'
 import { dialLocal, loadNodePeerConnection, nodeWebSocketFactory } from '../transports/node'
-import { runtimeCapability } from '../daemon/contract'
+import { RUNTIME_VERSION, runtimeCapability } from '../daemon/contract'
 import { serveWorkspace, type Daemon } from '../daemon/entry'
 import { CateConnectError, CONNECTION_FAILED } from './contract'
 import { dialCateConnect } from './client'
@@ -89,7 +89,7 @@ function registered(registration: ConnectRegistration): Promise<RegistrationStat
 
 function rpcClient(name: string, keys: KeyPair) {
   const client = new RpcClient({
-    version: 'test',
+    version: RUNTIME_VERSION,
     identity: { client: { clientId: name, device: { name, publicKey: encodePublicKey(keys.publicKey) }, features: [] } },
     helloTimeoutMs: 3_000,
   })
@@ -99,7 +99,7 @@ function rpcClient(name: string, keys: KeyPair) {
 
 /** A local client asks for a pairing secret, as "Share" does. */
 async function addDevice(daemon: Daemon) {
-  const desk = new RpcClient({ version: 'test', identity: { client: { clientId: 'desk', device: { name: 'desk', publicKey: '' }, features: [] } } })
+  const desk = new RpcClient({ version: RUNTIME_VERSION, identity: { client: { clientId: 'desk', device: { name: 'desk', publicKey: '' }, features: [] } } })
   clients.push(desk)
   await desk.attach(framePortOver(await dialLocal(daemon.endpoint), 'stream'))
   const pairing = createCapabilityProxy(desk, pairingCapability)

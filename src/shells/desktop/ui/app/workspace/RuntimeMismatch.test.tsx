@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { act, StrictMode } from 'react'
-import type { ConnectionState } from '@client/connections'
+import { createRuntimeUpdates, type ConnectionState, type RuntimeUpdates } from '@client/connections'
 import type { WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../app'
 import { ConnectionBlocker } from './ConnectionBlocker'
@@ -10,6 +10,7 @@ let host: HTMLDivElement
 let root: Root
 let idle = false
 let progress: unknown = null
+let updates: RuntimeUpdates | null = null
 
 function fakeConnection(state: ConnectionState) {
   const listeners = new Set<() => void>()
@@ -39,11 +40,14 @@ function fakeConnection(state: ConnectionState) {
 
 /** The workspace inside its blocker, next to a sidebar the blocker must not cover. */
 const render = (connection: ReturnType<typeof fakeConnection>, strict = false) => {
+  const connections = { get: () => connection, getSnapshot: () => [connection], subscribe: () => () => {} } as unknown as ClientApp['connections']
+  // The core's flow, as the app runs it: it tries the idle update at once.
+  updates = createRuntimeUpdates({ connections, version: '2.0.4', build: '2.0.4+new' })
   installClientApp({
     workspaces: { get: () => ({ name: 'cate' }) } as unknown as WorkspaceList,
-    connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
+    connections,
+    runtimeUpdates: updates,
     version: '2.0.4',
-    build: '2.0.4+new',
   })
   const tree = (
     <>
@@ -70,6 +74,8 @@ afterEach(() => {
   act(() => root.unmount())
   host.remove()
   installClientApp(null)
+  updates?.dispose()
+  updates = null
 })
 
 describe('RuntimeMismatchCard', () => {
@@ -80,7 +86,7 @@ describe('RuntimeMismatchCard', () => {
     expect(host.querySelector('[data-sidebar]')!.closest('[inert]')).toBeNull()
   })
 
-  it('updates a runtime of another protocol to this app\'s build', async () => {
+  it('updates a runtime of another version to this app\'s build', async () => {
     const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' })
     await render(connection)
     expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })

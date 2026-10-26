@@ -3,6 +3,7 @@ import type { WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from './app'
 import { installNavigationHooks, openUrl } from './navigation'
 import { INITIAL_UI_STATE, useUIStore } from './state/uiStore'
+import { noRuntimeUpdates } from '@client/connections/testing'
 
 afterEach(() => useUIStore.setState(INITIAL_UI_STATE))
 
@@ -15,6 +16,7 @@ it('a shown workspace that leaves the list is not shown any more', () => {
   let entries = [{ id: 'local:/a' }]
   const listeners = new Set<() => void>()
   installClientApp({
+    runtimeUpdates: noRuntimeUpdates,
     workspaces: {
       get: (id: string) => entries.find((e) => e.id === id),
       subscribe: (l: () => void) => { listeners.add(l); return () => listeners.delete(l) },

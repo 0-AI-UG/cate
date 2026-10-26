@@ -129,7 +129,7 @@ describe.skipIf(process.platform === 'win32')('socket lock', () => {
   const owner =async (program: string, args: string[] = []) => {
     const child = spawn(program, args)
     await new Promise<void>((resolve) => child.once('spawn', () => resolve()))
-    await writeRuntimeInfo(tmp, { runtimeId: 'abcdefghijklmnop', root: tmp, pid: child.pid!, version: '0', protocol: [1, 0], endpoints: { local: dataPaths(tmp).socket } })
+    await writeRuntimeInfo(tmp, { runtimeId: 'abcdefghijklmnop', root: tmp, pid: child.pid!, version: '0', endpoints: { local: dataPaths(tmp).socket } })
     return child
   }
 

@@ -8,7 +8,7 @@
 import type { AnyCapability, ClientFeature, DeviceInfo } from '@kernel/rpc/contract'
 import type { DeviceStore } from '@kernel/state/contract'
 import { setRuntimeResolver } from '@kernel/rpc/client'
-import { createClientIdentity, installClientIdentity, WorkspaceConnections, type ClientIdentity, type ShellTransports } from '@client/connections'
+import { createClientIdentity, createRuntimeUpdates, installClientIdentity, WorkspaceConnections, type ClientIdentity, type RuntimeUpdates, type ShellTransports } from '@client/connections'
 import { attachDocuments } from '@client/document'
 import { attachSessions, registerPanelDefinitions, serveSurfaces } from '@client/host'
 import { nameJoinedWorkspaces, WorkspaceList } from '@client/workspaces'
@@ -21,6 +21,8 @@ export interface ClientCoreOptions {
   deviceStore: DeviceStore
   transports: ShellTransports
   version: string
+  /** This client's build: the install a runtime of another version is
+   *  updated to (`runtime.update`). */
   build?: string
   /** `PANEL_DEFINITIONS`. */
   panels: readonly AnyPanelDefinition[]
@@ -32,6 +34,7 @@ export interface ClientCore {
   identity: ClientIdentity
   connections: WorkspaceConnections
   workspaces: WorkspaceList
+  runtimeUpdates: RuntimeUpdates
   dispose(): void
 }
 
@@ -44,7 +47,6 @@ export async function startClientCore(options: ClientCoreOptions): Promise<Clien
     transports: options.transports,
     capabilities: options.capabilities,
     version: options.version,
-    ...(options.build ? { build: options.build } : {}),
   })
   // `runtimeFor` answers from these connections, installed once here.
   const stops: (() => void)[] = [
@@ -56,10 +58,13 @@ export async function startClientCore(options: ClientCoreOptions): Promise<Clien
   const workspaces = new WorkspaceList({ store: options.deviceStore, connections })
   await workspaces.load()
   stops.push(nameJoinedWorkspaces(workspaces, connections))
+  const runtimeUpdates = createRuntimeUpdates({ connections, version: options.version, ...(options.build ? { build: options.build } : {}) })
+  stops.push(() => runtimeUpdates.dispose())
   return {
     identity,
     connections,
     workspaces,
+    runtimeUpdates,
     dispose() {
       for (const stop of stops.splice(0).reverse()) {
         try { stop() } catch { /* keep disposing */ }

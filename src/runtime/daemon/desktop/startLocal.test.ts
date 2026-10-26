@@ -7,7 +7,7 @@ import path from 'node:path'
 import { build } from 'esbuild'
 import { framePortOver } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
-import { runtimeCapability } from '../contract'
+import { RUNTIME_VERSION, runtimeCapability } from '../contract'
 import { startLocalRuntime } from './startLocal'
 
 const repoRoot = path.resolve(__dirname, '../../../..')
@@ -35,7 +35,7 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
 
   const first = await startLocalRuntime(options)
   expect(first.started).toBe(true)
-  const client = new RpcClient({ version: 'test', identity: { client: { clientId: 'c', device: { name: 'd', publicKey: 'f' }, features: [] } } })
+  const client = new RpcClient({ version: RUNTIME_VERSION, identity: { client: { clientId: 'c', device: { name: 'd', publicKey: 'f' }, features: [] } } })
   await client.attach(framePortOver(first.duplex, 'stream'))
   const runtime = createCapabilityProxy(client, runtimeCapability)
   const info = await runtime.info()

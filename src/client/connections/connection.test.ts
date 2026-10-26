@@ -3,7 +3,6 @@ import {
   RpcError,
   framePortOver,
   type ByteDuplex,
-  type ProtocolVersion,
 } from '@kernel/rpc/contract'
 import { runtimeFor, setRuntimeResolver, tryRuntimeFor } from '@kernel/rpc/client'
 import { RpcServer, type CapabilityImpl } from '@kernel/rpc/runtime'
@@ -53,13 +52,12 @@ interface FakeRuntime {
   dropAll(): void
 }
 
-function fakeRuntime(opts: { protocol?: ProtocolVersion; build?: string; refuse?: boolean } = {}): FakeRuntime {
+function fakeRuntime(opts: { version?: string; build?: string; refuse?: boolean } = {}): FakeRuntime {
   const rt: FakeRuntime = {
     server: new RpcServer({
       lifecycle: createLifecycleBus(),
-      version: '9.0.0',
+      version: opts.version ?? '9.0.0',
       build: opts.build,
-      protocol: opts.protocol,
       acceptHello: (hello) => {
         if (hello.client) rt.helloClientIds.push(hello.client.clientId)
         if (opts.refuse) throw new RpcError('rejected', 'unknown device')
@@ -113,9 +111,9 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }, build?: string, sessionLingerMs = 0) {
+function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backoff = { initialMs: 10, maxMs: 1000, factor: 2 }, sessionLingerMs = 0) {
   registry = new WorkspaceConnections({
-      capabilities: RUNTIME_CAPABILITIES, identity, transports: transportsFor(rt, extra), version: '9.0.0', build, backoff, sessionLingerMs })
+      capabilities: RUNTIME_CAPABILITIES, identity, transports: transportsFor(rt, extra), version: '9.0.0', backoff, sessionLingerMs })
   const opened = registry
   stopResolver = setRuntimeResolver((workspaceId) => opened.get(workspaceId)?.runtime ?? null)
   return registry.open('ws1', { kind: 'local', root: '/w' })
@@ -216,24 +214,20 @@ describe('WorkspaceConnection', () => {
     expect(rt.helloClientIds.length).toBe(3)
   })
 
-  it('reports an incompatible runtime and keeps the connection for crossMajor calls', async () => {
-    const rt = fakeRuntime({ protocol: [99, 0] })
-    const connection = openLocal(rt)
-    await vi.waitFor(() => expect(connection.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.0' }))
-  })
-
-  it('connects to a runtime of another build of the same protocol, as stale', async () => {
-    const stale = openLocal(fakeRuntime({ build: '9.0.0+old' }), {}, undefined, '9.0.0+new')
-    await vi.waitFor(() => expect(stale.state).toEqual({ kind: 'connected', stale: { runtime: '9.0.0+old', app: '9.0.0+new' } }))
-    await expect(stale.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
+  it('connects only to a runtime of its own version; any other is incompatible', async () => {
+    const older = openLocal(fakeRuntime({ version: '8.9.0' }))
+    await vi.waitFor(() => expect(older.state).toEqual({ kind: 'incompatible', runtimeVersion: '8.9.0' }))
+    await expect(older.runtime.workspace.info()).rejects.toThrow(/8\.9\.0/)
     registry!.close('ws1')
 
-    const unbuilt = openLocal(fakeRuntime(), {}, undefined, '9.0.0+new')
-    await vi.waitFor(() => expect(unbuilt.state).toEqual({ kind: 'connected', stale: { runtime: null, app: '9.0.0+new' } }))
+    const newer = openLocal(fakeRuntime({ version: '9.0.1' }))
+    await vi.waitFor(() => expect(newer.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.1' }))
     registry!.close('ws1')
 
-    const same = openLocal(fakeRuntime({ build: '9.0.0+new' }), {}, undefined, '9.0.0+new')
+    // Another build of the same version is the same version.
+    const same = openLocal(fakeRuntime({ build: '9.0.0+other' }))
     await vi.waitFor(() => expect(same.state).toEqual({ kind: 'connected' }))
+    await expect(same.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
   })
 
   it('stops retrying when the runtime refuses the client', async () => {
@@ -283,7 +277,7 @@ describe('WorkspaceConnection', () => {
         return () => { closed++ }
       },
     } satisfies CapabilityImpl<typeof sessionCapability>)
-    const connection = openLocal(rt, {}, undefined, undefined, 60)
+    const connection = openLocal(rt, {}, undefined, 60)
     const a = connection.subscribeSession('p1')
     await vi.waitFor(() => expect(a.getSnapshot()).not.toBeNull())
     a.release()

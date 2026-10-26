@@ -3,7 +3,6 @@
 // declarations passed to `register`.
 
 import {
-  PROTOCOL,
   RpcError,
   isCompatible,
   knownFeatures,
@@ -17,7 +16,6 @@ import {
   type HelloMessage,
   type Message,
   type ParamsOf,
-  type ProtocolVersion,
   type ReqMessage,
   type ResultOf,
   type WireError,
@@ -27,8 +25,7 @@ import type { ClientConnection, LifecycleBus } from '@kernel/lifecycle/runtime'
 export interface ConnectionInfo {
   readonly id: number
   readonly peerVersion: string
-  readonly protocol: ProtocolVersion
-  /** Same protocol major. An incompatible peer may only call `crossMajor` methods. */
+  /** The same version. An incompatible peer may only call `anyVersion` methods. */
   readonly compatible: boolean
   readonly client: ClientConnection | null
   readonly caller: CallerHello | null
@@ -77,7 +74,6 @@ export interface RpcServerOptions {
   version: string
   /** Daemon build, sent in `hello`. */
   build?: string
-  protocol?: ProtocolVersion
   lifecycle: LifecycleBus
   /** Throw (ideally an RpcError) to refuse a connection: bad token, device
    *  key that does not match the handshake. */
@@ -111,11 +107,9 @@ export class RpcServer {
   private nextConnId = 1
   /** This run of the server, sent in `hello`: the op log above is in memory. */
   readonly epoch = globalThis.crypto.randomUUID()
-  readonly protocol: ProtocolVersion
   readonly lifecycle: LifecycleBus
 
   constructor(readonly opts: RpcServerOptions) {
-    this.protocol = opts.protocol ?? PROTOCOL
     this.lifecycle = opts.lifecycle
   }
 
@@ -155,15 +149,15 @@ export class RpcServer {
   }
 
   /** @internal */
-  lookup(capName: string, name: string): { kind: 'method' | 'stream'; crossMajor: boolean; callers: boolean; fn: (...args: never[]) => unknown } | null {
+  lookup(capName: string, name: string): { kind: 'method' | 'stream'; anyVersion: boolean; callers: boolean; fn: (...args: never[]) => unknown } | null {
     const entry = this.caps.get(capName)
     if (!entry) return null
     const own = (o: object) => Object.prototype.hasOwnProperty.call(o, name)
     // Implementations may be class instances, so keep `this`.
     const fn = (...args: never[]) => entry.impl[name].call(entry.impl, ...args)
     const callers = entry.cap.callers === true
-    if (own(entry.cap.methods)) return { kind: 'method', crossMajor: entry.cap.methods[name].crossMajor, callers, fn }
-    if (own(entry.cap.streams)) return { kind: 'stream', crossMajor: false, callers, fn }
+    if (own(entry.cap.methods)) return { kind: 'method', anyVersion: entry.cap.methods[name].anyVersion, callers, fn }
+    if (own(entry.cap.streams)) return { kind: 'stream', anyVersion: false, callers, fn }
     return null
   }
 
@@ -261,7 +255,7 @@ class Connection {
     this.helloPending = true
     this.held = []
     const refuse = (err: unknown) => {
-      this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version, build: this.server.opts.build, error: toWireError(err) })
+      this.send({ t: 'hello', version: this.server.opts.version, build: this.server.opts.build, error: toWireError(err) })
       this.port.close('hello refused')
     }
     const client = hello.client
@@ -269,7 +263,7 @@ class Connection {
       && typeof client.clientId === 'string' && client.clientId.length > 0 && !client.clientId.includes(':')
       && typeof client.device?.name === 'string' && typeof client.device?.publicKey === 'string'
     const callerValid = hello.caller && typeof hello.caller.token === 'string'
-    if (!Array.isArray(hello.protocol) || (!clientValid && !callerValid)) {
+    if (typeof hello.version !== 'string' || (!clientValid && !callerValid)) {
       refuse(new RpcError('rejected', 'Invalid hello'))
       return
     }
@@ -290,13 +284,12 @@ class Connection {
     this.info = {
       id: this.id,
       peerVersion: String(hello.version),
-      protocol: [hello.protocol[0], hello.protocol[1]],
-      compatible: isCompatible(hello.protocol, this.server.protocol),
+      compatible: isCompatible(hello.version, this.server.opts.version),
       client: clientConn,
       caller: !clientValid && hello.caller ? { token: hello.caller.token } : null,
       has: (f) => featureSet.has(f),
     }
-    this.send({ t: 'hello', protocol: this.server.protocol, version: this.server.opts.version, build: this.server.opts.build, epoch: this.server.epoch })
+    this.send({ t: 'hello', version: this.server.opts.version, build: this.server.opts.build, epoch: this.server.epoch })
     if (clientConn && this.info.compatible) this.server.lifecycle.emitClientConnected(clientConn)
     for (const frame of held ?? []) this.onFrame(frame)
   }
@@ -315,8 +308,8 @@ class Connection {
     // A caller (no client in its hello) reaches only capabilities declared
     // with `callers`.
     if (!info.client && !target.callers) return fail(new RpcError('rejected', `${req.cap} is for clients only`))
-    if (!info.compatible && !target.crossMajor) {
-      return fail(new RpcError('unsupported', 'Incompatible protocol version'))
+    if (!info.compatible && !target.anyVersion) {
+      return fail(new RpcError('unsupported', `This runtime runs Cate ${this.server.opts.version}, not ${info.peerVersion}`))
     }
     if (this.inflight.has(req.id) || this.streams.has(req.id)) return fail(new RpcError('rejected', 'Duplicate request id'))
     const params = req.params ?? undefined

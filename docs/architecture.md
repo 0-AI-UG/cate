@@ -540,7 +540,7 @@ persisted session and document file. It is created with mode `0700`.
                         /tmp/cate-<uid>/<runtimeId>/runtime.sock, through a
                         symlink to this directory in a private (0700) dir;
                         the socket file stays here
-  runtime.json          { runtimeId, root, pid, version, build, protocol, endpoints }
+  runtime.json          { runtimeId, root, pid, version, build, endpoints }
   document.json         the document (9.1)
   sessions/<panelId>.json   persisted session state
   sessions/removed/     state of removed panels, kept a day for undo
@@ -935,15 +935,13 @@ terminal could share the computer.
   `res {id, result | error}`, `evt {stream, data}`, `cancel {id}`,
   `ack {stream, bytes}` (flow control for byte streams). Parameters are named
   objects, never positional arrays.
-- **Hello.** Both sides send their `protocol: [major, minor]` and version. A
+- **Hello.** Both sides send their version. A
   client also sends its `clientId`, `device {name, publicKey}` (checked
   against the handshake on network transports) and `features`
   (section 12.2), fixed for the life of the connection. A caller (the CLI)
   sends its token instead (section 14). The runtime also sends its `epoch`,
-  new at every daemon start. Same major is
-  compatible; a method or stream the other side does not have fails with
-  `unsupported`, so additions are always optional. A different major is
-  incompatible (7.10).
+  new at every daemon start. Only the same version is compatible; any
+  other is incompatible (7.10).
 - **Client identity and op ids.** A client picks a random `clientId` when it
   starts and keeps it across reconnects. Every call that changes something
   carries an `opId = clientId:counter`, and the runtime ignores an `opId` it
@@ -1008,37 +1006,42 @@ fails to compile when a registered capability is missing.
 
 ### 7.10 Versions
 
-- The client and runtime compare protocol majors on `hello`: that alone
-  decides compatibility, so clients of different releases or builds of one
-  protocol (the App Store iOS app, teammates' desktops) share a runtime.
-  The runtime also sends its build: the version plus a hash of what the
-  install is made of (the sources, bundled skills and the lockfile)
-  (`scripts/build-id.mjs`), baked into the daemon bundle and the desktop
-  app. A runtime of another build of the same protocol connects as
-  `stale` and is fully usable. The desktop restarts a stale runtime into its
-  build once per connection, whatever the transport, and only while nothing
-  else uses it (`ifIdle`, below) and its machine can get that build;
-  otherwise it keeps running as it is.
-- Another protocol major answers only `crossMajor` methods. The fix is
-  `runtime.update { version, build }` with the client's own
-  version and build: the daemon restarts into the install of that build, or
-  downloads release `version` from GitHub Releases (checked against its
-  `.sha256`) when the build is not on its machine, refusing a release of
-  another build. It restarts too when the versions are equal (a stale build).
-  A local runtime always finds the install the desktop app made. Updating
-  stops the runtime's terminals and agents.
-- When nothing else uses the runtime the client updates it without asking:
-  it sends `ifIdle`, which the daemon refuses (`dirty`) while another client
-  is connected or work runs. Otherwise the workspace's cover shows both
-  versions and says what updating ends before it acts (an incompatible runtime
-  answers only `crossMajor` methods, so it cannot list them). A runtime newer
-  than the app is never moved back to the app's version: the cover asks to
-  update the app. The question is asked in that workspace only, never in a
+- A client connects to a runtime only of its own version, exactly: the
+  client and the runtime compare versions on `hello`, and nothing else
+  decides. There is no partial compatibility, no feature negotiation and no
+  version skew to handle: every client of a runtime runs the code the
+  runtime was built with, so a field, setting or method added in a release
+  always exists on both sides. A client of another version (an older or
+  newer app, the iOS app of another release, a teammate's desktop) cannot
+  use the workspace until one of them is updated. The build (the version
+  plus a hash of what the install is made of: the sources, bundled skills
+  and the lockfile, `scripts/build-id.mjs`) names the install to run, not
+  compatibility: two builds of one version connect.
+- A runtime of another version answers only `anyVersion` methods. The fix
+  is `runtime.update { version, build }` with the client's own version and
+  build: the daemon restarts into the install of that build, or downloads
+  release `version` from GitHub Releases (checked against its `.sha256`)
+  when the build is not on its machine, refusing a release of another
+  build. It restarts too when the versions are equal (another build of
+  it). A local runtime always finds the install the desktop app made.
+  Updating stops the runtime's terminals and agents.
+- Every client runs the same flow, in the client core
+  (`client/connections` `RuntimeUpdates`); each shell only draws it. When
+  nothing else uses the runtime the client updates it without asking, once
+  each time the connection turns incompatible: it sends `ifIdle`, which the
+  daemon refuses (`dirty`) while another client of its version is connected
+  or work runs. Otherwise the workspace shows both versions and says what
+  updating ends before it acts (an incompatible runtime answers only
+  `anyVersion` methods, so it cannot list them): the desktop's cover, the
+  iOS app's workspace screen. A runtime newer than the app is never moved
+  back to the app's version: the workspace asks to update the app (the
+  desktop checks for updates; the iOS app says so, its update comes from
+  the App Store). The question is asked in that workspace only, never in a
   dialog over the app.
   Concurrent updates to one target share one install; another target fails
   `conflict`.
 - While an update runs, the cover shows its progress: the client polls
-  `runtime.updateProgress` (also `crossMajor`: the download's bytes, then
+  `runtime.updateProgress` (also `anyVersion`: the download's bytes, then
   the install) for a progress bar. The client that asked keeps the cover
   through the restart, saying it is restarting, until the new runtime
   answers (or does not within a minute), instead of the offline cover.
@@ -1802,7 +1805,8 @@ headless.
   "stopped" state (stopped on purpose, no retrying until started again);
   `eachConnection` runs something per open connection.
   Each connection implements `dialLoopback(port)` (section 12.3).
-  `connectionStatus(state, {startsRuntime})` is the one table of what a state
+  `RuntimeUpdates` brings a runtime of another version in line (7.10).
+  `connectionStatus(state, {startsRuntime, version})` is the one table of what a state
   means and what can be done about it, which every shell shows: a title, a
   message without socket paths, errno codes or timings, and its remedies,
   main one first (try again; start again, only where the transport starts the
@@ -1873,8 +1877,8 @@ a shell's UI knows its own platform and draws what it supports:
 
 Rules:
 
-1. **Declared once.** The list is closed. Adding a feature is a protocol minor
-   version; an unknown feature in `hello` is ignored.
+1. **Declared once.** The list is closed; an unknown feature in `hello` is
+   ignored.
 2. **Declared per connection.** A client sends its features in `hello`
    (7.8). The runtime keeps them per connection and shows them in presence.
    Each shell declares what it supports on its platform: the desktop shell
@@ -2263,8 +2267,7 @@ shell, with `--json` when it parses results.
     and the shell's ports, imports every panel view and maps each type to
     its view, calls `registerWorkspaceViews()`, fills the review and
     agent-changes openers, and mounts the desktop UI. It also runs the
-    desktop's own boot concerns: restarting a stale runtime into the app's
-    build (7.10), the menu bar model, quit blockers, the splash and the perf
+    desktop's own boot concerns: the menu bar model, quit blockers, the splash and the perf
     HUD. Logic another shell would need lives in the client core.
   - **ui**: the desktop UI, all of it, in React, mirroring where each piece
     belongs: the kernel components and theme manager (`ui/kernel/interaction`), panel
@@ -2311,7 +2314,9 @@ shell, with `--json` when it parses results.
   has a native view (terminal, editor, browser with loopback routing,
   review, the surface picker), and worktrees can be switched. The app
   shows each agent of a workspace as a chat (the conversation pushed as it
-  changes through `agents.watch`, replies, what it is doing while it works,
+  changes through `agents.watch`, its latest messages only and earlier
+  pages through `agents.more` as it is scrolled up, replies, what it is
+  doing while it works,
   the prompts the runtime keeps on their way: every reply goes through
   `agents.send`, busy agent or not, and shows as being sent, queued in
   order with Edit to take it back into the box, or not taken with Edit and
