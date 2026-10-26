@@ -71,6 +71,9 @@ targets:
         CFBundleDisplayName: Cate
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Only exempt encryption (HTTPS, the OS's own APIs), so App Store
+        # Connect does not hold each build for export compliance.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations:

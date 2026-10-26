@@ -33,6 +33,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>CateSharedKeychainGroup</key>
 	<string>$(AppIdentifierPrefix)$(CATE_BUNDLE_ID).shared</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
