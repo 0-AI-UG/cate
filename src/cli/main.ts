@@ -3,10 +3,11 @@
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CLI_VERSION, EXIT_ENV, runCli, type CliDeps, type HelpStyle } from './engine'
+import { EXIT_ENV, runCli, type CliDeps, type HelpStyle } from './engine'
 import { serveCommand, SERVE_SUMMARY } from './serve'
 import { connectSocket } from './socketPort'
 import { CATE_API } from '@panels/api'
+import { RUNTIME_VERSION } from '@runtime/daemon/contract'
 
 async function writeImage(base64: string, mimeType: unknown): Promise<string> {
   const path = join(await mkdtemp(join(tmpdir(), 'cate-browser-')), mimeType === 'image/jpeg' ? 'screenshot.jpg' : 'screenshot.png')
@@ -47,7 +48,7 @@ export function main(argv: string[], extraCommands: CliDeps['extraCommands'] = E
     cwd: process.cwd(),
     stdout,
     stderr,
-    connect: (socketPath, token) => connectSocket(socketPath, token, CLI_VERSION),
+    connect: (socketPath, token) => connectSocket(socketPath, token, RUNTIME_VERSION),
     writeImage,
     writeText,
     extraCommands,

@@ -44,16 +44,15 @@ export function isRpcError(err: unknown, code?: RpcErrorCode): err is RpcError {
   return err instanceof RpcError && (code === undefined || err.code === code)
 }
 
-/** The peer speaks a different protocol major (7.10). Not a wire code: it is
- *  decided locally from the peer's `hello`. */
-export class IncompatibleProtocolError extends Error {
+/** The peer runs another version (7.10). Not a wire code: it is decided
+ *  locally from the peer's `hello`. */
+export class IncompatibleVersionError extends Error {
   constructor(
-    readonly local: readonly [number, number],
-    readonly remote: readonly [number, number],
+    readonly local: string,
     readonly remoteVersion: string,
   ) {
-    super(`Incompatible runtime protocol ${remote.join('.')} (this side speaks ${local.join('.')})`)
-    this.name = 'IncompatibleProtocolError'
+    super(`The runtime runs Cate ${remoteVersion}, this side ${local}`)
+    this.name = 'IncompatibleVersionError'
   }
 }
 

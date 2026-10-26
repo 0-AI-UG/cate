@@ -170,10 +170,12 @@ enum MarkdownBlocks {
 /// An agent's reply as Markdown. One that came in while you watch shows
 /// line by line: it is laid out whole once and shown through a frame that
 /// grows down at a steady pace, its leading edge fading, so the chat grows
-/// with it and nothing is laid out again on the way. One that was there
-/// shows whole.
+/// with it and nothing is laid out again on the way. It waits while you
+/// scroll the chat, so what you scroll does not move under you. One that was
+/// there shows whole.
 struct ReplyView: View {
     let item: AgentConversation.Item
+    @Environment(\.chatScrolling) private var scrolling
     /// How much of the reply shows; nil for all of it.
     @State private var shown: CGFloat?
     /// The reply's height laid out whole.
@@ -181,6 +183,8 @@ struct ReplyView: View {
     /// The leading edge fades while it moves.
     @State private var revealing = false
     @State private var revealer: Task<Void, Never>?
+    /// The chat is being scrolled: the reveal waits.
+    @State private var paused = false
 
     init(item: AgentConversation.Item) {
         self.item = item
@@ -214,6 +218,7 @@ struct ReplyView: View {
                     .frame(height: revealing ? Self.edge : 0)
             }
         }
+        .onChange(of: scrolling, initial: true) { _, now in paused = now }
         .onDisappear {
             revealer?.cancel()
             revealer = nil
@@ -235,6 +240,7 @@ struct ReplyView: View {
             let now = clock.now
             let elapsed = CGFloat((now - last) / .seconds(1))
             last = now
+            if paused { continue }
             let pace = max(Self.speed, (height - current) / Self.longest)
             shown = min(height, current + pace * elapsed)
         }
@@ -244,4 +250,9 @@ struct ReplyView: View {
         shown = nil
         revealer = nil
     }
+}
+
+extension EnvironmentValues {
+    /// You are scrolling the chat (dragging, or flicked and it still moves).
+    @Entry var chatScrolling = false
 }

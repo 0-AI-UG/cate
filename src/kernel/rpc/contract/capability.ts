@@ -13,10 +13,10 @@ export interface MethodOptions {
   idempotent?: boolean
   /** Default deadline for this method; 0 disables it. */
   timeoutMs?: number
-  /** Callable across protocol majors (`runtime.update`, `runtime.info`), so an
-   *  incompatible runtime can still be updated. The method's params and
-   *  result must never change shape. */
-  crossMajor?: boolean
+  /** Callable at any version (`runtime.update`, `runtime.info`), so a
+   *  runtime of another version can still be updated. The method's params
+   *  and result must never change shape. */
+  anyVersion?: boolean
 }
 
 export interface StreamDeclOptions {
@@ -29,7 +29,7 @@ export interface MethodSpec<P = unknown, R = unknown> {
   readonly mutates: boolean
   readonly idempotent: boolean
   readonly timeoutMs?: number
-  readonly crossMajor: boolean
+  readonly anyVersion: boolean
   readonly __types?: { params: P; result: R }
 }
 
@@ -45,7 +45,7 @@ export function method<P = void, R = void>(opts: MethodOptions = {}): MethodSpec
     kind: 'method',
     mutates: opts.mutates === true,
     idempotent: opts.idempotent === true,
-    crossMajor: opts.crossMajor === true,
+    anyVersion: opts.anyVersion === true,
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
   }
 }

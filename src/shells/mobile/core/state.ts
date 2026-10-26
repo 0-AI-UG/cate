@@ -17,18 +17,20 @@ import type { MobileLinks } from './links'
 import { relationFieldsOf, relationsOf, type MobileRelations } from './relations'
 import type { MobileAvailability } from './availability'
 
+// An app update comes from the App Store: there is nothing to press here.
 const MOBILE_ACTIONS: Partial<Record<ConnectionRemedy, MobileConnectionAction>> = {
+  updateRuntime: 'updateRuntime',
   retry: 'retry',
   start: 'retry',
   pair: 'pair',
   close: 'forget',
 }
 
-export function connectionOf(state: ConnectionState, startsRuntime = false): MobileConnection {
-  const status = connectionStatus(state, { startsRuntime })
+export function connectionOf(state: ConnectionState, version: string, startsRuntime = false, updating = false): MobileConnection {
+  const status = connectionStatus(state, { startsRuntime, version })
   const text = status?.message ?? (state.kind === 'connected' ? 'Connected' : 'Not connected')
   const actions = [...new Set((status?.remedies ?? []).map((r) => MOBILE_ACTIONS[r]).filter((a): a is MobileConnectionAction => !!a))]
-  return { kind: state.kind, title: status?.title ?? '', text, actions }
+  return { kind: state.kind, title: status?.title ?? '', text, actions, updating }
 }
 
 function canvasOfDoc(doc: WorkspaceDocument, canvasId: string | undefined): MobileCanvas | null {
@@ -91,7 +93,7 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents, relations
         id: entry.id,
         name: entry.name,
         runtimeId: entry.runtimeId,
-        connection: connectionOf(connection?.getState() ?? { kind: 'closed' }, connection?.startsRuntime),
+        connection: connectionOf(connection?.getState() ?? { kind: 'closed' }, client.version, connection?.startsRuntime, !!connection && client.runtimeUpdates.run(connection) !== null),
         panels: connection ? panelsOf(entry.id) : null,
         worktrees: store?.isSynced() ? worktreesOf(store.getSnapshot()) : [],
         relations: relationsEnabled && store?.isSynced() ? relationsOf(store.getSnapshot()) : [],
@@ -152,6 +154,7 @@ export function watchState(client: MobileClient, agents: MobileAgents, relations
     client.workspaces.subscribe(schedule),
     trustStore.subscribe(schedule),
     client.connections.subscribe(schedule),
+    client.runtimeUpdates.subscribe(schedule),
     subscribeDocumentStores(schedule),
     agents.subscribe(schedule),
     relations.subscribe(schedule),

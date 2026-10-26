@@ -44,7 +44,6 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
       machineName: deps.machineName,
       machineSleeps: deps.machineSleeps,
       version: deps.version,
-      protocol: deps.rpc.protocol,
       pid: process.pid,
       clients: deps.rpc.connections().flatMap((c) =>
         c.client ? [{ clientId: c.client.clientId, device: { ...c.client.device }, features: [...c.client.features] }] : []),
@@ -63,7 +62,8 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
         throw new RpcError('rejected', `invalid build ${String(build)} for version ${version}`)
       }
       if (ifIdle) {
-        const others = deps.rpc.connections().some((c) => c.client !== null && c.id !== ctx.connection.id)
+        // A client of another version cannot use the runtime: it uses nothing.
+        const others = deps.rpc.connections().some((c) => c.client !== null && c.compatible && c.id !== ctx.connection.id)
         if (others || deps.busy()) throw new RpcError('dirty', 'the runtime has other clients or running work')
       }
       // One update at a time; a second caller for the same target waits on it.

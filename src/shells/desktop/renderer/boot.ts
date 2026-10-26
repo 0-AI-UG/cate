@@ -62,7 +62,6 @@ import { createDesktopShellTransports, serveLoopbackRequests } from './transport
 import { installWebviewHosts, prepareWebviewPartitions, type WebviewPartitions } from './webviews'
 import { attachDetachedWindow, createWindowsPort } from './windows'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
-import { restartStaleRuntimes } from './staleRuntimes'
 
 const log = createLogger('renderer')
 
@@ -146,7 +145,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     panels: PANEL_DEFINITIONS,
     capabilities: RUNTIME_CAPABILITIES,
   })
-  const { identity, connections, workspaces } = core
+  const { identity, connections, workspaces, runtimeUpdates } = core
   stops.push(api.app.onAttention(setClientAttentive))
   // Input in this window tells the runtimes the client is in use.
   const active = () => noteClientActivity()
@@ -160,8 +159,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
     return workspaceId ? connections.get(workspaceId) : undefined
   }, api))
 
-  installClientApp({ workspaces, connections, version: info.version, build: RUNTIME_BUILD, pair: transports.pair, machines: api.machines })
-  stops.push(restartStaleRuntimes({ connections, version: info.version, build: RUNTIME_BUILD }))
+  installClientApp({ workspaces, connections, runtimeUpdates, version: info.version, pair: transports.pair, machines: api.machines })
   // A connection may be dead without knowing it after sleep or a network change.
   const checkConnections = () => connections.checkAll()
   globalThis.addEventListener('online', checkConnections)

@@ -23,6 +23,13 @@ export type {
   PairedRuntime,
 } from './transports'
 export {
+  createRuntimeUpdates,
+  runtimeMismatch,
+  type RuntimeMismatch,
+  type RuntimeUpdateRun,
+  type RuntimeUpdates,
+} from './runtimeUpdate'
+export {
   connectionStatus,
   missingFolderOf,
   relativeTime,

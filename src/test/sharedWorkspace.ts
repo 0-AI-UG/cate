@@ -15,7 +15,8 @@ import path from 'node:path'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { createLogger, installLogSink } from '@kernel/log/contract'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
-import type { ByteDuplex, ChannelState, ClientFeature, ProtocolVersion } from '@kernel/rpc/contract'
+import type { ByteDuplex, ChannelState, ClientFeature } from '@kernel/rpc/contract'
+import { RUNTIME_VERSION } from '@runtime/daemon/contract'
 import { createClientIdentity, WorkspaceConnection, type ClientIdentity, type ConnectionState, type SessionHandle, type ShellTransports } from '@client/connections'
 import { attachDocument, documentStoreFor, type DocumentStore } from '@client/document'
 import { createPanel, registerPanelDefinitions } from '@client/host'
@@ -78,8 +79,8 @@ export interface SharedWorkspace {
   /** Another client: `local` on A's machine, `machine` through a bridge
    *  (as over SSH or WSL), or a newly paired device. */
   join(name: string, transport: 'local' | 'machine' | 'network', features?: ClientFeature[]): Promise<TestClient>
-  /** A local client of another app build or protocol; not waited for. */
-  connect(name: string, options: { build?: string; protocol?: ProtocolVersion }): TestClient
+  /** A local client of another app version; not waited for. */
+  connect(name: string, options: { version: string }): TestClient
   /** Closes a local client and opens a new connection with the same
    *  identity, as reopening a workspace in the same app launch does. */
   reopen(client: TestClient): Promise<TestClient>
@@ -234,7 +235,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
     name: string,
     identity?: ClientIdentity,
     features: ClientFeature[] = ['canvas', 'windows'],
-    app: { build?: string; protocol?: ProtocolVersion } = {},
+    app: { version?: string } = {},
     viaMachine = false,
   ): TestClient => {
     const link = createLink()
@@ -252,7 +253,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
       target: viaMachine ? { kind: 'machine', machine: { kind: 'ssh', target: { destination: 'test@box' } }, root } : { kind: 'local', root },
       transports,
       identity: identity ?? createClientIdentity({ device: { name, publicKey: encodePublicKey(generateKeyPair().publicKey) }, features }),
-      version: 'test',
+      version: RUNTIME_VERSION,
       ...app,
       backoff: { initialMs: 20, maxMs: 200 },
     }), link)
@@ -284,7 +285,7 @@ export async function startSharedWorkspace(opts: SharedWorkspaceOptions = {}): P
         dialLoopbackTcp: () => Promise.reject(new Error('no loopback in tests')),
       },
       identity: createClientIdentity({ device: { name, publicKey: encodePublicKey(keys.publicKey) }, features: ['canvas'] }),
-      version: 'test',
+      version: RUNTIME_VERSION,
       backoff: { initialMs: 20, maxMs: 200 },
     }), link)
   }

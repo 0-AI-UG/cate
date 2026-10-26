@@ -9,6 +9,7 @@ import { framePortOver, type ChannelEvent } from '@kernel/rpc/contract'
 import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 import { createWorkspaceSettingsMirror } from '@kernel/settings/client'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
+import { RUNTIME_VERSION } from '@runtime/daemon/contract'
 import { dialLocal } from '@runtime/transports/node'
 import { startSharedWorkspace, until, untilState, type SharedWorkspace, type TestClient } from '../sharedWorkspace'
 
@@ -35,7 +36,7 @@ async function cliIn(c: TestClient) {
     const read = await api.call({ method: 'cate.terminal.read', args: { panelId: id } }) as { text: string }
     return /TOK=([A-Za-z0-9_-]{20,})/.exec(read.text)?.[1]
   }, 10_000, 'CATE_TOKEN')
-  const rpc = new RpcClient({ version: 'test', identity: { caller: { token } } })
+  const rpc = new RpcClient({ version: RUNTIME_VERSION, identity: { caller: { token } } })
   callers.push(rpc)
   await rpc.attach(framePortOver(await dialLocal(ws.daemon.endpoint), 'stream'))
   return { panelId: id, cli: createCapabilityProxy(rpc, apiCapability) }

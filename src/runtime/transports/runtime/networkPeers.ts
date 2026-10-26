@@ -84,7 +84,7 @@ export function createNetworkPeers(options: NetworkPeersOptions): NetworkPeers {
     switch (admission.kind) {
       case 'unpaired':
         options.log?.info('refused a device that is not paired')
-        await refuse(channel, options.rpc)
+        await refuse(channel)
         break
       case 'paired':
         options.log?.info('paired device "%s"', admission.deviceName)
@@ -166,13 +166,12 @@ function peerHangsUp(channel: SecureChannel): Promise<void> {
  * refusal, so its client stops retrying and says why, and closes. It names no
  * version: an unpaired peer learns nothing about the runtime.
  */
-async function refuse(channel: SecureChannel, rpc: RpcServer): Promise<void> {
+async function refuse(channel: SecureChannel): Promise<void> {
   // The refusal answers the hello, so the client is listening when it lands.
   if (await nextFrame(channel, OPENING_TIMEOUT_MS) instanceof Uint8Array) secureFramePort(channel).send({
     kind: 'msg',
     msg: {
       t: 'hello',
-      protocol: rpc.protocol,
       version: '',
       error: toWireError(new RpcError('rejected', 'This device is not paired with this workspace.', { unpaired: true } satisfies UnpairedRefusal)),
     },
@@ -198,7 +197,6 @@ function checkedHello(port: FramePort, publicKey: string, rpc: RpcServer): Frame
               kind: 'msg',
               msg: {
                 t: 'hello',
-                protocol: rpc.protocol,
                 version: rpc.opts.version,
                 error: toWireError(new RpcError('rejected', 'hello does not match the device key of this connection')),
               },

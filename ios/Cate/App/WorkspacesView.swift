@@ -178,17 +178,43 @@ struct ConnectionActions: View {
     @Environment(\.joinWorkspace) private var join
     let workspace: Workspace
     var compact = false
+    /// Asking before an update ends the workspace's terminals and agents.
+    @State private var confirmingUpdate = false
+    @State private var updateFailure: String?
 
     var body: some View {
-        ForEach(Array(workspace.connection.actions.enumerated()), id: \.element) { index, action in
-            button(action)
-                .buttonStyle(index == 0 && !compact ? AnyPrimitiveButtonStyle(.glassProminent) : AnyPrimitiveButtonStyle(.glass))
+        if workspace.connection.updating {
+            ProgressView(compact ? "Updating" : "Updating the runtime")
                 .controlSize(compact ? .small : .regular)
+        } else {
+            ForEach(Array(workspace.connection.actions.enumerated()), id: \.element) { index, action in
+                button(action)
+                    .buttonStyle(index == 0 && !compact ? AnyPrimitiveButtonStyle(.glassProminent) : AnyPrimitiveButtonStyle(.glass))
+                    .controlSize(compact ? .small : .regular)
+            }
+            .confirmationDialog("Update the runtime?", isPresented: $confirmingUpdate, titleVisibility: .visible) {
+                Button("Update Runtime", role: .destructive) { updateRuntime() }
+            } message: {
+                Text("Updating ends the workspace's terminals and running agents for everyone connected to it.")
+            }
+            .alert("The runtime was not updated", isPresented: Binding(get: { updateFailure != nil }, set: { if !$0 { updateFailure = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(updateFailure ?? "")
+            }
+        }
+    }
+
+    private func updateRuntime() {
+        Task {
+            let result = await core.updateRuntime(workspace.id)
+            if !result.ok { updateFailure = result.message ?? "The runtime did not answer." }
         }
     }
 
     @ViewBuilder private func button(_ action: Connection.Action) -> some View {
         switch action {
+        case .updateRuntime: Button(compact ? "Update" : "Update Runtime") { confirmingUpdate = true }
         case .retry: Button(compact ? "Retry" : "Try Again") { Task { await core.retry(workspace.id) } }
         case .pair: Button("Pair Again", action: join)
         case .forget: Button("Forget", role: .destructive) { Task { await core.forget(workspace.id) } }

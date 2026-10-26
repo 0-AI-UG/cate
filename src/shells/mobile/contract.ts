@@ -93,8 +93,10 @@ export type MobileViewEvent =
   /** `buffer.open`: the buffer could not be opened or its stream ended. */
   | { kind: 'error'; message: string }
   /** `agents.watch`: the chat (`MobileChat`) with its items from index
-   *  `from` on, which replace the app's from there; the items before stay. */
-  | ({ kind: 'chat'; from: number } & MobileChat)
+   *  `from` on, which replace the app's from there; the items before stay.
+   *  Its items are the latest ones only; `earlier`: there are more before
+   *  them (`agents.more`). */
+  | ({ kind: 'chat'; from: number; earlier: boolean } & MobileChat)
 
 /** A loopback stream (`stream.open`): bytes from the runtime's machine
  *  (base64), or its end. */
@@ -122,7 +124,7 @@ export type MobileBridge = <M extends MobileBridgeMethod>(
 /** What the app offers for a connection state: try again
  *  (`workspaces.retry`), pair again (the join sheet), or forget the
  *  workspace (`workspaces.forget`, the core's `close` remedy). */
-export type MobileConnectionAction = 'retry' | 'pair' | 'forget'
+export type MobileConnectionAction = 'updateRuntime' | 'retry' | 'pair' | 'forget'
 
 /** A connection's state as the app shows it; the wording lives here once
  *  (`connectionStatus` in the client core). */
@@ -133,6 +135,9 @@ export interface MobileConnection {
   text: string
   /** Main action first. */
   actions: MobileConnectionAction[]
+  /** Its runtime is being updated to this app's version (installing, then
+   *  restarting until it answers again). */
+  updating: boolean
 }
 
 export interface MobilePanel {
@@ -424,6 +429,10 @@ export interface MobileCoreMethods {
   /** Stops the workspace's runtime for everyone (`runtime.stop`), then closes it. */
   'workspaces.stop': { params: { workspaceId: string }; result: null }
   'workspaces.retry': { params: { workspaceId: string }; result: null }
+  /** Updates a runtime of an older version to this app's (`runtime.update`),
+   *  which ends its terminals and running agents; resolves once it answers
+   *  again. */
+  'workspaces.updateRuntime': { params: { workspaceId: string }; result: MobileActionResult }
   /** Disconnects it and drops it from the list, deleting its pinned
    *  runtime key: opening it again takes a new code. */
   'workspaces.forget': { params: { workspaceId: string }; result: null }
@@ -513,6 +522,8 @@ export interface MobileCoreMethods {
    *  way with the agent. */
   'agents.watch': { params: { viewId: string; workspaceId: string; panelId: string; pending?: string }; result: null }
   'agents.unwatch': { params: { viewId: string }; result: null }
+  /** Adds earlier items to the chat `viewId` shows: a `chat` event from 0. */
+  'agents.more': { params: { viewId: string }; result: null }
   /** Sends a prompt to the agent (`cate agent send`): the runtime sends it
    *  once the agent can take one, whether or not the app is still there,
    *  and every chat of it shows where it is. `attachments`: paths

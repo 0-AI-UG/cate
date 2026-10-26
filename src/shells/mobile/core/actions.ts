@@ -19,7 +19,7 @@ type Handlers<M extends keyof MobileCoreMethods> = {
 }
 
 export type ActionMethod =
-  | 'agents.watch' | 'agents.unwatch' | 'agents.send' | 'agents.withdraw' | 'agents.attach' | 'agents.interrupt'
+  | 'agents.watch' | 'agents.unwatch' | 'agents.more' | 'agents.send' | 'agents.withdraw' | 'agents.attach' | 'agents.interrupt'
   | 'agents.choices' | 'agents.start' | 'agents.review'
   | 'power.set' | 'push.device' | 'push.useCateConnect'
 
@@ -70,6 +70,10 @@ export function createActionHandlers(agents: MobileAgents, conversations: Mobile
     },
     async 'agents.unwatch'({ viewId }) {
       conversations.unwatch(viewId)
+      return null
+    },
+    async 'agents.more'({ viewId }) {
+      conversations.more(viewId)
       return null
     },
     'agents.send': ({ workspaceId, panelId, prompt, attachments }) =>

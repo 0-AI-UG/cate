@@ -370,15 +370,18 @@ private struct ConversationList: View {
     @State private var following = true
     /// You are scrolling it (dragging, or flicked and it still moves).
     @State private var scrolling = false
-    /// How many of the latest items show; earlier ones on request, so a
-    /// long conversation opens without laying out all of it.
-    @State private var shown = ConversationList.page
+    /// The top is near: earlier items are asked for as you scroll there.
+    @State private var nearTop = false
+    /// Earlier items were asked for while this was the first: what shows
+    /// stays where it is when they come in above it.
+    @State private var earlierFrom: String?
     /// Something came in below while you read further up.
     @State private var unseen = false
     /// The items fade in once, when the first ones come.
     @State private var listShown = false
 
-    private static let page = 60
+    /// How far above the top earlier items are asked for.
+    private static let ahead: CGFloat = 600
 
     var body: some View {
         let items = conversation?.items ?? []
@@ -388,12 +391,10 @@ private struct ConversationList: View {
                 // conversation under the reader.
                 VStack(alignment: .leading, spacing: 16) {
                     Group {
-                        if items.count > shown {
-                            Button("Show Earlier Messages") { shown += Self.page }
-                                .font(.callout)
-                                .frame(maxWidth: .infinity)
+                        if conversation?.earlier == true {
+                            ProgressView().frame(maxWidth: .infinity)
                         }
-                        ForEach(items.suffix(shown)) { item in
+                        ForEach(items) { item in
                             ItemRow(item: item)
                         }
                     }
@@ -425,6 +426,13 @@ private struct ConversationList: View {
             // scrolled up.
             .onScrollPhaseChange { _, phase in
                 scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+                // Let go at the end while it follows: catch up with what grew.
+                if !scrolling, following { proxy.scrollTo("end", anchor: .bottom) }
+                if scrolling, nearTop { loadEarlier() }
+            }
+            .onScrollGeometryChange(for: Bool.self) { $0.visibleRect.minY < Self.ahead } action: { _, near in
+                nearTop = near
+                if near, scrolling { loadEarlier() }
             }
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.visibleRect.maxY >= geometry.contentSize.height - 48
@@ -438,9 +446,18 @@ private struct ConversationList: View {
             }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
                 if following, !scrolling, new != old { proxy.scrollTo("end", anchor: .bottom) }
+                // Earlier items came in above (and were kept out of the way):
+                // still near the top, the page before them too.
+                if let from = earlierFrom, items.first?.id != from {
+                    earlierFrom = nil
+                    if nearTop, scrolling { loadEarlier() }
+                }
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor(following ? .bottom : .top, for: .sizeChanges)
+            // Never moved under your finger: growth while you scroll stays
+            // below, and earlier items come in above what shows.
+            .defaultScrollAnchor((following && !scrolling) || earlierFrom != nil ? .bottom : .top, for: .sizeChanges)
+            .environment(\.chatScrolling, scrolling)
             .onAppear { listShown = !items.isEmpty }
             .onChange(of: items.isEmpty) { _, empty in
                 guard !empty, !listShown else { return }
@@ -471,6 +488,13 @@ private struct ConversationList: View {
             }
             .animation(.snappy, value: unseen)
         }
+    }
+
+    /// Asks for the page before the items, once at a time.
+    private func loadEarlier() {
+        guard let conversation, conversation.earlier, earlierFrom == nil, let first = conversation.items.first else { return }
+        earlierFrom = first.id
+        conversation.more(core)
     }
 
     /// Takes a queued or failed prompt back from the runtime; `edit` puts it

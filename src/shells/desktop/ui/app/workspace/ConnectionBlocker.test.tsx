@@ -6,6 +6,7 @@ import type { WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../app'
 import { installDesktopPort, type DesktopPort, type InstallProgressEvent } from '../desktop'
 import { ConnectionBlocker } from './ConnectionBlocker'
+import { noRuntimeUpdates } from '@client/connections/testing'
 
 let host: HTMLDivElement
 let root: Root
@@ -33,6 +34,7 @@ const getSnapshot = () => ({ entries: [], open: [] })
 
 function mount(connection: ReturnType<typeof fakeConnection>) {
   installClientApp({
+    runtimeUpdates: noRuntimeUpdates,
     workspaces: { get: () => ({ kind: 'local', id: 'ws', name: 'ws' }), close, getSnapshot } as unknown as WorkspaceList,
     connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
     version: '2.0.5',
@@ -122,6 +124,7 @@ describe('ConnectionBlocker', () => {
     } as unknown as DesktopPort)
     const connection = fakeConnection({ kind: 'connecting' } as ConnectionState)
     installClientApp({
+      runtimeUpdates: noRuntimeUpdates,
       workspaces: { get: () => ({ kind: 'machine', name: 'site', machine: { kind: 'ssh', target: { destination: 'box' } }, root: '/srv/site' }), close, getSnapshot } as unknown as WorkspaceList,
       connections: { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections'],
       version: '2.0.5',

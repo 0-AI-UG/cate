@@ -119,7 +119,7 @@ struct RememberedWorkspace: Codable, Equatable {
     var state: WorkspaceState {
         WorkspaceState(
             id: id, name: name, runtimeId: runtimeId,
-            connection: Connection(kind: .connecting, title: "", text: "Connecting…", actions: []),
+            connection: Connection(kind: .connecting, title: "", text: "Connecting…", actions: [], updating: false),
             panels: nil, worktrees: [], relations: [], relationsEnabled: false, agents: [],
             power: nil, whenClosed: nil, push: nil, others: []
         )
@@ -205,13 +205,15 @@ struct Connection: Decodable, Equatable, Hashable {
     }
     /// What the app offers for the state, main action first.
     enum Action: String, Decodable {
-        case retry, pair, forget
+        case updateRuntime, retry, pair, forget
     }
     let kind: Kind
     /// A short heading; empty when connected or closed.
     let title: String
     let text: String
     let actions: [Action]
+    /// Its runtime is being updated to this app's version.
+    let updating: Bool
 }
 
 struct Panel: Decodable, Equatable, Identifiable, Hashable {
@@ -459,6 +461,8 @@ struct ChatTurn: Decodable, Hashable, Sendable {
 struct ChatEvent: Decodable, Sendable {
     let kind: String
     let from: Int
+    /// Items are the latest only: there are earlier ones (`agents.more`).
+    let earlier: Bool
     /// The conversation was read.
     let loaded: Bool
     /// Nil while the panel hosts no agent.

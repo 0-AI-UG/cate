@@ -3,17 +3,16 @@
 // builds these at start and installs them once.
 
 import type { MachineSetup } from '@runtime/daemon/contract'
-import type { ShellTransports, WorkspaceConnections } from '@client/connections'
+import type { RuntimeUpdates, ShellTransports, WorkspaceConnections } from '@client/connections'
 import type { WorkspaceList } from '@client/workspaces'
 
 export interface ClientApp {
   workspaces: WorkspaceList
   connections: WorkspaceConnections
-  /** This client's release version, sent with `runtime.update`. */
+  /** Bringing runtimes of another version in line with this client. */
+  runtimeUpdates: RuntimeUpdates
+  /** This client's release version. */
   version: string
-  /** This client's build, sent with `runtime.update` so the runtime runs
-   *  exactly it. */
-  build?: string
   /** The shell's `ShellTransports.pair`; absent on a shell that cannot join
    *  network workspaces. */
   pair?: NonNullable<ShellTransports['pair']>

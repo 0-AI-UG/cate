@@ -192,6 +192,11 @@ final class CoreHost {
     func close(_ workspaceId: String) async { await call("workspaces.close", ["workspaceId": workspaceId]) }
     func stop(_ workspaceId: String) async { await call("workspaces.stop", ["workspaceId": workspaceId]) }
     func retry(_ workspaceId: String) async { await call("workspaces.retry", ["workspaceId": workspaceId]) }
+    /// Updates the workspace's older runtime to this app's version; resolves
+    /// once it answers again.
+    func updateRuntime(_ workspaceId: String) async -> ActionResult {
+        await action("workspaces.updateRuntime", ["workspaceId": workspaceId])
+    }
     func forget(_ workspaceId: String) async { await call("workspaces.forget", ["workspaceId": workspaceId]) }
 
     func workspace(_ id: String) -> Workspace? {
@@ -295,6 +300,11 @@ extension CoreHost {
     func unwatchAgent(_ viewId: String) {
         views[viewId] = nil
         Task { await call("agents.unwatch", ["viewId": viewId]) }
+    }
+
+    /// Earlier items for the chat `viewId` follows: a `chat` event from 0.
+    func moreAgent(_ viewId: String) {
+        Task { await call("agents.more", ["viewId": viewId]) }
     }
 
     // MARK: Buffers

@@ -14,6 +14,7 @@ import { OPEN_WORKSPACE_ANCHOR, OpenWorkspaceDialog } from './OpenWorkspaceDialo
 import { installDesktopPort, type DesktopPort } from '../desktop'
 import { clientSettingsTable, type ClientSettings } from '../../../settings'
 import { installMockClientUi } from '../../../../../test/clientUi'
+import { noRuntimeUpdates } from '@client/connections/testing'
 
 /** The Open picker, and the folder dialog it opens. */
 const Picker = () => <><WorkspacePicker /><MachineFolderHost /></>
@@ -86,7 +87,7 @@ async function addInPicker(command: string) {
 it('adds a machine once it answers, then opens the picked folder as a workspace', async () => {
   const setup = fakeSetup()
   const workspaces = fakeWorkspaces()
-  installClientApp({ workspaces, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
   await act(async () => root.render(<Picker />))
   await addInPicker('ssh -p 2222 u@box')
@@ -116,7 +117,7 @@ it('adds a machine once it answers, then opens the picked folder as a workspace'
 it('does not save a machine that never answered', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockRejectedValue(new Error('u@box refused the login.'))
-  installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
   await act(async () => root.render(<Picker />))
   await addInPicker('u@box')
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('refused the login')
@@ -127,7 +128,7 @@ it('shows why a machine cannot be set up and retries', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockRejectedValueOnce(new Error('u@box refused the login.'))
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
-  installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
   await act(async () => root.render(<Picker />))
   await act(async () => option('u@box').click())
@@ -141,7 +142,7 @@ it('falls back to the home folder when the last one is gone, and opens a typed p
   const setup = fakeSetup()
   const workspaces = { addMachine: vi.fn(async () => ({ id: 'w1' })) }
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' }, lastPath: '/gone' }])
-  installClientApp({ workspaces: workspaces as unknown as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: workspaces as unknown as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
   await act(async () => root.render(<Picker />))
   await act(async () => option('u@box').click())
@@ -155,7 +156,7 @@ it('falls back to the home folder when the last one is gone, and opens a typed p
 it('Open lists the hosts of the SSH config once, connects to one in a click and saves it', async () => {
   const setup = fakeSetup([], [{ alias: 'prod', hostName: '10.0.0.5', user: 'deploy', port: 2222 }, { alias: 'orb' }])
   store.set('sshMachines', [{ id: 'm', target: { destination: 'orb' } }])
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
   await act(async () => root.render(<Picker />))
   // A host already saved is listed with the saved machines, not twice.
@@ -168,7 +169,7 @@ it('Open lists the hosts of the SSH config once, connects to one in a click and 
 
 it('Open lists WSL distros to open a folder in', async () => {
   const setup = fakeSetup(['Ubuntu'])
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
   await act(async () => root.render(<Picker />))
   await act(async () => option('Ubuntu').click())
   expect(setup.ensureRuntime).toHaveBeenCalledWith({ kind: 'wsl', distro: 'Ubuntu' })
@@ -177,7 +178,7 @@ it('Open lists WSL distros to open a folder in', async () => {
 it('Open removes a saved machine once confirmed', async () => {
   const ui = installMockClientUi()
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
   await act(async () => root.render(<Picker />))
   await act(async () => button('Remove u@box').click())
   expect(store.get('sshMachines')).toHaveLength(1)
@@ -188,7 +189,7 @@ it('Open removes a saved machine once confirmed', async () => {
 })
 
 it('Open joins a workspace on another device with a code', async () => {
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', pair: vi.fn() })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', pair: vi.fn() })
   await act(async () => root.render(<Picker />))
   await act(async () => option('Join with a code…').click())
   expect(useUIStore.getState().joinDialog).toEqual({})
@@ -202,7 +203,7 @@ it('Open Workspace… shows the picker over the workspace the window shows', () 
 })
 
 it('Open hangs from the sidebar\'s "+" while it shows, and an outside click closes it', async () => {
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
   const plus = document.createElement('button')
   plus.setAttribute(OPEN_WORKSPACE_ANCHOR, '')
   plus.getBoundingClientRect = () => ({ left: 10, right: 32, top: 10, bottom: 32, width: 22, height: 22, x: 10, y: 10, toJSON: () => ({}) })
@@ -220,7 +221,7 @@ it('Open hangs from the sidebar\'s "+" while it shows, and an outside click clos
 })
 
 it('Open shows nothing of its own while the page shows the picker', async () => {
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
   useUIStore.setState({ openDialogOpen: true, pickerOnPage: true })
   await act(async () => root.render(<OpenWorkspaceDialog />))
   expect(document.body.querySelector('[role="dialog"]')).toBeNull()
@@ -230,7 +231,7 @@ it('Open shows nothing of its own while the page shows the picker', async () => 
 it('the Open dialog stays when the native folder dialog is cancelled, and closes on a pick', async () => {
   const pickFolder = vi.fn<() => Promise<string | null>>(async () => null)
   installDesktopPort({ pickFolder } as unknown as DesktopPort)
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
   useUIStore.setState({ openDialogOpen: true })
   await act(async () => root.render(<OpenWorkspaceDialog />))
   await act(async () => option('Open a folder…').click())
@@ -243,7 +244,7 @@ it('the Open dialog stays when the native folder dialog is cancelled, and closes
 
 it('the Open dialog steps aside for a machine\'s folders and comes back when they are dismissed', async () => {
   const setup = fakeSetup(['Ubuntu'])
-  installClientApp({ workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
   useUIStore.setState({ openDialogOpen: true })
   await act(async () => root.render(<><OpenWorkspaceDialog /><MachineFolderHost /></>))
   await act(async () => option('Ubuntu').click())
@@ -261,7 +262,7 @@ it('closing the dialog stops what still runs on the machine', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockImplementation(() => new Promise(() => {}))
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
-  installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
   await act(async () => root.render(<Picker />))
   await act(async () => option('u@box').click())
   await act(async () => button('Cancel').click())
@@ -269,7 +270,7 @@ it('closing the dialog stops what still runs on the machine', async () => {
 })
 
 it('refuses an ssh command it cannot read', async () => {
-  installClientApp({ workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
   await act(async () => root.render(<Picker />))
   await addInPicker('ssh -o ProxyCommand=x box')
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('~/.ssh/config')

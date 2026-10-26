@@ -5,6 +5,7 @@
 // offered a start.
 
 import type { ConnectionState } from './connection'
+import { runtimeMismatch } from './runtimeUpdate'
 
 /** "5 minutes ago", coarse. */
 export function relativeTime(then: number, now: number = Date.now()): string {
@@ -18,11 +19,11 @@ export function relativeTime(then: number, now: number = Date.now()): string {
   return `${days} day${days === 1 ? '' : 's'} ago`
 }
 
-/** What the person can do: resolve an incompatible runtime where the
- *  workspace says how, try again, start a stopped runtime, close the
- *  workspace (drop it from the list), pair again, or open the workspace a
- *  folder is nested in. */
-export type ConnectionRemedy = 'resolve' | 'retry' | 'start' | 'close' | 'pair' | 'openNested'
+/** What the person can do: update a runtime of an older version to this
+ *  client's, update this app to a newer runtime's version, try again, start
+ *  a stopped runtime, close the workspace (drop it from the list), pair
+ *  again, or open the workspace a folder is nested in. */
+export type ConnectionRemedy = 'updateRuntime' | 'updateApp' | 'retry' | 'start' | 'close' | 'pair' | 'openNested'
 
 export interface ConnectionStatus {
   /** A short heading. */
@@ -36,6 +37,8 @@ export interface ConnectionStatus {
 export interface StatusContext {
   /** Dialing starts the runtime when nothing answers (`startsRuntime`). */
   startsRuntime: boolean
+  /** This client's version. */
+  version: string
   now?: number
 }
 
@@ -54,7 +57,7 @@ function readableError(error: string | undefined): string | null {
 
 /** The state in words and what to do about it; null when connected. */
 export function connectionStatus(state: ConnectionState, context: StatusContext): ConnectionStatus | null {
-  const { startsRuntime, now } = context
+  const { startsRuntime, version, now } = context
   const unreachable: ConnectionRemedy[] = ['retry', 'close']
   switch (state.kind) {
     case 'connecting':
@@ -74,7 +77,9 @@ export function connectionStatus(state: ConnectionState, context: StatusContext)
         : { title: 'Not reachable', message: reason ? `${reason}.` : 'Its machine may be off or offline.', remedies: unreachable }
     }
     case 'incompatible':
-      return { title: 'Runtime out of date', message: `Runtime ${state.runtimeVersion} needs an update.`, remedies: ['resolve'] }
+      return runtimeMismatch(state, version)?.update === 'app'
+        ? { title: 'Update Cate', message: `The workspace runs Cate ${state.runtimeVersion}, newer than this app (${version}). Update Cate to use it.`, remedies: ['updateApp'] }
+        : { title: 'Runtime update needed', message: `The workspace runs Cate ${state.runtimeVersion}. Update it to ${version} to use it; that ends its terminals and running agents.`, remedies: ['updateRuntime'] }
     case 'refused':
       if (state.nestedIn) return { title: 'Already open', message: state.message, remedies: ['openNested', 'retry', 'close'] }
       if (state.unpaired) {

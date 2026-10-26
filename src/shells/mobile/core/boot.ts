@@ -2,7 +2,7 @@
 // client identity, the connections and the workspace list, over the native
 // bridge. No UI here; the app renders the core's state natively.
 
-import type { ShellTransports, WorkspaceConnections } from '@client/connections'
+import type { RuntimeUpdates, ShellTransports, WorkspaceConnections } from '@client/connections'
 import { startClientCore } from '@client/core'
 import { installLinkSettings } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
@@ -21,6 +21,10 @@ import { createClientSettingsStore, type ClientSettingsStore } from '@kernel/set
 export interface MobileClient {
   connections: WorkspaceConnections
   workspaces: WorkspaceList
+  /** Bringing runtimes of another version in line with this app. */
+  runtimeUpdates: RuntimeUpdates
+  /** This app's version: only runtimes of it connect. */
+  version: string
   pair: NonNullable<ShellTransports['pair']>
   /** This device's client settings (the shared slices). */
   settings: ClientSettingsStore<SharedClientSettings>
@@ -41,8 +45,8 @@ export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClie
     pins: new KnownRuntimes(device),
   })
   // The core is built from this checkout's sources, like the runtime it
-  // talks to, so it carries the same version and build.
-  const { connections, workspaces } = await startClientCore({
+  // talks to, so it carries the same version.
+  const { connections, workspaces, runtimeUpdates } = await startClientCore({
     device: { name: info.device, publicKey: encodePublicKey(deviceKeys.publicKey) },
     features: knownFeatures(info.features),
     deviceStore: device,
@@ -59,6 +63,8 @@ export async function bootMobileClient(bridge: MobileBridge): Promise<MobileClie
   return {
     connections,
     workspaces,
+    runtimeUpdates,
+    version: RUNTIME_VERSION,
     pair: transports.pair!,
     settings,
     isActive: () => active,

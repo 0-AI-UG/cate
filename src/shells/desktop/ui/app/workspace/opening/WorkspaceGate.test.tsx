@@ -5,6 +5,7 @@ import type { ConnectionState } from '@client/connections'
 import { createTrustStore, openTrusted, trustStore, type TrustApi, type WorkspaceList } from '@client/workspaces'
 import { installClientApp, type ClientApp } from '../../app'
 import { WorkspaceGate } from './WorkspaceGate'
+import { noRuntimeUpdates } from '@client/connections/testing'
 
 // The workspace's document: synced (or not yet) as each test sets it.
 const doc = vi.hoisted(() => {
@@ -58,7 +59,7 @@ const workspaces = {
 
 function mount(connection: ReturnType<typeof fakeConnection>) {
   const connections = { get: () => connection, subscribe: () => () => {} } as unknown as ClientApp['connections']
-  installClientApp({ workspaces, connections, version: '2.0.5' })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces, connections, version: '2.0.5' })
   act(() => root.render(<WorkspaceGate workspaceId="ws"><button>panel</button></WorkspaceGate>))
   return connections
 }

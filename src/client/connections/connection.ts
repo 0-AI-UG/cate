@@ -11,7 +11,7 @@ import {
   type RuntimeProxy,
 } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy, createRuntimeProxy, type RpcClientState } from '@kernel/rpc/client'
-import { framePortOver, type ProtocolVersion } from '@kernel/rpc/contract'
+import { framePortOver } from '@kernel/rpc/contract'
 import { nestedRefusalRoot } from '@runtime/daemon/contract'
 import { FRAME_MODE, isUnpairedRefusal } from '@runtime/transports/contract'
 import type { ClientIdentity } from './identity'
@@ -21,13 +21,10 @@ import { tunnelDuplex } from './tunnel'
 
 export type ConnectionState =
   | { kind: 'connecting' }
-  /** `stale`: the runtime runs another build of the same protocol than
-   *  this app (an older install, or a checkout's runtime before
-   *  `runtime:dev`); it is fully usable (7.10). */
-  | { kind: 'connected'; stale?: { runtime: string | null; app: string } }
+  | { kind: 'connected' }
   /** `lastSeen` is when the runtime was last connected (null: never). */
   | { kind: 'offline'; lastSeen: number | null; retrying: boolean; error?: string }
-  /** A different protocol major: nothing but `runtime.info` and
+  /** The runtime runs another version: nothing but `runtime.info` and
    *  `runtime.update` answers (7.10). */
   | { kind: 'incompatible'; runtimeVersion: string }
   /** Someone stopped the runtime on purpose: no reconnecting until
@@ -52,12 +49,8 @@ export interface WorkspaceConnectionOptions {
   target: ConnectionTarget
   transports: ShellTransports
   identity: ClientIdentity
-  /** App version, sent in `hello`. */
+  /** App version, sent in `hello`: only a runtime of this version connects. */
   version: string
-  /** The protocol this client speaks; default: `PROTOCOL`. */
-  protocol?: ProtocolVersion
-  /** App build: a runtime of another build connects as `stale`. */
-  build?: string
   backoff?: Partial<Backoff>
   now?: () => number
   /** How long a released panel session stays open; default `SESSION_LINGER_MS`. */
@@ -78,7 +71,6 @@ export class WorkspaceConnection {
   readonly runtime: RuntimeProxy
   private readonly transports: ShellTransports
   readonly identity: ClientIdentity
-  private readonly build: string | undefined
   private readonly backoff: Backoff
   private readonly now: () => number
   private readonly proxies = new Map<string, unknown>()
@@ -100,12 +92,10 @@ export class WorkspaceConnection {
     this.kind = opts.target.kind
     this.transports = opts.transports
     this.identity = opts.identity
-    this.build = opts.build
     this.backoff = { ...DEFAULT_BACKOFF, ...opts.backoff }
     this.now = opts.now ?? Date.now
     this.rpc = new RpcClient({
       version: opts.version,
-      ...(opts.protocol ? { protocol: opts.protocol } : {}),
       identity: {
         client: {
           clientId: opts.identity.clientId,
@@ -261,8 +251,7 @@ export class WorkspaceConnection {
       case 'ready': {
         this.attempt = 0
         this.lastSeen = this.now()
-        const runtime = this.rpc.remote?.build ?? null
-        this.setState({ kind: 'connected', ...(this.build !== undefined && runtime !== this.build ? { stale: { runtime, app: this.build } } : {}) })
+        this.setState({ kind: 'connected' })
         return
       }
       case 'incompatible':

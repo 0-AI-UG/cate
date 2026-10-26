@@ -103,6 +103,12 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       connections.get(workspaceId)?.retryNow()
       return null
     },
+    async 'workspaces.updateRuntime'({ workspaceId }) {
+      const connection = connections.get(workspaceId)
+      if (!connection) return { ok: false, message: 'The workspace is not open.' }
+      const failed = await client.runtimeUpdates.update(connection)
+      return failed ? { ok: false, message: failed } : { ok: true }
+    },
     async 'workspaces.forget'({ workspaceId }) {
       await workspaces.close(workspaceId)
       return null
