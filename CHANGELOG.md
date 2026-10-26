@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.5] - 2026-10-26
+
+### Changed
+
+- **Runtime versions**: the app connects only to workspace runtimes of exactly its own version. An older runtime is updated to the app's version (automatically when idle, otherwise after asking); a newer runtime asks you to update the app. On iOS the workspace shows an update action with progress.
+- **PDF preview** shows the whole document as one continuous scroll instead of one page at a time. The page counter follows your scroll, and the arrows jump between pages.
+- **iOS agent chat** loads the latest 20 messages and fetches earlier ones as you scroll up.
+
+### Breaking
+
+- Runtimes from 2.1.0-beta.4 and earlier refuse to connect to this version. Stop them once by hand; after that, updates go through the normal flow.
+
 ## [2.1.0-beta.4] - 2026-10-25
 
 ### Changed
