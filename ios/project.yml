@@ -16,8 +16,8 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1.1"
+    CURRENT_PROJECT_VERSION: "4"
 packages:
   # The terminal screen (TerminalPanelView.swift). Pinned below 1.19, whose
   # build-info plugin breaks iOS builds from xcodebuild.
