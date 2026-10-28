@@ -1954,15 +1954,28 @@ the runtime's machine on every client.
   `FORCE_HYPERLINK=1` so programs that check send them. The iOS app hands
   its taps to the core (`terminal.openLink`, and `links.open` for markdown);
   the core's question waits in its state (`linkPrompt`) for the app to ask.
-- **The web proxy.** Each client with `webview` runs one web proxy per open
-  workspace and routes that workspace's webviews through it. It supports
+- **Browser networking.** A connection that declares `reachesClientNetwork`
+  permits native browser networking: the runtime is on this machine, so
+  native loopback already means the runtime's machine. On desktop Chromium
+  owns ordinary connections, DNS, address-family fallback and network changes,
+  using the system proxy configuration unless `browserProxyUrl` overrides it.
+  Overrides use Chromium's proxy rules, PAC evaluation and HTTP/HTTPS proxy
+  authentication. Changing the setting reapplies it to open partitions and
+  closes pooled connections to the previous proxy.
+- **The protected web proxy.** When a connection does not declare
+  `reachesClientNetwork`, the desktop routes its workspace's webviews through
+  an authenticated web proxy. It supports
   plain HTTP, `CONNECT` (HTTPS) and upgrades (WebSocket, for hot reload). For
   a loopback host it calls `connection.dialLoopback(port)`; for every other
-  host it connects directly, or through the client's `browserProxyUrl`. A
+  host it connects directly, or through the client's HTTP `browserProxyUrl`. A
   connection whose `reachesClientNetwork` is false (every one but the local
   socket: a machine's runtime is on that machine's network) never reaches
   the client's private ranges: a private, link-local or unique local address
-  is refused with `403`, with or without an upstream proxy.
+  is refused with `403`, with or without an upstream proxy. Direct connections
+  retain the permitted DNS addresses and use Node's built-in address-family
+  fallback without resolving the name again; private answers cannot become
+  fallback targets. Unsupported upstream schemes fail rather than bypassing
+  the configured proxy.
 - **The connection decides how.** A local connection's `dialLoopback` opens a
   TCP socket to the port on this machine (it is the runtime's machine).
   Every other connection's (a machine's bridge, the network) opens
@@ -1972,13 +1985,16 @@ the runtime's machine on every client.
 - **Pages are not rewritten.** The URL stays `http://localhost:3000`, so
   origins, cookies and absolute links behave as they do on the runtime's
   machine.
-- **Desktop.** The proxy runs in desktop main on a random `127.0.0.1` port.
-  The workspace's partition (`persist:ws-<runtimeId>`, shared by its browser
-  panels) uses it with
+- **Desktop.** Each workspace has one partition (`persist:ws-<runtimeId>`,
+  shared by its browser panels). Native networking is prepared before its
+  first webview mounts. Where protected routing is required, the proxy runs
+  in desktop main on a random `127.0.0.1` port and the partition uses it with
   `proxyBypassRules: '<-loopback>'`, since Chromium never proxies loopback
   otherwise. The proxy requires a random per-launch credential, which the
   shell answers through Electron's `login` event, so other processes on the
-  client machine cannot use it to reach the runtime.
+  client machine cannot use it to reach the runtime. If any connection to a
+  runtime requires protected routing, that partition stays protected for the
+  rest of the launch; switching policy closes existing native connections.
 - **iOS.** WebKit connects to loopback hosts directly and never through a
   proxy, so there is no web proxy: before a page of the workspace loads a
   loopback URL (any frame), the app listens on the phone's own loopback at

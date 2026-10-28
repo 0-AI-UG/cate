@@ -375,6 +375,9 @@ app.whenReady().then(() => {
   device.subscribe((name) => {
     if (name !== 'settings') return
     const next = settings()
+    if (next.browserProxyUrl !== previous.browserProxyUrl) {
+      void partitions.refresh().catch((error: unknown) => log.warn('could not update browser proxy settings: %s', error))
+    }
     if (next.betaUpdatesEnabled !== previous.betaUpdatesEnabled) updater.setBetaUpdates(next.betaUpdatesEnabled)
     if (next.canvasBackgroundImagePath !== previous.canvasBackgroundImagePath) backgrounds.prune(next.canvasBackgroundImagePath)
     previous = next
