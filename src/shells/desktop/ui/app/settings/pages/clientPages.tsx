@@ -186,7 +186,7 @@ export function BrowserPage(): JSX.Element {
       </SettingRow>
       <SettingRow
         label="Proxy"
-        description="The upstream proxy for every browser panel. Leave empty for a direct connection. Supports authenticated proxy URLs, PAC scripts, and ;bypass= lists."
+        description="Local workspaces use your system proxy when empty. Supports authenticated HTTP/HTTPS proxies, SOCKS proxies, PAC URLs (.pac or pac+https://…), and ;bypass= lists. Remote workspaces support HTTP proxy URLs only."
       >
         <TextInput
           value={proxyDraft}
