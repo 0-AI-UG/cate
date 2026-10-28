@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import WebSocket, { WebSocketServer } from 'ws'
 import { socketDuplex } from '@runtime/transports/node'
-import { canonicalHost, createProxyCredentials, parseAuthority, routeFor, startLoopbackProxy, type LoopbackProxy } from './loopbackProxy'
+import { canonicalHost, connectProxyTarget, createProxyCredentials, parseAuthority, routeFor, startLoopbackProxy, type LoopbackProxy } from './loopbackProxy'
 
 // The target stands in for a dev server on the runtime's machine. The fake
 // dialLoopback reaches it with a plain TCP connect, as a local connection does.
@@ -16,8 +16,9 @@ let proxy: LoopbackProxy
 const credentials = createProxyCredentials()
 const auth = `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')}`
 const loopbackDials: number[] = []
-const directDials: { host: string; port: number }[] = []
+const directDials: { host: string; port: number; addresses?: string[] }[] = []
 let reaches = true
+let upstream: string | undefined
 // Stands in for DNS.
 const HOSTS: Record<string, string[]> = {
   'example.test': ['93.184.216.34'],
@@ -26,6 +27,8 @@ const HOSTS: Record<string, string[]> = {
   'lan.test': ['192.168.1.20'],
   'ula.test': ['fd00::5'],
   'mixed.test': ['93.184.216.34', '127.0.0.1'],
+  'dual.test': ['2001:db8::1', '93.184.216.34'],
+  'private-mixed.test': ['93.184.216.34', '192.168.1.20', 'fd00::5'],
 }
 const lookup = async (host: string): Promise<string[]> => {
   const found = HOSTS[host]
@@ -50,14 +53,15 @@ beforeAll(async () => {
   targetPort = (target.address() as AddressInfo).port
   proxy = await startLoopbackProxy({
     credentials,
+    upstream: () => upstream,
     reachesClientNetwork: () => reaches,
     lookup,
     dialLoopback: async (port) => {
       loopbackDials.push(port)
       return socketDuplex(await tcp(port))
     },
-    dialDirect: async (host, port) => {
-      directDials.push({ host, port })
+    dialDirect: async (host, port, addresses) => {
+      directDials.push({ host, port, ...(addresses ? { addresses } : {}) })
       return tcp(port)
     },
   })
@@ -73,6 +77,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   reaches = true
+  upstream = undefined
   loopbackDials.length = 0
   directDials.length = 0
 })
@@ -100,6 +105,42 @@ function connectTunnel(authority: string, headers: Record<string, string>): Prom
 }
 
 describe('loopback web proxy', () => {
+  it('fails closed for unsupported upstream proxy settings', async () => {
+    for (const setting of ['socks5://proxy.corp:1080', 'https://proxy.corp/config.pac', 'http://proxy.corp:8080;bypass=*']) {
+      upstream = setting
+      expect((await viaProxy(`http://example.test:${targetPort}/`, { 'Proxy-Authorization': auth })).status).toBe(502)
+    }
+    expect(directDials).toEqual([])
+  })
+
+  it('does not hang if an upstream closes before answering CONNECT', async () => {
+    const closedProxy = http.createServer()
+    closedProxy.on('connect', (_req, socket) => socket.end())
+    await new Promise<void>((resolve) => closedProxy.listen(0, '127.0.0.1', resolve))
+    upstream = `http://127.0.0.1:${(closedProxy.address() as AddressInfo).port}`
+    try {
+      const tunnel = await connectTunnel('example.test:443', { 'Proxy-Authorization': auth })
+      expect(tunnel.status).toBe(502)
+      tunnel.socket.destroy()
+    } finally { await new Promise<void>((resolve) => closedProxy.close(() => resolve())) }
+  })
+
+  it('uses built-in address fallback when the first checked address cannot connect', async () => {
+    // Only IPv4 is listening. The name need not resolve: the supplied, checked
+    // address set must be used without another DNS lookup.
+    const socket = await connectProxyTarget('not-in-dns.invalid', targetPort, ['::1', '127.0.0.1'])
+    try {
+      const response = await new Promise<string>((resolve, reject) => {
+        let text = ''
+        socket.on('data', (chunk) => { text += chunk })
+        socket.on('end', () => resolve(text))
+        socket.on('error', reject)
+        socket.write('GET /fallback HTTP/1.1\r\nHost: fixture\r\nConnection: close\r\n\r\n')
+      })
+      expect(response).toContain('GET /fallback')
+    } finally { socket.destroy() }
+  })
+
   it('routes plain HTTP to a loopback host through dialLoopback, without its credential', async () => {
     const res = await viaProxy(`http://localhost:${targetPort}/hello?x=1`, { 'Proxy-Authorization': auth })
     expect(res.status).toBe(200)
@@ -130,7 +171,7 @@ describe('loopback web proxy', () => {
     expect(res.status).toBe(200)
     expect(res.body).toContain('GET /direct host=example.test')
     // To the address that was checked, not the name again.
-    expect(directDials).toEqual([{ host: '93.184.216.34', port: targetPort }])
+    expect(directDials).toEqual([{ host: 'example.test', port: targetPort, addresses: ['93.184.216.34'] }])
     expect(loopbackDials).toEqual([])
   })
 
@@ -252,8 +293,16 @@ describe('routeFor', () => {
       expect(await routeFor(host, deps(false)), host).toEqual({ kind: 'refused' })
       expect((await routeFor(host, deps(true))).kind, host).toBe('direct')
     }
-    expect(await routeFor('lan.test', deps(true))).toEqual({ kind: 'direct', host: '192.168.1.20' })
-    expect(await routeFor('example.test', deps(false))).toEqual({ kind: 'direct', host: '93.184.216.34' })
+    expect(await routeFor('lan.test', deps(true))).toEqual({ kind: 'direct', host: 'lan.test', addresses: ['192.168.1.20'] })
+    expect(await routeFor('example.test', deps(false))).toEqual({ kind: 'direct', host: 'example.test', addresses: ['93.184.216.34'] })
+  })
+
+  it('retains alternative addresses without letting fallback reach private ranges', async () => {
+    expect(await routeFor('dual.test', deps(false))).toEqual({ kind: 'direct', host: 'dual.test', addresses: HOSTS['dual.test'] })
+    expect(await routeFor('private-mixed.test', deps(false))).toEqual({
+      kind: 'direct', host: 'private-mixed.test', addresses: ['93.184.216.34'],
+    })
+    expect(await routeFor('private-mixed.test', deps(false, true))).toEqual({ kind: 'refused' })
   })
 
   it('applies the same rules with an upstream proxy, which gets the name', async () => {
