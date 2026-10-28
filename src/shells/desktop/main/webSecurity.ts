@@ -1,6 +1,6 @@
 // Web security hardening for every webContents: app windows may only show the
 // app, guests (browser panels) get the restricted guest preload, a
-// sandbox, a workspace partition routed through its loopback proxy, and no
+// sandbox, a workspace partition with its network policy prepared, and no
 // popups (a popup becomes a tab of the owning browser panel).
 
 import { app, session as electronSession, type Session, type WebContents } from 'electron'
@@ -19,7 +19,7 @@ interface WebSecurityOptions {
   hardeningDisabled(): boolean
   /** The keys a web page never gets, from the menu model. */
   guestKeys(): MenuModel['guestKeys']
-  /** True once the workspace partition's loopback proxy is in place. */
+  /** True once the workspace partition's network policy is in place. */
   isPreparedPartition(partition: string): boolean
   platform?: NodeJS.Platform
 }
@@ -160,8 +160,8 @@ export function installWebSecurity(options: WebSecurityOptions): void {
         event.preventDefault()
         return
       }
-      // Loopback must mean the runtime's machine: only a prepared workspace
-      // partition, routed through its proxy, may host a guest.
+      // Loopback must mean the runtime's machine: only a workspace partition
+      // with native networking or its protected proxy prepared may host a guest.
       const partition = typeof webPreferences.partition === 'string' ? webPreferences.partition : ''
       if (!options.isPreparedPartition(partition)) {
         log.warn('blocked guest attach: partition %s is not a prepared workspace partition', partition || '(default)')
