@@ -71,6 +71,7 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
   let state: RegistrationState = { kind: 'connecting' }
   let channel: SecureChannel | null = null
   let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let registerTimer: ReturnType<typeof setTimeout> | null = null
   let delay = minMs
   let stopped = false
   let pushes = false
@@ -158,9 +159,15 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
       secure.close()
       return
     }
+    if (secure.closed) {
+      scheduleRetry()
+      return
+    }
     channel = secure
     secure.onClose(() => {
       if (channel !== secure) return
+      if (registerTimer) clearTimeout(registerTimer)
+      registerTimer = null
       channel = null
       pushes = false
       sessions.clear()
@@ -172,6 +179,8 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
       if (!message) return
       switch (message.t) {
         case 'registered':
+          if (registerTimer) clearTimeout(registerTimer)
+          registerTimer = null
           pushes = message.push === true
           delay = minMs
           setState({ kind: 'registered' })
@@ -198,7 +207,16 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
           return
       }
     })
-    send({ t: 'register', runtimeId: networkIdOf(options.runtimeKeys.publicKey), protocol: CONNECT_PROTOCOL })
+    registerTimer = setTimeout(() => {
+      options.log?.info('cate connect unreachable: registration timed out')
+      secure.close()
+    }, 10_000)
+    try {
+      send({ t: 'register', runtimeId: networkIdOf(options.runtimeKeys.publicKey), protocol: CONNECT_PROTOCOL })
+    } catch (error) {
+      options.log?.info('cate connect unreachable: %s', (error as Error).message)
+      secure.close()
+    }
   }
 
   void connect()
@@ -228,6 +246,7 @@ export function startConnectRegistration(options: ConnectRegistrationOptions): C
       stopped = true
       settlePushes('failed')
       if (retryTimer) clearTimeout(retryTimer)
+      if (registerTimer) clearTimeout(registerTimer)
       const open = channel
       channel = null
       open?.close()

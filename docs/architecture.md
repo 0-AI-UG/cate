@@ -763,6 +763,10 @@ machine's bridge and the network and requires the same result
   with the paired workspace and dials them next time, since a machine's
   private addresses change (DHCP, a WSL restart).
 - **Liveness.** A peer that slept or changed networks never says goodbye. The
+  runtime's Cate Connect socket pings the service every 30 s and terminates
+  a connection that missed the previous pong, triggering registration retry.
+  After the Noise handshake, registration must be acknowledged within 10 s
+  or the runtime closes the connection and retries with backoff. The
   same-network listener pings every WebSocket peer every 30 s and drops one
   that missed the previous ping (every WebSocket client answers pings on its
   own). A client checks its connections when the machine wakes (a timer that
