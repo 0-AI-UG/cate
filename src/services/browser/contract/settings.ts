@@ -9,7 +9,8 @@ export type LinkOpenTarget = 'ask' | 'cate' | 'external'
 export const browserClientSettings = defineSettings({
   scope: 'client',
   keys: {
-    /** The client's own upstream proxy (may hold credentials); empty is direct. */
+    /** The client's own upstream proxy (may hold credentials); empty uses the
+     *  system proxy when the connection permits native browser networking. */
     browserProxyUrl: setting(''),
     /** A loopback URL always opens in Cate; Cmd/Ctrl+Shift+click in a
      *  terminal always opens outside. */
