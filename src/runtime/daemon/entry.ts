@@ -29,6 +29,7 @@ import {
   type DataPaths,
 } from '@runtime/data/runtime'
 import { DEFAULT_CATE_CONNECT_URL } from '@runtime/connect/contract'
+import { connectWebSocketFactory } from '@runtime/connect/node'
 import { pairingCapability } from '@runtime/pairing/contract'
 import { openDevicesFile, PairingService, pairingCapabilityImpl } from '@runtime/pairing/runtime'
 import { powerCapability } from '@runtime/power/contract'
@@ -37,7 +38,7 @@ import { pushCapability } from '@runtime/push/contract'
 import { createPushService, openPushFile, pushCapabilityImpl } from '@runtime/push/runtime'
 import { fingerprint, hexToBytes, networkIdOf } from '@runtime/security/contract'
 import { pairingEndpoints, type PeerConnectionFactory, type WebSocketFactory } from '@runtime/transports/contract'
-import { loadNodePeerConnection, nodeWebSocketFactory, sameNetworkProblem } from '@runtime/transports/node'
+import { loadNodePeerConnection, sameNetworkProblem } from '@runtime/transports/node'
 import { createNetworkPeers, serveLocal, type SameNetworkOptions } from '@runtime/transports/runtime'
 import { tunnelCapability } from '@runtime/tunnel/contract'
 import { tunnelCapabilityImpl } from '@runtime/tunnel/runtime'
@@ -350,7 +351,7 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
     sameNetwork: options.lan,
     connect: {
       url: options.connect?.url ?? process.env.CATE_CONNECT_URL ?? DEFAULT_CATE_CONNECT_URL,
-      webSocket: options.connect?.webSocket ?? nodeWebSocketFactory,
+      webSocket: options.connect?.webSocket ?? connectWebSocketFactory,
       peerConnection: options.connect?.peerConnection ?? loadNodePeerConnection,
     },
     onEndpointsChanged: () => {

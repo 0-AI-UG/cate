@@ -1,6 +1,6 @@
 // Webview wiring (the `webview` and `pageDriver` features): each connected
-// workspace's partition is prepared in main (routed through its loopback web
-// proxy) before any of its webviews mounts; the browser views use that
+// workspace's network policy is prepared in main (native networking or its
+// protected loopback proxy) before any of its webviews mounts; views use that
 // partition; and page operations the runtime sends to this client run on its
 // mounted pages.
 

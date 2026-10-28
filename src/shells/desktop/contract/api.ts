@@ -291,8 +291,8 @@ export interface DesktopApi {
   }
   pipes: DesktopPipes
   web: {
-    /** The workspace's browser partition, routed through its loopback web
-     *  proxy. This window then serves the proxy's loopback requests.
+    /** The workspace's browser partition, prepared for native networking or
+     *  its protected proxy. This window serves any proxy loopback requests.
      *  `reachesClientNetwork`: the connection's (12.3). */
     partitionFor(workspace: { runtimeId: string; reachesClientNetwork: boolean }): Promise<string>
     release(workspace: { runtimeId: string }): Promise<void>

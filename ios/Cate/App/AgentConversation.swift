@@ -109,9 +109,9 @@ final class AgentConversation {
     }
 
     private func apply(_ event: ChatEvent) {
-        // Before the conversation came in, an item is what was shown already
-        // (cached, or the prompt on its way); after, it is new.
-        let live = loaded || !items.isEmpty
+        // What the conversation has when it comes in was there already, even
+        // where the cache had not caught up; only what comes after is new.
+        let live = loaded
         if event.loaded, !loaded { loaded = true }
         if status != event.status { status = event.status }
         if canReceivePrompt != event.canReceivePrompt { canReceivePrompt = event.canReceivePrompt }
