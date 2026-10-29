@@ -41,7 +41,7 @@ import { createConnectedEditors, type SharedEditor } from '@workspace/relations/
 import { RELATION_CONTEXT_MODE_FIELD, relationChangeProblem, type RelationRoleOf } from '@workspace/relations/contract'
 import { processCapability } from '@services/terminal/contract'
 import {
-  cateCliEnvContributor,
+  createCateCliRuntime,
   createTerminalService,
   processCapabilityImpl,
   snapshotProcessTree,
@@ -227,23 +227,16 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   })
   // A PTY's CLI token dies with its process, and every one when trust is
   // revoked (revoking ends the processes too).
-  const ptyTokens = new Map<string, string>()
-  const revokePtyToken = (terminalId: string) => {
-    const token = ptyTokens.get(terminalId)
-    if (token === undefined) return
-    ptyTokens.delete(terminalId)
-    tokens.revoke(token)
-  }
-  offs.push(terminal.registerEnvContributor(cateCliEnvContributor({
+  const terminalCli = createCateCliRuntime({
+    launcherDir: paths.terminalCli,
+    nodePath: process.execPath,
+    cliPath: layout.cateCli,
     socketPath: deps.endpoint,
-    mintToken: (panelId, terminalId) => {
-      const { token } = tokens.issue({ kind: 'cli', panelId })
-      ptyTokens.set(terminalId, token)
-      return token
-    },
-    binDir: layout.cateBin,
-  })))
-  offs.push(terminal.onExit((terminalId) => revokePtyToken(terminalId)))
+    mintToken: (panelId) => tokens.issue({ kind: 'cli', panelId }).token,
+    revokeToken: (token) => tokens.revoke(token),
+  })
+  offs.push(terminal.registerEnvContributor(terminalCli.envForTerminal))
+  offs.push(terminal.onExit(terminalCli.forgetTerminal))
 
   const browserData = createBrowserDataRuntime({
     dataPaths: paths,
@@ -388,7 +381,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       return
     }
     for (const term of terminal.list()) if (term.alive) terminal.kill(term.id)
-    for (const terminalId of [...ptyTokens.keys()]) revokePtyToken(terminalId)
+    terminalCli.dispose()
   }))
 
   return {
@@ -426,6 +419,7 @@ export function composeWorkspace(deps: WorkspaceDeps) {
       connectedEditors.dispose()
       agentsRuntime.dispose()
       await terminal.shutdown()
+      terminalCli.dispose()
       repository.dispose()
       presence.dispose()
       await skills.dispose()

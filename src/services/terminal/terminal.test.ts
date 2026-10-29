@@ -13,7 +13,7 @@ import { createLogger } from '@kernel/log/contract'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { processCapability, applyStatusChange, type TerminalStatuses, type TerminalStatusChange } from './contract'
 import {
-  cateCliEnvContributor,
+  createCateCliRuntime,
   createTerminalService,
   processCapabilityImpl,
   type PtyProcess,
@@ -211,11 +211,16 @@ describe('terminal service', () => {
     tmpDirs.push(binDir)
     const { service, ptys, connect } = setup()
     const minted: string[] = []
-    service.registerEnvContributor(cateCliEnvContributor({
+    const cli = createCateCliRuntime({
       socketPath: '/data/runtime.sock',
-      binDir,
+      launcherDir: binDir,
+      nodePath: process.execPath,
+      cliPath: '/install/cate/dist/cli.cjs',
       mintToken: (panelId) => { minted.push(panelId); return `tok-${panelId}` },
-    }))
+      revokeToken: () => {},
+    })
+    service.registerEnvContributor(cli.envForTerminal)
+    service.onExit(cli.forgetTerminal)
     service.registerEnvContributor((spawn) => ({ CATE_TERMINAL_ID: spawn.terminalId, SEEN_PATH: spawn.env.PATH }))
     service.registerEnvContributor(() => { throw new Error('broken contributor') })
     const proc = await connect()
@@ -223,7 +228,7 @@ describe('terminal service', () => {
     const env = ptys[0].options.env
     expect(env.CATE_SOCKET).toBe('/data/runtime.sock')
     expect(env.CATE_TOKEN).toBe('tok-panel-1')
-    expect(env.PATH).toBe(`${binDir}${path.delimiter}/usr/bin`)
+    expect(env.PATH).toBe(`${path.join(binDir, 'panels', 'panel-1')}${path.delimiter}/usr/bin`)
     expect(env.SEEN_PATH).toBe(env.PATH)
     expect(env.CATE_TERMINAL_ID).toBe(id)
     expect(env.HOME).toBe('/home/u')
