@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.6] - 2026-10-29
+
+This beta improves browser connectivity and Cate Connect recovery, and updates bundled dependencies.
+
+### Changed
+
+- **Local browser workspaces** use Chromium's native networking, including system proxy settings, DNS and network changes. Remote workspaces continue to route localhost to the runtime's machine through the protected proxy.
+- Updated Electron and bundled dependencies.
+
+### Fixed
+
+- **Cate Connect** recovers stalled registrations so workspaces remain reachable.
+- **iOS agent chat** no longer animates existing replies as if they were still streaming when opening a conversation.
+
 ## [2.1.0-beta.5] - 2026-10-26
 
 ### Changed
