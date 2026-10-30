@@ -1,4 +1,4 @@
-// Anonymous product telemetry, posted to cero-analytics' /api/app-events.
+// Anonymous product telemetry, posted to cero-analytics' shared event endpoint.
 // Only packaged builds send; dev and e2e builds never do. No file paths,
 // project names, workspace contents, hostnames or account data are sent.
 // State and the offline buffer live in userData (`analytics-state.json`,
@@ -6,6 +6,7 @@
 // next successful one.
 
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { createLogger } from '@kernel/log/contract'
 import { appendLine, readJsonFile, readTextFile, removeFile, writeJsonFile, writeTextFile } from '@kernel/state/node'
 import { PRIVATE_DEVICE_FILES } from '../../contract'
@@ -13,9 +14,10 @@ import { decideCensusAction, decideUpdateAction, sanitizeUsageProps, type Analyt
 
 const log = createLogger('analytics')
 
-export const ANALYTICS_ENDPOINT = 'https://analytics.cero-ai.com/api/app-events'
+export const ANALYTICS_ENDPOINT = 'https://analytics.cero-ai.com/api/service-events?app=cate'
 const APP_ID = 'cate'
 const MAX_PENDING_BYTES = 256 * 1024
+const DELIVERY_TIMEOUT_MS = 15_000
 
 /** Who is running, sent with every event and every crash report. */
 export interface CommonContext {
@@ -63,16 +65,38 @@ export function createAnalytics(deps: AnalyticsDeps): Analytics {
     const ctx = deps.context()
     return {
       app: APP_ID,
+      event_id: randomUUID(),
       event_name: name,
-      install_id: ctx.install_id,
-      app_version: ctx.app_version,
-      platform: ctx.platform,
-      arch: ctx.arch,
-      electron_version: ctx.electron_version,
-      locale: ctx.locale,
-      is_packaged: ctx.is_packaged,
-      ...(props ? { props } : {}),
+      timestamp: new Date().toISOString(),
+      data: {
+        ...props,
+        install_id: ctx.install_id,
+        app_version: ctx.app_version,
+        platform: ctx.platform,
+        arch: ctx.arch,
+        electron_version: ctx.electron_version,
+        locale: ctx.locale,
+        is_packaged: ctx.is_packaged,
+      },
     }
+  }
+
+  // Serialize delivery and replay so concurrent events cannot erase buffered
+  // events or replay the same offline queue at the same time.
+  let delivery: Promise<unknown> = Promise.resolve()
+  const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = delivery.then(operation)
+    delivery = result.catch(() => {})
+    return result
+  }
+  const post = async (event: unknown) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        deps.post(JSON.stringify(event)),
+        new Promise<boolean>(resolve => { timeout = setTimeout(() => resolve(false), DELIVERY_TIMEOUT_MS) }),
+      ])
+    } catch { return false } finally { clearTimeout(timeout) }
   }
 
   const buffer = (event: object) => {
@@ -87,30 +111,38 @@ export function createAnalytics(deps: AnalyticsDeps): Analytics {
     appendLine(pendingFile, line)
   }
 
-  const flushPending = async () => {
+  const replay = async () => {
     const raw = readTextFile(pendingFile)
     if (!raw) return
-    const events: unknown[] = []
-    for (const line of raw.split('\n').filter(Boolean)) {
-      try { events.push(JSON.parse(line)) } catch { /* skip malformed */ }
+    const lines = raw.split('\n').filter(Boolean)
+    for (let index = 0; index < lines.length; index++) {
+      let event: ReturnType<typeof payload>
+      try { event = JSON.parse(lines[index]) } catch { continue }
+      // Invalid records (including the retired wire format) are never sent.
+      if (!event || event.app !== APP_ID || typeof event.event_id !== 'string'
+        || typeof event.timestamp !== 'string' || typeof event.event_name !== 'string'
+        || !event.data || typeof event.data !== 'object' || Array.isArray(event.data)) continue
+      if (!await post(event)) {
+        writeTextFile(pendingFile, lines.slice(index).join('\n') + '\n')
+        return
+      }
     }
-    if (events.length === 0) {
-      removeFile(pendingFile)
-      return
-    }
-    if (await deps.post(JSON.stringify({ app: APP_ID, events }))) removeFile(pendingFile)
+    removeFile(pendingFile)
   }
+  const flushPending = () => deps.enabled ? enqueue(replay) : Promise.resolve()
 
-  const send = async (name: string, props?: Record<string, unknown>): Promise<boolean> => {
-    if (!deps.enabled) return false
+  const send = (name: string, props?: Record<string, unknown>): Promise<boolean> => {
+    if (!deps.enabled) return Promise.resolve(false)
     const event = payload(name, props)
-    if (await deps.post(JSON.stringify(event))) {
-      flushPending().catch(() => {})
-      return true
-    }
-    log.warn('%s failed; buffered', name)
-    buffer(event)
-    return false
+    return enqueue(async () => {
+      if (await post(event)) {
+        await replay()
+        return true
+      }
+      log.warn('%s failed; buffered', name)
+      buffer(event)
+      return false
+    })
   }
 
   return {
