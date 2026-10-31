@@ -559,6 +559,7 @@ persisted session and document file. It is created with mode `0700`.
                         usage/ (model-rates.json, the LiteLLM rate snapshot; scan-cache.json,
                         transcripts parsed for usage, by size and mtime)
   terminal-logs/
+  terminal-cli/         private, generated CLI launchers, stable per panel
   screenshots/
   logs/                 daemon.log (the daemon's log, rotated) and
                         daemon.out.log (the detached daemon's stdout and
@@ -1390,6 +1391,13 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   contributors (the `cate` CLI on PATH with `CATE_SOCKET` and `CATE_TOKEN`,
   agent hook env), output, input, activity and exit observers, launch
   intents (including the restore launch of a restored panel).
+  The CLI entry on PATH is a private workspace launcher under
+  `terminal-cli/panels/<panelId>/`, stable across runtime updates. Before a
+  restored PTY starts, its launcher is atomically refreshed with the running
+  install's Node and CLI paths and the new per-PTY socket/token. It overrides
+  inherited CLI credentials, so agent shell snapshots cannot replay an expired
+  token or a deleted install path. Exit revokes the token and removes the
+  launcher; a replacement PTY of the same panel owns its refreshed launcher.
 - **Links**: `process.links` gives the links on a row of the headless
   screen (web URLs, and paths that name an existing file, resolved against
   the PTY's cwd), so every client finds the same ones. A view names the row

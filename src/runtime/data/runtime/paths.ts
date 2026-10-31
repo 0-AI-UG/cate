@@ -26,6 +26,7 @@ export function dataPaths(dataDir: string) {
     downloads: path.join(dataDir, DATA_FILES.browser, 'downloads'),
     agents: at(DATA_FILES.agents),
     terminalLogs: at(DATA_FILES.terminalLogs),
+    terminalCli: at(DATA_FILES.terminalCli),
     screenshots: at(DATA_FILES.screenshots),
     logs: at(DATA_FILES.logs),
   }
