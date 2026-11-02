@@ -372,7 +372,7 @@ export type MobileChatItem =
   /** The person's prompt; `sent` false while it is on its way (the
    *  runtime is sending it) and the conversation does not show it yet. */
   | { kind: 'prompt'; id: string; text: string; sent: boolean }
-  | { kind: 'reply'; id: string; text: string }
+  | { kind: 'reply'; id: string; text: string; createdAt?: string }
   /** Steps the agent took; a ghost stands for steps from before the runtime
    *  kept them. */
   | { kind: 'steps'; id: string; steps: AgentStep[]; ghost: boolean }

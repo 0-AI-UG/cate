@@ -449,6 +449,7 @@ struct ChatItemData: Codable, Hashable, Sendable {
     let sent: Bool?
     let steps: [AgentStep]?
     let ghost: Bool?
+    var createdAt: String? = nil
 }
 
 /// The turn in progress and the step it last completed.

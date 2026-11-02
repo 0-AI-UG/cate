@@ -70,6 +70,8 @@ final class AgentConversation {
     /// The agent's panel.
     @ObservationIgnored let panelId: String
     @ObservationIgnored private var cacheKey = ""
+    @ObservationIgnored private var followedAt = Date()
+    @ObservationIgnored private var hasHistory = false
 
     private static let decoding = DispatchQueue(label: "cate.chat.decode", qos: .userInitiated)
 
@@ -87,6 +89,7 @@ final class AgentConversation {
 
     /// Follows the panel's conversation until cancelled.
     func run(_ core: CoreHost, workspaceId: String, pending: String?) async {
+        followedAt = Date()
         cacheKey = "\(workspaceId)-\(panelId)"
         if items.isEmpty, let cached = ChatCache.load(cacheKey) {
             items = cached.compactMap { Item($0, live: false) }
@@ -111,7 +114,10 @@ final class AgentConversation {
     private func apply(_ event: ChatEvent) {
         // What the conversation has when it comes in was there already, even
         // where the cache had not caught up; only what comes after is new.
-        let live = loaded
+        let live = hasHistory
+        if event.items.contains(where: { $0.kind == "reply" || ($0.kind == "prompt" && $0.sent == true) }) {
+            hasHistory = true
+        }
         if event.loaded, !loaded { loaded = true }
         if status != event.status { status = event.status }
         if canReceivePrompt != event.canReceivePrompt { canReceivePrompt = event.canReceivePrompt }
@@ -132,7 +138,10 @@ final class AgentConversation {
                 item.update(data)
                 return item
             }
-            return Item(data, live: live && index >= above)
+            // A delayed session identity may deliver its entire old history
+            // after an empty snapshot. Arrival time alone does not make it new.
+            let arrivedLive = ChatArrival.isLive(createdAt: data.createdAt, followedAt: followedAt, hasHistory: live)
+            return Item(data, live: arrivedLive && index >= above)
         }
         if items[from...].map(\.id) != tail.map(\.id) || zip(items[from...], tail).contains(where: { $0 !== $1 }) {
             items = Array(items[..<from]) + tail

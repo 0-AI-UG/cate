@@ -164,3 +164,30 @@ describe('Codex usage', () => {
     expect(codexUsageLimits({ account: null }, {}, 'now').unavailable?.reason).toBe('unsupported')
   })
 })
+
+
+describe('Codex process session identity', () => {
+  async function rollout(id: string, source: unknown = 'cli', cwd = '/repo'): Promise<string> {
+    const dir = path.join(homeDir, '.codex', 'sessions', '2026', '11', '02')
+    await mkdir(dir, { recursive: true })
+    const file = path.join(dir, `rollout-2026-11-02T12-00-00-${id}.jsonl`)
+    await writeFile(file, JSON.stringify({ type: 'session_meta', payload: { id, source, cwd } }) + '\n')
+    return file
+  }
+
+  it('binds only the root rollout held by this process, ignoring subagents', async () => {
+    const root = await rollout('root')
+    const child = await rollout('child', { subagent: { thread_spawn: { parent_thread_id: 'root' } } })
+    await expect(codexSessionStore.processSession!([root, child, root], homeDir)).resolves.toMatchObject({ agentId: 'codex', sessionId: 'root', cwd: '/repo' })
+  })
+
+  it('refuses ambiguous, missing, partial, and unrelated files', async () => {
+    const first = await rollout('first')
+    const second = await rollout('second')
+    await expect(codexSessionStore.processSession!([first, second], homeDir)).resolves.toBeNull()
+    await expect(codexSessionStore.processSession!([], homeDir)).resolves.toBeNull()
+    await writeFile(first, '{"type":"session_meta"')
+    await expect(codexSessionStore.processSession!([first], homeDir)).resolves.toBeNull()
+    await expect(codexSessionStore.processSession!([second], '/other-home')).resolves.toBeNull()
+  })
+})

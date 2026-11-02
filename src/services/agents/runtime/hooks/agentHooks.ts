@@ -29,6 +29,7 @@ import http from 'http'
 import os from 'os'
 import path from 'path'
 import { chmod, mkdir, open, readFile, stat, unlink, writeFile } from 'fs/promises'
+import { processFiles } from '../sessions/processFiles'
 import { createAgentChangesStore, type AgentChangeTerminal, type StoredAgentChange, type StoredChangesSnapshot } from '../changes/store'
 import { AGENT_SESSION_STORES, createAgentTitleTracker } from '../sessions'
 import type { AgentSessionStores } from '../sessions/types'
@@ -107,8 +108,10 @@ export interface AgentHooks {
   /** Whether Cate's hooks for one agent are installed for a checkout (its
    *  `injected` in inspectWorkspace), without inspecting the others. */
   hooksInstalled(cwd: string, agentId: AgentId): Promise<boolean>
-  /** Read one agent CLI session's visible conversation from that CLI's own
-   *  session store on this host. Null when the session cannot be found. */
+  /** Best-effort identity from one exact process's open transcript files.
+   *  Supplies no lifecycle state and never scans for a recent session. */
+  identifyProcessSession(agentId: AgentId, pid: number): Promise<AgentSessionLocator | null>
+  /** Read the CLI's visible conversation from its own store on this host. */
   readConversation(session: AgentSessionLocator): Promise<AgentConversationMessage[] | null>
   /** Changes whenever the session's conversation may have (its store files'
    *  times and sizes); null when its store cannot tell. */
@@ -811,6 +814,11 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         }
       }
       if (excludeRels.length > 0) await ensureGitExcluded(cwd, excludeRels)
+    },
+
+    async identifyProcessSession(agentId, pid) {
+      const identify = sessionStores[agentId]?.processSession
+      return identify ? identify(await processFiles(pid), homeDir).catch(() => null) : null
     },
 
     async readConversation(session) {

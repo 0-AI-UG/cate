@@ -163,6 +163,61 @@ afterEach(() => {
 })
 
 describe('terminal agents', () => {
+  it('reads an exactly identified process session before Codex sends its first hook', async () => {
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockResolvedValue({ agentId: 'codex', sessionId: 'resumed', cwd: root })
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'zsh')
+    procTree.nameByPid.set(42, 'codex')
+    procTree.childrenByPid.set(1, [42])
+    terminal.scan('pty-1', 'term', 'codex')
+    await vi.waitFor(() => expect(agents.panels.state('term')?.session).toMatchObject({ sessionId: 'resumed' }))
+    expect(identify).toHaveBeenCalledWith('codex', 42)
+    // Discovery supplies identity, never a fabricated turn or input readiness.
+    expect(agents.panels.state('term')?.canReceivePrompt).toBe(false)
+    await post(env, 'codex', { hook_event_name: 'SessionStart', session_id: 'hook-session', cwd: root })
+    expect(agents.panels.state('term')?.session?.sessionId).toBe('hook-session')
+    identify.mockRestore()
+  })
+
+  it('does not apply an in-flight process lookup after its PTY exits', async () => {
+    let resolve!: (value: { agentId: 'codex'; sessionId: string; cwd: string }) => void
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockImplementation(() => new Promise((done) => { resolve = done }))
+    await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('pty-1', 'term', 'codex')
+    terminal.exit('pty-1', 0)
+    resolve({ agentId: 'codex', sessionId: 'gone', cwd: root })
+    await Promise.resolve()
+    expect(agents.panels.state('term')?.session ?? null).toBeNull()
+    identify.mockRestore()
+  })
+
+  it('rejects an ambiguous process tree instead of choosing another terminal session', async () => {
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession')
+    await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'zsh')
+    procTree.nameByPid.set(42, 'codex')
+    procTree.nameByPid.set(43, 'codex')
+    procTree.childrenByPid.set(1, [42, 43])
+    terminal.scan('pty-1', 'term', 'codex')
+    expect(identify).not.toHaveBeenCalled()
+    expect(agents.panels.state('term')?.session ?? null).toBeNull()
+    identify.mockRestore()
+  })
+
+  it('rejects a late process result after a lifecycle hook identifies the session', async () => {
+    let resolve!: (value: { agentId: 'codex'; sessionId: string; cwd: string }) => void
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockImplementation(() => new Promise((done) => { resolve = done }))
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('pty-1', 'term', 'codex')
+    await post(env, 'codex', { hook_event_name: 'SessionStart', session_id: 'hook-session', cwd: root })
+    resolve({ agentId: 'codex', sessionId: 'stale', cwd: root })
+    await Promise.resolve()
+    expect(agents.panels.state('term')?.session?.sessionId).toBe('hook-session')
+    identify.mockRestore()
+  })
+
   it('plants the hook env on spawn and tracks the agent from hooks and presence', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     expect(env.CATE_TERMINAL_ID).toBe('pty-1')

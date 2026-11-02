@@ -18,6 +18,7 @@ import {
   agentLaunchCommand,
   agentPromptInput,
   isAgentId,
+  matchAgentDef,
   isPromptAttachments,
   openTerminalAgent,
   resumeCommandForAgent,
@@ -93,6 +94,9 @@ function normalizeStamps(parsed: unknown): StampsFile {
 interface TerminalInfo {
   panelId: string | null
   cwd: string
+  probing?: boolean
+  probeAfter?: number
+  processPid?: number
 }
 
 /** How long a sent prompt has to start a turn before the send reports it was
@@ -105,6 +109,8 @@ const INTERRUPT_KEY_GAP_MS = 500
 export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminalService, options: TerminalAgentsOptions): TerminalAgents {
   const { hooks, presence, promptContext, document, notifications } = agents
   const terminals = new Map<string, TerminalInfo>()
+  const processSessions = new Map<string, AgentSession>()
+  let disposed = false
   const panelTerminal = new Map<string, string>()
   const stampsFile = createJsonStateFile<StampsFile>({ file: options.stampsFile, defaults: {}, normalize: normalizeStamps })
   stampsFile.load()
@@ -175,6 +181,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     hooks.unregisterChangeTerminal(terminalId)
     status.forget(terminalId)
     stamps.drop(terminalId)
+    processSessions.delete(terminalId)
     sentContext.delete(terminalId)
     attachmentContext.delete(terminalId)
     hookAgent.delete(terminalId)
@@ -246,11 +253,47 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }))
 
   offs.push(terminal.onActivity((scan) => {
+    // A CLI may defer its first lifecycle hook until input. Ask its session
+    // store about the exact process, without guessing from nearby sessions.
+    const info = terminals.get(scan.terminalId)
+    if (info && !stamps.latest(scan.terminalId)) {
+      const candidates: Array<{ pid: number; agentId: AgentId }> = []
+      const visited = new Set<number>()
+      const visit = (pid: number) => {
+        if (visited.has(pid)) return
+        visited.add(pid)
+        const agent = matchAgentDef(scan.tree.nameByPid.get(pid) ?? '')
+        if (agent) candidates.push({ pid, agentId: agent.id })
+        else for (const child of scan.tree.childrenByPid.get(pid) ?? []) visit(child)
+      }
+      visit(scan.pid)
+      const candidate = candidates.length === 1 ? candidates[0] : null
+      if (info.processPid !== candidate?.pid) {
+        info.processPid = candidate?.pid
+        if (processSessions.delete(scan.terminalId)) changed(scan.terminalId)
+      }
+      if (candidate && !info.probing && Date.now() >= (info.probeAfter ?? 0)) {
+        info.probing = true
+        info.probeAfter = Date.now() + 3_000
+        void hooks.identifyProcessSession(candidate.agentId, candidate.pid).then((session) => {
+          if (disposed || terminals.get(scan.terminalId) !== info || info.processPid !== candidate.pid || stamps.latest(scan.terminalId)) return
+          if (session) {
+            const next = { agentId: session.agentId, sessionId: session.sessionId, cwd: session.cwd ?? info.cwd }
+            const previous = processSessions.get(scan.terminalId)
+            if (previous?.sessionId !== next.sessionId || previous.agentId !== next.agentId || previous.cwd !== next.cwd) {
+              processSessions.set(scan.terminalId, next)
+              changed(scan.terminalId)
+            }
+          } else if (processSessions.delete(scan.terminalId)) changed(scan.terminalId)
+        }).catch(() => { /* A process can exit during discovery. */ }).finally(() => { info.probing = false })
+      }
+    }
     const hook = presence.presenceFor(scan.terminalId, scan.tree)
     if (hook.endedAgentPid !== undefined) {
       hookAgent.delete(scan.terminalId)
       hookFiles.delete(scan.terminalId)
       hooks.noteAgentExited(scan.terminalId)
+      processSessions.delete(scan.terminalId)
       stamps.clear(scan.terminalId)
     }
     // One rule for every agent CLI: open from launch, not from its first
@@ -281,6 +324,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       promptContext.consume(panelId, event.agentId)
       attachmentContext.delete(event.terminalId)
     }
+    if (event.sessionId && event.kind !== 'input-submit') processSessions.delete(event.terminalId)
     stamps.ingest(event)
     status.noteHookEvent(event)
     syncPromptContext(event.terminalId)
@@ -307,6 +351,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
         ...(worktreeId ? { worktreeId } : {}),
       }
     }
+    const identified = terminalId ? processSessions.get(terminalId) : null
+    if (identified) return { ...identified, ...(worktreeId ? { worktreeId } : {}) }
     const stamp = stampsFile.get()[panelId]
     return stamp
       ? {
@@ -465,6 +511,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       return () => { exitListeners.delete(listener) }
     },
     dispose() {
+      disposed = true
+      processSessions.clear()
       for (const off of offs.splice(0)) off()
       stampsFile.dispose()
     },

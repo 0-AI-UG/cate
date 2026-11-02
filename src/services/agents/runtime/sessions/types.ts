@@ -20,6 +20,9 @@ export interface AgentSessionStore {
   /** The files the conversation is read from, so a watcher can tell when it
    *  changed; empty while the session has none yet. */
   files?(context: AgentSessionContext): Promise<string[]>
+  /** Identify a session from files held open by this exact CLI process. Never
+   *  choose a session by cwd, recency, or a directory scan. */
+  processSession?(files: string[], homeDir: string): Promise<AgentSessionLocator | null>
   /** Where the CLI records token usage and how to read it. */
   usage: AgentUsage
 }
