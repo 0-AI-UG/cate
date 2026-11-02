@@ -63,6 +63,7 @@ export const DATA_FILES = {
   browser: 'browser',
   agents: 'agents',
   terminalLogs: 'terminal-logs',
+  terminalCli: 'terminal-cli',
   screenshots: 'screenshots',
   logs: 'logs',
 } as const

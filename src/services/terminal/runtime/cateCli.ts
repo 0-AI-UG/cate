@@ -1,22 +1,12 @@
-// The `cate` CLI in every terminal: its launcher directory on PATH, the local
-// socket in CATE_SOCKET and a per-PTY token in CATE_TOKEN. The token is minted
-// by the api router and names the terminal's panel, so the CLI acts as that
-// panel. `cate` stays on PATH even without a token, so running it explains
-// what is missing instead of "command not found".
+// A terminal's CLI entry lives with the workspace, not a versioned install.
+// Agent shell snapshots retain PATH and credentials across restores. Refreshing
+// this panel's launcher at spawn makes those snapshots use the live runtime
+// and its per-PTY token without changing any agent-owned files.
 
-import { existsSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import path from 'node:path'
+import { writeFileAtomic } from '@kernel/state/node'
 import type { EnvContributor } from './extensions'
-
-/** The runtime install dir: node runs from `<install>/runtime/bin/node`. */
-function installRoot(execPath: string = process.execPath): string {
-  return path.resolve(path.dirname(execPath), '..', '..')
-}
-
-/** Directory holding the `cate` / `cate.cmd` launchers. */
-export function cateBinDir(root: string = installRoot()): string {
-  return path.join(root, 'cate', 'bin')
-}
 
 /** Prepends `dir` to the env's PATH, whatever its case (Windows uses `Path`). */
 export function prependPath(env: Readonly<Record<string, string>>, dir: string): Record<string, string> {
@@ -24,26 +14,77 @@ export function prependPath(env: Readonly<Record<string, string>>, dir: string):
   return { [key]: env[key] ? dir + path.delimiter + env[key] : dir }
 }
 
-export interface CateCliEnvOptions {
+export interface CateCliRuntimeDeps {
+  /** Private workspace data directory for the stable launchers. */
+  launcherDir: string
+  nodePath: string
+  cliPath: string
   socketPath: string
-  /** Mints a CLI token naming the panel for the terminal's PTY (the api
-   *  router's token registry). */
-  mintToken: (panelId: string, terminalId: string) => string | Promise<string>
-  /** Defaults to the bundled launchers; left off PATH when the directory is
-   *  missing (a daemon run from source). */
-  binDir?: string
+  mintToken: (panelId: string, terminalId: string) => string
+  revokeToken: (token: string) => void
 }
 
-export function cateCliEnvContributor(options: CateCliEnvOptions): EnvContributor {
-  const binDir = options.binDir ?? cateBinDir()
-  let present: boolean | undefined
-  return async (spawn) => {
-    present ??= existsSync(binDir)
-    const env: Record<string, string> = {
-      ...(present ? prependPath(spawn.env, binDir) : {}),
-      CATE_SOCKET: options.socketPath,
-    }
-    if (spawn.panelId) env.CATE_TOKEN = await options.mintToken(spawn.panelId, spawn.terminalId)
-    return env
+export interface CateCliRuntime {
+  envForTerminal: EnvContributor
+  forgetTerminal(terminalId: string): void
+  dispose(): void
+}
+
+const shQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
+const cmdQuote = (value: string): string => value.replaceAll('%', '%%')
+
+function launcher(deps: CateCliRuntimeDeps, token: string, windows: boolean): string {
+  if (windows) {
+    return '@echo off\r\nsetlocal DisableDelayedExpansion\r\n' +
+      `set "CATE_SOCKET=${cmdQuote(deps.socketPath)}"\r\n` +
+      `set "CATE_TOKEN=${cmdQuote(token)}"\r\n` +
+      `"${cmdQuote(deps.nodePath)}" "${cmdQuote(deps.cliPath)}" %*\r\n`
+  }
+  // Git Bash uses the POSIX entry on Windows too.
+  const executablePath = (value: string) => shQuote(process.platform === 'win32' ? value.replaceAll('\\', '/') : value)
+  return '#!/bin/sh\n' +
+    `export CATE_SOCKET=${shQuote(deps.socketPath)}\n` +
+    `export CATE_TOKEN=${shQuote(token)}\n` +
+    `exec ${executablePath(deps.nodePath)} ${executablePath(deps.cliPath)} "$@"\n`
+}
+
+export function createCateCliRuntime(deps: CateCliRuntimeDeps): CateCliRuntime {
+  const terminals = new Map<string, { binDir: string; token: string }>()
+  const owners = new Map<string, string>()
+
+  const forgetTerminal = (terminalId: string): void => {
+    const entry = terminals.get(terminalId)
+    if (!entry) return
+    terminals.delete(terminalId)
+    if (entry.token) deps.revokeToken(entry.token)
+    // A replacement PTY of the same panel may already own the launcher.
+    if (owners.get(entry.binDir) !== terminalId) return
+    owners.delete(entry.binDir)
+    try { rmSync(entry.binDir, { recursive: true, force: true }) } catch { /* An open Windows launcher may linger; its token is already revoked. */ }
+  }
+
+  return {
+    async envForTerminal(spawn) {
+      const key = spawn.panelId ?? spawn.terminalId
+      if (!/^[A-Za-z0-9._-]+$/.test(key) || key === '.' || key === '..') throw new Error('invalid terminal CLI identity')
+      const binDir = path.join(deps.launcherDir, spawn.panelId ? 'panels' : 'processes', key)
+      const token = spawn.panelId ? deps.mintToken(spawn.panelId, spawn.terminalId) : ''
+      try {
+        await writeFileAtomic(path.join(binDir, 'cate'), launcher(deps, token, false), { mode: 0o700 })
+        if (process.platform === 'win32') {
+          await writeFileAtomic(path.join(binDir, 'cate.cmd'), launcher(deps, token, true), { mode: 0o600 })
+        }
+      } catch (error) {
+        if (token) deps.revokeToken(token)
+        throw error
+      }
+      terminals.set(spawn.terminalId, { binDir, token })
+      owners.set(binDir, spawn.terminalId)
+      return { ...prependPath(spawn.env, binDir), CATE_SOCKET: deps.socketPath, CATE_TOKEN: token }
+    },
+    forgetTerminal,
+    dispose() {
+      for (const terminalId of terminals.keys()) forgetTerminal(terminalId)
+    },
   }
 }
