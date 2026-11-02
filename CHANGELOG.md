@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [iOS 0.1.1 (8)] - 2026-11-02
+
+This TestFlight build fixes terminal touch scrolling, delayed chat history, and multiline formulas.
+
+### Fixed
+
+- **Terminal scrolling**: one-finger swipes scroll terminal history and mouse-reporting applications, including with the keyboard open. Two fingers pan the fitted grid; zoomed grids pan with one finger.
+- **Agent chat** shows recovered conversation history without replaying every reply's fade-in animation.
+- **Multiline formulas** render as equations instead of raw LaTeX, including the display equations used in existing conversations. Code examples stay literal.
+
+## [2.1.0-beta.7] - 2026-11-02
+
+This beta restores agent conversation history before the first prompt and includes terminal CLI and panel popover fixes merged since beta.6.
+
+### Fixed
+
+- **Codex conversation history** can load before its deferred first lifecycle hook, including after resuming a chat. The runtime identifies the exact process's open transcript and refuses ambiguous matches.
+- **Terminal CLI** remains available after a runtime update, with refreshed credentials and a stable launcher for restored terminals.
+- **Panel relation popovers** use the shared surface so their controls remain accessible.
+
 ## [iOS 0.1.1 (7)] - 2026-11-02
 
 This TestFlight build adds formula rendering to mobile chat and Markdown previews.

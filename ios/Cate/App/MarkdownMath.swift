@@ -65,6 +65,18 @@ enum MarkdownMath {
                 cursor = start
                 continue
             }
+            // Textual parses Markdown lines before math extensions. Keep a
+            // display equation on one logical line so soft breaks cannot
+            // separate its delimiters from the expression. TeX treats these
+            // newlines as spaces; explicit LaTeX line breaks stay intact.
+            if fence == nil, text[cursor...].hasPrefix("$$") {
+                let start = text.index(cursor, offsetBy: 2)
+                if let end = text.range(of: "$$", range: start..<text.endIndex) {
+                    result += "$$" + text[start..<end.lowerBound].replacingOccurrences(of: "\n", with: " ") + "$$"
+                    cursor = end.upperBound
+                    continue
+                }
+            }
             if fence == nil, character == "\\" {
                 let next = text.index(after: cursor)
                 if next < text.endIndex {
@@ -75,7 +87,7 @@ enum MarkdownMath {
                         if let end = text.range(of: closer, range: start..<text.endIndex),
                            opener == "[" || !text[start..<end.lowerBound].contains("\n") {
                             let delimiter = opener == "(" ? "$" : "$$"
-                            result += delimiter + text[start..<end.lowerBound] + delimiter
+                            result += delimiter + text[start..<end.lowerBound].replacingOccurrences(of: "\n", with: " ") + delimiter
                             cursor = end.upperBound
                             continue
                         }

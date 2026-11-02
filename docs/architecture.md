@@ -1554,7 +1554,14 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     conversation;
   - change history per checkout (from terminal hooks) in
     `agents/changes/`;
-  - session store readers per agent, conversation reads;
+  - session store readers per agent, conversation reads. A store may identify
+    the interactive session from transcript files held open by the exact agent
+    process under this PTY, before its first lifecycle hook. Codex defers that
+    hook until submit, including after `/resume`. Only one unambiguous root
+    transcript qualifies; subagents are excluded. This read-only identity is
+    live state, never a synthetic hook, resume stamp, or permission to submit.
+    Hooks take precedence once they arrive. Never guess identity from cwd,
+    transcript recency, or a search of nearby sessions;
   - resume stamps, persisted in `agents/stamps.json` with the checkout each
     was taken in: a restored terminal panel spawns with the terminal
     service's restore launch, which the terminal agents resolve to the
@@ -2341,6 +2348,13 @@ shell, with `--json` when it parses results.
   `relations.*` methods over the shared relation edits. Every panel type
   has a native view (terminal, editor, browser with loopback routing,
   review, the surface picker), and worktrees can be switched. The app
+  renders math in Markdown locally, normalizing display equations to one
+  logical line before Markdown parsing while preserving code. At the fitted
+  terminal scale, a one-finger swipe scrolls history (wheel reports through
+  the negotiated terminal protocol for mouse-reporting programs), including
+  with the keyboard open; two fingers pan the grid. A zoomed grid pans with
+  one finger. These are native view concerns; terminal input still goes
+  through the same byte stream. The app
   shows each agent of a workspace as a chat (the conversation pushed as it
   changes through `agents.watch`, its latest messages only and earlier
   pages through `agents.more` as it is scrolled up, replies, what it is

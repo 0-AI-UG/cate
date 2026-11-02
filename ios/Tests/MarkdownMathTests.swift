@@ -8,6 +8,9 @@ enum MarkdownMathTests {
         let gaussian = #"$$ f(x)=\frac{1}{\sigma\sqrt{2\pi}}\exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right) $$"#
         let cases: [(String, String)] = [
             (gaussian, gaussian),
+            ("$$\nf(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}\\exp\\left(-\\frac{(x-\\mu)^2}{2\\sigma^2}\\right)\n$$", "$$ f(x)=\\frac{1}{\\sigma\\sqrt{2\\pi}}\\exp\\left(-\\frac{(x-\\mu)^2}{2\\sigma^2}\\right) $$"),
+            ("$$\n\\begin{aligned}a &= b \\\\ c &= d\\end{aligned}\n$$", "$$ \\begin{aligned}a &= b \\\\ c &= d\\end{aligned} $$"),
+            ("`$$\na\n$$`", "`$$\na\n$$`"),
             (#"Here, \(\mu\) is the mean and \(\sigma>0\) is the standard deviation."#,
              #"Here, $\mu$ is the mean and $\sigma>0$ is the standard deviation."#),
             (#"\[x^2\]"#, "$$x^2$$"),
@@ -26,8 +29,9 @@ enum MarkdownMathTests {
             let actual = MarkdownMath.normalize(input)
             precondition(actual == expected, "\(input.debugDescription): \(actual.debugDescription) != \(expected.debugDescription)")
         }
-        let display = "$$\na +\n\nb\n$$"
-        precondition(MarkdownBlocks.split("Before\n\n\(display)\n\nAfter") == ["Before", display, "After"])
+        let display = "$$ a +  b $$"
+        let multiline = "$$\na +\n\nb\n$$"
+        precondition(MarkdownBlocks.split("Before\n\n\(multiline)\n\nAfter") == ["Before", display, "After"])
         precondition(MarkdownBlocks.split("\\[\na +\n\nb\n\\]") == [display])
         precondition(MarkdownBlocks.split("```tex\n$$\n\n\\(x\\)\n```\n\nAfter") == ["```tex\n$$\n\n\\(x\\)\n```", "After"])
         precondition(MarkdownBlocks.split("One\n\nTwo") == ["One", "Two"])

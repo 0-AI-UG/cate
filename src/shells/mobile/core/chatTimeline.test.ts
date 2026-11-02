@@ -13,6 +13,13 @@ function chat(status: AgentStatus | null, messages: AgentConversationMessage[], 
 }
 
 describe('chat timeline', () => {
+  it('keeps reply timestamps so delayed history is not animated as new output', () => {
+    const timeline = createChatTimeline()
+    timeline.update(chat('notRunning', []))
+    expect(timeline.update(chat('waitingForInput', [user('earlier prompt', 1), reply('earlier reply', 2)])).items)
+      .toContainEqual({ kind: 'reply', id: 'm1', text: 'earlier reply', createdAt: at(2) })
+  })
+
   it('is not loaded before the conversation was read, and a new agent\'s first prompt opens its turn', () => {
     expect(createChatTimeline().update(null)).toMatchObject({ loaded: false, turn: null, items: [], queued: [], failed: [] })
     const timeline = createChatTimeline('go')
