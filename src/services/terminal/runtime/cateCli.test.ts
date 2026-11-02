@@ -24,7 +24,7 @@ function setup(build: string) {
   const cliPath = path.join(install, 'cli.cjs')
   fs.writeFileSync(cliPath, `console.log(JSON.stringify({
     build: ${JSON.stringify(build)},
-    socket: process.env.CATE_SOCKET, token: process.env.CATE_TOKEN,
+    socket: process.env.CATE_SOCKET, token: process.env.CATE_TOKEN ?? '',
     args: process.argv.slice(2),
   }))`)
   const nodePath = process.platform === 'win32' ? process.execPath : path.join(install, 'node')
@@ -48,7 +48,12 @@ function spawn(terminalId: string, panelId: string | null = 'panel-1'): SpawnInf
 async function run(env: Record<string, string>) {
   const command = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : '/bin/sh'
   const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'cate "argument with spaces"'] : ['-c', 'cate "argument with spaces"']
-  const result = await execFileP(command, args, { env: { ...process.env, ...env } })
+  // cmd must receive the command's quotes verbatim; Node's Windows argv
+  // escaping otherwise turns them into literal quotes in the CLI arguments.
+  const result = await execFileP(command, args, {
+    env: { ...process.env, ...env },
+    windowsVerbatimArguments: process.platform === 'win32',
+  })
   return JSON.parse(result.stdout.trim()) as { build: string; socket: string; token: string; args: string[] }
 }
 
