@@ -1,0 +1,36 @@
+// Run: swiftc ios/Cate/App/MarkdownMath.swift ios/Cate/App/MarkdownBlocks.swift
+//      ios/Tests/MarkdownMathTests.swift -o /tmp/cate-math-tests && /tmp/cate-math-tests
+import Foundation
+
+@main
+enum MarkdownMathTests {
+    static func main() {
+        let gaussian = #"$$ f(x)=\frac{1}{\sigma\sqrt{2\pi}}\exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right) $$"#
+        let cases: [(String, String)] = [
+            (gaussian, gaussian),
+            (#"Here, \(\mu\) is the mean and \(\sigma>0\) is the standard deviation."#,
+             #"Here, $\mu$ is the mean and $\sigma>0$ is the standard deviation."#),
+            (#"\[x^2\]"#, "$$x^2$$"),
+            (#"$x$ and $$y$$"#, #"$x$ and $$y$$"#),
+            (#"`\(code\)` and \(x\)"#, #"`\(code\)` and $x$"#),
+            (#"``a ` \(code\)`` and \(x\)"#, #"``a ` \(code\)`` and $x$"#),
+            ("```tex\n\\(code\\)\n```\n\\(x\\)", "```tex\n\\(code\\)\n```\n$x$"),
+            ("~~~~\n\\[code\\]\n~~~~\n\\[x\\]", "~~~~\n\\[code\\]\n~~~~\n$$x$$"),
+            ("```tex\n\\(unfinished code\\)", "```tex\n\\(unfinished code\\)"),
+            ("    \\(code\\)\n\n\\(x\\)", "    \\(code\\)\n\n$x$"),
+            (#"Unfinished \(x"#, #"Unfinished \(x"#),
+            (#"Escaped \\(x\\)"#, #"Escaped \\(x\\)"#),
+            ("Emoji 🐈 \\(x\\)", "Emoji 🐈 $x$"),
+        ]
+        for (input, expected) in cases {
+            let actual = MarkdownMath.normalize(input)
+            precondition(actual == expected, "\(input.debugDescription): \(actual.debugDescription) != \(expected.debugDescription)")
+        }
+        let display = "$$\na +\n\nb\n$$"
+        precondition(MarkdownBlocks.split("Before\n\n\(display)\n\nAfter") == ["Before", display, "After"])
+        precondition(MarkdownBlocks.split("\\[\na +\n\nb\n\\]") == [display])
+        precondition(MarkdownBlocks.split("```tex\n$$\n\n\\(x\\)\n```\n\nAfter") == ["```tex\n$$\n\n\\(x\\)\n```", "After"])
+        precondition(MarkdownBlocks.split("One\n\nTwo") == ["One", "Two"])
+        print("Passed \(cases.count) normalization cases and 4 block-splitting cases")
+    }
+}

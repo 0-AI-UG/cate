@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [iOS 0.1.1 (7)] - 2026-11-02
+
+This TestFlight build adds formula rendering to mobile chat and Markdown previews.
+
+### Fixed
+
+- **iOS formulas** render inline and display math, including LaTeX parenthesis and bracket delimiters, while code examples stay literal.
+- **iOS chat** keeps display equations together when they contain blank lines.
+
 ## [2.1.0-beta.6] - 2026-10-29
 
 This beta improves browser connectivity and Cate Connect recovery, and updates bundled dependencies.

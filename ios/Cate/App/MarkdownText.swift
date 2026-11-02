@@ -1,5 +1,5 @@
 // An agent's reply as GitHub-flavored Markdown (tables, code blocks, lists,
-// quotes, strikethrough, links), rendered by Textual in its GitHub style.
+// quotes, strikethrough, links, math), rendered by Textual in its GitHub style.
 
 import SwiftUI
 import Textual
@@ -19,7 +19,7 @@ struct MarkdownText: View, Equatable {
     }
 
     private var content: some View {
-        StructuredText(markdown: text)
+        StructuredText(markdown: MarkdownMath.normalize(text), syntaxExtensions: [.math])
             .textual.structuredTextStyle(.gitHub)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
