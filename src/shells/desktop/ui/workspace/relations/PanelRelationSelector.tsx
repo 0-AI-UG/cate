@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import type { Point } from '@workspace/canvas/contract'
 import type { PanelRecord, PanelRelation, RelationKind } from '@workspace/document/contract'
 import { RELATION_LABEL_MAX, panelRelationLabel, panelRelationOptions, relationPanelOf } from '@workspace/relations/contract'
+import { POPOVER_SURFACE } from '../../kernel/interaction'
 import {
   forgetRelationLabel,
   labelRelation,
@@ -249,7 +250,7 @@ export function PanelRelationSelector({
         role="menu"
         aria-label="Connection meaning"
         aria-hidden={!open}
-        className={`${relationOverlayTarget ? 'relative' : 'absolute left-1/2 top-[27px] -translate-x-1/2'} w-56 rounded-lg border border-subtle bg-surface-3/95 p-1 text-[11px] shadow-xl backdrop-blur-xl transition-[opacity,transform,visibility] duration-200 ease-out motion-reduce:transition-none ${
+        className={`${relationOverlayTarget ? 'relative' : 'absolute left-1/2 top-[27px] -translate-x-1/2'} ${POPOVER_SURFACE} w-56 p-1 text-[11px] transition-[opacity,transform,visibility] duration-200 ease-out motion-reduce:transition-none ${
           open
             ? 'visible translate-y-0 scale-100 opacity-100'
             : 'invisible -translate-y-1 scale-[0.98] opacity-0'
