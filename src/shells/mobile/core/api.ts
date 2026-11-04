@@ -110,7 +110,7 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       return failed ? { ok: false, message: failed } : { ok: true }
     },
     async 'workspaces.forget'({ workspaceId }) {
-      await workspaces.close(workspaceId)
+      await workspaces.forget(workspaceId)
       return null
     },
     async 'terminal.open'(params) {

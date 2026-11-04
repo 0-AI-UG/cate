@@ -262,7 +262,6 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   const agentTerminals = lateAgentTerminals(() => ports.agentTerminals)
 
   const agentsRuntime = createAgentsRuntime({
-    secrets: deps.secrets,
     root,
     agentsDir: paths.agents,
     trust,
@@ -275,9 +274,6 @@ export function composeWorkspace(deps: WorkspaceDeps) {
     onAgentSettingsChange: (listener) => settings.subscribe((_values, patch) => {
       if ('agentHookInjection' in patch) listener()
     }),
-    agentProviders: { get: () => settings.get('agentProviders'), set: async (value) => { settings.set('agentProviders', value); await settings.flushDurable() } },
-    agentPreferences: { get: () => settings.get('agentPreferences'), set: async (value) => { settings.set('agentPreferences', value); await settings.flushDurable() } },
-    onAgentPreferencesChange: (listener) => settings.subscribe((_values, patch) => { if ('agentPreferences' in patch || 'agentProviders' in patch) listener() }),
     enableAgent: async (agentId) => {
       settings.set('agentHookInjection', { ...settings.get('agentHookInjection'), [agentId]: 'on' })
       await settings.flushDurable()

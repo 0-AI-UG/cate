@@ -9,7 +9,7 @@ afterEach(() => useUIStore.setState(INITIAL_UI_STATE))
 
 it('a pairing link opened with the app fills in Join with a Code', () => {
   openUrl('cate://pair?r=abc&s=def')
-  expect(useUIStore.getState().joinDialog).toEqual({ code: 'cate://pair?r=abc&s=def' })
+  expect(useUIStore.getState().joinRequest).toEqual({ code: 'cate://pair?r=abc&s=def' })
 })
 
 it('a shown workspace that leaves the list is not shown any more', () => {

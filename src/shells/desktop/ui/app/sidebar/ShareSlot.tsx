@@ -51,7 +51,7 @@ export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
     )
   }
 
-  if (network !== 'off') {
+  if (isOpen && network !== 'off' && !isSelected) {
     const Glyph = network === 'cateConnect' ? Globe : Wifi
     const label = network === 'cateConnect' ? 'Shared: paired devices can join from anywhere' : 'Shared: paired devices can join on this network'
     return (
@@ -64,13 +64,14 @@ export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
   }
 
   return (
-    <Tooltip label="Share workspace…">
+    <Tooltip label="Invite to workspace…">
       <button
-        className={`${SLOT} w-5 h-5 text-secondary hover:text-primary transition-opacity ${isSelected ? 'opacity-60' : 'opacity-0'} group-hover:opacity-80 hover:!opacity-100 focus-visible:opacity-100`}
+        className={`${SLOT} h-5 px-1 text-secondary hover:text-primary transition-opacity ${isSelected ? 'opacity-60' : 'opacity-0'} group-hover:opacity-80 hover:!opacity-100 focus-visible:opacity-100`}
         onClick={share}
-        aria-label="Share workspace…"
+        aria-label="Invite to workspace…"
       >
         <UserPlus size={13} />
+        {isSelected && <span className="ml-1 text-xs">Invite</span>}
       </button>
     </Tooltip>
   )

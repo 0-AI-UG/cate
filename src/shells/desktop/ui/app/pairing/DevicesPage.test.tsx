@@ -16,7 +16,7 @@ let host: HTMLDivElement
 let root: Root
 let uninstall: () => void
 
-function fakeRuntime() {
+function fakeRuntime(lifetimeMs = 600_000) {
   const watchers = new Set<(list: WorkspaceDevice[]) => void>()
   let listener: ((e: Event) => void) | null = null
   let rev = 0
@@ -44,7 +44,7 @@ function fakeRuntime() {
     pairing: {
       createSecret: vi.fn(async ({ mode, acknowledged }: { mode: string; acknowledged?: boolean }) => {
         calls.push(`createSecret ${mode}${acknowledged === true ? '' : ' unacknowledged'}`)
-        return { uri: 'cate://pair?r=abcdefghijklmnop', code: 'abcd-efgh-ijkl-mnop-qrst-uvwx-yz23-4567', expiresAt: Date.now() + 600_000 }
+        return { uri: 'cate://pair?r=abcdefghijklmnop', code: 'abcd-efgh-ijkl-mnop-qrst-uvwx-yz23-4567', expiresAt: Date.now() + lifetimeMs }
       }),
       // The runtime sends the list, then again on every change.
       watch: vi.fn(() => ({
@@ -93,7 +93,7 @@ describe('Share and Devices', () => {
     const cancel = vi.fn()
     act(() => root.render(<SharePanel workspaceId="w1" onCancel={cancel} />))
     await flush()
-    expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Only its machine')
+    expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Host computer only')
     // Nothing is made or turned on before the person confirms.
     expect(host.textContent).toContain('Anyone who joins can use this computer as you')
     expect(host.textContent).toContain('Turns on same-network access first')
@@ -101,13 +101,41 @@ describe('Share and Devices', () => {
     await act(async () => { button('Cancel')!.click() })
     expect(cancel).toHaveBeenCalled()
     expect(calls).toEqual([])
-    await act(async () => { button('I understand, show code')!.click() })
+    await act(async () => { button('Create Invite')!.click() })
     await flush()
     expect(calls).toEqual(['set runtimeNetwork=sameNetwork', 'createSecret sameNetwork'])
     expect(host.textContent).toContain('ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567')
     expect(host.textContent).toMatch(/Expires in (9:59|10:00)/)
     expect(host.querySelector('[data-testid="pairing-qr"] svg')).not.toBeNull()
-    expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Same network')
+    expect(host.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Nearby only')
+  })
+
+  it('copies the displayed pairing code and confirms the copy', async () => {
+    const { runtime } = fakeRuntime()
+    uninstall = setRuntimeResolver(() => runtime)
+    const ui = installMockClientUi()
+    act(() => root.render(<SharePanel workspaceId="w1" />))
+    await flush()
+    await act(async () => { button('Create Invite')!.click() })
+    const copy = host.querySelector('[aria-label="Copy pairing code"]') as HTMLButtonElement
+    expect(copy).not.toBeNull()
+    await act(async () => copy.click())
+    expect(ui.writeClipboard).toHaveBeenCalledWith('ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567')
+    expect(host.querySelector('[aria-label="Copied"]')).not.toBeNull()
+    expect(host.textContent).toContain('Pairing code copied')
+  })
+
+  it('disables copying an expired invite', async () => {
+    const { runtime } = fakeRuntime(-1)
+    uninstall = setRuntimeResolver(() => runtime)
+    const ui = installMockClientUi()
+    act(() => root.render(<SharePanel workspaceId="w1" />))
+    await flush()
+    await act(async () => { button('Create Invite')!.click() })
+    const copy = host.querySelector('[aria-label="Copy pairing code"]') as HTMLButtonElement
+    expect(copy.disabled).toBe(true)
+    act(() => copy.click())
+    expect(ui.writeClipboard).not.toHaveBeenCalled()
   })
 
   it('asks again for every new code, after New code and after the access changes', async () => {
@@ -116,7 +144,7 @@ describe('Share and Devices', () => {
     installMockClientUi()
     act(() => root.render(<SharePanel workspaceId="w1" />))
     await flush()
-    await act(async () => { button('I understand, show code')!.click() })
+    await act(async () => { button('Create Invite')!.click() })
     await flush()
     expect(host.textContent).toContain('ABCD-EFGH')
 
@@ -124,7 +152,7 @@ describe('Share and Devices', () => {
     await flush()
     expect(host.textContent).not.toContain('ABCD-EFGH')
     expect(host.textContent).toContain('Anyone who joins can use this computer as you')
-    await act(async () => { button('I understand, show code')!.click() })
+    await act(async () => { button('Create Invite')!.click() })
     await flush()
     expect(host.textContent).toContain('ABCD-EFGH')
 
@@ -147,7 +175,7 @@ describe('Share and Devices', () => {
     await flush()
     expect(calls).toEqual(['set runtimeNetwork=cateConnect'])
     expect(ui.confirm).not.toHaveBeenCalled()
-    await act(async () => { radio('Only its machine').click() })
+    await act(async () => { radio('Host computer only').click() })
     await flush()
     expect(ui.confirm).toHaveBeenCalled()
     expect(calls).toEqual(['set runtimeNetwork=cateConnect'])

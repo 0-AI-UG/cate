@@ -22,7 +22,7 @@ const Picker = () => <><WorkspacePicker /><MachineFolderHost /></>
 /** A workspace list with nothing in it but `addMachine`. */
 function fakeWorkspaces(addMachine = vi.fn(async () => ({ id: 'w1' }))) {
   const snapshot = { entries: [], open: [] }
-  return { getSnapshot: () => snapshot, subscribe: () => () => {}, get: () => undefined, addMachine } as unknown as WorkspaceList & { addMachine: typeof addMachine }
+  return { getSnapshot: () => snapshot, getRecentSnapshot: () => snapshot.entries, subscribe: () => () => {}, get: () => undefined, addMachine } as unknown as WorkspaceList & { addMachine: typeof addMachine }
 }
 
 vi.mock('../navigation', () => ({ selectWorkspace: vi.fn(async () => true), openLocalFolder: vi.fn(async () => true) }))
@@ -62,7 +62,7 @@ afterEach(() => {
   installClientApp(null)
   installClientSettings(null)
   installDesktopPort(null)
-  useUIStore.setState({ machineFolder: null, joinDialog: null, openDialogOpen: false })
+  useUIStore.setState({ machineFolder: null, joinRequest: null, openDialogOpen: false })
 })
 
 const option = (label: string) =>
@@ -117,7 +117,7 @@ it('adds a machine once it answers, then opens the picked folder as a workspace'
 it('does not save a machine that never answered', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockRejectedValue(new Error('u@box refused the login.'))
-  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
   await act(async () => root.render(<Picker />))
   await addInPicker('u@box')
   expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('refused the login')
@@ -128,7 +128,7 @@ it('shows why a machine cannot be set up and retries', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockRejectedValueOnce(new Error('u@box refused the login.'))
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
-  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
   await act(async () => root.render(<Picker />))
   await act(async () => option('u@box').click())
@@ -140,7 +140,7 @@ it('shows why a machine cannot be set up and retries', async () => {
 
 it('falls back to the home folder when the last one is gone, and opens a typed path', async () => {
   const setup = fakeSetup()
-  const workspaces = { addMachine: vi.fn(async () => ({ id: 'w1' })) }
+  const workspaces = fakeWorkspaces()
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' }, lastPath: '/gone' }])
   installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: workspaces as unknown as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
 
@@ -191,8 +191,10 @@ it('Open removes a saved machine once confirmed', async () => {
 it('Open joins a workspace on another device with a code', async () => {
   installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', pair: vi.fn() })
   await act(async () => root.render(<Picker />))
-  await act(async () => option('Join with a code…').click())
-  expect(useUIStore.getState().joinDialog).toEqual({})
+  await act(async () => option('Join Workspace…').click())
+  expect(useUIStore.getState().joinRequest).toEqual({})
+  expect(document.body.querySelector('input[aria-label="Pairing code"]')).not.toBeNull()
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull()
 })
 
 it('Open Workspace… shows the picker over the workspace the window shows', () => {
@@ -234,11 +236,11 @@ it('the Open dialog stays when the native folder dialog is cancelled, and closes
   installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
   useUIStore.setState({ openDialogOpen: true })
   await act(async () => root.render(<OpenWorkspaceDialog />))
-  await act(async () => option('Open a folder…').click())
+  await act(async () => option('Open Folder…').click())
   expect(pickFolder).toHaveBeenCalled()
   expect(useUIStore.getState().openDialogOpen).toBe(true)
   pickFolder.mockResolvedValueOnce('/code/app')
-  await act(async () => option('Open a folder…').click())
+  await act(async () => option('Open Folder…').click())
   expect(useUIStore.getState().openDialogOpen).toBe(false)
 })
 
@@ -262,7 +264,7 @@ it('closing the dialog stops what still runs on the machine', async () => {
   const setup = fakeSetup()
   setup.ensureRuntime.mockImplementation(() => new Promise(() => {}))
   store.set('sshMachines', [{ id: 'm', target: { destination: 'u@box' } }])
-  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: setup })
   await act(async () => root.render(<Picker />))
   await act(async () => option('u@box').click())
   await act(async () => button('Cancel').click())
@@ -270,9 +272,44 @@ it('closing the dialog stops what still runs on the machine', async () => {
 })
 
 it('refuses an ssh command it cannot read', async () => {
-  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: {} as WorkspaceList, connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup() })
   await act(async () => root.render(<Picker />))
   await addInPicker('ssh -o ProxyCommand=x box')
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('~/.ssh/config')
   expect(store.get('sshMachines')).toEqual([])
+})
+
+it('uses the same single-line input interaction for adding a computer and joining', async () => {
+  installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5', machines: fakeSetup(), pair: vi.fn() })
+  await act(async () => root.render(<Picker />))
+  await act(async () => option('Add an SSH machine…').click())
+  const sshInput = host.querySelector('input[aria-label="SSH command"]') as HTMLInputElement
+  const sshRow = sshInput.closest('form')!
+  expect(sshInput).toBe(document.activeElement)
+  const rowClass = sshRow.className
+  const inputClass = sshInput.className
+  expect((button('Connect') as HTMLButtonElement).disabled).toBe(true)
+  expect(button('Cancel')).toBeTruthy()
+
+  // Opening the other action collapses the previous one.
+  await act(async () => option('Join Workspace…').click())
+  expect(host.querySelector('input[aria-label="SSH command"]')).toBeNull()
+  const joinInput = host.querySelector('input[aria-label="Pairing code"]') as HTMLInputElement
+  expect(joinInput).toBe(document.activeElement)
+  expect(joinInput.closest('form')?.className).toBe(rowClass)
+  expect(joinInput.className).toBe(inputClass)
+  expect((button('Join workspace') as HTMLButtonElement).disabled).toBe(true)
+
+  // Escape cancels the input, keeping keyboard navigation in the picker.
+  await act(async () => joinInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(host.querySelector('input')).toBeNull()
+  expect(document.activeElement).toBe(host.querySelector('[role="listbox"]'))
+  await act(async () => option('Add an SSH machine…').click())
+  await act(async () => type(host.querySelector('input')!, 'ssh -o ProxyCommand=x box'))
+  await act(async () => button('Connect').click())
+  expect(host.querySelector('form')?.className).toBe(rowClass)
+  expect(host.querySelector('input')?.getAttribute('aria-invalid')).toBe('true')
+  await act(async () => button('Cancel').click())
+  expect(host.querySelector('input')).toBeNull()
+  expect(document.activeElement).toBe(host.querySelector('[role="listbox"]'))
 })

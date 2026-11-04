@@ -4,8 +4,7 @@ import type { AgentHookAgentState } from './hooks'
 import type { PanelAgentState } from './session'
 import type { AgentId } from './registry'
 import type { AgentTypeInfo } from './launch'
-import type { AgentAvailability, AgentSetupSnapshot, AgentSetupOperation, AgentSetupConfigureRequest, AgentSetupInfo } from './setup'
-import type { AgentProviderSaveRequest, AgentProviderInfo, AgentProviderModel } from './setup'
+import type { AgentAvailability, AgentSetupSnapshot, AgentSetupOperation } from './setup'
 import type { PlaceTarget } from '@workspace/document/contract'
 import type { UsageLimitsReport, UsagePricing, UsageSummary, UsageSummaryInput } from './usage/types'
 
@@ -45,14 +44,10 @@ export function applyAgentPanelStatesChange(states: AgentPanelStates, change: Ag
  *  the workspace root or one of its worktree checkouts. */
 export const agentsCapability = defineCapability('agents', {
   methods: {
-    providerSave: method<AgentProviderSaveRequest, AgentProviderInfo>({ mutates: true }),
-    providerRemove: method<{ id: string }, { ok: true }>({ mutates: true }),
-    providerModels: method<{ id: string }, AgentProviderModel[]>({ timeoutMs: 20_000 }),
     setupInspect: method<{ refresh?: boolean }, AgentSetupSnapshot>({ timeoutMs: 60_000 }),
     setupBegin: method<{ agentId: AgentId; action: 'login' | 'install' }, AgentSetupOperation>({ mutates: true, timeoutMs: 60_000 }),
     setupOperation: method<{ operationId: string }, AgentSetupOperation | null>(),
     setupCancel: method<{ operationId: string }, { ok: true }>({ mutates: true }),
-    setupConfigure: method<AgentSetupConfigureRequest, AgentSetupInfo>({ mutates: true, timeoutMs: 45_000 }),
     /** Per-agent hook injection state of a checkout (defaults to the root). */
     inspectHooks: method<{ cwd?: string }, AgentHookAgentState[]>(),
     /** The agent a panel hosts, or null. */

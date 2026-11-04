@@ -4,8 +4,7 @@
 // hooks and terminal agents stay private to this module.
 
 import os from 'node:os'
-import { createAgentSetup, type AgentSetupService } from './setup/service'
-import { withManagedAgentStores } from './setup/stores'
+import { createAgentSetup } from './setup/service'
 import path from 'node:path'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import type { CateServiceHandlers } from '@kernel/api/contract'
@@ -33,10 +32,6 @@ export interface AgentsRuntimeDeps extends AgentsCoreDeps {
   env(): NodeJS.ProcessEnv
   /** Explicit setup opts this CLI into workspace hook injection. */
   onAgentSettingsChange?(listener: () => void): () => void
-  agentProviders: import('./setup/providers').ProviderStore
-  agentPreferences: import('./setup/service').AgentSetupDeps['preferences']
-  secrets: import('./setup/service').AgentSetupDeps['secrets']
-  onAgentPreferencesChange?(listener: () => void): () => void
   enableAgent?(agentId: AgentId): Promise<void>
   /** Tests: the usage service's rate fetch and clock. */
   usageOptions?: Partial<Pick<AgentUsageDeps, 'fetchRates' | 'now'>>
@@ -66,18 +61,16 @@ export interface AgentsRuntime {
 
 export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   let terminals!: TerminalAgents
-  let setup!: AgentSetupService
-  const stores = withManagedAgentStores(deps.hookOptions?.sessionStores ?? AGENT_SESSION_STORES, deps.agentsDir)
+  const stores = deps.hookOptions?.sessionStores ?? AGENT_SESSION_STORES
   const core = createAgentsCore({ ...deps, hookOptions: { ...deps.hookOptions, sessionStores: stores } }, (base) =>
-    terminals = createTerminalAgents(base, deps.terminal, { stampsFile: path.join(deps.agentsDir, 'stamps.json'), prepareLaunch: (...args) => setup.prepareLaunch(...args) }))
-  setup = createAgentSetup({ secrets: deps.secrets, root: deps.root, agentsDir: deps.agentsDir, homeDir: deps.homeDir, env: deps.env, trust: deps.trust, start: deps.start, terminal: deps.terminal, enable: deps.enableAgent, preferences: deps.agentPreferences, providers: deps.agentProviders, hooksReady: async (agentId) => {
+    terminals = createTerminalAgents(base, deps.terminal, { stampsFile: path.join(deps.agentsDir, 'stamps.json') }))
+  const setup = createAgentSetup({ root: deps.root, agentsDir: deps.agentsDir, homeDir: deps.homeDir, env: deps.env, trust: deps.trust, start: deps.start, terminal: deps.terminal, enable: deps.enableAgent, hooksReady: async (agentId) => {
     const states = await inspectAgentCliHooks((dir) => core.hooks.inspectFolders(dir), deps.root)
     const selected = states.find((state) => state.agent.id === agentId)
     return !!selected && evaluateAgentCliHooks(selected, core.settings.agentHookInjection()).ready
   } })
   // Warm availability on the runtime, before any client opens a launch menu.
   void setup.inspect().catch(() => {})
-  const offPreferences = deps.onAgentPreferencesChange?.(() => setup.preferencesChanged())
   const offSettings = deps.onAgentSettingsChange?.(() => setup.invalidate())
   const starter = createAgentStarter(core, deps.start, setup)
   const usage = createAgentUsage({
@@ -105,6 +98,6 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     onSessionEnded: (listener) => terminals.onExit((panelId) => listener(panelId)),
     capability: () => agentsCapabilityImpl(core, starter, usage, setup),
     apiHandlers: () => createAgentApiHandlers(core, starter),
-    dispose: () => { offSettings?.(); offPreferences?.(); setup.dispose(); core.dispose() },
+    dispose: () => { offSettings?.(); setup.dispose(); core.dispose() },
   }
 }

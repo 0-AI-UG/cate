@@ -1,5 +1,6 @@
 // A workspace whose runtime is not connected, for whatever reason, cannot be
-// used: its content is covered and inert until the connection is back. The
+// used: its content is inert until the connection is back. Reconnection keeps
+// the canvas visible with a compact notice; decisions use a blocking card. The
 // cover says what is wrong and offers the action that fixes it. It covers
 // this workspace only: the sidebar and other workspaces stay usable. An
 // incompatible runtime is resolved right here (RuntimeMismatchCard), which
@@ -59,23 +60,25 @@ export function useWorkspaceBlock(workspaceId: string | null): { blocked: boolea
 export function ConnectionBlocker({ workspaceId, children }: { workspaceId: string | null; children: ReactNode }): JSX.Element {
   const { blocked, connection, state, updating } = useWorkspaceBlock(workspaceId)
   const content = useRef<HTMLDivElement>(null)
+  const unavailable = !!connection && (blocks(state) || blocked)
+  const quiet = !updating && !runtimeMismatch(state, tryClientApp()?.version ?? '') && (state.kind === 'connecting' || state.kind === 'offline')
 
   // `inert` keeps focus, typing and shortcuts out of the covered panels.
   useEffect(() => {
     const el = content.current
     if (!el) return
-    if (blocked) el.setAttribute('inert', '')
+    if (unavailable) el.setAttribute('inert', '')
     else el.removeAttribute('inert')
-  }, [blocked])
+  }, [unavailable])
 
   return (
     <div className="relative h-full">
       <div ref={content} className="h-full">{children}</div>
       {blocked && (
-        <div className={`absolute inset-0 z-[1000] flex items-center justify-center ${BACKDROP}`} data-connection-blocker>
+        <div className={`absolute inset-0 z-[1000] flex ${quiet ? 'items-start justify-end bg-transparent pointer-events-auto p-3' : `items-center justify-center ${BACKDROP}`}`} data-connection-blocker>
           {(runtimeMismatch(state, tryClientApp()?.version ?? '') || updating) && connection
             ? <RuntimeMismatchCard connection={connection} />
-            : <ConnectionStatusCard workspaceId={workspaceId} connection={connection} state={state} />}
+            : <ConnectionStatusCard workspaceId={workspaceId} connection={connection} state={state} compact={quiet} />}
         </div>
       )}
     </div>
@@ -84,15 +87,16 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
 
 /** The connection's status and remedies (`connectionStatus`), with how far
  *  a runtime install it waits for is. */
-export function ConnectionStatusCard({ workspaceId, connection, state }: { workspaceId: string | null; connection: WorkspaceConnection | undefined; state: ConnectionState }): JSX.Element {
+export function ConnectionStatusCard({ workspaceId, connection, state, compact = false }: { compact?: boolean; workspaceId: string | null; connection: WorkspaceConnection | undefined; state: ConnectionState }): JSX.Element {
   const status = statusOf(connection, state)
   const actions = connectionActions(connection, state)
   const entry = workspaceId ? tryClientApp()?.workspaces.get(workspaceId) : undefined
   const install = useInstallProgress(state.kind === 'connecting' ? installTargetOf(entry) : null)
   return (
     <StatusCard
-      title={status?.title}
-      message={install ? 'Cate installs its runtime first. This can take a few minutes.' : status?.message}
+      title={compact && state.kind === 'connecting' ? 'Reconnecting…' : status?.title}
+      message={install ? 'Preparing this workspace. This can take a few minutes.' : compact ? (state.kind === 'offline' && !state.retrying ? 'Your workspace is unavailable. Try connecting again.' : 'Your workspace is temporarily unavailable. Cate will reconnect automatically.') : status?.message}
+      details={compact ? status?.message : undefined}
       busy={state.kind === 'connecting'}
       dotClass={connectionDotClass(state)}
       actions={actions}
@@ -102,9 +106,10 @@ export function ConnectionStatusCard({ workspaceId, connection, state }: { works
   )
 }
 
-export function StatusCard({ title, message, busy = false, dotClass, actions = [], children }: {
+export function StatusCard({ title, message, details, busy = false, dotClass, actions = [], children }: {
   title?: string
   message?: string
+  details?: string
   busy?: boolean
   dotClass?: string
   actions?: ConnectionAction[]
@@ -118,6 +123,7 @@ export function StatusCard({ title, message, busy = false, dotClass, actions = [
           {title}
         </span>
         <span className="text-[13px] leading-relaxed text-secondary break-words">{message}</span>
+        {details && <details className="text-xs text-muted"><summary className="cursor-pointer">Details</summary><p className="mt-2 break-words">{details}</p></details>}
         {children}
         {actions.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-2">

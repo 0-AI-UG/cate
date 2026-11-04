@@ -218,25 +218,6 @@ describe('terminal agents', () => {
     identify.mockRestore()
   })
 
-  it('prepares provider configuration on initial launch and stamped restore, propagating errors without native fallback', async () => {
-    const plan = { command: { executable: 'codex', args: ['provider-config'] }, env: { CATE_PROVIDER_API_KEY: 'fixture-secret' } }
-    const prepareLaunch = vi.fn(async () => plan)
-    agentTerminals.dispose()
-    agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile, prepareLaunch })
-    const context = { cwd: root, panelId: 'term' }
-    const start = () => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'codex', prompt: 'hello' }, context)
-    expect(await start()).toEqual(plan)
-    expect(prepareLaunch).toHaveBeenLastCalledWith('codex', agentLaunchCommand({ agentId: 'codex', prompt: 'hello' }))
-    const env = await terminal.spawn({ terminalId: 'pty-1', ...context })
-    await post(env, 'codex', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
-    const restore = () => terminal.intents.get(TERMINAL_RESTORE_LAUNCH.kind)!(undefined, context)
-    expect(await restore()).toEqual(plan)
-    expect(prepareLaunch).toHaveBeenLastCalledWith('codex', { executable: 'codex', args: AGENT_DEFS.codex.resume.args!('sess-1') })
-    prepareLaunch.mockRejectedValue(new Error('provider unavailable'))
-    await expect(start()).rejects.toThrow('provider unavailable')
-    await expect(restore()).rejects.toThrow('provider unavailable')
-    expect(terminal.writes).toEqual([])
-  })
   it('plants the hook env on spawn and tracks the agent from hooks and presence', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     expect(env.CATE_TERMINAL_ID).toBe('pty-1')

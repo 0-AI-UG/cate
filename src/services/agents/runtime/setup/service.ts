@@ -6,19 +6,12 @@ import path from 'node:path'
 import { createJsonStateFile, writeFileAtomic } from '@kernel/state/node'
 import { mkdir } from 'node:fs/promises'
 import { RpcError } from '@kernel/rpc/contract'
-import { AGENTS, AGENT_DEFS, isAgentId, type AgentId, type AgentSetupConfigureRequest, type AgentSetupInfo, type AgentSetupOperation, type AgentSetupSnapshot } from '../../contract'
-import type { LaunchPlan, LaunchCommand } from '@services/terminal/runtime'
+import { AGENTS, AGENT_DEFS, isAgentId, type AgentId, type AgentSetupInfo, type AgentSetupOperation, type AgentSetupSnapshot } from '../../contract'
 import type { AgentStartPorts } from '../start'
 import type { AgentTerminalService } from '../terminal'
 import type { TrustGate } from '../core'
 import { AGENT_SETUP_ADAPTERS, setupAuthentication } from './adapters'
-import { providerLaunch } from './launch'
 import { probeJsonLines } from '../usage/probe'
-
-import type { AgentPreferences } from '../../contract/settings'
-import { createProviders, type ProviderStore } from './providers'
-import type { JsonStateFile } from '@kernel/state/node'
-import type { SecretsFile } from '@runtime/data/runtime'
 
 export const AGENT_SETUP_LAUNCH = 'agents.setup'
 interface SetupState {
@@ -39,34 +32,26 @@ export interface SetupProbeResult { stdout: string; stderr?: string; code: numbe
 export interface AgentSetupDeps {
   root: string
   agentsDir: string
-  secrets: JsonStateFile<SecretsFile>
   homeDir?: string
   env(): NodeJS.ProcessEnv
   trust: TrustGate
   start: AgentStartPorts
   terminal: AgentTerminalService
-  providers: ProviderStore
-  preferences: { get(): AgentPreferences; set(value: AgentPreferences): Promise<void> }
   enable?(agentId: AgentId): Promise<void>
   hooksReady?(agentId: AgentId): Promise<boolean>
   /** Tests: avoid invoking real installers, auth or paid endpoints. */
   probe?: (executable: string, args: readonly string[]) => Promise<SetupProbeResult>
-  fetch?: typeof globalThis.fetch
   platform?: NodeJS.Platform
 }
 export interface AgentSetupService {
   types(): Promise<AgentTypeInfo[]>
   invalidate(): void
-  preferencesChanged(): void
   watch(listener: (state: AgentAvailability) => void): () => void
   inspect(refresh?: boolean): Promise<AgentSetupSnapshot>
   ensureReady(agentId: AgentId): Promise<void>
   begin(input: { agentId: AgentId; action: 'login' | 'install' }): Promise<AgentSetupOperation>
   operation(id: string): AgentSetupOperation | null
   cancel(id: string): { ok: true }
-  configure(input: AgentSetupConfigureRequest): Promise<AgentSetupInfo>
-  providers: ReturnType<typeof createProviders>
-  prepareLaunch(agentId: AgentId, command: LaunchCommand): Promise<LaunchPlan>
   dispose(): void
 }
 export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
@@ -75,7 +60,6 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
   // A daemon restart cannot claim to still own a previous installation/login.
   state.update((s) => ({ ...s, operations: Object.fromEntries(Object.entries(s.operations).map(([id, op]) => [id, op.status === 'running' ? { ...op, status: 'failed', message: 'Runtime restarted. Refresh account status before trying again.' } : op])) }))
   const platform = deps.platform ?? process.platform
-  const providers = createProviders({ store: deps.providers, secrets: deps.secrets, trust: deps.trust, fetch: deps.fetch, changed: () => { service.preferencesChanged(); service.invalidate() } })
   const terminalIds = new Map<string, string>()
   const cache = new Map<AgentId, { at: number; info: AgentSetupInfo }>()
   const probe = deps.probe ?? ((executable, args) => new Promise<SetupProbeResult>((resolve) => {
@@ -86,29 +70,10 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
     execFile(binary, argv, { cwd: deps.root, env: deps.env(), timeout: 8000, maxBuffer: 256 * 1024, windowsHide: true }, (error, stdout, stderr) => resolve({ stdout: String(stdout), stderr: String(stderr), code: error ? typeof error.code === 'number' ? error.code : 1 : 0, missing: (error as NodeJS.ErrnoException | null)?.code === 'ENOENT' }))
   }))
   const requireAgent = (agentId: AgentId) => { if (!isAgentId(agentId)) throw new RpcError('rejected', 'Unsupported agent.') }
-  const selection = (agentId: AgentId) => {
-    const preference = deps.preferences.get()[agentId]
-    if (preference?.connection !== 'api') return null
-    const adapter = AGENT_SETUP_ADAPTERS[agentId]
-    if (!adapter.apiProtocol) throw new RpcError('rejected', adapter.apiReason!)
-    const { provider, credential } = providers.get(preference.providerId ?? '')
-    if (provider.api !== adapter.apiProtocol) throw new RpcError('rejected', 'The provider API protocol is not compatible with this agent.')
-    const model = provider.models.find((m) => m.id === preference.model)
-    if (!model) throw new RpcError('rejected', 'Select a model for this agent in Agents settings.')
-    return { provider, credential, model }
-  }
-  const connectionInfo = (agentId: AgentId) => {
-    const preference = deps.preferences.get()[agentId]
-    const adapter = AGENT_SETUP_ADAPTERS[agentId]
-    let configured = false
-    try { configured = selection(agentId) !== null } catch { /* Invalid selections remain visible and block launch. */ }
-    return { connection: preference?.connection ?? 'native' as const, providerId: preference?.providerId, model: preference?.model,
-      api: { protocol: adapter.apiProtocol, reason: adapter.apiReason, configured } }
-  }
   const infoFor = async (agentId: AgentId, refresh = false): Promise<AgentSetupInfo> => {
     const previous = cache.get(agentId)
     if (!refresh && previous && Date.now() - previous.at < 15_000) {
-      return { ...previous.info, ...connectionInfo(agentId), hooksReady: await deps.hooksReady?.(agentId) ?? false }
+      return { ...previous.info, hooksReady: await deps.hooksReady?.(agentId) ?? false }
     }
     const adapter = AGENT_SETUP_ADAPTERS[agentId]
     const command = AGENT_DEFS[agentId].command
@@ -143,7 +108,7 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
     const info: AgentSetupInfo = {
       agentId, displayName: AGENT_DEFS[agentId].displayName, downloadUrl: adapter.downloadUrl,
       installation: { status: installed ? 'installed' : windowsUnsupported ? 'unsupported' : version.missing ? 'missing' : 'error', ...(installed ? { version: versionText, executable: command } : version.missing ? {} : { detail: tooOld ? `Update this CLI to ${adapter.minimumVersion} or newer for Cate support.` : 'The CLI version check failed.' }) },
-      authentication, ...connectionInfo(agentId),
+      authentication,
       hooksReady: await deps.hooksReady?.(agentId) ?? false,
       canLogin: installed, canInstall: !windowsUnsupported && !!(platform === 'win32' ? adapter.installer.windows : adapter.installer.unix),
     }
@@ -194,19 +159,12 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
     for (const listener of listeners) listener(next)
   }
   const typesFor = (agents: AgentSetupInfo[]) => agents.map((agent) => {
-    const setupReason = agent.installation.status !== 'installed' ? 'Install this CLI in Agents settings.' : agent.connection === 'native' && agent.authentication.status === 'signed-out' ? 'Sign in to this CLI in Agents settings.' : agent.connection === 'api' && !agent.api.configured ? 'Configure an API provider and model in Agents settings.' : !agent.hooksReady ? 'Enable this agent in Agents settings.' : undefined
-    return { agentId: agent.agentId, displayName: agent.displayName, ready: !setupReason, connection: agent.connection, ...(agent.model ? { model: agent.model } : {}), ...(setupReason ? { setupReason } : {}) }
+    const setupReason = agent.installation.status !== 'installed' ? 'Install this CLI in Agents settings.' : agent.authentication.status === 'signed-out' ? 'Sign in to this CLI in Agents settings.' : !agent.hooksReady ? 'Enable this agent in Agents settings.' : undefined
+    return { agentId: agent.agentId, displayName: agent.displayName, ready: !setupReason, ...(setupReason ? { setupReason } : {}) }
   })
   const refreshInBackground = () => { if (!disposed && listeners.size) void service.inspect().catch(() => {}) }
   const service: AgentSetupService = {
     async types() { await service.inspect(); return availability.types },
-    preferencesChanged() {
-      if (!availability.snapshot) return
-      const agents = availability.snapshot.agents.map((agent) => {
-        return { ...agent, ...connectionInfo(agent.agentId) }
-      })
-      publish({ ...availability, snapshot: { ...availability.snapshot, agents, providers: providers.list() }, types: typesFor(agents) })
-    },
     invalidate() {
       invalidation++
       cache.clear()
@@ -235,7 +193,7 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
           while (true) {
             const version = invalidation
             const force = refresh || version !== initialVersion
-            const snapshot: AgentSetupSnapshot = { host: { name: os.hostname(), platform, arch: os.arch() }, providers: providers.list(), agents: await Promise.all(AGENTS.map((a) => infoFor(a.id, force))), operations: Object.values(state.get().operations).sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 30) }
+            const snapshot: AgentSetupSnapshot = { host: { name: os.hostname(), platform, arch: os.arch() }, agents: await Promise.all(AGENTS.map((a) => infoFor(a.id, force))), operations: Object.values(state.get().operations).sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 30) }
             const types = typesFor(snapshot.agents)
             if (version !== invalidation) continue
             checkedAt = Date.now()
@@ -253,8 +211,7 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
       deps.trust.requireTrusted(); requireAgent(agentId)
       const info = (await service.inspect()).agents.find((agent) => agent.agentId === agentId)!
       if (info.installation.status !== 'installed') throw new RpcError('rejected', 'agent-cli-not-installed: Open Agents settings to install this CLI.')
-      if (info.connection === 'api') selection(agentId)
-      else if (info.authentication.status === 'signed-out') throw new RpcError('rejected', 'agent-cli-signed-out: Open Agents settings to sign in.')
+      if (info.authentication.status === 'signed-out') throw new RpcError('rejected', 'agent-cli-signed-out: Open Agents settings to sign in.')
     },
     async begin(input) {
       deps.trust.requireTrusted(); requireAgent(input.agentId)
@@ -275,30 +232,6 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
     },
     operation(id) { deps.trust.requireTrusted(); const op = state.get().operations[id]; return op ? { ...op } : null },
     cancel(id) { deps.trust.requireTrusted(); const terminalId = terminalIds.get(id); finish(id, 'cancelled'); if (terminalId) { if (deps.terminal.kill) deps.terminal.kill(terminalId); else deps.terminal.write(terminalId, '\x03') } return { ok: true } },
-    providers,
-    async configure(input) {
-      deps.trust.requireTrusted(); requireAgent(input.agentId)
-      if (input.connection !== 'native' && input.connection !== 'api') throw new RpcError('rejected', 'Unsupported connection.')
-      const preference = input.connection === 'native' ? { connection: 'native' as const } : { connection: 'api' as const, providerId: input.providerId, model: input.model }
-      if (input.connection === 'api') {
-        const adapter = AGENT_SETUP_ADAPTERS[input.agentId]
-        if (!adapter.apiProtocol) throw new RpcError('rejected', adapter.apiReason!)
-        const { provider } = providers.get(input.providerId ?? '')
-        if (provider.api !== adapter.apiProtocol) throw new RpcError('rejected', 'The provider API protocol is not compatible with this agent.')
-        if (!provider.models.some((m) => m.id === input.model)) throw new RpcError('rejected', 'Select a configured model for this provider.')
-      }
-      await deps.enable?.(input.agentId)
-      await deps.preferences.set({ ...deps.preferences.get(), [input.agentId]: preference })
-      service.preferencesChanged()
-      return infoFor(input.agentId)
-    },
-    async prepareLaunch(agentId, command) {
-      deps.trust.requireTrusted(); requireAgent(agentId)
-      const selected = selection(agentId)
-      if (!selected) return { command }
-      const { provider, credential, model } = selected
-      return providerLaunch({ agentId, baseUrl: provider.baseUrl, credential, model: model.id, maxInputTokens: model.maxInputTokens, maxOutputTokens: model.maxOutputTokens }, command, deps.agentsDir)
-    },
     dispose() { disposed = true; clearInterval(timer); listeners.clear(); offEnv(); offExit(); offLaunch(); state.dispose() },
   }
   // Native setup changes publish to every client.
@@ -307,6 +240,5 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
     finally { service.invalidate() }
   }
   service.begin = refreshAfter(service.begin)
-  service.configure = refreshAfter(service.configure)
   return service
 }

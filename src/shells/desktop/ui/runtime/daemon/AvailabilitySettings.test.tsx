@@ -61,7 +61,7 @@ it('on a laptop: finish comes first, picks store triggers, the toggle drops comm
   h.info.mockResolvedValue(laptop)
   await render(async (host) => {
     expect(host.textContent).toContain('Running on MacBook')
-    expect(options(host)).toEqual(['Finish what\'s running, then stop', 'Always stay available', 'Stop with Cate'])
+    expect(options(host)).toEqual(['Finish running work', 'Keep available', 'Stop with Cate'])
     expect(select(host).value).toBe('finish')
     expect(host.textContent).toContain('MacBook stays awake')
 
@@ -77,7 +77,7 @@ it('on a server: always comes first and is recommended, with no talk of sleep', 
   h.info.mockResolvedValue(server)
   await render(async (host) => {
     expect(host.textContent).toContain('Running on vps-1 (server)')
-    expect(options(host)[0]).toBe('Always stay available (recommended)')
+    expect(options(host)[0]).toBe('Keep available (recommended)')
     expect(host.textContent).not.toMatch(/awake|battery/)
   })
 })
@@ -100,7 +100,7 @@ it('offers adding a device when none is paired, and names a custom list', async 
   await render(async (host) => {
     expect(select(host).value).toBe('custom')
     expect(host.textContent).toContain('Set by hand in this workspace\'s settings.json')
-    const add = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Add a device')!
+    const add = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Share workspace…')!
     await act(async () => add.click())
     expect(onAddDevice).toHaveBeenCalled()
   }, { onAddDevice })

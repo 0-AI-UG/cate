@@ -19,10 +19,10 @@ export type SettingsGroup = 'general' | 'runtime' | 'layout' | 'tools' | 'source
 export const SETTINGS_GROUPS: readonly { id: SettingsGroup; title: string }[] = [
   { id: 'general', title: 'General' },
   { id: 'runtime', title: 'Runtime' },
+  { id: 'agents', title: 'Agents' },
   { id: 'layout', title: 'Layout' },
   { id: 'tools', title: 'Tools' },
   { id: 'sourceControl', title: 'Source control' },
-  { id: 'agents', title: 'Agents' },
 ]
 
 export interface SettingsPageProps {

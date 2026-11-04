@@ -11,8 +11,6 @@ export interface AgentTypeInfo {
   ready: boolean
   /** Setup readiness on the runtime host, independent of workspace hooks. */
   setupReason?: string
-  connection?: 'native' | 'api'
-  model?: string
 }
 
 const AGENT_TASK_PREFIX = 'Complete this coding task:\n\n'

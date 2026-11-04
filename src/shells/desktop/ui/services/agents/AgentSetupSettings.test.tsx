@@ -28,7 +28,7 @@ describe('AI & Agents settings', () => {
   let revision = 0
   const publish = (snapshot: AgentSetupSnapshot) => {
     serverSnapshot = snapshot
-    const state: AgentAvailability = { snapshot, types: snapshot.agents.map((agent) => ({ agentId: agent.agentId, displayName: agent.displayName, ready: agent.installation.status === 'installed' && agent.hooksReady !== false && agent.authentication.status !== 'signed-out', connection: agent.connection, model: agent.model })), refreshing: false, error: null }
+    const state: AgentAvailability = { snapshot, types: snapshot.agents.map((agent) => ({ agentId: agent.agentId, displayName: agent.displayName, ready: agent.installation.status === 'installed' && agent.hooksReady !== false && agent.authentication.status !== 'signed-out' })), refreshing: false, error: null }
     if (!revision) availabilityStream.emit({ kind: 'snapshot', rev: revision++, snapshot: state })
     else availabilityStream.emit({ kind: 'change', rev: revision++, change: state })
   }
@@ -41,21 +41,17 @@ describe('AI & Agents settings', () => {
 
   const settingsSubscribe = vi.fn(() => settingsStream.sub)
   const setupBegin = vi.fn()
-  const setupConfigure = vi.fn()
   const setupCancel = vi.fn()
   const setupOperation = vi.fn()
 
   const snapshot = (): AgentSetupSnapshot => ({
     host: { name: 'Remote build machine', platform: 'linux', arch: 'x64' },
-    providers: [],
     agents: AGENTS.map((agent) => ({
       agentId: agent.id,
       displayName: agent.displayName,
       downloadUrl: `https://example.com/download/${agent.id}`,
       installation: { status: 'installed', version: '1.2.3' },
       authentication: { status: 'signed-in', email: 'developer@example.com', plan: 'Pro' },
-      api: { protocol: 'responses', configured: false },
-      connection: 'native',
       canLogin: true,
       canInstall: true,
     })),
@@ -63,7 +59,7 @@ describe('AI & Agents settings', () => {
 
   async function render(workspaceId: string | null = 'ws', onOpenSetupTerminal?: (panelId: string) => Promise<boolean>) {
     await act(async () => { root.render(<AgentSetupSettings workspaceId={workspaceId} onOpenSetupTerminal={onOpenSetupTerminal} />) })
-    if (workspaceId) await act(async () => { await inspect(); settingsStream.emit({ kind: 'snapshot', rev: 1, snapshot: { ...workspaceSettingsTable.defaults, agentPreferences: {} } }) })
+    if (workspaceId) await act(async () => { await inspect(); settingsStream.emit({ kind: 'snapshot', rev: 1, snapshot: { ...workspaceSettingsTable.defaults } }) })
   }
 
   const row = (id: string) => host.querySelector<HTMLElement>(`[data-agent-setup-id="${id}"]`)!
@@ -90,7 +86,6 @@ describe('AI & Agents settings', () => {
     root = createRoot(host)
     const runtime = { settings: { set: setSetting, subscribe: settingsSubscribe }, agents: { inspectHooks, availability: () => availabilityStream.sub, setupInspect: inspect,
       setupBegin: async (input: unknown) => { const operation = await setupBegin(input); publish({ ...serverSnapshot, operations: [operation] }); return operation },
-      setupConfigure: async (input: unknown) => { const info = await setupConfigure(input); publish({ ...serverSnapshot, agents: serverSnapshot.agents.map((agent) => agent.agentId === info.agentId ? info : agent) }); return info },
       setupCancel: async (input: { operationId: string }) => { const result = await setupCancel(input); publish({ ...serverSnapshot, operations: serverSnapshot.operations?.map((op) => op.id === input.operationId ? { ...op, status: 'cancelled' } : op) }); return result }, setupOperation } }
     stop = setRuntimeResolver((id) => id === 'ws' ? runtime as never : null)
     installClientUi({ openExternal } as never)
@@ -112,11 +107,10 @@ describe('AI & Agents settings', () => {
   it('shows all seven agents, the actual host, version and safe native account identity', async () => {
     await render()
     expect(host.querySelectorAll('[data-agent-setup-id]')).toHaveLength(7)
-    expect(host.textContent).toContain('Remote build machine')
+    expect(host.textContent).not.toContain('Remote build machine')
     expect(row('codex').textContent).toContain('developer@example.com · Pro')
     expect(row('codex').textContent).not.toContain('Version')
     await expand('codex')
-    expect(row('codex').textContent).toContain('Add a responses provider')
     expect(row('codex').textContent).toContain('Version 1.2.3')
     await expand('claude-code')
     expect(row('codex').querySelector('[role="region"]')).toBeNull()
@@ -192,7 +186,6 @@ describe('AI & Agents settings', () => {
     const info = state.agents.find((agent) => agent.agentId === 'codex')!
     info.hooksReady = false
     setupInspect.mockResolvedValue(state)
-    setupConfigure.mockResolvedValue({ ...info, hooksReady: true })
     await render()
     await expand('codex')
     await act(async () => { const integration = row('codex').querySelector<HTMLSelectElement>('[aria-label="Codex integration"]')!; integration.value = 'on'; integration.dispatchEvent(new Event('change', { bubbles: true })) })
@@ -201,12 +194,10 @@ describe('AI & Agents settings', () => {
   })
 
 
-  it('reports a failed inspection and allows refresh', async () => {
+  it('reports a failed inspection', async () => {
     setupInspect.mockRejectedValueOnce(new Error('offline'))
     await render()
     expect(host.textContent).toContain('Could not inspect agents')
-    await act(async () => { button(host, 'Refresh agents').click() })
-    expect(host.querySelectorAll('[data-agent-setup-id]')).toHaveLength(7)
   })
   it('updates settings and an open launcher from the same server publication', async () => {
     await act(async () => {
@@ -214,41 +205,15 @@ describe('AI & Agents settings', () => {
     })
     await act(async () => {
       await inspect()
-      settingsStream.emit({ kind: 'snapshot', rev: 1, snapshot: { ...workspaceSettingsTable.defaults, agentPreferences: {} } })
+      settingsStream.emit({ kind: 'snapshot', rev: 1, snapshot: { ...workspaceSettingsTable.defaults } })
     })
-    expect(host.querySelector('[aria-label="New Codex · Native account"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="New Codex"]')).not.toBeNull()
     const next = snapshot()
     next.agents.find((agent) => agent.agentId === 'codex')!.installation = { status: 'missing' }
     act(() => publish(next))
     expect(row('codex').textContent).toContain('Not installed')
-    expect(host.querySelector('[aria-label="New Codex · Native account"]')).toBeNull()
+    expect(host.querySelector('[aria-label="New Codex"]')).toBeNull()
     expect(setupOperation).not.toHaveBeenCalled()
-  })
-
-  it('selects a compatible provider and model and switches back to the native account', async () => {
-    const state = snapshot()
-    state.providers = [{ id: 'provider', name: 'My provider', baseUrl: 'https://example.com/v1', api: 'responses', hasKey: true, models: [{ id: 'first' }, { id: 'second' }] }, { id: 'incompatible', name: 'Other protocol', baseUrl: 'https://example.com/v1', api: 'messages', hasKey: true, models: [{ id: 'other' }] }]
-    setupInspect.mockResolvedValue(state)
-    setupConfigure.mockImplementation(async (input) => ({ ...serverSnapshot.agents.find((a) => a.agentId === input.agentId), ...input, api: { protocol: 'responses', configured: input.connection === 'api' } }))
-    await render(); await expand('codex')
-    expect(row('codex').querySelector('option[value="incompatible"]')).toBeNull()
-    await act(async () => { const select = row('codex').querySelector<HTMLSelectElement>('[aria-label="Codex connection"]')!; select.value = 'provider'; select.dispatchEvent(new Event('change', { bubbles: true })) })
-    expect(setupConfigure).toHaveBeenLastCalledWith({ agentId: 'codex', connection: 'api', providerId: 'provider', model: 'first' })
-    await act(async () => { const select = row('codex').querySelector<HTMLSelectElement>('[aria-label="Codex model"]')!; select.value = 'second'; select.dispatchEvent(new Event('change', { bubbles: true })) })
-    expect(setupConfigure).toHaveBeenLastCalledWith({ agentId: 'codex', connection: 'api', providerId: 'provider', model: 'second' })
-    await act(async () => { const select = row('codex').querySelector<HTMLSelectElement>('[aria-label="Codex connection"]')!; select.value = 'native'; select.dispatchEvent(new Event('change', { bubbles: true })) })
-    expect(setupConfigure).toHaveBeenLastCalledWith({ agentId: 'codex', connection: 'native', providerId: undefined, model: undefined })
-    expect(row('codex').querySelector('[aria-label="Codex model"]')).toBeNull()
-  })
-
-  it('shows an explicit reason when custom API configuration is unsupported', async () => {
-    const state = snapshot()
-    const agent = state.agents.find((a) => a.agentId === 'kiro')!
-    agent.api = { protocol: null, configured: false, reason: 'This CLI only supports its native service.' }
-    setupInspect.mockResolvedValue(state)
-    await render(); await expand('kiro')
-    expect(row('kiro').textContent).toContain('This CLI only supports its native service.')
-    expect(row('kiro').querySelector('[aria-label="Kiro connection"]')).toBeNull()
   })
 
 })

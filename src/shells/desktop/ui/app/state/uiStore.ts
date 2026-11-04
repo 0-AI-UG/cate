@@ -20,8 +20,8 @@ export interface UIState {
   commandPaletteOpen: boolean
   overlay: OverlayRequest | null
   sidebarHidden: boolean
-  /** "Join with a Code": open, with what to start from. */
-  joinDialog: JoinRequest | null
+  /** Inline joining in the workspace picker, with optional prefilled code. */
+  joinRequest: JoinRequest | null
   /** "Open…": the picker of machines and workspaces. */
   openDialogOpen: boolean
   /** The page shows the picker itself (the welcome page): "Open…" goes to
@@ -49,8 +49,8 @@ export interface UIActions {
   toggleSettings(): void
   setSidebarHidden(hidden: boolean): void
   toggleSidebar(): void
-  openJoinDialog(request?: JoinRequest): void
-  closeJoinDialog(): void
+  openJoinInput(request?: JoinRequest): void
+  closeJoinInput(): void
   /** "Open Workspace…": the workspace picker over what the window shows,
    *  which changes only once something opens. */
   openWorkspacePicker(): void
@@ -67,7 +67,7 @@ export const INITIAL_UI_STATE: UIState = {
   commandPaletteOpen: false,
   overlay: null,
   sidebarHidden: false,
-  joinDialog: null,
+  joinRequest: null,
   openDialogOpen: false,
   pickerOnPage: false,
   machineFolder: null,
@@ -91,13 +91,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
   setSidebarHidden: (sidebarHidden) => set({ sidebarHidden }),
   toggleSidebar: () => set((s) => ({ sidebarHidden: !s.sidebarHidden })),
-  // Opening or joining leaves Settings: the workspace shows next. The Open
-  // dialog stays underneath, so dismissing a dialog started from it goes back
-  // to it; one that succeeds closes it.
-  openJoinDialog: (request = {}) => set({ joinDialog: request, overlay: null }),
-  closeJoinDialog: () => set({ joinDialog: null }),
+  // Opening or joining leaves Settings. Joining expands inline in the picker;
+  // machine folders use their own dialog.
+  openJoinInput: (request = {}) => set({ joinRequest: request, openDialogOpen: !get().pickerOnPage, machineFolder: null, overlay: null }),
+  closeJoinInput: () => set({ joinRequest: null }),
   openWorkspacePicker: () => set({ openDialogOpen: true, overlay: null }),
-  closeWorkspacePicker: () => set({ openDialogOpen: false }),
+  closeWorkspacePicker: () => set({ openDialogOpen: false, joinRequest: null }),
   setPickerOnPage: (pickerOnPage) => set({ pickerOnPage }),
   openMachineFolder: (machineFolder) => set({ machineFolder }),
   openShare: (shareWorkspaceId) => set({ shareWorkspaceId }),

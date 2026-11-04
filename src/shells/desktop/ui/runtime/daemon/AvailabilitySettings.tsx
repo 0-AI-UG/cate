@@ -95,16 +95,16 @@ export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAdd
       ? `Agents${commands ? ' and commands' : ''} keep going until they are done, then it stops. Opening it over SSH starts it again.`
       : `Agents${commands ? ' and commands' : ''} keep going until they are done. ${machine} stays awake until then, then sleeps as usual.`,
     always: server
-      ? 'Keeps running so you can connect from any device at any time.'
-      : `Keeps running and keeps ${machine} awake, so your other devices can connect at any time. Uses more battery.`,
+      ? 'Keeps running so collaborators and your other devices can connect at any time.'
+      : `Keeps running and keeps ${machine} awake, so collaborators and your other devices can connect at any time. Uses more battery.`,
     stop: 'Everything stops 5 minutes after the last window closes.',
     custom: 'Set by hand in this workspace\'s settings.json. Picking another option replaces it.',
   }
-  const always = { value: 'always', label: server ? 'Always stay available (recommended)' : 'Always stay available' }
+  const always = { value: 'always', label: server ? 'Keep available (recommended)' : 'Keep available' }
   const options = [
     // A server is meant to stay available: that comes first.
     ...(server ? [always] : []),
-    { value: 'finish', label: 'Finish what\'s running, then stop' },
+    { value: 'finish', label: 'Finish running work' },
     ...(server ? [] : [always]),
     { value: 'stop', label: 'Stop with Cate' },
     ...(choice === 'custom' ? [{ value: 'custom', label: 'Custom' }] : []),
@@ -118,7 +118,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAdd
     </span>
   ) : paired.length === 0 && devices && onAddDevice ? (
     <span className="block text-xs text-muted">
-      Want to use Cate from your phone? <button type="button" className={link} onClick={onAddDevice}>Add a device</button>
+      Work together or connect your other device. <button type="button" className={link} onClick={onAddDevice}>Share workspace…</button>
     </span>
   ) : undefined
 
@@ -130,7 +130,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAdd
   return (
     <div className="flex flex-col gap-1">
       <SettingRow
-        label="When you close Cate"
+        label="After closing Cate"
         description={descriptions[choice]}
         keywords="keep running awake sleep battery background close quit leave agents commands always available finish stop server"
         hint={hint}
@@ -155,7 +155,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAdd
           {!info && (infoError
             ? <SecondaryButton onClick={() => setAttempt((n) => n + 1)}>Retry</SecondaryButton>
             : <Spinner size={14} label="Asking the runtime" className="text-muted" />)}
-          <SecondaryButton onClick={() => setConfirmingStop(true)} disabled={confirmingStop}>Stop…</SecondaryButton>
+          <SecondaryButton onClick={() => setConfirmingStop(true)} disabled={confirmingStop}>Stop Workspace…</SecondaryButton>
         </div>
       </SettingRow>
       {children}

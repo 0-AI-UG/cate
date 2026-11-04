@@ -81,7 +81,7 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
 }
 
 describe('agent start', () => {
-  it.each(['agent-cli-not-installed', 'agent-cli-signed-out', 'agent-provider-unconfigured'])('refuses %s before creating a worktree or spawning/relaunching a terminal', async (message) => {
+  it.each(['agent-cli-not-installed', 'agent-cli-signed-out'])('refuses %s before creating a worktree or spawning/relaunching a terminal', async (message) => {
     const ensureReady = vi.fn(async () => { throw new Error(message) })
     const guarded = createAgentStarter(agents, ports as unknown as AgentStartPorts, { ensureReady })
     await expect(guarded.start(undefined, { agentId: 'codex', newWorktree: 'fix' })).rejects.toThrow(message)

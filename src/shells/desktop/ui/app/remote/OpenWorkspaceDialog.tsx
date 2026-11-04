@@ -1,7 +1,7 @@
 // The "Open…" picker: a popover under the sidebar's "+" while that shows,
 // else a modal; nothing while the page shows the picker itself (the welcome
-// page focuses its own). It steps aside while a dialog started from it (a machine's
-// folders, joining) is open, and comes back when that one is dismissed.
+// page focuses its own). It steps aside for a machine’s folder dialog and
+// comes back when that dialog is dismissed; joining stays inline.
 
 import { useRef } from 'react'
 import { FolderOpen } from 'lucide-react'
@@ -20,7 +20,7 @@ function shownAnchor(): HTMLElement | null {
 }
 
 export function OpenWorkspaceDialog(): JSX.Element | null {
-  const open = useUIStore((s) => s.openDialogOpen && !s.pickerOnPage && !s.machineFolder && !s.joinDialog)
+  const open = useUIStore((s) => s.openDialogOpen && !s.pickerOnPage && !s.machineFolder)
   if (!open) return null
   const close = () => useUIStore.getState().closeWorkspacePicker()
   const anchor = shownAnchor()

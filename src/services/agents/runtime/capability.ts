@@ -10,14 +10,10 @@ import type { AgentUsageService } from './usage/usage'
 export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter, usage: AgentUsageService, setup?: AgentSetupService): CapabilityImpl<typeof agentsCapability> {
   const unavailable = (): never => { throw new RpcError('rejected', 'Agent setup is unavailable.') }
   return {
-    providerSave: (args) => setup ? setup.providers.save(args) : unavailable(),
-    providerRemove: (args) => setup ? setup.providers.remove(args) : unavailable(),
-    providerModels: (args) => setup ? setup.providers.models(args) : unavailable(),
     setupInspect: ({ refresh }) => setup ? setup.inspect(refresh) : unavailable(),
     setupBegin: (args) => setup ? setup.begin(args) : unavailable(),
     setupOperation: ({ operationId }) => setup ? setup.operation(operationId) : unavailable(),
     setupCancel: ({ operationId }) => setup ? setup.cancel(operationId) : unavailable(),
-    setupConfigure: (args) => setup ? setup.configure(args) : unavailable(),
     usage: (input) => usage.summary(input),
     refreshUsageRates: () => usage.refreshRates(),
     usageLimits: (args) => usage.limits(args?.refresh === true),
