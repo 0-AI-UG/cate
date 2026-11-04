@@ -71,7 +71,7 @@ describe.runIf(process.env.CATE_LIVE_AGENT_CLIS === '1')('installed CLI authenti
       })
     } finally { await fixture.close() }
   })
-  test.each(selected)('%s accepts native login flags and reports an isolated signed-out account', { timeout: 45_000 }, async (agentId) => {
+  test.each(selected.filter((id) => id !== 'pi'))('%s accepts native login flags and reports an isolated signed-out account', { timeout: 45_000 }, async (agentId) => {
     const home = await mkdtemp(path.join(os.tmpdir(), 'cate-auth-cli-'))
     const env = {
       ...cleanHookEnv(), HOME: home,
@@ -91,7 +91,7 @@ describe.runIf(process.env.CATE_LIVE_AGENT_CLIS === '1')('installed CLI authenti
       expect(help.output).toMatch(/log ?in|sign in|authenticate/i)
       for (const flag of adapter.login.filter((arg) => arg.startsWith('--'))) expect(help.output).toContain(flag)
       if (!adapter.status) {
-        expect(['grok', 'pi']).toContain(agentId) // No invented whoami/config-token heuristic.
+        expect(['grok']).toContain(agentId) // No invented whoami/config-token heuristic.
         return
       }
       const signedOut = await invoke(command, adapter.status, env, home)

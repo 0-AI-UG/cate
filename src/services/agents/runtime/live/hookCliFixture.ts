@@ -80,8 +80,11 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
     case 'kiro': {
       env.HOME = path.join(directory, 'kiro-home')
       await mkdir(path.join(env.HOME, '.local/bin'), { recursive: true })
-      const chatBin = await realpath(execFileSync('which', ['kiro-cli-chat'], { encoding: 'utf8' }).trim())
-      await symlink(chatBin, path.join(env.HOME, '.local/bin/kiro-cli-chat'))
+      // The macOS app delegates to a sibling executable; Linux ships one binary.
+      if (process.platform === 'darwin') {
+        const chatBin = await realpath(execFileSync('which', ['kiro-cli-chat'], { encoding: 'utf8' }).trim())
+        await symlink(chatBin, path.join(env.HOME, '.local/bin/kiro-cli-chat'))
+      }
       // Keep the override and native default identical: older V3 builds can
       // create KIRO_HOME/sessions but still write transcripts under HOME/.kiro.
       env.KIRO_HOME = path.join(env.HOME, '.kiro')
