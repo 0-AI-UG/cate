@@ -27,6 +27,7 @@ describe('agent registry coverage', () => {
       grok: null,
       kiro: 'plain-text',
       opencode: 'endpoint',
+      pi: 'endpoint',
     })
   })
 
@@ -58,7 +59,7 @@ describe('agent registry coverage', () => {
   // restatement of the type.
   test('persisted SkillTargetId values never drift', () => {
     const expected: SkillTargetId[] = [
-      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'kiro',
+      'claude-code', 'opencode', 'codex', 'cursor', 'grok', 'kiro', 'pi',
     ]
     expect(AGENTS.flatMap((a) => (a.skills ? [a.skills.targetId] : [])).sort()).toEqual([...expected].sort())
   })
@@ -127,6 +128,7 @@ describe('resumeCommandForAgent', () => {
     expect(resumeCommandForAgent('cursor', uuid)).toBe(`cursor-agent --resume ${uuid}`)
     expect(resumeCommandForAgent('grok', uuid)).toBe(`grok --resume ${uuid}`)
     expect(resumeCommandForAgent('opencode', 'ses_abc123')).toBe('opencode --session ses_abc123')
+    expect(resumeCommandForAgent('pi', uuid)).toBe(`pi --session ${uuid}`)
     expect(resumeCommandForAgent('kiro', uuid)).toBe(`kiro-cli chat --v3 --resume-id ${uuid}`)
   })
 

@@ -1,4 +1,5 @@
 import type { AgentSessionStores } from './types'
+import { piSessionStore } from './pi'
 import { claudeSessionStore } from './claude'
 import { codexSessionStore } from './codex'
 import { cursorSessionStore } from './cursor'
@@ -14,6 +15,7 @@ export const AGENT_SESSION_STORES: AgentSessionStores = {
   grok: grokSessionStore,
   kiro: kiroSessionStore,
   opencode: openCodeSessionStore,
+  pi: piSessionStore,
 }
 
 export { createAgentTitleTracker } from './tracker'

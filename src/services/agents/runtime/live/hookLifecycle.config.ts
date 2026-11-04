@@ -3,6 +3,9 @@ import type { AgentHookEventKind, AgentId } from '../../contract'
 // Independent expectations: observing an HTTP post is insufficient if Cate
 // stops normalizing it. OpenCode's tool-part event is verified through storage.
 export const NATIVE_HOOK_KINDS: Record<string, AgentHookEventKind | 'stored-edit'> = {
+  session_start: 'session-start', session_shutdown: 'session-end', session_tree: 'session-start', session_info_changed: 'session-start',
+  session_before_compact: 'turn-start', session_compact: 'turn-end', session_compact_failed: 'turn-end',
+  before_agent_start: 'turn-start', agent_settled: 'turn-end', ui_prompt_start: 'permission-wait', ui_prompt_end: 'turn-resume', tool_execution_end: 'turn-resume',
   SessionStart: 'session-start', sessionStart: 'session-start',
   'session.created': 'session-start',
   UserPromptSubmit: 'turn-start', beforeSubmitPrompt: 'turn-start',
@@ -17,6 +20,13 @@ export const NATIVE_HOOK_KINDS: Record<string, AgentHookEventKind | 'stored-edit
   'session.status': 'turn-start', // The same native event with status=idle must also end the turn.
   'message.part.updated': 'stored-edit',
 }
+
+/** Pi-only native scenarios run in piContracts.itest.ts. Their event lists
+ * participate in the same exhaustive hook-coverage guard as the shared TUI cases. */
+export const PI_MANUAL_COMPACTION_CASES = [
+  { success: true, hooks: ['session_before_compact', 'session_compact'] },
+  { success: false, hooks: ['session_before_compact', 'session_compact_failed'] },
+] as const
 
 /** Every injected native event must be exercised by a real installed CLI.
  * Adding a production hook without a scenario fails the coverage unit test. */
@@ -65,6 +75,18 @@ export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
     'permission-allow': ['permission.asked', 'permission.replied', 'message.part.updated'],
     'permission-deny': ['permission.asked', 'permission.replied'],
     'tool-failure': ['message.part.updated', 'session.status'],
+  },
+  pi: {
+    edit: ['session_start', 'before_agent_start', 'tool_execution_end', 'agent_settled'],
+    interrupt: ['agent_settled'],
+    resume: ['session_start', 'before_agent_start', 'agent_settled'],
+    'session-end': ['session_shutdown'],
+    'session-reset': ['session_shutdown', 'session_start'],
+    'permission-allow': ['ui_prompt_start', 'ui_prompt_end', 'tool_execution_end'],
+    'permission-deny': ['ui_prompt_start', 'ui_prompt_end'],
+    'session-metadata': ['session_tree', 'session_info_changed'],
+    'tool-failure': ['tool_execution_end', 'agent_settled'],
+    'provider-failure': ['agent_settled'],
   },
   kiro: {
     edit: ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop'],

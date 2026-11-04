@@ -54,14 +54,15 @@ function awsEvent(event: string, payload: object): Buffer {
 /** Only the model transport is fake. The installed CLI owns the session,
  * terminal environment and hook execution; this server never posts a hook. */
 export type MockHookReply =
-  | { type: 'text'; hold?: boolean; text?: string }
+  | { type: 'text'; hold?: boolean; text?: string; promptTokens?: number }
   | { type: 'tool'; name: string; arguments: Record<string, unknown> | string; id?: string }
-  | { type: 'error' }
+  | { type: 'error'; status?: number; message?: string }
 
 export async function createHookMockProvider(options: {
   reply?: (input: Record<string, unknown>, protocol: string) => MockHookReply
 } = {}) {
   const requests: string[] = []
+  const inferenceAuthorization: Array<string | undefined> = []
   const modelInputs: Array<{ protocol: string; input: Record<string, unknown> }> = []
   const inputText: string[] = []
   let cursorToolFinished: (() => void) | undefined
@@ -84,13 +85,14 @@ export async function createHookMockProvider(options: {
         || req.headers['x-amz-target'] === 'KiroRuntimeService.GenerateAssistantResponse'
       const protocol = String(req.headers['x-amz-target'] ?? route)
       if (inference) {
+        inferenceAuthorization.push(req.headers.authorization ?? (typeof req.headers['x-api-key'] === 'string' ? `Bearer ${req.headers['x-api-key']}` : undefined))
         modelInputs.push({ protocol, input })
         inputText.push(body)
       }
       const reply = inference ? options.reply?.(input, protocol) ?? { type: 'text' } : { type: 'text' } as MockHookReply
       if (reply.type === 'error') {
-        res.writeHead(400, { 'content-type': 'application/json' })
-        res.end(JSON.stringify({ error: { type: 'invalid_request_error', message: 'Cate lifecycle fixture: deliberate provider failure' } }))
+        res.writeHead(reply.status ?? 400, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { type: 'invalid_request_error', message: reply.message ?? 'Cate lifecycle fixture: deliberate provider failure' } }))
         return
       }
       const call = reply.type === 'tool' ? { id: reply.id ?? 'call_cate_lifecycle', name: reply.name, arguments: reply.arguments } : undefined
@@ -169,16 +171,17 @@ export async function createHookMockProvider(options: {
         const toolCalls = call ? [{ id: call.id, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.arguments) } }] : undefined
         const message = toolCalls ? { role: 'assistant', content: null, tool_calls: toolCalls } : { role: 'assistant', content: replyText }
         const reason = call ? 'tool_calls' : 'stop'
+        const promptTokens = reply.type === 'text' ? reply.promptTokens ?? 10 : 10
         if (!input.stream) {
           json({ ...base, object: 'chat.completion', choices: [{ index: 0, message, finish_reason: reason }],
-            usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 } })
+            usage: { prompt_tokens: promptTokens, completion_tokens: 3, total_tokens: promptTokens + 3 } })
           return
         }
         res.writeHead(200, { 'content-type': 'text/event-stream' })
         const delta = toolCalls ? { role: 'assistant', tool_calls: toolCalls.map((tool) => ({ index: 0, ...tool })) } : message
         sse({ ...base, object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: null }] })
         if (hold) return
-        sse({ ...base, object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: reason }], usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 } })
+        sse({ ...base, object: 'chat.completion.chunk', choices: [{ index: 0, delta: {}, finish_reason: reason }], usage: { prompt_tokens: promptTokens, completion_tokens: 3, total_tokens: promptTokens + 3 } })
         res.end('data: [DONE]\n\n')
       } else if (route.endsWith('/responses')) {
         const part = { type: 'output_text', text: replyText, annotations: [], logprobs: [] }
@@ -224,6 +227,7 @@ export async function createHookMockProvider(options: {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     requests,
     modelInputs,
+    inferenceAuthorization,
     inputText,
     answer,
     close: () => new Promise<void>((resolve, reject) => {

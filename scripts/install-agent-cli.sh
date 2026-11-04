@@ -8,6 +8,7 @@ case "${1:?Pass a supported agent id}" in
   cursor) curl --fail --silent --show-error --location https://cursor.com/install | bash ;;
   grok) npm install --global @xai-official/grok@latest ;;
   opencode) npm install --global opencode-ai@latest ;;
+  pi) npm install --global --ignore-scripts @earendil-works/pi-coding-agent@latest ;;
   kiro) curl --fail --silent --show-error --location https://cli.kiro.dev/install | bash ;;
   *) echo "Unknown agent id: $1" >&2; exit 2 ;;
 esac

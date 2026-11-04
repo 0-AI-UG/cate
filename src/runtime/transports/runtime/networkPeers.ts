@@ -173,6 +173,7 @@ async function refuse(channel: SecureChannel): Promise<void> {
     msg: {
       t: 'hello',
       version: '',
+      compatibilityVersion: 0,
       error: toWireError(new RpcError('rejected', 'This device is not paired with this workspace.', { unpaired: true } satisfies UnpairedRefusal)),
     },
   })
@@ -198,6 +199,7 @@ function checkedHello(port: FramePort, publicKey: string, rpc: RpcServer): Frame
               msg: {
                 t: 'hello',
                 version: rpc.opts.version,
+                compatibilityVersion: 0,
                 error: toWireError(new RpcError('rejected', 'hello does not match the device key of this connection')),
               },
             })

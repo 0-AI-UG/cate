@@ -44,7 +44,7 @@ export function isRpcError(err: unknown, code?: RpcErrorCode): err is RpcError {
   return err instanceof RpcError && (code === undefined || err.code === code)
 }
 
-/** The peer runs another version (7.10). Not a wire code: it is decided
+/** The peer uses an incompatible protocol (7.10). Not a wire code: it is decided
  *  locally from the peer's `hello`. */
 export class IncompatibleVersionError extends Error {
   constructor(

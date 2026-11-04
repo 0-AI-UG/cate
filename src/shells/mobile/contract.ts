@@ -372,7 +372,7 @@ export type MobileChatItem =
   /** The person's prompt; `sent` false while it is on its way (the
    *  runtime is sending it) and the conversation does not show it yet. */
   | { kind: 'prompt'; id: string; text: string; sent: boolean }
-  | { kind: 'reply'; id: string; text: string }
+  | { kind: 'reply'; id: string; text: string; createdAt?: string }
   /** Steps the agent took; a ghost stands for steps from before the runtime
    *  kept them. */
   | { kind: 'steps'; id: string; steps: AgentStep[]; ghost: boolean }
@@ -416,10 +416,10 @@ export interface MobileCanvasRect {
 export type MobileJoinResult = { ok: true; workspaceId: string } | { ok: false; message: string }
 
 export interface MobileCoreMethods {
-  /** Pairs from a `cate://pair` link or a typed code and opens the workspace. */
   /** The app came to the front or went away (its scene phase): a client in
    *  front shows no notifications when `notifyOnlyWhenUnfocused` is on. */
   'app.setActive': { params: { active: boolean }; result: null }
+  /** Pairs from a `cate://pair` link or a typed code and opens the workspace. */
   'workspaces.join': { params: { input: string }; result: MobileJoinResult }
   'workspaces.open': { params: { workspaceId: string }; result: null }
   /** The person's answer to `trustPrompt`. */

@@ -67,8 +67,6 @@ export function WorkspaceTrustDialog({ store = defaultStore }: { store?: TrustSt
       icon={ICON}
       title={TITLE}
       dismissable={!answering.busy}
-      // Above Settings (z-[100001]): a workspace can open from there.
-      zClassName="z-[100002]"
       bodyClassName="px-5 py-4"
     >
       <TrustQuestion prompt={prompt} answering={answering} />

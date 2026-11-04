@@ -23,6 +23,6 @@ export { useAgentTabDecorations, AgentChangesOverlay, AgentHooksOffOverlay } fro
 export { AgentChangesPill } from './AgentChangesPill'
 export { agentContextPreview, useAgentContextTransport } from './contextTransport'
 export { setAgentChangesOpener, type AgentChangesOpener, type AgentChangesRequest } from './changesOpener'
-export { AgentHooksSettings } from './AgentHooksSettings'
+export { AgentSetupSettings } from './AgentSetupSettings'
 export { AgentSpawnFlyout } from './AgentSpawnFlyout'
 export { UsageOverview } from './usage'

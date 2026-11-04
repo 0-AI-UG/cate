@@ -81,6 +81,16 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
 }
 
 describe('agent start', () => {
+  it.each(['agent-cli-not-installed', 'agent-cli-signed-out', 'agent-provider-unconfigured'])('refuses %s before creating a worktree or spawning/relaunching a terminal', async (message) => {
+    const ensureReady = vi.fn(async () => { throw new Error(message) })
+    const guarded = createAgentStarter(agents, ports as unknown as AgentStartPorts, { ensureReady })
+    await expect(guarded.start(undefined, { agentId: 'codex', newWorktree: 'fix' })).rejects.toThrow(message)
+    await expect(guarded.start(undefined, { agentId: 'codex', terminalPanelId: 'idle' })).rejects.toThrow(message)
+    expect(ensureReady).toHaveBeenCalledWith('codex')
+    expect(ports.worktrees.create).not.toHaveBeenCalled()
+    expect(ports.terminals.create).not.toHaveBeenCalled()
+    expect(ports.terminals.relaunch).not.toHaveBeenCalled()
+  })
   it('runs a hook-ready CLI in a terminal next to the caller, in its checkout', async () => {
     await expect(starter().start('supervisor', { prompt: '  Fix the login  ' })).resolves.toEqual({ panelId: 'new-terminal', agentId: 'codex' })
     expect(ports.terminals.create).toHaveBeenCalledWith({
@@ -151,8 +161,16 @@ describe('agent start', () => {
 
   it('lists every agent CLI with whether it can start here', async () => {
     const types = await starter().types()
-    expect(types.map((type) => type.agentId)).toEqual(['claude-code', 'codex', 'cursor', 'grok', 'opencode', 'kiro'])
+    expect(types.map((type) => type.agentId)).toEqual(['claude-code', 'codex', 'cursor', 'grok', 'opencode', 'pi', 'kiro'])
     expect(types.find((type) => type.agentId === 'codex')).toEqual({ agentId: 'codex', displayName: 'Codex', ready: true })
     expect(types.find((type) => type.agentId === 'kiro')).toMatchObject({ ready: false })
   })
+})
+
+it('serves the authoritative setup types to RPC and CLI callers without a separate hook inspection', async () => {
+  const types = vi.fn(async () => [{ agentId: 'codex' as const, displayName: 'Codex', ready: true, connection: 'native' as const }])
+  const authoritative = createAgentStarter(agents, ports as unknown as AgentStartPorts, { ensureReady: vi.fn(), types })
+  expect(await authoritative.types()).toEqual(await types())
+  types.mockResolvedValue([{ agentId: 'codex', displayName: 'Codex', ready: false, connection: 'native' }])
+  expect(await authoritative.types()).toMatchObject([{ agentId: 'codex', ready: false }])
 })

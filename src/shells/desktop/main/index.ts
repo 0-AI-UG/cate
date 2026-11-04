@@ -54,6 +54,9 @@ app.setName('Cate')
 if (process.platform === 'win32') app.setAppUserModelId('com.cate.app')
 
 const userData = configureUserData()
+// Protocol launches on Windows/Linux arrive in a second process. Keep one
+// shell per device store and forward those URLs to its existing window.
+if (process.platform !== 'darwin' && !IS_E2E && !app.requestSingleInstanceLock()) app.exit(0)
 const device = createDeviceFiles(userData)
 const settings = (): ClientSettings => clientSettingsTable.normalize(device.get('settings'))
 
@@ -158,6 +161,17 @@ app.on('open-url', (event, url) => {
   event.preventDefault()
   openRequests.openUrl(url)
 })
+app.on('second-instance', (_event, args) => openRequests.openUrlsFromArgs(args))
+openRequests.openUrlsFromArgs(process.argv)
+
+// In development the OS must target Electron plus this checkout's entry,
+// rather than an installed Cate. Never change OS associations during tests.
+if (!IS_E2E) {
+  const registered = process.defaultApp && process.argv[1]
+    ? app.setAsDefaultProtocolClient('cate', process.execPath, [path.resolve(process.argv[1])])
+    : app.setAsDefaultProtocolClient('cate')
+  if (!registered) log.warn('Could not register Cate links with the operating system.')
+}
 
 // Every runtime install main runs tells the windows how far it is.
 const installs = createInstallProgress((event) => registry.broadcast(C.installProgress, [event]))

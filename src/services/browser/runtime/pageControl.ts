@@ -176,16 +176,16 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     const fill = deps.passwords.forFill(chosen.id, url)
     if (!fill) throw new RpcError('rejected', `browser-login-no-saved-password: there is no saved password for ${host}`)
     // The driver fills it only while the page still shows `origin`.
-    const credential = { username: fill.username, password: fill.password, origin: chosen.origin }
+    const credential = { username: fill.username, password: fill.password, origin: credentialOrigin(url)! }
     return execute(tabId, 'login', { ...rest, tabId, credential }, false, call)
   }
 
-  /** An agent's `signup` (gated like `login`): a generated password filled
+  /** An agent's `signup` (gated like `login`): a supplied or generated password filled
    *  into the sign-up form of the page the driving client shows, then saved
    *  as the site's login for `username`. The password goes to the page
    *  driver and the store, never back to the caller. */
   const signup = async (args: Record<string, unknown>, ctx: ApiSessionContext): Promise<unknown> => {
-    const { credential: _credential, ...rest } = args
+    const { credential: _credential, password: suppliedPassword, ...rest } = args
     const tabId = boundTab(rest.tabId).id
     const call = pageCall(ctx)
     panel.showCursor({ kind: 'type', label: 'signup' })
@@ -198,7 +198,7 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     if (deps.passwords.suggestions(url).some((entry) => entry.username === username)) {
       throw new RpcError('rejected', `browser-signup-exists: there is already a saved login for ${host} as ${username}; sign in with cate browser login`)
     }
-    const password = generatePassword()
+    const password = typeof suppliedPassword === 'string' ? suppliedPassword : generatePassword()
     const result = await execute(tabId, 'signup', { ...rest, tabId, credential: { password, origin } }, false, call)
     await deps.passwords.save({ origin, username, password })
     return result

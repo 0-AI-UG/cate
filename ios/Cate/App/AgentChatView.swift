@@ -2,7 +2,7 @@
 // runs it in the box, send. Your message shows at once and stays where it
 // is; the chat's last slot says what the agent does from then until its turn
 // ended, shimmering (thinking, the step it last completed, stopping), and
-// replies come in line by line (ChatPresentation). The same screen then
+// replies update in place as text arrives. The same screen then
 // follows the agent; a conversation that takes a moment to load shows a
 // spinner in the middle, one shown before shows at once. Each turn's steps
 // show between the replies they came between. What you send while the agent
@@ -364,135 +364,134 @@ private struct ConversationList: View {
     let workspaceId: String
     let input: ChatInput
     let attachments: ComposerAttachments
-    /// The chat follows its end: what comes in stays in view. Only your
-    /// scrolling changes it (up: off; back to the end: on), never the chat
-    /// growing past the screen.
+    @Environment(\.openURL) private var openURL
+    @Environment(\.navigate) private var navigate
+    @Environment(\.dynamicTypeSize) private var dynamicType
+    @Environment(\.colorScheme) private var colorScheme
     @State private var following = true
-    /// You are scrolling it (dragging, or flicked and it still moves).
-    @State private var scrolling = false
-    /// The top is near: earlier items are asked for as you scroll there.
-    @State private var nearTop = false
-    /// Earlier items were asked for while this was the first: what shows
-    /// stays where it is when they come in above it.
     @State private var earlierFrom: String?
-    /// Something came in below while you read further up.
     @State private var unseen = false
-    /// The items fade in once, when the first ones come.
-    @State private var listShown = false
-
-    /// How far above the top earlier items are asked for.
-    private static let ahead: CGFloat = 600
+    @State private var scrollRequest = 0
 
     var body: some View {
         let items = conversation?.items ?? []
-        ScrollViewReader { proxy in
-            ScrollView {
-                // Not lazy: rows measured as they scroll in would move the
-                // conversation under the reader.
-                VStack(alignment: .leading, spacing: 16) {
-                    Group {
-                        if conversation?.earlier == true {
-                            ProgressView().frame(maxWidth: .infinity)
-                        }
-                        ForEach(items) { item in
-                            ItemRow(item: item)
-                        }
-                    }
-                    .opacity(listShown ? 1 : 0)
-                    if let starting {
-                        UserBubble(text: starting)
-                    }
-                    TailSlot(wanted: tail)
-                    ForEach(conversation?.failed ?? []) { prompt in
-                        FailedBubble(prompt: prompt, edit: { withdraw(prompt.id, edit: true) }, dismiss: { withdraw(prompt.id, edit: false) })
-                    }
-                    ForEach(conversation?.queued ?? []) { queued in
-                        QueuedBubble(text: queued.text) { withdraw(queued.id, edit: true) }
-                    }
-                    if let startFailure {
-                        Label(startFailure, systemImage: "exclamationmark.triangle")
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                    }
-                    if let attention {
-                        AttentionCard(agent: attention, open: PanelRoute(workspaceId: workspaceId, panelId: attention.panelId))
-                    }
-                    Color.clear.frame(height: 1).id("end")
-                }
-                .padding()
-            }
-            // Growth keeps the end in view while it follows, frame by frame
-            // as a reply reveals, and the spot you read at while you
-            // scrolled up.
-            .onScrollPhaseChange { _, phase in
-                scrolling = phase == .tracking || phase == .interacting || phase == .decelerating
-                // Let go at the end while it follows: catch up with what grew.
-                if !scrolling, following { proxy.scrollTo("end", anchor: .bottom) }
-                if scrolling, nearTop { loadEarlier() }
-            }
-            .onScrollGeometryChange(for: Bool.self) { $0.visibleRect.minY < Self.ahead } action: { _, near in
-                nearTop = near
-                if near, scrolling { loadEarlier() }
-            }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.visibleRect.maxY >= geometry.contentSize.height - 48
-            } action: { _, end in
-                if end {
-                    following = true
-                    unseen = false
-                } else if scrolling {
-                    following = false
-                }
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height } action: { old, new in
-                if following, !scrolling, new != old { proxy.scrollTo("end", anchor: .bottom) }
-                // Earlier items came in above (and were kept out of the way):
-                // still near the top, the page before them too.
-                if let from = earlierFrom, items.first?.id != from {
+        ChatCollectionList(
+            rows: rows(items), firstMessageId: items.first?.id,
+            ready: conversation?.loaded == true && !items.isEmpty,
+            scrollRequest: scrollRequest,
+            onFollowing: { end in
+                following = end
+                if end { unseen = false }
+            },
+            onApplied: { first in
+                if let from = earlierFrom, first != from {
                     earlierFrom = nil
-                    if nearTop, scrolling { loadEarlier() }
-                }
-            }
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            // Never moved under your finger: growth while you scroll stays
-            // below, and earlier items come in above what shows.
-            .defaultScrollAnchor((following && !scrolling) || earlierFrom != nil ? .bottom : .top, for: .sizeChanges)
-            .environment(\.chatScrolling, scrolling)
-            .onAppear { listShown = !items.isEmpty }
-            .onChange(of: items.isEmpty) { _, empty in
-                guard !empty, !listShown else { return }
-                // What was on screen already (a prompt sent here) does not fade.
-                if items.contains(where: \.live) {
-                    listShown = true
-                } else {
-                    withAnimation(.easeOut(duration: 0.25)) { listShown = true }
-                }
-            }
-            .onChange(of: items.last?.id) { _, _ in
-                if !following { unseen = true }
-            }
-            // Your prompt went out: to the end, where it shows.
-            .onChange(of: items.last { $0.kind == .prompt && !$0.sent }?.id) { _, id in
-                if id != nil { withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
-            }
-            .overlay(alignment: .bottom) {
-                if unseen {
-                    Button("New", systemImage: "arrow.down") {
-                        withAnimation { proxy.scrollTo("end", anchor: .bottom) }
+                    #if DEBUG
+                    if conversation?.panelId == "scroll-fixture" {
+                        Task { await ChatScrollProbe.shared.finish(count: items.count) }
                     }
+                    #endif
+                }
+            },
+            onPositions: positionProbe
+        )
+        .onChange(of: items.last?.id) { _, _ in
+            if !following { unseen = true }
+        }
+        .onChange(of: items.last { $0.kind == .prompt && !$0.sent }?.id) { _, id in
+            if id != nil { scrollRequest += 1 }
+        }
+        .overlay(alignment: .bottom) {
+            if unseen {
+                Button("New", systemImage: "arrow.down") { scrollRequest += 1 }
                     .buttonStyle(.glass)
                     .font(.footnote.weight(.semibold))
                     .padding(.bottom, 8)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                }
             }
-            .animation(.snappy, value: unseen)
         }
     }
 
-    /// Asks for the page before the items, once at a time.
+    private func rows(_ items: [AgentConversation.Item]) -> [ChatCollectionRow] {
+        var rows: [ChatCollectionRow] = []
+        if conversation?.earlier == true {
+            rows.append(row("__history__", revision: earlierFrom != nil) {
+                Button(action: loadEarlier) {
+                    ZStack {
+                        Text("Load earlier messages").opacity(earlierFrom == nil ? 1 : 0)
+                        if earlierFrom != nil { ProgressView() }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32)
+                }
+                .disabled(earlierFrom != nil)
+            })
+        }
+        for item in items {
+            let revision = MessageRevision(kind: item.kind.rawValue, text: item.text, sent: item.sent, ghost: item.ghost, steps: item.steps)
+            rows.append(row(item.id, revision: revision) { ItemRow(item: item) })
+        }
+        let queued = conversation?.queued ?? []
+        let failed = conversation?.failed ?? []
+        let footerRevision = ([starting ?? "", String(describing: tail), startFailure ?? "",
+                               attention?.panelId ?? "", attention?.attention ?? "", attention?.name ?? ""]
+            + (queued + failed).map { "\($0.id):\($0.text):\($0.message ?? "")" }).joined(separator: "\u{0}")
+        rows.append(row("__tail__", revision: footerRevision) {
+            VStack(alignment: .leading, spacing: 16) {
+                if let starting { UserBubble(text: starting) }
+                TailSlot(wanted: tail)
+                ForEach(failed) { prompt in
+                    FailedBubble(prompt: prompt, edit: { withdraw(prompt.id, edit: true) }, dismiss: { withdraw(prompt.id, edit: false) })
+                }
+                ForEach(queued) { prompt in
+                    QueuedBubble(text: prompt.text) { withdraw(prompt.id, edit: true) }
+                }
+                if let startFailure {
+                    Label(startFailure, systemImage: "exclamationmark.triangle")
+                        .font(.callout).foregroundStyle(.red)
+                }
+                if let attention {
+                    AttentionCard(agent: attention) {
+                        navigate(PanelRoute(workspaceId: workspaceId, panelId: attention.panelId))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        })
+        return rows
+    }
+
+    private func row<Content: View>(_ id: String, revision: AnyHashable, @ViewBuilder content: () -> Content) -> ChatCollectionRow {
+        ChatCollectionRow(id: id,
+                          revision: RowRevision(value: revision, dynamicType: dynamicType, colorScheme: colorScheme),
+                          content: AnyView(content().environment(core).environment(\.openURL, openURL)
+                            .environment(\.dynamicTypeSize, dynamicType).environment(\.colorScheme, colorScheme)))
+    }
+
+    private var positionProbe: (([String: CGRect]) -> Void)? {
+        #if DEBUG
+        if conversation?.panelId == "scroll-fixture" {
+            return { ChatScrollProbe.shared.frames = $0 }
+        }
+        #endif
+        return nil
+    }
+
+    private struct MessageRevision: Hashable {
+        let kind: String
+        let text: String
+        let sent: Bool
+        let ghost: Bool
+        let steps: [AgentStep]
+    }
+
+    private struct RowRevision: Hashable {
+        let value: AnyHashable
+        let dynamicType: DynamicTypeSize
+        let colorScheme: ColorScheme
+    }
+
     private func loadEarlier() {
         guard let conversation, conversation.earlier, earlierFrom == nil, let first = conversation.items.first else { return }
+        following = false
         earlierFrom = first.id
         conversation.more(core)
     }
@@ -510,6 +509,21 @@ private struct ConversationList: View {
         }
     }
 }
+
+
+#if DEBUG
+/// Keep the fixture on the exact production list, including pagination.
+struct AgentChatScrollFixtureList: View {
+    let conversation: AgentConversation
+    let input: ChatInput
+    let attachments: ComposerAttachments
+
+    var body: some View {
+        ConversationList(conversation: conversation, starting: nil, tail: nil, startFailure: nil,
+                         attention: nil, workspaceId: "scroll-fixture", input: input, attachments: attachments)
+    }
+}
+#endif
 
 /// An empty chat: what to ask, and a few prompts to start from.
 private struct NewChatPrompt: View {
@@ -556,16 +570,14 @@ private struct NewChatPrompt: View {
 /// What a blocked agent asks, and where to answer it.
 private struct AttentionCard: View {
     let agent: Agent
-    let open: PanelRoute
+    let open: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(agent.attention ?? "\(agent.name) is waiting for you.", systemImage: "hand.raised.fill")
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(.orange)
-            NavigationLink(value: open) {
-                Label("Answer in the Terminal", systemImage: "terminal")
-            }
+            Button("Answer in the Terminal", systemImage: "terminal", action: open)
             .buttonStyle(.glassProminent)
             .tint(.orange)
         }
@@ -576,7 +588,7 @@ private struct AttentionCard: View {
 }
 
 /// An item: the person's prompts in a bubble on the right, the agent's
-/// replies as Markdown across the screen (ReplyView), a turn's steps. Reads
+/// replies as Markdown across the screen, a turn's steps. Reads
 /// its item, so a growing reply redraws only its own row. Your own prompts
 /// show at once: they were on screen already, as sent. Long press copies a
 /// message.
@@ -588,7 +600,7 @@ private struct ItemRow: View {
         case .prompt:
             UserBubble(text: item.text).contextMenu { copy }
         case .reply:
-            ReplyView(item: item).contextMenu { copy }
+            MarkdownText(text: item.text, selectable: false).equatable().contextMenu { copy }
         case .steps:
             AgentStepsRow(item: item)
         }

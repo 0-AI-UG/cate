@@ -13,7 +13,7 @@ import { createAgentChangesStore } from './store'
 
 export const LIVE_AGENT_CHANGES = process.env.CATE_LIVE_AGENT_CLIS === '1'
 
-async function terminateLiveProcessTree(pid: number | undefined): Promise<void> {
+export async function terminateLiveProcessTree(pid: number | undefined): Promise<void> {
   if (!pid) return
   if (process.platform === 'win32') {
     return new Promise((resolve) => execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 }, () => resolve()))

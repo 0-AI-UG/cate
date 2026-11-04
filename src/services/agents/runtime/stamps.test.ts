@@ -165,3 +165,16 @@ describe('emit mechanics', () => {
     expect(stamps(tid).at(-1)).toEqual({ agentId: 'codex', sessionId: 'id-2', cwd: '/w' })
   })
 })
+
+
+it('keeps Pi tree position in the live locator, without persisting it in the shell resume stamp', () => {
+  const event = { ...ev(tid, 'pi', 'turn-end', 'pi-session', '/repo'), transcriptPath: '/custom/pi/session.jsonl', leafId: 'leaf-a' }
+  stampsUnderTest.ingest(event)
+  expect(stampsUnderTest.latest(tid)).toEqual({ agentId: 'pi', sessionId: 'pi-session', cwd: '/repo', transcriptPath: event.transcriptPath, leafId: 'leaf-a' })
+  expect(stamps(tid)).toEqual([{ agentId: 'pi', sessionId: 'pi-session', cwd: '/repo' }])
+  stampsUnderTest.ingest({ ...event, kind: 'session-start', leafId: null })
+  expect(stampsUnderTest.latest(tid)?.leafId).toBeNull()
+  // A new run follows newly appended messages rather than pinning the old leaf.
+  stampsUnderTest.ingest({ ...event, kind: 'turn-start', leafId: undefined })
+  expect(stampsUnderTest.latest(tid)?.leafId).toBeUndefined()
+})

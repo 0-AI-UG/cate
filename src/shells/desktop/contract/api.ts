@@ -78,8 +78,8 @@ export interface UpdateStatus {
   message?: string
   /** This status answers an explicit check. */
   manual?: boolean
-  /** Re-open the "update ready" dialog even if it was dismissed for this version. */
-  forceShow?: boolean
+  /** The staged update prompt was dismissed for this app session. */
+  dismissed?: boolean
 }
 
 export interface RecentScreenshot {
@@ -237,6 +237,7 @@ export interface DesktopApi {
   updates: {
     status(): Promise<UpdateStatus>
     check(): Promise<void>
+    dismiss(version: string): Promise<void>
     /** Quit and install a downloaded update. False when none is staged. */
     install(): Promise<boolean>
     onStatus(listener: (status: UpdateStatus) => void): () => void

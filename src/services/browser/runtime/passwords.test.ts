@@ -74,6 +74,23 @@ describe('saved passwords', () => {
     await expect(store.save({ origin: 'https://example.com', username: '', password: '' })).rejects.toThrow('invalid')
   })
 
+  it('matches secure sibling hosts, with exact origins first', async () => {
+    const exact = await store.save({ origin: 'https://login.tum.de', username: 'me', password: 'exact' })
+    const sibling = await store.save({ origin: 'https://campus.tum.de', username: 'me', password: 'sibling' })
+    expect(store.suggestions('https://login.tum.de')).toEqual([exact.credential, sibling.credential])
+    expect(store.forFill(sibling.credential.id, 'https://login.tum.de')?.password).toBe('sibling')
+    for (const url of ['http://login.tum.de', 'https://login.tum.de:8443', 'https://tum.de.evil.com', 'https://not-tum.de']) {
+      expect(store.suggestions(url)).toEqual([])
+      expect(store.forFill(sibling.credential.id, url)).toBeNull()
+    }
+  })
+
+  it('does not share passwords between tenants of a private public suffix', async () => {
+    const saved = await store.save({ origin: 'https://alice.github.io', username: 'me', password: 'secret' })
+    expect(store.suggestions('https://bob.github.io')).toEqual([])
+    expect(store.forFill(saved.credential.id, 'https://bob.github.io')).toBeNull()
+  })
+
   it('imports rows, skipping unusable ones and merging by identity', async () => {
     const result = await store.import([
       { origin: 'https://example.com/login', username: 'a', password: 'one' },

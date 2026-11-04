@@ -6,6 +6,152 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.8] - 2026-11-04
+
+This beta separates connection compatibility from release numbers and adds agent provider setup.
+
+### Added
+
+- **Pi agents**: start Pi alongside the other supported agent harnesses.
+- **Agent setup**: configure and authenticate agent providers from workspace settings.
+
+### Changed
+
+- **Desktop and iOS connections** use one shared compatibility version, so compatible releases can connect across app versions. Breaking protocol changes require updating both apps.
+
+### Fixed
+
+- **Browser passwords** fill through the page bridge and support choosing a saved login.
+- **Terminal startup and rendering** improve CLI availability and terminal sizing.
+
+
+### Changed
+
+- **Agent API providers**: configure a provider URL, protocol, API key and models per workspace, then select a provider and model for each supported harness. Native accounts remain available.
+
+### Removed
+
+- **Cate credits**: removed prepaid balances, purchases, spending tokens and desktop/iOS credit installation. Agents connect directly to user-configured providers.
+
+## [iOS 0.1.1 (18)] - 2026-11-04
+
+This build connects to desktop beta.8 using compatibility version 1.
+
+### Changed
+
+- **Workspace connections** compare the shared compatibility version instead of the desktop release number. Future compatible desktop releases no longer require an iOS update.
+- **Agent providers** connect directly to workspace-configured providers.
+
+## [iOS 0.1.1 (17)] - 2026-11-03
+
+This build completes privacy disclosures for the iPhone-only App Store submission.
+
+### Added
+
+- **Privacy and support**: device settings include links to the privacy policy and support page.
+- **Privacy manifest**: declares device identifiers used for app functionality and the required reasons for local preferences and file metadata access.
+
+### Changed
+
+- **Encryption disclosure**: the app declares its bundled cryptography for App Store Connect's export-compliance questionnaire. France is excluded from the initial release pending the required documentation.
+
+## [iOS 0.1.1 (16)] - 2026-11-03
+
+This build prepares Cate Mobile for an iPhone-only App Store release.
+
+### Changed
+
+- **Device support**: Cate Mobile targets iPhone only; iPad is no longer a supported device family.
+
+## [iOS 0.1.1 (15)] - 2026-11-03
+
+This TestFlight build replaces the agent chat scroller with a native collection view.
+
+### Changed
+
+- **iOS agent chat** uses a native collection view with reusable cells, cached rendered row heights, and a bounded cache of warmed message renderers. New pages are prepared incrementally before insertion; layout updates wait until scrolling stops.
+- **iOS replies** resize when text changes instead of continuously growing through a simulated reveal animation.
+
+## [iOS 0.1.1 (14)] - 2026-11-03
+
+This TestFlight build preserves the reading position when loading older agent messages.
+
+### Fixed
+
+- **Chat pagination** keeps the previous message at its measured viewport position while older messages are inserted and lazy rows settle, including the final page.
+- **Page boundaries** preserve normal scrolling after loading history; the position keeper releases as soon as scrolling begins.
+- **Loading indicator** keeps a fixed height while a page is requested.
+
+## [iOS 0.1.1 (13)] - 2026-11-03
+
+This TestFlight build makes loading older agent messages explicit and removes scroll-stop adjustments.
+
+### Changed
+
+- **Chat history** loads older messages only through the "Load earlier messages" button; scrolling no longer requests pages automatically.
+
+### Fixed
+
+- **Chat scrolling** no longer snaps to the end or switches size-change anchors when a gesture stops, avoiding an extra bottom adjustment caused by lazy row measurements.
+
+## [iOS 0.1.1 (12)] - 2026-11-03
+
+This TestFlight build improves loading and navigating agent chat history.
+
+### Fixed
+
+- **Agent chat** opens at the newest message after history arrives, instead of starting at the top and requesting older pages.
+- **History loading** requires an upward gesture and loads at most one page per gesture, with a button to load earlier messages explicitly.
+- **Chat performance** defers rendering offscreen messages and avoids repeatedly parsing Markdown during reply animations.
+
+## [iOS 0.1.1 (11)] - 2026-11-03
+
+This TestFlight build improves agent chat scrolling and limits the initial chat history.
+
+### Changed
+
+- **Agent chat** opens with the newest 10 messages and trims older messages as new ones arrive. Scrolling up restores earlier messages in batches of 10 and keeps that history while reading.
+
+### Fixed
+
+- **Chat scrolling** avoids an extra snap after scrolling stops and duplicate scroll adjustments while replies appear.
+- **Streaming replies** reveal later text additions smoothly.
+- **LaTeX formulas** get their own horizontal scroll area when wider than the chat.
+
+## [iOS 0.1.1 (10)] - 2026-11-03
+
+This TestFlight build adds agent logos to the iOS agent list and restores the Pi logo.
+
+### Added
+
+- **Agent list**: each agent's logo appears alongside its existing status indicator.
+
+### Fixed
+
+- **Pi logo**: bundled the missing iOS artwork so Pi renders wherever agent logos are shown.
+
+## [iOS 0.1.1 (9)] - 2026-11-03
+
+This TestFlight build adds prepaid credit installation to the current iOS app.
+
+### Added
+
+- **Cate credits**: open a credit link or scan its QR code, then choose connected workspaces to share the prepaid balance.
+- **Credit installation** reports which workspaces received credits and lets you retry failed installations.
+
+## [iOS 0.1.1 (6)] - 2026-11-02
+
+This TestFlight build is rebuilt from the local Cate 2.1.0-beta.6 checkout.
+
+### Changed
+
+- **Workspaces**: all paired workspaces are available without a subscription in this build.
+- **Agent choices** include Pi when supported by the connected runtime.
+
+### Fixed
+
+- **Agent chat** no longer animates existing replies when opening a conversation.
+
 ## [2.1.0-beta.6] - 2026-10-29
 
 This beta improves browser connectivity and Cate Connect recovery, and updates bundled dependencies.

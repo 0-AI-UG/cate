@@ -104,10 +104,13 @@ export function useTerminalGrid(deps: TerminalGridDeps): TerminalGrid {
     scheduleRef.current = schedule
     const observer = new ResizeObserver(schedule)
     observer.observe(box)
+    // Output and buffer switches can add or remove the scrollbar gutter.
+    const render = xterm.current?.terminal.onRender(schedule)
     schedule()
     return () => {
       scheduleRef.current = () => {}
       observer.disconnect()
+      render?.dispose()
       if (timer) clearTimeout(timer)
     }
     // `measure` reads refs only.

@@ -1,0 +1,18 @@
+[
+  { "chapter": "Live workspace and canvas", "wait": "Canvas", "hold": 3 },
+  { "tap": "README.md", "wait": "Edit", "hold": 4 },
+  { "chapter": "Native file preview and source", "tap": "Edit", "wait": "Preview", "hold": 3 },
+  { "tap": "Preview", "wait": "Edit", "hold": 2 },
+  { "tap": "Files", "wait": "README.md", "hold": 2 },
+  { "tap": "README.md", "wait": "Edit", "hold": 2 },
+  { "tap": "BackButton", "wait": "Canvas", "hold": 2 },
+  { "chapter": "Terminal running on the paired computer", "tap": "Terminal 1", "wait": "Show keyboard", "hold": 2 },
+  { "tap": "Fit to screen" },
+  { "tap": "Show keyboard", "wait": "Hide keyboard", "hold": 1 },
+  { "keys": "cat README.md\n", "hold": 3 },
+  { "tap": "Hide keyboard", "wait": "Show keyboard" },
+  { "tap": "Fit to screen", "hold": 4 },
+  { "tap": "BackButton", "wait": "Canvas", "hold": 3 },
+  { "chapter": "Workspace connection and device presence", "tap": "Settings", "hold": 4 },
+  { "tap": "BackButton", "wait": "Canvas", "hold": 3 }
+]

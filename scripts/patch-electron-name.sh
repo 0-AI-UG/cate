@@ -25,6 +25,14 @@ PLIST="node_modules/electron/dist/Electron.app/Contents/Info.plist"
 if [ -f "$PLIST" ]; then
   /usr/libexec/PlistBuddy -c "Set CFBundleDisplayName Cate" "$PLIST" 2>/dev/null
   /usr/libexec/PlistBuddy -c "Set CFBundleName Cate" "$PLIST" 2>/dev/null
+  # macOS only delivers cate:// links to bundles declaring the scheme. The
+  # packaged app gets this from electron-builder; dev uses Electron.app.
+  /usr/libexec/PlistBuddy -c "Delete CFBundleURLTypes" "$PLIST" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add CFBundleURLTypes array" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Add CFBundleURLTypes:0 dict" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Add CFBundleURLTypes:0:CFBundleURLName string Cate links" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Add CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
+  /usr/libexec/PlistBuddy -c "Add CFBundleURLTypes:0:CFBundleURLSchemes:0 string cate" "$PLIST"
   # Also replace the .icns (may not exist yet before first icon generation)
   if [ -f "build/icon.icns" ]; then
     cp build/icon.icns "node_modules/electron/dist/Electron.app/Contents/Resources/electron.icns"

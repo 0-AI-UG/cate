@@ -92,7 +92,14 @@ export function createTerminalXterm(config: TerminalXtermOptions): TerminalXterm
     const cell = core()?._renderService?.dimensions?.css?.cell
     return cell && cell.width > 0 && cell.height > 0 ? cell : null
   }
-  const scrollBarWidth = () => (terminal.options.scrollback === 0 ? 0 : core()?.viewport?.scrollBarWidth ?? 0)
+  const scrollBarWidth = () => {
+    const scrollable = terminal.buffer.active.baseY > 0
+    const viewport = terminal.element?.querySelector<HTMLElement>('.xterm-viewport')
+    if (viewport) viewport.style.overflowY = scrollable ? 'scroll' : 'hidden'
+    if (!scrollable) return 0
+    const measured = viewport ? viewport.offsetWidth - viewport.clientWidth : 0
+    return measured || core()?.viewport?.scrollBarWidth || 0
+  }
 
   const releaseWebgl = () => {
     if (!webgl) return

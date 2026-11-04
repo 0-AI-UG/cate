@@ -4,6 +4,8 @@ import type { AgentHookAgentState } from './hooks'
 import type { PanelAgentState } from './session'
 import type { AgentId } from './registry'
 import type { AgentTypeInfo } from './launch'
+import type { AgentAvailability, AgentSetupSnapshot, AgentSetupOperation, AgentSetupConfigureRequest, AgentSetupInfo } from './setup'
+import type { AgentProviderSaveRequest, AgentProviderInfo, AgentProviderModel } from './setup'
 import type { PlaceTarget } from '@workspace/document/contract'
 import type { UsageLimitsReport, UsagePricing, UsageSummary, UsageSummaryInput } from './usage/types'
 
@@ -43,6 +45,14 @@ export function applyAgentPanelStatesChange(states: AgentPanelStates, change: Ag
  *  the workspace root or one of its worktree checkouts. */
 export const agentsCapability = defineCapability('agents', {
   methods: {
+    providerSave: method<AgentProviderSaveRequest, AgentProviderInfo>({ mutates: true }),
+    providerRemove: method<{ id: string }, { ok: true }>({ mutates: true }),
+    providerModels: method<{ id: string }, AgentProviderModel[]>({ timeoutMs: 20_000 }),
+    setupInspect: method<{ refresh?: boolean }, AgentSetupSnapshot>({ timeoutMs: 60_000 }),
+    setupBegin: method<{ agentId: AgentId; action: 'login' | 'install' }, AgentSetupOperation>({ mutates: true, timeoutMs: 60_000 }),
+    setupOperation: method<{ operationId: string }, AgentSetupOperation | null>(),
+    setupCancel: method<{ operationId: string }, { ok: true }>({ mutates: true }),
+    setupConfigure: method<AgentSetupConfigureRequest, AgentSetupInfo>({ mutates: true, timeoutMs: 45_000 }),
     /** Per-agent hook injection state of a checkout (defaults to the root). */
     inspectHooks: method<{ cwd?: string }, AgentHookAgentState[]>(),
     /** The agent a panel hosts, or null. */
@@ -54,7 +64,7 @@ export const agentsCapability = defineCapability('agents', {
     busy: method<void, { panelIds: string[] }>(),
     /** The same functions as `cate agent start / types / send / interrupt`. */
     start: method<AgentStartRequest, { panelId: string; agentId: AgentId | null }>({ mutates: true, timeoutMs: 90_000 }),
-    types: method<void, AgentTypeInfo[]>(),
+    types: method<void, AgentTypeInfo[]>({ timeoutMs: 60_000 }),
     /** The same function as `cate agent send`: the runtime takes the prompt
      *  and sends it once the agent can take one, after those before it; its
      *  outcome shows in the conversation's prompts. `attachments`: files that
@@ -76,6 +86,7 @@ export const agentsCapability = defineCapability('agents', {
     usageLimits: method<{ refresh?: boolean }, UsageLimitsReport>({ timeoutMs: 45_000 }),
   },
   streams: {
+    availability: channelStream<void, AgentAvailability, AgentAvailability>(),
     /** Every agent panel's state: a snapshot, then changes. */
     panels: channelStream<void, AgentPanelStates, AgentPanelStatesChange>(),
     /** A panel's agent conversation with its state, live while the agent

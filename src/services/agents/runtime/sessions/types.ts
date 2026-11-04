@@ -20,6 +20,9 @@ export interface AgentSessionStore {
   /** The files the conversation is read from, so a watcher can tell when it
    *  changed; empty while the session has none yet. */
   files?(context: AgentSessionContext): Promise<string[]>
+  /** Identify a session from files held open by this exact CLI process. Never
+   *  choose a session by cwd, recency, or a directory scan. */
+  processSession?(files: string[], homeDir: string): Promise<AgentSessionLocator | null>
   /** Where the CLI records token usage and how to read it. */
   usage: AgentUsage
 }
@@ -60,7 +63,7 @@ export type AgentUsageSource =
   /** Append-only JSONL transcripts under `root`, parsed incrementally and
    *  cached per file. `parser` resumes from a saved state, or returns null
    *  when that state is not one it wrote (the file is then parsed afresh). */
-  | { kind: 'transcripts'; root(homeDir: string): string; fileName?: string; parser(file: string, state?: unknown): AgentUsageLineParser | null }
+  | { kind: 'transcripts'; root(homeDir: string): string; additionalRoots?(homeDir: string): string[]; fileName?: string; parser(file: string, state?: unknown): AgentUsageLineParser | null }
   /** A store queried for the window on every scan (null: unreadable). */
   | { kind: 'store'; location(homeDir: string): string; records(homeDir: string, sinceMs: number): Promise<AgentUsageRecord[] | null> }
   /** The CLI keeps no token counts; `note` says what it keeps instead. */

@@ -177,6 +177,7 @@ const api: DesktopApi = {
     status: () => invoke(C.updateGetStatus),
     check: () => invoke(C.updateCheck),
     install: () => invoke(C.updateInstall),
+    dismiss: (version) => invoke(C.updateDismiss, version),
     onStatus: (listener) => listen(C.updateStatus, listener),
   },
   analytics: {

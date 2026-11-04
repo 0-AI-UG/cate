@@ -104,7 +104,7 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       notify: vi.fn(async () => {}),
       onNotificationAction: off,
     },
-    updates: { status: async () => ({ state: 'idle', version: null }), check: async () => {}, install: async () => false, onStatus: off },
+    updates: { status: async () => ({ state: 'idle', version: null }), check: async () => {}, dismiss: async () => {}, install: async () => false, onStatus: off },
     analytics: { track: () => {} },
     capture: {
       window: async () => null,

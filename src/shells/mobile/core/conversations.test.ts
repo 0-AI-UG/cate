@@ -47,22 +47,24 @@ it('opens a long chat with its latest page and adds earlier pages as asked, send
   // Only the latest page goes to the app.
   expect(events).toHaveLength(1)
   expect(events[0]).toMatchObject({ loaded: true, from: 0, earlier: true })
-  expect(ids(events[0])).toEqual(range(50 - CHAT_PAGE, 50))
+  expect(ids(events[0])).toEqual(range(40, 50))
 
-  // What comes in is added at the end; nothing shown is sent again.
+  // A new message removes the oldest from the ten-message window.
   conversation.emit({ kind: 'change', rev: 1, change: { from: 50, messages: messages(1, 50) } })
-  expect(events.at(-1)).toMatchObject({ from: CHAT_PAGE, earlier: true })
-  expect(ids(events.at(-1))).toEqual(['m50'])
+  expect(events.at(-1)).toMatchObject({ from: 0, earlier: true })
+  expect(ids(events.at(-1))).toEqual(range(41, 51))
 
   // Scrolled up: the page before, with everything after it.
   chats.more('v')
   expect(events.at(-1)).toMatchObject({ from: 0, earlier: true })
-  expect(ids(events.at(-1))).toEqual(range(50 - 2 * CHAT_PAGE, 51))
+  expect(ids(events.at(-1))).toEqual(range(51 - 2 * CHAT_PAGE, 51))
 
-  // The first page: nothing is left before it.
-  chats.more('v')
-  expect(events.at(-1)).toMatchObject({ from: 0, earlier: false })
-  expect(ids(events.at(-1))).toEqual(range(0, 51))
+  // Each request adds ten older messages until the first page.
+  for (const start of [21, 11, 1, 0]) {
+    chats.more('v')
+    expect(events.at(-1)).toMatchObject({ from: 0, earlier: start > 0 })
+    expect(ids(events.at(-1))).toEqual(range(start, 51))
+  }
 
   const sent = events.length
   chats.more('v')
@@ -79,6 +81,32 @@ it('shows a short chat whole', () => {
   expect(ids(events.at(-1))).toEqual(range(0, 4))
   chats.more('v')
   expect(events).toHaveLength(1)
+  chats.unwatch('v')
+})
+
+it('trims a growing chat to ten messages and restores trimmed messages through pagination', () => {
+  const chats = createMobileConversations(bridge)
+  chats.watch({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
+  load(messages(9))
+  load(messages(12))
+  expect(ids(events.at(-1))).toEqual(range(2, 12))
+  expect(events.at(-1)?.earlier).toBe(true)
+  chats.more('v')
+  expect(ids(events.at(-1))).toEqual(range(0, 12))
+  // Incoming messages must not evict history while it is being read.
+  load(messages(13))
+  expect(events.at(-1)).toMatchObject({ from: 12, earlier: false })
+  expect(ids(events.at(-1))).toEqual(['m12'])
+  chats.unwatch('v')
+})
+
+it('limits delayed history to ten messages after an empty loaded snapshot', () => {
+  const chats = createMobileConversations(bridge)
+  chats.watch({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
+  load([])
+  load(messages(50))
+  expect(events.at(-1)).toMatchObject({ loaded: true, from: 0, earlier: true })
+  expect(ids(events.at(-1))).toEqual(range(40, 50))
   chats.unwatch('v')
 })
 

@@ -2,7 +2,7 @@
 // `__CATE_BUILD__`: the package version plus a hash of everything the runtime
 // install is made from: the source tree, the bundled skills and the
 // lockfile. It names the install a client asks a runtime to run
-// (`runtime.update`); compatibility is the version alone. Shell code
+// (`runtime.update`); compatibility is the shared protocol version. Shell code
 // (src/shells, apart from settings slices) is not in the runtime and is left
 // out.
 

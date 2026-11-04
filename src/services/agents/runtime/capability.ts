@@ -1,3 +1,5 @@
+import { RpcError } from '@kernel/rpc/contract'
+import type { AgentSetupService } from './setup/service'
 import type { CapabilityImpl } from '@kernel/rpc/runtime'
 import { applyAgentPanelStatesChange, type agentsCapability } from '../contract'
 import type { AgentsCore } from './core'
@@ -5,8 +7,17 @@ import { interruptAgent, sendToAgent, startAgent, withdrawFromAgent } from './ap
 import type { AgentStarter } from './start'
 import type { AgentUsageService } from './usage/usage'
 
-export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter, usage: AgentUsageService): CapabilityImpl<typeof agentsCapability> {
+export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter, usage: AgentUsageService, setup?: AgentSetupService): CapabilityImpl<typeof agentsCapability> {
+  const unavailable = (): never => { throw new RpcError('rejected', 'Agent setup is unavailable.') }
   return {
+    providerSave: (args) => setup ? setup.providers.save(args) : unavailable(),
+    providerRemove: (args) => setup ? setup.providers.remove(args) : unavailable(),
+    providerModels: (args) => setup ? setup.providers.models(args) : unavailable(),
+    setupInspect: ({ refresh }) => setup ? setup.inspect(refresh) : unavailable(),
+    setupBegin: (args) => setup ? setup.begin(args) : unavailable(),
+    setupOperation: ({ operationId }) => setup ? setup.operation(operationId) : unavailable(),
+    setupCancel: ({ operationId }) => setup ? setup.cancel(operationId) : unavailable(),
+    setupConfigure: (args) => setup ? setup.configure(args) : unavailable(),
     usage: (input) => usage.summary(input),
     refreshUsageRates: () => usage.refreshRates(),
     usageLimits: (args) => usage.limits(args?.refresh === true),
@@ -19,6 +30,14 @@ export function agentsCapabilityImpl(agents: AgentsCore, starter: AgentStarter, 
     panel: ({ panelId }) => agents.panel(panelId),
     previewContext: ({ panelId }) => agents.promptContext.peek(panelId, agents.panel(panelId)?.agentId ?? null),
     busy: () => ({ panelIds: agents.busy() }),
+    availability(_params, sink) {
+      if (!setup) return unavailable()
+      let rev = 0
+      return setup.watch((state) => {
+        if (rev === 0) sink.emit({ kind: 'snapshot', rev: rev++, snapshot: state })
+        else sink.emit({ kind: 'change', rev: rev++, change: state })
+      })
+    },
     panels(_params, sink) {
       let rev = 0
       let states = agents.panels.all()

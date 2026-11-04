@@ -1,4 +1,4 @@
-import { readFile, readdir } from 'node:fs/promises'
+import { open, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentConversationMessage, UsageAgentLimits, UsageLimitWindow } from '../../contract'
 import { isoInstant, parseJsonLine, tokenCount, totalTokens, totalsFromInclusiveInput } from '../usage/records'
@@ -87,6 +87,31 @@ async function locateRollout({ session, homeDir }: AgentSessionContext): Promise
   const suffix = `-${session.sessionId}.jsonl`
   return await findRollout(path.join(codexHome, 'sessions'), suffix)
     ?? await findRollout(path.join(codexHome, 'archived_sessions'), suffix)
+}
+
+/** Codex defers SessionStart until submit, including after /resume. Its
+ * open rollout is an exact process binding. Multiple root rollouts are
+ * ambiguous; subagent rollouts never identify the interactive session. */
+async function processSession(files: string[], homeDir: string): Promise<AgentSessionContext['session'] | null> {
+  const root = path.join(homeDir, '.codex', 'sessions') + path.sep
+  const sessions = new Map<string, AgentSessionContext['session']>()
+  for (const file of new Set(files)) {
+    if (!file.startsWith(root) || !path.basename(file).startsWith('rollout-') || !file.endsWith('.jsonl')) continue
+    const handle = await open(file, 'r').catch(() => null)
+    if (!handle) continue
+    try {
+      const buffer = Buffer.alloc(64 * 1024)
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+      const header = buffer.subarray(0, bytesRead).toString('utf8').split('\n')[0]
+      const record = object(JSON.parse(header))
+      const meta = object(record?.payload)
+      if (record?.type !== 'session_meta' || meta?.source !== 'cli' || typeof meta.id !== 'string'
+        || !SAFE_SESSION_ID.test(meta.id) || typeof meta.cwd !== 'string' || !file.endsWith(`-${meta.id}.jsonl`)) continue
+      sessions.set(meta.id, { agentId: 'codex', sessionId: meta.id, cwd: meta.cwd, transcriptPath: file })
+    } catch { /* A partial header is retried at the next activity scan. */ }
+    finally { await handle.close() }
+  }
+  return sessions.size === 1 ? [...sessions.values()][0] : null
 }
 
 function itemText(content: unknown): string {
@@ -311,4 +336,4 @@ const codexUsage: AgentUsage = {
   },
 }
 
-export const codexSessionStore: AgentSessionStore = { title, conversation, files, usage: codexUsage }
+export const codexSessionStore: AgentSessionStore = { title, conversation, files, processSession, usage: codexUsage }

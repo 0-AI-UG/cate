@@ -173,15 +173,16 @@ private struct TerminalScreen: UIViewRepresentable {
 }
 
 /// Shows the PTY's grid whole: the font is fitted so `cols` x `rows` cells
-/// fill the screen, and pinching zooms in, with panning. While zoomed (or
-/// while the keyboard covers part of the grid) panning moves the grid, and
-/// the terminal's own scrollback scrolls only when the grid fits.
+/// fill the screen, and pinching zooms in, with panning. At the fitted scale,
+/// one finger scrolls the terminal, including with the keyboard open; two
+/// fingers pan the grid. While zoomed, one finger pans the enlarged grid.
 final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
     let terminal = CateTerminalView(frame: .zero, font: TerminalViewport.font(ofSize: 12))
     /// The grid the screen holds at a readable font: once laid out, and on
     /// every change.
     var onHeldGrid: ((Grid) -> Void)?
 
+    private var touchScroll: TerminalTouchScroll?
     private var grid: Grid?
     private var heldGrid: Grid?
     /// The space the font is fitted to: the width, and the tallest height
@@ -216,6 +217,11 @@ final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
         terminal.inputAccessoryView = TerminalKeyBar(terminal: terminal)
         terminal.inputView = nil
         addSubview(terminal)
+        let touchScroll = TerminalTouchScroll(terminal: terminal)
+        self.touchScroll = touchScroll
+        terminal.addGestureRecognizer(touchScroll.pan)
+        terminal.panGestureRecognizer.require(toFail: touchScroll.pan)
+        panGestureRecognizer.require(toFail: touchScroll.pan)
     }
 
     @available(*, unavailable)
@@ -287,13 +293,14 @@ final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
         arrange()
     }
 
-    /// Centers the grid when it is narrower than the screen, and lets the
-    /// terminal scroll its scrollback only while the grid fits.
+    /// At the fitted scale, reserve one-finger swipes for terminal scrolling.
     private func arrange() {
         let left = max(0, (bounds.width - contentSize.width) / 2)
         if contentInset.left != left { contentInset = UIEdgeInsets(top: 0, left: left, bottom: 0, right: 0) }
-        let fits = contentSize.width <= bounds.width + 0.5 && contentSize.height <= bounds.height + 0.5
-        terminal.isScrollEnabled = fits
+        let scrollsTerminal = zoomScale <= minimumZoomScale + 0.001
+        terminal.isScrollEnabled = scrollsTerminal
+        touchScroll?.gridFits = scrollsTerminal
+        panGestureRecognizer.minimumNumberOfTouches = scrollsTerminal ? 2 : 1
     }
 
     /// Redraws the text at the zoomed resolution instead of scaling pixels.
@@ -325,6 +332,46 @@ final class TerminalViewport: UIScrollView, UIScrollViewDelegate {
     }
 }
 
+/// Touch input is a view concern: wheel reports go through SwiftTerm's
+/// negotiated mouse protocol and the existing terminal byte stream.
+private final class TerminalTouchScroll: NSObject, UIGestureRecognizerDelegate {
+    private weak var terminal: CateTerminalView?
+    var gridFits = true
+    lazy var pan = UIPanGestureRecognizer(target: self, action: #selector(scroll(_:)))
+
+    init(terminal: CateTerminalView) {
+        self.terminal = terminal
+        super.init()
+        pan.delegate = self
+        pan.maximumNumberOfTouches = 1
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let terminal else { return false }
+        let translation = pan.translation(in: terminal)
+        return gridFits && terminal.getTerminal().mouseMode != .off
+            && !terminal.selection.active && abs(translation.y) > abs(translation.x)
+    }
+
+    @objc private func scroll(_ gesture: UIPanGestureRecognizer) {
+        guard let view = terminal else { return }
+        let cell = view.cellSize
+        guard cell.height > 0 else { return }
+        let translation = gesture.translation(in: view)
+        let lines = Int(translation.y / cell.height)
+        guard lines != 0 else { return }
+        let terminal = view.getTerminal()
+        let point = gesture.location(in: view)
+        let x = min(terminal.cols - 1, max(0, Int(point.x / cell.width)))
+        let y = min(terminal.rows - 1, max(0, Int((point.y - view.contentOffset.y) / cell.height)))
+        let flags = terminal.encodeButton(button: lines > 0 ? 4 : 5, release: false, shift: false, meta: false, control: false)
+        for _ in 0..<min(abs(lines), 64) {
+            terminal.sendEvent(buttonFlags: flags, x: x, y: y, pixelX: Int(point.x), pixelY: Int(point.y - view.contentOffset.y))
+        }
+        gesture.setTranslation(CGPoint(x: 0, y: translation.y - CGFloat(lines) * cell.height), in: view)
+    }
+}
+
 struct Grid: Equatable {
     let cols: Int
     let rows: Int
@@ -333,6 +380,11 @@ struct Grid: Equatable {
 /// SwiftTerm's view, sized to an exact grid and reporting the keyboard.
 final class CateTerminalView: TerminalView {
     var onFirstResponder: ((Bool) -> Void)?
+
+    // SwiftTerm maps a mouse-mode pan to button dragging. On a phone a
+    // one-finger swipe scrolls instead; TerminalTouchScroll sends wheel events.
+    // Taps and explicit text selection keep SwiftTerm's own handling.
+    override func mouseModeChanged(source: Terminal) {}
 
     var cellSize: CGSize {
         let frame = getOptimalFrameSize()

@@ -105,7 +105,7 @@ describe('agentHooks capability', () => {
     const states = await cap.inspectWorkspace(cwd, { approvals: true })
     expect(reader).toHaveBeenCalledWith(cwd, { env: undefined })
     expect(states.find((state) => state.agentId === 'codex')?.approvalDetection).toEqual(detection)
-    expect(states.filter((state) => state.approvalDetection?.source === 'signal').map((state) => state.agentId).sort()).toEqual(['claude-code', 'grok', 'opencode'])
+    expect(states.filter((state) => state.approvalDetection?.source === 'signal').map((state) => state.agentId).sort()).toEqual(['claude-code', 'grok', 'opencode', 'pi'])
     expect(states.filter((state) => state.approvalDetection?.source === 'unavailable').map((state) => state.agentId).sort()).toEqual(['cursor', 'kiro'])
   })
 

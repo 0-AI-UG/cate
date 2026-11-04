@@ -136,8 +136,6 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
       icon={<Server size={16} />}
       title={`Open a workspace on ${machineLabel(machine)}`}
       dismissable={step !== 'opening'}
-      // Above Settings (z-[100001]), which can open it too.
-      zClassName="z-[100002]"
       bodyClassName="min-h-0 flex-1 flex flex-col"
     >
       {step === 'checking' ? (

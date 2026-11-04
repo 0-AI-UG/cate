@@ -20,3 +20,5 @@ export * from './contract/usage/types'
 export * from './contract/usage/format'
 export * from './contract/usage/limits'
 export * from './contract/usage/prices'
+
+export * from './contract/setup'

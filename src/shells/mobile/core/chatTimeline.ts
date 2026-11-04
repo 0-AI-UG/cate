@@ -86,7 +86,7 @@ export function createChatTimeline(first: string | null = null): ChatTimeline {
         stepsAt(index)
         items.push(message.role === 'user'
           ? { kind: 'prompt', id: `m${index}`, text: message.text, sent: true }
-          : { kind: 'reply', id: `m${index}`, text: message.text })
+          : { kind: 'reply', id: `m${index}`, text: message.text, ...(message.createdAt ? { createdAt: message.createdAt } : {}) })
       })
       stepsAt(messages.length)
       const outgoing = held?.text ?? first

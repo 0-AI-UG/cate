@@ -53,6 +53,7 @@ export interface AutoUpdater {
   start(): void
   status(): UpdateStatus
   checkManually(): void
+  dismiss(version: string): void
   /** Quits and installs a staged update; false when none is staged. */
   installNow(): boolean
   setBetaUpdates(enabled: boolean): void
@@ -77,6 +78,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
   const persistInstallState = deps.app.isPackaged
 
   let status: UpdateStatus = enabled ? { state: 'idle', version: null } : DISABLED
+  let dismissedVersion: string | null = null
   let pendingInstall = false
   let manualPrompted = false
   let manualCheck = false
@@ -186,7 +188,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
       }
       log.info('update v%s downloaded; installs on quit', version)
       track('update_downloaded', { version: version || null })
-      push({ state: 'downloaded', version: version || null })
+      push({ state: 'downloaded', version: version || null, ...(version && version === dismissedVersion ? { dismissed: true } : {}) })
     })
     updater.on('error', (error: unknown) => {
       const raw = error instanceof Error ? error.message : String(error)
@@ -242,11 +244,16 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
       }
       manualPrompted = false
       if (pendingInstall && status.state === 'downloaded') {
-        // Re-open a dismissed "update ready" dialog; a one-off, not cached.
-        manualCheck = false
-        deps.broadcast({ ...status, forceShow: true })
+        dismissedVersion = null
+        push({ state: 'downloaded', version: status.version })
       }
       void check()
+    },
+    dismiss(version) {
+      // Ignore a stale window's dismissal of a different update.
+      if (status.state !== 'downloaded' || status.version !== version) return
+      dismissedVersion = version
+      push({ ...status, dismissed: true })
     },
     installNow() {
       if (!pendingInstall || !deps.canSelfUpdate()) return false

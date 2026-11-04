@@ -11,7 +11,7 @@ import type { MobileBridge, MobileChat, MobileChatItem, MobileViewEvent } from '
 import { createChatTimeline } from './chatTimeline'
 
 /** Messages a chat opens with, and adds each time it is scrolled up. */
-export const CHAT_PAGE = 20
+export const CHAT_PAGE = 10
 
 export interface MobileConversations {
   /** `pending`: a new agent's first prompt, on its way with the agent. */
@@ -36,6 +36,7 @@ export function createMobileConversations(bridge: MobileBridge): MobileConversat
       const timeline = createChatTimeline(pending ?? null)
       /** The first message shown; null until the conversation was read. */
       let start: number | null = null
+      let readingEarlier = false
       let shown: (MobileChat & { earlier: boolean }) | null = null
       let shownItems: string[] = []
       const emit = (event: MobileViewEvent) => {
@@ -45,10 +46,11 @@ export function createMobileConversations(bridge: MobileBridge): MobileConversat
         const conversation = handle.get()
         const chat = timeline.update(conversation)
         const messages = conversation?.messages.length ?? 0
-        if (start === null && chat.loaded) start = Math.max(0, messages - CHAT_PAGE)
+        if (!readingEarlier && chat.loaded && messages > 0) start = Math.max(0, messages - CHAT_PAGE)
         let first = windowStart(chat.items, start ?? 0)
         // Fewer messages than before (a cleared conversation): its latest again.
         if (first < 0) {
+          readingEarlier = false
           start = Math.max(0, messages - CHAT_PAGE)
           first = windowStart(chat.items, start)
         }
@@ -75,6 +77,7 @@ export function createMobileConversations(bridge: MobileBridge): MobileConversat
         },
         more() {
           if (!start) return
+          readingEarlier = true
           start = Math.max(0, start - CHAT_PAGE)
           update()
         },

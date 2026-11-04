@@ -130,9 +130,9 @@ export function WelcomeDialog(): JSX.Element | null {
 
           <div className="border-t border-subtle" />
 
-          {/* Telemetry notice, informational only, no choice. */}
+          {/* Telemetry notice, informational only. */}
           <p className="text-center text-[12px] text-secondary leading-relaxed">
-            Cate collects anonymous usage data and crash reports to improve the app.{' '}
+            Cate collects usage data and crash reports to improve the app.{' '}
             <button
               type="button"
               onClick={() => openLink(PRIVACY_URL, 'privacy_policy')}

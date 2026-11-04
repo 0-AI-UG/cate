@@ -10,6 +10,7 @@
 // into the shell's `settings-content-slot` when both exist, else the window
 // takes the whole screen.
 
+import { useDialogLayer } from '../../kernel/interaction'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -156,16 +157,12 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   }, [visible, shownPages, slots])
 
   // Escape clears the search first, then closes.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return
-      e.preventDefault()
-      if (rawQuery) setRawQuery('')
-      else onClose()
-    }
-    document.addEventListener('keydown', onKey, { capture: true })
-    return () => document.removeEventListener('keydown', onKey, { capture: true })
-  }, [rawQuery, onClose])
+  const dialogOrder = useDialogLayer((event) => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    if (rawQuery) setRawQuery('')
+    else onClose()
+  })
 
   const openSettingsFile = async (): Promise<void> => {
     try {
@@ -375,7 +372,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
 
   if (slots) return <>{createPortal(navigation, slots.sidebar)}{createPortal(content, slots.content)}</>
   return createPortal(
-    <div className="fixed inset-0 z-[100001] flex bg-surface-1 text-primary">
+    <div className="fixed inset-0 flex bg-surface-1 text-primary" style={{ zIndex: dialogOrder }}>
       <aside className="w-[220px] shrink-0 flex flex-col pt-3">{navigation}</aside>
       {content}
     </div>,

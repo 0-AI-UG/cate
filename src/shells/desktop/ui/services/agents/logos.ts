@@ -7,6 +7,8 @@ import codexLogo from './logos/codex.svg?url'
 import cursorLogo from './logos/cursor.svg?url'
 import grokLogo from './logos/grok.svg?url'
 import kiroLogo from './logos/kiro.svg?url'
+// Official Pi artwork, bundled verbatim from https://pi.dev/logo-auto.svg.
+import piLogo from './logos/pi.svg?url'
 import opencodeLogo from './logos/opencode.svg?url'
 
 const AGENT_LOGOS: Record<AgentId, string> = {
@@ -16,6 +18,7 @@ const AGENT_LOGOS: Record<AgentId, string> = {
   grok: grokLogo,
   kiro: kiroLogo,
   opencode: opencodeLogo,
+  pi: piLogo,
 }
 
 /** Logo URL of an agent; null without one (callers show the panel's icon). */

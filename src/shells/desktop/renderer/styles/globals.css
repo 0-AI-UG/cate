@@ -260,8 +260,8 @@
 /* Terminal scrollbar: the same thin rounded floating pill as the base, but only
    visible while the pointer is over the terminal or the terminal is focused
    (xterm toggles `.focus` on its root element). The thumb is transparent until
-   then — its track space stays reserved, so revealing it doesn't reflow the
-   terminal. Unlayered so it overrides the @layer base defaults above. */
+   then. Track space is reserved only while the terminal has scrollback.
+   Unlayered so it overrides the @layer base defaults above. */
 /* The scrollbar lives inside the render box, which is counter-scaled by
    1/cellScale — so a fixed 8px track shrinks on screen as the terminal zooms in
    (down to −36% at the top scale step, while every other scrollbar in the app

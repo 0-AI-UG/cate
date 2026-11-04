@@ -3,6 +3,7 @@
 import type { AnyCapability, CapabilityProxy } from './contract/capability'
 
 export * from './contract/messages'
+export * from './contract/compatibility'
 export * from './contract/errors'
 export * from './contract/features'
 export * from './contract/capability'

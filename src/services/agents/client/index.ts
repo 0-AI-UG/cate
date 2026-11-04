@@ -9,3 +9,5 @@ export {
 export { onAgentsWorking, type AgentConnections } from './working'
 export { watchAgentChat, type AgentChatHandle } from './conversation'
 export { createUsageReports, type UsageReport, type UsageReports } from './usage'
+
+export { acquireAgentAvailability, peekAgentAvailability } from './availability'

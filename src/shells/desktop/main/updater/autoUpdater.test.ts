@@ -138,13 +138,30 @@ describe('auto updater', () => {
     expect(deps.showMessageBox).not.toHaveBeenCalled()
   })
 
-  it('a manual check re-surfaces a staged update with forceShow', () => {
+  it('a manual check reopens the dismissed staged update for every window', () => {
     const { auto, updater, statuses } = setup()
     auto.start()
     updater.emit('update-downloaded', { version: '1.2.3' })
+    auto.dismiss('1.2.3')
     auto.checkManually()
-    expect(statuses.at(-1)).toEqual({ state: 'downloaded', version: '1.2.3', forceShow: true })
+    expect(statuses.at(-1)).toEqual({ state: 'downloaded', version: '1.2.3', manual: true })
     expect(auto.status()).toEqual({ state: 'downloaded', version: '1.2.3' })
+  })
+
+  it('keeps dismissal in the status read by remounted dialogs and other windows', () => {
+    const { auto, updater, statuses } = setup()
+    auto.start()
+    updater.emit('update-downloaded', { version: '1.2.3' })
+    auto.dismiss('1.2.3')
+    expect(auto.status()).toEqual({ state: 'downloaded', version: '1.2.3', dismissed: true })
+    expect(statuses.at(-1)).toEqual(auto.status())
+    expect(auto.pendingInstall()).toBe(true)
+    updater.emit('update-downloaded', { version: '1.2.3' })
+    expect(auto.status().dismissed).toBe(true)
+    updater.emit('update-downloaded', { version: '1.2.4' })
+    expect(auto.status()).toEqual({ state: 'downloaded', version: '1.2.4' })
+    auto.dismiss('1.2.3')
+    expect(auto.status().dismissed).toBeUndefined()
   })
 
   it('marks the answer to a manual check and not later background results', async () => {

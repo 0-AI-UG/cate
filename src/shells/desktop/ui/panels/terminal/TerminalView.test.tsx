@@ -62,6 +62,7 @@ vi.mock('@xterm/xterm', () => ({
     input(data: string) { for (const l of this.data) l(data) }
     onData(l: (data: string) => void) { this.data.add(l); return { dispose: () => this.data.delete(l) } }
     onResize() { return { dispose() {} } }
+    onRender() { return { dispose() {} } }
     resize(cols: number, rows: number) { this.cols = cols; this.rows = rows }
     refresh() {}
     scrollToBottom() {}
@@ -79,6 +80,7 @@ vi.mock('@workspace/files/client', async (importOriginal) => ({
 vi.mock('@xterm/addon-webgl', () => { throw new Error('no WebGL in jsdom') })
 
 import TerminalView from './TerminalView'
+import { createTerminalXterm } from './parts/xterm'
 
 function fakeProcess() {
   const attaches: Array<{ id: string; written: Uint8Array[]; cancelled: boolean; events: Set<(e: unknown) => void> }> = []
@@ -146,6 +148,35 @@ afterEach(() => {
 })
 
 describe('TerminalView', () => {
+  it('reserves scrollbar space only while the active buffer has history', () => {
+    const xterm = createTerminalXterm({
+      options: { fontFamily: 'monospace', fontSize: 13, scrollSensitivity: 1, minimumContrastRatio: 1, cursorBlink: false, macOptionIsMeta: false },
+      theme: {}, isMac: false, links: { links: async () => [], open() {} },
+    })
+    xterm.open(host)
+    const viewport = document.createElement('div')
+    viewport.className = 'xterm-viewport'
+    xterm.terminal.element!.appendChild(viewport)
+    Object.defineProperties(viewport, { offsetWidth: { value: 100 }, clientWidth: { value: 86 } })
+    const terminal = xterm.terminal as unknown as {
+      _core: unknown
+      buffer: { active: { baseY: number } }
+    }
+    terminal._core = { _renderService: { dimensions: { css: { cell: { width: 10, height: 20 } } } }, viewport: { scrollBarWidth: 14 } }
+
+    expect(xterm.gridFor({ width: 800, height: 480 })).toEqual({ cols: 80, rows: 24 })
+    expect(xterm.gridBox()?.width).toBe(800)
+    expect(viewport.style.overflowY).toBe('hidden')
+    terminal.buffer.active.baseY = 10
+    expect(xterm.gridFor({ width: 800, height: 480 })).toEqual({ cols: 78, rows: 24 })
+    expect(xterm.gridBox()?.width).toBe(814)
+    expect(viewport.style.overflowY).toBe('scroll')
+    terminal.buffer.active.baseY = 0
+    expect(xterm.gridFor({ width: 800, height: 480 })).toEqual({ cols: 80, rows: 24 })
+    expect(viewport.style.overflowY).toBe('hidden')
+    xterm.dispose()
+  })
+
   it('attaches to the session PTY and writes the screen it gets', () => {
     render(<TerminalView {...props(snapshotOf())} />)
     expect(process_.attaches.map((a) => a.id)).toEqual(['pty-1'])

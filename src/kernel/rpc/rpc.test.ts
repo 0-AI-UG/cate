@@ -172,9 +172,17 @@ describe('rpc server and client', () => {
     expect(plain.message).toBe('disk on fire')
   })
 
-  it('refuses a runtime of another version but still allows anyVersion methods', async () => {
+  it('serves different releases when their compatibility versions match', async () => {
+    const { api, client, connect } = setup({ server: { version: '2.1.0-beta.8' } })
+    await connect().ready
+    expect(client.state).toBe('ready')
+    expect(client.remote?.version).toBe('2.1.0-beta.8')
+    await expect(api.read({ path: '/a' })).resolves.toBeDefined()
+  })
+
+  it('refuses a runtime of another compatibility version but still allows anyVersion methods', async () => {
     for (const version of ['1.0.1', '1.0.0-beta.1', '0.9.0']) {
-      const { api, client, connect } = setup({ server: { version } })
+      const { api, client, connect } = setup({ server: { version, compatibilityVersion: 2 } })
       const queued = api.read({ path: '/a' })
       await connect().ready
       expect(client.state).toBe('incompatible')
@@ -184,13 +192,13 @@ describe('rpc server and client', () => {
     }
   })
 
-  it('refuses a client of another version except for anyVersion methods', async () => {
+  it('refuses a client of another compatibility version except for anyVersion methods', async () => {
     const { server } = setup()
     const [serverPort, clientPort] = createMemoryPortPair()
     server.serve(serverPort)
     const replies: Array<Record<string, unknown>> = []
     clientPort.onFrame((f) => { if (f.kind === 'msg') replies.push(f.msg as never) })
-    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '0.9.0', client: { clientId: 'old', device: { name: 'mac', publicKey: 'fp' }, features: [] } } })
+    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '0.9.0', compatibilityVersion: 2, client: { clientId: 'old', device: { name: 'mac', publicKey: 'fp' }, features: [] } } })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 1, cap: 'test', method: 'read', params: { path: '/' } } })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 2, cap: 'test', method: 'info' } })
     await vi.waitFor(() => expect(replies).toHaveLength(3))
@@ -431,7 +439,7 @@ describe('rpc server and client', () => {
     const replies: unknown[] = []
     clientPort.onFrame((f) => { if (f.kind === 'msg') replies.push(f.msg) })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 1, cap: 'test', method: 'read', params: { path: '/' } } })
-    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '1.0.0', caller: { token: 't' } } })
+    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '1.0.0', compatibilityVersion: 1, caller: { token: 't' } } })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 2, cap: 'test', method: 'bump', params: { by: 1 }, opId: 'c9:1' } })
     await vi.waitFor(() => expect(replies).toHaveLength(3))
     expect(replies[0]).toMatchObject({ t: 'res', id: 1, error: { code: 'rejected' } })

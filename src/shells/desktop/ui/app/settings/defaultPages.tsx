@@ -10,7 +10,7 @@ import { workspaceSettingsFor } from '../../kernel/settings'
 import { AvailabilitySettings } from '../../runtime/daemon'
 import { GitHubSettings, WorktreeSettings } from '../../workspace/repository'
 import { SkillsSettings } from '../../workspace/skills'
-import { AgentHooksSettings } from '../../services/agents'
+import { AgentSetupSettings } from '../../services/agents'
 import { documentStoreFor } from '@client/document'
 import { useUIStore } from '../state/uiStore'
 import { useOtherClients } from '../../client/document'
@@ -23,6 +23,7 @@ import { CanvasPage, WorkspaceCanvasPage } from './pages/CanvasPage'
 import { ShortcutsPage } from './pages/ShortcutsPage'
 import { BrowserPage, EditorPage, NotificationsPage, SidebarPage, TerminalPage, WorkspaceBrowserPage, WorkspaceTerminalPage } from './pages/clientPages'
 import { registerSettingsPage, type SettingsPage, type SettingsPageProps } from './registry'
+import { openAgentSetupTerminal } from './agentSetupNavigation'
 
 function RuntimePage({ workspaceId }: SettingsPageProps): JSX.Element | null {
   return workspaceId ? <AvailabilityPage workspaceId={workspaceId} /> : null
@@ -58,9 +59,10 @@ function SkillsPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
   return workspaceId ? <SkillsSettings workspaceId={workspaceId} /> : null
 }
 
-function HooksPage({ workspaceId }: SettingsPageProps): JSX.Element {
-  return <AgentHooksSettings workspaceId={workspaceId} />
+function AgentsPage({ workspaceId }: SettingsPageProps): JSX.Element {
+  return <AgentSetupSettings workspaceId={workspaceId} onOpenSetupTerminal={workspaceId ? (panelId) => openAgentSetupTerminal(workspaceId, panelId) : undefined} />
 }
+
 
 export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   // This device. General (0) and Updates (90) come from the desktop shell.
@@ -80,8 +82,8 @@ export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'workspace-canvas', title: 'Canvas', scope: 'workspace', group: 'tools', order: 30, component: WorkspaceCanvasPage },
   { id: 'worktrees', title: 'Worktrees', scope: 'workspace', group: 'sourceControl', order: 10, component: WorktreesPage },
   { id: 'github', title: 'GitHub', scope: 'workspace', group: 'sourceControl', order: 20, component: GitHubPage },
+  { id: 'agents', title: 'Agents', scope: 'workspace', group: 'agents', order: 0, component: AgentsPage },
   { id: 'cli', title: 'CLI', scope: 'workspace', group: 'agents', order: 10, component: CliSettingsPage },
-  { id: 'hooks', title: 'Hooks', scope: 'workspace', group: 'agents', order: 20, component: HooksPage },
   { id: 'skills', title: 'Skills', scope: 'workspace', group: 'agents', order: 30, component: SkillsPage },
 ]
 

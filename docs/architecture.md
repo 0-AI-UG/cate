@@ -108,7 +108,7 @@ No UI is shared between shells.
 
 | Concept | Meaning | Examples |
 |---|---|---|
-| **Agent** | A provider identity, static data in one registry (`AGENTS`). | claude-code, codex, cursor, grok, kiro, opencode |
+| **Agent** | A provider identity, static data in one registry (`AGENTS`). | claude-code, codex, cursor, grok, kiro, opencode, pi |
 | **Agent session** | One conversation of an agent CLI running in a terminal panel's PTY, observed through injected hooks and pid presence: `{agentId, sessionId, cwd, worktreeId}`. It reports status, takes a prompt, reads its conversation, lists its changes and resumes. | "claude-code in a terminal" |
 
 Every agent runs as its CLI in a terminal panel; the terminal panel shows
@@ -368,6 +368,13 @@ Rules:
   `~/.codex`). Those belong to the CLI, not to Cate, and Cate never writes
   user-global agent files, so a terminal agent is logged in wherever the
   machine user is. Cate writes only repo-local agent files (hooks, skills).
+  Explicit agent setup operations may invoke the CLI's native login or
+  installer; the CLI remains the writer of its own account files. Cate-owned
+  agent setup state belongs under `agents/`. API provider keys belong in the
+  runtime's `secrets.json` (0600), alongside browser passwords. Provider metadata
+  and per-agent connection/model selections are workspace settings. Requests go
+  directly from the harness on the runtime host to the selected provider.
+
 
 ## 6. Kernel
 
@@ -559,6 +566,7 @@ persisted session and document file. It is created with mode `0700`.
                         usage/ (model-rates.json, the LiteLLM rate snapshot; scan-cache.json,
                         transcripts parsed for usage, by size and mtime)
   terminal-logs/
+  terminal-cli/         private, generated CLI launchers, stable per panel
   screenshots/
   logs/                 daemon.log (the daemon's log, rotated) and
                         daemon.out.log (the detached daemon's stdout and
@@ -939,12 +947,12 @@ terminal could share the computer.
   `res {id, result | error}`, `evt {stream, data}`, `cancel {id}`,
   `ack {stream, bytes}` (flow control for byte streams). Parameters are named
   objects, never positional arrays.
-- **Hello.** Both sides send their version. A
+- **Hello.** Both sides send their release `version` and `compatibilityVersion`. A
   client also sends its `clientId`, `device {name, publicKey}` (checked
   against the handshake on network transports) and `features`
   (section 12.2), fixed for the life of the connection. A caller (the CLI)
   sends its token instead (section 14). The runtime also sends its `epoch`,
-  new at every daemon start. Only the same version is compatible; any
+  new at every daemon start. Only the same compatibility version is compatible; any
   other is incompatible (7.10).
 - **Client identity and op ids.** A client picks a random `clientId` when it
   starts and keeps it across reconnects. Every call that changes something
@@ -1010,18 +1018,18 @@ fails to compile when a registered capability is missing.
 
 ### 7.10 Versions
 
-- A client connects to a runtime only of its own version, exactly: the
-  client and the runtime compare versions on `hello`, and nothing else
-  decides. There is no partial compatibility, no feature negotiation and no
-  version skew to handle: every client of a runtime runs the code the
-  runtime was built with, so a field, setting or method added in a release
-  always exists on both sides. A client of another version (an older or
-  newer app, the iOS app of another release, a teammate's desktop) cannot
-  use the workspace until one of them is updated. The build (the version
-  plus a hash of what the install is made of: the sources, bundled skills
-  and the lockfile, `scripts/build-id.mjs`) names the install to run, not
-  compatibility: two builds of one version connect.
-- A runtime of another version answers only `anyVersion` methods. The fix
+- Both peers send a release `version` and an integer `compatibilityVersion`
+  on `hello`. Only equal compatibility versions connect, regardless of release
+  or build. `COMPATIBILITY_VERSION` in `kernel/rpc/contract` is shared by the
+  runtime, desktop, mobile core and CLI. Bump it only when an existing client
+  can no longer safely use the protocol (including capabilities, document ops,
+  session channels and settings). Compatible changes leave it alone. There is
+  no version range, feature negotiation or fallback to release equality.
+  A missing compatibility version is incompatible. Release versions and builds
+  still identify runtime installs, updates and diagnostics. The build is the
+  version plus a hash of the sources, bundled skills and lockfile
+  (`scripts/build-id.mjs`). Desktop and iOS releases can ship independently.
+- An incompatible runtime answers only `anyVersion` methods. The fix
   is `runtime.update { version, build }` with the client's own version and
   build: the daemon restarts into the install of that build, or downloads
   release `version` from GitHub Releases (checked against its `.sha256`)
@@ -1033,7 +1041,7 @@ fails to compile when a registered capability is missing.
   (`client/connections` `RuntimeUpdates`); each shell only draws it. When
   nothing else uses the runtime the client updates it without asking, once
   each time the connection turns incompatible: it sends `ifIdle`, which the
-  daemon refuses (`dirty`) while another client of its version is connected
+  daemon refuses (`dirty`) while another compatible client is connected
   or work runs. Otherwise the workspace shows both versions and says what
   updating ends before it acts (an incompatible runtime answers only
   `anyVersion` methods, so it cannot list them): the desktop's cover, the
@@ -1105,7 +1113,7 @@ or that changes shared state, is a **workspace** setting.
 | Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
 | Runtime (`runtime/daemon`) | | `keepRunningWhile`, `runtimeNetwork` |
 | `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
-| Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
+| Agents (`services/agents`) | | `agentPreferences` (native/API connection, provider and model per agent), `agentProviders` (named API endpoints, protocols and model metadata), `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
 
 ## 9. Workspace
 
@@ -1390,6 +1398,13 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   contributors (the `cate` CLI on PATH with `CATE_SOCKET` and `CATE_TOKEN`,
   agent hook env), output, input, activity and exit observers, launch
   intents (including the restore launch of a restored panel).
+  The CLI entry on PATH is a private workspace launcher under
+  `terminal-cli/panels/<panelId>/`, stable across runtime updates. Before a
+  restored PTY starts, its launcher is atomically refreshed with the running
+  install's Node and CLI paths and the new per-PTY socket/token. It overrides
+  inherited CLI credentials, so agent shell snapshots cannot replay an expired
+  token or a deleted install path. Exit revokes the token and removes the
+  launcher; a replacement PTY of the same panel owns its refreshed launcher.
 - **Links**: `process.links` gives the links on a row of the headless
   screen (web URLs, and paths that name an existing file, resolved against
   the PTY's cwd), so every client finds the same ones. A view names the row
@@ -1464,10 +1479,17 @@ downloads list and its views, and hands page work to it.
   control: the
   runtime picks the one saved login for the page the driving client shows
   and hands the credential to the page driver, never to the agent. Its
-  `signup`, behind the same opt-in, has the runtime generate a password,
+  `signup`, behind the same opt-in, uses an optional supplied `--password`
+  or has the runtime generate a password,
   the driver fill it into the sign-up form's empty password fields, and the
   runtime then save it as the login for the username the agent names. The driver
-  fills it only while the page still shows the login's origin. Passkeys are
+  fills it only while the page still shows the origin chosen for that operation.
+  Saved passwords match exact origins first, then sibling HTTPS hosts within
+  the same registrable domain and port (including private public suffixes).
+  The guest offers autofill on username and password fields and captures
+  native submissions, login-button clicks and Enter before page handlers
+  clear the form. Agent submissions save without a confirmation; manual
+  submissions ask before saving or updating. Passkeys are
   never stored by Cate: the native addon calls the OS, which keeps them in
   the user's keychain. It needs the signed app's entitlement, a window and
   macOS, so the desktop shell declares the `passkeys` feature only on macOS.
@@ -1523,6 +1545,10 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   error until every table has it; a reader only some agents need (their
   approval config) is the exception. Also the session,
   the start launch command, and the `cate.agent.*` API specs.
+  Setup contracts describe installation, authentication, safe account identity,
+  native setup operations and API-provider capabilities independently of
+  workspace hook readiness. Unsupported operations carry an explicit reason;
+  an unavailable identity is not evidence that the CLI is signed out.
   `PanelAgentState` carries what views show (`label`, `contextPolicy`),
   computed in the runtime. Recorded changes reach consumers
   resolved to the panels that showed their session (`panelIds`); they never
@@ -1534,6 +1560,49 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   `cate.agent.*` handlers. It publishes notification events through a port
   it is given.
   Inside:
+  - **setup**: owns one authoritative in-memory availability snapshot
+    (installation, authentication, hooks, connection, launch readiness and setup
+    operations), published through `agents.availability`. Settings and launch
+    menus mirror that stream; they do not maintain independent availability
+    caches or poll setup operations. Concurrent inspections share one request.
+    Explicit refresh, setup completion, provider and hook-setting changes update
+    the same snapshot; the runtime rechecks external CLI state every 15 seconds
+    while clients subscribe. Known agents remain visible during refresh.
+    An exhaustive per-CLI adapter inspects installed versions and
+    native account state, starts explicit login/install operations and prepares
+    provider configuration for launches. A connection is either the CLI's native
+    account/configuration or an explicit API provider and model. Provider metadata
+    (`agentProviders`) and each agent's selection (`agentPreferences`) use workspace
+    settings; keys are write-only setup inputs stored by provider ID in runtime
+    secrets. Availability exposes only whether a key is present, never its value.
+    Metadata edits and key changes publish readiness to every client.
+
+    Providers declare a full API base URL (preserving path prefixes), protocol
+    (Anthropic Messages, OpenAI Responses or Chat Completions) and model IDs with
+    optional context/output limits. HTTPS and loopback HTTP are accepted; embedded
+    credentials, queries and fragments are rejected. Model discovery is explicit,
+    optional and runtime-owned; manual model IDs always work without discovery.
+    Messages uses the Anthropic SDK base URL, with `/v1/messages` and `/v1/models`
+    appended by the harness and discovery respectively. Other protocols use the
+    full API base, including any `/v1` prefix. Discovery requests `/models` there
+    with the saved key and
+    disallows redirects. No inference proxy or hosted billing service is involved.
+
+    The current adapters support Messages for Claude Code, Responses for Codex,
+    and Chat Completions for OpenCode, Grok and Pi. Cursor and Kiro retain native
+    configuration with an explicit custom-API unsupported reason. Selection checks
+    protocol compatibility and model membership. A removed provider, missing key,
+    changed protocol or removed model makes the selection unready and blocks launch;
+    it never silently falls back to a native account. Removing a provider removes
+    its key but leaves selections visible for repair.
+
+    Every launch and resume resolves the current provider, key, model and limits.
+    Credentials travel only in the child environment, never in argv, panel records,
+    generated files or public snapshots. CLI configuration is process-scoped or
+    written into Cate-owned files under `agents/`; native CLI logins and global
+    configuration remain CLI-owned. Existing running agents retain their launch
+    configuration until restarted. Setup and provider operations require workspace
+    trust. Shared workspace controllers can configure providers and use their keys.
   - hook bridges and repo hook files (per `agentHookInjection`), hook
     ingestion and normalization, pid presence;
   - the **status** state machine, driven by hook events, pid presence (or
@@ -1541,12 +1610,29 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     to the PTY (for a CLI with no hook for an approval reply), and the
     transcript where a CLI pushes no hook for a user's interrupt; there is
     no screen scraping;
+  - Pi (1.4 or newer) uses a project-local `.pi/extensions/cate-hook.ts`
+    extension, inert outside Cate terminals. It forwards `agent_settled` as
+    final idle (including retries and queued continuations), extension UI waits,
+    session switches, manual compaction boundaries and successful/failed tool
+    completions. Extension reload preserves the existing resume stamp. Native project
+    trust stays with Pi. Its JSONL reader follows the active session-tree leaf;
+    the in-memory locator carries that leaf and transcript path. API provider launches
+    add an explicit workspace-owned provider extension and select the configured
+    provider/model, with credentials only in the child environment. Pi's native
+    settings and logins remain CLI-owned. Skills install under `.pi/skills`;
   - approval detection per agent (whether it is asking for a permission),
     and the tool steps its hooks report, kept in memory and sent with the
     conversation;
   - change history per checkout (from terminal hooks) in
     `agents/changes/`;
-  - session store readers per agent, conversation reads;
+  - session store readers per agent, conversation reads. A store may identify
+    the interactive session from transcript files held open by the exact agent
+    process under this PTY, before its first lifecycle hook. Codex defers that
+    hook until submit, including after `/resume`. Only one unambiguous root
+    transcript qualifies; subagents are excluded. This read-only identity is
+    live state, never a synthetic hook, resume stamp, or permission to submit.
+    Hooks take precedence once they arrive. Never guess identity from cwd,
+    transcript recency, or a search of nearby sessions;
   - resume stamps, persisted in `agents/stamps.json` with the checkout each
     was taken in: a restored terminal panel spawns with the terminal
     service's restore launch, which the terminal agents resolve to the
@@ -2333,9 +2419,23 @@ shell, with `--json` when it parses results.
   `relations.*` methods over the shared relation edits. Every panel type
   has a native view (terminal, editor, browser with loopback routing,
   review, the surface picker), and worktrees can be switched. The app
+  renders math in Markdown locally, normalizing display equations to one
+  logical line before Markdown parsing while preserving code. At the fitted
+  terminal scale, a one-finger swipe scrolls history (wheel reports through
+  the negotiated terminal protocol for mouse-reporting programs), including
+  with the keyboard open; two fingers pan the grid. A zoomed grid pans with
+  one finger. These are native view concerns; terminal input still goes
+  through the same byte stream. Agent chats use a native collection view
+  with rendered row heights cached before page insertion and a bounded cache
+  of warmed message renderers. Its layout owns
+  scrolling and preserves the visible row across inserts and resizes;
+  replies resize on text updates rather than through a synthetic reveal
+  animation. Layout updates wait until a drag and its momentum finish.
+  These are shell UI concerns. The app
   shows each agent of a workspace as a chat (the conversation pushed as it
   changes through `agents.watch`, its latest messages only and earlier
-  pages through `agents.more` as it is scrolled up, replies, what it is
+  pages through `agents.more` only when "Load earlier messages" is tapped,
+  replies, what it is
   doing while it works,
   the prompts the runtime keeps on their way: every reply goes through
   `agents.send`, busy agent or not, and shows as being sent, queued in

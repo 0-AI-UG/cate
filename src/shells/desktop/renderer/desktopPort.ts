@@ -29,6 +29,7 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
     updateStatus: async () => toUpdateStatus(await api.updates.status()),
     onUpdateStatus: (listener) => api.updates.onStatus((status) => listener(toUpdateStatus(status))),
     checkForUpdates: () => api.updates.check(),
+    dismissUpdate: (version) => api.updates.dismiss(version),
     quitAndInstallUpdate: () => api.updates.install(),
     showContextMenu: (items) => api.menu.showContextMenu(items),
     onMenuAction: (listener) => api.menu.onAction(listener),

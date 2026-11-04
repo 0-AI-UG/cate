@@ -12,6 +12,8 @@ export interface LaunchCommand {
 /** What a launch intent turns into: a program run in place of the shell,
  *  text typed into the shell once it starts, or both. */
 export interface LaunchPlan {
+  /** Required launch credentials/configuration; applied after best-effort contributors. */
+  env?: Record<string, string>
   command?: LaunchCommand
   input?: string
 }

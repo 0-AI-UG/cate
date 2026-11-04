@@ -22,3 +22,5 @@ export * from './icons/Icon'
 export * from './theme/themeManager'
 export * from './shortcuts/hooks'
 export * from './actions/hooks'
+
+export { useDialogLayer } from './components/dialogLayers'

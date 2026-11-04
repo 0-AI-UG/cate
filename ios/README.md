@@ -1,5 +1,56 @@
 # Cate for iOS
 
+## App Review recording
+
+`scripts/record-ios-review.mjs` drives the installed app on a real iPhone
+through an existing Appium XCUITest session. `ios/review-demo.json` is the
+timed walkthrough; omitting `--record` rehearses it without capturing video.
+It requires the paired `cate-review-demo` workspace canvas, with `README.md`
+and `Terminal 1` already on the canvas. The sample folder is
+`/private/tmp/cate-review-demo`; no personal projects should be used.
+
+For the prepared session on this Mac:
+
+```bash
+node scripts/record-ios-review.mjs \
+  --session-file /private/tmp/cate-phone-automation/session.json \
+  --plan ios/review-demo.json --record
+```
+
+Leave the phone unlocked and in Cate. The runner checks the foreground app
+throughout the sequence and discards the take if it detects another app or
+an action fails. Successful takes and wall-clock action timings are saved locally in
+`/private/tmp/cate-review-recordings`, without uploading them. Inspect every
+finished take before sharing it. `Ctrl+C` discards an in-progress take.
+Appium's captured video may have a different duration from the wall clock;
+the JSON timings describe the automation run, not exact video timestamps.
+Use `--inspect` to print visible controls and `--tap 'Label'` to rehearse a
+single action. The temporary Appium server and signed WebDriverAgent must
+still be running; a new Appium session requires updating the session file.
+
+For the pairing video, create a fresh code in the sample workspace's Share
+dialog and put it in a private file outside the repository (mode `0600`).
+On the phone, open Add → Join a workspace before recording. This keeps
+unrelated saved workspace names out of the video. Then run:
+
+```bash
+node scripts/record-ios-review.mjs \
+  --session-file /private/tmp/cate-phone-automation/session.json \
+  --plan ios/review-pairing.json \
+  --pairing-code-file /private/tmp/cate-phone-automation/pairing-code.txt --record
+```
+
+The pairing plan enters the code, joins the workspace, opens its real README,
+and shows the connected settings. Codes are single-use, so a rehearsal needs
+its own fresh code. The code is never logged by the runner or stored in the
+plan. The video shows the code being entered; only share a successful take,
+after the code has been consumed. Remove the private code file afterward.
+
+This is a supplementary screen recording. Apple's required-hardware review
+guidance asks for camera footage of the physical device pairing and
+interacting with the hardware. Video-only review is not guaranteed; retain
+working desktop installation and pairing instructions for the reviewer.
+
 The mobile shell (architecture 15, `shells/mobile`). The app is native
 SwiftUI; the client core runs headless in a hidden `WKWebView`
 (`Cate/Core/Web/core.js`, built from `src/shells/mobile/core` by
@@ -52,6 +103,22 @@ bundle id and `Cate/CateLocal.entitlements`, without push. Everything else
 works, banners while the app is open included.
 
 ## Build
+
+The chat pagination regression uses the real chat view with 40 mock messages
+and checks insertion positions and scrolling across page boundaries:
+
+It also checks incoming text while reading and dragging, bottom following,
+and keyboard resizing.
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+  -project ios/Cate.xcodeproj -scheme CateChatUITests \
+  -destination 'platform=iOS Simulator,name=Cate Chat Test' \
+  -parallel-testing-enabled NO CODE_SIGN_IDENTITY=- test
+```
+
+For manual inspection, launch a Debug build with `--chat-scroll-fixture`.
+The fixture and its position readout are excluded from Release builds.
 
 ```bash
 brew install xcodegen

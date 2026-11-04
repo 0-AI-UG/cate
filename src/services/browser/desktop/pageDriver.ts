@@ -331,7 +331,10 @@ export class PageDriver {
   async fillCredential(targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
     return this.enqueue(async () => {
       const selector = `[data-cate-autofill-target=${JSON.stringify(targetId)}]`
-      await this.fillLogin(await this.resolveSelector(selector), credential)
+      const field = await this.resolveSelector(selector)
+      const password = await this.locate(field, PASSWORD_FIELD)
+      if (password) await this.fillLogin(password, credential)
+      else await this.fillUsername(field, credential.username)
       return { ok: true as const }
     }).catch((error) => ({ error: error instanceof Error ? error.message : 'credential-fill-failed' }))
   }
@@ -393,7 +396,7 @@ export class PageDriver {
       field = await this.locate(first, EMPTY_PASSWORD_FIELD)
     }
     const where = filled === 1 ? 'the password field' : `${filled} password fields`
-    return [`Filled a new generated password into ${where}; the password is hidden and is saved as this site's login. Fill in the rest of the form, then submit it.`]
+    return [`Filled a password into ${where}; the password is hidden and is saved as this site's login. Fill in the rest of the form, then submit it.`]
   }
 
   /** Throws unless the page still shows `origin` and `field` belongs to the

@@ -1,4 +1,4 @@
-name: Agent CLI hooks
+name: Agent CLI hooks and authentication
 
 on:
   push:
@@ -44,8 +44,12 @@ jobs:
         run: >-
           npx vitest run
           src/services/agents/runtime/live
+          src/services/agents/runtime/setup
+          src/shells/desktop/ui/services/agents/AgentSetupSettings.test.tsx
           src/services/agents/runtime/changes/liveHarness.test.ts
           src/services/agents/runtime/hooks
+          src/services/agents/runtime/pi.test.ts
+          src/services/agents/runtime/sessions/pi.test.ts
           src/services/agents/runtime/status.test.ts
           src/services/agents/runtime/status.integration.test.ts
           src/services/agents/runtime/terminal.test.ts
@@ -57,7 +61,7 @@ jobs:
           src/shells/desktop/ui/services/agents/AgentHooksSettings.test.tsx
       - name: Install current agent CLI
         run: bash scripts/install-agent-cli.sh "${{ matrix.agent }}"
-      - name: Verify installed terminal hooks and links against fake providers
+      - name: Verify installed hooks, login contracts and provider switching against fake providers
         run: npm run test:agent-hooks:ci -- --reporter=default --reporter=junit --outputFile.junit=reports/agent-hooks.xml
         env:
           CATE_HOOK_SMOKE_AGENTS: ${{ matrix.agent }}

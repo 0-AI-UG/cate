@@ -53,7 +53,10 @@ struct WorkspacesView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                Button("Join a workspace", systemImage: "plus", action: join).disabled(!core.ready)
+                Menu {
+                    Button("Join a workspace", systemImage: "plus", action: join)
+                } label: { Image(systemName: "plus") }
+                .disabled(!core.ready)
             }
         }
         .task(id: core.ready) { if core.ready { await core.openAll() } }
@@ -93,6 +96,10 @@ struct DeviceSettingsView: View {
                         Label("Saved connections", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                     }
                 }
+            }
+            Section("About Cate") {
+                Link("Privacy Policy", destination: URL(string: "https://cate.cero-ai.com/mobile/privacy")!)
+                Link("Support", destination: URL(string: "https://cate.cero-ai.com/mobile/support")!)
             }
         }
         .navigationTitle("Settings")

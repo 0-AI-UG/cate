@@ -4,6 +4,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { build } from 'esbuild'
 import { apiCapability } from '@kernel/api/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
 import { framePortOver, type ChannelEvent } from '@kernel/rpc/contract'
@@ -64,6 +67,56 @@ async function until<T>(read: () => Promise<T | undefined> | T | undefined, time
 }
 
 describe.skipIf(process.platform === 'win32')('daemon workspace', () => {
+  it('keeps the CLI working through a saved agent environment after the runtime is replaced', async () => {
+    const oldInstall = path.join(tmp, 'old-install')
+    const nextInstall = path.join(tmp, 'next-install')
+    const cliIn = (install: string) => path.join(install, 'cate', 'dist', 'cli.cjs')
+    await build({ entryPoints: ['src/cli/main.ts'], outfile: cliIn(oldInstall), platform: 'node', format: 'cjs', bundle: true })
+    fs.mkdirSync(path.dirname(cliIn(nextInstall)), { recursive: true })
+    fs.copyFileSync(cliIn(oldInstall), cliIn(nextInstall))
+    const start = async (installDir: string) => {
+      const result = await serveWorkspace({ root, home, installDir, lifecycle: createLifecycleBus(), log: createLogger('test') })
+      if (result.kind !== 'serving') throw new Error('expected to serve')
+      daemon = result.daemon
+      return daemon
+    }
+    const old = await start(oldInstall)
+    const client = await connect(old.endpoint, {
+      client: { clientId: 'c1', device: { name: 'laptop', publicKey: 'fp' }, features: [] },
+    })
+    await createCapabilityProxy(client, workspaceCapability).setTrust({ trusted: true })
+    await createCapabilityProxy(client, documentCapability).apply({ op: {
+      kind: 'addPanel',
+      record: { id: 'term-1', type: 'terminal', title: 'Terminal', fields: {} },
+      at: { to: 'stack', dock: { windowId: MAIN_WINDOW }, stackId: 's1' },
+      opId: { clientId: 'c1', counter: 1 },
+    } as DocOp })
+    const api = createCapabilityProxy(client, apiCapability)
+    await api.call({ method: 'cate.terminal.type', args: { panelId: 'term-1', text: `printf '%s%s\\n' TOK= "$CATE_TOKEN"` } })
+    await api.call({ method: 'cate.terminal.press', args: { panelId: 'term-1', keys: 'enter' } })
+    const token = await until(async () => {
+      const read = await api.call({ method: 'cate.terminal.read', args: { panelId: 'term-1' } }) as { text: string }
+      return /TOK=([A-Za-z0-9_-]{20,})/.exec(read.text)?.[1]
+    })
+    const env = {
+      ...process.env,
+      PATH: `${path.join(old.paths.terminalCli, 'panels', 'term-1')}${path.delimiter}${process.env.PATH}`,
+      CATE_SOCKET: old.endpoint,
+      CATE_TOKEN: token,
+    }
+    const cli = () => promisify(execFile)('/bin/sh', ['-c', 'cate version'], { env, timeout: 10_000 })
+    const before = await cli()
+    expect(before.stdout.trim()).toMatch(/^\d+$/)
+
+    await old.stop({ kind: 'update', version: 'next', installDir: nextInstall })
+    fs.rmSync(oldInstall, { recursive: true, force: true })
+    const next = await start(nextInstall)
+    await expect(connect(next.endpoint, { caller: { token } })).rejects.toThrow(/unknown or revoked/)
+    // The same panel was restored. Replay its saved PATH and old token with
+    // the real CLI and socket: the current launcher must supply a new token.
+    expect((await cli()).stdout).toBe(before.stdout)
+  }, 30_000)
+
   it('serves the document, sessions and the cate API to clients and CLI callers', async () => {
     const result = await serveWorkspace({ root, home, lifecycle: createLifecycleBus(), log: createLogger('test') })
     if (result.kind !== 'serving') throw new Error('expected to serve')

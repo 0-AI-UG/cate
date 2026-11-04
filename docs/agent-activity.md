@@ -17,9 +17,10 @@ them separately from confirmed human prompts:
 | Claude Code | `PermissionRequest` is a check; `Notification` with `permission_prompt` confirms a human prompt. Claude delays that notification by about six seconds. Automatic denials and failed tools resume via `PermissionDenied` and `PostToolUseFailure`. |
 | Grok | `Notification` with `permission_prompt` confirms a human prompt. Ordinary pre-tool hooks do not. |
 | OpenCode | `permission.asked` and `permission.replied` delimit a pending permission request. Automatically allowed tools do not create this wait. |
+| Pi | `ui_prompt_start` / `ui_prompt_end` delimit blocking extension dialogs. Built-in tools run without approval prompts. `agent_settled` is final idle; individual model turns and retries do not mark completion. Manual compaction stays Running until its success/failure event. |
 | Cursor / Kiro | Their current hooks do not distinguish a human permission prompt from ordinary tool checks. Keep the turn running; do not manufacture an attention notification. |
 
-Settings → Agents → Hooks shows a read-only Codex label: **Approvals:
+Settings → Agents → Codex settings shows a read-only label: **Approvals:
 Automatic / Manual / Unknown**. There are no approval overrides and Cate never
 modifies the CLI's permission policy.
 

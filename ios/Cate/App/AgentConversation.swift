@@ -28,7 +28,7 @@ final class AgentConversation {
         fileprivate(set) var sent: Bool
         fileprivate(set) var steps: [AgentStep]
         fileprivate(set) var ghost: Bool
-        /// Came in while the chat was on screen: a reply reveals its blocks.
+        /// Came in while the chat was on screen.
         let live: Bool
 
         fileprivate init?(_ data: ChatItemData, live: Bool) {
@@ -70,8 +70,14 @@ final class AgentConversation {
     /// The agent's panel.
     @ObservationIgnored let panelId: String
     @ObservationIgnored private var cacheKey = ""
+    @ObservationIgnored private var followedAt = Date()
+    @ObservationIgnored private var hasHistory = false
 
     private static let decoding = DispatchQueue(label: "cate.chat.decode", qos: .userInitiated)
+
+    #if DEBUG
+    @ObservationIgnored var loadFixturePage: (() -> Void)?
+    #endif
 
     init(panelId: String) {
         self.panelId = panelId
@@ -82,11 +88,15 @@ final class AgentConversation {
     /// Asks for the page before the items.
     func more(_ core: CoreHost) {
         guard earlier else { return }
+        #if DEBUG
+        if let loadFixturePage { loadFixturePage(); return }
+        #endif
         core.moreAgent(viewId)
     }
 
     /// Follows the panel's conversation until cancelled.
     func run(_ core: CoreHost, workspaceId: String, pending: String?) async {
+        followedAt = Date()
         cacheKey = "\(workspaceId)-\(panelId)"
         if items.isEmpty, let cached = ChatCache.load(cacheKey) {
             items = cached.compactMap { Item($0, live: false) }
@@ -111,7 +121,10 @@ final class AgentConversation {
     private func apply(_ event: ChatEvent) {
         // What the conversation has when it comes in was there already, even
         // where the cache had not caught up; only what comes after is new.
-        let live = loaded
+        let live = hasHistory
+        if event.items.contains(where: { $0.kind == "reply" || ($0.kind == "prompt" && $0.sent == true) }) {
+            hasHistory = true
+        }
         if event.loaded, !loaded { loaded = true }
         if status != event.status { status = event.status }
         if canReceivePrompt != event.canReceivePrompt { canReceivePrompt = event.canReceivePrompt }
@@ -132,13 +145,41 @@ final class AgentConversation {
                 item.update(data)
                 return item
             }
-            return Item(data, live: live && index >= above)
+            // A delayed session identity may deliver its entire old history
+            // after an empty snapshot. Arrival time alone does not make it new.
+            let arrivedLive = ChatArrival.isLive(createdAt: data.createdAt, followedAt: followedAt, hasHistory: live)
+            return Item(data, live: arrivedLive && index >= above)
         }
         if items[from...].map(\.id) != tail.map(\.id) || zip(items[from...], tail).contains(where: { $0 !== $1 }) {
             items = Array(items[..<from]) + tail
         }
-        if event.loaded { ChatCache.save(cacheKey, items.map(\.data)) }
+        if event.loaded, !cacheKey.isEmpty { ChatCache.save(cacheKey, items.map(\.data)) }
     }
+
+    #if DEBUG
+    func appendFixtureReply(chunk: Int) {
+        guard let last = items.last, last.kind == .reply else { return }
+        last.text += "\n\n" + String(repeating: "Incoming text grows the final reply while the reader chooses where to scroll. ", count: 8)
+            + "\n\nStream chunk \(chunk)."
+    }
+
+    func showFixturePage(start: Int) {
+        let rows = (start..<40).map { index in
+            let number = index + 1
+            let text: String
+            if index.isMultiple(of: 2) {
+                text = "Message \(number): explain the next change."
+            } else {
+                let paragraphs = (0..<(index % 5 + 2)).map { part in
+                    "Paragraph \(part + 1) of message \(number). " + String(repeating: "This is a longer reply used to check stable scrolling across page boundaries. ", count: 3)
+                }
+                text = "## Message \(number)\n\n" + paragraphs.joined(separator: "\n\n") + "\n\nEnd of message \(number)."
+            }
+            return ChatItemData(kind: index.isMultiple(of: 2) ? "prompt" : "reply", id: "m\(index)", text: text, sent: true, steps: nil, ghost: nil)
+        }
+        apply(ChatEvent(kind: "chat", from: 0, earlier: start > 0, loaded: true, status: "waitingForInput", canReceivePrompt: true, queued: [], failed: [], turn: nil, items: rows))
+    }
+    #endif
 }
 
 /// The chats last shown, by workspace and panel: in memory, and on disk for
@@ -147,8 +188,14 @@ final class AgentConversation {
 enum ChatCache {
     private static var memory: [String: [ChatItemData]] = [:]
     private static var saving: [String: Task<Void, Never>] = [:]
-    /// The latest items a chat keeps: enough for a screen and some.
-    private static let kept = 120
+    /// Match the core's initial page, including each message's step group.
+    private static func latestPage(_ items: [ChatItemData]) -> [ChatItemData] {
+        let messages = items.indices.filter { items[$0].kind != "steps" }
+        guard messages.count > 10 else { return items }
+        var first = messages[messages.count - 10]
+        if first > 0, items[first - 1].kind == "steps" { first -= 1 }
+        return Array(items[first...])
+    }
 
     private static func file(_ key: String) -> URL? {
         guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
@@ -160,13 +207,14 @@ enum ChatCache {
         if let items = memory[key] { return items }
         guard let url = file(key), let data = try? Data(contentsOf: url),
               let items = try? JSONDecoder().decode([ChatItemData].self, from: data) else { return nil }
-        memory[key] = items
-        return items
+        let page = latestPage(items)
+        memory[key] = page
+        return page
     }
 
     static func save(_ key: String, _ items: [ChatItemData]) {
         // A prompt on its way is not kept: it may not go through.
-        let items = Array(items.filter { $0.sent != false }.suffix(kept))
+        let items = latestPage(items.filter { $0.sent != false })
         memory[key] = items
         saving[key]?.cancel()
         saving[key] = Task {

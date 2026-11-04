@@ -37,6 +37,7 @@ function relocatedStore(agentId: AgentId, env: Record<string, string>): [string,
     case 'grok': return ['.grok/sessions', path.join(env.GROK_HOME, 'sessions')]
     // Kiro V3 keeps them under KIRO_HOME; earlier versions under HOME.
     case 'kiro': return ['.kiro/sessions', existsSync(path.join(env.KIRO_HOME, 'sessions')) ? path.join(env.KIRO_HOME, 'sessions') : path.join(env.HOME, '.kiro', 'sessions')]
+    case 'pi': return ['.pi/agent/sessions', path.join(env.PI_CODING_AGENT_DIR, 'sessions')]
     case 'opencode': return ['.local/share/opencode', path.join(env.XDG_DATA_HOME, 'opencode')]
   }
 }
@@ -100,6 +101,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           'claude-code': { name: 'Write', arguments: { file_path: path.join(cwd, 'created.txt'), content: 'after\n' } },
           codex: { name: 'apply_patch', arguments: '*** Begin Patch\n*** Add File: created.txt\n+after\n*** End Patch' },
           grok: { name: 'write', arguments: { file_path: path.join(cwd, 'created.txt'), content: 'after\n' } },
+          pi: { name: 'write', arguments: { path: path.join(cwd, 'created.txt'), content: 'after\n' } },
           opencode: { name: 'write', arguments: { filePath: path.join(cwd, 'created.txt'), content: 'after\n' } },
           kiro: { name: 'fs_write', arguments: { path: path.join(cwd, 'created.txt'), text: 'after\n' } },
           cursor: { name: 'Write', arguments: { path: path.join(cwd, 'created.txt'), text: 'after\n' } },
@@ -111,6 +113,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           'claude-code': { name: 'Bash', arguments: { command, description: 'Lifecycle fixture command' } },
           codex: { name: 'exec_command', arguments: { cmd: command, sandbox_permissions: 'require_escalated', justification: 'Run the disposable lifecycle fixture command?' } },
           grok: { name: 'run_terminal_command', arguments: { command, description: 'Lifecycle fixture command' } },
+          pi: { name: 'bash', arguments: { command } },
           opencode: { name: 'bash', arguments: { command, description: 'Lifecycle fixture command' } },
           kiro: { name: 'execute_bash', arguments: { command } },
           cursor: { name: 'Shell', arguments: { command } },
@@ -119,7 +122,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const provider = await createHookMockProvider({ reply: (input, protocol) => {
           const data = JSON.stringify(input)
           if (scenario === 'automatic-approval' && agentId === 'codex' && data.includes('risk_level')) return { type: 'text', text: JSON.stringify({ risk_level: 'low', user_authorization: 'high', outcome: 'allow', rationale: 'Only the disposable fixture file is removed.' }) }
-          if (['resume', 'session-end', 'session-reset'].includes(scenario)) return { type: 'text', text: followupAnswer }
+          if (['resume', 'session-end', 'session-reset', 'session-metadata'].includes(scenario)) return { type: 'text', text: followupAnswer }
           if (scenario === 'interrupt') return { type: 'text', text: followupAnswer, hold: !recovering && (data.includes('CATE_LIFECYCLE') || protocol.endsWith('/RunSSE')) }
           if (scenario === 'provider-failure' && data.includes('CATE_LIFECYCLE')) return { type: 'error' }
           return (agentId === 'cursor' && protocol.endsWith('/RunSSE')) || data.includes('CATE_LIFECYCLE') && data.includes(tool.name) && !data.includes('call_cate_lifecycle')
@@ -148,6 +151,19 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           await runLiveCli('git', ['init', '-q'], { cwd, env })
           await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
           launch = await configureHookCli(agentId, directory, cwd, env, provider, 'CATE_LIFECYCLE: edit target.txt then finish.')
+          if (agentId === 'pi') {
+            const extension = path.join(cwd, '.pi/extensions/cate-fixture.ts')
+            await writeFile(extension, `export default function (pi) {
+              pi.registerCommand("cate-metadata", { handler: async (_args, ctx) => {
+                const root = ctx.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "user")
+                await ctx.navigateTree(root.id, { summarize: false })
+                pi.setSessionName("Cate fixture")
+              } })
+              ${scenario.startsWith('permission-') ? `pi.on("tool_call", async (event, ctx) => {
+                if (event.toolName === "bash" && !await ctx.ui.confirm("Allow command?", event.input.command)) return { block: true, reason: "Denied by user" }
+              })` : ''}
+            }`)
+          }
           // Claude's default permission mode changed to auto (2.1.296), whose
           // classifier answers prompts itself: name the mode each scenario needs.
           if (agentId === 'claude-code') launch.args.unshift('--permission-mode', scenario === 'automatic-denial' ? 'auto' : 'default')
@@ -184,11 +200,11 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 if (!billingNoticeAt) billingNoticeAt = Date.now()
                 if (Date.now() - billingNoticeAt > 1500) { billingNoticeAcknowledged = true; return '\r' }
               }
-              if (scenario === 'session-end' || scenario === 'session-reset') {
+              if (scenario === 'session-end' || scenario === 'session-reset' || scenario === 'session-metadata') {
                 if (!sessionReadyAt && events.some((event) => event.kind === 'turn-end') && screen.replace(/\s/g, '').includes(provider.answer)) sessionReadyAt = Date.now()
                 if (!sessionCommandAt && sessionReadyAt && Date.now() - sessionReadyAt > 1500) {
                   sessionCommandAt = Date.now()
-                  return scenario === 'session-reset' ? '/clear' : '/exit'
+                  return scenario === 'session-metadata' ? '/cate-metadata' : scenario === 'session-reset' ? agentId === 'pi' ? '/new' : '/clear' : agentId === 'pi' ? '/quit' : '/exit'
                 }
                 if (sessionCommandAt && !sessionCommandSent && Date.now() - sessionCommandAt > 500) { sessionCommandSent = true; return '\r' }
                 return undefined
@@ -227,7 +243,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 // the number it shows.
                 const claudeNo = screen.match(/(\d)\.\s+No\b/)?.[1]
                 const keys = scenario === 'permission-deny'
-                  ? agentId === 'grok' ? '4\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r'
+                  ? agentId === 'pi' ? '\x1b[B\r' : agentId === 'grok' ? '4\r' : agentId === 'opencode' ? '\x1b[C\x1b[C\r'
                     : agentId === 'claude-code' && claudeNo ? claudeNo : '\x1b[B\x1b[B\r'
                   : agentId === 'grok' ? '3\r' : '\r'
                 if (keys.length > 1) {
@@ -253,6 +269,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 const session = events.find((event) => event.sessionId)
                 if (!session || !recorded(await readSession(agentId, env, directory, session))) return false
               }
+              if (scenario === 'session-metadata') return posts.some((post) => post.type === 'session_tree') && posts.some((post) => post.type === 'session_info_changed')
               if (scenario === 'session-end') return events.some((event) => event.kind === 'session-end')
               if (scenario === 'session-reset') return events.filter((event) => event.kind === 'session-start').length >= 2
               const lastStart = events.findLastIndex((event) => event.kind === 'turn-start')
@@ -372,7 +389,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             expect(commandSteps[0].tool).toBeTruthy()
           }
           if (scenario === 'permission-deny' || scenario === 'automatic-denial') expect(commandSteps, 'a refused command is no step').toEqual([])
-          if (scenario === 'provider-failure') expect(posts.some((post) => ['StopFailure', 'stop_failure'].includes(String(post.hook_event_name ?? post.hookEventName)))).toBe(true)
+          if (scenario === 'provider-failure') expect(posts.some((post) => agentId === 'pi' ? post.type === 'agent_settled' : ['StopFailure', 'stop_failure'].includes(String(post.hook_event_name ?? post.hookEventName)))).toBe(true)
 
         } finally {
           unsubscribe(); offSteps(); hooks.dispose()
