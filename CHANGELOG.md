@@ -17,17 +17,13 @@ This beta separates connection compatibility from release numbers and adds agent
 
 ### Changed
 
+- **Agent API providers**: configure a provider URL, protocol, API key and models per workspace, then select a provider and model for each supported harness. Native accounts remain available.
 - **Desktop and iOS connections** use one shared compatibility version, so compatible releases can connect across app versions. Breaking protocol changes require updating both apps.
 
 ### Fixed
 
 - **Browser passwords** fill through the page bridge and support choosing a saved login.
 - **Terminal startup and rendering** improve CLI availability and terminal sizing.
-
-
-### Changed
-
-- **Agent API providers**: configure a provider URL, protocol, API key and models per workspace, then select a provider and model for each supported harness. Native accounts remain available.
 
 ### Removed
 
