@@ -255,7 +255,7 @@ describe('mobile actions', () => {
 })
 
 it('reads current server agent types for the iOS agent picker without a client availability cache', async () => {
-  let choices: AgentTypeInfo[] = [{ agentId: 'codex', displayName: 'Codex', ready: true, connection: 'native' }]
+  let choices: AgentTypeInfo[] = [{ agentId: 'codex', displayName: 'Codex', ready: true }]
   const types = vi.fn(async () => choices)
   const stop = setRuntimeResolver((id) => id === 'ios-availability' ? ({ agents: { types } }) as never : null)
   try {

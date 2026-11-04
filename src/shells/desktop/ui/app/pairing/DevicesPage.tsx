@@ -5,9 +5,9 @@
 
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
-import { RefreshCw, ShieldAlert, Smartphone, Trash2 } from 'lucide-react'
+import { Check, Copy, RefreshCw, Smartphone, Trash2 } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
-import { Button, SecondaryButton, SearchableBlock, SettingRow, Spinner } from '../../kernel/interaction'
+import { Button, IconButton, SecondaryButton, SearchableBlock, SettingRow, Spinner } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { setWorkspaceSetting, useWorkspaceSetting } from '../../kernel/settings'
 import type { CreatedSecret, PairingMode, WorkspaceDevice } from '@runtime/pairing/contract'
@@ -69,6 +69,7 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
   const network = useWorkspaceSetting(workspaceId, 'runtimeNetwork')
   const [secret, setSecret] = useState<(CreatedSecret & { mode: PairingMode }) | null>(null)
   const [qrSvg, setQrSvg] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const secondsLeft = useSecondsLeft(secret?.expiresAt ?? null)
@@ -82,7 +83,25 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
     return () => { cancelled = true }
   }, [secret])
 
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  const copyCode = async () => {
+    const ui = clientUi()
+    if (!secret || expired || !ui.writeClipboard) return
+    try {
+      await ui.writeClipboard(secret.code.toUpperCase())
+      setCopied(true)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not copy the code.'))
+    }
+  }
+
   const create = async () => {
+    setCopied(false)
     if (!runtime) return
     setBusy(true)
     setError(null)
@@ -104,25 +123,22 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
   const problem = secret?.sameNetworkProblem ?? null
   useEffect(() => { onSameNetworkProblem?.(problem) }, [problem, onSameNetworkProblem])
 
-  const howTo = 'On the other device, scan the QR code or type the code under "Join with a Code".'
+  const howTo = 'On the other device, scan the QR code or type the code under "Join Workspace".'
 
   if (!secret) {
     return (
-      <div role="group" aria-label="Confirm sharing" className="flex flex-col items-center gap-3 rounded-xl border border-warning bg-surface-0 px-6 py-6 text-center">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-warning-tint text-warning">
-          <ShieldAlert size={18} />
-        </div>
+      <div role="group" aria-label="Confirm sharing" className="flex flex-col items-center gap-3 rounded-xl border border-warning bg-surface-0 px-4 py-4 text-center">
         <div className="flex flex-col gap-1">
           <span className="text-[14px] font-medium text-primary">Anyone who joins can use this computer as you</span>
           <span className="max-w-[360px] text-xs leading-relaxed text-muted">
-            They can run commands, read and change files, and reach local services in this workspace. Only share with people you trust.
+            Full access to commands, files and local services. Only invite people you trust.
             {network === 'off' && ' Turns on same-network access first.'}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {onCancel && <SecondaryButton onClick={onCancel}>Cancel</SecondaryButton>}
-          <Button variant="primary" onClick={() => void create()} disabled={!runtime} loading={busy}>
-            I understand, show code
+          {onCancel && <Button variant="secondary" className="w-32" onClick={onCancel}>Cancel</Button>}
+          <Button variant="primary" className="w-32" onClick={() => void create()} disabled={!runtime} loading={busy}>
+            Create Invite
           </Button>
         </div>
         {error && <span role="alert" className="text-xs text-danger">{error}</span>}
@@ -139,11 +155,17 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
         dangerouslySetInnerHTML={qrSvg ? { __html: qrSvg } : undefined}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <span className="text-[14px] font-medium text-primary">Add a device</span>
+        <span className="text-[14px] font-medium text-primary">Invite to this workspace</span>
         <span className="text-xs leading-relaxed text-muted">{howTo}</span>
-        <code className={`break-all font-mono text-[15px] tracking-wider select-all ${expired ? 'text-muted line-through' : 'text-primary'}`}>
-          {secret.code.toUpperCase()}
-        </code>
+        <div className="flex items-center gap-2">
+          <code className={`min-w-0 break-all font-mono text-[15px] tracking-wider select-all ${expired ? 'text-muted line-through' : 'text-primary'}`}>
+            {secret.code.toUpperCase()}
+          </code>
+          <IconButton label={copied ? 'Copied' : 'Copy pairing code'} disabled={expired || !clientUi().writeClipboard} onClick={() => void copyCode()}>
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+          </IconButton>
+          <span role="status" className="sr-only">{copied ? 'Pairing code copied' : ''}</span>
+        </div>
         <div className="flex items-center justify-between gap-3">
           <span className={`text-xs ${expired ? 'text-danger' : 'text-muted'}`}>
             {expired ? 'Expired.' : `Works once. Expires in ${formatCountdown(secondsLeft)}.`}
@@ -197,7 +219,7 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
     <SearchableBlock keywords="devices paired revoke remove phone">
       <div className="py-3 flex flex-col gap-2">
         <span className="text-[13px] font-medium text-primary">
-          Devices{devices && devices.length > 0 && <span className="ml-1.5 font-normal text-muted">{devices.length}</span>}
+          Devices with access{devices && devices.length > 0 && <span className="ml-1.5 font-normal text-muted">{devices.length}</span>}
         </span>
         {error && <span className="text-xs text-danger">{error}</span>}
         {devices === null ? (
@@ -223,7 +245,7 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
                       {device.publicKey === ownKey && <span className="text-muted"> (this device)</span>}
                     </span>
                     <span className="truncate text-[11px] text-muted" title={`Fingerprint ${device.fingerprint}`}>
-                      {device.admittedBy === 'pairing' ? 'Paired' : "Joined as this machine's user"} · {connected ? 'connected now' : `last seen ${relativeTime(device.lastSeen)}`}
+                      {device.admittedBy === 'pairing' ? 'Has access' : "Joined as this machine's user"} · {connected ? 'connected now' : `last seen ${relativeTime(device.lastSeen)}`}
                     </span>
                   </div>
                   <button

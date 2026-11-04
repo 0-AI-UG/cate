@@ -43,7 +43,7 @@ function mount(connection: ReturnType<typeof fakeConnection>) {
 }
 
 const cover = () => host.querySelector('[data-connection-blocker]')
-const content = () => host.querySelector('button')?.parentElement as HTMLElement
+const content = () => [...host.querySelectorAll('button')].find((button) => button.textContent === 'panel')?.parentElement as HTMLElement
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -66,18 +66,29 @@ describe('ConnectionBlocker', () => {
     expect(content().hasAttribute('inert')).toBe(false)
   })
 
+  it('keeps the canvas visible and inert during reconnection', () => {
+    const connection = fakeConnection({ kind: 'connected' })
+    mount(connection)
+    expect(host.querySelector('header')).toBeNull()
+    act(() => connection.set({ kind: 'offline', lastSeen: null, retrying: true }))
+    expect(content().hasAttribute('inert')).toBe(true)
+    act(() => { vi.advanceTimersByTime(400) })
+    expect(cover()?.className).toContain('bg-transparent')
+    expect(cover()?.querySelector('details summary')?.textContent).toBe('Details')
+  })
+
   it('covers an incompatible workspace at once with the way to resolve it, and makes it inert', async () => {
     mount(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
     await act(async () => { await Promise.resolve() })
-    expect(cover()?.textContent).toContain('Workspace runtime needs an update')
-    expect(cover()?.textContent).toContain('Update to')
+    expect(cover()?.textContent).toContain('A workspace update is ready')
+    expect(cover()?.textContent).toContain('Update and Stop Work')
     expect(content().hasAttribute('inert')).toBe(true)
   })
 
   it('a stopped runtime covers at once and offers to start again', () => {
     const connection = fakeConnection({ kind: 'stopped' })
     mount(connection)
-    expect(cover()?.textContent).toContain('Runtime stopped')
+    expect(cover()?.textContent).toContain('Workspace stopped')
     act(() => (cover()!.querySelector('button') as HTMLButtonElement).click())
     expect(connection.retryNow).toHaveBeenCalled()
   })

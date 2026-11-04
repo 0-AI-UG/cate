@@ -28,7 +28,7 @@ export function useRuntimeUpdate(connection: WorkspaceConnection | undefined): R
 const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1)
 
 /** The card while an update runs: what it does, and a bar. */
-function UpdateProgressCard({ run, version }: { run: RuntimeUpdateRun; version: string }): JSX.Element {
+function UpdateProgressCard({ run }: { run: RuntimeUpdateRun }): JSX.Element {
   const progress = run.phase === 'installing' ? run.progress : null
   // One bar over the whole update, only ever moving forward: the download
   // fills most of it, install and restart the rest.
@@ -38,10 +38,10 @@ function UpdateProgressCard({ run, version }: { run: RuntimeUpdateRun; version: 
       ? 0.85
       : progress?.phase === 'download' && progress.total ? 0.8 * Math.min(1, progress.received / progress.total) : 0
   const label = run.phase === 'restarting'
-    ? 'Restarting the workspace runtime'
+    ? 'Reopening the workspace'
     : progress?.phase === 'download'
-      ? `Downloading Cate runtime ${version}`
-      : progress?.phase === 'install' ? 'Installing the workspace runtime' : 'Updating the workspace runtime'
+      ? `Downloading workspace update`
+      : progress?.phase === 'install' ? 'Installing workspace update' : 'Updating the workspace'
   const detail = progress?.phase === 'download'
     ? (progress.total ? `${mb(progress.received)} of ${mb(progress.total)} MB` : `${mb(progress.received)} MB`)
     : run.phase === 'restarting' ? 'The workspace reconnects when it is back.' : null
@@ -72,7 +72,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
   }, [])
 
   const version = app?.version ?? ''
-  if (run) return <UpdateProgressCard run={run} version={version} />
+  if (run) return <UpdateProgressCard run={run} />
   const mismatch = runtimeMismatch(state, version)
   if (!mismatch || !app) return null
   const name = app.workspaces.get(connection.workspaceId)?.name ?? connection.workspaceId
@@ -83,7 +83,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
       <ModalCard className="w-[440px] max-w-[92%]" icon={icon} title="Update Cate to use this workspace" showClose={false} bodyClassName="px-5 py-4">
         <p className="text-[13px] leading-relaxed text-secondary">
           <span className="text-primary font-medium">{name}</span>
-          {` runs Cate runtime ${mismatch.runtimeVersion}, which is newer than this app (${version}). Update Cate to use the workspace.`}
+          {` was opened with a newer version of Cate. Update this app to use the workspace.`}
         </p>
         <div className="mt-4 flex justify-end">
           <button type="button" className={btn.primary} onClick={() => runWindowAction('checkForUpdates')}>Check for Updates…</button>
@@ -102,21 +102,21 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
     <ModalCard
       className="w-[440px] max-w-[92%]"
       icon={icon}
-      title="Workspace runtime needs an update"
+      title="A workspace update is ready"
       showClose={false}
       bodyClassName="px-5 py-4"
     >
       <p className="text-[13px] leading-relaxed text-secondary">
         <span className="text-primary font-medium">{name}</span>
-        {` runs Cate runtime ${mismatch.runtimeVersion}. Update it to ${version} to use this app's runtime fixes and features.`}
+         needs an update before it can open in this version of Cate.
       </p>
 
-      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2.5 py-2 rounded-md bg-surface-5 border border-subtle text-[12px]">
+      <details className="mt-3 text-xs text-muted"><summary className="cursor-pointer">Details</summary><dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2.5 py-2 rounded-md bg-surface-5 border border-subtle text-[12px]">
         <dt className="text-muted">This app</dt>
         <dd className="font-mono text-secondary break-all">{version}</dd>
         <dt className="text-muted">Runtime</dt>
         <dd className="font-mono text-secondary break-all">{mismatch.runtimeVersion}</dd>
-      </dl>
+      </dl></details>
 
       <p className="mt-3 text-[12px] leading-relaxed text-muted">
         Updating ends the workspace's terminals and running agents for everyone connected to it.
@@ -126,7 +126,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
 
       <div className="mt-5 flex justify-end gap-2">
         <button type="button" className={btn.primary} onClick={() => void confirm()}>
-          {`Update to ${version}`}
+          Update and Stop Work…
         </button>
       </div>
     </ModalCard>

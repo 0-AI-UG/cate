@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.10] - 2026-11-04
+
+This beta simplifies workspace navigation, collaboration, and agent setup. Compatibility version remains 1.
+
+### Changed
+
+- **Workspace navigation**: reopen recent workspaces with retained paired access, arrange workspaces across computers in one sidebar, and explicitly forget entries when no longer needed.
+- **Collaboration**: join workspaces inline, see clearer sharing and device access controls, and keep the canvas visible during reconnection with diagnostics under Details.
+- **Agent setup**: agents use their CLI's native account and configuration.
+
+### Fixed
+
+- **Runtime updates**: older compatible workspace runtimes update automatically when idle or offer a shared-runtime restart when work or other clients prevent an idle update.
+
+### Removed
+
+- **Custom agent API providers**: removed workspace-managed provider endpoints, API keys, and model selections.
+
 ## [2.1.0-beta.9] - 2026-11-04
 
 This beta improves shared browser passwords and restores missing bundled workspace skills. Compatibility version remains 1.

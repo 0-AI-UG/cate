@@ -54,13 +54,6 @@ describe('composed slices', () => {
     expect(workspaceSettingsTable.validate('runtimeNetwork', 'lan')).toBe(false)
   })
 
-  it('validates public agent preferences through the shared settings table', () => {
-    expect(workspaceSettingsTable.validate('agentPreferences', { codex: { connection: 'api' } })).toBe(true)
-    expect(workspaceSettingsTable.validate('agentPreferences', { codex: { connection: 'native' } })).toBe(true)
-    for (const value of [{ unknown: { connection: 'native' } }, { codex: { connection: 'other' } }, { codex: { connection: 'api', credential: 'private' } }, { codex: { connection: 'native', credential: 'private' } }]) {
-      expect(workspaceSettingsTable.validate('agentPreferences', value)).toBe(false)
-    }
-  })
 
   it('types the composed settings', () => {
     expectTypeOf<ClientSettings['uiScale']>().toEqualTypeOf<number>()

@@ -17,9 +17,9 @@ import { useUIStore } from '../state/uiStore'
 import { PairingCode, WorkspaceDevices } from './DevicesPage'
 
 const ACCESS: { value: RuntimeNetwork; label: string; detail: string }[] = [
-  { value: 'off', label: 'Only its machine', detail: 'Only the machine the workspace runs on can open it.' },
-  { value: 'sameNetwork', label: 'Same network', detail: 'Paired devices can join while they are on the same network.' },
-  { value: 'cateConnect', label: 'Anywhere', detail: 'Paired devices can join from any network, through Cate Connect.' },
+  { value: 'off', label: 'Host computer only', detail: 'Only the machine the workspace runs on can open it.' },
+  { value: 'sameNetwork', label: 'Nearby only', detail: 'Paired devices can join while they are on the same network.' },
+  { value: 'cateConnect', label: 'Anywhere', detail: 'Invited devices can join from any network.' },
 ]
 
 export function ShareDialog(): JSX.Element | null {
@@ -49,6 +49,7 @@ export function SharePanel({ workspaceId, onCancel }: { workspaceId: string; onC
   }
   return (
     <div className="flex flex-col gap-5">
+      <p className="text-[13px] text-secondary">Work together in the same live workspace.</p>
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <span className="text-[13px] font-medium text-primary">Who can join</span>

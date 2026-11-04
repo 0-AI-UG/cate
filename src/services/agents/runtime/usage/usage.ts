@@ -193,7 +193,7 @@ export function createAgentUsage(deps: AgentUsageDeps): AgentUsageService {
   async function scanAgent(agent: AgentId, source: AgentUsageSource, scope: AgentUsageScope, walked: { live: Set<string>; roots: string[] }): Promise<ScannedAgent> {
     const missing: ScannedAgent = { agent, status: 'missing', note: null, records: [] }
     if (source.kind === 'transcripts') {
-      const roots = [source.root(deps.homeDir), ...(source.additionalRoots?.(deps.homeDir) ?? [])]
+      const roots = [source.root(deps.homeDir)]
       const records: AgentUsageRecord[] = []
       let found = false
       for (const root of new Set(roots)) {

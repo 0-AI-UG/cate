@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, Download, LogIn, Monitor, RefreshCw } from 'lucide-react'
+import { ChevronDown, Download, LogIn } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import type { AgentId, AgentSetupInfo, AgentSetupOperation } from '@services/agents/contract'
 import { useRuntime } from '../../kernel/rpc'
 import { LoadingState, SearchableBlock } from '../../kernel/interaction'
 import { useAgentAvailability } from './useAgentAvailability'
 import { AgentMark } from './AgentMark'
-import { AgentProviders } from './AgentProviders'
 import { AgentHookControl, useAgentHookSettings } from './AgentHooksSettings'
 
 const actionClass = 'rounded-md border border-subtle px-2.5 py-1.5 text-xs text-secondary hover:bg-hover hover:text-primary disabled:opacity-40 disabled:pointer-events-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue'
@@ -30,8 +29,6 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
   const [expanded, setExpanded] = useState<AgentId | null>(null)
   const availability = useAgentAvailability(workspaceId)
   const snapshot = availability?.snapshot ?? null
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [errors, setErrors] = useState<Partial<Record<AgentId, string>>>({})
   const operations: Partial<Record<AgentId, AgentSetupOperation>> = {}
   for (const operation of snapshot?.operations ?? []) {
@@ -42,26 +39,12 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
   const generation = useRef(0)
   const invalidate = useCallback(() => { generation.current++ }, [])
 
-  const refresh = useCallback(async () => {
-    if (!runtime) return
-    const request = ++generation.current
-    setLoading(true)
-    setError(null)
-    try {
-      await runtime.agents.setupInspect({ refresh: true })
-    } catch {
-      if (generation.current === request) setError('Could not inspect agents on this runtime. Try refreshing.')
-    } finally {
-      if (generation.current === request) setLoading(false)
-    }
-  }, [runtime])
-
   useEffect(() => {
     setPending([])
     setErrors({})
     setExpanded(null)
     return invalidate
-  }, [refresh, invalidate])
+  }, [runtime, invalidate])
 
   const perform = async (agentId: AgentId, work: () => Promise<unknown>) => {
     const current = generation.current
@@ -82,38 +65,21 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
     await runtime.agents.setupBegin({ agentId, action })
   })
 
-  const configure = (agentId: AgentId, providerId?: string, model?: string) => perform(agentId, async () => {
-    await runtime.agents.setupConfigure({ agentId, connection: providerId ? 'api' : 'native', providerId, model })
-  })
-
   return (
-    <SearchableBlock keywords="agents hooks activity setup install download login account claude codex cursor grok kiro opencode pi api provider key model approvals permissions">
-      <div className="flex items-center justify-between gap-3 py-2">
-        <span className="flex min-w-0 items-center gap-2 text-xs text-muted" title={snapshot ? `${snapshot.host.platform} / ${snapshot.host.arch}` : undefined}>
-          <Monitor size={14} className="shrink-0" />
-          <span className="truncate">{snapshot?.host.name ?? 'Runtime'}</span>
-        </span>
-        <button type="button" aria-label="Refresh agents" title="Refresh agents" className="rounded-md p-1.5 text-muted hover:bg-hover hover:text-primary disabled:opacity-40" disabled={loading || hooks.loading} onClick={() => { void refresh(); void hooks.refresh() }}>
-          <RefreshCw size={14} className={loading || hooks.loading ? 'animate-spin' : ''} />
-        </button>
-      </div>
-      {(loading || availability?.refreshing) && !snapshot && <LoadingState label="Loading agents" size={14} className="justify-start py-3 text-xs" />}
-      {(error || availability?.error) && <p role="alert" className="py-2 text-xs text-muted">{error || availability?.error}</p>}
+    <SearchableBlock keywords="agents hooks activity setup install download login account claude codex cursor grok kiro opencode pi approvals permissions">
+      {availability?.refreshing && !snapshot && <LoadingState label="Loading agents" size={14} className="justify-start py-3 text-xs" />}
+      {availability?.error && <p role="alert" className="py-2 text-xs text-muted">{availability.error}</p>}
       {hooks.error && <p role="alert" className="py-2 text-xs text-muted">{hooks.error}</p>}
-      {workspaceId && snapshot && <AgentProviders key={workspaceId} workspaceId={workspaceId} providers={snapshot.providers} />}
       {snapshot?.agents.map((inspected) => {
         const agent = inspected
         const operation = operations[agent.agentId]
         const working = pending.includes(agent.agentId) || operation?.status === 'running'
         const installed = agent.installation.status === 'installed'
-        const apiActive = agent.connection === 'api'
         const open = expanded === agent.agentId
         const ready = availability?.types.find((type) => type.agentId === agent.agentId)?.ready ?? false
         const status = !installed ? agent.installation.status === 'missing' ? 'Not installed' : 'Unavailable'
           : agent.hooksReady === false ? 'Integration off' : ready ? 'Ready' : agent.authentication.status === 'signed-out' ? 'Sign in' : 'Installed'
         const identity = installed ? authenticationLabel(agent.authentication) : null
-        const selectedProvider = snapshot.providers.find((p) => p.id === agent.providerId)
-        const compatible = snapshot.providers.filter((p) => p.api === agent.api.protocol)
         return (
           <div key={agent.agentId} data-agent-setup-id={agent.agentId} className="-mx-3 border-b border-subtle px-3 last:border-b-0">
             <h3>
@@ -128,7 +94,6 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
                   </span>
                   {identity && <span className="mt-0.5 block truncate text-[11px] font-normal text-muted" title={[identity, agent.authentication.detail].filter(Boolean).join(' · ')}>{identity}{agent.authentication.plan ? ` · ${agent.authentication.plan}` : ''}</span>}
                 </span>
-                {apiActive && <span className="shrink-0 text-[10px] font-normal text-muted">{selectedProvider?.name ?? 'API provider'}</span>}
                 <ChevronDown size={15} className={`shrink-0 text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
               </button>
             </h3>
@@ -137,27 +102,6 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
                 <span className="text-[13px] font-medium text-primary">Account</span>
                 <button type="button" className={actionClass} disabled={working} onClick={() => { void begin(agent.agentId, 'login') }}><span className="inline-flex items-center gap-1.5"><LogIn size={12} />{agent.authentication.status === 'signed-in' ? 'Switch account' : 'Sign in'}</span></button>
               </div>}
-              {installed && agent.api.protocol && <div className="space-y-2 py-2">
-                <label className="flex items-center justify-between gap-3 text-[13px] font-medium text-primary">Connection
-                  <select aria-label={`${agent.displayName} connection`} className="max-w-[65%] rounded-md border border-subtle bg-surface-2 px-2 py-1.5 text-xs text-secondary" value={apiActive ? agent.providerId ?? '' : 'native'} disabled={working} onChange={(e) => {
-                    const provider = compatible.find((p) => p.id === e.target.value)
-                    void configure(agent.agentId, provider?.id, provider?.models[0]?.id)
-                  }}>
-                    <option value="native">Native account</option>
-                    {apiActive && !compatible.some((p) => p.id === agent.providerId) && <option value={agent.providerId ?? ''}>Provider unavailable</option>}
-                    {compatible.map((p) => <option key={p.id} value={p.id} disabled={!p.hasKey}>{p.name}</option>)}
-                  </select>
-                </label>
-                {!compatible.length && <p className="text-[11px] text-muted">Add a {agent.api.protocol} provider above to use an API key.</p>}
-                {apiActive && selectedProvider && <label className="flex items-center justify-between gap-3 text-[13px] font-medium text-primary">Model
-                  <select aria-label={`${agent.displayName} model`} className="max-w-[65%] rounded-md border border-subtle bg-surface-2 px-2 py-1.5 text-xs text-secondary" value={agent.model ?? ''} disabled={working} onChange={(e) => { void configure(agent.agentId, selectedProvider.id, e.target.value) }}>
-                    {!selectedProvider.models.some((m) => m.id === agent.model) && <option value={agent.model ?? ''}>Select a model</option>}
-                    {selectedProvider.models.map((m) => <option key={m.id} value={m.id}>{m.name ?? m.id}</option>)}
-                  </select>
-                </label>}
-                {apiActive && !agent.api.configured && <p role="alert" className="text-[11px] text-muted">Update this provider's API key, protocol or model selection before launching.</p>}
-              </div>}
-              {installed && !agent.api.protocol && <p className="py-2 text-[11px] text-muted">{agent.api.reason}</p>}
               {installed && <div className="py-2"><AgentHookControl agentId={agent.agentId} name={agent.displayName} controller={hooks} /></div>}
               {!installed && agent.canInstall && <div className="flex min-h-10 items-center justify-between gap-3 py-2"><span className="text-[13px] font-medium text-primary">Installation</span><button type="button" className={actionClass} disabled={working} onClick={() => { void begin(agent.agentId, 'install') }}>Install</button></div>}
               <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 py-2">

@@ -24,7 +24,9 @@ export function connectionDotClass(state: ConnectionState): string {
 /** The connection's state in words; null when connected or there is no
  *  connection. */
 export function statusOf(connection: WorkspaceConnection | undefined, state: ConnectionState): ConnectionStatus | null {
-  return connection ? connectionStatus(state, { startsRuntime: connection.startsRuntime, version: tryClientApp()?.version ?? '' }) : null
+  const status = connection ? connectionStatus(state, { startsRuntime: connection.startsRuntime, version: tryClientApp()?.version ?? '' }) : null
+  if (status && state.kind === 'stopped') return { ...status, title: 'Workspace stopped' }
+  return status
 }
 
 export interface ConnectionAction {
@@ -40,13 +42,13 @@ function remedyAction(connection: WorkspaceConnection, state: ConnectionState, r
     case 'updateRuntime': return { label: 'Update…', run: () => void selectWorkspace(id) }
     case 'updateApp': return { label: 'Check for Updates…', run: () => runWindowAction('checkForUpdates') }
     case 'retry': return { label: 'Try again', run: () => connection.retryNow() }
-    case 'start': return { label: 'Start again', run: () => connection.retryNow() }
+    case 'start': return { label: 'Open Workspace', run: () => connection.retryNow() }
     // A paired one asks first.
-    case 'close': return { label: workspaces?.get(id)?.kind === 'paired' ? 'Close Workspace…' : 'Close Workspace', run: () => void closeWorkspace(id) }
+    case 'close': return { label: 'Close Workspace', run: () => void closeWorkspace(id) }
     case 'pair': {
       const entry = workspaces?.get(id)
       const machine = entry?.kind === 'paired' ? entry.machineName : undefined
-      return { label: 'Pair again…', run: () => useUIStore.getState().openJoinDialog(machine ? { machine } : {}) }
+      return { label: 'Pair again…', run: () => useUIStore.getState().openJoinInput(machine ? { machine } : {}) }
     }
     case 'openNested': {
       if (state.kind !== 'refused' || !state.nestedIn) return null

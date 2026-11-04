@@ -1,6 +1,6 @@
 {
   "name": "cate",
-  "version": "2.1.0-beta.9",
+  "version": "2.1.0-beta.10",
   "productName": "Cate",
   "description": "An infinite zoomable canvas IDE",
   "license": "MIT",
@@ -39,9 +39,8 @@
     "lint": "eslint .",
     "lint:deps": "depcruise src --config .dependency-cruiser.cjs",
     "test": "vitest run",
-    "test:agent-hooks:ci": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts src/services/agents/runtime/live src/services/agents/runtime/setup/authCli.itest.ts src/services/agents/runtime/setup/providersCli.itest.ts --disableConsoleIntercept",
+    "test:agent-hooks:ci": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts src/services/agents/runtime/live src/services/agents/runtime/setup/authCli.itest.ts --disableConsoleIntercept",
     "test:agent-changes": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts src/services/agents/runtime/changes",
-    "test:agent-providers": "CATE_LIVE_AGENT_CLIS=1 vitest run --config vitest.live.config.ts src/services/agents/runtime/setup/providersCli.itest.ts",
     "test:runtime:linux-glibc": "node scripts/test-linux-node-pty-baseline.mjs",
     "test:e2e": "playwright test",
     "test:e2e:perf": "node scripts/run-e2e-perf.mjs",

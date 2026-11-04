@@ -10,7 +10,7 @@ import { useClientSetting } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
 import { useDocument } from '../../client/document'
 import { focusedLeafPanelId, panelRowLabel } from '@client/host'
-import type { WorkspaceEntry } from '@client/workspaces'
+import { machineOf, type WorkspaceEntry } from '@client/workspaces'
 import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
 import { useWorktreeColor } from '../../workspace/repository'
@@ -107,14 +107,14 @@ export function WorkspaceRow({
     const cwd = terminalCwd(statuses, isOpen ? focusedLeafPanelId(workspaceId) : null) ?? rootPath
     const items: MenuItem[] = [
       { id: 'select', label: 'Select Workspace', enabled: !isSelected },
-      { id: 'share', label: 'Share…' },
+      { id: 'share', label: 'Share Workspace…' },
       { id: 'rename', label: 'Rename Workspace' },
       { id: 'settings', label: 'Workspace Settings…', enabled: isOpen },
       { type: 'separator' },
       { id: 'copy-cwd', label: 'Copy Working Directory', enabled: !!cwd },
       { id: 'close-panels', label: 'Close All Panels', enabled: isOpen && tree.count > 0 },
       { type: 'separator' },
-      { id: 'close', label: entry.kind === 'paired' ? 'Close Workspace…' : 'Close Workspace' },
+      { id: 'close', label: 'Close Workspace' },
     ]
     setMenuOpen(true)
     const id = await showMenu(items)
@@ -199,6 +199,7 @@ export function WorkspaceRow({
     </React.Fragment>
   )
 
+  const location = machineOf(entry)
   const displayTitle = entry.name
   const FolderIcon = isExpanded ? FolderOpen : Folder
   // Only a connected workspace shows its tree: the document mirror outlives a
@@ -250,6 +251,7 @@ export function WorkspaceRow({
             {displayTitle}
           </span>
         )}
+        {entry.kind !== 'local' && <span className="max-w-24 truncate text-[11px] text-muted" title="Workspace computer">{'label' in location ? location.label ?? 'Remote computer' : ''}</span>}
         <ShareSlot workspaceId={workspaceId} isOpen={isOpen} isSelected={isSelected} onShare={() => void share()} />
         {canExpand && !isExpanded && (
           <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">

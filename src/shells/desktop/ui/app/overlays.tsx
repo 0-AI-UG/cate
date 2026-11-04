@@ -10,7 +10,6 @@
 import { useSyncExternalStore, type ComponentType } from 'react'
 import { WorkspaceTrustDialog } from './workspace/opening'
 import { CommandPalette } from './palette/CommandPalette'
-import { JoinWorkspaceDialog } from './pairing/JoinWorkspaceDialog'
 import { ShareDialog } from './pairing/ShareDialog'
 import { MachineFolderHost } from './remote/MachineFolderHost'
 import { MachinePromptDialog } from './remote/MachinePromptDialog'
@@ -88,7 +87,6 @@ export function ClientOverlays({ firstRun = true }: ClientOverlaysProps): JSX.El
       <OverlayHost />
       <CommandPalette />
       <OpenWorkspaceDialog />
-      <JoinWorkspaceDialog />
       <MachineFolderHost />
       <ShareDialog />
       <MachinePromptDialog />

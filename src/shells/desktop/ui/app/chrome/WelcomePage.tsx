@@ -30,7 +30,7 @@ export function WelcomePage(): JSX.Element {
   }, [])
   useEffect(() => {
     if (!pickerOpen) return
-    card.current?.querySelector('input')?.focus()
+    card.current?.querySelector<HTMLElement>('[role="listbox"]')?.focus()
     useUIStore.getState().closeWorkspacePicker()
   }, [pickerOpen])
 

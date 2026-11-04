@@ -129,24 +129,58 @@ describe('WorkspaceList', () => {
       const connection = await list.open(entry.id)
       expect(ids()).toEqual([entry.id, other.id])
 
-      // Closing disconnects it and drops it, from the file too; a paired
-      // one loses its pinned key.
+      // Closing removes sidebar membership, retaining history and access.
       await list.close(entry.id)
       expect(connection.state.kind).toBe('closed')
       expect(ids()).toEqual([other.id])
       expect(list.getSnapshot().open).toEqual([other.id])
       expect((await setup(store)).list.getSnapshot().entries.map((e) => e.id)).toEqual([other.id])
-      if (entry.kind === 'paired') expect(await list.known.get(entry.runtimeId)).toBeUndefined()
+      expect(list.getRecentSnapshot().map((workspace) => workspace.id)).toContain(entry.id)
+      if (entry.kind === 'paired') expect(await list.known.get(entry.runtimeId)).toEqual(key)
+      const reloaded = (await setup(store)).list
+      expect(reloaded.getRecentSnapshot().find((workspace) => workspace.id === entry.id)).toEqual(list.getRecentSnapshot().find((workspace) => workspace.id === entry.id))
+      const reopened = await reloaded.open(entry.id)
+      expect(reopened.target).toEqual(targetOf(entry))
+      expect(reloaded.getSnapshot().entries.map((workspace) => workspace.id)).toEqual([other.id, entry.id])
+      expect(reloaded.getRecentSnapshot().filter((workspace) => workspace.id === entry.id)).toHaveLength(1)
     })
   }
 
-  it('closing the last one leaves an empty file', async () => {
+  it('forgetting a closed workspace removes its history and paired access', async () => {
     const { store, list } = await setup()
     const entry = await list.addPaired({ runtimeId: 'RT2', name: 'Box', endpoints: [{ kind: 'connect' }], publicKey: key })
     await list.open(entry.id)
     await list.close(entry.id)
+    await list.forget(entry.id)
+    expect(list.getRecentSnapshot()).toEqual([])
     expect(await store.get(KNOWN_RUNTIMES_DOCUMENT)).toEqual({ runtimes: {} })
-    expect(await store.get(WORKSPACES_DOCUMENT)).toEqual({ local: [], machine: [], paired: [], order: [] })
+    expect(await store.get(WORKSPACES_DOCUMENT)).toEqual({ local: [], machine: [], paired: [], order: [], closed: [] })
+  })
+
+  it('orders history by last use independently of sidebar order, including closed workspaces', async () => {
+    const { list, store } = await setup()
+    const first = await list.addLocal('/first')
+    const second = await list.addLocal('/second')
+    await list.reorder([first.id, second.id])
+    expect(list.getRecentSnapshot().map((entry) => entry.id)).toEqual([second.id, first.id])
+    await list.open(first.id)
+    await list.close(first.id)
+    expect(list.getRecentSnapshot().map((entry) => entry.id)).toEqual([first.id, second.id])
+    expect(list.getSnapshot().entries.map((entry) => entry.id)).toEqual([second.id])
+    const reloaded = (await setup(store)).list
+    expect(reloaded.getRecentSnapshot()).toEqual(list.getRecentSnapshot())
+    await reloaded.restore(first.id)
+    expect(reloaded.getSnapshot().entries.map((entry) => entry.id)).toEqual([second.id, first.id])
+    expect(reloaded.getSnapshot().open).toEqual([])
+  })
+
+  it('adding a closed folder again restores its membership without duplicating history', async () => {
+    const { list } = await setup()
+    const entry = await list.addLocal('/folder')
+    await list.close(entry.id)
+    await list.addLocal('/folder')
+    expect(list.getSnapshot().entries).toHaveLength(1)
+    expect(list.getRecentSnapshot()).toHaveLength(1)
   })
 
   it('disconnects a workspace another window closed', async () => {

@@ -44,8 +44,8 @@ export const BUILTIN_ACTIONS = defineActions({
   undo: { title: 'Undo', key: key('z', { command: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   redo: { title: 'Redo', key: key('z', { command: true, shift: true }), menu: { bar: 'edit', group: 'history' }, keys: { yieldToText: true, windowOnly: true } },
   openWorkspace: { title: 'Open Workspace…', key: key('o', { command: true }), menu: { bar: 'file', group: 'open', order: 0 } },
-  openFolder: { title: 'Open Local Workspace…', key: key('o', { command: true, shift: true }), menu: { bar: 'file', group: 'open', order: 1 } },
-  joinWorkspace: { title: 'Join with a Code…', menu: { bar: 'file', group: 'open', order: 2 } },
+  openFolder: { title: 'Open Folder…', key: key('o', { command: true, shift: true }), menu: { bar: 'file', group: 'open', order: 1 } },
+  joinWorkspace: { title: 'Join Workspace…', menu: { bar: 'file', group: 'open', order: 2 } },
   shareWorkspace: { title: 'Share Workspace…', menu: { bar: 'file', group: 'open', order: 3 } },
   showTutorial: { title: 'Show Tutorial', menu: { bar: 'help', group: 'learn' } },
   whatsNew: { title: "What's New", menu: { bar: 'help', group: 'learn' } },
@@ -133,7 +133,7 @@ export function registerBuiltinActions(): () => void {
       },
       openWorkspace: { run: () => useUIStore.getState().openWorkspacePicker() },
       joinWorkspace: {
-        run: () => useUIStore.getState().openJoinDialog(),
+        run: () => useUIStore.getState().openJoinInput(),
         enabled: () => !!tryClientApp()?.pair,
       },
       shareWorkspace: {

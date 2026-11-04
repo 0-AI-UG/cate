@@ -370,10 +370,7 @@ Rules:
   machine user is. Cate writes only repo-local agent files (hooks, skills).
   Explicit agent setup operations may invoke the CLI's native login or
   installer; the CLI remains the writer of its own account files. Cate-owned
-  agent setup state belongs under `agents/`. API provider keys belong in the
-  runtime's `secrets.json` (0600), alongside browser passwords. Provider metadata
-  and per-agent connection/model selections are workspace settings. Requests go
-  directly from the harness on the runtime host to the selected provider.
+  agent setup state belongs under `agents/`.
 
 
 ## 6. Kernel
@@ -1115,7 +1112,7 @@ or that changes shared state, is a **workspace** setting.
 | Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
 | Runtime (`runtime/daemon`) | | `keepRunningWhile`, `runtimeNetwork` |
 | `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
-| Agents (`services/agents`) | | `agentPreferences` (native/API connection, provider and model per agent), `agentProviders` (named API endpoints, protocols and model metadata), `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
+| Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
 
 ## 9. Workspace
 
@@ -1557,7 +1554,7 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   approval config) is the exception. Also the session,
   the start launch command, and the `cate.agent.*` API specs.
   Setup contracts describe installation, authentication, safe account identity,
-  native setup operations and API-provider capabilities independently of
+  native setup operations independently of
   workspace hook readiness. Unsupported operations carry an explicit reason;
   an unavailable identity is not evidence that the CLI is signed out.
   `PanelAgentState` carries what views show (`label`, `contextPolicy`),
@@ -1576,44 +1573,13 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     operations), published through `agents.availability`. Settings and launch
     menus mirror that stream; they do not maintain independent availability
     caches or poll setup operations. Concurrent inspections share one request.
-    Explicit refresh, setup completion, provider and hook-setting changes update
+    Explicit refresh, setup completion, hook-setting changes update
     the same snapshot; the runtime rechecks external CLI state every 15 seconds
     while clients subscribe. Known agents remain visible during refresh.
     An exhaustive per-CLI adapter inspects installed versions and
-    native account state, starts explicit login/install operations and prepares
-    provider configuration for launches. A connection is either the CLI's native
-    account/configuration or an explicit API provider and model. Provider metadata
-    (`agentProviders`) and each agent's selection (`agentPreferences`) use workspace
-    settings; keys are write-only setup inputs stored by provider ID in runtime
-    secrets. Availability exposes only whether a key is present, never its value.
-    Metadata edits and key changes publish readiness to every client.
-
-    Providers declare a full API base URL (preserving path prefixes), protocol
-    (Anthropic Messages, OpenAI Responses or Chat Completions) and model IDs with
-    optional context/output limits. HTTPS and loopback HTTP are accepted; embedded
-    credentials, queries and fragments are rejected. Model discovery is explicit,
-    optional and runtime-owned; manual model IDs always work without discovery.
-    Messages uses the Anthropic SDK base URL, with `/v1/messages` and `/v1/models`
-    appended by the harness and discovery respectively. Other protocols use the
-    full API base, including any `/v1` prefix. Discovery requests `/models` there
-    with the saved key and
-    disallows redirects. No inference proxy or hosted billing service is involved.
-
-    The current adapters support Messages for Claude Code, Responses for Codex,
-    and Chat Completions for OpenCode, Grok and Pi. Cursor and Kiro retain native
-    configuration with an explicit custom-API unsupported reason. Selection checks
-    protocol compatibility and model membership. A removed provider, missing key,
-    changed protocol or removed model makes the selection unready and blocks launch;
-    it never silently falls back to a native account. Removing a provider removes
-    its key but leaves selections visible for repair.
-
-    Every launch and resume resolves the current provider, key, model and limits.
-    Credentials travel only in the child environment, never in argv, panel records,
-    generated files or public snapshots. CLI configuration is process-scoped or
-    written into Cate-owned files under `agents/`; native CLI logins and global
-    configuration remain CLI-owned. Existing running agents retain their launch
-    configuration until restarted. Setup and provider operations require workspace
-    trust. Shared workspace controllers can configure providers and use their keys.
+    native account state and starts explicit login/install operations. Setup
+    operations require workspace trust. Native CLI logins and configuration
+    remain CLI-owned.
   - hook bridges and repo hook files (per `agentHookInjection`), hook
     ingestion and normalization, pid presence;
   - the **status** state machine, driven by hook events, pid presence (or
@@ -1627,10 +1593,8 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     session switches, manual compaction boundaries and successful/failed tool
     completions. Extension reload preserves the existing resume stamp. Native project
     trust stays with Pi. Its JSONL reader follows the active session-tree leaf;
-    the in-memory locator carries that leaf and transcript path. API provider launches
-    add an explicit workspace-owned provider extension and select the configured
-    provider/model, with credentials only in the child environment. Pi's native
-    settings and logins remain CLI-owned. Skills install under `.pi/skills`;
+    the in-memory locator carries that leaf and transcript path. Skills install
+    under `.pi/skills`;
   - approval detection per agent (whether it is asking for a permission),
     and the tool steps its hooks report, kept in memory and sent with the
     conversation;
@@ -1918,8 +1882,10 @@ headless.
   on this device: local ones, ones on machines (`{machine, root}`), paired
   workspaces and their pinned keys (`known-runtimes.json`) and the machine
   name their runtime reports (`runtime.info`), sidebar order. A workspace
-  is in it from opening until closing, across restarts; closing one
-  disconnects it and drops it (a paired one with its pinned key); the machine
+  stays in its history across closes and restarts; closing removes sidebar
+  membership and disconnects, retaining paired access. `getRecentSnapshot`
+  exposes all remembered workspaces by last use; `restore` returns one to the
+  sidebar, and `forget` removes its history and pinned key. The machine
   each workspace lives on (`machineOf`, `groupByMachine`) for lists grouped
   by machine;
   joining with a code (`joinWorkspace`); and the trust question
@@ -2158,12 +2124,12 @@ reaches (its own, or one it runs commands on, 7.1), **join** a workspace on
 another device with a pairing code, **share** a workspace (who can join and
 a code).
 
-- **Open.** One picker (desktop: "Open Workspace…") lists the machines: this device
-  (a folder picker), the
-  saved SSH machines, the SSH config's hosts and the WSL distros, with adding
-  an SSH machine by its command, forgetting a saved one, and joining with a
-  code. A machine opens its folder dialog wherever it was picked from.
-- **Join.** "Join with a Code" takes the typed code or the `cate://pair`
+- **Open.** The desktop picker leads with recent workspaces and Open Folder.
+  Other computers are always listed: saved SSH machines, SSH config hosts and
+  WSL distros, including adding an SSH machine by its command. Join Workspace
+  expands an inline code input in the picker. A machine opens its own folder dialog.
+- **Join.** "Join Workspace" expands a code input in the desktop picker,
+  with progress and errors inline. It takes the typed code or the `cate://pair`
   link (opening such a link with the app fills it in; joining stays the
   person's click). Pairing again with a known machine names it.
 - **Share.** One place sets network access ("who can join": only its
@@ -2174,10 +2140,18 @@ a code).
   this computer as them; nothing is remembered. Wider access is the person's choice in that place; narrower access
   asks first, since it cuts devices off. The workspace's settings keep the
   same setting and the device list with revoke.
-- **Where it lives.** Lists of workspaces group them by machine
-  (`groupByMachine`, machine by machine in list order: the sidebar, moving
-  to the next workspace) under a header naming the machine. Rows reorder
-  within their machine.
+- **Where it lives.** The desktop sidebar is one manually ordered workspace
+  list, with remote computer names on rows. Rows reorder across computers;
+  next/previous workspace follows that same order. The opening picker sorts
+  all remembered workspaces by last use, including closed ones. Closing
+  disconnects this client and removes sidebar membership, retaining history
+  and paired access. Reopening restores membership. Removing from recents
+  forgets the entry and any pinned paired access, with explicit confirmation.
+- **Collaboration.** Share describes working together in the same live workspace.
+  The sidebar’s sharing control and device avatars expose existing presence;
+  the access list distinguishes connected devices from devices with access.
+  Personal access uses the same invitation flow. Reconnecting leaves the canvas
+  visible but inert, with a compact notice; diagnostics live under Details.
 - **What a window shows.** One rule (`windowContent` in
   `client/workspaces`): the selected workspace while it is listed, else the
   welcome screen (no workspace at all, or none selected). On every change of

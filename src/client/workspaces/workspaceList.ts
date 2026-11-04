@@ -1,11 +1,5 @@
-// The device's workspace list (12.1, 16): the workspaces open on this
-// device, in the sidebar's order: local ones by root path, ones on machines
-// this device runs commands on (SSH, WSL) by machine and root, paired ones by
-// runtimeId, in the `workspaces` device document. Pinned runtime keys live in
-// `known-runtimes` (runtime/pairing). A workspace is in the list from when
-// it is opened until it is closed, across restarts; its connection is made
-// when it is shown. Closing one disconnects it and drops it from the list
-// (a paired one with its pinned key: opening it again takes a new code).
+// Device-local workspace history and sidebar membership. Closing retains a
+// workspace and its paired access for reopening; forgetting removes both.
 
 import type { DeviceStore } from '@kernel/state/contract'
 import type { WorkspaceConnection, WorkspaceConnections, ConnectionTarget } from '@client/connections'
@@ -53,6 +47,8 @@ interface WorkspacesFile {
   /** Sidebar order by workspace id (a new one joins last); entries not
    *  named (a hand edit) follow, newest first. */
   order: string[]
+  /** Remembered workspaces currently absent from the sidebar. */
+  closed: string[]
 }
 
 export interface WorkspaceListSnapshot {
@@ -99,7 +95,8 @@ export class WorkspaceList {
   private readonly store: DeviceStore
   private readonly connections: WorkspaceConnections
   private readonly now: () => number
-  private file: WorkspacesFile = { local: [], machine: [], paired: [], order: [] }
+  private file: WorkspacesFile = { local: [], machine: [], paired: [], order: [], closed: [] }
+  private recent: readonly WorkspaceEntry[] = []
   private snapshot: WorkspaceListSnapshot = { entries: [], open: [] }
   private readonly listeners = new Set<() => void>()
   private readonly stops: (() => void)[] = []
@@ -126,6 +123,9 @@ export class WorkspaceList {
 
   getSnapshot = (): WorkspaceListSnapshot => this.snapshot
 
+  /** All remembered workspaces, including closed ones, newest first. */
+  getRecentSnapshot = (): readonly WorkspaceEntry[] => this.recent
+
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
@@ -139,7 +139,7 @@ export class WorkspaceList {
   async addLocal(root: string, name = basename(root)): Promise<LocalWorkspace> {
     const lastOpenedAt = this.now()
     const rest = this.file.local.filter((w) => w.root !== root)
-    this.file = { ...this.file, local: [{ root, name, lastOpenedAt }, ...rest], order: this.joined(localWorkspaceId(root)) }
+    this.file = { ...this.file, local: [{ root, name, lastOpenedAt }, ...rest], order: this.joined(localWorkspaceId(root)), closed: this.file.closed.filter((id) => id !== localWorkspaceId(root)) }
     await this.save()
     return this.get(localWorkspaceId(root)) as LocalWorkspace
   }
@@ -150,7 +150,7 @@ export class WorkspaceList {
     const id = machineWorkspaceId(machine, root)
     const lastOpenedAt = this.now()
     const rest = this.file.machine.filter((w) => idOf.machine(w) !== id)
-    this.file = { ...this.file, machine: [{ machine, root, name, lastOpenedAt }, ...rest], order: this.joined(id) }
+    this.file = { ...this.file, machine: [{ machine, root, name, lastOpenedAt }, ...rest], order: this.joined(id), closed: this.file.closed.filter((closed) => closed !== id) }
     await this.save()
     return this.get(id) as MachineWorkspace
   }
@@ -160,7 +160,7 @@ export class WorkspaceList {
     await this.known.pin(opts.runtimeId, opts.publicKey)
     const rest = this.file.paired.filter((w) => w.runtimeId !== opts.runtimeId)
     const entry = { runtimeId: opts.runtimeId, name: opts.name, endpoints: opts.endpoints, pairedAt: this.now(), lastOpenedAt: null }
-    this.file = { ...this.file, paired: [...rest, entry], order: this.joined(pairedWorkspaceId(opts.runtimeId)) }
+    this.file = { ...this.file, paired: [...rest, entry], order: this.joined(pairedWorkspaceId(opts.runtimeId)), closed: this.file.closed.filter((id) => id !== pairedWorkspaceId(opts.runtimeId)) }
     await this.save()
     return this.get(pairedWorkspaceId(opts.runtimeId)) as PairedWorkspace
   }
@@ -177,7 +177,7 @@ export class WorkspaceList {
 
   /** Opens the workspace's connection and marks it opened. */
   async open(id: string): Promise<WorkspaceConnection> {
-    const entry = this.get(id)
+    const entry = this.get(id) ?? await this.restore(id)
     if (!entry) throw new Error(`Unknown workspace ${id}`)
     const fresh = !this.connections.get(id)
     const connection = this.connections.open(id, targetOf(entry))
@@ -222,18 +222,35 @@ export class WorkspaceList {
     this.connections.close(id)
   }
 
-  /** Disconnects the workspace and drops it from the list; a paired one
-   *  also loses its pinned key, so opening it again takes a new code. */
+  /** Restores a remembered workspace to the sidebar without connecting. */
+  async restore(id: string): Promise<WorkspaceEntry | undefined> {
+    const entry = this.recent.find((workspace) => workspace.id === id)
+    if (!entry || this.get(id)) return entry
+    this.file = { ...this.file, closed: this.file.closed.filter((closed) => closed !== id), order: this.joined(id) }
+    await this.save()
+    return this.get(id)
+  }
+
+  /** Closes this device's workspace while retaining history and paired access. */
   async close(id: string): Promise<void> {
-    const entry = this.get(id)
     this.disconnect(id)
+    if (!this.get(id)) return
+    this.file = { ...this.file, closed: [...new Set([...this.file.closed, id])], order: this.file.order.filter((entry) => entry !== id) }
+    await this.save()
+  }
+
+  /** Removes a workspace from history and forgets any pinned paired access. */
+  async forget(id: string): Promise<void> {
+    const entry = this.recent.find((workspace) => workspace.id === id)
     if (!entry) return
+    this.disconnect(id)
     if (entry.kind === 'paired') await this.known.forget(entry.runtimeId)
     this.file = {
       ...this.file,
       local: this.file.local.filter((w) => idOf.local(w) !== id),
       machine: this.file.machine.filter((w) => idOf.machine(w) !== id),
       paired: this.file.paired.filter((w) => idOf.paired(w) !== id),
+      closed: this.file.closed.filter((closed) => closed !== id),
     }
     await this.save()
   }
@@ -264,7 +281,10 @@ export class WorkspaceList {
   }
 
   private refresh(): void {
-    const entries = sortEntries(entriesOf(this.file), this.file.order)
+    const all = entriesOf(this.file)
+    this.recent = [...all].sort((a, b) => recency(b) - recency(a))
+    const closed = new Set(this.file.closed)
+    const entries = sortEntries(all.filter((entry) => !closed.has(entry.id)), this.file.order)
     const open = this.connections.getSnapshot().map((c) => c.workspaceId)
     this.snapshot = { entries, open }
     for (const listener of [...this.listeners]) {
@@ -281,9 +301,10 @@ function entriesOf(file: WorkspacesFile): WorkspaceEntry[] {
   ]
 }
 
+const recency = (entry: WorkspaceEntry): number => entry.lastOpenedAt ?? (entry.kind === 'paired' ? entry.pairedAt : 0)
+
 function sortEntries(entries: WorkspaceEntry[], order: readonly string[]): WorkspaceEntry[] {
   const rank = new Map(order.map((id, i) => [id, i]))
-  const recency = (e: WorkspaceEntry) => (e.kind === 'paired' ? e.lastOpenedAt ?? e.pairedAt : e.lastOpenedAt)
   return [...entries].sort((a, b) => {
     const ra = rank.get(a.id)
     const rb = rank.get(b.id)
@@ -340,5 +361,6 @@ function normalize(value: unknown): WorkspacesFile {
     })
   }
   const order = Array.isArray(raw.order) ? [...new Set(raw.order.filter(isStr))] : []
-  return { local, machine, paired, order }
+  const closed = Array.isArray(raw.closed) ? [...new Set(raw.closed.filter(isStr))] : []
+  return { local, machine, paired, order, closed }
 }

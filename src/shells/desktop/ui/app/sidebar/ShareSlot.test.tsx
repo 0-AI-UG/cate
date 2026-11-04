@@ -36,7 +36,7 @@ afterEach(() => {
 
 describe('ShareSlot', () => {
   it('offers to share a workspace nobody else can join', () => {
-    expect(render().getAttribute('aria-label')).toBe('Share workspace…')
+    expect(render().getAttribute('aria-label')).toBe('Invite to workspace…')
   })
 
   it('shows who can join a shared workspace', () => {
@@ -54,7 +54,7 @@ describe('ShareSlot', () => {
 
   it('shows no clients of a closed workspace', () => {
     state.others = [client('Anna Phone')]
-    expect(render(false).getAttribute('aria-label')).toBe('Share workspace…')
+    expect(render(false).getAttribute('aria-label')).toBe('Invite to workspace…')
   })
 
   it('opens Share without selecting the row', () => {

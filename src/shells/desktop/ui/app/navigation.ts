@@ -4,7 +4,7 @@
 // panels are client/host's; this module plugs workspace selection and window
 // raising into its reveal hooks.
 
-import { byMachine, openTrusted, reconcileWindow } from '@client/workspaces'
+import { openTrusted, reconcileWindow } from '@client/workspaces'
 import { documentStoreFor } from '@client/document'
 import { focusedPanelId, installRevealHooks, openLink, panelTypeOpening, closePanels as closeHostPanels, revealPanel as revealHostPanel } from '@client/host'
 import { MAIN_WINDOW, renamePanelChange, type PanelId } from '@workspace/document/contract'
@@ -48,18 +48,13 @@ export async function pickAndOpenFolder(): Promise<boolean> {
 }
 
 /** Closes workspaces: disconnects this client (the runtime follows
- *  `keepRunningWhile`) and drops them from the list. Paired ones ask first,
- *  once, since opening one again takes a new code. When the shown one is
+ *  `keepRunningWhile`) and removes them from the sidebar, retaining recents
+ *  and paired access. When the shown one is
  *  closed, its nearest neighbour left in the list shows next. */
 export async function closeWorkspaces(workspaceIds: readonly string[]): Promise<boolean> {
   const { workspaces } = clientApp()
   const closing = workspaceIds.map((id) => workspaces.get(id)).filter((e) => e !== undefined)
   if (closing.length === 0) return false
-  const paired = closing.filter((e) => e.kind === 'paired')
-  if (paired.length > 0) {
-    const what = paired.length === 1 ? `"${paired[0].name}"` : `${paired.length} paired workspaces`
-    if (!await clientUi().confirm(`Close ${what}? To open ${paired.length === 1 ? 'it' : 'one'} again, this device needs a new code from the device it is on.`)) return false
-  }
   const ids = new Set(closing.map((e) => e.id))
   const { entries } = workspaces.getSnapshot()
   const shown = useUIStore.getState().selectedWorkspaceId
@@ -97,7 +92,7 @@ export async function reconnectWorkspaces(ids: readonly string[]): Promise<void>
 /** The next or previous workspace in sidebar order (machine by machine),
  *  wrapping. */
 export function cycleWorkspace(step: 1 | -1): void {
-  const entries = byMachine(clientApp().workspaces.getSnapshot().entries)
+  const entries = clientApp().workspaces.getSnapshot().entries
   if (entries.length === 0) return
   const current = entries.findIndex((e) => e.id === useUIStore.getState().selectedWorkspaceId)
   const next = entries[(current + step + entries.length) % entries.length]
@@ -181,7 +176,7 @@ export async function openWorkspaceFile(workspaceId: string, path: string): Prom
  *  workspace, placed from its focused panel, else outside the app. */
 export function openUrl(url: string): void {
   if (isPairingLink(url)) {
-    useUIStore.getState().openJoinDialog({ code: url })
+    useUIStore.getState().openJoinInput({ code: url })
     return
   }
   const workspaceId = useUIStore.getState().selectedWorkspaceId

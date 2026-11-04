@@ -85,9 +85,9 @@ describe('RuntimeMismatchCard', () => {
     expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
     expect(card()?.textContent).toContain('Updating ends')
     expect(card()?.textContent).not.toContain("can't talk to")
-    await act(async () => button('Update to 2.0.4').click())
+    await act(async () => button('Update and Stop Work…').click())
     expect(connection.runtime.runtime.update).toHaveBeenLastCalledWith({ version: '2.0.4', build: '2.0.4+new' })
-    expect(card()?.textContent).toContain('Restarting')
+    expect(card()?.textContent).toContain('Reopening')
     await act(async () => connection.set({ kind: 'connected', runtimeVersion: '2.0.4' }))
     expect(card()).toBeNull()
   })
@@ -101,7 +101,7 @@ describe('RuntimeMismatchCard', () => {
 
   it('asks inside the workspace only: no dialog over the app, the sidebar stays usable', async () => {
     await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
-    expect(card()?.textContent).toContain('Workspace runtime needs an update')
+    expect(card()?.textContent).toContain('A workspace update is ready')
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(host.querySelector('[data-sidebar]')!.closest('[inert]')).toBeNull()
   })
@@ -111,7 +111,7 @@ describe('RuntimeMismatchCard', () => {
     await render(connection)
     expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
     expect(card()?.textContent).toContain('1.9.0')
-    await act(async () => button('Update to 2.0.4').click())
+    await act(async () => button('Update and Stop Work…').click())
     expect(connection.runtime.runtime.update).toHaveBeenLastCalledWith({ version: '2.0.4', build: '2.0.4+new' })
     await act(async () => connection.set({ kind: 'connected' }))
     expect(card()).toBeNull()
@@ -124,25 +124,25 @@ describe('RuntimeMismatchCard', () => {
       const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.3' })
       await render(connection)
       connection.runtime.runtime.update.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
-      await act(async () => button('Update to 2.0.4').click())
-      expect(card()?.textContent).toContain('Updating the workspace runtime')
+      await act(async () => button('Update and Stop Work…').click())
+      expect(card()?.textContent).toContain('Updating the workspace')
 
       progress = { phase: 'download', received: 5_000_000, total: 20_000_000 }
       await act(async () => { await vi.advanceTimersByTimeAsync(250) })
-      expect(card()?.textContent).toContain('Downloading Cate runtime 2.0.4')
+      expect(card()?.textContent).toContain('Downloading workspace update')
       expect(card()?.textContent).toContain('5.0 of 20.0 MB')
       expect(card()?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('20')
 
       progress = { phase: 'install' }
       await act(async () => { await vi.advanceTimersByTimeAsync(250) })
-      expect(card()?.textContent).toContain('Installing the workspace runtime')
+      expect(card()?.textContent).toContain('Installing workspace update')
       expect(card()?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('85')
 
       await act(async () => finish())
       await act(async () => connection.set({ kind: 'offline', lastSeen: 1, retrying: true }))
-      expect(card()?.textContent).toContain('Restarting the workspace runtime')
+      expect(card()?.textContent).toContain('Reopening the workspace')
       await act(async () => connection.set({ kind: 'connecting' }))
-      expect(card()?.textContent).toContain('Restarting the workspace runtime')
+      expect(card()?.textContent).toContain('Reopening the workspace')
 
       await act(async () => connection.set({ kind: 'connected' }))
       expect(card()).toBeNull()
@@ -153,17 +153,17 @@ describe('RuntimeMismatchCard', () => {
 
   it('asks once the idle update is refused under StrictMode', async () => {
     await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }), true)
-    expect(button('Update to 2.0.4')).toBeTruthy()
+    expect(button('Update and Stop Work…')).toBeTruthy()
   })
 
   it('says so when the runtime does not restart', async () => {
     vi.useFakeTimers()
     try {
       await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
-      await act(async () => button('Update to 2.0.4').click())
+      await act(async () => button('Update and Stop Work…').click())
       await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
       expect(card()?.textContent).toContain('The runtime did not restart. Stop it (process 727)')
-      expect(button('Update to 2.0.4').disabled).toBe(false)
+      expect(button('Update and Stop Work…').disabled).toBe(false)
     } finally {
       vi.useRealTimers()
     }
@@ -171,8 +171,8 @@ describe('RuntimeMismatchCard', () => {
 
   it('offers an update for another version', async () => {
     await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.7.0' }))
-    expect(card()?.textContent).toContain('Workspace runtime needs an update')
-    expect(button('Update to 2.0.4')).toBeTruthy()
+    expect(card()?.textContent).toContain('A workspace update is ready')
+    expect(button('Update and Stop Work…')).toBeTruthy()
   })
 
   it('updates a runtime nothing else uses without asking', async () => {
@@ -181,8 +181,8 @@ describe('RuntimeMismatchCard', () => {
     await render(connection)
     expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
     // The fake update returns at once: it is restarting.
-    expect(card()?.textContent).toContain('Restarting the workspace runtime')
-    expect(button('Update to')).toBeUndefined()
+    expect(card()?.textContent).toContain('Reopening the workspace')
+    expect(button('Update and Stop Work')).toBeUndefined()
   })
 
   it('never moves a newer runtime back to this app', async () => {
@@ -191,6 +191,6 @@ describe('RuntimeMismatchCard', () => {
     await render(connection)
     expect(connection.runtime.runtime.update).not.toHaveBeenCalled()
     expect(card()?.textContent).toContain('Update Cate to use this workspace')
-    expect(button('Update to')).toBeUndefined()
+    expect(button('Update and Stop Work')).toBeUndefined()
   })
 })

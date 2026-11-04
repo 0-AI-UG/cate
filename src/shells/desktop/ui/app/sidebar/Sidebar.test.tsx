@@ -81,12 +81,30 @@ describe('Sidebar', () => {
     expect(host.querySelector('[aria-label="Open Workspace…"]')).toBeNull()
   })
 
-  it('lists local and paired workspaces under their machines', () => {
+  it('lists local and paired workspaces together with remote location context', () => {
     act(() => root.render(<Sidebar />))
     expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(3)
     expect(host.textContent).toContain('Shared')
-    expect([...host.querySelectorAll('[data-machine]')].map((h) => h.textContent)).toEqual(['This device', 'Paired'])
+    expect(host.querySelectorAll('[data-machine]')).toHaveLength(0)
+    expect(rowOf('Shared').textContent).toContain('Remote computer')
     expect(host.querySelector('[aria-label="Open Workspace…"]')).not.toBeNull()
+  })
+
+  it('reorders a paired workspace across local workspaces', () => {
+    act(() => root.render(<Sidebar />))
+    const source = rowOf('Shared').parentElement!
+    const target = rowOf('cate').parentElement!
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? '', effectAllowed: '', dropEffect: '' }
+    const drag = (element: HTMLElement, type: string) => {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      Object.defineProperties(event, { dataTransfer: { value: dataTransfer }, clientY: { value: 0 } })
+      act(() => element.dispatchEvent(event))
+    }
+    drag(source, 'dragstart')
+    drag(target, 'dragover')
+    drag(target, 'drop')
+    expect(list.reorder).toHaveBeenCalledWith(['paired:abc', 'local:/p/cate', 'local:/p/site'])
   })
 
   it('opens and selects a workspace on click', async () => {

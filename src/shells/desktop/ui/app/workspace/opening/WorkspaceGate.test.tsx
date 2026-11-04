@@ -8,6 +8,7 @@ import { WorkspaceGate } from './WorkspaceGate'
 import { noRuntimeUpdates } from '@client/connections/testing'
 
 // The workspace's document: synced (or not yet) as each test sets it.
+const others = vi.hoisted(() => [])
 const doc = vi.hoisted(() => {
   const listeners = new Set<() => void>()
   const store = {
@@ -23,6 +24,7 @@ const doc = vi.hoisted(() => {
   return store
 })
 vi.mock('@client/document', () => ({
+  otherClientsOf: () => others,
   documentStoreFor: () => doc,
   documentStoresVersion: () => 0,
   subscribeDocumentStores: () => () => {},
