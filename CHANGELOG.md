@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+### Fixed
+
+- **Browser passwords**: reusing an identical saved login on a matching HTTPS subdomain no longer prompts to save a duplicate password on desktop or iOS.
+
+## [iOS 0.1.1 (20)] - 2026-11-04
+
+This TestFlight build adds shared workspace passwords to the iOS browser. Compatibility version remains 1.
+
+### Added
+
+- **Browser passwords**: choose a saved workspace login to fill a form on iPhone, and confirm saving or updating a submitted password.
+
+### Changed
+
+- **Password filling** is scoped to the selected page and origin, with stale targets invalidated when navigating or switching tabs.
+
 ## [2.1.0-beta.8] - 2026-11-04
 
 This beta separates connection compatibility from release numbers and adds agent provider setup.

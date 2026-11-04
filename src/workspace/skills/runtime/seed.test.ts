@@ -103,6 +103,39 @@ describe('seeding bundled skills', () => {
     expect(manifest().seeded).toEqual([expect.stringMatching(markerFor('claude-code'))])
   })
 
+  it.each(['current', 'older', 'absent'])('restores a missing installed bundle with a %s marker', async (marker) => {
+    dirs.add(`${WS}/.claude`)
+    await seed()
+    const installed = [...files.keys()].filter(p => p.startsWith(`${CLAUDE_DIR}/`))
+    for (const p of installed) files.delete(p)
+    for (const dir of [...dirs]) {
+      if (dir === CLAUDE_DIR || dir.startsWith(`${CLAUDE_DIR}/`)) dirs.delete(dir)
+    }
+    const seeded = marker === 'current' ? manifest().seeded
+      : marker === 'older' ? ['cate/cate-cli:claude-code@000000000000'] : []
+    files.set(MANIFEST, JSON.stringify({ skills: manifest().skills, seeded }))
+
+    await seed()
+
+    expect(files.get(CLAUDE_SKILL)).toContain('name: cate-cli')
+    for (const p of installed) expect(files.has(p)).toBe(true)
+    expect(manifest().seeded).toEqual([expect.stringMatching(markerFor('claude-code'))])
+  })
+
+  it('preserves an uninstall with the current version marker', async () => {
+    dirs.add(`${WS}/.claude`)
+    await seed()
+    for (const p of [...files.keys()]) {
+      if (p.startsWith(`${CLAUDE_DIR}/`)) files.delete(p)
+    }
+    files.set(MANIFEST, JSON.stringify({ skills: [], seeded: manifest().seeded }))
+
+    await seed()
+
+    expect(files.has(CLAUDE_SKILL)).toBe(false)
+    expect(manifest().skills).toEqual([])
+  })
+
   it('refreshes an unedited copy from an older bundle', async () => {
     dirs.add(`${WS}/.claude`)
     await seed()
