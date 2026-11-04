@@ -6,9 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.9] - 2026-11-04
+
+This beta improves shared browser passwords and restores missing bundled workspace skills. Compatibility version remains 1.
+
+### Added
+
+- **iOS browser passwords**: fill saved workspace logins and confirm saving or updating submitted passwords through the shared runtime.
+
 ### Fixed
 
 - **Browser passwords**: reusing an identical saved login on a matching HTTPS subdomain no longer prompts to save a duplicate password on desktop or iOS.
+- **Bundled skills**: missing installed skill files are restored when the workspace still requests them, while explicit uninstalls remain respected. Worktree sync warnings explain how to restore missing workspace skills.
 
 ## [iOS 0.1.1 (20)] - 2026-11-04
 
