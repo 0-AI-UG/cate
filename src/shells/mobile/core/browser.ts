@@ -2,6 +2,7 @@
 // session (the core's tab follower: `load` events) and report what they do,
 // as every client's pages do (10.2).
 
+import { runtimeFor } from '@kernel/rpc/client'
 import { clientIdentity } from '@client/connections'
 import { createBrowserTabFollower, type BrowserTabFollower } from '@panels/browser/client'
 import type { BrowserOp, BrowserSnapshot } from '@panels/browser/contract'
@@ -15,6 +16,10 @@ export interface MobileBrowsers {
   navigated(params: Params<'browser.navigated'>): void
   loading(params: Params<'browser.loading'>): void
   title(params: Params<'browser.title'>): void
+  passwordSuggestions(params: Params<'browser.passwordSuggestions'>): Promise<MobileCoreMethods['browser.passwordSuggestions']['result']>
+  passwordForFill(params: Params<'browser.passwordForFill'>): Promise<MobileCoreMethods['browser.passwordForFill']['result']>
+  passwordSaveDisposition(params: Params<'browser.passwordSaveDisposition'>): Promise<MobileCoreMethods['browser.passwordSaveDisposition']['result']>
+  savePassword(params: Params<'browser.savePassword'>): Promise<MobileCoreMethods['browser.savePassword']['result']>
 }
 
 export function createMobileBrowsers(views: MobileViews): MobileBrowsers {
@@ -27,7 +32,17 @@ export function createMobileBrowsers(views: MobileViews): MobileBrowsers {
     return view && follower ? { view, follower } : null
   }
 
+  const dataFor = (viewId: string, tabId: string) => {
+    const found = find(viewId)
+    if (!found?.view.snapshot()?.tabs.some((tab) => tab.id === tabId)) throw new Error('The browser tab is not open.')
+    return runtimeFor(found.view.workspaceId).browserData
+  }
+
   return {
+    passwordSuggestions: ({ viewId, tabId, url }) => dataFor(viewId, tabId).passwordSuggestions({ url }),
+    passwordForFill: ({ viewId, tabId, url, id }) => dataFor(viewId, tabId).passwordForFill({ url, id }),
+    passwordSaveDisposition: ({ viewId, tabId, input }) => dataFor(viewId, tabId).passwordSaveDisposition({ input }),
+    savePassword: ({ viewId, tabId, input }) => dataFor(viewId, tabId).savePassword({ input }),
     open(params) {
       const view = views.open<BrowserSnapshot>(params)
       const follower = createBrowserTabFollower(() => clientIdentity().clientId)

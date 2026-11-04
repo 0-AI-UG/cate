@@ -54,6 +54,8 @@ struct BrowserPanelView: View {
             }
         }
         .panelTitle(panel.title)
+        .onAppear { pages.shownPage?.passwords.setActive(true) }
+        .onDisappear { pages.shownPage?.passwords.setActive(false) }
         .onChange(of: pages.url) { if !editingAddress { address = pages.url } }
         .onChange(of: editingAddress) { if !editingAddress { address = pages.url } }
         .onChange(of: session.snapshot) {
@@ -70,6 +72,9 @@ struct BrowserPanelView: View {
     /// a menu, each a piece of glass over the page.
     private func chrome(_ snapshot: BrowserSnapshot) -> some View {
         VStack(spacing: 8) {
+            if let passwords = pages.shownPage?.passwords {
+                BrowserPasswordControls(passwords: passwords)
+            }
             if let error = pages.loadError, !editingAddress {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
@@ -354,13 +359,18 @@ final class BrowserPages {
             }
         }
         let open = Set(snapshot.tabs.map(\.id))
-        for id in pages.keys where !open.contains(id) { pages[id] = nil }
+        for id in pages.keys where !open.contains(id) {
+            pages[id]?.passwords.setActive(false)
+            pages[id] = nil
+        }
         if let shownTabId, !open.contains(shownTabId) { show(snapshot.activeTabId) }
     }
 
     func show(_ tabId: String) {
         guard tabId != shownTabId else { return }
+        shownPage?.passwords.setActive(false)
         shownTabId = tabId
+        shownPage?.passwords.setActive(true)
         refresh()
     }
 
@@ -396,6 +406,7 @@ final class BrowserPages {
 @MainActor
 final class BrowserPage: WebPageController, WKNavigationDelegate, WKUIDelegate {
     let tabId: String
+    let passwords: BrowserPasswords
     private(set) var loadError: String?
     /// Clear space under the page for the controls over it; the scroll view
     /// adds the bars' safe area itself.
@@ -416,7 +427,10 @@ final class BrowserPage: WebPageController, WKNavigationDelegate, WKUIDelegate {
         self.tabId = tabId
         self.session = session
         self.changed = changed
-        super.init(store: store, route: route)
+        let passwords = BrowserPasswords(tabId: tabId, session: session)
+        self.passwords = passwords
+        super.init(store: store, route: route, configure: { passwords.configure($0) })
+        passwords.attach(webView)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         observations = [
@@ -469,6 +483,7 @@ final class BrowserPage: WebPageController, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         navigating = true
+        passwords.navigated()
         reportLoad(true)
     }
 

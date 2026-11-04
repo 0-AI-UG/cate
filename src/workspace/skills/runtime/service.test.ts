@@ -131,6 +131,22 @@ describe('skills runtime', () => {
     await expect(service.syncCheckout(path.join(tmp, 'elsewhere'))).rejects.toSatisfy((e) => isRpcError(e, 'rejected'))
   })
 
+  it('reports a missing unrelated skill once across worktrees without failing installs', async () => {
+    await service.install(demoEntry, 'codex')
+    await fs.rm(path.join(root, '.codex/skills/demo'), { recursive: true })
+    checkouts = ['one', 'two'].map(name => path.join(root, '.cate/worktrees', name))
+    for (const checkout of checkouts) await fs.mkdir(checkout, { recursive: true })
+
+    const result = await service.install(demoEntry, 'claude-code')
+
+    expect(result.warnings).toEqual([
+      'Workspace skill files are missing for owner-repo/demo:codex. Reinstall this skill in the workspace to restore worktree syncing.',
+    ])
+    for (const checkout of checkouts) {
+      expect(await fs.readFile(path.join(checkout, '.claude/skills/demo/SKILL.md'), 'utf8')).toContain('body')
+    }
+  })
+
   it('refuses to apply anything while the workspace is untrusted', async () => {
     trusted = false
     await fs.mkdir(path.join(root, '.claude'))

@@ -13,7 +13,7 @@ import type { CloseChoice } from '@runtime/daemon/contract'
 import type { PowerState, KeepAwakeDuration } from '@runtime/power/contract'
 import type { PushStatus } from '@runtime/push/contract'
 import type { AgentId, AgentStatus, AgentStep, AgentTypeInfo } from '@services/agents/contract'
-import type { LinkOpenTarget } from '@services/browser/contract'
+import type { BrowserCredentialSuggestion, BrowserCredentialFill, BrowserCredentialSaveInput, BrowserCredentialSaveDisposition, BrowserCredentialSaveResult, LinkOpenTarget } from '@services/browser/contract'
 import type { RelationKind } from '@workspace/document/contract'
 import type { Point } from '@workspace/canvas/contract'
 import type { RelationContextMode } from '@workspace/relations/contract'
@@ -516,6 +516,12 @@ export interface MobileCoreMethods {
   'browser.navigated': { params: { viewId: string; tabId: string; url: string; title: string; inPage: boolean; canGoBack: boolean; canGoForward: boolean }; result: null }
   'browser.loading': { params: { viewId: string; tabId: string; loading: boolean; loadError: string | null }; result: null }
   'browser.title': { params: { viewId: string; tabId: string; title: string }; result: null }
+  /** Native browser password UI; secrets travel only in explicit fill/save calls. */
+  'browser.passwordSuggestions': { params: { viewId: string; tabId: string; url: string }; result: BrowserCredentialSuggestion[] }
+  'browser.passwordForFill': { params: { viewId: string; tabId: string; url: string; id: string }; result: BrowserCredentialFill | null }
+  'browser.passwordSaveDisposition': { params: { viewId: string; tabId: string; input: BrowserCredentialSaveInput }; result: BrowserCredentialSaveDisposition }
+  'browser.savePassword': { params: { viewId: string; tabId: string; input: BrowserCredentialSaveInput }; result: BrowserCredentialSaveResult }
+
 
   /** Follows a panel's agent conversation as `chat` events for `viewId`
    *  until `agents.unwatch`; `pending` is a new agent's first prompt, on its

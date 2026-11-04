@@ -61,6 +61,34 @@ describe('saved passwords', () => {
     })
   })
 
+  it('recognizes an unchanged login across secure matching hosts without creating a duplicate', async () => {
+    const input = { origin: 'https://tum.de', username: 'me', password: 'secret' }
+    const saved = await store.save(input)
+    const submission = { ...input, origin: 'https://mail.tum.de' }
+    expect(store.saveDisposition(submission)).toBe('unchanged')
+    await expect(store.save(submission)).resolves.toEqual({ action: 'unchanged', credential: saved.credential })
+    expect(store.list()).toEqual([saved.credential])
+
+    for (const origin of ['http://mail.tum.de', 'https://mail.tum.de:8443', 'https://tum.de.evil.com', 'https://not-tum.de']) {
+      expect(store.saveDisposition({ ...submission, origin })).toBe('create')
+    }
+    expect(store.saveDisposition({ ...submission, username: 'someone-else' })).toBe('create')
+  })
+
+  it('keeps changed passwords site-specific and gives an exact-origin login priority', async () => {
+    const root = await store.save({ origin: 'https://tum.de', username: 'me', password: 'root-secret' })
+    const submission = { origin: 'https://mail.tum.de', username: 'me', password: 'mail-secret' }
+    expect(store.saveDisposition(submission)).toBe('create')
+    const mail = await store.save(submission)
+    expect(mail.action).toBe('created')
+    expect(store.forFill(root.credential.id, 'https://tum.de')?.password).toBe('root-secret')
+
+    const changed = { ...submission, password: 'root-secret' }
+    expect(store.saveDisposition(changed)).toBe('update')
+    await expect(store.save(changed)).resolves.toMatchObject({ action: 'updated', credential: { id: mail.credential.id } })
+    expect(store.list()).toHaveLength(2)
+  })
+
   it('exposes only matching usernames, never passwords, in suggestions', async () => {
     await store.save({ origin: 'https://example.com', username: 'me', password: 'secret' })
     const suggestions = store.suggestions('https://example.com/account')

@@ -141,8 +141,11 @@ export function createPasswordStore(
     secrets.update((cur) => ({ ...cur, [PASSWORDS_KEY]: credentials.slice(0, MAX_CREDENTIALS) }))
     await secrets.flushDurable()
   }
-  const findSame = (list: StoredCredential[], origin: string, username: string) =>
+  // Exact-origin accounts own updates; matching hosts only suppress saving
+  // a login that is already available unchanged through autofill.
+  const findSame = (list: StoredCredential[], origin: string, username: string, password: string) =>
     list.find((c) => c.origin === origin && c.username === username)
+    ?? list.find((c) => c.username === username && c.password === password && matchesOrigin(c.origin, origin))
 
   return {
     list: () => read().map(suggestion),
@@ -154,14 +157,14 @@ export function createPasswordStore(
     },
     saveDisposition(input) {
       const value = validateInput(input)
-      const existing = findSame(read(), value.origin, value.username)
+      const existing = findSame(read(), value.origin, value.username, value.password)
       if (!existing) return 'create'
       return existing.password === value.password ? 'unchanged' : 'update'
     },
     async save(input) {
       const value = validateInput(input)
       const current = read()
-      const existing = findSame(current, value.origin, value.username)
+      const existing = findSame(current, value.origin, value.username, value.password)
       if (existing && existing.password === value.password) {
         return { action: 'unchanged', credential: suggestion(existing) }
       }

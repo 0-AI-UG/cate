@@ -73,13 +73,22 @@ export function createSkillSeeder(deps: SkillSeederDeps) {
       const marker = seeded.find((m) => m === base || m.startsWith(`${base}@`))
       const expectedHash = hashSkillFiles(expectedInstall(bundled, name, targetId))
       const versioned = `${base}@${expectedHash}`
-      if (marker === versioned) continue
-
       const entry = installed.find((m) => m.skillId === skillId && m.targetId === targetId)
       const write = async (): Promise<void> => {
         await installer.writeSkill({ skillId, name, targetId, cwd, files: bundled })
         log.info('seeded %s for %s in %s', name, targetId, cwd)
       }
+
+      // A manifest row still requests this install. Restore a missing bundle
+      // before checking the marker, which records the version, not disk state.
+      // An explicit uninstall removes the row and must continue to stick.
+      const current = entry ? await installer.readWorkspaceSkillFiles(cwd, targetId, entry.name) : []
+      if (entry && current.length === 0) {
+        await write()
+        await installer.setSeededMarker(cwd, versioned)
+        continue
+      }
+      if (marker === versioned) continue
 
       if (marker !== undefined) {
         if (!entry) {
@@ -87,7 +96,7 @@ export function createSkillSeeder(deps: SkillSeederDeps) {
           await installer.setSeededMarker(cwd, versioned)
           continue
         }
-        const installedHash = hashSkillFiles(await installer.readWorkspaceSkillFiles(cwd, targetId, entry.name))
+        const installedHash = hashSkillFiles(current)
         if (installedHash !== expectedHash) {
           const priorHash = marker.includes('@') ? marker.slice(base.length + 1) : null
           // Edited since the last seed: the user's copy wins and the old marker

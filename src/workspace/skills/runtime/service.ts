@@ -88,7 +88,7 @@ export function createSkillsRuntime(deps: SkillsRuntimeDeps) {
     try {
       const checkouts = await deps.listCheckouts()
       const results = await Promise.all(checkouts.map((checkout) => mirror.sync(root, checkout)))
-      return results.flatMap((result) => result.warnings)
+      return [...new Set(results.flatMap((result) => result.warnings))]
     } catch (err) {
       log.warn('worktree sync failed: %O', err)
       return []

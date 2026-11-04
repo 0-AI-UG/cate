@@ -1519,6 +1519,15 @@ downloads list and its views, and hands page work to it.
   being the active one fails with `browser-tab-changed`, which says why.
 - **Shared passwords, own sessions.** The runtime remembers passwords, so any
   client can autofill them; each client keeps its own logged-in session.
+  On iOS, the native browser uses the mobile core's view-scoped password
+  methods over the same `browserData` capability. A main-frame script in an
+  isolated WebKit content world detects login fields and captures submissions;
+  it has no core API access. Native UI offers matching accounts, fetches the
+  selected secret only for a fill, and asks before saving or updating a manual
+  submission. Fill targets are bound to a document and origin and invalidated
+  on navigation, tab switching or leaving the browser. Cross-origin frames are
+  not supported. Passwords remain runtime workspace data; the phone holds only
+  transient fill/submission data and keeps its own per-workspace cookies.
   Importing Chrome passwords into a runtime the client's connection does not
   put on its own network (`reachesClientNetwork`) asks first: they are stored
   on that machine.

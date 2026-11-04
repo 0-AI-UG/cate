@@ -153,7 +153,7 @@ export function createSkillMirror(deps: SkillMirrorDeps) {
     for (const [key, source] of sourceByKey) {
       const sourceBundle = await readInstalledBundle(files, targets, base, source)
       if (!sourceBundle) {
-        warn(result, `Canonical skill files are missing for ${key}`)
+        warn(result, `Workspace skill files are missing for ${key}. Reinstall this skill in the workspace to restore worktree syncing.`)
         continue
       }
       const prior = owned.get(key)

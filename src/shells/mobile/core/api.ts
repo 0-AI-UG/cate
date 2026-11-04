@@ -231,6 +231,10 @@ export function createCoreApi(client: MobileClient, parts: CoreParts): Handlers 
       browsers.loading(params)
       return null
     },
+    'browser.passwordSuggestions': (params) => browsers.passwordSuggestions(params),
+    'browser.passwordForFill': (params) => browsers.passwordForFill(params),
+    'browser.passwordSaveDisposition': (params) => browsers.passwordSaveDisposition(params),
+    'browser.savePassword': (params) => browsers.savePassword(params),
     async 'browser.title'(params) {
       browsers.title(params)
       return null
