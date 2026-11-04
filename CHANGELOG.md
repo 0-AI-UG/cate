@@ -29,7 +29,7 @@ This beta separates connection compatibility from release numbers and adds agent
 
 - **Cate credits**: removed prepaid balances, purchases, spending tokens and desktop/iOS credit installation. Agents connect directly to user-configured providers.
 
-## [iOS 0.1.1 (18)] - 2026-11-04
+## [iOS 0.1.1 (19)] - 2026-11-04
 
 This build connects to desktop beta.8 using compatibility version 1.
 
