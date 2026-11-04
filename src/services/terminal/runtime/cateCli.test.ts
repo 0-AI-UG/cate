@@ -48,7 +48,9 @@ function spawn(terminalId: string, panelId: string | null = 'panel-1'): SpawnInf
 async function run(env: Record<string, string>) {
   const command = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : '/bin/sh'
   const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'cate "argument with spaces"'] : ['-c', 'cate "argument with spaces"']
-  const result = await execFileP(command, args, { env: { ...process.env, ...env } })
+  // cmd.exe must receive its command text verbatim; Node otherwise escapes
+  // the embedded quotes for a normal Windows executable rather than a shell.
+  const result = await execFileP(command, args, { env: { ...process.env, ...env }, windowsVerbatimArguments: process.platform === 'win32' })
   return JSON.parse(result.stdout.trim()) as { build: string; socket: string; token: string; args: string[] }
 }
 
@@ -103,7 +105,8 @@ it('does not inherit another terminal token for a process without a panel', asyn
   const { runtime } = setup('build')
   const env = await runtime.envForTerminal({ ...spawn('anonymous', null), env: { PATH: process.env.PATH!, CATE_TOKEN: 'inherited' } }) as Record<string, string>
   expect(env.CATE_TOKEN).toBe('')
-  expect((await run({ ...env, CATE_TOKEN: 'snapshot-token' })).token).toBe('')
+  // cmd.exe removes an environment variable when it is set to an empty value.
+  expect((await run({ ...env, CATE_TOKEN: 'snapshot-token' })).token ?? '').toBe('')
 })
 
 it('revokes the issued token if publishing its launcher fails', async () => {
