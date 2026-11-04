@@ -38,7 +38,6 @@ function PromptDialog({ prompt: current, reply }: { prompt: MachinePrompt; reply
       width={420}
       icon={<KeyRound size={16} />}
       title={current.machine ? `Sign in to ${current.machine}` : 'Sign in'}
-      zClassName="z-[100003]"
       bodyClassName="px-5 py-4"
     >
       <form

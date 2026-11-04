@@ -24,6 +24,7 @@ export type AgentId =
   | 'grok'
   | 'kiro'
   | 'opencode'
+  | 'pi'
 
 /** Where one agent reads project skills from, and how they are written.
  *  Cate follows the open Agent Skills standard (a `SKILL.md` folder), so an
@@ -196,6 +197,20 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     promptContextHook: 'endpoint',
     promptGuidance: null,
     skills: folderSkills('opencode', ['.opencode', 'skills']),
+  },
+  pi: {
+    id: 'pi',
+    displayName: 'Pi',
+    command: 'pi',
+    resume: { args: (sid) => ['--session', sid], fromSessionStart: false },
+    sessionStore: '.pi/agent/sessions',
+    promptArgs: (prompt) => [prompt],
+    startArgs: [],
+    interruptKeys: ['escape'],
+    matchProcess: (n) => n === 'pi',
+    promptContextHook: 'endpoint',
+    promptGuidance: null,
+    skills: folderSkills('pi', ['.pi', 'skills']),
   },
   // Kiro CLI with its v3 engine: standalone workspace hooks require it, so it
   // is selected explicitly for fresh and resumed sessions.

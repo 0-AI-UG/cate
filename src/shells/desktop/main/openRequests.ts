@@ -59,16 +59,22 @@ export function createOpenRequests(deps: OpenRequestsDeps) {
     }
   }
 
+  const openUrl = (url: string) => {
+    if (!isOpenableUrl(url)) return
+    pending.push({ kind: 'url', value: url })
+    if (!deps.target() && deps.started()) deps.createMainWindow()
+    flush()
+  }
+
   return {
     openPath(path: string) {
       pending.push({ kind: 'path', value: realPath(path) })
       flush()
     },
-    openUrl(url: string) {
-      if (!isOpenableUrl(url)) return
-      pending.push({ kind: 'url', value: url })
-      if (!deps.target() && deps.started()) deps.createMainWindow()
-      flush()
+    openUrl,
+    /** Windows/Linux deliver protocol launches in argv, including cold starts. */
+    openUrlsFromArgs(args: readonly string[]) {
+      for (const arg of args) if (arg.startsWith('cate://')) openUrl(arg)
     },
     /** The renderer listens (again, after a reload). */
     markReady(contents: WebContents) {

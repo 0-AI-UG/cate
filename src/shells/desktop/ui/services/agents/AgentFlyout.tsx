@@ -6,16 +6,18 @@ import { agentDisplayName, type AgentId } from '@services/agents/contract'
 import { Tooltip } from '../../kernel/interaction'
 import { AgentMark } from './AgentMark'
 
-export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, onPick, children }: {
+export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, onPick, children, footer }: {
   agents: readonly AgentId[]
   /** The side of the button it opens on; the column grows away from it. */
   side: 'up' | 'down' | 'left'
   label: string
-  itemLabel(name: string): string
+  itemLabel(name: string, agentId: AgentId): string
   disabled?: boolean
   onPick(agentId: AgentId): void
   /** Shown in the pill in place of the logos (loading, nothing to pick). */
   children?: React.ReactNode
+  /** An optional action alongside the available agents. */
+  footer?: React.ReactNode
 }): React.ReactElement {
   const down = side === 'down'
   return (
@@ -29,7 +31,7 @@ export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, 
       } as React.CSSProperties}
     >
       {children ?? agents.map((agentId, index) => {
-        const name = itemLabel(agentDisplayName(agentId))
+        const name = itemLabel(agentDisplayName(agentId), agentId)
         return (
           <Tooltip key={agentId} label={name} placement={side === 'left' ? 'left' : 'right'}>
             <button
@@ -46,6 +48,7 @@ export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, 
           </Tooltip>
         )
       })}
+      {footer}
     </div>
   )
 }

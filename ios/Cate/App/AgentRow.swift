@@ -14,6 +14,13 @@ struct AgentRow: View {
     var body: some View {
         NavigationLink(value: AgentRoute(workspaceId: workspaceId, panelId: agent.panelId)) {
             HStack(alignment: .top, spacing: 12) {
+                if let agentId = agent.agentId {
+                    Image("agent-\(agentId)")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .accessibilityLabel(agent.name)
+                }
                 AgentStatusIcon(agent: agent)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(agent.title).font(.headline).lineLimit(1)

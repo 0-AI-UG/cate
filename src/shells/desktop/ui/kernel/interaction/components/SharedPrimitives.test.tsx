@@ -143,3 +143,24 @@ it('flips a side tooltip and repositions it when the window resizes', () => {
     expect(tooltip.style.maxWidth).toBe('calc(100vw - 16px)')
   } finally { measure.mockRestore() }
 })
+
+it('stacks nested dialogs by creation order and closes only the top dialog on Escape', () => {
+  const closeParent = vi.fn()
+  function Dialogs() {
+    const [child, setChild] = useState(true)
+    return <Modal title="Parent" onClose={closeParent}>
+      {child && <Modal title="Child" onClose={() => setChild(false)}><button>Child action</button></Modal>}
+    </Modal>
+  }
+  render(<Dialogs />)
+  const dialogs = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')]
+  const parent = dialogs.find((dialog) => document.getElementById(dialog.getAttribute('aria-labelledby')!)?.textContent === 'Parent')!
+  const child = dialogs.find((dialog) => dialog !== parent)!
+  expect(child.contains(document.activeElement)).toBe(true)
+  expect(Number(child.parentElement!.style.zIndex)).toBeGreaterThan(Number(parent.parentElement!.style.zIndex))
+  act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+  expect(closeParent).not.toHaveBeenCalled()
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+  act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+  expect(closeParent).toHaveBeenCalledOnce()
+})

@@ -172,7 +172,7 @@ describe('workspace usage', () => {
     const summary = await service().summary(input)
 
     expect(Object.fromEntries(summary.stores.map((a) => [a.agent, [a.status, a.sessions]]))).toEqual({
-      'claude-code': ['ok', 2], codex: ['ok', 1], grok: ['ok', 1], opencode: ['ok', 1], kiro: ['unsupported', 0], cursor: ['unsupported', 0],
+      'claude-code': ['ok', 2], codex: ['ok', 1], grok: ['ok', 1], opencode: ['ok', 1], kiro: ['unsupported', 0], cursor: ['unsupported', 0], pi: ['missing', 0],
     })
     expect(summary.stores.find((a) => a.agent === 'kiro')?.note).toBe('Kiro records credits, not tokens: 0.50 credits across 1 session.')
 

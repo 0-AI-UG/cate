@@ -11,6 +11,7 @@ export const AGENT_COLORS: Record<AgentId, string> = {
   grok: 'color-mix(in oklab, var(--text-primary) 72%, var(--canvas-bg))',
   opencode: '#5b9cf5',
   kiro: '#9046ff',
+  pi: '#e8a33d',
   cursor: 'var(--text-secondary)',
 }
 

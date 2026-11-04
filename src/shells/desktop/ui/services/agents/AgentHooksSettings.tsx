@@ -1,67 +1,47 @@
-// Agent hooks settings: per-agent control over Cate's repo-local hook
-// injection in this workspace (the `agentHookInjection` workspace setting).
-// Auto enables an agent's hooks when its own config folder is in the repo;
-// On and Off force it. The runtime applies a change on the next terminal
-// spawn. The readout is inspected from the workspace's files on open (and on
-// Refresh detection). For a CLI whose approvals are told apart by config
-// (Codex) it also shows a read-only Approvals label; Cate never changes the
-// CLI's permission policy (docs/agent-activity.md).
-
-import { useEffect, useRef, useState } from 'react'
+// Workspace activity integration shared by the unified Agents settings.
+// Native approval policy is inspected, never changed here.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRuntime } from '../../kernel/rpc'
-import { createWorkspaceSettingsMirror, type WorkspaceSettingsMirror } from '@kernel/settings/client'
-import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
-import { LoadingState, SearchableBlock } from '../../kernel/interaction'
+import { useWorkspaceSetting, workspaceSettingsFor, setWorkspaceSetting } from '../../kernel/settings'
 import {
-  AGENTS,
-  AGENT_APPROVAL_DETECTION,
-  agentHookInUse,
-  agentHooksEnabled,
-  resolveAgentHookMode,
-  type AgentApprovalDetection,
-  type AgentDef,
-  type AgentHookAgentState,
-  type AgentHookConfig,
-  type AgentHookMode,
-  type AgentId,
+  AGENTS, AGENT_DEFS, AGENT_APPROVAL_DETECTION, agentHookInUse, agentHooksEnabled, resolveAgentHookMode,
+  type AgentApprovalDetection, type AgentDef, type AgentHookAgentState, type AgentHookConfig, type AgentHookMode, type AgentId,
 } from '@services/agents/contract'
-import { agentLogo } from './logos'
 
 const MODE_OPTIONS = [
   { value: 'auto', label: 'Auto', description: 'Enable when the agent is configured in this workspace' },
   { value: 'on', label: 'On', description: 'Install hooks for new terminals' },
   { value: 'off', label: 'Off', description: 'Disable hooks for new terminals' },
 ] as const
+const APPROVAL_LABELS = { automatic: 'Automatic', manual: 'Manual', unknown: 'Unknown' } as const
 
-interface AgentHookRow {
+export interface AgentHookRow {
   agent: AgentDef
   folderPresent: boolean
   injected: boolean
   approvalDetection: AgentApprovalDetection
 }
-
-const APPROVAL_LABELS = { automatic: 'Automatic', manual: 'Manual', unknown: 'Unknown' } as const
-
-/** Inspection results in registry order, one row per agent. */
+export interface AgentHookController {
+  available: boolean
+  config: AgentHookConfig
+  rows: AgentHookRow[]
+  states: Partial<Record<AgentId, AgentHookRow>>
+  loading: boolean
+  error: string | null
+  refresh(): Promise<void>
+  setMode(agentId: AgentId, mode: AgentHookMode): Promise<void>
+}
 function agentHookRows(live: readonly AgentHookAgentState[]): AgentHookRow[] {
   const byId = new Map(live.map((state) => [state.agentId, state]))
-  return AGENTS.map((agent) => ({
-    agent,
-    folderPresent: byId.get(agent.id)?.folderPresent ?? false,
-    injected: byId.get(agent.id)?.injected ?? false,
-    approvalDetection: byId.get(agent.id)?.approvalDetection ?? AGENT_APPROVAL_DETECTION[agent.id],
-  }))
+  return AGENTS.map((agent) => ({ agent, folderPresent: byId.get(agent.id)?.folderPresent ?? false, injected: byId.get(agent.id)?.injected ?? false, approvalDetection: byId.get(agent.id)?.approvalDetection ?? AGENT_APPROVAL_DETECTION[agent.id] }))
 }
-
-function agentHookStatus(row: AgentHookRow, config: AgentHookConfig): { mode: AgentHookMode; label: string } {
+function agentHookStatus(row: AgentHookRow, config: AgentHookConfig): string {
   const mode = resolveAgentHookMode(config, row.agent.id)
   const inUse = agentHookInUse(row.agent.id, { folderPresent: row.folderPresent })
-  if (mode === 'off') return { mode, label: 'Off for new terminals' }
-  if (!agentHooksEnabled(mode, inUse)) return { mode, label: 'Not configured in this workspace' }
-  return { mode, label: row.injected ? 'Hooks installed' : 'Will install when a terminal opens' }
+  if (mode === 'off') return 'Off for new terminals'
+  if (!agentHooksEnabled(mode, inUse)) return 'Not configured in this workspace'
+  return row.injected ? 'Hooks installed' : 'Will install when a terminal opens'
 }
-
-/** Sparse: Auto needs no entry. */
 function withHookMode(config: AgentHookConfig, agentId: AgentId, mode: AgentHookMode): AgentHookConfig {
   const next = { ...config }
   if (mode === 'auto') delete next[agentId]
@@ -69,118 +49,78 @@ function withHookMode(config: AgentHookConfig, agentId: AgentId, mode: AgentHook
   return next
 }
 
-export function AgentHooksSettings({ workspaceId }: { workspaceId: string | null | undefined }) {
+/** One settings subscription and one inspection for all of the agent rows. */
+export function useAgentHookSettings(workspaceId: string | null | undefined): AgentHookController {
   const runtime = useRuntime(workspaceId)
-  const [rows, setRows] = useState<AgentHookRow[] | null>(null)
-  const [error, setError] = useState(false)
-  const [config, setConfig] = useState<AgentHookConfig>({})
-  const [refresh, setRefresh] = useState(0)
-  const mirror = useRef<WorkspaceSettingsMirror<WorkspaceSettings> | null>(null)
+  const [rows, setRows] = useState(() => agentHookRows([]))
+  const config = useWorkspaceSetting(workspaceId, 'agentHookInjection')
+  const [inspecting, setInspecting] = useState(false)
+  const [settingsReady, setSettingsReady] = useState(false)
+  const [inspectionError, setInspectionError] = useState<string | null>(null)
+  const [writeError, setWriteError] = useState<string | null>(null)
+  const generation = useRef(0)
+  const active = useRef(true)
 
   useEffect(() => {
-    setRows(null)
-    setError(false)
-    if (!runtime) return
+    active.current = true
+    setSettingsReady(false); setWriteError(null)
+    const settings = workspaceId ? workspaceSettingsFor(workspaceId) : null
     let live = true
-    runtime.agents.inspectHooks({}).then(
-      (states) => { if (live) setRows(agentHookRows(states)) },
-      () => { if (live) { setRows([]); setError(true) } },
-    )
-    return () => { live = false }
-  }, [runtime, refresh])
+    void settings?.ready.then(() => { if (live) setSettingsReady(true) })
+    return () => { live = false; active.current = false }
+  }, [runtime, workspaceId])
 
-  useEffect(() => {
-    if (!runtime) return
-    const settings = createWorkspaceSettingsMirror(runtime.settings, workspaceSettingsTable)
-    mirror.current = settings
-    setConfig(settings.get('agentHookInjection'))
-    const off = settings.subscribe((values) => setConfig(values.agentHookInjection))
-    return () => {
-      off()
-      settings.dispose()
-      if (mirror.current === settings) mirror.current = null
+  const refresh = useCallback(async () => {
+    const request = ++generation.current
+    setInspectionError(null)
+    if (!runtime) { setRows(agentHookRows([])); setInspecting(false); return }
+    setInspecting(true)
+    try {
+      const states = await runtime.agents.inspectHooks({})
+      if (active.current && generation.current === request) setRows(agentHookRows(states))
+    } catch {
+      if (active.current && generation.current === request) setInspectionError('Could not check agent activity. Refresh agents to try again.')
+    } finally {
+      if (active.current && generation.current === request) setInspecting(false)
     }
   }, [runtime])
+  const invalidateInspection = useCallback(() => { generation.current++ }, [])
+  useEffect(() => { void refresh(); return invalidateInspection }, [refresh, invalidateInspection])
 
-  if (!runtime) {
-    return <p className="text-xs text-muted py-2">Open a workspace to configure its agent hooks.</p>
-  }
-
-  const setMode = (agentId: AgentId, mode: AgentHookMode) => {
-    void mirror.current?.set('agentHookInjection', withHookMode(config, agentId, mode)).catch(() => {})
-  }
-
-  return (
-    <SearchableBlock keywords="agent hooks injection claude codex cursor grok kiro opencode status presence auto on off approval automatic manual permissions">
-      <button type="button" className="text-xs text-muted hover:text-primary" onClick={() => setRefresh((value) => value + 1)}>Refresh detection</button>
-      {rows === null && <LoadingState label="Loading agent hooks" size={14} className="justify-start py-3 text-xs" />}
-      {error && <p role="alert" className="py-3 text-xs text-muted">Could not check agent hooks. Refresh detection to try again.</p>}
-      {!!rows?.length && !error && <div>
-        {rows.map((row) => {
-          const { mode, label } = agentHookStatus(row, config)
-          const logo = agentLogo(row.agent.id)
-          return (
-            <div
-              key={row.agent.id}
-              data-agent-hook-id={row.agent.id}
-              className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-subtle py-3 last:border-b-0"
-            >
-              <div className="flex min-w-[180px] flex-1 items-center gap-3">
-                {logo && <img src={logo} alt="" draggable={false} className="h-5 w-5 shrink-0 object-contain" />}
-                <div className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium text-primary">{row.agent.displayName}</span>
-                  <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
-                    {mode !== 'off' && row.injected && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: 'var(--git-added)' }} />}
-                    {label}
-                  </span>
-                </div>
-              </div>
-              <Segmented
-                label={`${row.agent.displayName} hooks`}
-                value={mode}
-                options={MODE_OPTIONS}
-                onChange={(value) => setMode(row.agent.id, value as AgentHookMode)}
-              />
-              {row.approvalDetection.source === 'config' && (
-                <span className="w-full pl-8 text-[11px] text-muted" title={row.approvalDetection.detail}>
-                  Approvals: {APPROVAL_LABELS[row.approvalDetection.mode]}
-                </span>
-              )}
-            </div>
-          )
-        })}
-      </div>}
-    </SearchableBlock>
-  )
+  const setMode = useCallback(async (agentId: AgentId, mode: AgentHookMode) => {
+    if (!workspaceId) return
+    const settings = workspaceSettingsFor(workspaceId)
+    if (!settings) return
+    setWriteError(null)
+    try {
+      await setWorkspaceSetting(workspaceId, 'agentHookInjection', withHookMode(settings.get('agentHookInjection'), agentId, mode))
+    } catch {
+      if (active.current) setWriteError('Could not update agent activity. Try again.')
+    }
+  }, [workspaceId])
+  const states = useMemo(() => Object.fromEntries(rows.map((row) => [row.agent.id, row])), [rows])
+  return { available: !!runtime, config, rows, states, loading: !!runtime && (inspecting || !settingsReady), error: inspectionError ?? writeError, refresh, setMode }
 }
 
-interface SegmentedProps {
-  label: string
-  value: string
-  options: ReadonlyArray<{ value: string; label: string; description: string }>
-  onChange: (value: string) => void
-}
-
-function Segmented({ label, value, options, onChange }: SegmentedProps) {
+/** A compact control in an existing agent row; identity belongs to its parent. */
+export function AgentHookControl({ agentId, name, controller, onChanged }: { agentId: AgentId; name: string; controller: AgentHookController; onChanged?(): void }) {
+  const row = controller.states[agentId] ?? { agent: AGENT_DEFS[agentId], folderPresent: false, injected: false, approvalDetection: AGENT_APPROVAL_DETECTION[agentId] }
+  const mode = resolveAgentHookMode(controller.config, agentId)
+  const status = controller.loading ? 'Checking agent activity' : agentHookStatus(row, controller.config)
+  const installed = mode !== 'off' && row.injected && !controller.loading
   return (
-    <div role="group" aria-label={label} className="inline-flex shrink-0 rounded-lg border border-subtle bg-surface-1 p-0.5">
-      {options.map((opt) => {
-        const active = opt.value === value
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            aria-pressed={active}
-            title={opt.description}
-            onClick={() => onChange(opt.value)}
-            className={`min-w-10 rounded-md px-2.5 py-1 text-[11px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue ${
-              active ? 'bg-surface-4 font-medium text-primary shadow-sm' : 'text-muted hover:bg-hover hover:text-primary'
-            }`}
-          >
-            {opt.label}
-          </button>
-        )
-      })}
+    <div data-agent-hook-id={agentId} className="space-y-3 text-xs text-muted">
+      <label className="flex items-center justify-between gap-3">
+        <span className="mr-auto text-[13px] font-medium text-primary">Cate integration</span>
+        <span aria-label={`${name} integration status`} title={status} className="inline-flex">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: installed ? 'var(--git-added)' : 'currentColor' }} />
+          <span className="sr-only">{status}</span>
+        </span>
+        <select aria-label={`${name} integration`} title="Cate hooks for new terminals" value={mode} disabled={!controller.available || controller.loading} onChange={(event) => { void controller.setMode(agentId, event.target.value as AgentHookMode).then(onChanged) }} className="rounded border border-subtle bg-surface-2 px-1.5 py-0.5 text-[11px] text-secondary disabled:opacity-40">
+          {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value} title={option.description}>{option.label}</option>)}
+        </select>
+      </label>
+      {row.approvalDetection.source === 'config' && !controller.loading && <span className="flex justify-between text-[11px]" title={row.approvalDetection.detail}><span>Approvals: </span><span>{APPROVAL_LABELS[row.approvalDetection.mode]}</span></span>}
     </div>
   )
 }

@@ -584,6 +584,7 @@ describe('interrupt', () => {
       codex: 'hook',
       cursor: 'hook',
       opencode: 'hook',
+      pi: 'hook',
       // Expected self-heal via stop{cancelled}; streaming path not yet
       // observed live (test account quota) — see grokSpec.
       grok: 'hook',

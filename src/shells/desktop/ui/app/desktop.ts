@@ -16,8 +16,8 @@ export interface UpdateStatus {
   message?: string
   /** Answers an explicit check. */
   manual?: boolean
-  /** Reopen the "update ready" dialog even for a dismissed version. */
-  forceShow?: boolean
+  /** The staged update prompt was dismissed for this app session. */
+  dismissed?: boolean
 }
 
 /** A runtime install and how far it is (null: it ended). `target` is
@@ -47,6 +47,7 @@ export interface DesktopPort {
   updateStatus(): Promise<UpdateStatus>
   onUpdateStatus(listener: (status: UpdateStatus) => void): () => void
   checkForUpdates(): Promise<void>
+  dismissUpdate(version: string): Promise<void>
   /** Resolves false when nothing is staged. */
   quitAndInstallUpdate(): Promise<boolean>
   // Native chrome.

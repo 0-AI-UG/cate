@@ -39,7 +39,7 @@ export function AgentChangesOverlay({ workspaceId, record }: { workspaceId: stri
 }
 
 /** A warning over a panel's top-right corner while its agent runs without
- *  Cate's hooks; opens the agent hooks settings. */
+ *  Cate's hooks; opens the agent settings. */
 export function AgentHooksOffOverlay({ workspaceId, record }: { workspaceId: string; record: PanelRecord }) {
   const state = useAgentPanelState(workspaceId, record.id)
   if (!state?.hooksMissing) return null
@@ -49,7 +49,7 @@ export function AgentHooksOffOverlay({ workspaceId, record }: { workspaceId: str
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation()
-        clientUi().openSettings('hooks')
+        clientUi().openSettings('agents')
       }}>
       <AlertTriangle size={11} />
       Hooks off

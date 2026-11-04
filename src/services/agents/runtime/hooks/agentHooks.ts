@@ -843,7 +843,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         conversationFiles.set(key, files)
       }
       const stamps = await Promise.all(files.map((file) => stat(file).then((info) => `${info.mtimeMs}:${info.size}`, () => '-')))
-      return stamps.join('|')
+      return session.leafId === undefined ? stamps.join('|') : `${session.leafId ?? 'root'}|${stamps.join('|')}`
     },
 
     async inspectWorkspace(cwd, options = {}) {

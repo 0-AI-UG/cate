@@ -107,7 +107,7 @@ async function processSession(files: string[], homeDir: string): Promise<AgentSe
       const meta = object(record?.payload)
       if (record?.type !== 'session_meta' || meta?.source !== 'cli' || typeof meta.id !== 'string'
         || !SAFE_SESSION_ID.test(meta.id) || typeof meta.cwd !== 'string' || !file.endsWith(`-${meta.id}.jsonl`)) continue
-      sessions.set(meta.id, { agentId: 'codex', sessionId: meta.id, cwd: meta.cwd })
+      sessions.set(meta.id, { agentId: 'codex', sessionId: meta.id, cwd: meta.cwd, transcriptPath: file })
     } catch { /* A partial header is retried at the next activity scan. */ }
     finally { await handle.close() }
   }

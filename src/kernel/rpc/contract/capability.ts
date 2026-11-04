@@ -14,7 +14,7 @@ export interface MethodOptions {
   /** Default deadline for this method; 0 disables it. */
   timeoutMs?: number
   /** Callable at any version (`runtime.update`, `runtime.info`), so a
-   *  runtime of another version can still be updated. The method's params
+   *  runtime with an incompatible protocol can still be updated. The method's params
    *  and result must never change shape. */
   anyVersion?: boolean
 }

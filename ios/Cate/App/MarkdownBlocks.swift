@@ -27,6 +27,17 @@ enum MarkdownBlocks {
                 continue
             }
             let indented = line.first == " " || line.first == "\t"
+            // Display formulas own their overflow region even when an agent
+            // puts no blank line between the equation and its explanation.
+            if !indented, MarkdownMath.isDisplayBlock(String(line)) {
+                if !current.isEmpty {
+                    blocks.append(current.joined(separator: "\n"))
+                    current = []
+                }
+                blocks.append(String(line))
+                blank = false
+                continue
+            }
             if blank, !current.isEmpty, !indented {
                 blocks.append(current.joined(separator: "\n"))
                 current = []

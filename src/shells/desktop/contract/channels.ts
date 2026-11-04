@@ -48,6 +48,7 @@ export const DESKTOP_CHANNELS = {
   updateGetStatus: 'cate-desktop:update:get-status',
   updateCheck: 'cate-desktop:update:check',
   updateInstall: 'cate-desktop:update:install',
+  updateDismiss: 'cate-desktop:update:dismiss',
 
   analyticsTrack: 'cate-desktop:analytics:track',
 

@@ -16,11 +16,7 @@ export function UpdateReadyDialog(): JSX.Element | null {
 
 function UpdateReadyDialogWith({ port }: { port: DesktopPort }): JSX.Element | null {
   const [version, setVersion] = useState<string | null>(null)
-  // The version the user dismissed ("Install on next quit"), so the modal does
-  // NOT re-nag every time the 15-minute background check re-announces the same
-  // staged update. A genuinely newer version (or an explicit "Check for
-  // Updates…", which arrives with forceShow) re-opens it.
-  const [dismissedVersion, setDismissedVersion] = useState<string | null>(null)
+  const [dismissed, setDismissed] = useState(false)
   const [restarting, setRestarting] = useState(false)
   const [entered, setEntered] = useState(false)
 
@@ -28,20 +24,26 @@ function UpdateReadyDialogWith({ port }: { port: DesktopPort }): JSX.Element | n
     const apply = (status: UpdateStatus): void => {
       if (status.state === 'downloaded') {
         setVersion(status.version)
-        // Explicit user re-check: clear the dismissal so it opens again.
-        if (status.forceShow) setDismissedVersion(null)
+        setDismissed(status.dismissed === true)
       } else if (status.state === 'error') {
         setVersion(null)
         setRestarting(false)
       }
     }
-    const unsubscribe = port.onUpdateStatus(apply)
+    let active = true
+    let receivedEvent = false
+    const unsubscribe = port.onUpdateStatus((status) => {
+      receivedEvent = true
+      apply(status)
+    })
     // The download may have finished before this window mounted, pull current.
-    port.updateStatus().then(apply).catch(() => {})
-    return unsubscribe
+    port.updateStatus().then((status) => {
+      if (active && !receivedEvent) apply(status)
+    }).catch(() => {})
+    return () => { active = false; unsubscribe() }
   }, [port])
 
-  const open = version !== null && version !== dismissedVersion
+  const open = version !== null && !dismissed
 
   // Soft fade + scale in on appear (matches the welcome card's transition).
   useEffect(() => {
@@ -50,7 +52,9 @@ function UpdateReadyDialogWith({ port }: { port: DesktopPort }): JSX.Element | n
     return () => cancelAnimationFrame(id)
   }, [open])
 
-  const later = useCallback(() => setDismissedVersion(version), [version])
+  const later = useCallback(() => {
+    if (version) void port.dismissUpdate(version).catch(() => {})
+  }, [port, version])
 
   const restart = useCallback(async () => {
     setRestarting(true)

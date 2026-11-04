@@ -274,6 +274,10 @@ describe('worktree lifecycle', () => {
       trusted = true
       spied.trustChanged()
       await vi.waitFor(() => expect(watch).toHaveBeenCalledTimes(1))
+      // Watch registration precedes the asynchronous initial git probe. Wait
+      // for that probe before revoking trust, otherwise it can be cancelled
+      // and the baseline below stays zero even though revocation works.
+      await vi.waitFor(async () => expect(await gitCalls()).toBeGreaterThan(0))
       trusted = false
       spied.trustChanged()
       await settle()

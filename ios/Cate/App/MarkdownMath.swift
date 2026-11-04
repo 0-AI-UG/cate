@@ -4,6 +4,18 @@ import Foundation
 /// agents use before Markdown consumes their backslashes. Leave code alone,
 /// including unfinished code fences while a reply is streaming.
 enum MarkdownMath {
+    /// A standalone display formula, after delimiter normalization.
+    static func isDisplayBlock(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("$$"), trimmed.hasSuffix("$$"),
+           trimmed.components(separatedBy: "$$").count == 3 { return true }
+        let lines = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let first = lines.first, let last = lines.last, lines.count >= 2 else { return false }
+        let fence = first.prefix { $0 == "`" || $0 == "~" }
+        return fence.count >= 3 && first.dropFirst(fence.count).trimmingCharacters(in: .whitespaces).lowercased() == "math"
+            && last == fence
+    }
+
     static func normalize(_ text: String) -> String {
         var result = ""
         var cursor = text.startIndex

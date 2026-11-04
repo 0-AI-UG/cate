@@ -171,4 +171,5 @@ export interface AgentSessionLocator {
   sessionId: string
   cwd?: string
   transcriptPath?: string
+  leafId?: string | null
 }

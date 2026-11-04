@@ -28,9 +28,10 @@ export interface CallerHello {
 
 export interface HelloMessage {
   t: 'hello'
-  /** App or daemon release version. A client and a runtime talk only at
-   *  the same version (7.10). */
+  /** App or daemon release version, for diagnostics and updates. */
   version: string
+  /** Peers connect only when their compatibility versions match (7.10). */
+  compatibilityVersion: number
   /** Runtime only: the build it runs (version plus a source hash). */
   build?: string
   /** Runtime only: new at every start. Ops are remembered only within one. */
@@ -79,11 +80,6 @@ export type Message = HelloMessage | ReqMessage | ResMessage | EvtMessage | Canc
 export type Frame =
   | { kind: 'msg'; msg: Message }
   | { kind: 'bytes'; streamId: number; bytes: Uint8Array }
-
-/** A client and a runtime talk only at the same version (7.10). */
-export function isCompatible(a: string, b: string): boolean {
-  return a === b
-}
 
 const MESSAGE_TYPES: ReadonlySet<string> = new Set(['hello', 'req', 'res', 'evt', 'cancel', 'ack'])
 

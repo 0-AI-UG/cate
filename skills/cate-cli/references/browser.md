@@ -63,6 +63,7 @@ cate browser upload 42 report.pdf  # see "Files"
 cate browser dialog accept         # see "Dialogs"
 cate browser login                 # see "Signing in and signing up"
 cate browser signup --user me@x.io
+cate browser signup --user me@x.io --password 'existing-password'
 
 # Logs and downloads
 cate browser console --level error # console messages and uncaught errors
@@ -190,13 +191,27 @@ site into its sign-in form; the password never reaches you, and snapshots
 mask it. Submit the form yourself afterwards. With several saved logins,
 `--user <name>` picks one; a step that asks for the username alone gets the
 username, then run `login` again on the password step.
+Saved logins match the exact origin first, then sibling HTTPS hosts within
+the same registrable domain and port. Separate domains need separate saved
+entries; unrelated tenants of a hosted service do not share logins.
 
 To create an account, fill in the rest of the sign-up form yourself, then run
 `cate browser signup --user <name>`: it fills a new generated password into
 the form's empty password fields (the password and its confirmation) and saves
 it as the site's login under `<name>`, the username or email the account
-signs in with. You never see the password; submit the form afterwards, and
-later sign in with `login`.
+signs in with. Generated passwords are never returned; submit the form
+afterwards, and later sign in with `login`.
+
+To use a password you already have, pass it to the same flow:
+`cate browser signup --user <name> --password 'existing-password'`.
+It fills and saves the supplied password instead of generating one. Omitting
+`--password` keeps generation as the default. Saving happens only after the
+password fields are filled successfully; an existing saved login for that
+username is still rejected. Neither mode submits the form.
+
+Passwords captured when an agent submits a login form are saved or updated
+without an approval prompt. Manual submissions still ask before saving or
+updating a password.
 
 Both are off unless the person turns on Browser passwords (on top of Browser
 control) in Settings > CLI (`browser-passwords-disabled`). When it is refused

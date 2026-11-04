@@ -7,6 +7,7 @@
 
 import { createJsonStateFile } from '@kernel/state/node'
 import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
+import type { LaunchCommand, LaunchPlan } from '@services/terminal/runtime'
 import type { TerminalService } from '@services/terminal/runtime'
 import type { PanelRecord } from '@workspace/document/contract'
 import {
@@ -52,6 +53,8 @@ export type AgentTerminalService = Pick<TerminalService,
   /** Whether the program in the PTY enabled bracketed paste. Assumed on when
    *  the service cannot say (every agent TUI enables it). */
   bracketedPaste?(terminalId: string): boolean
+  /** Setup cancellation terminates the native login/installer process group. */
+  kill?(terminalId: string): void
 }
 
 export interface TerminalAgents extends AgentTerminals {
@@ -65,6 +68,7 @@ export interface TerminalAgents extends AgentTerminals {
 export interface TerminalAgentsOptions {
   /** `agents/stamps.json`: each terminal panel's resume stamp. */
   stampsFile: string
+  prepareLaunch?: (agentId: AgentId, command: LaunchCommand) => Promise<LaunchPlan>
 }
 
 /** A stamp with the panel checkout it was taken in: a panel moved to another
@@ -223,7 +227,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const { agentId, prompt, attachments } = (params ?? {}) as { agentId?: unknown; prompt?: unknown; attachments?: unknown }
     if (!isAgentId(agentId) || (prompt !== undefined && typeof prompt !== 'string')) throw new Error('Invalid agent launch')
     if (attachments !== undefined && (prompt === undefined || !isPromptAttachments(attachments))) throw new Error('Invalid agent launch')
-    return { command: agentLaunchCommand({ agentId, prompt: prompt === undefined ? undefined : agentPromptInput(agentId, prompt, attachments).text }) }
+    const command = agentLaunchCommand({ agentId, prompt: prompt === undefined ? undefined : agentPromptInput(agentId, prompt, attachments).text })
+    return options.prepareLaunch ? options.prepareLaunch(agentId, command) : { command }
   }))
 
   // A restored terminal panel types its stamped session's resume command,
@@ -231,6 +236,12 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   offs.push(terminal.registerLaunchIntent(TERMINAL_RESTORE_LAUNCH.kind, (_params, { panelId }) => {
     const stamp = panelId ? stampsFile.get()[panelId] : undefined
     if (!stamp || stamp.binding !== bindingOf(document.panel(panelId!))) return {}
+    if (options.prepareLaunch) {
+      const agent = AGENT_DEFS[stamp.agentId]
+      const args = agent.resume.args?.(stamp.sessionId)
+      if (!args) return {}
+      return options.prepareLaunch(stamp.agentId, { executable: agent.command, args })
+    }
     const command = resumeCommandForAgent(stamp.agentId, stamp.sessionId)
     return command ? { input: command } : {}
   }))
@@ -468,6 +479,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       const session = sessionOf(panelId, liveTerminal(panelId))
       if (!session?.agentId) return null
       const messages = await hooks.readConversation({
+        ...stamps.latest(liveTerminal(panelId) ?? ''),
         agentId: session.agentId,
         sessionId: session.sessionId,
         cwd: session.cwd,
@@ -478,6 +490,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       const session = sessionOf(panelId, liveTerminal(panelId))
       if (!session?.agentId) return null
       return hooks.conversationStamp({
+        ...stamps.latest(liveTerminal(panelId) ?? ''),
         agentId: session.agentId,
         sessionId: session.sessionId,
         cwd: session.cwd,

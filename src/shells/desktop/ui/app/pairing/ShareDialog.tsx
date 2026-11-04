@@ -32,8 +32,7 @@ function OpenShareDialog({ workspaceId }: { workspaceId: string }): JSX.Element 
   const close = () => useUIStore.getState().openShare(null)
   const name = clientApp().workspaces.get(workspaceId)?.name ?? 'workspace'
   return (
-    // Above Settings (z-[100001]), whose Devices page opens it too.
-    <Modal onClose={close} width={520} icon={<Users size={16} />} title={`Share "${name}"`} zClassName="z-[100002]" bodyClassName="px-5 py-4 overflow-y-auto">
+    <Modal onClose={close} width={520} icon={<Users size={16} />} title={`Share "${name}"`} bodyClassName="px-5 py-4 overflow-y-auto">
       <SharePanel workspaceId={workspaceId} onCancel={close} />
     </Modal>
   )

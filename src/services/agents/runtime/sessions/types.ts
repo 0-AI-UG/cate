@@ -63,7 +63,7 @@ export type AgentUsageSource =
   /** Append-only JSONL transcripts under `root`, parsed incrementally and
    *  cached per file. `parser` resumes from a saved state, or returns null
    *  when that state is not one it wrote (the file is then parsed afresh). */
-  | { kind: 'transcripts'; root(homeDir: string): string; fileName?: string; parser(file: string, state?: unknown): AgentUsageLineParser | null }
+  | { kind: 'transcripts'; root(homeDir: string): string; additionalRoots?(homeDir: string): string[]; fileName?: string; parser(file: string, state?: unknown): AgentUsageLineParser | null }
   /** A store queried for the window on every scan (null: unreadable). */
   | { kind: 'store'; location(homeDir: string): string; records(homeDir: string, sinceMs: number): Promise<AgentUsageRecord[] | null> }
   /** The CLI keeps no token counts; `note` says what it keeps instead. */

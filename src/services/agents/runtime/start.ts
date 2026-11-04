@@ -79,7 +79,7 @@ function fail(code: string): never {
 /** Start arguments once validated. */
 type StartRequest = Omit<AgentStartArgs, 'agentId'> & { agentId?: AgentId }
 
-export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): AgentStarter {
+export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, setup?: { ensureReady(agentId: AgentId): Promise<void>; types?(): Promise<AgentTypeInfo[]> }): AgentStarter {
   const pending = new Map<string, { agentId: AgentId; at: number }>()
   /** Still starting: recent, its terminal running, its agent not observed. */
   const stillStarting = (panelId: string, at: number): boolean =>
@@ -139,6 +139,7 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
       const existing = args.newWorktree ? null : checkoutFor(callerPanelId, args.worktreeId)
       const agentId = await chooseAgent(args.agentId, existing?.cwd ?? agents.root)
 
+      await setup?.ensureReady(agentId)
       const created = args.newWorktree ? await ports.worktrees.create(args.newWorktree) : null
       const checkout = created ? { cwd: created.path, worktreeId: created.id } : existing!
       const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt !== undefined ? { prompt } : {}), ...(attachments ? { attachments } : {}) } }
@@ -163,14 +164,12 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts): 
 
     async types() {
       agents.trust.requireTrusted()
+      if (setup?.types) return setup.types()
       const states = await inspectAgentCliHooks((dir) => agents.hooks.inspectFolders(dir), agents.root)
       const config = agents.settings.agentHookInjection()
       const ready = new Set(states.filter((state) => evaluateAgentCliHooks(state, config).ready).map((state) => state.agent.id))
-      return AGENTS.map((agent) => ({
-        agentId: agent.id,
-        displayName: agent.displayName,
-        ready: ready.has(agent.id),
-      }))
+      const types = AGENTS.map((agent) => ({ agentId: agent.id, displayName: agent.displayName, ready: ready.has(agent.id) }))
+      return types
     },
 
     starting() {

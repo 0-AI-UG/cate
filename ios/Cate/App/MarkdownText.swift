@@ -19,8 +19,23 @@ struct MarkdownText: View, Equatable {
     }
 
     private var content: some View {
-        StructuredText(markdown: MarkdownMath.normalize(text), syntaxExtensions: [.math])
-            .textual.structuredTextStyle(.gitHub)
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(MarkdownBlocks.split(text).enumerated()), id: \.offset) { _, block in
+                if MarkdownMath.isDisplayBlock(block) {
+                    Overflow {
+                        markdown(block).fixedSize(horizontal: true, vertical: true)
+                    }
+                    .textual.overflowMode(.scroll)
+                } else {
+                    markdown(block)
+                }
+            }
+        }
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func markdown(_ text: String) -> some View {
+        StructuredText(markdown: text, syntaxExtensions: [.math])
+            .textual.structuredTextStyle(.gitHub)
     }
 }

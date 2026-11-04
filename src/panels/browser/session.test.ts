@@ -391,6 +391,28 @@ describe('browser session', () => {
     w.dispose()
   })
 
+  it('uses an optional supplied signup password without returning it', async () => {
+    const calls: any[] = []
+    let driverError = true
+    const w = world(async (_panelId, op, args) => {
+      if (op === 'page.ready') return { url: 'https://a.test/join', title: 'A' }
+      calls.push(args)
+      return driverError ? { error: 'browser-signup-field-not-found' } : { result: { ok: true } }
+    })
+    const id = w.create({ url: 'https://a.test/join' })
+    await w.host.restore()
+    const args = { username: 'me', password: 'existing-secret' }
+    await expect(w.api(id, 'signup', args)).rejects.toThrow('browser-signup-field-not-found')
+    expect(w.stored).toEqual([])
+    driverError = false
+    const result = await w.api(id, 'signup', args)
+    expect(calls.at(-1).args).toMatchObject({ credential: { origin: 'https://a.test', password: args.password } })
+    expect(calls.at(-1).args).not.toHaveProperty('password')
+    expect(w.stored).toEqual([{ origin: 'https://a.test', username: 'me', password: args.password }])
+    expect(JSON.stringify(result)).not.toContain(args.password)
+    w.dispose()
+  })
+
   it('names the page a tab without a web page shows, who opened it and how to move on', async () => {
     const w = world(async () => ({ result: {} }))
     const id = w.create({ url: 'https://a.test/' })

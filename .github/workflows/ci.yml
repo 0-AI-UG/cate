@@ -63,7 +63,7 @@ jobs:
       - name: Layering rules
         run: npm run lint:deps
 
-      - name: Unit tests
+      - name: Unit tests (including agent setup and providers)
         run: npm run test
 
       # E2E and Electron smoke tests run locally only. Keep the npm scripts

@@ -11,16 +11,12 @@
 // id before its transcript exists and Kiro before its first turn is saved;
 // both are stamped from their first turn event (resume.fromSessionStart).
 
-import { AGENT_DEFS, type AgentHookEvent, type AgentId, type TerminalResumeStamp } from '../contract'
+import { AGENT_DEFS, type AgentHookEvent, type AgentSessionLocator, type TerminalResumeStamp } from '../contract'
 
 interface StampState {
   /** Dedup key of the last emitted stamp. */
   key?: string | null
-  latest?: {
-    agentId: AgentId
-    sessionId: string
-    cwd?: string
-  }
+  latest?: AgentSessionLocator
   /** Ingest counter: an async cwd lookup drops its result when a newer event
    *  (or a clear) landed while it was in flight. */
   seq: number
@@ -38,7 +34,7 @@ export interface ResumeStamps {
   /** Presence falling edge: the agent exited while the terminal lives on. */
   clear(terminalId: string): void
   /** The session the terminal's hooks last named, stamped or not. */
-  latest(terminalId: string): { agentId: AgentId; sessionId: string; cwd?: string } | undefined
+  latest(terminalId: string): AgentSessionLocator | undefined
   drop(terminalId: string): void
 }
 
@@ -89,7 +85,9 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
       if (event.sessionId == null) return
       st.seq++
       const { agentId, sessionId } = event
-      const identity = { agentId, sessionId, ...(event.cwd ? { cwd: event.cwd } : {}) }
+      const identity = { agentId, sessionId, ...(event.cwd ? { cwd: event.cwd } : {}),
+        ...(event.transcriptPath ? { transcriptPath: event.transcriptPath } : {}),
+        ...(event.leafId !== undefined ? { leafId: event.leafId } : {}) }
       if (event.kind === 'session-start' && !agent?.resume.fromSessionStart) {
         const previous = st.latest
         st.latest = identity
@@ -122,11 +120,7 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
     latest(terminalId) {
       const latest = states.get(terminalId)?.latest
       if (!latest) return undefined
-      return {
-        agentId: latest.agentId,
-        sessionId: latest.sessionId,
-        ...(latest.cwd ? { cwd: latest.cwd } : {}),
-      }
+      return { ...latest }
     },
 
     drop(terminalId) {

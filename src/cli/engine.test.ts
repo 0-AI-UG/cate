@@ -40,6 +40,13 @@ describe('commands from specs', () => {
 })
 
 describe('parseCommandLine', () => {
+  it('accepts an optional existing password in the signup flow', () => {
+    expect(call(['browser', 'signup', '--user', 'me', '--password', 'existing-secret']).args)
+      .toEqual({ username: 'me', password: 'existing-secret' })
+    expect(call(['browser', 'signup', '--user', 'me']).args).toEqual({ username: 'me' })
+    expect(() => call(['browser', 'signup', '--user', 'me', '--password', ''])).toThrow()
+  })
+
   it('parses positionals, rest words and the session --panel target', () => {
     expect(call(['panel', 'list'])).toEqual({ method: 'cate.panel.list', args: {}, json: false })
     expect(call(['terminal', 'type', 'npm', 'test', '--panel', 'ab12'])).toMatchObject({

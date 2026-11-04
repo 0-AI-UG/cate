@@ -28,7 +28,7 @@ it('warns while the agent runs without Cate hooks and opens the hooks settings',
   act(() => panels.emit({ kind: 'snapshot', rev: 1, snapshot: { term: { ...state, hooksMissing: true } } }))
   expect(host.textContent).toBe('Hooks off')
   act(() => host.querySelector('button')!.click())
-  expect(openSettings).toHaveBeenCalledWith('hooks')
+  expect(openSettings).toHaveBeenCalledWith('agents')
 
   act(() => panels.emit({ kind: 'snapshot', rev: 2, snapshot: { term: state } }))
   expect(host.textContent).toBe('')

@@ -35,6 +35,12 @@ enum MarkdownMathTests {
         precondition(MarkdownBlocks.split("\\[\na +\n\nb\n\\]") == [display])
         precondition(MarkdownBlocks.split("```tex\n$$\n\n\\(x\\)\n```\n\nAfter") == ["```tex\n$$\n\n\\(x\\)\n```", "After"])
         precondition(MarkdownBlocks.split("One\n\nTwo") == ["One", "Two"])
-        print("Passed \(cases.count) normalization cases and 4 block-splitting cases")
+        precondition(MarkdownBlocks.split("Before\n$$x^2$$\nAfter") == ["Before", "$$x^2$$", "After"])
+        precondition(MarkdownMath.isDisplayBlock(gaussian))
+        precondition(MarkdownMath.isDisplayBlock("```math\nx^2\n```"))
+        precondition(!MarkdownMath.isDisplayBlock("```tex\nx^2\n```"))
+        precondition(!MarkdownMath.isDisplayBlock("Before $$x^2$$"))
+        precondition(!MarkdownMath.isDisplayBlock("$$x$$ and $$y$$"))
+        print("Passed \(cases.count) normalization cases, 5 block-splitting cases and display-block checks")
     }
 }

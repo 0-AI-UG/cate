@@ -1,0 +1,127 @@
+Cate Mobile — App Store readiness audit
+3 November 2026. Scope: iOS source, Release archive, physical iPhone workflow,
+App Store Connect metadata, and applicable current Apple guidance.
+This is an engineering readiness review, not a guarantee of Apple's approval.
+
+Confirmed and corrected
+
+Device support
+  Build 17 targets UIDeviceFamily [1] in both the app and notification extension.
+  iPad-specific orientation settings were removed. The store description and
+  mobile support/privacy wording now describe iPhone support.
+
+SDK and packaging
+  Release archive built successfully with Xcode 26.5 and iPhoneOS 26.5 SDK;
+  deployment target is iOS 26.0. Bundle IDs and production signing team match
+  App Store Connect. The app icon is included in the asset catalog.
+  Apple currently requires Xcode 26 / the 26 SDK or later for uploads:
+  https://developer.apple.com/news/upcoming-requirements/?id=04282026a
+
+Privacy policy access
+  Added Privacy Policy and Support links in the app's device settings.
+  The policy/support URLs return HTTP 200. The policy describes pairing,
+  connection identifiers, encrypted workspace traffic, push delivery,
+  retention, deletion requests, and user-configured external providers.
+  Apple's privacy-policy accessibility requirement:
+  https://developer.apple.com/app-store/review/guidelines/#privacy
+
+Privacy manifest
+  The previous archive had no PrivacyInfo.xcprivacy. Added one to the app.
+  The archive now includes it at the app bundle root.
+  Declared UserDefaults with CA92.1 for this app's own preferences and
+  remembered workspace list. Declared FileTimestamp with C617.1 for metadata
+  of files inside the app container; SwiftTerm references stat/fstat for its
+  temporary image files. Both API references were verified in the binary.
+  No corresponding required-reason references were found in the notification
+  extension. No app-group UserDefaults access is used; the shared push key
+  uses Keychain instead.
+  https://developer.apple.com/documentation/bundleresources/app-privacy-configuration/nsprivacyaccessedapitypes/nsprivacyaccessedapitype
+
+Privacy label and tracking
+  The user approved and published the existing App Store disclosure:
+  Device ID, linked to the user, App Functionality. The manifest matches it
+  and declares no tracking. Source inspection found no advertising/tracking
+  SDK, IDFA access, or ATT-dependent flow in the mobile shell.
+
+Permissions and user choice
+  Camera and Local Network purpose strings are present and describe the
+  actual features. Bonjour service is limited to _cate._tcp. Notifications
+  request system permission and remain optional. Photo selection uses the
+  system picker; camera capture is image-only. There is no location,
+  contacts, health, microphone, or broad photo-library access requested.
+
+Accounts and purchases
+  There is no Cate account creation or social-login flow in the iOS app.
+  Pairing uses a device key rather than creating a service account. The
+  account-deletion and Sign in with Apple conditions for account-based apps
+  therefore do not apply to a Cate account in this implementation.
+  No StoreKit purchase/subscription implementation was found. Subscription
+  claims were removed from the listing and mobile policy/support pages.
+  The unsubmitted subscription product remains a draft and must not be
+  included in this release.
+
+Content rights
+  The user confirmed the necessary third-party content rights. The exact
+  affirmative declaration was saved in App Store Connect.
+
+Encryption
+  The mobile core bundles Noise using @noble X25519, ChaCha20-Poly1305 and
+  BLAKE2b, in addition to OS cryptography used for notifications. It must not
+  be described as using only Apple-provided encryption. Build 17 omits
+  ITSAppUsesNonExemptEncryption so App Store Connect requests its questionnaire.
+  Setting it to true without an approved compliance code failed upload validation.
+  The corrected archive uploaded successfully on 3 November 2026.
+  The user chose to exclude France; its territory checkbox was already
+  unchecked and that exclusion was retained. Completed the standard-algorithm
+  questionnaire for build 17 with France excluded. No unverified French or US
+  classification document has been asserted or uploaded.
+  https://developer.apple.com/help/app-store-connect/reference/app-information/export-compliance-documentation-for-encryption/
+
+Review access and evidence
+  The review draft has the combined pairing/workspace video and setup notes.
+  The recordings demonstrate the actual app on an iPhone 13 Pro Max:
+  code pairing, real files, preview/source views, terminal commands on the
+  paired computer, and connected settings. The recorded code was consumed.
+  Reviewers still have desktop installation and fresh-code instructions.
+  Video-only review is not assured. Apple's hardware-specific guidance asks
+  for external-camera footage of the physical Apple device interacting with
+  the hardware; current attachments are screen recordings.
+  https://developer.apple.com/help/app-review/before-submitting-for-review/complete-review
+
+Review judgments and remaining limits
+
+AI data sharing
+  The iPhone sends content and commands to the user's paired computer.
+  Agents on that computer use the user's configured accounts/providers.
+  The phone has no direct built-in AI vendor account/purchase integration.
+  There is currently no separate mobile consent gate before agent prompts
+  or notification replies. The user identified this as a special remote-client
+  case; the sending flow was left unchanged. Describe the architecture in
+  the review notes. Apple may still require an explicit AI-sharing consent
+  flow under guideline 5.1.2(i); this audit does not certify an exception.
+
+Remote-client classification
+  Cate has native workspace UI and structured runtime channels. It is not
+  a pixel-streaming desktop mirror. Guideline 4.2.7 applicability, minimum
+  functionality, and the remote runtime requirement remain review judgments.
+  Do not hide Cate Connect, internet access, terminal execution, or the need
+  for a running paired computer from the reviewer.
+  https://developer.apple.com/app-store/review/guidelines/
+
+Coverage
+  This review does not claim exhaustive device/OS, VoiceOver, Dynamic Type,
+  every provider/agent, every website, offline/recovery, or push-delivery QA.
+  Do not select accessibility support claims that have not been verified.
+  The Release archive was exported with development signing and installed on
+  the physical iPhone. Automated final UI checks could not reconnect over USB;
+  the user confirmed the new app contains the additions and verified it.
+  App Store Connect validation is recorded separately on completion.
+
+Submission result
+  App Store Connect accepted iOS 0.1.1 (17) on 3 November 2026 at 23:24 CET.
+  Verified status: Warten auf Prüfung / Waiting for Review.
+  Submission ID: 0e2ca0e6-9c2f-4211-af36-92cf65ac60b2.
+  Metadata validation passed after selecting the iPhone-only build; no iPad
+  screenshot was required. The combined review video remains attached.
+  Manual release after approval is selected. No subscription was submitted.
+  https://appstoreconnect.apple.com/apps/6819006119/distribution/reviewsubmissions/details/0e2ca0e6-9c2f-4211-af36-92cf65ac60b2

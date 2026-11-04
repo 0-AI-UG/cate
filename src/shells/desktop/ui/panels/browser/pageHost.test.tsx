@@ -225,6 +225,24 @@ describe('BrowserPageHost', () => {
     await expect(pageOp(host, 'page.execute', { tabId: 't1', method: 'click', args: {} }, { bridge: bridge as never })).rejects.toThrow('browser-tab-changed')
   })
 
+  it.each(['create', 'update', 'unchanged'] as const)('saves agent-submitted passwords without approval (%s)', async (disposition) => {
+    const save = vi.fn(async () => ({}))
+    const confirmSave = vi.fn(async () => false)
+    const saveDisposition = vi.fn(async () => disposition)
+    const host = new BrowserPageHost({
+      panelId: 'p1', clientId: 'me', send: async () => {}, bridge: null, confirmSave,
+      passwords: { suggestions: async () => [], forFill: async () => null, saveDisposition, save },
+    })
+    host.update(snapshot([tab()]))
+    const webview = guest()
+    host.attachGuest('t1', webview)
+    webview.fire('ipc-message', { channel: 'cate-browser-password-submit', args: [{ origin: 'https://a.test', username: 'me', password: 'pw', automated: true }] })
+    await vi.waitFor(() => expect(saveDisposition).toHaveBeenCalled())
+    if (disposition === 'unchanged') expect(save).not.toHaveBeenCalled()
+    else expect(save).toHaveBeenCalledWith(expect.objectContaining({ origin: 'https://a.test', password: 'pw' }))
+    expect(confirmSave).not.toHaveBeenCalled()
+  })
+
   it('offers to save a submitted password through the runtime', async () => {
     const save = vi.fn(async () => ({}))
     const confirmSave = vi.fn(async () => true)

@@ -196,7 +196,7 @@ export function installAppCsp(rendererUrl: string | undefined): void {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          `default-src 'self'; script-src 'self'${dev}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https: ws: wss: sentry-ipc:; font-src 'self' data:; base-uri 'self'`,
+          `default-src 'self'; script-src 'self'${dev}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https: ws: wss: sentry-ipc:; font-src 'self' data:; frame-src https: http://localhost:* http://127.0.0.1:*; base-uri 'self'`,
         ],
       },
     })

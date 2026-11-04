@@ -17,7 +17,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.1"
-    CURRENT_PROJECT_VERSION: "8"
+    CURRENT_PROJECT_VERSION: "19"
 packages:
   # The terminal screen (TerminalPanelView.swift). Pinned below 1.19, whose
   # build-info plugin breaks iOS builds from xcodebuild.
@@ -29,6 +29,17 @@ packages:
     url: https://github.com/gonzalezreal/textual
     exactVersion: 0.5.0
 targets:
+  CateChatUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/ChatScrollingUITests.swift
+    dependencies:
+      - target: Cate
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Cate
   Cate:
     type: application
     platform: iOS
@@ -55,7 +66,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(CATE_BUNDLE_ID)
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
@@ -75,11 +86,6 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        UISupportedInterfaceOrientations~ipad:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         # Pairing links (`cate://pair?...`) from a scanned QR code open the app.
@@ -110,7 +116,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(CATE_BUNDLE_ID).notifications
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: Notifications/Notifications.entitlements
     info:

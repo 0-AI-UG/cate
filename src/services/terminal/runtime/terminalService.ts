@@ -556,6 +556,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
     params: SpawnParams,
     executable: string,
     args: readonly string[],
+    launchEnv?: Record<string, string>,
   ): Promise<PtyProcess> => {
     let env = { ...TERMINAL_LINK_ENV, ...sanitizeEnv(deps.env()) }
     for (const contribute of envContributors) {
@@ -567,6 +568,8 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         log.warn('terminal env contributor failed: %O', err)
       }
     }
+    // Launch configuration is authoritative and cannot fail open through a contributor.
+    if (launchEnv) env = { ...env, ...launchEnv }
     // Trust may have been revoked while contributors ran.
     deps.trust.requireTrusted()
     return spawnPty(executable, [...args], { name: 'xterm-256color', cols: params.cols, rows: params.rows, cwd, env })
@@ -588,7 +591,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       // ends it for them like an exit.
       let pty: PtyProcess
       try {
-        pty = await spawnWithEnv(id, panelId, cwd, params, executable, args)
+        pty = await spawnWithEnv(id, panelId, cwd, params, executable, args, plan.env)
       } catch (err) {
         notify(exitObservers, id, CLOSED_EXIT_CODE)
         throw err

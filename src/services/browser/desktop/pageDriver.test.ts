@@ -9,6 +9,20 @@ it('binds every operation to the full guest identity', async () => {
   expect(await runtime.execute(contents.id, { ...identity, tabId: 'other' }, 'getAXState', {})).toEqual({ error: 'browser-target-not-registered' })
 })
 
+it('autofills only the username on a username-first step', async () => {
+  const filled: string[] = []
+  const { runtime, contents } = await setupGuest(async (method, params) => {
+    if (method === 'Runtime.evaluate' && String(params.expression).startsWith('document.querySelector')) return { result: { objectId: '20' } }
+    if (method !== 'Runtime.callFunctionOn') return
+    const fn = String(params.functionDeclaration)
+    if (fn.includes("this.type.toLowerCase() === 'password'")) return { result: { subtype: 'null' } }
+    const text = fn.match(/const text=(".*?");/)
+    if (fn.includes('setter.call(this,text)') && text) { filled.push(JSON.parse(text[1])); return { result: { value: false } } }
+  })
+  expect(await runtime.fillCredential(contents.id, 'username-target', { username: 'me', password: 'secret' })).toEqual({ ok: true })
+  expect(filled).toEqual(['me'])
+})
+
 it('invalidates numeric IDs and observations on navigation', async () => {
   const { observe, execute, events } = await setupGuest()
   const before = await observe()

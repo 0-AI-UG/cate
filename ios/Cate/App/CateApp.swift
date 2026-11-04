@@ -12,12 +12,24 @@ struct CateApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(delegate.core)
-                .environment(delegate.notifier)
-                // The core's web view must be in the window to keep running.
-                .background(HiddenCoreView(webView: delegate.core.webView))
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--chat-scroll-fixture") {
+                ChatScrollFixture().environment(delegate.core)
+            } else {
+                appRoot
+            }
+            #else
+            appRoot
+            #endif
         }
+    }
+
+    private var appRoot: some View {
+        RootView()
+            .environment(delegate.core)
+            .environment(delegate.notifier)
+            // The core's web view must be in the window to keep running.
+            .background(HiddenCoreView(webView: delegate.core.webView))
     }
 }
 

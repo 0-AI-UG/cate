@@ -13,6 +13,7 @@ import {
   RpcError,
   fromWireError,
   isCompatible,
+  COMPATIBILITY_VERSION,
   type CallOptions,
   type CallerHello,
   type ClientHello,
@@ -33,6 +34,8 @@ export type RpcClientState = 'disconnected' | 'connecting' | 'ready' | 'incompat
 export interface RpcClientOptions {
   /** App version, sent in `hello`. */
   version: string
+  /** Defaults to the shared protocol compatibility version. */
+  compatibilityVersion?: number
   /** Who this side is: a client (keeps `clientId` across reconnects) or a caller. */
   identity: { client: ClientHello } | { caller: CallerHello }
   /** The next op counter of this `clientId`. It belongs to the identity, not
@@ -127,7 +130,7 @@ export class RpcClient {
     this.helloTimer = setTimeout(() => {
       if (this.port === port) port.close('Runtime handshake timed out')
     }, this.opts.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS)
-    port.send({ kind: 'msg', msg: { t: 'hello', version: this.opts.version, ...this.opts.identity } })
+    port.send({ kind: 'msg', msg: { t: 'hello', version: this.opts.version, compatibilityVersion: this.opts.compatibilityVersion ?? COMPATIBILITY_VERSION, ...this.opts.identity } })
     return done
   }
 
@@ -292,7 +295,7 @@ export class RpcClient {
       this.failAll(() => err)
       return
     }
-    const compatible = isCompatible(hello.version, this.opts.version)
+    const compatible = isCompatible(hello.compatibilityVersion, this.opts.compatibilityVersion ?? COMPATIBILITY_VERSION)
     this.setState(compatible ? 'ready' : 'incompatible')
     const waiter = this.attachWaiter
     this.clearHello(null)

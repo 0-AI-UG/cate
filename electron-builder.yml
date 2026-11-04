@@ -1,5 +1,9 @@
 appId: com.cate.app
 productName: Cate
+protocols:
+  - name: Cate links
+    schemes: [cate]
+    role: Viewer
 beforePack: scripts/passkey-packaging.cjs
 afterSign: scripts/verify-passkey-signing.cjs
 directories:
@@ -49,7 +53,7 @@ mac:
     - name: Web URLs
       schemes: [http, https]
       role: Viewer
-    - name: Cate pairing links
+    - name: Cate links
       schemes: [cate]
       role: Viewer
   extraResources:

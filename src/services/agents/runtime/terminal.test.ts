@@ -218,6 +218,25 @@ describe('terminal agents', () => {
     identify.mockRestore()
   })
 
+  it('prepares provider configuration on initial launch and stamped restore, propagating errors without native fallback', async () => {
+    const plan = { command: { executable: 'codex', args: ['provider-config'] }, env: { CATE_PROVIDER_API_KEY: 'fixture-secret' } }
+    const prepareLaunch = vi.fn(async () => plan)
+    agentTerminals.dispose()
+    agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile, prepareLaunch })
+    const context = { cwd: root, panelId: 'term' }
+    const start = () => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'codex', prompt: 'hello' }, context)
+    expect(await start()).toEqual(plan)
+    expect(prepareLaunch).toHaveBeenLastCalledWith('codex', agentLaunchCommand({ agentId: 'codex', prompt: 'hello' }))
+    const env = await terminal.spawn({ terminalId: 'pty-1', ...context })
+    await post(env, 'codex', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    const restore = () => terminal.intents.get(TERMINAL_RESTORE_LAUNCH.kind)!(undefined, context)
+    expect(await restore()).toEqual(plan)
+    expect(prepareLaunch).toHaveBeenLastCalledWith('codex', { executable: 'codex', args: AGENT_DEFS.codex.resume.args!('sess-1') })
+    prepareLaunch.mockRejectedValue(new Error('provider unavailable'))
+    await expect(start()).rejects.toThrow('provider unavailable')
+    await expect(restore()).rejects.toThrow('provider unavailable')
+    expect(terminal.writes).toEqual([])
+  })
   it('plants the hook env on spawn and tracks the agent from hooks and presence', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     expect(env.CATE_TERMINAL_ID).toBe('pty-1')
@@ -535,6 +554,10 @@ const TOOL_POSTS: Record<AgentId, { edit: (file: string) => Record<string, unkno
     edit: (file) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'e', tool_name: 'fs_write', tool_input: { path: file, text: 'after\n' }, tool_response: {} }),
     shell: (command) => ({ hook_event_name: 'PostToolUse', session_id: 's', tool_use_id: 'b', tool_name: 'execute_bash', tool_input: { command }, tool_response: {} }),
   },
+  pi: {
+    edit: (file) => ({ type: 'tool_execution_end', sessionId: 's', toolCallId: 'e', toolName: 'write', input: { path: file, content: 'after\n' }, result: {} }),
+    shell: (command) => ({ type: 'tool_execution_end', sessionId: 's', toolCallId: 'b', toolName: 'bash', input: { command }, result: {} }),
+  },
   opencode: {
     edit: (file) => ({ type: 'message.part.updated', sessionID: 's', part: { type: 'tool', tool: 'write', callID: 'e', state: { status: 'completed', input: { filePath: file, content: 'after\n' }, metadata: {} } } }),
     shell: (command) => ({ type: 'message.part.updated', sessionID: 's', part: { type: 'tool', tool: 'bash', callID: 'b', state: { status: 'completed', input: { command, description: 'Run it' }, metadata: {} } } }),
@@ -647,6 +670,7 @@ describe('terminal agentTerminals input and hook ordering', () => {
     { agentId: 'claude-code', start: { hook_event_name: 'UserPromptSubmit' }, wait: { hook_event_name: 'PermissionRequest' } },
     { agentId: 'grok', start: { hookEventName: 'user_prompt_submit' }, wait: { hookEventName: 'notification', notificationType: 'permission_prompt' } },
     { agentId: 'opencode', start: { type: 'session.status', status: { type: 'busy' } }, wait: { type: 'permission.asked' } },
+    { agentId: 'pi', start: { type: 'before_agent_start' }, wait: { type: 'ui_prompt_start', title: 'Allow command?' } },
     // These CLIs have no permission-wait hook. Input must preserve their running state.
     { agentId: 'cursor', start: { hook_event_name: 'beforeSubmitPrompt' }, wait: null },
     { agentId: 'kiro', start: { hook_event_name: 'UserPromptSubmit' }, wait: null },

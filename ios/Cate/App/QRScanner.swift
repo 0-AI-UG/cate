@@ -1,5 +1,5 @@
-// Scanning a pairing QR code with the camera (client feature `camera`):
-// VisionKit's live scanner, taking the first `cate://pair` link it sees.
+// Scanning workspace pairing QR codes (client feature `camera`).
+// Each caller declares which links its scanner accepts.
 
 import SwiftUI
 import VisionKit
@@ -18,13 +18,15 @@ enum QRScanner {
 struct QRScannerView: View {
     let scanned: (String) -> Void
     let cancel: () -> Void
+    var accepts: (String) -> Bool = QRScanner.isPairingLink
+    var instruction = "Point the camera at the QR code on your computer."
 
     var body: some View {
         NavigationStack {
-            DataScanner(scanned: scanned)
+            DataScanner(scanned: scanned, accepts: accepts)
                 .ignoresSafeArea()
                 .overlay(alignment: .bottom) {
-                    Text("Point the camera at the QR code on your computer.")
+                    Text(instruction)
                         .font(.callout)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
@@ -41,8 +43,9 @@ struct QRScannerView: View {
 
 private struct DataScanner: UIViewControllerRepresentable {
     let scanned: (String) -> Void
+    let accepts: (String) -> Bool
 
-    func makeCoordinator() -> Coordinator { Coordinator(scanned: scanned) }
+    func makeCoordinator() -> Coordinator { Coordinator(scanned: scanned, accepts: accepts) }
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = DataScannerViewController(
@@ -64,16 +67,18 @@ private struct DataScanner: UIViewControllerRepresentable {
     @MainActor
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         private var scanned: ((String) -> Void)?
+        private let accepts: (String) -> Bool
 
-        init(scanned: @escaping (String) -> Void) {
+        init(scanned: @escaping (String) -> Void, accepts: @escaping (String) -> Bool) {
             self.scanned = scanned
+            self.accepts = accepts
         }
 
         func dataScanner(_ scanner: DataScannerViewController, didAdd items: [RecognizedItem], allItems: [RecognizedItem]) {
             for item in items {
                 guard case .barcode(let barcode) = item,
                       let text = barcode.payloadStringValue,
-                      QRScanner.isPairingLink(text),
+                      accepts(text),
                       let scanned else { continue }
                 // Once: the scanner keeps reporting while it closes.
                 self.scanned = nil

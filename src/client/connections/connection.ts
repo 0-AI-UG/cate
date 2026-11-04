@@ -24,7 +24,7 @@ export type ConnectionState =
   | { kind: 'connected' }
   /** `lastSeen` is when the runtime was last connected (null: never). */
   | { kind: 'offline'; lastSeen: number | null; retrying: boolean; error?: string }
-  /** The runtime runs another version: nothing but `runtime.info` and
+  /** The runtime uses an incompatible protocol: nothing but `runtime.info` and
    *  `runtime.update` answers (7.10). */
   | { kind: 'incompatible'; runtimeVersion: string }
   /** Someone stopped the runtime on purpose: no reconnecting until

@@ -129,6 +129,9 @@ export function registerAppIpc(deps: AppIpcDeps): { blockers(): string[] } {
   handle(C.updateGetStatus, () => deps.updater.status())
   handle(C.updateCheck, () => deps.updater.checkManually())
   handle(C.updateInstall, () => deps.updater.installNow())
+  handle(C.updateDismiss, (_event, version: unknown) => {
+    if (typeof version === 'string') deps.updater.dismiss(version)
+  })
 
   listen(C.analyticsTrack, (_event, feature: unknown, props: unknown) => deps.analytics.trackUsage(feature, props))
 

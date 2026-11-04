@@ -123,7 +123,7 @@ export const browserPasswordsCliArea = defineCliArea({
   control: {
     key: 'cliBrowserPasswordsEnabled',
     code: 'browser-passwords-disabled',
-    detail: '`cate browser login / signup`: fill a password saved in the browser into a sign-in form, or a new generated one into a sign-up form and save it. The agent never sees the password, but it can sign in with it.',
+    detail: '`cate browser login / signup`: fill a password saved in the browser into a sign-in form, or a supplied or generated one into a sign-up form and save it. Saved and generated passwords are never returned to the agent, but it can sign in with them.',
   },
 })
 
@@ -237,7 +237,8 @@ export const browserApi = defineCateApi(
     signup: { ...page('control', {
       target: opt(elementTarget).pos('id').help('The password field or the sign-up form (default: the page\'s)'),
       username: str.nonEmpty().flag('user', 'name').help('The username or email the account signs in with, to save the login under'),
-    }, command('signup', 'Fill a new generated password into the sign-up form and save it as this site\'s login (the password never reaches you)')), optIn: browserPasswordsCliArea },
+      password: opt(str.nonEmpty()).flag('password').help('Use this password instead of generating one'),
+    }, command('signup', 'Fill a supplied or generated password into the sign-up form and save it as this site\'s login (generated passwords are never returned)')), optIn: browserPasswordsCliArea },
     dialog: page('control', {
       action: oneOf('accept', 'dismiss').pos('action').help('accept (OK) or dismiss (Cancel)'),
       text: opt(str).help('The answer to a prompt (default: its default text)'),

@@ -5,6 +5,7 @@
 import {
   RpcError,
   isCompatible,
+  COMPATIBILITY_VERSION,
   knownFeatures,
   toWireError,
   type AnyCapability,
@@ -25,7 +26,7 @@ import type { ClientConnection, LifecycleBus } from '@kernel/lifecycle/runtime'
 export interface ConnectionInfo {
   readonly id: number
   readonly peerVersion: string
-  /** The same version. An incompatible peer may only call `anyVersion` methods. */
+  /** Matching compatibility version. Other peers may only call `anyVersion` methods. */
   readonly compatible: boolean
   readonly client: ClientConnection | null
   readonly caller: CallerHello | null
@@ -72,6 +73,8 @@ export type CapabilityImpl<C extends AnyCapability> = {
 export interface RpcServerOptions {
   /** Daemon release version, sent in `hello`. */
   version: string
+  /** Defaults to the shared protocol compatibility version. */
+  compatibilityVersion?: number
   /** Daemon build, sent in `hello`. */
   build?: string
   lifecycle: LifecycleBus
@@ -255,7 +258,7 @@ class Connection {
     this.helloPending = true
     this.held = []
     const refuse = (err: unknown) => {
-      this.send({ t: 'hello', version: this.server.opts.version, build: this.server.opts.build, error: toWireError(err) })
+      this.send({ t: 'hello', version: this.server.opts.version, compatibilityVersion: this.server.opts.compatibilityVersion ?? COMPATIBILITY_VERSION, build: this.server.opts.build, error: toWireError(err) })
       this.port.close('hello refused')
     }
     const client = hello.client
@@ -284,12 +287,12 @@ class Connection {
     this.info = {
       id: this.id,
       peerVersion: String(hello.version),
-      compatible: isCompatible(hello.version, this.server.opts.version),
+      compatible: isCompatible(hello.compatibilityVersion, this.server.opts.compatibilityVersion ?? COMPATIBILITY_VERSION),
       client: clientConn,
       caller: !clientValid && hello.caller ? { token: hello.caller.token } : null,
       has: (f) => featureSet.has(f),
     }
-    this.send({ t: 'hello', version: this.server.opts.version, build: this.server.opts.build, epoch: this.server.epoch })
+    this.send({ t: 'hello', version: this.server.opts.version, compatibilityVersion: this.server.opts.compatibilityVersion ?? COMPATIBILITY_VERSION, build: this.server.opts.build, epoch: this.server.epoch })
     if (clientConn && this.info.compatible) this.server.lifecycle.emitClientConnected(clientConn)
     for (const frame of held ?? []) this.onFrame(frame)
   }

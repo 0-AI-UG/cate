@@ -24,7 +24,7 @@ const result = await build({
   // stacks and `error.name`, the source map for the inspector.
   minify: true,
   keepNames: true,
-  // The runtime refuses a client of another build; the core is this checkout's.
+  // The build identifies the install for runtime updates.
   define: { __CATE_BUILD__: JSON.stringify(computeBuildId(repoRoot)) },
   logLevel: 'info',
   metafile: true,

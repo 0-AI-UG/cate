@@ -558,7 +558,7 @@ export class BrowserPageHost {
 
   private async offerToSave(payload: unknown): Promise<void> {
     const passwords = this.deps.passwords
-    if (!passwords || !this.deps.confirmSave || this.savePrompt || !payload || typeof payload !== 'object') return
+    if (!passwords || this.savePrompt || !payload || typeof payload !== 'object') return
     const raw = payload as Record<string, unknown>
     const input: PasswordSubmit = {
       origin: typeof raw.origin === 'string' ? raw.origin : '',
@@ -572,13 +572,16 @@ export class BrowserPageHost {
     try {
       const action = await passwords.saveDisposition(input)
       if (action === 'unchanged') return
+      if (raw.automated === true) {
+        await passwords.save(input)
+        return
+      }
       const host = new URL(input.origin).hostname
       const who = input.username || 'No username'
-      const agent = raw.automated === true ? ' (entered by an agent)' : ''
       const question = action === 'update'
-        ? `Update the saved password for ${host} (${who})${agent}?`
-        : `Save the password for ${host} (${who})${agent}?`
-      if (await this.deps.confirmSave(question)) await passwords.save(input)
+        ? `Update the saved password for ${host} (${who})?`
+        : `Save the password for ${host} (${who})?`
+      if (await this.deps.confirmSave?.(question)) await passwords.save(input)
     } catch {
       // A failed save is not worth interrupting the page for.
     } finally {

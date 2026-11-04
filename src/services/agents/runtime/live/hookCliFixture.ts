@@ -80,9 +80,14 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
     case 'kiro': {
       env.HOME = path.join(directory, 'kiro-home')
       await mkdir(path.join(env.HOME, '.local/bin'), { recursive: true })
-      const chatBin = await realpath(execFileSync('which', ['kiro-cli-chat'], { encoding: 'utf8' }).trim())
-      await symlink(chatBin, path.join(env.HOME, '.local/bin/kiro-cli-chat'))
-      env.KIRO_HOME = path.join(directory, 'kiro')
+      // The macOS app delegates to a sibling executable; Linux ships one binary.
+      if (process.platform === 'darwin') {
+        const chatBin = await realpath(execFileSync('which', ['kiro-cli-chat'], { encoding: 'utf8' }).trim())
+        await symlink(chatBin, path.join(env.HOME, '.local/bin/kiro-cli-chat'))
+      }
+      // Keep the override and native default identical: older V3 builds can
+      // create KIRO_HOME/sessions but still write transcripts under HOME/.kiro.
+      env.KIRO_HOME = path.join(env.HOME, '.kiro')
       env.KIRO_DATA_DIR = path.join(directory, 'kiro-data')
       env.KIRO_API_KEY = 'cate-fake-key'
       env.KIRO_KAS_ENDPOINT = mockUrl
@@ -94,6 +99,17 @@ export async function configureHookCli(agentId: AgentId, directory: string, cwd:
       await mkdir(root, { recursive: true })
       await writeFile(path.join(root, 'permissions.yaml'), 'rules: []\nworkspaceTrusted: true\n')
       return { args: ['chat', '--v3', initialPrompt] }
+    }
+    case 'pi': {
+      env.PI_CODING_AGENT_DIR = path.join(directory, 'pi')
+      env.PI_OFFLINE = '1'
+      await mkdir(env.PI_CODING_AGENT_DIR)
+      await writeFile(path.join(env.PI_CODING_AGENT_DIR, 'settings.json'), JSON.stringify({ defaultProjectTrust: 'always', tuiMode: 'regular', retry: { enabled: false }, autoCompact: false }))
+      await writeFile(path.join(env.PI_CODING_AGENT_DIR, 'models.json'), JSON.stringify({ providers: { fixture: {
+        baseUrl: `${mockUrl}/v1`, api: 'openai-completions', apiKey: 'cate-fake-key', authHeader: true,
+        models: [{ id: 'cate-mock', input: ['text', 'image'] }],
+      } } }))
+      return { args: ['--provider', 'fixture', '--model', 'cate-mock', '--tools', 'read,bash,edit,write', initialPrompt] }
     }
     case 'opencode':
       env.OPENCODE_DISABLE_AUTOUPDATE = '1'

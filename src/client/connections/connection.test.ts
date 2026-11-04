@@ -52,11 +52,12 @@ interface FakeRuntime {
   dropAll(): void
 }
 
-function fakeRuntime(opts: { version?: string; build?: string; refuse?: boolean } = {}): FakeRuntime {
+function fakeRuntime(opts: { version?: string; compatibilityVersion?: number; build?: string; refuse?: boolean } = {}): FakeRuntime {
   const rt: FakeRuntime = {
     server: new RpcServer({
       lifecycle: createLifecycleBus(),
       version: opts.version ?? '9.0.0',
+      compatibilityVersion: opts.compatibilityVersion,
       build: opts.build,
       acceptHello: (hello) => {
         if (hello.client) rt.helloClientIds.push(hello.client.clientId)
@@ -214,18 +215,18 @@ describe('WorkspaceConnection', () => {
     expect(rt.helloClientIds.length).toBe(3)
   })
 
-  it('connects only to a runtime of its own version; any other is incompatible', async () => {
-    const older = openLocal(fakeRuntime({ version: '8.9.0' }))
+  it('connects across releases with the same compatibility version; rejects other protocols', async () => {
+    const older = openLocal(fakeRuntime({ version: '8.9.0', compatibilityVersion: 2 }))
     await vi.waitFor(() => expect(older.state).toEqual({ kind: 'incompatible', runtimeVersion: '8.9.0' }))
     await expect(older.runtime.workspace.info()).rejects.toThrow(/8\.9\.0/)
     registry!.close('ws1')
 
-    const newer = openLocal(fakeRuntime({ version: '9.0.1' }))
+    const newer = openLocal(fakeRuntime({ version: '9.0.1', compatibilityVersion: 2 }))
     await vi.waitFor(() => expect(newer.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.1' }))
     registry!.close('ws1')
 
-    // Another build of the same version is the same version.
-    const same = openLocal(fakeRuntime({ build: '9.0.0+other' }))
+    // Release and build numbers do not decide protocol compatibility.
+    const same = openLocal(fakeRuntime({ version: '9.1.0', build: '9.1.0+other' }))
     await vi.waitFor(() => expect(same.state).toEqual({ kind: 'connected' }))
     await expect(same.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
   })

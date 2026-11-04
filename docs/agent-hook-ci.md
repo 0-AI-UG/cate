@@ -149,3 +149,94 @@ expected diff:
 ```sh
 npm run test:agent-changes
 ```
+
+## Native login and provider contracts
+
+The agent matrix runs `setup/authCli.itest.ts` and
+`setup/providersCli.itest.ts` as part of `npm run test:agent-hooks:ci`.
+`CATE_HOOK_SMOKE_AGENTS` selects the installed agent across these suites;
+missing executables or changed CLI arguments/status formats fail the gate.
+
+The authentication contract checks native login help (including device-flow
+flags), signed-out status, API authentication status where the CLI exposes it,
+and stored subscription → API → subscription credential selection for Claude
+Code and Codex. All account files live in temporary homes. Subscription tokens
+are synthetic: these checks verify local credential selection, not a completed
+hosted browser authorization or a paying subscription's entitlement. Those
+require an account owner and remain a manual acceptance check. Grok exposes no
+machine-readable account status; the test verifies its native login command
+without guessing login state from token files. Cursor's account status does
+not report its API-key environment authentication; the setup service therefore
+recognizes an explicitly configured runtime API key. The auth suite checks
+production readiness with that key, and the existing hook suite exercises its
+real API transport. A configured key is not a claim of upstream validity.
+
+Normal `npm test` covers all seven agents' login lifecycle, retries, cancellation
+and restart recovery; safe status parsing; provider validation, protocol and model
+selection; write-only credentials; and launch preparation across daemon restarts.
+UI tests cover native login and provider/model selection.
+
+## Custom API provider routing
+
+`npm run test:agent-providers` runs installed Claude Code, Codex, OpenCode, Grok
+and Pi with production provider launch configuration, isolated CLI homes and two
+local mock providers. Each CLI switches native → configured API → native, verifies
+endpoint/model/credential selection and streaming, preserves native files, and
+checks current configuration on session restore. Provider failures must not send
+requests to the native endpoint. Cursor and Kiro explicitly reject custom API
+configuration. No hosted service, PostgreSQL database or paid model is used.
+
+
+## Pi
+
+Pi support targets 1.4.0 or newer. The matrix installs the official
+`@earendil-works/pi-coding-agent` package. Its project-local extension observes
+session changes, active tree branches, tool executions, final `agent_settled`
+events, and extension UI waits. The live scenarios exercise edit/context
+injection, interrupt/recovery, resume, `/new`, `/quit`, tree navigation/rename,
+permission extensions, failed tools, and provider errors. Pi's built-in tools
+have no approval prompts; the fixture adds a confirmation extension to verify
+real user-wait events without changing production approval policy.
+
+Native sign-in opens Pi with `/login` prefilled and a prompt to press Enter; no account identity
+is inferred from credential files. Provider tests use an explicit Cate provider
+extension, environment-only credentials, and configured model limits. They verify
+native → custom API → native switching, restored configuration, unchanged native
+files, and no native fallback after a provider failure. The bundled logo is the
+official `https://pi.dev/logo-auto.svg`.
+
+
+### Pi contract coverage
+
+The Pi matrix entry runs `piContracts.itest.ts` in addition to the shared
+TUI lifecycle, two-terminal smoke, prompt/attachment, terminal-link, native
+setup, and provider-routing suites. The additional harness controls the
+installed CLI through its native RPC mode; it observes real CLI events and
+transcripts while Cate's generated extension is the sole source of Cate hooks.
+Only the inference HTTP server is mocked. It never manufactures hook payloads.
+
+| Contract Cate relies on | Real CLI assertion |
+| --- | --- |
+| Final idle follows all automatic work | Retry success/exhaustion, queued follow-ups, steering, extension continuation; intermediate `agent_end` leaves Cate busy |
+| Compaction is busy work | Threshold and overflow recovery, manual compaction success/failure, and accepting the next prompt |
+| Tool calls retain their input and execution outcome | Actual `edit` old/new text, successful changes, failed edits excluded from history; denied tools covered by the shared lifecycle suite |
+| Session trees select a branch | Native navigation changes the hook locator and the conversation reader excludes the abandoned branch |
+| Copied transcripts do not duplicate usage | Native clone creates a second file; parsed unique usage equals actual paid model requests |
+| Rename/reload preserve identity | Native title reaches the reader; reloading extensions keeps the persisted session stamp and subsequent hooks |
+| Presence names the correct resource | Real hook pid matches the CLI process, registers through the production presence tracker, and falls after exit |
+| Project resources respect Pi trust | An untrusted project loads neither its hook nor skills; explicit approval loads both |
+| Hooks are optional and inert elsewhere | Off removes the generated bridge; missing Cate environment produces no posts |
+| Idle extension UI does not strand status | Real select, confirm, input, editor and custom dialogs all return to an addressable prompt |
+| Provider failures block inference | Missing provider extension and provider 401/402/429/503 cause no native inference; session restore uses the configured provider |
+
+`PI_MANUAL_COMPACTION_CASES` connects the Pi-specific scenarios to the exhaustive
+native-hook coverage guard. Every newly registered production hook must have a
+real scenario, including both compaction completion outcomes. The normal CI
+suite also runs the parser, status and setup unit tests across supported host
+platforms. The real-CLI matrix currently runs on Linux with the latest official
+Pi package. Local validation also runs the same tests on macOS.
+
+External boundaries remain explicit: these tests do not complete a real
+provider OAuth login or make paid upstream requests. The CLI matrix verifies
+provider routing, credentials, session restore, and failure behavior against local
+HTTP servers.

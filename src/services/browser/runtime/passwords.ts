@@ -3,6 +3,7 @@
 // permissions (7.2). Passwords reach a client only through `passwordForFill`.
 
 import { randomInt, randomUUID } from 'node:crypto'
+import { getDomain } from 'tldts'
 import { isPlainObject } from '@kernel/state/contract'
 import type { JsonStateFile } from '@kernel/state/node'
 import type { SecretsFile } from '@runtime/data/runtime'
@@ -103,6 +104,16 @@ const suggestion = ({ id, username, origin }: StoredCredential): BrowserCredenti
 const credentialKey = (c: Pick<StoredCredential, 'origin' | 'signonRealm' | 'username'>) =>
   `${c.origin}\0${c.signonRealm}\0${c.username}`
 
+/** Only share across secure sibling hosts, respecting private public suffixes. */
+function matchesOrigin(saved: string, target: string): boolean {
+  if (saved === target) return true
+  const a = new URL(saved)
+  const b = new URL(target)
+  if (a.protocol !== 'https:' || b.protocol !== 'https:' || a.port !== b.port) return false
+  const domain = getDomain(a.hostname, { allowPrivateDomains: true })
+  return !!domain && domain === getDomain(b.hostname, { allowPrivateDomains: true })
+}
+
 export interface PasswordStore {
   list(): BrowserCredentialSuggestion[]
   suggestions(url: string): BrowserCredentialSuggestion[]
@@ -138,7 +149,8 @@ export function createPasswordStore(
     suggestions(url) {
       const origin = credentialOrigin(url)
       if (!origin) return []
-      return read().filter((c) => c.origin === origin).map(suggestion)
+      return read().filter((c) => matchesOrigin(c.origin, origin))
+        .sort((a, b) => Number(b.origin === origin) - Number(a.origin === origin)).map(suggestion)
     },
     saveDisposition(input) {
       const value = validateInput(input)
@@ -196,7 +208,7 @@ export function createPasswordStore(
     forFill(id, url) {
       const origin = credentialOrigin(url)
       if (!origin) return null
-      const credential = read().find((c) => c.id === id && c.origin === origin)
+      const credential = read().find((c) => c.id === id && matchesOrigin(c.origin, origin))
       return credential
         ? { username: credential.username, password: credential.password, usernameElement: credential.usernameElement }
         : null

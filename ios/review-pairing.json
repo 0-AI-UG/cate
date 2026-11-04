@@ -1,0 +1,9 @@
+[
+  { "chapter": "Join a workspace from your computer", "wait": "Join a workspace", "hold": 4 },
+  { "chapter": "Enter the single-use pairing code", "pairingCode": true, "hold": 3 },
+  { "chapter": "Pair with the computer", "tap": "Join", "wait": "Canvas", "hold": 4 },
+  { "tap": "README.md", "wait": "Edit", "hold": 4 },
+  { "tap": "BackButton", "wait": "Canvas", "hold": 2 },
+  { "chapter": "Paired and connected", "tap": "Settings", "hold": 4 },
+  { "tap": "BackButton", "wait": "Canvas", "hold": 3 }
+]

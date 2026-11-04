@@ -4,7 +4,7 @@
 // (`demandSurface`) and waits for one. A client serves only if it has a
 // surface feature, and the runtime sends it only ops it has the feature for.
 
-import { RpcError, toWireError } from '@kernel/rpc/contract'
+import { RpcError, toWireError, type Subscription } from '@kernel/rpc/contract'
 import { eachConnection, type WorkspaceConnections } from '@client/connections'
 import type { SurfaceRequest } from '@panels/framework/contract'
 import { demandSurface } from './surfaceDemand'
@@ -62,16 +62,27 @@ export function serveSurfaces(connections: WorkspaceConnections): () => void {
     if (!connection.clientHas('webview') && !connection.clientHas('pageDriver')) return () => {}
     const { workspaceId } = connection
     const surface = connection.runtime.surface
-    const sub = surface.requests(undefined, { resume: true })
-    sub.onEvent((request) => {
-      void Promise.resolve()
-        .then(() => runSurfaceRequest(workspaceId, request))
-        .then(
-          (result) => surface.reply({ requestId: request.requestId, result }),
-          (err) => surface.reply({ requestId: request.requestId, error: toWireError(err) }),
-        )
-        .catch(() => { /* the connection dropped; the runtime fails the request */ })
-    })
-    return () => sub.cancel()
+    let sub: Subscription<SurfaceRequest, void> | undefined
+    const serve = () => {
+      sub?.cancel()
+      sub = surface.requests()
+      sub.onEvent((request) => {
+        void Promise.resolve()
+          .then(() => runSurfaceRequest(workspaceId, request))
+          .then(
+            (result) => surface.reply({ requestId: request.requestId, result }),
+            (err) => surface.reply({ requestId: request.requestId, error: toWireError(err) }),
+          )
+          .catch(() => { /* the connection dropped; the runtime fails the request */ })
+      })
+    }
+    // A version mismatch or refusal ends streams permanently, including
+    // resumable ones. Start fresh after every successful handshake.
+    const stopReady = connection.rpc.onReady(serve)
+    if (connection.rpc.state === 'ready') serve()
+    return () => {
+      stopReady()
+      sub?.cancel()
+    }
   })
 }

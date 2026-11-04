@@ -3,14 +3,20 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent } from '@kernel/rpc/contract'
-import { SettingsSearchContext } from '../../kernel/interaction'
+import { AGENTS } from '@services/agents/contract'
 import { workspaceSettingsTable, type WorkspaceSettings } from '@panels/settings'
 import { fakeStream } from '@services/agents/client/testing'
-import { AgentHooksSettings } from './AgentHooksSettings'
+import { AgentHookControl, useAgentHookSettings } from './AgentHooksSettings'
+
+function HookHarness({ workspaceId }: { workspaceId: string | null }) {
+  const controller = useAgentHookSettings(workspaceId)
+  if (!controller.available) return <p>Open a workspace</p>
+  return <div><button onClick={() => { void controller.refresh() }}>Refresh detection</button>{controller.error && <p role="alert">{controller.error}</p>}{AGENTS.map((agent) => <AgentHookControl key={agent.id} agentId={agent.id} name={agent.displayName} controller={controller} />)}</div>
+}
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-describe('AgentHooksSettings', () => {
+describe('agent activity controls', () => {
   let host: HTMLDivElement
   let root: Root
   let stop = () => {}
@@ -38,7 +44,7 @@ describe('AgentHooksSettings', () => {
       root.render(node)
       await Promise.resolve()
     })
-    if (snapshot) act(() => snapshot())
+    if (snapshot) await act(async () => { snapshot() })
   }
 
   beforeEach(() => {
@@ -56,50 +62,56 @@ describe('AgentHooksSettings', () => {
   })
 
   it('asks for a workspace without one', async () => {
-    await render(<AgentHooksSettings workspaceId={null} />)
+    await render(<HookHarness workspaceId={null} />)
     expect(host.textContent).toContain('Open a workspace')
   })
 
   it('shows a neutral status when Auto has no agent config folder', async () => {
     inspectHooks.mockResolvedValue([])
-    await render(<AgentHooksSettings workspaceId="ws" />, install())
+    await render(<HookHarness workspaceId="ws" />, install())
     expect(host.querySelector('[data-agent-hook-id="codex"]')?.textContent).toContain('Not configured in this workspace')
   })
 
   it('shows when explicitly enabled hooks will be installed', async () => {
     inspectHooks.mockResolvedValue([{ agentId: 'claude-code', displayName: 'Claude Code', folderPresent: false, injected: false }])
-    await render(<AgentHooksSettings workspaceId="ws" />, install({ 'claude-code': 'on' }))
+    await render(<HookHarness workspaceId="ws" />, install({ 'claude-code': 'on' }))
     expect(host.querySelector('[data-agent-hook-id="claude-code"]')?.textContent).toContain('Will install when a terminal opens')
   })
 
   it('writes the sparse per-agent mode to the workspace setting', async () => {
     inspectHooks.mockResolvedValue([])
-    await render(<AgentHooksSettings workspaceId="ws" />, install({ codex: 'off' }))
+    await render(<HookHarness workspaceId="ws" />, install({ codex: 'off' }))
     const row = host.querySelector('[data-agent-hook-id="claude-code"]')!
-    await act(async () => { row.querySelector<HTMLButtonElement>('[aria-pressed="false"][title^="Install"]')!.click() })
+    await act(async () => { const select = row.querySelector('select')!; select.value = 'on'; select.dispatchEvent(new Event('change', { bubbles: true })) })
     expect(set).toHaveBeenCalledWith({ key: 'agentHookInjection', value: { codex: 'off', 'claude-code': 'on' } })
 
     const codex = host.querySelector('[data-agent-hook-id="codex"]')!
     expect(codex.textContent).toContain('Off for new terminals')
-    await act(async () => { codex.querySelector<HTMLButtonElement>('[title^="Enable when"]')!.click() })
+    await act(async () => { const select = codex.querySelector('select')!; select.value = 'auto'; select.dispatchEvent(new Event('change', { bubbles: true })) })
     expect(set).toHaveBeenLastCalledWith({ key: 'agentHookInjection', value: { 'claude-code': 'on' } })
   })
 
   it('shows an error when inspection fails', async () => {
     inspectHooks.mockRejectedValue(new Error('boom'))
-    await render(<AgentHooksSettings workspaceId="ws" />, install())
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Could not check agent hooks')
+    await render(<HookHarness workspaceId="ws" />, install())
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Could not check agent activity')
   })
 
-  it('is discoverable when settings search is filtered to Kiro', async () => {
+  it('renders compact activity controls without repeating agent names or logos', async () => {
     inspectHooks.mockResolvedValue([])
-    await render(
-      <SettingsSearchContext.Provider value={{ query: 'kiro', sectionMatched: false }}>
-        <AgentHooksSettings workspaceId="ws" />
-      </SettingsSearchContext.Provider>,
-      install(),
-    )
-    expect(host.querySelector('[data-srow]')).not.toBeNull()
+    await render(<HookHarness workspaceId="ws" />, install())
+    expect(host.querySelectorAll('select')).toHaveLength(7)
+    expect(host.querySelectorAll('img')).toHaveLength(0)
+    expect(host.querySelector('[data-agent-hook-id="kiro"]')?.textContent).not.toContain('Kiro')
+  })
+
+  it('reports failed mode updates and restores the confirmed selection', async () => {
+    inspectHooks.mockResolvedValue([])
+    await render(<HookHarness workspaceId="ws" />, install({ codex: 'off' }))
+    set.mockRejectedValueOnce(new Error('refused'))
+    await act(async () => { const select = host.querySelector<HTMLSelectElement>('[aria-label="Codex integration"]')!; select.value = 'on'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Could not update agent activity')
+    expect(host.querySelector<HTMLSelectElement>('[aria-label="Codex integration"]')?.value).toBe('off')
   })
 
   it.each([
@@ -109,19 +121,19 @@ describe('AgentHooksSettings', () => {
       agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true,
       approvalDetection: { source: 'config', mode, detail: '/home/test/.codex/config.toml' },
     }])
-    await render(<AgentHooksSettings workspaceId="ws" />, install())
+    await render(<HookHarness workspaceId="ws" />, install())
     expect(host.textContent).toContain(`Approvals: ${label}`)
     expect(host.textContent).not.toContain('/home/test/.codex/config.toml')
     expect(host.querySelector('[title="/home/test/.codex/config.toml"]')).not.toBeNull()
     expect(host.querySelector('[aria-label="Codex approval mode"]')).toBeNull()
-    expect(host.querySelector('[aria-label="Codex hooks"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="Codex integration"]')).not.toBeNull()
     expect(set).not.toHaveBeenCalled()
     expect(host.textContent).not.toContain('human permission-prompt notification')
   })
 
   it('refreshes detected configuration', async () => {
     inspectHooks.mockResolvedValue([])
-    await render(<AgentHooksSettings workspaceId="ws" />, install())
+    await render(<HookHarness workspaceId="ws" />, install())
     expect(host.textContent).toContain('Approvals: Unknown')
     inspectHooks.mockResolvedValue([{
       agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true,

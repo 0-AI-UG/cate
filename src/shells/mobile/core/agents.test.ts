@@ -3,7 +3,7 @@ import { setRuntimeResolver } from '@kernel/rpc/client'
 import { RpcError, type ChannelEvent } from '@kernel/rpc/contract'
 import type { PowerState } from '@runtime/power/contract'
 import { fakeStream } from '@services/agents/client/testing'
-import type { AgentConversation, AgentConversationChange, AgentPanelStates, AgentPanelStatesChange, PanelAgentState } from '@services/agents/contract'
+import type { AgentConversation, AgentConversationChange, AgentPanelStates, AgentPanelStatesChange, PanelAgentState, AgentTypeInfo } from '@services/agents/contract'
 import type { NotificationEvent } from '@workspace/notifications/contract'
 import type { MobileBridge, MobileNotification, MobileViewEvent } from '../contract'
 import type { MobileClient } from './boot'
@@ -252,4 +252,17 @@ describe('mobile actions', () => {
     expect(wordsFor(new Error('agent-prompt-not-taken: the agent started no turn'))).toBe(NOT_TAKEN)
     expect(wordsFor(new Error('Something else'))).toBe('Something else')
   })
+})
+
+it('reads current server agent types for the iOS agent picker without a client availability cache', async () => {
+  let choices: AgentTypeInfo[] = [{ agentId: 'codex', displayName: 'Codex', ready: true, connection: 'native' }]
+  const types = vi.fn(async () => choices)
+  const stop = setRuntimeResolver((id) => id === 'ios-availability' ? ({ agents: { types } }) as never : null)
+  try {
+    const handlers = createActionHandlers({} as never, {} as never)
+    expect(await handlers['agents.choices']({ workspaceId: 'ios-availability' })).toBe(choices)
+    choices = [{ ...choices[0], ready: false, setupReason: 'Sign in to this CLI in Agents settings.' }]
+    expect(await handlers['agents.choices']({ workspaceId: 'ios-availability' })).toBe(choices)
+    expect(types).toHaveBeenCalledTimes(2)
+  } finally { stop() }
 })

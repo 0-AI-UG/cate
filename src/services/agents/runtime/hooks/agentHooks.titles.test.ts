@@ -109,6 +109,13 @@ const FIXTURES: Record<AgentId, TitleFixture> = {
       )
     },
   },
+  pi: {
+    sessionId: 'pi-session',
+    prompt: (env) => ({ type: 'before_agent_start', sessionId: env.sessionId, cwd: env.cwd }),
+    writeTitle(env, title) {
+      writeFile(path.join(env.home, '.pi/agent/sessions/bucket', `stamp_${env.sessionId}.jsonl`), JSON.stringify({ type: 'session_info', name: title }) + '\n')
+    },
+  },
   opencode: {
     sessionId: 'ses_target',
     sqlite: true,

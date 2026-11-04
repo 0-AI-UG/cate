@@ -24,7 +24,7 @@ function setup(build: string) {
   const cliPath = path.join(install, 'cli.cjs')
   fs.writeFileSync(cliPath, `console.log(JSON.stringify({
     build: ${JSON.stringify(build)},
-    socket: process.env.CATE_SOCKET, token: process.env.CATE_TOKEN ?? '',
+    socket: process.env.CATE_SOCKET, token: process.env.CATE_TOKEN,
     args: process.argv.slice(2),
   }))`)
   const nodePath = process.platform === 'win32' ? process.execPath : path.join(install, 'node')
@@ -48,12 +48,9 @@ function spawn(terminalId: string, panelId: string | null = 'panel-1'): SpawnInf
 async function run(env: Record<string, string>) {
   const command = process.platform === 'win32' ? process.env.ComSpec ?? 'cmd.exe' : '/bin/sh'
   const args = process.platform === 'win32' ? ['/d', '/s', '/c', 'cate "argument with spaces"'] : ['-c', 'cate "argument with spaces"']
-  // cmd must receive the command's quotes verbatim; Node's Windows argv
-  // escaping otherwise turns them into literal quotes in the CLI arguments.
-  const result = await execFileP(command, args, {
-    env: { ...process.env, ...env },
-    windowsVerbatimArguments: process.platform === 'win32',
-  })
+  // cmd.exe must receive its command text verbatim; Node otherwise escapes
+  // the embedded quotes for a normal Windows executable rather than a shell.
+  const result = await execFileP(command, args, { env: { ...process.env, ...env }, windowsVerbatimArguments: process.platform === 'win32' })
   return JSON.parse(result.stdout.trim()) as { build: string; socket: string; token: string; args: string[] }
 }
 
@@ -108,7 +105,8 @@ it('does not inherit another terminal token for a process without a panel', asyn
   const { runtime } = setup('build')
   const env = await runtime.envForTerminal({ ...spawn('anonymous', null), env: { PATH: process.env.PATH!, CATE_TOKEN: 'inherited' } }) as Record<string, string>
   expect(env.CATE_TOKEN).toBe('')
-  expect((await run({ ...env, CATE_TOKEN: 'snapshot-token' })).token).toBe('')
+  // cmd.exe removes an environment variable when it is set to an empty value.
+  expect((await run({ ...env, CATE_TOKEN: 'snapshot-token' })).token ?? '').toBe('')
 })
 
 it('revokes the issued token if publishing its launcher fails', async () => {

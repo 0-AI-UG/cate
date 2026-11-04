@@ -20,6 +20,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type HTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import { isTopDialogLayer, useDialogLayer } from './dialogLayers'
 import { Tooltip } from './Tooltip'
 import { buttonClassName } from './Button'
 
@@ -99,6 +100,7 @@ interface PaletteDialogShellProps {
 
 const FOCUSABLE = [
   'button:not([disabled])',
+  'iframe',
   '[href]',
   'input:not([disabled])',
   'select:not([disabled])',
@@ -106,17 +108,17 @@ const FOCUSABLE = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-function useDialogFocus(ref: RefObject<HTMLElement | null>): void {
+function useDialogFocus(ref: RefObject<HTMLElement | null>, order?: number): void {
   useEffect(() => {
     const dialog = ref.current
-    if (!dialog) return
+    if (!dialog || order !== undefined && !isTopDialogLayer(order)) return
     if (!dialog.contains(document.activeElement)) {
       const initial = dialog.querySelector<HTMLElement>('[autofocus], [data-autofocus]')
         ?? dialog.querySelector<HTMLElement>(FOCUSABLE)
         ?? dialog
       initial.focus({ preventScroll: true })
     }
-  }, [ref])
+  }, [ref, order])
 }
 
 function trapDialogFocus(event: ReactKeyboardEvent<HTMLElement>): void {
@@ -254,8 +256,6 @@ interface ModalProps extends Omit<ModalCardProps, 'onClose' | 'className'> {
   /** Close on Escape. Defaults to `dismissable`. Set false when the caller owns
    *  Escape (e.g. to clear a search before closing). */
   closeOnEscape?: boolean
-  /** Stacking class (Settings sits above other modals). */
-  zClassName?: string
 }
 
 /** Portaled, centered modal: dimmed blurred backdrop + entrance + the shared
@@ -266,32 +266,27 @@ export function Modal({
   height,
   dismissable = true,
   closeOnEscape,
-  zClassName = 'z-[100000]',
   bodyClassName,
   ...card
 }: ModalProps) {
   useRestoreFocusOnUnmount()
   const dialogRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
-  useDialogFocus(dialogRef)
   const escapeCloses = closeOnEscape ?? dismissable
-  useEffect(() => {
-    if (!escapeCloses) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', onKey, { capture: true })
-    return () => document.removeEventListener('keydown', onKey, { capture: true })
-  }, [onClose, escapeCloses])
+  const order = useDialogLayer((event) => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    if (escapeCloses) onClose()
+  })
+
+  useDialogFocus(dialogRef, order)
 
   const size: CSSProperties = { width, ...(height != null ? { height } : null) }
 
   return createPortal(
     <div
-      className={`modal-backdrop-in fixed inset-0 ${zClassName} flex items-center justify-center ${BACKDROP}`}
+      className={`modal-backdrop-in fixed inset-0 flex items-center justify-center ${BACKDROP}`}
+      style={{ zIndex: order }}
       onClick={dismissable ? onClose : undefined}
     >
       <div
