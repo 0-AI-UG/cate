@@ -108,7 +108,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
     >
       <p className="text-[13px] leading-relaxed text-secondary">
         <span className="text-primary font-medium">{name}</span>
-        {` runs Cate runtime ${mismatch.runtimeVersion}, which this app can't talk to. Update it to ${version} to use the workspace.`}
+        {` runs Cate runtime ${mismatch.runtimeVersion}. Update it to ${version} to use this app's runtime fixes and features.`}
       </p>
 
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2.5 py-2 rounded-md bg-surface-5 border border-subtle text-[12px]">

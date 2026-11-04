@@ -1,17 +1,6 @@
-// Bringing a runtime of another version in line with this client (7.10).
-// Only the same version connects, so every mismatch has one fix: a runtime
-// older than this client is updated to it (`runtime.update` with this
-// client's version and build), and one newer than this client waits for
-// this app to be updated (a runtime is never moved back: another device may
-// need it). Every client runs the same flow; each shell only draws it:
-// - When nothing else uses the runtime (no other client of its version, no
-//   running work), it is updated without asking, once each time the
-//   connection turns incompatible: the runtime refuses that try (`dirty`)
-//   otherwise, and the shell asks, since updating ends the workspace's
-//   terminals and running agents for everyone.
-// - An update shows where it is (installing, with the runtime's download
-//   progress; then restarting) until the runtime answers again, instead of
-//   the offline state of the restart.
+// Bring older runtimes to this client's release, including compatible ones.
+// Try once per connection while idle; other clients or running work require
+// confirmation because restarting ends terminals and agents for everyone.
 
 import { compareSemver, type RuntimeUpdateProgress } from '@runtime/daemon/contract'
 import type { ConnectionState, WorkspaceConnection } from './connection'
@@ -31,9 +20,12 @@ export interface RuntimeMismatch {
   appVersion: string
 }
 
-/** The mismatch an incompatible connection is; null for any other state. */
+/** An incompatible runtime or a compatible runtime behind this client. */
 export function runtimeMismatch(state: ConnectionState, appVersion: string): RuntimeMismatch | null {
-  if (state.kind !== 'incompatible') return null
+  if (state.kind !== 'incompatible' && state.kind !== 'connected') return null
+  if (!state.runtimeVersion) return null
+  // Compatible newer runtimes stay usable; an older client never downgrades them.
+  if (state.kind === 'connected' && compareSemver(state.runtimeVersion, appVersion) >= 0) return null
   const newer = compareSemver(state.runtimeVersion, appVersion) > 0
   return { update: newer ? 'app' : 'runtime', runtimeVersion: state.runtimeVersion, appVersion }
 }
@@ -83,6 +75,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
 
   const runUpdate = async (connection: WorkspaceConnection, ifIdle: boolean): Promise<string | null> => {
     if (runs.has(connection)) return 'An update is already running.'
+    const beforeRestart = connection.state
     const api = connection.runtime.runtime
     setRun(connection, { phase: 'installing', progress: null })
     const poll = setInterval(() => {
@@ -100,7 +93,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
       clearInterval(poll)
     }
     setRun(connection, { phase: 'restarting' })
-    if (!await waitFor(connection, (kind) => kind !== 'incompatible', RESTART_TIMEOUT_MS)) {
+    if (!await waitFor(connection, () => connection.state !== beforeRestart, RESTART_TIMEOUT_MS)) {
       setRun(connection, null)
       const pid = await api.info().then((info) => info.pid, () => null)
       return pid
@@ -110,11 +103,11 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
     const settled = (kind: ConnectionState['kind']) => kind === 'connected' || kind === 'incompatible' || kind === 'refused' || kind === 'stopped' || kind === 'closed'
     await waitFor(connection, settled, RECONNECT_TIMEOUT_MS)
     setRun(connection, null)
-    if (connection.state.kind === 'incompatible') return 'The runtime restarted but still does not run this version.'
+    if (runtimeMismatch(connection.state, deps.version)) return 'The runtime restarted but still does not run this version.'
     return null
   }
 
-  // The idle try, once per incompatible spell of each connection.
+  // The idle try, once per outdated connection.
   const tried = new Set<WorkspaceConnection>()
   const watched = new Map<WorkspaceConnection, () => void>()
   const check = (connection: WorkspaceConnection): void => {

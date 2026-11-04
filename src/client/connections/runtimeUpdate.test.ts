@@ -70,3 +70,31 @@ it('never touches a runtime newer than this client', () => {
   expect(newer.runtime.runtime.update).not.toHaveBeenCalled()
   expect(runtimeUpdates.run(as(newer))).toBeNull()
 })
+
+it('updates a compatible older runtime and waits for an actual disconnect', async () => {
+  const older = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.3' })
+  const runtimeUpdates = start(older)
+  expect(older.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+b', ifIdle: true })
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(older))).toEqual({ phase: 'restarting' }))
+  // Being connected to the old daemon does not mean the restart completed.
+  await Promise.resolve()
+  expect(runtimeUpdates.run(as(older))).toEqual({ phase: 'restarting' })
+  older.set({ kind: 'offline', lastSeen: 1, retrying: true })
+  older.set({ kind: 'connected', runtimeVersion: '2.0.4' })
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(older))).toBeNull())
+  expect(older.runtime.runtime.update).toHaveBeenCalledTimes(1)
+})
+
+it('leaves compatible newer runtimes usable and asks before interrupting a busy older one', async () => {
+  expect(runtimeMismatch({ kind: 'connected', runtimeVersion: '2.0.5' }, '2.0.4')).toBeNull()
+  expect(runtimeMismatch({ kind: 'connected', runtimeVersion: '2.0.4' }, '2.0.4')).toBeNull()
+  const busy = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.3' }, false)
+  const runtimeUpdates = start(busy)
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(busy))).toBeNull())
+  expect(runtimeMismatch(busy.state, '2.0.4')).toMatchObject({ update: 'runtime' })
+  const confirmed = runtimeUpdates.update(as(busy))
+  expect(busy.runtime.runtime.update).toHaveBeenLastCalledWith({ version: '2.0.4', build: '2.0.4+b' })
+  await vi.waitFor(() => expect(runtimeUpdates.run(as(busy))).toEqual({ phase: 'restarting' }))
+  busy.set({ kind: 'connected', runtimeVersion: '2.0.4' })
+  await expect(confirmed).resolves.toBeNull()
+})

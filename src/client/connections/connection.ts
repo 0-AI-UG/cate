@@ -21,7 +21,7 @@ import { tunnelDuplex } from './tunnel'
 
 export type ConnectionState =
   | { kind: 'connecting' }
-  | { kind: 'connected' }
+  | { kind: 'connected'; runtimeVersion?: string }
   /** `lastSeen` is when the runtime was last connected (null: never). */
   | { kind: 'offline'; lastSeen: number | null; retrying: boolean; error?: string }
   /** The runtime uses an incompatible protocol: nothing but `runtime.info` and
@@ -49,7 +49,7 @@ export interface WorkspaceConnectionOptions {
   target: ConnectionTarget
   transports: ShellTransports
   identity: ClientIdentity
-  /** App version, sent in `hello`: only a runtime of this version connects. */
+  /** App version, sent in `hello` for diagnostics and updates. */
   version: string
   backoff?: Partial<Backoff>
   now?: () => number
@@ -251,7 +251,7 @@ export class WorkspaceConnection {
       case 'ready': {
         this.attempt = 0
         this.lastSeen = this.now()
-        this.setState({ kind: 'connected' })
+        this.setState({ kind: 'connected', runtimeVersion: this.rpc.remote?.version })
         return
       }
       case 'incompatible':

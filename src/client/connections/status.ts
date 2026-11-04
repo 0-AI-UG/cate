@@ -76,6 +76,10 @@ export function connectionStatus(state: ConnectionState, context: StatusContext)
         // A network dial explains itself (why each way failed, what to change).
         : { title: 'Not reachable', message: reason ? `${reason}.` : 'Its machine may be off or offline.', remedies: unreachable }
     }
+    case 'connected':
+      return runtimeMismatch(state, version)
+        ? { title: 'Runtime update needed', message: `The workspace runs Cate ${state.runtimeVersion}. Update it to ${version} for this app's runtime fixes and features; that ends its terminals and running agents for everyone.`, remedies: ['updateRuntime'] }
+        : null
     case 'incompatible':
       return runtimeMismatch(state, version)?.update === 'app'
         ? { title: 'Update Cate', message: `The workspace runs Cate ${state.runtimeVersion}, newer than this app (${version}). Update Cate to use it.`, remedies: ['updateApp'] }

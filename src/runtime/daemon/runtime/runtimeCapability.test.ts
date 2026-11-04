@@ -58,6 +58,14 @@ it('refuses an idle-only update while another client is connected or work runs',
   expect(alone.update).toHaveBeenCalledWith({ version: '2.0.5' }, expect.any(Function))
 })
 
+it('allows a confirmed shared restart even with other clients and running work', async () => {
+  const shared = setup({ clients: [1, 2], busy: true })
+  const done = shared.call({ version: '2.0.5' })
+  shared.finish()
+  await done
+  expect(shared.update).toHaveBeenCalledTimes(1)
+})
+
 it('runs one update at a time', async () => {
   const { call, update, finish } = setup()
   const build = '2.0.5+aaaaaaaaaaaa'

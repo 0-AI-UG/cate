@@ -1039,10 +1039,12 @@ fails to compile when a registered capability is missing.
   Updating stops the runtime's terminals and agents.
 - Every client runs the same flow, in the client core
   (`client/connections` `RuntimeUpdates`); each shell only draws it. When
-  nothing else uses the runtime the client updates it without asking, once
-  each time the connection turns incompatible: it sends `ifIdle`, which the
+  the runtime runs an older release or an incompatible protocol, the client
+  updates it without asking if nothing else uses it, once per connection:
+  it sends `ifIdle`, which the
   daemon refuses (`dirty`) while another compatible client is connected
-  or work runs. Otherwise the workspace shows both versions and says what
+  or work runs. Compatible runtimes ahead of the client stay usable and are
+  never downgraded. Otherwise the workspace shows both versions and says what
   updating ends before it acts (an incompatible runtime answers only
   `anyVersion` methods, so it cannot list them): the desktop's cover, the
   iOS app's workspace screen. A runtime newer than the app is never moved

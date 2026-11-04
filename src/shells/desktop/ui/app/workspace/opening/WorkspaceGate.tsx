@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { documentStoreFor } from '@client/document'
 import { subscribeWorkspacePhase, trustStore, workspacePhaseOf, type WorkspacePhase } from '@client/workspaces'
-import type { ConnectionState, WorkspaceConnection } from '@client/connections'
+import { runtimeMismatch, type ConnectionState, type WorkspaceConnection } from '@client/connections'
 import { useConnectionState } from '../../../client/connections'
 import { panelViewsLoaded, preloadPanelViews } from '../../../client/host/views'
 import { tryClientApp } from '../../app'
@@ -85,7 +85,8 @@ export function WorkspaceGate({ workspaceId, children }: { workspaceId: string |
   const updating = useRuntimeUpdate(connection) !== null
   const asking = useSyncExternalStore(trustStore.subscribe, () => !!workspaceId && trustStore.current()?.workspaceId === workspaceId)
   const opening = phase !== 'ready' || !viewsLoaded
-  const immediate = asking || updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
+  const mismatch = runtimeMismatch(state, tryClientApp()?.version ?? '') !== null
+  const immediate = mismatch || asking || updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
   const card = useOpeningCard(opening, immediate)
   // An overlay hides this place (or covers it in a detached window): the
   // question is the modal then.
@@ -102,7 +103,7 @@ export function WorkspaceGate({ workspaceId, children }: { workspaceId: string |
           ? <WorkspaceTrustCard workspaceId={workspaceId} />
           : (
             <div data-connection-blocker className="flex w-full justify-center">
-              {(state.kind === 'incompatible' || updating) && connection
+              {(mismatch || updating) && connection
                 ? <RuntimeMismatchCard connection={connection} />
                 : <OpeningStatus workspaceId={workspaceId} connection={connection} state={state} />}
             </div>

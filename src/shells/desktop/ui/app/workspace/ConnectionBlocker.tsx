@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { BACKDROP, ModalCard, btn, Spinner } from '../../kernel/interaction'
-import type { ConnectionState, WorkspaceConnection } from '@client/connections'
+import { runtimeMismatch, type ConnectionState, type WorkspaceConnection } from '@client/connections'
 import { machineLabel } from '@runtime/daemon/contract'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
@@ -44,14 +44,15 @@ export function useWorkspaceBlock(workspaceId: string | null): { blocked: boolea
   const connection = useWorkspaceConnection(workspaceId)
   const state = useConnectionState(connection)
   const updating = useRuntimeUpdate(connection) !== null
-  const immediate = updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
+  const mismatch = runtimeMismatch(state, tryClientApp()?.version ?? '') !== null
+  const immediate = mismatch || updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
   const [graced, setGraced] = useState(false)
   useEffect(() => {
     if (!blocks(state) || immediate) { setGraced(false); return }
     const timer = setTimeout(() => setGraced(true), GRACE_MS)
     return () => clearTimeout(timer)
   }, [state, immediate])
-  return { blocked: !!connection && blocks(state) && (immediate || graced), connection, state, updating }
+  return { blocked: !!connection && (mismatch || updating || (blocks(state) && (immediate || graced))), connection, state, updating }
 }
 
 /** Covers `children` (the workspace's windows) while its connection blocks. */
@@ -72,7 +73,7 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
       <div ref={content} className="h-full">{children}</div>
       {blocked && (
         <div className={`absolute inset-0 z-[1000] flex items-center justify-center ${BACKDROP}`} data-connection-blocker>
-          {(state.kind === 'incompatible' || updating) && connection
+          {(runtimeMismatch(state, tryClientApp()?.version ?? '') || updating) && connection
             ? <RuntimeMismatchCard connection={connection} />
             : <ConnectionStatusCard workspaceId={workspaceId} connection={connection} state={state} />}
         </div>
