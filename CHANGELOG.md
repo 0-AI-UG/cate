@@ -152,6 +152,17 @@ This TestFlight build is rebuilt from the local Cate 2.1.0-beta.6 checkout.
 
 - **Agent chat** no longer animates existing replies when opening a conversation.
 
+## [2.1.0-beta.7] - 2026-11-02
+
+This beta restores agent conversation history before the first prompt and includes terminal CLI and panel popover fixes merged since beta.6.
+
+### Fixed
+
+- **Codex conversation history** can load before its deferred first lifecycle hook, including after resuming a chat. The runtime identifies the exact process's open transcript and refuses ambiguous matches.
+- **Terminal CLI** remains available after a runtime update, with refreshed credentials and a stable launcher for restored terminals.
+- **Panel relation popovers** use the shared surface so their controls remain accessible.
+
+
 ## [2.1.0-beta.6] - 2026-10-29
 
 This beta improves browser connectivity and Cate Connect recovery, and updates bundled dependencies.
