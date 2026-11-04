@@ -79,6 +79,26 @@ afterEach(() => {
 })
 
 describe('RuntimeMismatchCard', () => {
+  it('covers a compatible older workspace until its shared runtime update is confirmed', async () => {
+    const connection = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.3' })
+    await render(connection)
+    expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
+    expect(card()?.textContent).toContain('Updating ends')
+    expect(card()?.textContent).not.toContain("can't talk to")
+    await act(async () => button('Update to 2.0.4').click())
+    expect(connection.runtime.runtime.update).toHaveBeenLastCalledWith({ version: '2.0.4', build: '2.0.4+new' })
+    expect(card()?.textContent).toContain('Restarting')
+    await act(async () => connection.set({ kind: 'connected', runtimeVersion: '2.0.4' }))
+    expect(card()).toBeNull()
+  })
+
+  it('keeps a compatible newer workspace usable', async () => {
+    const connection = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.5' })
+    await render(connection)
+    expect(connection.runtime.runtime.update).not.toHaveBeenCalled()
+    expect(card()).toBeNull()
+  })
+
   it('asks inside the workspace only: no dialog over the app, the sidebar stays usable', async () => {
     await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
     expect(card()?.textContent).toContain('Workspace runtime needs an update')

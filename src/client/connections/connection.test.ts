@@ -167,7 +167,7 @@ describe('WorkspaceConnection', () => {
     const connection = openLocal(rt)
     expect(runtimeFor('ws1')).toBe(connection.runtime)
     await expect(connection.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
-    expect(connection.state).toEqual({ kind: 'connected' })
+    expect(connection.state).toMatchObject({ kind: 'connected', runtimeVersion: '9.0.0' })
     expect(connection.clientHas('canvas')).toBe(true)
     expect(connection.clientHas('camera')).toBe(false)
     registry!.close('ws1')
@@ -227,7 +227,7 @@ describe('WorkspaceConnection', () => {
 
     // Release and build numbers do not decide protocol compatibility.
     const same = openLocal(fakeRuntime({ version: '9.1.0', build: '9.1.0+other' }))
-    await vi.waitFor(() => expect(same.state).toEqual({ kind: 'connected' }))
+    await vi.waitFor(() => expect(same.state).toEqual({ kind: 'connected', runtimeVersion: '9.1.0' }))
     await expect(same.runtime.workspace.info()).resolves.toEqual({ runtimeId: 'r1', root: '/w', name: 'w' })
   })
 
