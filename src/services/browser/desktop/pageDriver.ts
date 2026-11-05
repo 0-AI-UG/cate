@@ -1306,12 +1306,37 @@ export class PageDriver {
     if (fresh.documentId !== observation.documentId) throw new Error('stale-browser-observation')
     observation = this.requireObservation({ observationId: fresh.observationId })
     if (observation.focusedElementId !== undefined) return this.element(observation.focusedElementId, observation)
-    const active = objectValue((await this.send('Runtime.evaluate', { expression: 'document.activeElement', returnByValue: false, objectGroup: 'cate-browser' })).result)
-    if (typeof active.objectId !== 'string') throw new Error('browser-focused-element-required')
-    const described = await this.send('DOM.describeNode', { objectId: active.objectId })
-    const backendNodeId = objectValue(described.node).backendNodeId
-    if (typeof backendNodeId !== 'number') throw new Error('browser-focused-element-required')
-    return { objectId: active.objectId, backendNodeId }
+    // AX may omit an editable body or expose it with a generic role. Follow
+    // the actual focus chain instead; each iframe document has its own world,
+    // including same-process children of an out-of-process frame.
+    await this.currentFrameIds()
+    let frameId: string | undefined
+    let sessionId: string | undefined
+    let contextId: number | undefined
+    const visited = new Set<string>()
+    for (;;) {
+      const active = objectValue((await this.send('Runtime.evaluate', {
+        expression: `(() => {
+          let element = document.activeElement;
+          while (element?.shadowRoot?.activeElement) element = element.shadowRoot.activeElement;
+          return element;
+        })()`,
+        ...(contextId === undefined ? {} : { contextId }),
+        returnByValue: false, objectGroup: 'cate-browser',
+      }, sessionId)).result)
+      if (typeof active.objectId !== 'string' || active.subtype === 'null') throw new Error('browser-focused-element-required')
+      const node = objectValue((await this.send('DOM.describeNode', { objectId: active.objectId }, sessionId)).node)
+      if (typeof node.backendNodeId !== 'number') throw new Error('browser-focused-element-required')
+      const childFrameId = node.frameId
+      if (typeof childFrameId !== 'string') return { objectId: active.objectId, backendNodeId: node.backendNodeId, frameId, sessionId }
+      if (visited.has(childFrameId)) throw new Error('browser-focused-element-required')
+      visited.add(childFrameId)
+      frameId = childFrameId
+      sessionId = this.frames.sessionOf(frameId)
+      const world = await this.send('Page.createIsolatedWorld', { frameId, worldName: 'cate-browser-input' }, sessionId)
+      if (typeof world.executionContextId !== 'number') throw new Error('browser-focused-element-required')
+      contextId = world.executionContextId
+    }
   }
 
   private async waitCondition(args: BrowserArgs, observation: CachedBrowserObservation): Promise<void> {
