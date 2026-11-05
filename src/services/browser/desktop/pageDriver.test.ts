@@ -359,3 +359,47 @@ it('returns from an action a dialog interrupts, refuses other calls until it is 
   expect(result).toMatchObject({ result: { action: { method: 'dialog', status: 'verified' }, observation: { kind: 'ax' } } })
   expect(await execute('dialog', { action: 'dismiss' })).toMatchObject({ error: 'browser-no-dialog' })
 })
+
+it.each([false, true])('types into a focused nested editor without a textbox AX role (out-of-process: %s)', async outOfProcess => {
+  let value = ''
+  const editorCalls: Array<string | undefined> = []
+  const { execute, events, contents } = await setupGuest(async (method, params, sessionId) => {
+    if (method === 'Page.getFrameTree') return { frameTree: { frame: { id: 'main' }, childFrames: [
+      { frame: { id: 'mail' }, childFrames: [{ frame: { id: 'editor' } }] },
+    ] } }
+    if (method === 'Page.createIsolatedWorld') return { executionContextId: params.frameId === 'mail' ? 2 : 3 }
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('document.activeElement')) {
+      return { result: { objectId: params.contextId === 3 ? 'editor-body' : params.contextId === 2 ? 'editor-frame' : 'mail-frame' } }
+    }
+    if (method === 'DOM.describeNode') {
+      if (params.objectId === 'mail-frame') return { node: { backendNodeId: 10, frameId: 'mail' } }
+      if (params.objectId === 'editor-frame') return { node: { backendNodeId: 11, frameId: 'editor' } }
+      if (params.objectId === 'editor-body') return { node: { backendNodeId: 12 } }
+    }
+    if (method === 'Runtime.callFunctionOn' && params.objectId === 'editor-body') {
+      editorCalls.push(sessionId)
+      const fn = String(params.functionDeclaration)
+      if (fn.includes('element-not-editable')) return { result: { value: true } }
+      if (fn.includes('this.isContentEditable ? this.innerText : this.value')) return { result: { value } }
+      if (fn.includes("new InputEvent('beforeinput'")) { value += JSON.parse(fn.match(/const text=(".*?");/)![1]); return { result: {} } }
+    }
+  })
+  if (outOfProcess) events.emit('message', {}, 'Target.attachedToTarget', {
+    sessionId: 'mail-session', targetInfo: { type: 'iframe', targetId: 'mail' },
+  })
+  expect(await execute('typeText', { text: 'Reply text' })).not.toHaveProperty('error')
+  expect(value).toBe('Reply text')
+  expect(editorCalls.length).toBeGreaterThan(0)
+  expect(editorCalls.every(session => session === (outOfProcess ? 'mail-session' : undefined))).toBe(true)
+  expect(contents.debugger.sendCommand).toHaveBeenCalledWith('Page.createIsolatedWorld', {
+    frameId: 'editor', worldName: 'cate-browser-input',
+  }, outOfProcess ? 'mail-session' : undefined)
+})
+
+it('rejects typing when the actual focused element is not editable', async () => {
+  const { execute } = await setupGuest(async (method, params) => {
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('document.activeElement')) return { result: { objectId: 'button' } }
+    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('element-not-editable')) return { result: { value: 'element-not-editable' } }
+  })
+  expect(await execute('typeText', { text: 'Reply text' })).toMatchObject({ error: 'browser-type-target-not-focused' })
+})
