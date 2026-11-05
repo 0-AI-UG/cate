@@ -121,6 +121,7 @@ function WallpaperSwatch({ selected, onClick, label, imageUrl }: {
       type="button"
       onClick={onClick}
       title={label}
+      aria-label={label}
       aria-pressed={selected}
       className={`relative h-12 w-20 shrink-0 overflow-hidden rounded-md border text-xs transition-colors ${
         selected ? 'border-focus-blue ring-2 ring-focus-blue' : 'border-subtle hover:border-strong'

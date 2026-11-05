@@ -3,6 +3,8 @@
 // The images are bundled assets, so they render without the shell port.
 
 import hillside from './assets/hillside.webp'
+import lighthouse from './assets/lighthouse.webp'
+import snowyPass from './assets/snowy-pass.webp'
 
 export const BUILTIN_WALLPAPER_PREFIX = 'builtin:'
 
@@ -16,6 +18,8 @@ export interface BuiltinWallpaper {
 
 export const BUILTIN_WALLPAPERS: BuiltinWallpaper[] = [
   { id: 'hillside', name: 'Hillside', url: hillside },
+  { id: 'lighthouse', name: 'Lighthouse', url: lighthouse },
+  { id: 'snowy-pass', name: 'Snowy Pass', url: snowyPass },
 ]
 
 function isBuiltinWallpaperPath(path: string | undefined | null): boolean {

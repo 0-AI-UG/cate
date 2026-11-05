@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-## [2.1.0-beta.10] - 2026-11-04
+## [2.1.0-beta.10] - 2026-11-05
 
-This beta simplifies workspace navigation, collaboration, and agent setup. Compatibility version remains 1.
+This beta adds canvas wallpapers and simplifies workspace navigation, collaboration, and agent setup. Compatibility version remains 1.
+
+### Added
+
+- **Canvas wallpapers**: choose the bundled 4K Lighthouse and Snowy Pass landscapes in Canvas settings, with accessible wallpaper swatches.
 
 ### Changed
 
