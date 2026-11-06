@@ -24,7 +24,7 @@ function SidebarFrame({ visible, fill = false, onHide, children }: { visible: bo
       className="relative shrink-0 h-full"
       style={{ width: visible ? (fill ? '100%' : width) : 0, maxWidth: fill ? 'none' : '70%' }}
     >
-      <div className={`h-full overflow-hidden ${fill ? '' : 'border-l border-subtle'}`} style={{ visibility: visible ? 'visible' : 'hidden' }}>
+      <div className={`h-full overflow-hidden ${fill ? '' : 'border-l border-subtle'}`} style={{ visibility: visible ? 'inherit' : 'hidden' }}>
         <div className="h-full w-full" style={{ minWidth: fill ? undefined : width }}>{children}</div>
       </div>
       {visible && !fill && (
