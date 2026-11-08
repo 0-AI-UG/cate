@@ -1,0 +1,2 @@
+# Keep recorded benchmark samples available without obscuring source review.
+docs/performance/*.json linguist-generated=true
