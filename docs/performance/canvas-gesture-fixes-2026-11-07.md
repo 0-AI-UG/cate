@@ -71,4 +71,4 @@ CATE_GESTURE_PROFILE=1 CATE_GESTURE_ASSERT_SMOOTH=1 \
 
 `CATE_GESTURE_FOCUS_TERMINAL=1` measures a focused terminal in terminal-containing scenarios. `CATE_GESTURE_DOM_TERMINALS=1` is an isolation helper, not production policy. The benchmark dispatches wheel input once per rAF; it does not measure OS input latency or prove every frame reached the display. Very many small diff hunks can still mount more DOM, and virtualized rows change browser text-search/selection behavior across unloaded content. Arbitrary web apps, video and GPU saturation remain outside this deterministic workload.
 
-[Raw results and diagnostics](canvas-gesture-fixes-2026-11-07.json) include all final timing failures. The complete local trace is `/private/tmp/cate-pan-fixed-trace.json`. Existing unrelated user edits were preserved.
+Raw results and diagnostics (`canvas-gesture-fixes-2026-11-07.json`; local raw samples) include all final timing failures. The complete local trace is `/private/tmp/cate-pan-fixed-trace.json`. Existing unrelated user edits were preserved.

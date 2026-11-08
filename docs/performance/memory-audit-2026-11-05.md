@@ -63,7 +63,7 @@ For many workspaces, prioritize disconnecting eligible inactive workspace connec
 
 The ten empty daemons' 962 MiB RSS is the scale of the resident cost to investigate, not a guaranteed physical-memory saving. Profile idle daemon heaps and native modules before attempting a lighter startup. This run used empty projects; large repositories and real browser pages can add substantially more work and memory.
 
-The [many-workspace test](../../e2e/memory-workspaces.spec.ts) passed, with [raw samples](memory-workspaces-2026-11-05.json). Run it with:
+The [many-workspace test](../../e2e/memory-workspaces.spec.ts) passed, with raw samples (`memory-workspaces-2026-11-05.json`; local raw samples). Run it with:
 
 ```sh
 CATE_MEMORY_AUDIT=1 npx playwright test e2e/memory-workspaces.spec.ts --workers=1
@@ -79,6 +79,6 @@ npm run build:runtime
 CATE_MEMORY_AUDIT=1 npx playwright test e2e/memory-scenarios.spec.ts --workers=1
 ```
 
-The test writes `memory-scenarios.json` into its Playwright output directory and attaches it to the result. [Raw fresh-build samples](memory-scenarios-2026-11-05.json) include PID-level RSS, Electron metrics, webContents-to-process mappings, main-process memory and renderer heap usage from CDP. Measurements use the built app in the hidden E2E window, default terminal rendering, and no forced GC. Real websites, running agent CLIs, large repositories and long-duration churn need separate profiles. Renderer heap figures cover the main renderer isolate, not all workers or browser guests.
+The test writes `memory-scenarios.json` into its Playwright output directory and attaches it to the result. Raw fresh-build samples (`memory-scenarios-2026-11-05.json`; local raw samples) include PID-level RSS, Electron metrics, webContents-to-process mappings, main-process memory and renderer heap usage from CDP. Measurements use the built app in the hidden E2E window, default terminal rendering, and no forced GC. Real websites, running agent CLIs, large repositories and long-duration churn need separate profiles. Renderer heap figures cover the main renderer isolate, not all workers or browser guests.
 
 Validation: desktop build, runtime build, TypeScript check, ESLint for the new spec, dependency rules, and two successful live scenario runs. No application behavior was changed.

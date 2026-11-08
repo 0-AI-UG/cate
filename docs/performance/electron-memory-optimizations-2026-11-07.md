@@ -55,7 +55,7 @@ Passed: desktop build, TypeScript, dependency rules, targeted ESLint, 86 unit te
 
 Measurements used isolated temporary profiles and projects; existing user workspaces were untouched. The media baseline was captured November 6 and the retained implementation was verified November 7. MacOS `vmmap` figures are physical footprint, not summed RSS or unique whole-system RAM. Source and working tree contain other concurrent changes, so this is not a clean-release benchmark.
 
-[Raw measurements](electron-memory-optimizations-2026-11-07.json).
+Raw measurements (`electron-memory-optimizations-2026-11-07.json`; local raw samples).
 
 ```sh
 CATE_MEDIA_PROFILE=1 CATE_MEDIA_EXPECT_BOUNDED=1 npx playwright test e2e/media-memory-profile.spec.ts --workers=1 --output=/tmp/cate-media-profile

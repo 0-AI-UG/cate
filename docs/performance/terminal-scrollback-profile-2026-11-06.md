@@ -37,7 +37,7 @@ A 500-line default would save more, but would hide most of the runtime's default
 
 Validation: six profiling scenarios passed, the real-PTY integration scenario passed, and 32 terminal view/binding unit tests passed. Desktop build, TypeScript, dependency rules, and targeted ESLint passed. The nine-terminal idle and concurrent-output performance scenarios also passed. Idle measured 110 FPS (11.5 ms p95), and output in four terminals measured 118 FPS (9.5 ms p95); neither recorded long tasks. The preceding graphics evaluation measured about 120 FPS, so this rerun does not claim identical frame timing, but shows no material output-interaction regression in the sampled workload.
 
-[Raw measurements](terminal-scrollback-profile-2026-11-06.json), [profiling spec](../../e2e/terminal-scrollback-profile.spec.ts), and [integration test](../../e2e/terminal-scrollback.spec.ts).
+Raw measurements (`terminal-scrollback-profile-2026-11-06.json`; local raw samples), [profiling spec](../../e2e/terminal-scrollback-profile.spec.ts), and [integration test](../../e2e/terminal-scrollback.spec.ts).
 
 Reproduce:
 

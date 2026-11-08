@@ -58,7 +58,7 @@ Default GPU footprint eventually reached 107.6 MiB after all test panels closed,
 2. Experiment with a smaller terminal WebGL budget or selective acceleration, validating output and scroll performance.
 3. Design an opt-in or eligibility-based inactive browser discard policy to recover page state beyond the graphics memory already released by hiding.
 
-Raw measurements: [graphics-memory-profile-2026-11-06.json](graphics-memory-profile-2026-11-06.json). Reproducible instrumentation: [graphics-memory-profile.spec.ts](../../e2e/graphics-memory-profile.spec.ts).
+Raw measurements: `graphics-memory-profile-2026-11-06.json` (local raw samples). Reproducible instrumentation: [graphics-memory-profile.spec.ts](../../e2e/graphics-memory-profile.spec.ts).
 
 Run each mode separately with a distinct output directory to preserve all artifacts:
 

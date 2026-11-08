@@ -76,6 +76,6 @@ CATE_GESTURE_PROFILE=1 npx playwright test e2e/canvas-gesture-profile.spec.ts
 
 Optional variables: `CATE_GESTURE_SCENARIOS` (comma-separated), `CATE_GESTURE_ACTIONS`, `CATE_GESTURE_COUNT`, `CATE_GESTURE_REPEATS`, and `CATE_GESTURE_OUTPUT`. Set `CATE_GESTURE_TRACE` to an absolute trace destination, with `CATE_GESTURE_TRACE_SCENARIO` and `CATE_GESTURE_TRACE_ACTION` to select a gesture (defaults: mixed-24 pan). Traces can be large.
 
-Raw measurements, per-action summaries, hardware metadata, and extracted trace summaries are in [canvas-gestures-2026-11-07.json](canvas-gestures-2026-11-07.json). Full local traces are `/private/tmp/cate-canvas-pan-trace.json` and `/private/tmp/cate-review-zoom-trace.json`; these temporary files are not committed.
+Raw measurements, per-action summaries, hardware metadata, and extracted trace summaries are in `canvas-gestures-2026-11-07.json` (local raw samples). Full local traces are `/private/tmp/cate-canvas-pan-trace.json` and `/private/tmp/cate-review-zoom-trace.json`; these temporary files are not committed.
 
 Validation: four isolated profiling passes completed; ESLint for the new profiler and application typecheck passed. No production rendering behavior was changed. The opt-in test records timings and checks that gestures move the canvas; completion of the test is not a smoothness pass.

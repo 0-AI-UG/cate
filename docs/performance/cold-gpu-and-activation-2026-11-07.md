@@ -70,4 +70,4 @@ CATE_ACTIVATION_PROFILE=1 CATE_ACTIVATION_CASES=terminals \
   npx playwright test e2e/canvas-activation-profile.spec.ts
 ```
 
-[Raw follow-up measurements](cold-gpu-and-activation-2026-11-07.json) retain the rejected comparisons and installed/local scheduling probes. Detailed GPU traces remain under `/private/tmp/cate-github-cold-*-trace.json`. No project Electron dependency was upgraded, no rejected renderer policy was enabled, and the user's unrelated changes were preserved.
+Raw follow-up measurements (`cold-gpu-and-activation-2026-11-07.json`; local raw samples) retain the rejected comparisons and installed/local scheduling probes. Detailed GPU traces remain under `/private/tmp/cate-github-cold-*-trace.json`. No project Electron dependency was upgraded, no rejected renderer policy was enabled, and the user's unrelated changes were preserved.
