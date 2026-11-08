@@ -42,5 +42,6 @@ cate-daemon-ws-*/
 # Superpowers planning artifacts (plans/specs) — scratch, not tracked
 docs/superpowers/
 
-# Raw benchmark samples stay local; commit reports and profiling tests instead.
+# Local performance reports and samples; profiling tests remain versioned.
 /docs/performance/*.json
+/docs/performance/*.md
