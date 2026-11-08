@@ -10,6 +10,7 @@ import type { MenuModel } from './menu'
 import type { FileRef } from '@workspace/files/contract'
 import type { Machine, MachineSetup, RuntimeInstallProgress } from '@runtime/daemon/contract'
 import type { PipeMessage } from './pipe'
+import type { CanvasBackgroundData } from './canvasBackgrounds'
 
 export type DesktopWindowKind = 'main' | 'detached'
 
@@ -222,7 +223,7 @@ export interface DesktopApi {
     open(request: OpenDialogRequest): Promise<string[] | null>
     /** Picks an image and copies it into `canvas-backgrounds/`; the managed path. */
     pickCanvasBackground(): Promise<string | null>
-    readCanvasBackground(path: string): Promise<string | null>
+    readCanvasBackground(path: string): Promise<CanvasBackgroundData | null>
     pruneCanvasBackgrounds(keepPath: string): Promise<void>
   }
   os: {

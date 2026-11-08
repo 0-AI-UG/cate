@@ -92,3 +92,58 @@ describe('CanvasView', () => {
     expect(items).toEqual(['p1', 'p2'])
   })
 })
+
+
+it('applies the first trackpad delta immediately and drops pending movement on app blur', async () => {
+  act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
+  await frames()
+  const api = createCanvasE2E()
+  act(() => { api.setZoom(1); api.setViewportOffset({ x: 0, y: 0 }) })
+  const canvas = container.querySelector<HTMLElement>('[data-canvas-container]')!
+  const world = container.querySelector<HTMLElement>('[data-canvas-world]')!
+  const wheel = () => canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaX: 4, deltaY: 2 }))
+  act(() => { wheel(); wheel() })
+  expect(world.style.transform).toBe('scale(1) translate(-4px, -2px)')
+  expect(document.body.classList.contains('canvas-interacting')).toBe(true)
+  act(() => { window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus')) })
+  expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+  act(() => { wheel() })
+  expect(world.style.transform).toBe('scale(1) translate(-8px, -4px)')
+  expect(document.body.classList.contains('canvas-interacting')).toBe(true)
+  await frames(1)
+  expect(world.style.transform).toBe('scale(1) translate(-8px, -4px)')
+})
+
+it('coalesces high-rate drag input and flushes the final movement on release', async () => {
+  act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
+  await frames()
+  const api = createCanvasE2E()
+  act(() => { api.setZoom(1); api.setViewportOffset({ x: 0, y: 0 }) })
+  const canvas = container.querySelector<HTMLElement>('[data-canvas-container]')!
+  const world = container.querySelector<HTMLElement>('[data-canvas-world]')!
+  act(() => {
+    canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 1, clientX: 100, clientY: 100 }))
+    for (let i = 1; i <= 20; i++) canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 4, clientX: 100 + i * 5, clientY: 100 + i * 2 }))
+  })
+  expect(world.style.transform).toBe('scale(1) translate(0px, 0px)')
+  await frames(1)
+  expect(world.style.transform).toBe('scale(1) translate(100px, 40px)')
+  act(() => {
+    canvas.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 4, clientX: 210, clientY: 150 }))
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 1 }))
+  })
+  expect(world.style.transform).toBe('scale(1) translate(110px, 50px)')
+  expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+})
+
+it('releases temporary compositor layers after canvas interaction settles', async () => {
+  act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
+  await frames()
+  act(() => createCanvasE2E().setViewportOffset({ x: 70, y: 30 }))
+  const world = container.querySelector<HTMLElement>('[data-canvas-world]')!
+  expect(world.classList.contains('canvas-world-moving')).toBe(true)
+  expect(world.style.willChange).toBe('transform')
+  await act(() => new Promise(resolve => setTimeout(resolve, 700)))
+  expect(world.classList.contains('canvas-world-moving')).toBe(false)
+  expect(world.style.willChange).toBe('auto')
+})

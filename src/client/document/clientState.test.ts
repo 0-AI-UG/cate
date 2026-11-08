@@ -95,3 +95,24 @@ describe('presence reporting', () => {
     expect(reports).toHaveLength(5)
   })
 })
+
+
+describe('removed panel view retention', () => {
+  it('bounds removed state while preserving live panels and recent undo state', () => {
+    const state = createClientStateStore()
+    state.setPanelView('live', 'sidebar', { visible: false })
+    for (let i = 0; i < 1000; i++) state.setPanelView(`removed-${i}`, 'tree', ['src'])
+    state.retainPanelViews(new Set(['live']))
+    const views = state.getSnapshot().panelViews
+    expect(Object.keys(views)).toHaveLength(201)
+    expect(views.live.sidebar).toEqual({ visible: false })
+    expect(views['removed-0']).toBeUndefined()
+    expect(views['removed-999'].tree).toEqual(['src'])
+    const snapshot = state.getSnapshot()
+    state.retainPanelViews(new Set(['live', 'removed-999']))
+    expect(state.getSnapshot()).toBe(snapshot)
+    // A view cleanup can save state after the document removed its panel.
+    for (let i = 1000; i < 1100; i++) state.setPanelView(`removed-${i}`, 'tree', ['src'])
+    expect(Object.keys(state.getSnapshot().panelViews)).toHaveLength(202)
+  })
+})

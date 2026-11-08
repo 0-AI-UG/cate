@@ -30,6 +30,7 @@ export function revealLine(editor: monaco.editor.IStandaloneCodeEditor, line: nu
 export function CodeEditor({ panelId, filePath, text, font, hidden, onEditor }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const appliedFont = useRef({ fontFamily: font.fontFamily, fontSize: font.fontSize })
   const onEditorRef = useRef(onEditor)
   onEditorRef.current = onEditor
 
@@ -71,7 +72,11 @@ export function CodeEditor({ panelId, filePath, text, font, hidden, onEditor }: 
   }, [])
 
   useEffect(() => {
-    editorRef.current?.updateOptions({ fontSize: font.fontSize, fontFamily: font.fontFamily })
+    const editor = editorRef.current
+    const previous = appliedFont.current
+    if (!editor || (previous.fontSize === font.fontSize && previous.fontFamily === font.fontFamily)) return
+    appliedFont.current = { fontSize: font.fontSize, fontFamily: font.fontFamily }
+    editor.updateOptions(appliedFont.current)
     // Cached glyph metrics belong to the old face.
     monaco.editor.remeasureFonts()
   }, [font.fontSize, font.fontFamily])

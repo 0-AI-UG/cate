@@ -36,8 +36,11 @@ monacoGlobal.MonacoEnvironment = {
 
 export const CATE_MONACO_THEME = 'cate-active'
 
-/** (Re)defines the one Cate theme; every editor using it re-themes. */
+let appliedEditorTheme: Theme['editor'] | undefined
+
+/** Only a changed editor configuration re-themes every Monaco instance. */
 export function applyMonacoTheme(theme: Theme): void {
+  if (appliedEditorTheme === theme.editor) return
   monaco.editor.defineTheme(CATE_MONACO_THEME, {
     base: theme.editor.base,
     inherit: true,
@@ -50,6 +53,7 @@ export function applyMonacoTheme(theme: Theme): void {
     colors: theme.editor.colors ?? {},
   })
   monaco.editor.setTheme(CATE_MONACO_THEME)
+  appliedEditorTheme = theme.editor
 }
 
 const FALLBACK_LANGUAGES: Record<string, string> = {

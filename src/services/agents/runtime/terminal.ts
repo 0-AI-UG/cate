@@ -200,6 +200,13 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
 
   offs.push(terminal.registerEnvContributor(async (spawn) => {
     const cwd = spawn.cwd
+    // A command that handed its panel to a shell must not resume on restore.
+    if (spawn.continueFrom && spawn.panelId) {
+      stampsFile.update((all) => {
+        const { [spawn.panelId!]: _previous, ...rest } = all
+        return rest
+      })
+    }
     const launched = spawn.launch?.kind === AGENT_LAUNCH.start && isAgentId((spawn.launch.params as { agentId?: unknown })?.agentId)
       ? AGENT_DEFS[(spawn.launch.params as { agentId: AgentId }).agentId]
       : agentForLaunchCommand(spawn.executable)

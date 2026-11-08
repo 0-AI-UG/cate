@@ -21,6 +21,7 @@ import { registerGuestDialogs, type GuestDialogs } from './dialogs'
 import type { GuestDownloads } from './downloads'
 import type { PageDriverRegistry } from './pageDriver'
 import { flattenScreenshotPng } from './screenshotPng'
+import { createPageLifecycle } from './pageLifecycle'
 
 const log = createLogger('browser')
 const MAX_UPLOAD_BYTES = 512 * 1024 * 1024
@@ -61,6 +62,7 @@ export function sendBrowserShortcut(host: WebContents, action: BrowserShortcutAc
 /** Registers the page bridge IPC. Returns an unregister function. */
 export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
   const { drivers, downloads, dialogs } = deps
+  const lifecycle = createPageLifecycle({ busy: id => !!dialogs.current(id) || downloads.list(id).some(d => d.state === 'progressing' || d.state === 'paused') })
   const handled: string[] = []
   const handle = (channel: string, handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown) => {
     ipcMain.handle(channel, handler)
@@ -73,10 +75,23 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     if (event.sender.getType() === 'webview') drivers.noteUserInput(event.sender.id)
   }
   ipcMain.on(BROWSER_GUEST_CHANNELS.userInput, onUserInput)
+  const onDirty = (event: Electron.IpcMainEvent) => {
+    if (event.sender.getType() === 'webview') lifecycle.noteInput(event.sender)
+  }
+  ipcMain.on(BROWSER_GUEST_CHANNELS.dirty, onDirty)
+  handle(BROWSER_PAGE_CHANNELS.protectPage, (event, id: number) => {
+    const page = hostedGuest(event, id)
+    if (page) lifecycle.protect(page)
+  })
+  handle(BROWSER_PAGE_CHANNELS.preparePageDiscard, (event, id: number) => {
+    const page = hostedGuest(event, id)
+    return page ? lifecycle.prepareDiscard(page) : false
+  })
 
   handle(BROWSER_PAGE_CHANNELS.attach, async (event, guest: BrowserGuestRef) => {
     const contents = hostedGuest(event, guest?.webContentsId)
     if (!contents) throw new Error('no-guest')
+    lifecycle.watch(contents)
     downloads.watch(contents.session)
     await drivers.attach(contents, identity(guest))
   })
@@ -85,6 +100,7 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     const contents = hostedGuest(event, guest?.webContentsId)
     if (!contents) return { error: 'no-guest' }
     if (typeof method !== 'string' || !method) return { error: 'browser-method-required' }
+    lifecycle.protect(contents)
     return drivers.execute(contents.id, identity(guest), method, args && typeof args === 'object' ? args : {})
   })
 
@@ -168,6 +184,7 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
   return () => {
     for (const channel of handled) ipcMain.removeHandler(channel)
     ipcMain.removeListener(BROWSER_GUEST_CHANNELS.userInput, onUserInput)
+    ipcMain.removeListener(BROWSER_GUEST_CHANNELS.dirty, onDirty)
     unregisterDialogs()
   }
 }

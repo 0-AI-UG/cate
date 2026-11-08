@@ -28,13 +28,14 @@ export interface AgentTerminalLaunch {
 
 export interface AgentStartPorts {
   terminals: {
-    /** A new terminal panel running `launch`; resolves once its PTY started.
+    /** A new terminal panel running `launch`; resolves once it is placed.
+     *  The session owns asynchronous startup and reports any launch failure.
      *  `titleChosen`: the caller named it, so the agent never retitles it. */
     create(params: { cwd: string; worktreeId?: string; title: string; titleChosen?: boolean; launch: AgentTerminalLaunch; placement: AgentPlacement }): Promise<string>
     /** Restarts an existing terminal panel's PTY with `launch`. */
     relaunch(panelId: string, params: { cwd: string; worktreeId?: string; launch: AgentTerminalLaunch }): Promise<void>
     /** A terminal panel's PTY, or null for a panel that is no terminal. */
-    state(panelId: string): { alive: boolean; busy: boolean } | null
+    state(panelId: string): { alive: boolean; busy: boolean; starting?: boolean } | null
   }
   worktrees: {
     create(name: string): Promise<{ id: string; path: string }>
@@ -79,13 +80,15 @@ function fail(code: string): never {
 /** Start arguments once validated. */
 type StartRequest = Omit<AgentStartArgs, 'agentId'> & { agentId?: AgentId }
 
-export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, setup?: { ensureReady(agentId: AgentId): Promise<void>; types?(): Promise<AgentTypeInfo[]> }): AgentStarter {
+export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, setup?: { types?(): Promise<AgentTypeInfo[]> }): AgentStarter {
   const pending = new Map<string, { agentId: AgentId; at: number }>()
   /** Still starting: recent, its terminal running, its agent not observed. */
-  const stillStarting = (panelId: string, at: number): boolean =>
-    Date.now() - at < START_GRACE_MS
-    && ports.terminals.state(panelId)?.alive === true
-    && (agents.panels.state(panelId)?.status ?? 'notRunning') === 'notRunning'
+  const stillStarting = (panelId: string, at: number): boolean => {
+    const terminal = ports.terminals.state(panelId)
+    return Date.now() - at < START_GRACE_MS
+      && (terminal?.alive === true || terminal?.starting === true)
+      && (agents.panels.state(panelId)?.status ?? 'notRunning') === 'notRunning'
+  }
 
   /** The checkout to run in: the asked worktree, else the caller's own. */
   const checkoutFor = (callerPanelId: string | undefined, worktreeId: string | undefined): { cwd: string; worktreeId?: string } => {
@@ -104,7 +107,7 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
     if (panelId === callerPanelId) fail('agent-cannot-replace-caller-terminal')
     const terminal = ports.terminals.state(panelId)
     if (!terminal) fail('terminal-not-found')
-    if (terminal!.alive && (agents.panels.state(panelId)?.present || terminal!.busy)) fail('terminal-busy')
+    if (terminal!.starting || terminal!.alive && (agents.panels.state(panelId)?.present || terminal!.busy)) fail('terminal-busy')
   }
 
   /** The hook-ready agent for the checkout (strict for a preference). */
@@ -139,7 +142,6 @@ export function createAgentStarter(agents: AgentsCore, ports: AgentStartPorts, s
       const existing = args.newWorktree ? null : checkoutFor(callerPanelId, args.worktreeId)
       const agentId = await chooseAgent(args.agentId, existing?.cwd ?? agents.root)
 
-      await setup?.ensureReady(agentId)
       const created = args.newWorktree ? await ports.worktrees.create(args.newWorktree) : null
       const checkout = created ? { cwd: created.path, worktreeId: created.id } : existing!
       const launch = { kind: AGENT_LAUNCH.start, params: { agentId, ...(prompt !== undefined ? { prompt } : {}), ...(attachments ? { attachments } : {}) } }

@@ -42,10 +42,12 @@ export function configureUserData(): string {
   if (IS_E2E) {
     // A never-shown window counts as occluded on Windows, which freezes its
     // compositor; keep it and its timers running.
-    app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
-    app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
-    app.commandLine.appendSwitch('disable-renderer-backgrounding')
-    app.commandLine.appendSwitch('disable-background-timer-throttling')
+    if (process.env.CATE_E2E_BACKGROUND_THROTTLING !== '1') {
+      app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+      app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+      app.commandLine.appendSwitch('disable-renderer-backgrounding')
+      app.commandLine.appendSwitch('disable-background-timer-throttling')
+    }
     const requested = process.env.CATE_E2E_USER_DATA
     const dir = requested ? path.resolve(requested) : fs.mkdtempSync(path.join(os.tmpdir(), 'cate-e2e-'))
     fs.mkdirSync(dir, { recursive: true })

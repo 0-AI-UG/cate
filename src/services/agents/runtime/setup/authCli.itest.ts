@@ -115,7 +115,11 @@ describe.runIf(process.env.CATE_LIVE_AGENT_CLIS === '1')('installed CLI authenti
       expect(setupAuthentication(agentId, signedIn.output, signedIn.code).status).toBe(agentId === 'cursor' ? 'signed-out' : 'signed-in')
       expect(JSON.stringify(setupAuthentication(agentId, signedIn.output, signedIn.code))).not.toContain('fixture-api-key')
       const fixture = await createSetupFixture({ env: () => env, probe: undefined })
-      try { await expect(fixture.setup.ensureReady(agentId)).resolves.toBeUndefined() }
+      try {
+        const info = (await fixture.setup.inspect()).agents.find((agent) => agent.agentId === agentId)
+        expect(info?.installation.status).toBe('installed')
+        expect(info?.authentication.status).toMatch(/^(signed-in|unknown)$/)
+      }
       finally { await fixture.close() }
     } finally { await rm(home, { recursive: true, force: true }) }
   })

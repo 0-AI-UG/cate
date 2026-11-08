@@ -103,7 +103,7 @@ function UpdateButtonWith({ port, className }: { port: DesktopPort; className: s
     }
   }
   return <>
-    <Tooltip label={label} placement="top">
+    <Tooltip label={label} placement="top" suppressed={!!feedback}>
       <button
         ref={buttonRef}
         type="button"
@@ -118,7 +118,7 @@ function UpdateButtonWith({ port, className }: { port: DesktopPort; className: s
       </button>
     </Tooltip>
     {feedback && createPortal(
-      <div ref={feedbackRef} role={failed ? 'alert' : 'status'} className="fixed z-[100] flex items-start gap-2 max-w-[min(320px,calc(100vw-16px))] rounded-lg border border-subtle bg-surface-2 p-3 text-xs text-primary shadow-lg"
+      <div ref={feedbackRef} role={failed ? 'alert' : 'status'} className="fixed z-[100004] flex w-max items-start gap-2 max-w-[min(320px,calc(100vw-16px))] rounded-lg border border-subtle bg-surface-2 p-3 text-xs text-primary shadow-lg"
         style={{ visibility: 'hidden' }}>
         <span className="min-w-0 break-words">{feedback}</span>
         <button type="button" aria-label="Dismiss update message" onClick={() => setFeedback(null)} className="shrink-0 text-muted hover:text-primary"><X size={14} /></button>

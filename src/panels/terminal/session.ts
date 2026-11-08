@@ -58,6 +58,7 @@ interface SpawnOptions {
   cwd?: string
   launch?: LaunchIntent
   restore?: boolean
+  continueFrom?: string
 }
 
 export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> {
@@ -67,6 +68,7 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
   /** Bumped by every spawn and by dispose; a stale spawn closes its PTY. */
   private generation = 0
   private spawning: Promise<void> = Promise.resolve()
+  private command = false
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: TerminalSessionDeps) {
     super(kit, record, initialSnapshot())
@@ -198,7 +200,10 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
 
   /** Spawns after any spawn in flight, replacing the current PTY. */
   private respawn(options: SpawnOptions): Promise<void> {
-    const run = this.spawning.then(() => this.spawn(options))
+    const run = this.spawning.then(() => {
+      if (options.continueFrom && (this.state.ptyId !== options.continueFrom || this.state.status !== 'exited')) return
+      return this.spawn(options)
+    })
     this.spawning = run.catch(() => {})
     return run
   }
@@ -206,9 +211,11 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
   private async spawn(options: SpawnOptions): Promise<void> {
     if (this.disposed) return
     const generation = ++this.generation
-    // The old PTY goes first: the new one reuses the panel's log files.
+    // A continuation lets the service transfer the old screen and grid;
+    // otherwise close first because the new PTY reuses the panel's logs.
     const previous = this.state.ptyId
-    if (previous) this.closePty(previous)
+    this.command = false
+    if (previous && previous !== options.continueFrom) this.closePty(previous)
     this.publish({ ptyId: null, status: 'starting', exitCode: null, error: null, activity: { type: 'idle' } })
 
     const base = this.checkoutCwd()
@@ -219,6 +226,7 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       panelId: this.panelId,
       ...(options.launch ? { launch: options.launch } : {}),
       ...(options.restore ? { restore: true } : {}),
+      ...(options.continueFrom ? { continueFrom: options.continueFrom } : {}),
     })
     let cwd = options.cwd ?? base
     let result: Awaited<ReturnType<typeof attempt>>
@@ -233,7 +241,7 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       }
     } catch (err) {
       if (!this.disposed && generation === this.generation) {
-        this.publish({ status: 'failed', error: err instanceof Error ? err.message : String(err) })
+        this.publish({ ptyId: options.continueFrom ?? null, status: 'failed', error: err instanceof Error ? err.message : String(err) })
       }
       return
     }
@@ -242,6 +250,7 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       return
     }
     this.shell = result.shell
+    this.command = result.command === true
     this.publish({ ptyId: result.id, status: 'running', title: shellName(result.shell), cwd })
     this.rememberCwd(cwd)
     this.followStatus(this.deps.terminal.statuses()[result.id] ?? null)
@@ -257,6 +266,10 @@ export class TerminalSession extends PanelSession<TerminalSnapshot, TerminalOp> 
       ...(status.alive ? {} : { status: 'exited' as const, exitCode: status.exitCode, activity: { type: 'idle' as const } }),
     })
     if (status.cwd) this.rememberCwd(status.cwd)
+    if (!status.alive && this.command && !this.disposed) {
+      this.command = false
+      void this.respawn({ cwd: this.lastCwd ?? undefined, continueFrom: status.id })
+    }
   }
 
   private rememberCwd(cwd: string): void {

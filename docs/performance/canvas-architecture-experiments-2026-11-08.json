@@ -1,0 +1,5770 @@
+{
+  "status": "complete",
+  "date": "2026-11-08",
+  "manifest": {
+    "run": "canvas-arch-1794079816",
+    "baseCommit": "33a16b5c1724b4e6d4e7d560888565ad4a9a3949",
+    "paths": {
+      "baseline": "/Users/anton/Dev/cate/.cate/worktrees/canvas-arch-1794079816/baseline",
+      "geometry": "/Users/anton/Dev/cate/.cate/worktrees/canvas-arch-1794079816/geometry",
+      "levels": "/Users/anton/Dev/cate/.cate/worktrees/canvas-arch-1794079816/levels",
+      "scheduler": "/Users/anton/Dev/cate/.cate/worktrees/canvas-arch-1794079816/scheduler",
+      "frames": "/Users/anton/Dev/cate/.cate/worktrees/canvas-arch-1794079816/frames",
+      "isolation": "/Users/anton/Dev/cate/.cate/worktrees/canvas-arch-1794079816/isolation"
+    },
+    "originalHead": "39771c677bde02a86161c5beb7f115f6883961fb",
+    "commonProfilerSha256": "d09b0ea86353a284f366e56b26de1d40d83071d1ed80d22e9bef5155e8ea362a",
+    "runtimeSha256": "90c85075f7610709e2dc4a257d93138498a77a840064ec2b9c8983e8d0bf2695",
+    "prototypeCommits": {
+      "baseline": "33a16b5c1724b4e6d4e7d560888565ad4a9a3949",
+      "geometry": "c1f54a5d11ad7cc4b5b178629ad2c71e414b16e3",
+      "levels": "ab321ddb87a9bcd137cf5e2716e706fbabb25012",
+      "scheduler": "f6af2984b15a41446f98367ae1ec04604a89872f",
+      "frames": "822f66e5",
+      "isolation": "33bdd750"
+    },
+    "foregroundCollection": "output/canvas-architecture/canvas-arch-1794079816/foreground-resumed",
+    "status": "complete: targeted comparisons; repository availability excluded"
+  },
+  "acceptedIntegratedFiles": [
+    "baseline-steady.json",
+    "baseline-dense.json",
+    "baseline-restore.json",
+    "baseline-stream.json",
+    "baseline-stress.json",
+    "geometry-steady.json",
+    "geometry-dense.json",
+    "levels-steady.json",
+    "levels-dense.json",
+    "levels-restore.json",
+    "levels-stream.json",
+    "scheduler-stream.json",
+    "scheduler-stress.json"
+  ],
+  "integrated": [
+    {
+      "variant": "baseline",
+      "file": "baseline-dense.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 119.41342527806155,
+      "p95Ms": 10.5,
+      "p99Ms": 11.599999904632568,
+      "maxMs": 28.200000286102295,
+      "recoveryMaxMs": 29.59999990463257,
+      "over25ms": 1,
+      "workingSetMiB": 2615.94375,
+      "cpuReportedSumPct": 29.608786032655733,
+      "gpuProcessCpuReportedPct": 11.157537252612531,
+      "machineGpuUtilPct": 60.4,
+      "rendererTaskMs": 1830.2509999999995,
+      "counters": {
+        "browserGeometryFrame": 265,
+        "browserGeometryRect": 32381,
+        "browserGeometryStyle": 68009,
+        "browserGeometryMicros": 402900,
+        "canvasCullEval": 248,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1006.2000002861023,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 29.59999990463257,
+        "over25ms": 1,
+        "domElements": 12127,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-dense.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 119.404476424554,
+      "p95Ms": 10.299999713897705,
+      "p99Ms": 14.300000190734863,
+      "maxMs": 29.699999809265137,
+      "recoveryMaxMs": 29.90000009536743,
+      "over25ms": 1,
+      "workingSetMiB": 2654.778125,
+      "cpuReportedSumPct": 26.77386452729504,
+      "gpuProcessCpuReportedPct": 10.665057225914707,
+      "machineGpuUtilPct": 62,
+      "rendererTaskMs": 2042.0990000000004,
+      "counters": {
+        "browserGeometryFrame": 275,
+        "browserGeometryRect": 33607,
+        "browserGeometryStyle": 70555,
+        "browserGeometryMicros": 422400,
+        "canvasCullEval": 248,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1006.5,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 29.90000009536743,
+        "over25ms": 1,
+        "domElements": 12127,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-dense.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 91.1633947814781,
+      "p95Ms": 17.299999713897705,
+      "p99Ms": 20.59999990463257,
+      "maxMs": 24.09999990463257,
+      "recoveryMaxMs": 16.300000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 2695.496875,
+      "cpuReportedSumPct": 39.53185089515114,
+      "gpuProcessCpuReportedPct": 14.04796837069709,
+      "machineGpuUtilPct": 75.2,
+      "rendererTaskMs": 2610.7999999999993,
+      "counters": {
+        "browserGeometryFrame": 367,
+        "browserGeometryRect": 42594,
+        "browserGeometryStyle": 86967,
+        "browserGeometryMicros": 549100,
+        "canvasCullEval": 1,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1006.9000000953674,
+        "p95Ms": 11.300000190734863,
+        "maxMs": 16.300000190734863,
+        "over25ms": 0,
+        "domElements": 12127,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-dense.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 92.13023069350876,
+      "p95Ms": 17.5,
+      "p99Ms": 21.799999713897705,
+      "maxMs": 23.399999618530273,
+      "recoveryMaxMs": 16.90000009536743,
+      "over25ms": 0,
+      "workingSetMiB": 2894.50625,
+      "cpuReportedSumPct": 37.25699901784566,
+      "gpuProcessCpuReportedPct": 13.396985134188709,
+      "machineGpuUtilPct": 75,
+      "rendererTaskMs": 2599.995999999999,
+      "counters": {
+        "browserGeometryFrame": 371,
+        "browserGeometryRect": 43079,
+        "browserGeometryStyle": 87945,
+        "browserGeometryMicros": 544500,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1002.6999998092651,
+        "p95Ms": 13.199999809265137,
+        "maxMs": 16.90000009536743,
+        "over25ms": 0,
+        "domElements": 12127,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-restore.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 101.1690647530217,
+      "p95Ms": 16.09999990463257,
+      "p99Ms": 20,
+      "maxMs": 22.59999990463257,
+      "recoveryMaxMs": 17.399999618530273,
+      "over25ms": 0,
+      "workingSetMiB": 2546.3,
+      "cpuReportedSumPct": 37.21136459349712,
+      "gpuProcessCpuReportedPct": 13.145539259089189,
+      "machineGpuUtilPct": 77.4,
+      "rendererTaskMs": 2862.789,
+      "counters": {
+        "browserGeometryFrame": 405,
+        "browserGeometryRect": 44147,
+        "browserGeometryStyle": 82221,
+        "browserGeometryMicros": 591600,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1001.9000000953674,
+        "p95Ms": 12.899999618530273,
+        "maxMs": 17.399999618530273,
+        "over25ms": 0,
+        "domElements": 12126,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-restore.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 100.69713400704711,
+      "p95Ms": 15.899999618530273,
+      "p99Ms": 18.699999809265137,
+      "maxMs": 24.59999990463257,
+      "recoveryMaxMs": 16.800000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 2927.371875,
+      "cpuReportedSumPct": 38.00282927242832,
+      "gpuProcessCpuReportedPct": 13.799716735996382,
+      "machineGpuUtilPct": 80.6,
+      "rendererTaskMs": 2850.114999999999,
+      "counters": {
+        "browserGeometryFrame": 402,
+        "browserGeometryRect": 43854,
+        "browserGeometryStyle": 81714,
+        "browserGeometryMicros": 600100,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1006,
+        "p95Ms": 12.5,
+        "maxMs": 16.800000190734863,
+        "over25ms": 0,
+        "domElements": 12126,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.12686994684829,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.399999618530273,
+      "maxMs": 18,
+      "recoveryMaxMs": 30.699999809265137,
+      "over25ms": 0,
+      "workingSetMiB": 1614.025,
+      "cpuReportedSumPct": 9.622855673586258,
+      "gpuProcessCpuReportedPct": 3.412998219933644,
+      "machineGpuUtilPct": 56.4,
+      "rendererTaskMs": 1131.2499999999998,
+      "counters": {
+        "browserGeometryFrame": 263,
+        "browserGeometryRect": 13277,
+        "browserGeometryStyle": 26155,
+        "browserGeometryMicros": 167300,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.8999996185303,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 30.699999809265137,
+        "over25ms": 1,
+        "domElements": 5505,
+        "details": 0,
+        "previews": 0,
+        "editors": 7,
+        "terminals": 7
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.04891805367353,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.599999904632568,
+      "maxMs": 17.299999713897705,
+      "recoveryMaxMs": 31.5,
+      "over25ms": 0,
+      "workingSetMiB": 1466.071875,
+      "cpuReportedSumPct": 9.662213891171687,
+      "gpuProcessCpuReportedPct": 3.6555552273581786,
+      "machineGpuUtilPct": 58.2,
+      "rendererTaskMs": 1117.5860000000002,
+      "counters": {
+        "browserGeometryFrame": 263,
+        "browserGeometryRect": 13301,
+        "browserGeometryStyle": 26227,
+        "browserGeometryMicros": 169800,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1009,
+        "p95Ms": 9.400000095367432,
+        "maxMs": 31.5,
+        "over25ms": 1,
+        "domElements": 5502,
+        "details": 0,
+        "previews": 0,
+        "editors": 7,
+        "terminals": 7
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.07588995384127,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 10.900000095367432,
+      "recoveryMaxMs": 25.5,
+      "over25ms": 0,
+      "workingSetMiB": 1651.25625,
+      "cpuReportedSumPct": 20.92279192112824,
+      "gpuProcessCpuReportedPct": 7.696211399651562,
+      "machineGpuUtilPct": 70.4,
+      "rendererTaskMs": 2078.9039999999995,
+      "counters": {
+        "browserGeometryFrame": 492,
+        "browserGeometryRect": 25268,
+        "browserGeometryStyle": 50220,
+        "browserGeometryMicros": 326400,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1000.3000001907349,
+        "p95Ms": 10.800000190734863,
+        "maxMs": 25.5,
+        "over25ms": 1,
+        "domElements": 6138,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.24748028852717,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.299999713897705,
+      "maxMs": 13.699999809265137,
+      "recoveryMaxMs": 23.5,
+      "over25ms": 0,
+      "workingSetMiB": 1856.496875,
+      "cpuReportedSumPct": 22.737607425895106,
+      "gpuProcessCpuReportedPct": 9.821109249493144,
+      "machineGpuUtilPct": 69.8,
+      "rendererTaskMs": 2067.539999999999,
+      "counters": {
+        "browserGeometryFrame": 493,
+        "browserGeometryRect": 25323,
+        "browserGeometryStyle": 50333,
+        "browserGeometryMicros": 362200,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1008.7999997138977,
+        "p95Ms": 9.599999904632568,
+        "maxMs": 23.5,
+        "over25ms": 0,
+        "domElements": 6141,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 119.77243236708016,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 12,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 1854.46875,
+      "cpuReportedSumPct": 25.394265944396313,
+      "gpuProcessCpuReportedPct": 9.270714844512451,
+      "machineGpuUtilPct": 72.6,
+      "rendererTaskMs": 2116.9790000000007,
+      "counters": {
+        "browserGeometryFrame": 485,
+        "browserGeometryRect": 29514,
+        "browserGeometryStyle": 60441,
+        "browserGeometryMicros": 463700,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 24,
+        "editors": 8,
+        "terminals": 8,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.7999997138977,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 6138,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 119.9400299850075,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.900000095367432,
+      "maxMs": 16.800000190734863,
+      "recoveryMaxMs": 10,
+      "over25ms": 0,
+      "workingSetMiB": 2000.575,
+      "cpuReportedSumPct": 20.98597422160977,
+      "gpuProcessCpuReportedPct": 7.848995197838332,
+      "machineGpuUtilPct": 69.4,
+      "rendererTaskMs": 1764.3819999999994,
+      "counters": {
+        "browserGeometryFrame": 484,
+        "browserGeometryRect": 29466,
+        "browserGeometryStyle": 60348,
+        "browserGeometryMicros": 290600,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 24,
+        "editors": 8,
+        "terminals": 8,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1005.9000000953674,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 10,
+        "over25ms": 0,
+        "domElements": 6141,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.20191923517177,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.399999618530273,
+      "maxMs": 11.5,
+      "recoveryMaxMs": 9.300000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 1995.0125,
+      "cpuReportedSumPct": 17.43458881197198,
+      "gpuProcessCpuReportedPct": 8.700104577450814,
+      "machineGpuUtilPct": 64.2,
+      "rendererTaskMs": 750.8800000000005,
+      "counters": {
+        "browserGeometryFrame": 254,
+        "browserGeometryRect": 11430,
+        "browserGeometryStyle": 27686,
+        "browserGeometryMicros": 171000,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1008.3000001907349,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 9.300000190734863,
+        "over25ms": 0,
+        "domElements": 930,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.21994501374657,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 11,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 1987.928125,
+      "cpuReportedSumPct": 15.296212386039285,
+      "gpuProcessCpuReportedPct": 5.578123124001388,
+      "machineGpuUtilPct": 64.2,
+      "rendererTaskMs": 751.7020000000016,
+      "counters": {
+        "browserGeometryFrame": 256,
+        "browserGeometryRect": 11520,
+        "browserGeometryStyle": 27904,
+        "browserGeometryMicros": 173700,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1000.6999998092651,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 930,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 99.20783667414409,
+      "p95Ms": 13.300000190734863,
+      "p99Ms": 16.300000190734863,
+      "maxMs": 20,
+      "recoveryMaxMs": 9.699999809265137,
+      "over25ms": 0,
+      "workingSetMiB": 2143.990625,
+      "cpuReportedSumPct": 26.639581557457575,
+      "gpuProcessCpuReportedPct": 12.085692037732027,
+      "machineGpuUtilPct": 76.2,
+      "rendererTaskMs": 1218.1029999999992,
+      "counters": {
+        "browserGeometryFrame": 408,
+        "browserGeometryRect": 18360,
+        "browserGeometryStyle": 44472,
+        "browserGeometryMicros": 257500,
+        "canvasCullEval": 1,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1008,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.699999809265137,
+        "over25ms": 0,
+        "domElements": 927,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 102.44621573917944,
+      "p95Ms": 13,
+      "p99Ms": 16,
+      "maxMs": 20,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2088.253125,
+      "cpuReportedSumPct": 24.547089678771982,
+      "gpuProcessCpuReportedPct": 9.980403144409815,
+      "machineGpuUtilPct": 77.4,
+      "rendererTaskMs": 1282.3540000000016,
+      "counters": {
+        "browserGeometryFrame": 421,
+        "browserGeometryRect": 18945,
+        "browserGeometryStyle": 45889,
+        "browserGeometryMicros": 284600,
+        "canvasCullEval": 1,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1007.5999999046326,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 930,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 114.17293326188195,
+      "p95Ms": 11.199999809265137,
+      "p99Ms": 12.599999904632568,
+      "maxMs": 15.400000095367432,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2029.51875,
+      "cpuReportedSumPct": 21.38187119331335,
+      "gpuProcessCpuReportedPct": 8.395211438593273,
+      "machineGpuUtilPct": 73.4,
+      "rendererTaskMs": 1208.3860000000009,
+      "counters": {
+        "browserGeometryFrame": 456,
+        "browserGeometryRect": 18855,
+        "browserGeometryStyle": 45535,
+        "browserGeometryMicros": 245100,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1007.1999998092651,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 927,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 114.37133225121738,
+      "p95Ms": 11.399999618530273,
+      "p99Ms": 12.699999809265137,
+      "maxMs": 15.200000286102295,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2017.690625,
+      "cpuReportedSumPct": 28.499484087834702,
+      "gpuProcessCpuReportedPct": 8.88708558143698,
+      "machineGpuUtilPct": 71.8,
+      "rendererTaskMs": 1241.8969999999981,
+      "counters": {
+        "browserGeometryFrame": 457,
+        "browserGeometryRect": 18900,
+        "browserGeometryStyle": 45644,
+        "browserGeometryMicros": 250100,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1000.0999999046326,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 930,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stream.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.0758899681347,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 11.400000095367432,
+      "recoveryMaxMs": 11.599999904632568,
+      "over25ms": 0,
+      "workingSetMiB": 709.8125,
+      "cpuReportedSumPct": 11.485002039233928,
+      "gpuProcessCpuReportedPct": 4.604610447305157,
+      "machineGpuUtilPct": 62.6,
+      "rendererTaskMs": 1807.437,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1007.9000000953674,
+        "p95Ms": 9.099999904632568,
+        "maxMs": 11.599999904632568,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16061,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stream.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.04891805367353,
+      "p95Ms": 9,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 11.5,
+      "recoveryMaxMs": 10.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 724.075,
+      "cpuReportedSumPct": 11.362931334599807,
+      "gpuProcessCpuReportedPct": 2.311794644350617,
+      "machineGpuUtilPct": 62.8,
+      "rendererTaskMs": 1816.1930000000002,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1007.0999999046326,
+        "p95Ms": 9.099999904632568,
+        "maxMs": 10.400000095367432,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16061,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.06090407036423,
+      "p95Ms": 9,
+      "p99Ms": 9.200000286102295,
+      "maxMs": 9.300000190734863,
+      "recoveryMaxMs": 9.599999904632568,
+      "over25ms": 0,
+      "workingSetMiB": 760.5125,
+      "cpuReportedSumPct": 11.651172929816735,
+      "gpuProcessCpuReportedPct": 3.290093058107626,
+      "machineGpuUtilPct": 68.8,
+      "rendererTaskMs": 2160.73,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1007.6999998092651,
+        "p95Ms": 9,
+        "maxMs": 9.599999904632568,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16061,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.08488328548246,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.200000286102295,
+      "maxMs": 9.300000190734863,
+      "recoveryMaxMs": 9.599999904632568,
+      "over25ms": 0,
+      "workingSetMiB": 766.484375,
+      "cpuReportedSumPct": 11.23724076196094,
+      "gpuProcessCpuReportedPct": 2.7741284217464988,
+      "machineGpuUtilPct": 67.8,
+      "rendererTaskMs": 2125.65,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1000.6999998092651,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 9.599999904632568,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16061,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.210931455875,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 9.400000095367432,
+      "recoveryMaxMs": 11.900000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 754.43125,
+      "cpuReportedSumPct": 7.963530756781066,
+      "gpuProcessCpuReportedPct": 1.8002420174415654,
+      "machineGpuUtilPct": 68.4,
+      "rendererTaskMs": 1977.9030000000014,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.1999998092651,
+        "p95Ms": 9.099999904632568,
+        "maxMs": 11.900000095367432,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16061,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.039930122286,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.299999713897705,
+      "maxMs": 9.5,
+      "recoveryMaxMs": 11,
+      "over25ms": 0,
+      "workingSetMiB": 746.6625,
+      "cpuReportedSumPct": 7.349109156155079,
+      "gpuProcessCpuReportedPct": 1.756897754951006,
+      "machineGpuUtilPct": 68.2,
+      "rendererTaskMs": 1973.0499999999988,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008,
+        "p95Ms": 9.099999904632568,
+        "maxMs": 11,
+        "over25ms": 0,
+        "domElements": 961,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16061,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stress.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.05491076999876,
+      "p95Ms": 9.900000095367432,
+      "p99Ms": 10.300000190734863,
+      "maxMs": 13.600000381469727,
+      "recoveryMaxMs": 12.800000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 766.228125,
+      "cpuReportedSumPct": 13.421265762326374,
+      "gpuProcessCpuReportedPct": 3.1282288576814974,
+      "machineGpuUtilPct": 63.6,
+      "rendererTaskMs": 2542.749,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.4000000953674,
+        "p95Ms": 10.199999809265137,
+        "maxMs": 12.800000190734863,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 46,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stress.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.0758899681347,
+      "p95Ms": 9.900000095367432,
+      "p99Ms": 10.400000095367432,
+      "maxMs": 10.599999904632568,
+      "recoveryMaxMs": 11.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 773.9375,
+      "cpuReportedSumPct": 12.745375235296326,
+      "gpuProcessCpuReportedPct": 4.456184711843691,
+      "machineGpuUtilPct": 67.4,
+      "rendererTaskMs": 2581.573,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008,
+        "p95Ms": 9.900000095367432,
+        "maxMs": 11.400000095367432,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 46,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stress.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.20492315381732,
+      "p95Ms": 10,
+      "p99Ms": 10.300000190734863,
+      "maxMs": 13.400000095367432,
+      "recoveryMaxMs": 10.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 787.76875,
+      "cpuReportedSumPct": 7.183972970508141,
+      "gpuProcessCpuReportedPct": 2.370834478669958,
+      "machineGpuUtilPct": 61,
+      "rendererTaskMs": 1587.0109999999995,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1010,
+        "p95Ms": 10.300000190734863,
+        "maxMs": 10.400000095367432,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 46,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "baseline",
+      "file": "baseline-stress.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.1989154666582,
+      "p95Ms": 9.599999904632568,
+      "p99Ms": 10.199999809265137,
+      "maxMs": 10.400000095367432,
+      "recoveryMaxMs": 10.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 809.584375,
+      "cpuReportedSumPct": 4.424428173531089,
+      "gpuProcessCpuReportedPct": 1.5021354458438338,
+      "machineGpuUtilPct": 60.2,
+      "rendererTaskMs": 683.9289999999992,
+      "counters": {
+        "canvasCullEval": 1
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.8000001907349,
+        "p95Ms": 10.200000286102295,
+        "maxMs": 10.400000095367432,
+        "over25ms": 0,
+        "domElements": 969,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 46,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-dense.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 118.8781498991876,
+      "p95Ms": 9.900000095367432,
+      "p99Ms": 12.599999904632568,
+      "maxMs": 38.90000009536743,
+      "recoveryMaxMs": 39.299999713897705,
+      "over25ms": 1,
+      "workingSetMiB": 2752.753125,
+      "cpuReportedSumPct": 24.420939032265455,
+      "gpuProcessCpuReportedPct": 8.570920744600352,
+      "machineGpuUtilPct": 58.2,
+      "rendererTaskMs": 1672.5759999999993,
+      "counters": {
+        "browserGeometryFrame": 264,
+        "browserGeometryCacheRebuild": 25,
+        "browserGeometryRect": 3104,
+        "browserGeometryStyle": 6425,
+        "browserGeometryMicros": 213700,
+        "canvasCullEval": 247,
+        "canvasCullSort": 0,
+        "browserGeometryCacheReuse": 239
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1006,
+        "p95Ms": 9,
+        "maxMs": 39.299999713897705,
+        "over25ms": 1,
+        "domElements": 12131,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-dense.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 119.19338314016663,
+      "p95Ms": 10.100000381469727,
+      "p99Ms": 12.200000286102295,
+      "maxMs": 35,
+      "recoveryMaxMs": 31.299999713897705,
+      "over25ms": 1,
+      "workingSetMiB": 2859.6125,
+      "cpuReportedSumPct": 27.40652072608463,
+      "gpuProcessCpuReportedPct": 9.585523443108888,
+      "machineGpuUtilPct": 62.8,
+      "rendererTaskMs": 1761.216000000001,
+      "counters": {
+        "browserGeometryFrame": 272,
+        "browserGeometryCacheRebuild": 34,
+        "browserGeometryRect": 4260,
+        "browserGeometryStyle": 8858,
+        "browserGeometryMicros": 225800,
+        "canvasCullEval": 248,
+        "canvasCullSort": 0,
+        "browserGeometryCacheReuse": 238
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1007.5999999046326,
+        "p95Ms": 9.100000381469727,
+        "maxMs": 31.299999713897705,
+        "over25ms": 1,
+        "domElements": 12131,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-dense.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 94.57503619206406,
+      "p95Ms": 17.09999990463257,
+      "p99Ms": 21,
+      "maxMs": 31.90000009536743,
+      "recoveryMaxMs": 12.599999904632568,
+      "over25ms": 1,
+      "workingSetMiB": 2720.225,
+      "cpuReportedSumPct": 41.337049092733324,
+      "gpuProcessCpuReportedPct": 16.19191311482838,
+      "machineGpuUtilPct": 76.6,
+      "rendererTaskMs": 2546.187,
+      "counters": {
+        "browserGeometryFrame": 383,
+        "browserGeometryCacheRebuild": 14,
+        "browserGeometryRect": 1758,
+        "browserGeometryStyle": 3594,
+        "browserGeometryMicros": 258100,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryCacheReuse": 369
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1002.2000002861023,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 12.599999904632568,
+        "over25ms": 0,
+        "domElements": 12131,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-dense.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 98.34019717958317,
+      "p95Ms": 16.59999990463257,
+      "p99Ms": 20,
+      "maxMs": 29.800000190734863,
+      "recoveryMaxMs": 14.599999904632568,
+      "over25ms": 1,
+      "workingSetMiB": 2953.3375,
+      "cpuReportedSumPct": 46.04770564338624,
+      "gpuProcessCpuReportedPct": 13.535776765759891,
+      "machineGpuUtilPct": 78,
+      "rendererTaskMs": 2610.183000000001,
+      "counters": {
+        "browserGeometryFrame": 397,
+        "browserGeometryCacheRebuild": 12,
+        "browserGeometryRect": 1552,
+        "browserGeometryStyle": 3176,
+        "browserGeometryMicros": 266400,
+        "canvasCullEval": 1,
+        "canvasCullSort": 0,
+        "browserGeometryCacheReuse": 385
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1003.7000002861023,
+        "p95Ms": 10.300000190734863,
+        "maxMs": 14.599999904632568,
+        "over25ms": 0,
+        "domElements": 12131,
+        "details": 0,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 119.80531636091352,
+      "p95Ms": 9.299999713897705,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 19,
+      "recoveryMaxMs": 31.90000009536743,
+      "over25ms": 0,
+      "workingSetMiB": 1666.2875,
+      "cpuReportedSumPct": 10.146343078923136,
+      "gpuProcessCpuReportedPct": 3.869078937318752,
+      "machineGpuUtilPct": 58,
+      "rendererTaskMs": 1047.1809999999998,
+      "counters": {
+        "canvasCullEval": 249,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 265,
+        "browserGeometryCacheRebuild": 22,
+        "browserGeometryRect": 1148,
+        "browserGeometryStyle": 2234,
+        "browserGeometryMicros": 92600,
+        "browserGeometryCacheReuse": 243
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.8999996185303,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 31.90000009536743,
+        "over25ms": 1,
+        "domElements": 5511,
+        "details": 0,
+        "previews": 0,
+        "editors": 7,
+        "terminals": 7
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 119.88910258582487,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.299999713897705,
+      "maxMs": 20.700000286102295,
+      "recoveryMaxMs": 22,
+      "over25ms": 0,
+      "workingSetMiB": 1684.1,
+      "cpuReportedSumPct": 9.426349091145033,
+      "gpuProcessCpuReportedPct": 3.8924469182776207,
+      "machineGpuUtilPct": 56.4,
+      "rendererTaskMs": 979.1509999999998,
+      "counters": {
+        "canvasCullEval": 249,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 263,
+        "browserGeometryCacheRebuild": 18,
+        "browserGeometryRect": 940,
+        "browserGeometryStyle": 1830,
+        "browserGeometryMicros": 87700,
+        "browserGeometryCacheReuse": 245
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.8999996185303,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 22,
+        "over25ms": 0,
+        "domElements": 5508,
+        "details": 0,
+        "previews": 0,
+        "editors": 7,
+        "terminals": 7
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.11487077038332,
+      "p95Ms": 9.300000190734863,
+      "p99Ms": 9.699999809265137,
+      "maxMs": 14.399999618530273,
+      "recoveryMaxMs": 27.5,
+      "over25ms": 0,
+      "workingSetMiB": 1961.446875,
+      "cpuReportedSumPct": 23.70613958560659,
+      "gpuProcessCpuReportedPct": 10.491400636382165,
+      "machineGpuUtilPct": 68.6,
+      "rendererTaskMs": 1999.68,
+      "counters": {
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 491,
+        "browserGeometryCacheRebuild": 26,
+        "browserGeometryRect": 1380,
+        "browserGeometryStyle": 2710,
+        "browserGeometryMicros": 158200,
+        "browserGeometryCacheReuse": 465
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.7000002861023,
+        "p95Ms": 10,
+        "maxMs": 27.5,
+        "over25ms": 1,
+        "domElements": 6150,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.15687842208764,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 9.5,
+      "recoveryMaxMs": 25.800000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 2081.403125,
+      "cpuReportedSumPct": 20.353945100837937,
+      "gpuProcessCpuReportedPct": 7.670541790145422,
+      "machineGpuUtilPct": 68.6,
+      "rendererTaskMs": 1882.2960000000003,
+      "counters": {
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 493,
+        "browserGeometryCacheRebuild": 30,
+        "browserGeometryRect": 1588,
+        "browserGeometryStyle": 3114,
+        "browserGeometryMicros": 163900,
+        "browserGeometryCacheReuse": 463
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.5,
+        "p95Ms": 9.5,
+        "maxMs": 25.800000190734863,
+        "over25ms": 1,
+        "domElements": 6147,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.19891545233546,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 12,
+      "recoveryMaxMs": 9.300000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 1853.334375,
+      "cpuReportedSumPct": 27.167014371328463,
+      "gpuProcessCpuReportedPct": 10.612867646083329,
+      "machineGpuUtilPct": 73.2,
+      "rendererTaskMs": 1911.7659999999992,
+      "counters": {
+        "canvasCullEval": 1,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 487,
+        "browserGeometryCacheRebuild": 18,
+        "browserGeometryRect": 1160,
+        "browserGeometryStyle": 2346,
+        "browserGeometryMicros": 194000,
+        "browserGeometryCacheReuse": 469
+      },
+      "mounted": {
+        "nodes": 24,
+        "editors": 8,
+        "terminals": 8,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.3999996185303,
+        "p95Ms": 9.100000381469727,
+        "maxMs": 9.300000190734863,
+        "over25ms": 0,
+        "domElements": 6135,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 119.73204019682511,
+      "p95Ms": 9.300000190734863,
+      "p99Ms": 10.5,
+      "maxMs": 14.199999809265137,
+      "recoveryMaxMs": 9.700000286102295,
+      "over25ms": 0,
+      "workingSetMiB": 2005.5875,
+      "cpuReportedSumPct": 21.61557414606916,
+      "gpuProcessCpuReportedPct": 9.313849561536873,
+      "machineGpuUtilPct": 66.2,
+      "rendererTaskMs": 1596.293000000001,
+      "counters": {
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 485,
+        "browserGeometryCacheRebuild": 18,
+        "browserGeometryRect": 1160,
+        "browserGeometryStyle": 2346,
+        "browserGeometryMicros": 118300,
+        "browserGeometryCacheReuse": 467
+      },
+      "mounted": {
+        "nodes": 24,
+        "editors": 8,
+        "terminals": 8,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1006.4000000953674,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.700000286102295,
+        "over25ms": 0,
+        "domElements": 6147,
+        "details": 0,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.0159688692891,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 9.400000095367432,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2001.846875,
+      "cpuReportedSumPct": 14.58684004892805,
+      "gpuProcessCpuReportedPct": 5.537322239209736,
+      "machineGpuUtilPct": 63.2,
+      "rendererTaskMs": 721.4220000000005,
+      "counters": {
+        "canvasCullEval": 249,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 257,
+        "browserGeometryCacheRebuild": 12,
+        "browserGeometryRect": 552,
+        "browserGeometryStyle": 1308,
+        "browserGeometryMicros": 100100,
+        "browserGeometryCacheReuse": 245
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1009.1000003814697,
+        "p95Ms": 9.399999618530273,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 936,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.01596885500993,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 9.5,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 1999.028125,
+      "cpuReportedSumPct": 14.472723979441097,
+      "gpuProcessCpuReportedPct": 5.291476005867502,
+      "machineGpuUtilPct": 62,
+      "rendererTaskMs": 687.863,
+      "counters": {
+        "canvasCullEval": 249,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 258,
+        "browserGeometryCacheRebuild": 13,
+        "browserGeometryRect": 598,
+        "browserGeometryStyle": 1417,
+        "browserGeometryMicros": 91500,
+        "browserGeometryCacheReuse": 245
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1000.7999997138977,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 936,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 100.15985613186932,
+      "p95Ms": 14.400000095367432,
+      "p99Ms": 16.399999618530273,
+      "maxMs": 22.59999990463257,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2178.44375,
+      "cpuReportedSumPct": 26.767930663942344,
+      "gpuProcessCpuReportedPct": 12.01433810129282,
+      "machineGpuUtilPct": 75.4,
+      "rendererTaskMs": 1146.8380000000006,
+      "counters": {
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 412,
+        "browserGeometryCacheRebuild": 28,
+        "browserGeometryRect": 1288,
+        "browserGeometryStyle": 3052,
+        "browserGeometryMicros": 142900,
+        "browserGeometryCacheReuse": 384
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1007.9000000953674,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 933,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 97.39286784305062,
+      "p95Ms": 14.100000381469727,
+      "p99Ms": 16.40000009536743,
+      "maxMs": 23.199999809265137,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2194.246875,
+      "cpuReportedSumPct": 24.662633791701587,
+      "gpuProcessCpuReportedPct": 9.967110958355098,
+      "machineGpuUtilPct": 74.6,
+      "rendererTaskMs": 1235.6080000000009,
+      "counters": {
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 401,
+        "browserGeometryCacheRebuild": 28,
+        "browserGeometryRect": 1288,
+        "browserGeometryStyle": 3052,
+        "browserGeometryMicros": 154800,
+        "browserGeometryCacheReuse": 373
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1008,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 936,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 111.11943466956185,
+      "p95Ms": 11.599999904632568,
+      "p99Ms": 13,
+      "maxMs": 16.40000009536743,
+      "recoveryMaxMs": 9.599999904632568,
+      "over25ms": 0,
+      "workingSetMiB": 2037.75625,
+      "cpuReportedSumPct": 21.442483218116486,
+      "gpuProcessCpuReportedPct": 8.506804598864573,
+      "machineGpuUtilPct": 72.4,
+      "rendererTaskMs": 1147.1220000000012,
+      "counters": {
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 445,
+        "browserGeometryCacheRebuild": 6,
+        "browserGeometryRect": 276,
+        "browserGeometryStyle": 654,
+        "browserGeometryMicros": 122300,
+        "browserGeometryCacheReuse": 439
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1007.1999998092651,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 9.599999904632568,
+        "over25ms": 0,
+        "domElements": 924,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "geometry",
+      "file": "geometry-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 112.39884104573864,
+      "p95Ms": 12.199999809265137,
+      "p99Ms": 13.799999713897705,
+      "maxMs": 15,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2032.846875,
+      "cpuReportedSumPct": 21.8946042833379,
+      "gpuProcessCpuReportedPct": 8.506869560379249,
+      "machineGpuUtilPct": 70.4,
+      "rendererTaskMs": 1100.5310000000002,
+      "counters": {
+        "canvasCullEval": 0,
+        "canvasCullSort": 0,
+        "browserGeometryFrame": 451,
+        "browserGeometryCacheRebuild": 8,
+        "browserGeometryRect": 338,
+        "browserGeometryStyle": 798,
+        "browserGeometryMicros": 110100,
+        "browserGeometryCacheReuse": 443
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1007,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 936,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-dense.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.15387690420602,
+      "p95Ms": 9.300000190734863,
+      "p99Ms": 9.5,
+      "maxMs": 16.199999809265137,
+      "recoveryMaxMs": 10.299999713897705,
+      "over25ms": 0,
+      "workingSetMiB": 2136.63125,
+      "cpuReportedSumPct": 3.9921468834716483,
+      "gpuProcessCpuReportedPct": 1.6419054069627521,
+      "machineGpuUtilPct": 55.4,
+      "rendererTaskMs": 616.5340000000001,
+      "counters": {
+        "browserGeometryFrame": 261,
+        "browserGeometryRect": 4176,
+        "browserGeometryStyle": 4176,
+        "browserGeometryMicros": 88700,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1007,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 10.299999713897705,
+        "over25ms": 0,
+        "domElements": 2694,
+        "details": 0,
+        "previews": 48,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-dense.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.01896350098356,
+      "p95Ms": 9.300000190734863,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 9.5,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2155.809375,
+      "cpuReportedSumPct": 5.006351721996207,
+      "gpuProcessCpuReportedPct": 1.3533008967559406,
+      "machineGpuUtilPct": 55,
+      "rendererTaskMs": 626.331,
+      "counters": {
+        "browserGeometryFrame": 262,
+        "browserGeometryRect": 4192,
+        "browserGeometryStyle": 4192,
+        "browserGeometryMicros": 82600,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1008.3000001907349,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 2694,
+        "details": 0,
+        "previews": 48,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-dense.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.20191923517177,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.100000381469727,
+      "maxMs": 9.199999809265137,
+      "recoveryMaxMs": 133.40000009536743,
+      "over25ms": 0,
+      "workingSetMiB": 2255.2,
+      "cpuReportedSumPct": 13.19218284121796,
+      "gpuProcessCpuReportedPct": 3.823934876140043,
+      "machineGpuUtilPct": 67.6,
+      "rendererTaskMs": 1585.912,
+      "counters": {
+        "browserGeometryFrame": 484,
+        "browserGeometryRect": 7744,
+        "browserGeometryStyle": 7744,
+        "browserGeometryMicros": 112200,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1097.7000002861023,
+        "p95Ms": 85.90000009536743,
+        "maxMs": 133.40000009536743,
+        "over25ms": 9,
+        "domElements": 9021,
+        "details": 48,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-dense.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.25948103792415,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.5,
+      "maxMs": 10.199999809265137,
+      "recoveryMaxMs": 27.40000009536743,
+      "over25ms": 0,
+      "workingSetMiB": 2594.65625,
+      "cpuReportedSumPct": 17.60686480311877,
+      "gpuProcessCpuReportedPct": 4.846309542567692,
+      "machineGpuUtilPct": 67.2,
+      "rendererTaskMs": 1768.1149999999998,
+      "counters": {
+        "browserGeometryFrame": 483,
+        "browserGeometryRect": 7728,
+        "browserGeometryStyle": 7728,
+        "browserGeometryMicros": 255300,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1007.1999998092651,
+        "p95Ms": 9.199999809265137,
+        "maxMs": 27.40000009536743,
+        "over25ms": 1,
+        "domElements": 12170,
+        "details": 48,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-restore.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 105.64435564435564,
+      "p95Ms": 15.799999713897705,
+      "p99Ms": 17.300000190734863,
+      "maxMs": 22.59999990463257,
+      "recoveryMaxMs": 104.7000002861023,
+      "over25ms": 0,
+      "workingSetMiB": 2455.2375,
+      "cpuReportedSumPct": 38.41083493270948,
+      "gpuProcessCpuReportedPct": 13.527514678799733,
+      "machineGpuUtilPct": 78.6,
+      "rendererTaskMs": 3103.4109999999996,
+      "counters": {
+        "browserGeometryFrame": 423,
+        "browserGeometryRect": 46145,
+        "browserGeometryStyle": 90011,
+        "browserGeometryMicros": 594000,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1006.8000001907349,
+        "p95Ms": 37.40000009536743,
+        "maxMs": 104.7000002861023,
+        "over25ms": 6,
+        "domElements": 12170,
+        "details": 48,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-restore.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 100.5313443189158,
+      "p95Ms": 15.5,
+      "p99Ms": 17.90000009536743,
+      "maxMs": 20.100000381469727,
+      "recoveryMaxMs": 13.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 2733.6625,
+      "cpuReportedSumPct": 39.786764504736254,
+      "gpuProcessCpuReportedPct": 13.86719072848382,
+      "machineGpuUtilPct": 80.2,
+      "rendererTaskMs": 2600.9330000000004,
+      "counters": {
+        "browserGeometryFrame": 402,
+        "browserGeometryRect": 43822,
+        "browserGeometryStyle": 85438,
+        "browserGeometryMicros": 561000,
+        "canvasCullEval": 1,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 48,
+        "editors": 16,
+        "terminals": 16,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 16
+      },
+      "recovery": {
+        "elapsedMs": 1001.6999998092651,
+        "p95Ms": 11.300000190734863,
+        "maxMs": 13.400000095367432,
+        "over25ms": 0,
+        "domElements": 12173,
+        "details": 48,
+        "previews": 0,
+        "editors": 16,
+        "terminals": 16
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.09087959312868,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 17.600000381469727,
+      "recoveryMaxMs": 29.399999618530273,
+      "over25ms": 0,
+      "workingSetMiB": 1644.125,
+      "cpuReportedSumPct": 11.707749528181909,
+      "gpuProcessCpuReportedPct": 5.697060636164939,
+      "machineGpuUtilPct": 54.2,
+      "rendererTaskMs": 1134.6100000000001,
+      "counters": {
+        "browserGeometryFrame": 262,
+        "browserGeometryRect": 13250,
+        "browserGeometryStyle": 27146,
+        "browserGeometryMicros": 167400,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1007.5,
+        "p95Ms": 9.400000095367432,
+        "maxMs": 29.399999618530273,
+        "over25ms": 2,
+        "domElements": 5527,
+        "details": 22,
+        "previews": 0,
+        "editors": 7,
+        "terminals": 7
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "mixed-24",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.08188536335427,
+      "p95Ms": 8.799999713897705,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 15.700000286102295,
+      "recoveryMaxMs": 29.800000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 1684.671875,
+      "cpuReportedSumPct": 9.328625632627183,
+      "gpuProcessCpuReportedPct": 3.3879349075444574,
+      "machineGpuUtilPct": 57.2,
+      "rendererTaskMs": 1110.6400000000006,
+      "counters": {
+        "browserGeometryFrame": 263,
+        "browserGeometryRect": 13297,
+        "browserGeometryStyle": 27238,
+        "browserGeometryMicros": 168000,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1008.1000003814697,
+        "p95Ms": 9.400000095367432,
+        "maxMs": 29.800000190734863,
+        "over25ms": 1,
+        "domElements": 5524,
+        "details": 22,
+        "previews": 0,
+        "editors": 7,
+        "terminals": 7
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.08788135730452,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 9.5,
+      "recoveryMaxMs": 20.09999990463257,
+      "over25ms": 0,
+      "workingSetMiB": 1744.503125,
+      "cpuReportedSumPct": 19.134343350367722,
+      "gpuProcessCpuReportedPct": 6.772050707790725,
+      "machineGpuUtilPct": 68.6,
+      "rendererTaskMs": 1868.7299999999993,
+      "counters": {
+        "browserGeometryFrame": 492,
+        "browserGeometryRect": 25268,
+        "browserGeometryStyle": 52232,
+        "browserGeometryMicros": 337500,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1000.2000002861023,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 20.09999990463257,
+        "over25ms": 0,
+        "domElements": 5066,
+        "details": 0,
+        "previews": 24,
+        "editors": 6,
+        "terminals": 6
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.05491076999876,
+      "p95Ms": 9,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 10.299999713897705,
+      "recoveryMaxMs": 18.299999713897705,
+      "over25ms": 0,
+      "workingSetMiB": 1893.4875,
+      "cpuReportedSumPct": 19.73583585219313,
+      "gpuProcessCpuReportedPct": 7.335673282970851,
+      "machineGpuUtilPct": 67.8,
+      "rendererTaskMs": 1881.8479999999997,
+      "counters": {
+        "browserGeometryFrame": 493,
+        "browserGeometryRect": 25315,
+        "browserGeometryStyle": 52324,
+        "browserGeometryMicros": 369300,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 20,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1008.3000001907349,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 18.299999713897705,
+        "over25ms": 0,
+        "domElements": 5063,
+        "details": 0,
+        "previews": 24,
+        "editors": 6,
+        "terminals": 6
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.01297437275248,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 9.699999809265137,
+      "recoveryMaxMs": 32.80000019073486,
+      "over25ms": 0,
+      "workingSetMiB": 1900.990625,
+      "cpuReportedSumPct": 9.132043797066347,
+      "gpuProcessCpuReportedPct": 2.209478706756143,
+      "machineGpuUtilPct": 65,
+      "rendererTaskMs": 1172.1459999999997,
+      "counters": {
+        "browserGeometryFrame": 486,
+        "browserGeometryRect": 3888,
+        "browserGeometryStyle": 3888,
+        "browserGeometryMicros": 125900,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 24,
+        "editors": 6,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1000.5,
+        "p95Ms": 10.400000095367432,
+        "maxMs": 32.80000019073486,
+        "over25ms": 2,
+        "domElements": 6162,
+        "details": 24,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "mixed-24",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.07588995384127,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.200000286102295,
+      "maxMs": 10.099999904632568,
+      "recoveryMaxMs": 14.700000286102295,
+      "over25ms": 0,
+      "workingSetMiB": 1811.228125,
+      "cpuReportedSumPct": 19.137947637518256,
+      "gpuProcessCpuReportedPct": 6.950576399431658,
+      "machineGpuUtilPct": 70.6,
+      "rendererTaskMs": 1340.8569999999997,
+      "counters": {
+        "browserGeometryFrame": 486,
+        "browserGeometryRect": 29577,
+        "browserGeometryStyle": 63309,
+        "browserGeometryMicros": 290100,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 24,
+        "editors": 8,
+        "terminals": 8,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 8
+      },
+      "recovery": {
+        "elapsedMs": 1005.8000001907349,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 14.700000286102295,
+        "over25ms": 0,
+        "domElements": 6165,
+        "details": 24,
+        "previews": 0,
+        "editors": 8,
+        "terminals": 8
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.12087007326295,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.399999618530273,
+      "maxMs": 9.5,
+      "recoveryMaxMs": 9.300000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 1897.36875,
+      "cpuReportedSumPct": 20.61320714224682,
+      "gpuProcessCpuReportedPct": 8.502564247672527,
+      "machineGpuUtilPct": 63.6,
+      "rendererTaskMs": 728.9970000000014,
+      "counters": {
+        "browserGeometryFrame": 255,
+        "browserGeometryRect": 11475,
+        "browserGeometryStyle": 29325,
+        "browserGeometryMicros": 166100,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1008,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.300000190734863,
+        "over25ms": 0,
+        "domElements": 936,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.17789326117803,
+      "p95Ms": 9.300000190734863,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 11.400000095367432,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 1881.596875,
+      "cpuReportedSumPct": 15.131252438704443,
+      "gpuProcessCpuReportedPct": 5.676480606146472,
+      "machineGpuUtilPct": 63.2,
+      "rendererTaskMs": 738.5449999999985,
+      "counters": {
+        "browserGeometryFrame": 256,
+        "browserGeometryRect": 11520,
+        "browserGeometryStyle": 29440,
+        "browserGeometryMicros": 164800,
+        "canvasCullEval": 249,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1007.6999998092651,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 936,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 101.15895694116477,
+      "p95Ms": 13.599999904632568,
+      "p99Ms": 16.300000190734863,
+      "maxMs": 21.799999713897705,
+      "recoveryMaxMs": 9.399999618530273,
+      "over25ms": 0,
+      "workingSetMiB": 2070.678125,
+      "cpuReportedSumPct": 28.709318317806197,
+      "gpuProcessCpuReportedPct": 10.818706927795104,
+      "machineGpuUtilPct": 77.2,
+      "rendererTaskMs": 1271.0039999999997,
+      "counters": {
+        "browserGeometryFrame": 416,
+        "browserGeometryRect": 18720,
+        "browserGeometryStyle": 47840,
+        "browserGeometryMicros": 275700,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1000.5,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 9.399999618530273,
+        "over25ms": 0,
+        "domElements": 969,
+        "details": 0,
+        "previews": 6,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 103.17262053459905,
+      "p95Ms": 13.799999713897705,
+      "p99Ms": 16.40000009536743,
+      "maxMs": 21.300000190734863,
+      "recoveryMaxMs": 9.5,
+      "over25ms": 0,
+      "workingSetMiB": 2095.0,
+      "cpuReportedSumPct": 24.896715448511834,
+      "gpuProcessCpuReportedPct": 10.073814227778282,
+      "machineGpuUtilPct": 76.6,
+      "rendererTaskMs": 1285.0359999999998,
+      "counters": {
+        "browserGeometryFrame": 424,
+        "browserGeometryRect": 19080,
+        "browserGeometryStyle": 48760,
+        "browserGeometryMicros": 266300,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1000.2999997138977,
+        "p95Ms": 9.300000190734863,
+        "maxMs": 9.5,
+        "over25ms": 0,
+        "domElements": 972,
+        "details": 0,
+        "previews": 6,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.13287044844857,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.299999713897705,
+      "maxMs": 11.199999809265137,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 1990.81875,
+      "cpuReportedSumPct": 9.811510098687744,
+      "gpuProcessCpuReportedPct": 2.754640023121823,
+      "machineGpuUtilPct": 63,
+      "rendererTaskMs": 1150.6339999999984,
+      "counters": {
+        "browserGeometryFrame": 480,
+        "browserGeometryRect": 2880,
+        "browserGeometryStyle": 2880,
+        "browserGeometryMicros": 87800,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1000.0999999046326,
+        "p95Ms": 9.199999809265137,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 933,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-steady.json",
+      "scenario": "browsers-heavy",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 110.31797534331372,
+      "p95Ms": 12.200000286102295,
+      "p99Ms": 13.700000286102295,
+      "maxMs": 16.59999990463257,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 1929.05,
+      "cpuReportedSumPct": 29.67997871779368,
+      "gpuProcessCpuReportedPct": 10.911879079715229,
+      "machineGpuUtilPct": 69.2,
+      "rendererTaskMs": 1163.6799999999994,
+      "counters": {
+        "browserGeometryFrame": 441,
+        "browserGeometryRect": 18180,
+        "browserGeometryStyle": 46213,
+        "browserGeometryMicros": 237300,
+        "canvasCullEval": 0,
+        "canvasCullSort": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 0,
+        "terminalCanvases": 0,
+        "terminalWebglCanvases": 0,
+        "browsers": 6
+      },
+      "recovery": {
+        "elapsedMs": 1007.0999999046326,
+        "p95Ms": 9.200000286102295,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 936,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 0
+      },
+      "completions": []
+    },
+    {
+      "variant": "levels",
+      "file": "levels-stream.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.08788135730452,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 10,
+      "recoveryMaxMs": 10.300000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 712.075,
+      "cpuReportedSumPct": 9.316289448036871,
+      "gpuProcessCpuReportedPct": 2.8722808327968563,
+      "machineGpuUtilPct": 62.8,
+      "rendererTaskMs": 1825.469,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.2000002861023,
+        "p95Ms": 8.800000190734863,
+        "maxMs": 10.300000190734863,
+        "over25ms": 0,
+        "domElements": 971,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16078,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "levels",
+      "file": "levels-stream.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.0609040846541,
+      "p95Ms": 9,
+      "p99Ms": 9.299999713897705,
+      "maxMs": 10.600000381469727,
+      "recoveryMaxMs": 11.199999809265137,
+      "over25ms": 0,
+      "workingSetMiB": 726.88125,
+      "cpuReportedSumPct": 9.477987592367167,
+      "gpuProcessCpuReportedPct": 2.3164552914254934,
+      "machineGpuUtilPct": 63.4,
+      "rendererTaskMs": 1812.7229999999997,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.2000002861023,
+        "p95Ms": 8.900000095367432,
+        "maxMs": 11.199999809265137,
+        "over25ms": 0,
+        "domElements": 971,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16078,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "levels",
+      "file": "levels-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.14787430397708,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 9.699999809265137,
+      "recoveryMaxMs": 11.300000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 765.94375,
+      "cpuReportedSumPct": 8.603284563253622,
+      "gpuProcessCpuReportedPct": 2.3706366312196896,
+      "machineGpuUtilPct": 68,
+      "rendererTaskMs": 2123.176,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.0999999046326,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 11.300000190734863,
+        "over25ms": 0,
+        "domElements": 1001,
+        "details": 0,
+        "previews": 6,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16078,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "levels",
+      "file": "levels-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.15387690420602,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 11.5,
+      "recoveryMaxMs": 11,
+      "over25ms": 0,
+      "workingSetMiB": 777.23125,
+      "cpuReportedSumPct": 8.492151214444599,
+      "gpuProcessCpuReportedPct": 2.2983529930991566,
+      "machineGpuUtilPct": 66.2,
+      "rendererTaskMs": 2081.393000000001,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.2000002861023,
+        "p95Ms": 8.800000190734863,
+        "maxMs": 11,
+        "over25ms": 0,
+        "domElements": 1001,
+        "details": 0,
+        "previews": 6,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16078,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "levels",
+      "file": "levels-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.08188536335427,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 9.5,
+      "recoveryMaxMs": 12,
+      "over25ms": 0,
+      "workingSetMiB": 766.0375,
+      "cpuReportedSumPct": 7.381702013788792,
+      "gpuProcessCpuReportedPct": 1.816096450643967,
+      "machineGpuUtilPct": 65.8,
+      "rendererTaskMs": 1732.545,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1007.9000000953674,
+        "p95Ms": 9.299999713897705,
+        "maxMs": 12,
+        "over25ms": 0,
+        "domElements": 971,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16078,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "levels",
+      "file": "levels-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.09687648534452,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.399999618530273,
+      "maxMs": 11.900000095367432,
+      "recoveryMaxMs": 10.699999809265137,
+      "over25ms": 0,
+      "workingSetMiB": 761.95625,
+      "cpuReportedSumPct": 6.927255180358885,
+      "gpuProcessCpuReportedPct": 1.2254322230030374,
+      "machineGpuUtilPct": 64.4,
+      "rendererTaskMs": 1710.8919999999994,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1005.5,
+        "p95Ms": 9.199999809265137,
+        "maxMs": 10.699999809265137,
+        "over25ms": 0,
+        "domElements": 967,
+        "details": 6,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 16078,
+          "scheduler": null
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stream.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.18690187937881,
+      "p95Ms": 9.200000286102295,
+      "p99Ms": 9.800000190734863,
+      "maxMs": 11.300000190734863,
+      "recoveryMaxMs": 10.699999809265137,
+      "over25ms": 0,
+      "workingSetMiB": 718.615625,
+      "cpuReportedSumPct": 5.303927944308354,
+      "gpuProcessCpuReportedPct": 1.6182299865314018,
+      "machineGpuUtilPct": 59,
+      "rendererTaskMs": 949.258,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1007.5,
+        "p95Ms": 8.900000095367432,
+        "maxMs": 10.699999809265137,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 1080,
+          "cancelledJobs": 0,
+          "maxQueueDepth": 6,
+          "maxQueueAgeMs": 127,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 3957939,
+          "parsedTerminalBytes": 3936127,
+          "cancelledTerminalBytes": 0,
+          "pendingTerminalBytes": 21812,
+          "maxPendingTerminalBytes": 162887
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 15052,
+          "scheduler": {
+            "completedJobs": 6147,
+            "cancelledJobs": 0,
+            "maxQueueDepth": 6,
+            "maxQueueAgeMs": 127.59999990463257,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 20100617,
+            "parsedTerminalBytes": 20100617,
+            "cancelledTerminalBytes": 0,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 162887
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stream.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.17188827548605,
+      "p95Ms": 8.900000095367432,
+      "p99Ms": 9.199999809265137,
+      "maxMs": 11.400000095367432,
+      "recoveryMaxMs": 11,
+      "over25ms": 0,
+      "workingSetMiB": 733.21875,
+      "cpuReportedSumPct": 5.456786670144954,
+      "gpuProcessCpuReportedPct": 1.5942611243655207,
+      "machineGpuUtilPct": 62.4,
+      "rendererTaskMs": 952.564,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.2000002861023,
+        "p95Ms": 9,
+        "maxMs": 11,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 1732,
+          "cancelledJobs": 0,
+          "maxQueueDepth": 6,
+          "maxQueueAgeMs": 127,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 6041157,
+          "parsedTerminalBytes": 6021436,
+          "cancelledTerminalBytes": 0,
+          "pendingTerminalBytes": 19721,
+          "maxPendingTerminalBytes": 162887
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 15052,
+          "scheduler": {
+            "completedJobs": 6147,
+            "cancelledJobs": 0,
+            "maxQueueDepth": 6,
+            "maxQueueAgeMs": 127.59999990463257,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 20100617,
+            "parsedTerminalBytes": 20100617,
+            "cancelledTerminalBytes": 0,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 162887
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-out",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.210931455875,
+      "p95Ms": 9.199999809265137,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 11.299999713897705,
+      "recoveryMaxMs": 9.300000190734863,
+      "over25ms": 0,
+      "workingSetMiB": 766.56640625,
+      "cpuReportedSumPct": 6.491484162991192,
+      "gpuProcessCpuReportedPct": 2.4092587542121158,
+      "machineGpuUtilPct": 64.5,
+      "rendererTaskMs": 1181.7900000000004,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1000.2000002861023,
+        "p95Ms": 9.099999904632568,
+        "maxMs": 9.300000190734863,
+        "over25ms": 0,
+        "domElements": 961,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 2383,
+          "cancelledJobs": 0,
+          "maxQueueDepth": 6,
+          "maxQueueAgeMs": 127,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 8113461,
+          "parsedTerminalBytes": 8088943,
+          "cancelledTerminalBytes": 0,
+          "pendingTerminalBytes": 24518,
+          "maxPendingTerminalBytes": 162887
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 15052,
+          "scheduler": {
+            "completedJobs": 6147,
+            "cancelledJobs": 0,
+            "maxQueueDepth": 6,
+            "maxQueueAgeMs": 127.59999990463257,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 20100617,
+            "parsedTerminalBytes": 20100617,
+            "cancelledTerminalBytes": 0,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 162887
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-out",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.12686996115386,
+      "p95Ms": 9,
+      "p99Ms": 9.300000190734863,
+      "maxMs": 9.399999618530273,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 776.953125,
+      "cpuReportedSumPct": 6.128582314373509,
+      "gpuProcessCpuReportedPct": 1.8700267592006585,
+      "machineGpuUtilPct": 64,
+      "rendererTaskMs": 1177.2779999999993,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.0999999046326,
+        "p95Ms": 9.099999904632568,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 3034,
+          "cancelledJobs": 0,
+          "maxQueueDepth": 6,
+          "maxQueueAgeMs": 127,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 10185232,
+          "parsedTerminalBytes": 10161247,
+          "cancelledTerminalBytes": 0,
+          "pendingTerminalBytes": 23985,
+          "maxPendingTerminalBytes": 162887
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 15052,
+          "scheduler": {
+            "completedJobs": 6147,
+            "cancelledJobs": 0,
+            "maxQueueDepth": 6,
+            "maxQueueAgeMs": 127.59999990463257,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 20100617,
+            "parsedTerminalBytes": 20100617,
+            "cancelledTerminalBytes": 0,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 162887
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.0609040846541,
+      "p95Ms": 9.099999904632568,
+      "p99Ms": 9.400000095367432,
+      "maxMs": 11.300000190734863,
+      "recoveryMaxMs": 12.200000286102295,
+      "over25ms": 0,
+      "workingSetMiB": 766.5625,
+      "cpuReportedSumPct": 9.196319258111576,
+      "gpuProcessCpuReportedPct": 1.6096844985250551,
+      "machineGpuUtilPct": 65,
+      "rendererTaskMs": 1168.6040000000003,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.0999999046326,
+        "p95Ms": 9.099999904632568,
+        "maxMs": 12.200000286102295,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 3687,
+          "cancelledJobs": 0,
+          "maxQueueDepth": 6,
+          "maxQueueAgeMs": 127.59999990463257,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 12267663,
+          "parsedTerminalBytes": 12245810,
+          "cancelledTerminalBytes": 0,
+          "pendingTerminalBytes": 21853,
+          "maxPendingTerminalBytes": 162887
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 15052,
+          "scheduler": {
+            "completedJobs": 6147,
+            "cancelledJobs": 0,
+            "maxQueueDepth": 6,
+            "maxQueueAgeMs": 127.59999990463257,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 20100617,
+            "parsedTerminalBytes": 20100617,
+            "cancelledTerminalBytes": 0,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 162887
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stream.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.21694034427152,
+      "p95Ms": 8.800000190734863,
+      "p99Ms": 9.200000286102295,
+      "maxMs": 9.400000095367432,
+      "recoveryMaxMs": 9.400000095367432,
+      "over25ms": 0,
+      "workingSetMiB": 758.396875,
+      "cpuReportedSumPct": 5.462776392898424,
+      "gpuProcessCpuReportedPct": 1.5628339161389975,
+      "machineGpuUtilPct": 64.4,
+      "rendererTaskMs": 1147.7960000000005,
+      "counters": {
+        "canvasCullEval": 1
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008,
+        "p95Ms": 9,
+        "maxMs": 9.400000095367432,
+        "over25ms": 0,
+        "domElements": 961,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 4338,
+          "cancelledJobs": 0,
+          "maxQueueDepth": 6,
+          "maxQueueAgeMs": 127.59999990463257,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 14346363,
+          "parsedTerminalBytes": 14328774,
+          "cancelledTerminalBytes": 0,
+          "pendingTerminalBytes": 17589,
+          "maxPendingTerminalBytes": 162887
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 15052,
+          "scheduler": {
+            "completedJobs": 6147,
+            "cancelledJobs": 0,
+            "maxQueueDepth": 6,
+            "maxQueueAgeMs": 127.59999990463257,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 20100617,
+            "parsedTerminalBytes": 20100617,
+            "cancelledTerminalBytes": 0,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 162887
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stress.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 119.99100066922819,
+      "p95Ms": 10.199999809265137,
+      "p99Ms": 10.400000095367432,
+      "maxMs": 11.800000190734863,
+      "recoveryMaxMs": 10.399999618530273,
+      "over25ms": 0,
+      "workingSetMiB": 802.028125,
+      "cpuReportedSumPct": 6.167858449028363,
+      "gpuProcessCpuReportedPct": 1.5296437084389298,
+      "machineGpuUtilPct": 60.4,
+      "rendererTaskMs": 1171.959,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.3000001907349,
+        "p95Ms": 9.900000095367432,
+        "maxMs": 10.399999618530273,
+        "over25ms": 0,
+        "domElements": 969,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 1089,
+          "cancelledJobs": 5,
+          "maxQueueDepth": 11,
+          "maxQueueAgeMs": 199.89999961853027,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 17740727,
+          "parsedTerminalBytes": 8423240,
+          "cancelledTerminalBytes": 3590456,
+          "pendingTerminalBytes": 5727031,
+          "maxPendingTerminalBytes": 5727031
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 32895,
+          "scheduler": {
+            "completedJobs": 6999,
+            "cancelledJobs": 10,
+            "maxQueueDepth": 11,
+            "maxQueueAgeMs": 199.89999961853027,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 64412412,
+            "parsedTerminalBytes": 56771143,
+            "cancelledTerminalBytes": 7641269,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 6510287
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stress.json",
+      "scenario": "terminals-active",
+      "action": "pan",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.06390095923827,
+      "p95Ms": 10,
+      "p99Ms": 10.300000190734863,
+      "maxMs": 10.900000095367432,
+      "recoveryMaxMs": 12,
+      "over25ms": 0,
+      "workingSetMiB": 820.728125,
+      "cpuReportedSumPct": 7.866221192839648,
+      "gpuProcessCpuReportedPct": 2.8246276610430074,
+      "machineGpuUtilPct": 60.4,
+      "rendererTaskMs": 1138.321,
+      "counters": {
+        "canvasCullEval": 249
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1008.7000002861023,
+        "p95Ms": 10.099999904632568,
+        "maxMs": 12,
+        "over25ms": 0,
+        "domElements": 969,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 1747,
+          "cancelledJobs": 10,
+          "maxQueueDepth": 11,
+          "maxQueueAgeMs": 199.89999961853027,
+          "queuedJobs": 6,
+          "inFlight": false,
+          "receivedTerminalBytes": 23980351,
+          "parsedTerminalBytes": 13772616,
+          "cancelledTerminalBytes": 7641269,
+          "pendingTerminalBytes": 2566466,
+          "maxPendingTerminalBytes": 6340065
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 32895,
+          "scheduler": {
+            "completedJobs": 6999,
+            "cancelledJobs": 10,
+            "maxQueueDepth": 11,
+            "maxQueueAgeMs": 199.89999961853027,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 64412412,
+            "parsedTerminalBytes": 56771143,
+            "cancelledTerminalBytes": 7641269,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 6510287
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stress.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 0,
+      "foregroundValid": true,
+      "fps": 120.19290836566068,
+      "p95Ms": 10.099999904632568,
+      "p99Ms": 10.5,
+      "maxMs": 11,
+      "recoveryMaxMs": 10.599999904632568,
+      "over25ms": 0,
+      "workingSetMiB": 832.98046875,
+      "cpuReportedSumPct": 5.655980482910699,
+      "gpuProcessCpuReportedPct": 1.7924819655614905,
+      "machineGpuUtilPct": 64.5,
+      "rendererTaskMs": 1327.5629999999996,
+      "counters": {
+        "canvasCullEval": 1
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1001.3000001907349,
+        "p95Ms": 10.300000190734863,
+        "maxMs": 10.599999904632568,
+        "over25ms": 0,
+        "domElements": 965,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 2398,
+          "cancelledJobs": 10,
+          "maxQueueDepth": 11,
+          "maxQueueAgeMs": 199.89999961853027,
+          "queuedJobs": 5,
+          "inFlight": false,
+          "receivedTerminalBytes": 29928395,
+          "parsedTerminalBytes": 19095719,
+          "cancelledTerminalBytes": 7641269,
+          "pendingTerminalBytes": 3191407,
+          "maxPendingTerminalBytes": 6510287
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 32895,
+          "scheduler": {
+            "completedJobs": 6999,
+            "cancelledJobs": 10,
+            "maxQueueDepth": 11,
+            "maxQueueAgeMs": 199.89999961853027,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 64412412,
+            "parsedTerminalBytes": 56771143,
+            "cancelledTerminalBytes": 7641269,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 6510287
+          }
+        }
+      ]
+    },
+    {
+      "variant": "scheduler",
+      "file": "scheduler-stress.json",
+      "scenario": "terminals-active",
+      "action": "zoom-in",
+      "repeat": 1,
+      "foregroundValid": true,
+      "fps": 120.17188827548605,
+      "p95Ms": 9.900000095367432,
+      "p99Ms": 10.400000095367432,
+      "maxMs": 12.700000286102295,
+      "recoveryMaxMs": 11.899999618530273,
+      "over25ms": 0,
+      "workingSetMiB": 837.434375,
+      "cpuReportedSumPct": 5.339411079632628,
+      "gpuProcessCpuReportedPct": 1.4814978324094579,
+      "machineGpuUtilPct": 58.8,
+      "rendererTaskMs": 1225.3680000000004,
+      "counters": {
+        "canvasCullEval": 0
+      },
+      "mounted": {
+        "nodes": 6,
+        "editors": 0,
+        "terminals": 6,
+        "terminalCanvases": 4,
+        "terminalWebglCanvases": 2,
+        "browsers": 0
+      },
+      "recovery": {
+        "elapsedMs": 1000.5999999046326,
+        "p95Ms": 10.200000286102295,
+        "maxMs": 11.899999618530273,
+        "over25ms": 0,
+        "domElements": 969,
+        "details": 0,
+        "previews": 0,
+        "editors": 0,
+        "terminals": 6,
+        "schedulerStats": {
+          "completedJobs": 3048,
+          "cancelledJobs": 10,
+          "maxQueueDepth": 11,
+          "maxQueueAgeMs": 199.89999961853027,
+          "queuedJobs": 5,
+          "inFlight": false,
+          "receivedTerminalBytes": 36278988,
+          "parsedTerminalBytes": 24420519,
+          "cancelledTerminalBytes": 7641269,
+          "pendingTerminalBytes": 4217200,
+          "maxPendingTerminalBytes": 6510287
+        }
+      },
+      "completions": [
+        {
+          "scenario": "terminals-active",
+          "panelCount": 6,
+          "drainedAfterGesturesMs": 32895,
+          "scheduler": {
+            "completedJobs": 6999,
+            "cancelledJobs": 10,
+            "maxQueueDepth": 11,
+            "maxQueueAgeMs": 199.89999961853027,
+            "queuedJobs": 0,
+            "inFlight": false,
+            "receivedTerminalBytes": 64412412,
+            "parsedTerminalBytes": 56771143,
+            "cancelledTerminalBytes": 7641269,
+            "pendingTerminalBytes": 0,
+            "maxPendingTerminalBytes": 6510287
+          }
+        }
+      ]
+    }
+  ],
+  "retainedFrames": [
+    {
+      "group": "frames",
+      "file": "embedded-fixture-pan.json",
+      "mode": "embedded",
+      "site": "fixture",
+      "action": "pan",
+      "gesture": {
+        "activeMs": 5009,
+        "inputs": 313,
+        "fps": 120.18366939508884,
+        "active": {
+          "frames": 602,
+          "p95Ms": 9.099999999999454,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.400000000000546,
+          "over25ms": 0
+        },
+        "recovery": {
+          "frames": 121,
+          "p95Ms": 8.900000000000546,
+          "p99Ms": 9.199999999999818,
+          "maxMs": 9.400000000000546,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 0,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 0,
+          "lastSequence": 0,
+          "lastCapturedAt": null,
+          "lastDrawnAt": null,
+          "maxTransportMs": 0,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": null,
+        "embeddedFrameRatePolicy": "native browser cadence; no offscreen frame-rate cap",
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 822,
+        "currentDocumentRafObservedFps": 116.03122397101602,
+        "fixtureOwnDrawnFrames": 824,
+        "osrPaintEvents": 0,
+        "hostReceivedFrames": 0
+      }
+    },
+    {
+      "group": "frames",
+      "file": "embedded-fixture-zoom.json",
+      "mode": "embedded",
+      "site": "fixture",
+      "action": "zoom",
+      "gesture": {
+        "activeMs": 5009.5,
+        "inputs": 313,
+        "fps": 120.1716738197425,
+        "active": {
+          "frames": 602,
+          "p95Ms": 9.099999999999909,
+          "p99Ms": 9.299999999999272,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 9.199999999999818,
+          "p99Ms": 9.299999999999272,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 0,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 0,
+          "lastSequence": 0,
+          "lastCapturedAt": null,
+          "lastDrawnAt": null,
+          "maxTransportMs": 0,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": null,
+        "embeddedFrameRatePolicy": "native browser cadence; no offscreen frame-rate cap",
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 821,
+        "currentDocumentRafObservedFps": 116.2379125250469,
+        "fixtureOwnDrawnFrames": 823,
+        "osrPaintEvents": 0,
+        "hostReceivedFrames": 0
+      }
+    },
+    {
+      "group": "frames",
+      "file": "embedded-github-home-pan.json",
+      "mode": "embedded",
+      "site": "github-home",
+      "action": "pan",
+      "gesture": {
+        "activeMs": 5008.200000286102,
+        "inputs": 313,
+        "fps": 98.2388882177017,
+        "active": {
+          "frames": 492,
+          "p95Ms": 8.900000000000091,
+          "p99Ms": 91.69999999999982,
+          "maxMs": 350,
+          "over25ms": 6
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 9,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 0,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 0,
+          "lastSequence": 0,
+          "lastCapturedAt": null,
+          "lastDrawnAt": null,
+          "maxTransportMs": 0,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": null,
+        "embeddedFrameRatePolicy": "native browser cadence; no offscreen frame-rate cap",
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 531,
+        "currentDocumentRafObservedFps": 96.91372670862776,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 0,
+        "hostReceivedFrames": 0
+      }
+    },
+    {
+      "group": "frames",
+      "file": "embedded-github-home-zoom.json",
+      "mode": "embedded",
+      "site": "github-home",
+      "action": "zoom",
+      "gesture": {
+        "activeMs": 5009.300000190735,
+        "inputs": 313,
+        "fps": 92.82734114193492,
+        "active": {
+          "frames": 465,
+          "p95Ms": 9,
+          "p99Ms": 91.80000000000018,
+          "maxMs": 424.9000000000001,
+          "over25ms": 9
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 9,
+          "p99Ms": 9.200000000000728,
+          "maxMs": 9.399999999999636,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 0,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 0,
+          "lastSequence": 0,
+          "lastCapturedAt": null,
+          "lastDrawnAt": null,
+          "maxTransportMs": 0,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": null,
+        "embeddedFrameRatePolicy": "native browser cadence; no offscreen frame-rate cap",
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 510,
+        "currentDocumentRafObservedFps": 91.52907394113424,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 0,
+        "hostReceivedFrames": 0
+      }
+    },
+    {
+      "group": "frames",
+      "file": "shared-fixture-pan.json",
+      "mode": "shared",
+      "site": "fixture",
+      "action": "pan",
+      "gesture": {
+        "activeMs": 5009.89999961853,
+        "inputs": 313,
+        "fps": 119.96247431001858,
+        "active": {
+          "frames": 601,
+          "p95Ms": 9.100000000000136,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.400000000000091,
+          "over25ms": 0
+        },
+        "recovery": {
+          "frames": 121,
+          "p95Ms": 9,
+          "p99Ms": 9.200000000000728,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 722,
+          "p95Ms": 12,
+          "p99Ms": 13,
+          "maxMs": 13,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 479,
+          "lastSequence": 480,
+          "lastCapturedAt": 1794132252811,
+          "lastDrawnAt": 1794132252811,
+          "maxTransportMs": 6,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": 120,
+        "embeddedFrameRatePolicy": null,
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 482,
+        "currentDocumentRafObservedFps": 66.19515209778206,
+        "fixtureOwnDrawnFrames": 482,
+        "osrPaintEvents": 486,
+        "hostReceivedFrames": 479
+      }
+    },
+    {
+      "group": "frames",
+      "file": "shared-fixture-zoom.json",
+      "mode": "shared",
+      "site": "fixture",
+      "action": "zoom",
+      "gesture": {
+        "activeMs": 5008.300000190735,
+        "inputs": 313,
+        "fps": 120.00079866963074,
+        "active": {
+          "frames": 601,
+          "p95Ms": 9.099999999999909,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.400000000000091,
+          "over25ms": 0
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 8.800000000000182,
+          "p99Ms": 9.199999999999818,
+          "maxMs": 9.200000000000728,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 721,
+          "p95Ms": 13,
+          "p99Ms": 14,
+          "maxMs": 14,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 480,
+          "lastSequence": 482,
+          "lastCapturedAt": 1794132262242,
+          "lastDrawnAt": 1794132262242,
+          "maxTransportMs": 1,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": 120,
+        "embeddedFrameRatePolicy": null,
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 483,
+        "currentDocumentRafObservedFps": 66.33430843219587,
+        "fixtureOwnDrawnFrames": 483,
+        "osrPaintEvents": 486,
+        "hostReceivedFrames": 480
+      }
+    },
+    {
+      "group": "frames",
+      "file": "shared-github-home-pan.json",
+      "mode": "shared",
+      "site": "github-home",
+      "action": "pan",
+      "gesture": {
+        "activeMs": 5009.200000286102,
+        "inputs": 313,
+        "fps": 107.20274693949713,
+        "active": {
+          "frames": 537,
+          "p95Ms": 9.199999999999818,
+          "p99Ms": 16.59999999999991,
+          "maxMs": 241.60000000000014,
+          "over25ms": 4
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 8.599999999999454,
+          "p99Ms": 9.199999999999818,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 657,
+          "p95Ms": 53,
+          "p99Ms": 180,
+          "maxMs": 453,
+          "over25ms": 50
+        },
+        "receiver": {
+          "received": 710,
+          "lastSequence": 715,
+          "lastCapturedAt": 1794132271651,
+          "lastDrawnAt": 1794132271651,
+          "maxTransportMs": 52,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": 120,
+        "embeddedFrameRatePolicy": null,
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 565,
+        "currentDocumentRafObservedFps": 100.9559546144912,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 728,
+        "hostReceivedFrames": 710
+      }
+    },
+    {
+      "group": "frames",
+      "file": "shared-github-home-zoom.json",
+      "mode": "shared",
+      "site": "github-home",
+      "action": "zoom",
+      "gesture": {
+        "activeMs": 5008.599999904633,
+        "inputs": 313,
+        "fps": 107.41524577930838,
+        "active": {
+          "frames": 538,
+          "p95Ms": 9,
+          "p99Ms": 16.59999999999991,
+          "maxMs": 258.3000000000002,
+          "over25ms": 5
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 8.900000000000546,
+          "p99Ms": 9.200000000000728,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 658,
+          "p95Ms": 54,
+          "p99Ms": 188,
+          "maxMs": 480,
+          "over25ms": 52
+        },
+        "receiver": {
+          "received": 712,
+          "lastSequence": 715,
+          "lastCapturedAt": 1794132281085,
+          "lastDrawnAt": 1794132281085,
+          "maxTransportMs": 42,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": 120,
+        "embeddedFrameRatePolicy": null,
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 570,
+        "currentDocumentRafObservedFps": 101.45778822193905,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 728,
+        "hostReceivedFrames": 712
+      }
+    },
+    {
+      "group": "frames-gpu-repeat",
+      "file": "embedded-github-home-pan.json",
+      "mode": "embedded",
+      "site": "github-home",
+      "action": "pan",
+      "gesture": {
+        "activeMs": 5010,
+        "inputs": 313,
+        "fps": 98.20359281437126,
+        "active": {
+          "frames": 492,
+          "p95Ms": 10,
+          "p99Ms": 92.40000000000009,
+          "maxMs": 358.5,
+          "over25ms": 7
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 9.599999999999454,
+          "p99Ms": 10,
+          "maxMs": 10.199999999999818,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 0,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 0,
+          "lastSequence": 0,
+          "lastCapturedAt": null,
+          "lastDrawnAt": null,
+          "maxTransportMs": 0,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": null,
+        "embeddedFrameRatePolicy": "native browser cadence; no offscreen frame-rate cap",
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 539,
+        "currentDocumentRafObservedFps": 95.82733300844198,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 0,
+        "hostReceivedFrames": 0
+      }
+    },
+    {
+      "group": "frames-gpu-repeat",
+      "file": "embedded-github-home-zoom.json",
+      "mode": "embedded",
+      "site": "github-home",
+      "action": "zoom",
+      "gesture": {
+        "activeMs": 5009.900000095367,
+        "inputs": 313,
+        "fps": 92.21740952737689,
+        "active": {
+          "frames": 462,
+          "p95Ms": 10.200000000000045,
+          "p99Ms": 83.30000000000018,
+          "maxMs": 425,
+          "over25ms": 9
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 9.899999999999636,
+          "p99Ms": 10.099999999999454,
+          "maxMs": 10.100000000000364,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 0,
+          "over25ms": 0
+        },
+        "receiver": {
+          "received": 0,
+          "lastSequence": 0,
+          "lastCapturedAt": null,
+          "lastDrawnAt": null,
+          "maxTransportMs": 0,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": null,
+        "embeddedFrameRatePolicy": "native browser cadence; no offscreen frame-rate cap",
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 497,
+        "currentDocumentRafObservedFps": 89.24723458967415,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 0,
+        "hostReceivedFrames": 0
+      }
+    },
+    {
+      "group": "frames-gpu-repeat",
+      "file": "shared-github-home-pan.json",
+      "mode": "shared",
+      "site": "github-home",
+      "action": "pan",
+      "gesture": {
+        "activeMs": 5008.900000095367,
+        "inputs": 313,
+        "fps": 106.01129988418414,
+        "active": {
+          "frames": 531,
+          "p95Ms": 9.300000000000182,
+          "p99Ms": 10.399999999999636,
+          "maxMs": 250.70000000000005,
+          "over25ms": 4
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 9.100000000000364,
+          "p99Ms": 10.199999999999818,
+          "maxMs": 10.199999999999818,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 651,
+          "p95Ms": 42,
+          "p99Ms": 160,
+          "maxMs": 447,
+          "over25ms": 41
+        },
+        "receiver": {
+          "received": 715,
+          "lastSequence": 718,
+          "lastCapturedAt": 1794132898209,
+          "lastDrawnAt": 1794132898209,
+          "maxTransportMs": 5,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": 120,
+        "embeddedFrameRatePolicy": null,
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 571,
+        "currentDocumentRafObservedFps": 101.65930779609118,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 735,
+        "hostReceivedFrames": 715
+      }
+    },
+    {
+      "group": "frames-gpu-repeat",
+      "file": "shared-github-home-zoom.json",
+      "mode": "shared",
+      "site": "github-home",
+      "action": "zoom",
+      "gesture": {
+        "activeMs": 5009.400000095367,
+        "inputs": 313,
+        "fps": 106.79921746912102,
+        "active": {
+          "frames": 535,
+          "p95Ms": 9.900000000000091,
+          "p99Ms": 24.90000000000009,
+          "maxMs": 250.29999999999973,
+          "over25ms": 5
+        },
+        "recovery": {
+          "frames": 120,
+          "p95Ms": 9.299999999999272,
+          "p99Ms": 9.800000000000182,
+          "maxMs": 10.099999999999454,
+          "over25ms": 0
+        },
+        "frameAge": {
+          "frames": 655,
+          "p95Ms": 54,
+          "p99Ms": 204,
+          "maxMs": 500,
+          "over25ms": 55
+        },
+        "receiver": {
+          "received": 705,
+          "lastSequence": 710,
+          "lastCapturedAt": 1794132907776,
+          "lastDrawnAt": 1794132907776,
+          "maxTransportMs": 6,
+          "errors": []
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "sourceActivity": {
+        "requestedOffscreenFrameRate": 120,
+        "embeddedFrameRatePolicy": null,
+        "probe": "metadata-only rAF loop installed at dom-ready in both modes; no DOM mutation",
+        "currentDocumentRafCallbacks": 565,
+        "currentDocumentRafObservedFps": 105.47144803710009,
+        "fixtureOwnDrawnFrames": null,
+        "osrPaintEvents": 723,
+        "hostReceivedFrames": 705
+      }
+    }
+  ],
+  "gpuIsolation": [
+    {
+      "file": "isolation.json",
+      "mode": "embedded",
+      "site": "live",
+      "action": "pan",
+      "frameRate": 15,
+      "measured": {
+        "count": 602,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.099999999999909,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.400000000000091,
+        "over25ms": 0,
+        "fps": 120.17407274095487,
+        "elapsedMs": 5009.400000095367,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9.100000000000364,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.400000000000546,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 0,
+          "p50Ms": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "maxMs": null,
+          "over25ms": 0
+        },
+        "framesReceived": 0,
+        "changedFrames": 0,
+        "view": {
+          "frames": 0,
+          "changedFrames": 0,
+          "decodeErrors": 0,
+          "lastHash": null,
+          "lastCreatedWall": null,
+          "lastPresentedWall": null,
+          "lastSequence": 0,
+          "maxAgeOnInstallMs": 0
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 503.625,
+        "peakGpuWorkingSetMiB": 108.71875,
+        "meanElectronCPUPercent": 3.2882767431239373,
+        "meanGpuProcessCPUPercent": 1.3019799513915626,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 10.625,
+      "hostGpu": [
+        69963
+      ],
+      "producerGpu": [],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": null
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "embedded",
+      "site": "live",
+      "action": "zoom",
+      "frameRate": 15,
+      "measured": {
+        "count": 602,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.199999999999818,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.400000000000091,
+        "over25ms": 0,
+        "fps": 120.17887088216128,
+        "elapsedMs": 5009.199999809265,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9,
+          "p99Ms": 9.099999999999454,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 0,
+          "p50Ms": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "maxMs": null,
+          "over25ms": 0
+        },
+        "framesReceived": 0,
+        "changedFrames": 0,
+        "view": {
+          "frames": 0,
+          "changedFrames": 0,
+          "decodeErrors": 0,
+          "lastHash": null,
+          "lastCreatedWall": null,
+          "lastPresentedWall": null,
+          "lastSequence": 0,
+          "maxAgeOnInstallMs": 0
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 499.625,
+        "peakGpuWorkingSetMiB": 108.328125,
+        "meanElectronCPUPercent": 4.196971297342777,
+        "meanGpuProcessCPUPercent": 1.587875239344079,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 13.5,
+      "hostGpu": [
+        70371
+      ],
+      "producerGpu": [],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": null
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "embedded",
+      "site": "github-home",
+      "action": "pan",
+      "frameRate": 15,
+      "measured": {
+        "count": 494,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.099999999999909,
+        "p99Ms": 91.69999999999982,
+        "maxMs": 324.70000000000005,
+        "over25ms": 7,
+        "fps": 98.62444848921365,
+        "elapsedMs": 5008.89999961853,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 8.800000000000182,
+          "p99Ms": 9.100000000000364,
+          "maxMs": 9.199999999999818,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 0,
+          "p50Ms": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "maxMs": null,
+          "over25ms": 0
+        },
+        "framesReceived": 0,
+        "changedFrames": 0,
+        "view": {
+          "frames": 0,
+          "changedFrames": 0,
+          "decodeErrors": 0,
+          "lastHash": null,
+          "lastCreatedWall": null,
+          "lastPresentedWall": null,
+          "lastSequence": 0,
+          "maxAgeOnInstallMs": 0
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 794.140625,
+        "peakGpuWorkingSetMiB": 140.4375,
+        "meanElectronCPUPercent": 4.890212391862251,
+        "meanGpuProcessCPUPercent": 1.968012885698843,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 29.875,
+      "hostGpu": [
+        70742
+      ],
+      "producerGpu": [],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": null
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "embedded",
+      "site": "github-home",
+      "action": "zoom",
+      "frameRate": 15,
+      "measured": {
+        "count": 455,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.299999999999727,
+        "p99Ms": 91.60000000000036,
+        "maxMs": 391.70000000000005,
+        "over25ms": 11,
+        "fps": 90.83649431024156,
+        "elapsedMs": 5009,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 8.899999999999636,
+          "p99Ms": 9.200000000000728,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 0,
+          "p50Ms": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "maxMs": null,
+          "over25ms": 0
+        },
+        "framesReceived": 0,
+        "changedFrames": 0,
+        "view": {
+          "frames": 0,
+          "changedFrames": 0,
+          "decodeErrors": 0,
+          "lastHash": null,
+          "lastCreatedWall": null,
+          "lastPresentedWall": null,
+          "lastSequence": 0,
+          "maxAgeOnInstallMs": 0
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 807.59375,
+        "peakGpuWorkingSetMiB": 151.140625,
+        "meanElectronCPUPercent": 5.219520838782048,
+        "meanGpuProcessCPUPercent": 2.1316430881051818,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 31.625,
+      "hostGpu": [
+        71154
+      ],
+      "producerGpu": [],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": null
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "same-process",
+      "site": "live",
+      "action": "pan",
+      "frameRate": 15,
+      "measured": {
+        "count": 601,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.100000000000364,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.400000000000091,
+        "over25ms": 0,
+        "fps": 119.98881968422158,
+        "elapsedMs": 5008.799999713898,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9.100000000000364,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 721,
+          "p50Ms": 39,
+          "p95Ms": 66,
+          "p99Ms": 67,
+          "maxMs": 100,
+          "over25ms": 460
+        },
+        "framesReceived": 90,
+        "changedFrames": 90,
+        "view": {
+          "frames": 102,
+          "changedFrames": 102,
+          "decodeErrors": 0,
+          "lastHash": "2f2f7d6ecdf71573b158d1c2cff596dba72287bb83926ab14fb12036273e9e44",
+          "lastCreatedWall": 1794132455898,
+          "lastPresentedWall": 1794132455902,
+          "lastSequence": 102,
+          "maxAgeOnInstallMs": 5
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 586.484375,
+        "peakGpuWorkingSetMiB": 126.171875,
+        "meanElectronCPUPercent": 3.4477083074563946,
+        "meanGpuProcessCPUPercent": 0.8587550814593083,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 19.25,
+      "hostGpu": [
+        71603
+      ],
+      "producerGpu": [
+        71603
+      ],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": 71584
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "same-process",
+      "site": "live",
+      "action": "zoom",
+      "frameRate": 15,
+      "measured": {
+        "count": 601,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.100000000000136,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.400000000000091,
+        "over25ms": 0,
+        "fps": 119.96726350194164,
+        "elapsedMs": 5009.700000286102,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 121,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9.100000000000364,
+          "p99Ms": 9.200000000000728,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 722,
+          "p50Ms": 38,
+          "p95Ms": 66,
+          "p99Ms": 67,
+          "maxMs": 97,
+          "over25ms": 454
+        },
+        "framesReceived": 90,
+        "changedFrames": 90,
+        "view": {
+          "frames": 102,
+          "changedFrames": 102,
+          "decodeErrors": 0,
+          "lastHash": "2f2f7d6ecdf71573b158d1c2cff596dba72287bb83926ab14fb12036273e9e44",
+          "lastCreatedWall": 1794132465033,
+          "lastPresentedWall": 1794132465036,
+          "lastSequence": 102,
+          "maxAgeOnInstallMs": 5
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 594.953125,
+        "peakGpuWorkingSetMiB": 128.40625,
+        "meanElectronCPUPercent": 2.5401164490710033,
+        "meanGpuProcessCPUPercent": 0.9503856924114036,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 15.25,
+      "hostGpu": [
+        72041
+      ],
+      "producerGpu": [
+        72041
+      ],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": 72015
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "same-process",
+      "site": "github-home",
+      "action": "pan",
+      "frameRate": 15,
+      "measured": {
+        "count": 557,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.100000000000364,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 208.4000000000001,
+        "over25ms": 3,
+        "fps": 111.19984028748253,
+        "elapsedMs": 5009,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 121,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 678,
+          "p50Ms": 39,
+          "p95Ms": 138,
+          "p99Ms": 347,
+          "maxMs": 597,
+          "over25ms": 449
+        },
+        "framesReceived": 83,
+        "changedFrames": 82,
+        "view": {
+          "frames": 96,
+          "changedFrames": 95,
+          "decodeErrors": 0,
+          "lastHash": "7b4ba624846d30fe3411e914be421d123d88b68daf6e221d65d7cf5887a9385f",
+          "lastCreatedWall": 1794132474068,
+          "lastPresentedWall": 1794132474072,
+          "lastSequence": 96,
+          "maxAgeOnInstallMs": 5
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 853.03125,
+        "peakGpuWorkingSetMiB": 148.25,
+        "meanElectronCPUPercent": 7.4832505200673385,
+        "meanGpuProcessCPUPercent": 0.16526259449808692,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 17.375,
+      "hostGpu": [
+        72489
+      ],
+      "producerGpu": [
+        72489
+      ],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": 72445
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "same-process",
+      "site": "github-home",
+      "action": "zoom",
+      "frameRate": 15,
+      "measured": {
+        "count": 553,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 241.70000000000005,
+        "over25ms": 4,
+        "fps": 110.38585145239324,
+        "elapsedMs": 5009.699999809265,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 8.800000000000182,
+          "p99Ms": 9.199999999999818,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 673,
+          "p50Ms": 37,
+          "p95Ms": 97,
+          "p99Ms": 264,
+          "maxMs": 549,
+          "over25ms": 469
+        },
+        "framesReceived": 85,
+        "changedFrames": 84,
+        "view": {
+          "frames": 97,
+          "changedFrames": 96,
+          "decodeErrors": 0,
+          "lastHash": "216a6f87a0b2f93869582b4fc14cfe0950534f2e8a5980bf3dd7beb7c79548c0",
+          "lastCreatedWall": 1794132483468,
+          "lastPresentedWall": 1794132483473,
+          "lastSequence": 97,
+          "maxAgeOnInstallMs": 5
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 853.75,
+        "peakGpuWorkingSetMiB": 144.109375,
+        "meanElectronCPUPercent": 2.991467055761345,
+        "meanGpuProcessCPUPercent": 0.7923496276238082,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 16.25,
+      "hostGpu": [
+        72907
+      ],
+      "producerGpu": [
+        72907
+      ],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": 72874
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "isolated",
+      "site": "live",
+      "action": "pan",
+      "frameRate": 15,
+      "measured": {
+        "count": 602,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.100000000000364,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.399999999999636,
+        "over25ms": 0,
+        "fps": 120.18127009072715,
+        "elapsedMs": 5009.099999904633,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9,
+          "p99Ms": 9.100000000000364,
+          "maxMs": 9.200000000000728,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 722,
+          "p50Ms": 36,
+          "p95Ms": 69,
+          "p99Ms": 70,
+          "maxMs": 95,
+          "over25ms": 492
+        },
+        "framesReceived": 89,
+        "changedFrames": 89,
+        "view": {
+          "frames": 102,
+          "changedFrames": 102,
+          "decodeErrors": 0,
+          "lastHash": "b754636a9be53e9db49facb040caf214a109bbfa95b737f5ffeaf34ae91b3303",
+          "lastCreatedWall": 1794132494366,
+          "lastPresentedWall": 1794132494371,
+          "lastSequence": 102,
+          "maxAgeOnInstallMs": 5
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 870.890625,
+        "peakGpuWorkingSetMiB": 203.34375,
+        "meanElectronCPUPercent": 3.311010087583501,
+        "meanGpuProcessCPUPercent": 1.2371715110066452,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 19.375,
+      "hostGpu": [
+        73377
+      ],
+      "producerGpu": [
+        73407
+      ],
+      "shutdown": {
+        "workerExited": true,
+        "workerPid": 73381
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "isolated",
+      "site": "live",
+      "action": "zoom",
+      "frameRate": 15,
+      "measured": {
+        "count": 601,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.199999999999818,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.400000000000546,
+        "over25ms": 0,
+        "fps": 119.98642416270184,
+        "elapsedMs": 5008.900000095367,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 8.800000000001091,
+          "p99Ms": 9.200000000000728,
+          "maxMs": 9.300000000001091,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 721,
+          "p50Ms": 36,
+          "p95Ms": 69,
+          "p99Ms": 71,
+          "maxMs": 95,
+          "over25ms": 495
+        },
+        "framesReceived": 89,
+        "changedFrames": 89,
+        "view": {
+          "frames": 102,
+          "changedFrames": 102,
+          "decodeErrors": 0,
+          "lastHash": "2f2f7d6ecdf71573b158d1c2cff596dba72287bb83926ab14fb12036273e9e44",
+          "lastCreatedWall": 1794132505165,
+          "lastPresentedWall": 1794132505169,
+          "lastSequence": 102,
+          "maxAgeOnInstallMs": 6
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 869.203125,
+        "peakGpuWorkingSetMiB": 204.09375,
+        "meanElectronCPUPercent": 3.484566127461559,
+        "meanGpuProcessCPUPercent": 1.2744928283454675,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 17.125,
+      "hostGpu": [
+        73848
+      ],
+      "producerGpu": [
+        73864
+      ],
+      "shutdown": {
+        "workerExited": true,
+        "workerPid": 73861
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "isolated",
+      "site": "github-home",
+      "action": "pan",
+      "frameRate": 15,
+      "measured": {
+        "count": 601,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.400000000000091,
+        "over25ms": 0,
+        "fps": 120.00079866963074,
+        "elapsedMs": 5008.300000190735,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 8.800000000000182,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.300000000001091,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 721,
+          "p50Ms": 43,
+          "p95Ms": 211,
+          "p99Ms": 453,
+          "maxMs": 511,
+          "over25ms": 526
+        },
+        "framesReceived": 84,
+        "changedFrames": 82,
+        "view": {
+          "frames": 97,
+          "changedFrames": 95,
+          "decodeErrors": 0,
+          "lastHash": "990f2ed0e7770b724aac86ce9de29c77e2749019b29240ba6a0da03639c65f4b",
+          "lastCreatedWall": 1794132516000,
+          "lastPresentedWall": 1794132516005,
+          "lastSequence": 97,
+          "maxAgeOnInstallMs": 5
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 1084.984375,
+        "peakGpuWorkingSetMiB": 227.546875,
+        "meanElectronCPUPercent": 3.228931429689564,
+        "meanGpuProcessCPUPercent": 0.8470426398963492,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 18.625,
+      "hostGpu": [
+        74314
+      ],
+      "producerGpu": [
+        74319
+      ],
+      "shutdown": {
+        "workerExited": true,
+        "workerPid": 74318
+      }
+    },
+    {
+      "file": "isolation.json",
+      "mode": "isolated",
+      "site": "github-home",
+      "action": "zoom",
+      "frameRate": 15,
+      "measured": {
+        "count": 601,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 8.899999999999636,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.400000000000091,
+        "over25ms": 0,
+        "fps": 119.97684306731803,
+        "elapsedMs": 5009.300000190735,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 121,
+          "p50Ms": 8.300000000001091,
+          "p95Ms": 9.100000000000364,
+          "p99Ms": 9.299999999999272,
+          "maxMs": 9.299999999999272,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 722,
+          "p50Ms": 39,
+          "p95Ms": 265,
+          "p99Ms": 507,
+          "maxMs": 566,
+          "over25ms": 484
+        },
+        "framesReceived": 84,
+        "changedFrames": 83,
+        "view": {
+          "frames": 97,
+          "changedFrames": 96,
+          "decodeErrors": 0,
+          "lastHash": "c35d7c34db9a5776a8827d9c40f4e269c0122776fc6ab063517b3838cee416d0",
+          "lastCreatedWall": 1794132527134,
+          "lastPresentedWall": 1794132527138,
+          "lastSequence": 97,
+          "maxAgeOnInstallMs": 5
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 1077.421875,
+        "peakGpuWorkingSetMiB": 227.265625,
+        "meanElectronCPUPercent": 2.9211266872860295,
+        "meanGpuProcessCPUPercent": 0.8205576104081376,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 16.375,
+      "hostGpu": [
+        74768
+      ],
+      "producerGpu": [
+        74806
+      ],
+      "shutdown": {
+        "workerExited": true,
+        "workerPid": 74781
+      }
+    },
+    {
+      "file": "isolation-60.json",
+      "mode": "same-process",
+      "site": "github-home",
+      "action": "pan",
+      "frameRate": 60,
+      "measured": {
+        "count": 544,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.100000000000364,
+        "p99Ms": 16.600000000000364,
+        "maxMs": 191.5999999999999,
+        "over25ms": 4,
+        "fps": 108.593672023156,
+        "elapsedMs": 5009.5,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9.199999999999818,
+          "p99Ms": 9.300000000000182,
+          "maxMs": 9.300000000000182,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 664,
+          "p50Ms": 14,
+          "p95Ms": 50,
+          "p99Ms": 206,
+          "maxMs": 423,
+          "over25ms": 51
+        },
+        "framesReceived": 312,
+        "changedFrames": 311,
+        "view": {
+          "frames": 347,
+          "changedFrames": 346,
+          "decodeErrors": 0,
+          "lastHash": "6ab5b9e386e2e2295b4224b89e5428afe64cb033cb2b6889a7bd3fc49b5c6ff8",
+          "lastCreatedWall": 1794132592883,
+          "lastPresentedWall": 1794132592885,
+          "lastSequence": 349,
+          "maxAgeOnInstallMs": 3
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 895.375,
+        "peakGpuWorkingSetMiB": 157.859375,
+        "meanElectronCPUPercent": 5.069213248748746,
+        "meanGpuProcessCPUPercent": 1.2385979494161738,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 23.375,
+      "hostGpu": [
+        76735
+      ],
+      "producerGpu": [
+        76735
+      ],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": 76621
+      }
+    },
+    {
+      "file": "isolation-60.json",
+      "mode": "same-process",
+      "site": "github-home",
+      "action": "zoom",
+      "frameRate": 60,
+      "measured": {
+        "count": 536,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.200000000000045,
+        "p99Ms": 16,
+        "maxMs": 216.5999999999999,
+        "over25ms": 5,
+        "fps": 106.99457042682127,
+        "elapsedMs": 5009.599999904633,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9.300000000000182,
+          "p99Ms": 9.399999999999636,
+          "maxMs": 9.399999999999636,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 656,
+          "p50Ms": 14,
+          "p95Ms": 122,
+          "p99Ms": 315,
+          "maxMs": 573,
+          "over25ms": 62
+        },
+        "framesReceived": 303,
+        "changedFrames": 301,
+        "view": {
+          "frames": 339,
+          "changedFrames": 337,
+          "decodeErrors": 0,
+          "lastHash": "c0d3f3abd68cface2a24802d29242a357f5a15ef3a3d81b6039d22db09878600",
+          "lastCreatedWall": 1794132602151,
+          "lastPresentedWall": 1794132602153,
+          "lastSequence": 339,
+          "maxAgeOnInstallMs": 3
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 889.171875,
+        "peakGpuWorkingSetMiB": 153.34375,
+        "meanElectronCPUPercent": 5.025301606283752,
+        "meanGpuProcessCPUPercent": 1.2071977304130836,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 21.625,
+      "hostGpu": [
+        77165
+      ],
+      "producerGpu": [
+        77165
+      ],
+      "shutdown": {
+        "workerExited": false,
+        "workerPid": 77138
+      }
+    },
+    {
+      "file": "isolation-60.json",
+      "mode": "isolated",
+      "site": "github-home",
+      "action": "pan",
+      "frameRate": 60,
+      "measured": {
+        "count": 601,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9.199999999999818,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.399999999999636,
+        "over25ms": 0,
+        "fps": 119.99600678845962,
+        "elapsedMs": 5008.5,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 120,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9.100000000000364,
+          "p99Ms": 9.300000000001091,
+          "maxMs": 9.399999999999636,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 721,
+          "p50Ms": 14,
+          "p95Ms": 258,
+          "p99Ms": 500,
+          "maxMs": 557,
+          "over25ms": 115
+        },
+        "framesReceived": 310,
+        "changedFrames": 309,
+        "view": {
+          "frames": 354,
+          "changedFrames": 353,
+          "decodeErrors": 0,
+          "lastHash": "7dffabeedd7069b4567e3e8f453a69bd0dccf33731924010a06092549ad5ac03",
+          "lastCreatedWall": 1794132613118,
+          "lastPresentedWall": 1794132613120,
+          "lastSequence": 355,
+          "maxAgeOnInstallMs": 11
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 1094,
+        "peakGpuWorkingSetMiB": 238.484375,
+        "meanElectronCPUPercent": 5.665234409936687,
+        "meanGpuProcessCPUPercent": 1.516244834402046,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 26.5,
+      "hostGpu": [
+        77627
+      ],
+      "producerGpu": [
+        77674
+      ],
+      "shutdown": {
+        "workerExited": true,
+        "workerPid": 77639
+      }
+    },
+    {
+      "file": "isolation-60.json",
+      "mode": "isolated",
+      "site": "github-home",
+      "action": "zoom",
+      "frameRate": 60,
+      "measured": {
+        "count": 602,
+        "p50Ms": 8.300000000000182,
+        "p95Ms": 9,
+        "p99Ms": 9.300000000000182,
+        "maxMs": 9.399999999999636,
+        "over25ms": 0,
+        "fps": 120.18606879525208,
+        "elapsedMs": 5008.900000095367,
+        "inputs": 313,
+        "inputCadenceMs": 16,
+        "recovery": {
+          "count": 121,
+          "p50Ms": 8.300000000000182,
+          "p95Ms": 9.300000000000182,
+          "p99Ms": 9.399999999999636,
+          "maxMs": 9.399999999999636,
+          "over25ms": 0
+        },
+        "paintToConsumptionAge": {
+          "count": 723,
+          "p50Ms": 11,
+          "p95Ms": 178,
+          "p99Ms": 420,
+          "maxMs": 478,
+          "over25ms": 108
+        },
+        "framesReceived": 313,
+        "changedFrames": 312,
+        "view": {
+          "frames": 357,
+          "changedFrames": 356,
+          "decodeErrors": 0,
+          "lastHash": "87e0b4a3762708745ea9f95bac1d4ce70e88225c71b83f41e48c519d139d6c99",
+          "lastCreatedWall": 1794132624285,
+          "lastPresentedWall": 1794132624287,
+          "lastSequence": 359,
+          "maxAgeOnInstallMs": 14
+        },
+        "dpr": 2,
+        "innerWidth": 1400,
+        "innerHeight": 824
+      },
+      "resources": {
+        "peakWorkingSetMiB": 1091.53125,
+        "peakGpuWorkingSetMiB": 240.40625,
+        "meanElectronCPUPercent": 5.6426590802193255,
+        "meanGpuProcessCPUPercent": 1.4569520796036588,
+        "allSamplesFocused": true
+      },
+      "machineGpuUtilPct": 23.75,
+      "hostGpu": [
+        78182
+      ],
+      "producerGpu": [
+        78242
+      ],
+      "shutdown": {
+        "workerExited": true,
+        "workerPid": 78216
+      }
+    }
+  ],
+  "validTrialCount": 106,
+  "rawResults": "/Users/anton/Dev/cate/output/canvas-architecture/canvas-arch-1794079816/foreground-resumed",
+  "limitations": [
+    "rAF intervals are not presentation latency",
+    "summed working sets double-count shared pages",
+    "hardware GPU utilization is whole-machine",
+    "repository page failed content validation and is excluded",
+    "synthetic input does not test physical activation latency",
+    "backend prototypes lack production browser integration"
+  ]
+}

@@ -116,11 +116,62 @@ export class BrowserPageHost {
   /** JavaScript dialogs the pages of this panel wait on, by tab. */
   private readonly dialogs = new Map<string, BrowserDialog & { id: string; webContentsId: number }>()
   private readonly unsubscribeDialogs: () => void
-  visible = false
+  private readonly automated = new Set<string>()
+  private readonly discarded = new Set<string>()
+  private readonly inactiveAt = new Map<string, number>()
+  private readonly lifetimeTimer: ReturnType<typeof setInterval>
+  private checkingLifetime = false
+  private shownVisible = false
+  get visible(): boolean { return this.shownVisible }
+  set visible(value: boolean) {
+    this.shownVisible = value
+    if (value && this.shownTabId) this.restore(this.shownTabId)
+    this.noteVisibility()
+  }
+  isDiscarded(tabId: string): boolean { return this.discarded.has(tabId) }
+
+  private restore(tabId: string): void {
+    this.inactiveAt.delete(tabId)
+    if (this.discarded.delete(tabId)) this.changed()
+  }
+
+  private noteVisibility(): void {
+    for (const id of this.pages.keys()) {
+      if (this.visible && id === this.shownTabId) this.inactiveAt.delete(id)
+      else if (!this.inactiveAt.has(id)) this.inactiveAt.set(id, Date.now())
+    }
+  }
+
+  private protect(tabId: string): void {
+    this.automated.add(tabId)
+    this.restore(tabId)
+    const page = this.pages.get(tabId)
+    if (page?.ready) {
+      try { void this.deps.bridge?.protectPage(page.webview.getWebContentsId()).catch(() => {}) } catch { /* guest is being replaced */ }
+    }
+  }
+
+  private async discardInactive(): Promise<void> {
+    const bridge = this.deps.bridge
+    if (!bridge || this.checkingLifetime || this.disposed) return
+    this.checkingLifetime = true
+    this.noteVisibility()
+    try {
+      for (const [id, page] of this.pages) {
+        if (!page.ready || this.automated.has(id) || this.tab(id)?.pinned || Date.now() - (this.inactiveAt.get(id) ?? Date.now()) < 10 * 60_000) continue
+        let eligible: boolean
+        try { eligible = await bridge.preparePageDiscard(page.webview.getWebContentsId()) } catch { continue }
+        if (!eligible || !this.tab(id) || this.disposed || this.pages.get(id) !== page || this.automated.has(id) || (this.visible && this.shownTabId === id) || this.tab(id)?.pinned) continue
+        this.discarded.add(id)
+        this.changed()
+      }
+    } finally { this.checkingLifetime = false }
+  }
   local: LocalPageState = { url: '', canGoBack: false, canGoForward: false, isLoading: false, loadError: null, crashed: false }
   autofill: BrowserAutofill | null = null
 
   constructor(private readonly deps: PageHostDeps) {
+    this.lifetimeTimer = setInterval(() => { void this.discardInactive() }, 30_000)
     this.unsubscribeDialogs = deps.bridge?.onDialog((event) => this.dialogChanged(event)) ?? (() => {})
   }
 
@@ -147,8 +198,10 @@ export class BrowserPageHost {
 
   /** The view tells which tab this client shows. */
   show(tabId: string): void {
+    this.restore(tabId)
     if (tabId === this.shown) return
     this.shown = tabId
+    this.noteVisibility()
     this.dismissAutofill()
     this.refreshLocal()
   }
@@ -166,6 +219,13 @@ export class BrowserPageHost {
 
   update(snapshot: BrowserSnapshot): void {
     this.snapshot = snapshot
+    const ids = new Set(snapshot.tabs.map(tab => tab.id))
+    for (const id of this.automated) if (!ids.has(id)) this.automated.delete(id)
+    for (const id of this.discarded) if (!ids.has(id)) this.discarded.delete(id)
+    for (const id of this.inactiveAt.keys()) if (!ids.has(id)) this.inactiveAt.delete(id)
+    for (const tab of snapshot.tabs) {
+      if (tab.openedBy && ('caller' in tab.openedBy || ('page' in tab.openedBy && this.automated.has(tab.openedBy.page)))) this.protect(tab.id)
+    }
     for (const { tabId, url } of this.follower.toFollow(snapshot)) {
       const page = this.pages.get(tabId)
       let current = ''
@@ -234,6 +294,7 @@ export class BrowserPageHost {
         try { webview.getWebContentsId() } catch { return }
         const first = !page.ready
         page.ready = true
+        if (this.automated.has(tabId)) void this.deps.bridge?.protectPage(webview.getWebContentsId()).catch(() => {})
         try { webview.setZoomFactor(this.zoom) } catch { /* detached */ }
         const css = this.deps.guestCss?.()
         if (css) void webview.insertCSS(css).catch(() => { /* guest gone */ })
@@ -392,6 +453,7 @@ export class BrowserPageHost {
   /** Shows the session's active tab `tabId` on this client for a page
    *  operation, then returns its page. */
   private async drive(tabId: string): Promise<Page> {
+    this.protect(tabId)
     if (tabId !== this.snapshot?.activeTabId) throw new Error('browser-tab-changed')
     if (this.shownTabId !== tabId) {
       this.deps.reveal?.(tabId)
@@ -400,6 +462,7 @@ export class BrowserPageHost {
       await frame()
       await frame()
     }
+    await this.waitFor(() => this.pages.get(tabId), 8_000)
     return this.requireActive(tabId)
   }
 
@@ -429,6 +492,7 @@ export class BrowserPageHost {
 
   async ready(args: BrowserSurfaceArgs<'page.ready'>): Promise<BrowserSurfaceResult<'page.ready'>> {
     const { tabId, nav } = args
+    this.protect(tabId)
     // A tab's page mounts once this client shows it.
     if (!this.pages.has(tabId) && tabId === this.snapshot?.activeTabId) this.deps.reveal?.(tabId)
     const settled = await this.waitFor(() => {
@@ -593,6 +657,7 @@ export class BrowserPageHost {
 
   dispose(): void {
     this.disposed = true
+    clearInterval(this.lifetimeTimer)
     this.unsubscribeDialogs()
     for (const page of this.pages.values()) page.detach()
     this.pages.clear()

@@ -81,15 +81,12 @@ async function refusal(promise: Promise<unknown>): Promise<string> {
 }
 
 describe('agent start', () => {
-  it.each(['agent-cli-not-installed', 'agent-cli-signed-out'])('refuses %s before creating a worktree or spawning/relaunching a terminal', async (message) => {
-    const ensureReady = vi.fn(async () => { throw new Error(message) })
-    const guarded = createAgentStarter(agents, ports as unknown as AgentStartPorts, { ensureReady })
-    await expect(guarded.start(undefined, { agentId: 'codex', newWorktree: 'fix' })).rejects.toThrow(message)
-    await expect(guarded.start(undefined, { agentId: 'codex', terminalPanelId: 'idle' })).rejects.toThrow(message)
-    expect(ensureReady).toHaveBeenCalledWith('codex')
-    expect(ports.worktrees.create).not.toHaveBeenCalled()
-    expect(ports.terminals.create).not.toHaveBeenCalled()
-    expect(ports.terminals.relaunch).not.toHaveBeenCalled()
+  it('launches the selected CLI without waiting for account or installation inspection', async () => {
+    const types = vi.fn(() => new Promise<never>(() => {}))
+    const direct = createAgentStarter(agents, ports as unknown as AgentStartPorts, { types })
+    await expect(direct.start(undefined, { agentId: 'codex' })).resolves.toEqual({ panelId: 'new-terminal', agentId: 'codex' })
+    expect(types).not.toHaveBeenCalled()
+    expect(ports.terminals.create).toHaveBeenCalledOnce()
   })
   it('runs a hook-ready CLI in a terminal next to the caller, in its checkout', async () => {
     await expect(starter().start('supervisor', { prompt: '  Fix the login  ' })).resolves.toEqual({ panelId: 'new-terminal', agentId: 'codex' })
@@ -121,6 +118,8 @@ describe('agent start', () => {
     const agentStarter = starter()
     ports.terminals.state.mockReturnValue({ alive: true, busy: true })
     await agentStarter.start('supervisor', { prompt: 'Fix it' })
+    expect(agentStarter.starting()).toEqual([{ panelId: 'new-terminal', agentId: 'codex' }])
+    ports.terminals.state.mockReturnValue({ alive: false, busy: false, starting: true })
     expect(agentStarter.starting()).toEqual([{ panelId: 'new-terminal', agentId: 'codex' }])
     ports.terminals.state.mockReturnValue({ alive: false, busy: false })
     expect(agentStarter.starting()).toEqual([])
@@ -169,7 +168,7 @@ describe('agent start', () => {
 
 it('serves the authoritative setup types to RPC and CLI callers without a separate hook inspection', async () => {
   const types = vi.fn(async () => [{ agentId: 'codex' as const, displayName: 'Codex', ready: true, connection: 'native' as const }])
-  const authoritative = createAgentStarter(agents, ports as unknown as AgentStartPorts, { ensureReady: vi.fn(), types })
+  const authoritative = createAgentStarter(agents, ports as unknown as AgentStartPorts, { types })
   expect(await authoritative.types()).toEqual(await types())
   types.mockResolvedValue([{ agentId: 'codex', displayName: 'Codex', ready: false, connection: 'native' }])
   expect(await authoritative.types()).toMatchObject([{ agentId: 'codex', ready: false }])

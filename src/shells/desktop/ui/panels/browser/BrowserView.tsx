@@ -607,7 +607,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
 
           {/* Guests share the view's transform, so the page and the agent
               overlay always use the same coordinates. */}
-          {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) ? null : (
+          {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) || host.isDiscarded(tab.id) ? null : (
             <WebviewSlot
               key={`${panelId}:${partition}:${tab.id}`}
               tabId={tab.id}

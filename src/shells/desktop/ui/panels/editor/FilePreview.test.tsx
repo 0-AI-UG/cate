@@ -9,6 +9,8 @@ vi.hoisted(() => {
 const m = vi.hoisted(() => ({
   getDocument: vi.fn(),
   readBinary: vi.fn(),
+  objectUrl: vi.fn(() => 'blob:preview'),
+  revokeUrl: vi.fn(),
   watch: vi.fn((..._args: unknown[]) => () => {}),
 }))
 vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: { workerSrc: '' }, getDocument: m.getDocument }))
@@ -28,6 +30,7 @@ const show = (filePath: string) => act(async () => root.render(<FilePreview work
 beforeEach(() => {
   ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
   vi.clearAllMocks()
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: m.objectUrl, revokeObjectURL: m.revokeUrl }))
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -36,6 +39,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   host.remove()
+  vi.unstubAllGlobals()
 })
 
 describe('FilePreview', () => {
@@ -46,7 +50,7 @@ describe('FilePreview', () => {
     expect(m.readBinary).toHaveBeenCalledWith('/workspace/photo.pdf', 'ws-1')
     const image = host.querySelector('img')
     expect(image?.alt).toBe('photo.pdf')
-    expect(image?.getAttribute('src')).toBe('data:image/png;base64,iVBORw==')
+    expect(image?.getAttribute('src')).toBe('blob:preview')
     expect(m.getDocument).not.toHaveBeenCalled()
   })
 
@@ -64,7 +68,8 @@ describe('FilePreview', () => {
     })
     await flush()
     expect(m.readBinary).toHaveBeenCalledTimes(2)
-    expect(host.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,iVBORwE=')
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:preview')
+    expect(m.revokeUrl).toHaveBeenCalledWith('blob:preview')
   })
 
   it('shows a failed read', async () => {
@@ -93,6 +98,7 @@ describe('FilePreview', () => {
     m.getDocument.mockReturnValue({ promise: new Promise(() => {}), destroy })
     m.readBinary.mockResolvedValue(Uint8Array.from([0x25, 0x50, 0x44, 0x46]))
     await show('/workspace/report.pdf')
+    await act(async () => { await vi.dynamicImportSettled() })
     await flush()
     expect(m.getDocument).toHaveBeenCalledTimes(1)
     act(() => root.unmount())

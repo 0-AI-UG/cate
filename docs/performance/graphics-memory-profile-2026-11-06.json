@@ -1,0 +1,2367 @@
+{
+  "date": "2026-11-06",
+  "metric": "macOS vmmap physical footprint; single sequential sample per stage",
+  "runs": [
+    {
+      "mode": "default",
+      "samples": [
+        {
+          "scenario": "empty-canvas",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "79.0M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    34.5M    25.2M       0K       0K       0K       0K      585 ",
+                "Memory Tag 255                     1.4T    41.8M    41.8M       0K       0K       0K       0K      239 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   647.6M    79.1M       0K       0K     320K       0K     7035 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2221       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "219.5M",
+              "regions": [
+                "IOAccelerator                      112K     112K     112K       0K       0K       0K       0K        3 ",
+                "IOAccelerator (graphics)          15.7M    1936K    1936K       0K       0K    1936K       0K      141 ",
+                "IOSurface                        177.2M   177.0M   177.0M       0K       0K   177.0M       0K       53 ",
+                "Memory Tag 253                    48.0G    25.4M    15.7M       0K       0K       0K       0K      427 ",
+                "TOTAL                             51.0G   730.8M   219.5M      16K       0K   178.9M       0K     6410 ",
+                "TOTAL                                       16.5M       992K       992K         0K       1842       255K       737K     75%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7537K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6000K    3120K       0K       0K       0K       0K      139 ",
+                "TOTAL                             50.6G   504.9M    7553K       0K       0K      16K       0K     5836 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "51.8M",
+              "regions": [
+                "Memory Tag 253                    48.0G    35.3M    29.4M       0K       0K       0K       0K      541 ",
+                "Memory Tag 255                     1.4T    16.9M    16.9M       0K       0K       0K       0K      144 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   601.1M    51.9M       0K       0K      16K       0K     6425 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "five-terminals-visible",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "84.8M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    36.0M    27.7M       0K       0K       0K       0K      614 ",
+                "Memory Tag 255                     1.4T    46.4M    44.9M       0K       0K       0K       0K      288 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   661.2M    84.8M       0K       0K     320K       0K     7146 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2294       199K      1145K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "556.7M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          60.2M    25.2M    25.2M       0K       0K    25.2M       0K      511 ",
+                "IOSurface                        353.6M   353.3M   353.3M       0K       0K   353.3M       0K      120 ",
+                "Memory Tag 253                    48.0G    36.9M    25.3M       0K       0K       0K       0K      600 ",
+                "TOTAL                             51.3G   952.7M   556.7M      16K       0K   378.6M       0K     7051 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       2059       278K       730K     73%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7521K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6000K    3120K       0K       0K       0K       0K      139 ",
+                "TOTAL                             50.6G   511.6M    7537K       0K       0K      16K       0K     5834 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "115.7M",
+              "regions": [
+                "IOSurface                           96K       0K       0K       0K       0K       0K       0K        6 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    56.8M    49.0M       0K       0K       0K       0K      855 ",
+                "Memory Tag 255                     1.4T    62.0M    59.0M       0K       0K       0K       0K      673 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   683.0M   115.7M       0K       0K      16K       0K     7312 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 5,
+            "terminalCanvases": 10,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "terminals-offscreen",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "84.9M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    36.1M    27.7M       0K       0K       0K       0K      617 ",
+                "Memory Tag 255                     1.4T    46.4M    45.0M       0K       0K       0K       0K      288 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   657.5M    85.0M       0K       0K     320K      32K     7148 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "333.2M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          55.9M    11.9M    11.9M       0K       0K    11.9M       0K      503 ",
+                "IOSurface                        260.5M   260.2M   260.2M       0K       0K   260.2M       0K       81 ",
+                "Memory Tag 253                    48.0G    36.9M    25.3M       0K       0K       0K       0K      600 ",
+                "TOTAL                             51.1G   842.9M   333.2M      16K       0K   272.2M       0K     6995 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       1838       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7521K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6000K    3120K       0K       0K       0K       0K      139 ",
+                "TOTAL                             50.6G   508.4M    7537K       0K       0K      16K       0K     5834 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "116.5M",
+              "regions": [
+                "IOSurface                           96K       0K       0K       0K       0K       0K       0K        6 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    57.4M    49.6M       0K       0K       0K       0K      867 ",
+                "Memory Tag 255                     1.4T    62.2M    59.2M       0K       0K       0K       0K      674 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   683.9M   116.5M       0K       0K      16K       0K     7322 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "terminals-closed",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "84.9M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    36.1M    27.7M       0K       0K       0K       0K      617 ",
+                "Memory Tag 255                     1.4T    46.4M    45.0M       0K       0K       0K       0K      288 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   657.5M    85.0M       0K       0K     320K      32K     7146 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "298.7M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          56.6M    12.1M    12.1M       0K       0K    12.1M       0K      513 ",
+                "IOSurface                        230.9M   230.6M   230.6M       0K       0K   230.6M       0K       70 ",
+                "Memory Tag 253                    48.0G    37.0M    25.3M       0K       0K       0K       0K      601 ",
+                "TOTAL                             51.1G   813.5M   298.7M      16K       0K   242.7M       0K     6995 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       1839       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7521K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6000K    3120K       0K       0K       0K       0K      139 ",
+                "TOTAL                             50.6G   508.4M    7537K       0K       0K      16K       0K     5834 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "121.6M",
+              "regions": [
+                "IOSurface                           96K       0K       0K       0K       0K       0K       0K        6 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    58.0M    51.3M       0K       0K       0K       0K      881 ",
+                "Memory Tag 255                     1.4T    65.6M    62.7M       0K       0K       0K       0K      693 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   688.0M   121.6M       0K       0K      16K       0K     7355 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "three-browsers-visible",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "87.1M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    25.1M    25.0M    3920K       0K       0K       0K      657 ",
+                "Memory Tag 255                     1.4T    35.1M    33.7M    11.4M       0K       0K       0K      290 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   634.5M    68.7M    18.5M       0K     320K      32K     7221 ",
+                "TOTAL                                       17.5M      1152K      1152K       192K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "655.6M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          67.8M    3904K    3904K       0K       0K    3904K       0K      612 ",
+                "IOSurface                        553.8M   553.4M   553.4M       0K       0K   553.4M       0K      185 ",
+                "Memory Tag 253                    48.0G    29.4M    27.4M    1248K       0K       0K       0K      629 ",
+                "TOTAL                             51.4G     1.1G   652.9M    2832K       0K   557.2M       0K     7256 ",
+                "TOTAL                                       16.5M       832K       832K       176K       1942       265K       743K     74%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7777K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2544K    2544K     832K       0K       0K       0K      150 ",
+                "TOTAL                             50.6G   503.5M    5425K    2368K       0K      16K       0K     5845 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "100.2M",
+              "regions": [
+                "IOSurface                           80K       0K       0K       0K       0K       0K       0K        5 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    48.1M    43.0M    7568K       0K       0K       0K      930 ",
+                "Memory Tag 255                     1.4T    67.0M    42.7M     832K       0K       0K       0K      703 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   678.2M    90.9M    9536K       0K      16K       0K     7399 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            },
+            {
+              "pid": 99391,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9376K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   549.3M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 99394,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9408K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   549.3M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 99405,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9376K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       64 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   549.2M    17.3M       0K       0K      16K       0K     6063 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-offscreen",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "70.2M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    25.8M    25.7M    3840K       0K       0K       0K      664 ",
+                "Memory Tag 255                     1.4T    21.2M    18.6M    9184K       0K       0K       0K      301 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   621.9M    54.3M    15.9M       0K     320K      32K     7239 ",
+                "TOTAL                                       17.5M      1152K      1152K       192K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "289.0M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          67.7M    3872K    3872K       0K       0K    3872K       0K      610 ",
+                "IOSurface                        229.3M   229.0M   229.0M       0K       0K   229.0M       0K       71 ",
+                "Memory Tag 253                    48.0G    29.4M    25.5M    1248K       0K       0K       0K      629 ",
+                "TOTAL                             51.1G   795.2M   286.3M    2832K       0K   232.8M       0K     7140 ",
+                "TOTAL                                       16.5M       832K       832K       176K       1839       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7777K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2544K    2544K     832K       0K       0K       0K      150 ",
+                "TOTAL                             50.6G   504.0M    5425K    2368K       0K      16K       0K     5845 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "76.5M",
+              "regions": [
+                "IOSurface                           80K       0K       0K       0K       0K       0K       0K        5 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    48.6M    43.4M    7568K       0K       0K       0K      935 ",
+                "Memory Tag 255                     1.4T    47.6M    18.6M     832K       0K       0K       0K      695 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   659.7M    67.2M    9536K       0K      16K       0K     7396 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            },
+            {
+              "pid": 99391,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9408K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   549.8M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 99394,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9408K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   549.7M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 99405,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9376K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       64 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   549.7M    17.3M       0K       0K      16K       0K     6063 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-background-workspace",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "71.5M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    26.0M    26.0M    3808K       0K       0K       0K      666 ",
+                "Memory Tag 255                     1.4T    22.6M    20.1M    8576K       0K       0K       0K      301 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   623.7M    56.2M    15.3M       0K     320K      32K     7255 ",
+                "TOTAL                                       17.5M      1152K      1152K       192K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "105.7M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          67.7M    3840K    3840K       0K       0K    3840K       0K      608 ",
+                "IOSurface                         51.1M    50.7M    50.7M       0K       0K    50.7M       0K       39 ",
+                "Memory Tag 253                    48.0G    29.5M    25.6M    1136K       0K       0K       0K      629 ",
+                "TOTAL                             50.9G   617.1M   103.1M    2656K       0K    54.5M       0K     7101 ",
+                "TOTAL                                       16.5M       832K       832K       176K       1809       251K       757K     76%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "8033K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2768K    2768K     768K       0K       0K       0K      152 ",
+                "TOTAL                             50.6G   504.4M    5745K    2304K       0K      16K       0K     5851 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "79.2M",
+              "regions": [
+                "IOSurface                           80K       0K       0K       0K       0K       0K       0K        5 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    49.5M    44.3M    6752K       0K       0K       0K      935 ",
+                "Memory Tag 255                     1.4T    50.3M    21.4M     672K       0K       0K       0K      695 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   663.4M    70.9M    8512K       0K      16K       0K     7393 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            },
+            {
+              "pid": 99391,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9408K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.2M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 99394,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9408K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.1M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 99405,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9376K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       64 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.2M    17.3M       0K       0K      16K       0K     6063 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-closed",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "71.8M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    27.2M    27.1M    3712K       0K       0K       0K      667 ",
+                "Memory Tag 255                     1.4T    22.8M    20.3M    8560K       0K       0K       0K      301 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   624.6M    56.8M    15.1M       0K     320K      32K     7223 ",
+                "TOTAL                                       17.5M      1152K      1152K       192K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "180.5M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          67.7M    3888K    3888K       0K       0K    3888K       0K      610 ",
+                "IOSurface                        117.9M   117.5M   117.5M       0K       0K   117.5M       0K       45 ",
+                "Memory Tag 253                    48.0G    29.9M    26.2M    1136K       0K       0K       0K      632 ",
+                "TOTAL                             51.0G   684.2M   177.9M    2656K       0K   121.3M       0K     7087 ",
+                "TOTAL                                       16.5M       832K       832K       176K       1838       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7985K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2768K    2768K     768K       0K       0K       0K      152 ",
+                "TOTAL                             50.6G   505.0M    5761K    2240K       0K      16K       0K     5849 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "81.6M",
+              "regions": [
+                "IOSurface                           80K       0K       0K       0K       0K       0K       0K        5 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    49.5M    44.4M    6752K       0K       0K       0K      936 ",
+                "Memory Tag 255                     1.4T    52.5M    23.7M     672K       0K       0K       0K      695 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   666.3M    73.3M    8512K       0K      16K       0K     7397 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "after-close-idle",
+          "maps": [
+            {
+              "pid": 98590,
+              "type": "Browser",
+              "footprint": "66.3M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    27.3M    22.4M    3552K       0K       0K       0K      667 ",
+                "Memory Tag 255                     1.4T    22.9M    19.8M    8544K       0K       0K       0K      301 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   625.1M    51.4M    14.9M       0K     320K      32K     7219 ",
+                "TOTAL                                       17.5M      1152K      1152K       192K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 98591,
+              "type": "GPU",
+              "footprint": "107.6M",
+              "regions": [
+                "IOAccelerator                      256K     256K     256K       0K       0K       0K       0K        6 ",
+                "IOAccelerator (graphics)          67.7M    3888K    3888K       0K       0K    3888K       0K      610 ",
+                "IOSurface                         68.5M    68.2M    68.2M       0K       0K    68.2M       0K       32 ",
+                "Memory Tag 253                    48.0G    30.0M    22.7M    1072K       0K       0K       0K      632 ",
+                "TOTAL                             50.9G   635.3M   105.1M    2592K       0K    72.0M       0K     7072 ",
+                "TOTAL                                       16.5M       832K       832K       176K       1838       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 98592,
+              "type": "Utility",
+              "footprint": "7809K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2912K    2752K     608K       0K       0K       0K      152 ",
+                "TOTAL                             50.6G   505.5M    5745K    2080K       0K      16K       0K     5849 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 98594,
+              "type": "Tab",
+              "footprint": "73.4M",
+              "regions": [
+                "IOSurface                           80K       0K       0K       0K       0K       0K       0K        5 ",
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    49.5M    42.2M    6752K       0K       0K       0K      936 ",
+                "Memory Tag 255                     1.4T    48.1M    17.6M     672K       0K       0K       0K      694 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   662.3M    65.1M    8512K       0K      16K       0K     7396 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 0
+          }
+        }
+      ]
+    },
+    {
+      "mode": "webgl2-disabled",
+      "samples": [
+        {
+          "scenario": "empty-canvas",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "78.4M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    35.2M    25.3M       0K       0K       0K       0K      591 ",
+                "Memory Tag 255                     1.4T    40.9M    40.9M       0K       0K       0K       0K      237 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   653.1M    78.5M       0K       0K     320K       0K     7057 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "158.0M",
+              "regions": [
+                "IOAccelerator                      112K     112K     112K       0K       0K       0K       0K        3 ",
+                "IOAccelerator (graphics)          22.3M    6368K    6368K       0K       0K    6368K       0K      161 ",
+                "IOSurface                        114.8M   114.6M   114.6M       0K       0K   114.6M       0K       47 ",
+                "Memory Tag 253                    48.0G    24.1M    14.6M       0K       0K       0K       0K      403 ",
+                "TOTAL                             50.9G   675.3M   158.0M      16K       0K   120.9M       0K     6400 ",
+                "TOTAL                                       16.5M       992K       992K         0K       1838       255K       737K     75%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7617K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6016K    3152K       0K       0K       0K       0K      138 ",
+                "TOTAL                             50.6G   510.7M    7633K       0K       0K      16K       0K     5835 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "52.1M",
+              "regions": [
+                "Memory Tag 253                    48.0G    35.2M    29.3M       0K       0K       0K       0K      531 ",
+                "Memory Tag 255                     1.4T    17.4M    17.4M       0K       0K       0K       0K      147 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   606.3M    52.1M       0K       0K      16K       0K     6416 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "five-terminals-visible",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "82.6M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    36.4M    26.3M       0K       0K       0K       0K      611 ",
+                "Memory Tag 255                     1.4T    46.5M    44.2M       0K       0K       0K       0K      295 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   660.0M    82.7M       0K       0K     320K       0K     7131 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "253.0M",
+              "regions": [
+                "IOAccelerator                      112K     112K     112K       0K       0K       0K       0K        3 ",
+                "IOAccelerator (graphics)          22.0M    2176K    2176K       0K       0K    2176K       0K      191 ",
+                "IOSurface                        195.9M   195.6M   195.6M       0K       0K   195.6M       0K       67 ",
+                "Memory Tag 253                    48.0G    26.2M    16.9M       0K       0K       0K       0K      442 ",
+                "TOTAL                             51.0G   755.0M   253.0M      16K       0K   197.8M       0K     6486 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       2055       278K       730K     73%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7569K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6016K    3152K       0K       0K       0K       0K      138 ",
+                "TOTAL                             50.6G   510.8M    7585K       0K       0K      16K       0K     5833 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "119.0M",
+              "regions": [
+                "Memory Tag 253                    48.0G    56.4M    47.5M       0K       0K       0K       0K      837 ",
+                "Memory Tag 255                     1.4T    66.6M    65.7M       0K       0K       0K       0K      664 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   681.8M   119.0M       0K       0K      16K       0K     7252 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 5,
+            "terminalCanvases": 5,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 300,
+                "height": 150
+              },
+              {
+                "width": 300,
+                "height": 150
+              },
+              {
+                "width": 300,
+                "height": 150
+              },
+              {
+                "width": 300,
+                "height": 150
+              },
+              {
+                "width": 300,
+                "height": 150
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "terminals-offscreen",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "82.7M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    36.4M    26.3M       0K       0K       0K       0K      611 ",
+                "Memory Tag 255                     1.4T    46.5M    44.3M       0K       0K       0K       0K      296 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   660.0M    82.7M       0K       0K     320K       0K     7132 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "201.0M",
+              "regions": [
+                "IOAccelerator                      112K     112K     112K       0K       0K       0K       0K        3 ",
+                "IOAccelerator (graphics)          21.9M    2144K    2144K       0K       0K    2144K       0K      190 ",
+                "IOSurface                        163.9M   163.7M   163.7M       0K       0K   163.7M       0K       53 ",
+                "Memory Tag 253                    48.0G    26.2M    16.9M       0K       0K       0K       0K      442 ",
+                "TOTAL                             50.9G   723.0M   201.0M      16K       0K   165.8M       0K     6469 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       1839       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7569K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6016K    3152K       0K       0K       0K       0K      138 ",
+                "TOTAL                             50.6G   510.8M    7585K       0K       0K      16K       0K     5833 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "118.9M",
+              "regions": [
+                "Memory Tag 253                    48.0G    56.4M    47.5M       0K       0K       0K       0K      837 ",
+                "Memory Tag 255                     1.4T    66.5M    65.7M       0K       0K       0K       0K      663 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   681.8M   118.9M       0K       0K      16K       0K     7251 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "terminals-closed",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "82.7M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    36.4M    26.3M       0K       0K       0K       0K      611 ",
+                "Memory Tag 255                     1.4T    46.5M    44.3M       0K       0K       0K       0K      296 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   660.0M    82.7M       0K       0K     320K       0K     7130 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "186.3M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          48.9M    2496K    2496K       0K       0K    2496K       0K      416 ",
+                "IOSurface                        143.3M   143.1M   143.1M       0K       0K   143.1M       0K       50 ",
+                "Memory Tag 253                    48.0G    27.7M    18.5M       0K       0K       0K       0K      454 ",
+                "TOTAL                             50.9G   704.3M   186.3M      16K       0K   145.5M       0K     6705 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       1840       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7569K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6016K    3152K       0K       0K       0K       0K      138 ",
+                "TOTAL                             50.6G   510.8M    7585K       0K       0K      16K       0K     5833 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "99.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    57.2M    46.7M       0K       0K       0K       0K      857 ",
+                "Memory Tag 255                     1.4T    68.2M    46.8M       0K       0K       0K       0K      677 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   684.4M    99.3M       0K       0K      16K       0K     7287 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "three-browsers-visible",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "86.7M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    38.6M    29.0M       0K       0K       0K       0K      643 ",
+                "Memory Tag 255                     1.4T    46.7M    44.5M       0K       0K       0K       0K      296 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   663.8M    86.7M       0K       0K     320K      32K     7199 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "729.9M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          53.3M    16.1M    16.1M       0K       0K    16.1M       0K      428 ",
+                "IOSurface                        514.8M   514.4M   514.4M       0K       0K   514.4M       0K      177 ",
+                "Memory Tag 253                    48.0G    31.3M    22.8M       0K       0K       0K       0K      512 ",
+                "TOTAL                             51.4G     1.1G   729.9M      16K       0K   530.6M       0K     6943 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       1940       265K       743K     74%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7825K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6272K    3408K       0K       0K       0K       0K      150 ",
+                "TOTAL                             50.6G   510.1M    7841K       0K       0K      16K       0K     5845 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "102.9M",
+              "regions": [
+                "Memory Tag 253                    48.0G    60.3M    49.4M       0K       0K       0K       0K      898 ",
+                "Memory Tag 255                     1.4T    68.9M    47.7M       0K       0K       0K       0K      679 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   688.4M   103.0M       0K       0K      16K       0K     7333 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 1916,
+              "type": "Tab",
+              "footprint": "17.2M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.5M    9328K       0K       0K       0K       0K      272 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.6M    17.2M       0K       0K      16K       0K     6064 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 1919,
+              "type": "Tab",
+              "footprint": "17.2M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9344K       0K       0K       0K       0K      270 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.6M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       20.5M       464K       464K         0K       1675       233K       231K     50%       7"
+              ]
+            },
+            {
+              "pid": 1930,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.5M    9296K       0K       0K       0K       0K      272 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       64 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.6M    17.3M       0K       0K      16K       0K     6064 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-offscreen",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "66.1M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    39.3M    29.6M       0K       0K       0K       0K      656 ",
+                "Memory Tag 255                     1.4T    26.4M    23.3M       0K       0K       0K       0K      304 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   644.2M    66.1M       0K       0K     320K      32K     7220 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "262.2M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          49.1M    2688K    2688K       0K       0K    2688K       0K      419 ",
+                "IOSurface                        213.8M   213.5M   213.5M       0K       0K   213.5M       0K       70 ",
+                "Memory Tag 253                    48.0G    31.3M    22.8M       0K       0K       0K       0K      512 ",
+                "TOTAL                             51.0G   779.5M   262.2M      16K       0K   216.1M       0K     6820 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       1840       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7825K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    6272K    3408K       0K       0K       0K       0K      150 ",
+                "TOTAL                             50.6G   510.1M    7841K       0K       0K      16K       0K     5845 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "75.5M",
+              "regions": [
+                "Memory Tag 253                    48.0G    60.7M    49.8M       0K       0K       0K       0K      901 ",
+                "Memory Tag 255                     1.4T    45.0M    19.9M       0K       0K       0K       0K      656 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   664.9M    75.5M       0K       0K      16K       0K     7310 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 1916,
+              "type": "Tab",
+              "footprint": "17.2M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9344K       0K       0K       0K       0K      273 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.6M    17.2M       0K       0K      16K       0K     6065 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 1919,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9360K       0K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.6M    17.3M       0K       0K      16K       0K     6063 ",
+                "TOTAL                                       20.5M       464K       464K         0K       1675       233K       231K     50%       7"
+              ]
+            },
+            {
+              "pid": 1930,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.5M    9296K       0K       0K       0K       0K      272 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       64 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   550.6M    17.3M       0K       0K      16K       0K     6064 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-background-workspace",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "67.7M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    39.4M    29.8M       0K       0K       0K       0K      657 ",
+                "Memory Tag 255                     1.4T    27.7M    24.8M       0K       0K       0K       0K      304 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   645.7M    67.7M       0K       0K     320K      32K     7223 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "160.3M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          49.1M    2688K    2688K       0K       0K    2688K       0K      419 ",
+                "IOSurface                        113.0M   112.6M   112.6M       0K       0K   112.6M       0K       43 ",
+                "Memory Tag 253                    48.0G    31.3M    22.8M       0K       0K       0K       0K      512 ",
+                "TOTAL                             50.9G   678.6M   160.3M      16K       0K   115.3M       0K     6791 ",
+                "TOTAL                                       16.5M      1008K      1008K         0K       1809       251K       757K     76%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "8017K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    4080K    3200K     320K       0K       0K       0K      151 ",
+                "TOTAL                             50.6G   507.0M    6529K    1488K       0K      16K       0K     5850 ",
+                "TOTAL                                       16.5M       240K       240K       192K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "79.5M",
+              "regions": [
+                "Memory Tag 253                    48.0G    46.4M    43.0M    7024K       0K       0K       0K      902 ",
+                "Memory Tag 255                     1.4T    24.8M    23.6M     320K       0K       0K       0K      656 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   629.8M    71.7M    8112K       0K      16K       0K     7311 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 1916,
+              "type": "Tab",
+              "footprint": "17.2M",
+              "regions": [
+                "Memory Tag 253                    48.0G    4400K    4400K    4944K       0K       0K       0K      273 ",
+                "Memory Tag 255                     1.4T     560K     560K    2480K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   539.8M    8049K    9600K       0K      16K       0K     6065 ",
+                "TOTAL                                       16.5M       208K       208K       240K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 1919,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    4896K    4896K    4464K       0K       0K       0K      271 ",
+                "Memory Tag 255                     1.4T     528K     528K    2512K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   540.9M    9233K    8448K       0K      16K       0K     6063 ",
+                "TOTAL                                       20.5M       400K       400K        64K       1675       233K       231K     50%       7"
+              ]
+            },
+            {
+              "pid": 1930,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    7472K    6608K    2688K       0K       0K       0K      272 ",
+                "Memory Tag 255                     1.4T    2144K    2144K     896K       0K       0K       0K       64 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   545.0M    12.1M    5264K       0K      16K       0K     6064 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-closed",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "67.0M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    33.5M    27.6M    2224K       0K       0K       0K      657 ",
+                "Memory Tag 255                     1.4T    23.9M    23.5M    1552K       0K       0K       0K      304 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   633.2M    61.3M    5856K       0K     320K      32K     7190 ",
+                "TOTAL                                       17.5M      1296K      1296K        48K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "208.5M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          49.1M    2704K    2448K     256K       0K    2704K    19.1M      421 ",
+                "IOSurface                        164.3M   163.9M   102.1M    61.9M       0K   163.9M       0K       48 ",
+                "Memory Tag 253                    48.0G    17.5M    16.3M    5168K       0K       0K       0K      512 ",
+                "TOTAL                             51.0G   713.1M   126.3M    82.2M       0K   166.6M    19.1M     6769 ",
+                "TOTAL                                       16.5M       816K       816K       192K       1838       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7921K",
+              "regions": [
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    1744K    1744K    1776K       0K       0K       0K      151 ",
+                "TOTAL                             50.6G   503.8M    3953K    3984K       0K      16K       0K     5848 ",
+                "TOTAL                                       16.5M       208K       208K       224K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "81.5M",
+              "regions": [
+                "Memory Tag 253                    48.0G    32.5M    32.5M    17.5M       0K       0K       0K      905 ",
+                "Memory Tag 255                     1.4T    24.0M    23.9M    1696K       0K       0K       0K      656 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   623.8M    60.6M    20.9M       0K      16K       0K     7316 ",
+                "TOTAL                                       16.5M       272K       272K       176K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "after-close-idle",
+          "maps": [
+            {
+              "pid": 1181,
+              "type": "Browser",
+              "footprint": "62.1M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    22.5M    19.8M    6000K       0K       0K       0K      657 ",
+                "Memory Tag 255                     1.4T    16.4M    16.0M    8512K       0K       0K       0K      304 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   624.4M    43.5M    18.6M       0K     320K      32K     7186 ",
+                "TOTAL                                       17.5M      1136K      1136K       208K       2220       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 1200,
+              "type": "GPU",
+              "footprint": "145.8M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          49.1M    2704K     704K    2000K       0K    2704K    43.0M      421 ",
+                "IOSurface                        114.9M   114.6M      16K   114.5M       0K   114.6M       0K       35 ",
+                "Memory Tag 253                    48.0G    18.2M    15.3M    3904K       0K       0K       0K      512 ",
+                "TOTAL                             50.9G   676.6M    21.6M   124.2M       0K   117.2M    43.0M     6754 ",
+                "TOTAL                                       16.5M       816K       816K       192K       1838       255K       753K     75%      14"
+              ]
+            },
+            {
+              "pid": 1201,
+              "type": "Utility",
+              "footprint": "7761K",
+              "regions": [
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2432K    2320K    1040K       0K       0K       0K      151 ",
+                "TOTAL                             50.6G   516.6M    4545K    3232K       0K      16K       0K     5848 ",
+                "TOTAL                                       16.5M       208K       208K       224K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 1203,
+              "type": "Tab",
+              "footprint": "75.6M",
+              "regions": [
+                "Memory Tag 253                    48.0G    32.9M    32.9M    17.1M       0K       0K       0K      905 ",
+                "Memory Tag 255                     1.4T    21.3M    18.7M     992K       0K       0K       0K      653 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   624.1M    55.8M    19.8M       0K      16K       0K     7314 ",
+                "TOTAL                                       16.5M       272K       272K       176K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        }
+      ]
+    },
+    {
+      "mode": "territory-cpu",
+      "samples": [
+        {
+          "scenario": "empty-canvas",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "77.7M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    34.2M    24.1M       0K       0K       0K       0K      580 ",
+                "Memory Tag 255                     1.4T    41.6M    41.6M       0K       0K       0K       0K      234 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   651.7M    77.7M       0K       0K     320K       0K     7027 ",
+                "TOTAL                                       17.5M      1344K      1344K         0K       2221       194K      1150K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "165.6M",
+              "regions": [
+                "IOAccelerator                      112K     112K     112K       0K       0K       0K       0K        3 ",
+                "IOAccelerator (graphics)          17.8M    1760K    1760K       0K       0K    1760K       0K      156 ",
+                "IOSurface                        131.5M   131.2M   131.2M       0K       0K   131.2M       0K       53 ",
+                "Memory Tag 253                    48.0G    23.9M    14.1M       0K       0K       0K       0K      404 ",
+                "TOTAL                             50.9G   686.2M   165.6M      16K       0K   133.0M       0K     6402 ",
+                "TOTAL                                       20.5M      1008K      1008K         0K       1842       255K       753K     75%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7553K",
+              "regions": [
+                "Memory Tag 241                     320K      80K      80K       0K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    5984K    3104K       0K       0K       0K       0K      138 ",
+                "TOTAL                             50.6G   509.7M    7569K       0K       0K      16K       0K     5835 ",
+                "TOTAL                                       16.5M       432K       432K         0K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "51.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    35.2M    29.2M       0K       0K       0K       0K      532 ",
+                "Memory Tag 255                     1.4T    16.7M    16.7M       0K       0K       0K       0K      143 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   604.6M    51.4M       0K       0K      16K       0K     6413 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1673       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "five-terminals-visible",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "83.6M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    22.4M    22.4M    4528K       0K       0K       0K      611 ",
+                "Memory Tag 255                     1.4T    34.3M    34.3M    10.3M       0K       0K       0K      281 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   648.5M    65.5M    18.2M       0K     320K      32K     7140 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "403.8M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          40.0M    10.8M    5168K    5936K       0K    10.8M       0K      359 ",
+                "IOSurface                        326.2M   325.9M   261.2M    64.7M       0K   325.9M       0K      112 ",
+                "Memory Tag 253                    48.0G    20.8M    20.8M    2080K       0K       0K       0K      529 ",
+                "TOTAL                             51.1G   909.3M   295.3M   108.5M       0K   336.8M       0K     6816 ",
+                "TOTAL                                       20.5M       960K       960K        64K       1223       167K       857K     84%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7521K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2096K    2096K    1024K       0K       0K       0K      140 ",
+                "TOTAL                             50.6G   522.9M    4945K    2592K       0K      16K       0K     5835 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "115.7M",
+              "regions": [
+                "IOSurface                          160K       0K       0K       0K       0K       0K       0K       10 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    35.7M    34.8M    12.2M       0K       0K       0K      844 ",
+                "Memory Tag 255                     1.4T    44.9M    44.9M    16.1M       0K       0K       0K      675 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   663.3M    86.0M    29.7M       0K      16K       0K     7300 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 5,
+            "terminalCanvases": 10,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              },
+              {
+                "width": 1246,
+                "height": 728
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "terminals-offscreen",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "83.6M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    22.4M    22.4M    4480K       0K       0K       0K      611 ",
+                "Memory Tag 255                     1.4T    34.3M    34.3M    10.3M       0K       0K       0K      281 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   648.6M    65.5M    18.1M       0K     320K      32K     7138 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "293.0M",
+              "regions": [
+                "IOAccelerator                      160K     160K     160K       0K       0K       0K       0K        4 ",
+                "IOAccelerator (graphics)          38.6M    9648K    5152K    4496K       0K    9648K       0K      356 ",
+                "IOSurface                        238.0M   237.8M   180.6M    57.2M       0K   237.8M       0K       77 ",
+                "Memory Tag 253                    48.0G    20.9M    19.4M    1888K       0K       0K       0K      529 ",
+                "TOTAL                             51.0G   819.9M   213.3M    79.7M       0K   247.2M       0K     6774 ",
+                "TOTAL                                       20.5M       960K       960K        64K       1010       144K       880K     86%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7521K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2096K    2096K    1024K       0K       0K       0K      140 ",
+                "TOTAL                             50.6G   522.9M    4945K    2592K       0K      16K       0K     5835 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "117.2M",
+              "regions": [
+                "IOSurface                          160K       0K       0K       0K       0K       0K       0K       10 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    37.2M    36.3M    11.5M       0K       0K       0K      858 ",
+                "Memory Tag 255                     1.4T    46.0M    46.0M    15.8M       0K       0K       0K      680 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   666.0M    88.6M    28.5M       0K      16K       0K     7319 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "terminals-closed",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "83.6M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    22.5M    22.5M    4448K       0K       0K       0K      611 ",
+                "Memory Tag 255                     1.4T    34.4M    34.4M    10.2M       0K       0K       0K      281 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   648.7M    65.6M    18.0M       0K     320K      32K     7137 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "292.3M",
+              "regions": [
+                "IOAccelerator                      208K     208K     208K       0K       0K       0K       0K        5 ",
+                "IOAccelerator (graphics)          55.9M    9584K    5328K    4256K       0K    9584K       0K      479 ",
+                "IOSurface                        244.5M   244.2M   187.0M    57.2M       0K   244.2M       0K       80 ",
+                "Memory Tag 253                    48.0G    22.0M    20.5M    1632K       0K       0K       0K      534 ",
+                "TOTAL                             51.0G   827.5M   221.1M    71.2M       0K   253.6M       0K     6906 ",
+                "TOTAL                                       20.5M       960K       960K        64K       1011       144K       880K     86%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7521K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2096K    2096K    1024K       0K       0K       0K      140 ",
+                "TOTAL                             50.6G   522.9M    4945K    2592K       0K      16K       0K     5835 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "123.0M",
+              "regions": [
+                "IOSurface                          160K       0K       0K       0K       0K       0K       0K       10 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    39.2M    38.8M    11.2M       0K       0K       0K      875 ",
+                "Memory Tag 255                     1.4T    50.5M    50.5M    14.9M       0K       0K       0K      698 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   672.6M    95.6M    27.4M       0K      16K       0K     7354 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "three-browsers-visible",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "87.8M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    25.9M    25.9M    4096K       0K       0K       0K      650 ",
+                "Memory Tag 255                     1.4T    34.5M    34.5M    10.2M       0K       0K       0K      281 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   648.3M    70.2M    17.6M       0K     320K      32K     7206 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "795.5M",
+              "regions": [
+                "IOAccelerator                      208K     208K     208K       0K       0K       0K       0K        5 ",
+                "IOAccelerator (graphics)          55.9M    2816K    2240K     576K       0K    2816K       0K      506 ",
+                "IOSurface                        703.1M   702.7M   687.3M    15.5M       0K   702.7M       0K      236 ",
+                "Memory Tag 253                    48.0G    27.1M    23.0M    1344K       0K       0K       0K      575 ",
+                "TOTAL                             51.5G     1.2G   759.7M    35.8M       0K   705.5M       0K     7146 ",
+                "TOTAL                                       20.5M       960K       960K        64K       1104       154K       870K     85%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7777K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2496K    2496K     880K       0K       0K       0K      150 ",
+                "TOTAL                             50.6G   517.1M    5345K    2448K       0K      16K       0K     5845 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "99.6M",
+              "regions": [
+                "IOSurface                          144K       0K       0K       0K       0K       0K       0K        9 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    44.5M    40.6M    8688K       0K       0K       0K      921 ",
+                "Memory Tag 255                     1.4T    62.7M    41.3M    3088K       0K       0K       0K      700 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   683.6M    86.9M    12.7M       0K      16K       0K     7389 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            },
+            {
+              "pid": 3177,
+              "type": "Tab",
+              "footprint": "17.2M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.5M    9312K       0K       0K       0K       0K      270 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   562.8M    17.2M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 3181,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.6M    9424K       0K       0K       0K       0K      270 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   562.9M    17.4M       0K       0K      16K       0K     6061 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 3193,
+              "type": "Tab",
+              "footprint": "17.4M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.8M    9552K       0K       0K       0K       0K      279 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   563.0M    17.4M       0K       0K      16K       0K     6069 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-offscreen",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "72.0M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    26.7M    26.7M    4016K       0K       0K       0K      664 ",
+                "Memory Tag 255                     1.4T    20.5M    19.1M    9328K       0K       0K       0K      290 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   635.2M    55.6M    16.4M       0K     320K      32K     7229 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "267.2M",
+              "regions": [
+                "IOAccelerator                      208K     208K     208K       0K       0K       0K       0K        5 ",
+                "IOAccelerator (graphics)          55.8M    2768K    2192K     576K       0K    2768K       0K      504 ",
+                "IOSurface                        214.1M   213.8M   198.3M    15.5M       0K   213.8M       0K       70 ",
+                "Memory Tag 253                    48.0G    27.1M    23.0M    1344K       0K       0K       0K      575 ",
+                "TOTAL                             51.0G   789.5M   231.4M    35.8M       0K   216.5M       0K     6976 ",
+                "TOTAL                                       20.5M       960K       960K        64K       1011       144K       880K     86%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7777K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2496K    2496K     880K       0K       0K       0K      150 ",
+                "TOTAL                             50.6G   517.1M    5345K    2448K       0K      16K       0K     5845 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "78.6M",
+              "regions": [
+                "IOSurface                          144K       0K       0K       0K       0K       0K       0K        9 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    44.9M    41.0M    8672K       0K       0K       0K      930 ",
+                "Memory Tag 255                     1.4T    43.8M    19.9M    3088K       0K       0K       0K      687 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   665.2M    65.9M    12.7M       0K      16K       0K     7386 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            },
+            {
+              "pid": 3177,
+              "type": "Tab",
+              "footprint": "17.2M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.5M    9328K       0K       0K       0K       0K      270 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   562.8M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 3181,
+              "type": "Tab",
+              "footprint": "17.4M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.7M    9440K       0K       0K       0K       0K      270 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   562.9M    17.4M       0K       0K      16K       0K     6061 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 3193,
+              "type": "Tab",
+              "footprint": "17.4M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.8M    9552K       0K       0K       0K       0K      279 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   563.0M    17.4M       0K       0K      16K       0K     6069 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-background-workspace",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "73.6M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    26.8M    26.8M    4000K       0K       0K       0K      664 ",
+                "Memory Tag 255                     1.4T    21.9M    20.5M    9328K       0K       0K       0K      289 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   636.9M    57.3M    16.3M       0K     320K      32K     7236 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "165.1M",
+              "regions": [
+                "IOAccelerator                      208K     208K     208K       0K       0K       0K       0K        5 ",
+                "IOAccelerator (graphics)          55.8M    2768K    2192K     576K       0K    2768K       0K      504 ",
+                "IOSurface                        113.0M   112.6M    97.1M    15.5M       0K   112.6M       0K       43 ",
+                "Memory Tag 253                    48.0G    27.1M    23.0M    1344K       0K       0K       0K      575 ",
+                "TOTAL                             50.9G   688.4M   130.1M    35.0M       0K   115.3M       0K     6949 ",
+                "TOTAL                                       20.5M       960K       960K        64K        980       141K       883K     87%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7969K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2736K    2736K     800K       0K       0K       0K      152 ",
+                "TOTAL                             50.6G   517.5M    5681K    2304K       0K      16K       0K     5851 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "81.2M",
+              "regions": [
+                "IOSurface                          144K       0K       0K       0K       0K       0K       0K        9 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    45.4M    41.5M    8208K       0K       0K       0K      930 ",
+                "Memory Tag 255                     1.4T    46.2M    22.4M    3056K       0K       0K       0K      687 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   668.1M    69.0M    12.2M       0K      16K       0K     7386 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            },
+            {
+              "pid": 3177,
+              "type": "Tab",
+              "footprint": "17.3M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.5M    9328K       0K       0K       0K       0K      270 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   562.8M    17.3M       0K       0K      16K       0K     6062 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 3181,
+              "type": "Tab",
+              "footprint": "17.4M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.7M    9440K       0K       0K       0K       0K      270 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   562.9M    17.4M       0K       0K      16K       0K     6061 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            },
+            {
+              "pid": 3193,
+              "type": "Tab",
+              "footprint": "17.4M",
+              "regions": [
+                "Memory Tag 253                    48.0G    10.8M    9552K       0K       0K       0K       0K      279 ",
+                "Memory Tag 255                     1.4T    3040K    3040K       0K       0K       0K       0K       63 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   563.0M    17.4M       0K       0K      16K       0K     6069 ",
+                "TOTAL                                       16.5M       448K       448K         0K       1675       233K       215K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [],
+            "guests": 3
+          }
+        },
+        {
+          "scenario": "browsers-closed",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "71.9M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    27.7M    26.1M    3824K       0K       0K       0K      664 ",
+                "Memory Tag 255                     1.4T    22.1M    20.8M    9312K       0K       0K       0K      289 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   637.0M    55.8M    16.1M       0K     320K      32K     7204 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "214.7M",
+              "regions": [
+                "IOAccelerator                      208K     208K     208K       0K       0K       0K       0K        5 ",
+                "IOAccelerator (graphics)          55.8M    2768K    2192K     576K       0K    2768K       0K      504 ",
+                "IOSurface                        164.3M   163.9M   148.5M    15.5M       0K   163.9M       0K       48 ",
+                "Memory Tag 253                    48.0G    27.1M    23.0M    1344K       0K       0K       0K      575 ",
+                "TOTAL                             51.0G   739.1M   180.7M    34.0M       0K   166.7M       0K     6926 ",
+                "TOTAL                                       20.5M       960K       960K        64K       1009       144K       880K     86%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7921K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2736K    2736K     800K       0K       0K       0K      152 ",
+                "TOTAL                             50.6G   517.7M    5713K    2224K       0K      16K       0K     5849 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "83.1M",
+              "regions": [
+                "IOSurface                          144K       0K       0K       0K       0K       0K       0K        9 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    45.6M    41.7M    8144K       0K       0K       0K      931 ",
+                "Memory Tag 255                     1.4T    47.9M    24.3M    3056K       0K       0K       0K      687 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   670.1M    71.0M    12.1M       0K      16K       0K     7387 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        },
+        {
+          "scenario": "after-close-idle",
+          "maps": [
+            {
+              "pid": 2491,
+              "type": "Browser",
+              "footprint": "67.4M",
+              "regions": [
+                "IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 ",
+                "IOAccelerator (graphics)            64K      16K       0K      16K       0K      16K       0K        1 ",
+                "Memory Tag 253                    48.0G    27.8M    22.3M    3536K       0K       0K       0K      664 ",
+                "Memory Tag 255                     1.4T    22.2M    20.4M    9280K       0K       0K       0K      289 ",
+                "Memory Tag 255 (reserved)          384K       0K       0K       0K       0K       0K       0K        6         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   637.3M    51.7M    15.8M       0K     320K      32K     7200 ",
+                "TOTAL                                       17.5M      1216K      1216K       128K       2287       198K      1146K     86%      20"
+              ]
+            },
+            {
+              "pid": 2492,
+              "type": "GPU",
+              "footprint": "149.7M",
+              "regions": [
+                "IOAccelerator                      208K     208K     208K       0K       0K       0K       0K        5 ",
+                "IOAccelerator (graphics)          55.8M    2768K    2192K     576K       0K    2768K       0K      504 ",
+                "IOSurface                        114.9M   114.6M    99.1M    15.5M       0K   114.6M       0K       35 ",
+                "Memory Tag 253                    48.0G    27.3M    20.1M    1152K       0K       0K       0K      575 ",
+                "TOTAL                             50.9G   689.9M   128.4M    21.3M       0K   117.3M       0K     6913 ",
+                "TOTAL                                       20.5M       960K       960K        64K       1009       144K       880K     86%      15"
+              ]
+            },
+            {
+              "pid": 2493,
+              "type": "Utility",
+              "footprint": "7761K",
+              "regions": [
+                "Memory Tag 241                     320K      64K      64K      16K       0K       0K       0K        3 ",
+                "Memory Tag 253                    48.0G    2896K    2800K     576K       0K       0K       0K      152 ",
+                "TOTAL                             50.6G   517.9M    5793K    1984K       0K      16K       0K     5849 ",
+                "TOTAL                                       16.5M       224K       224K       208K       1661       231K       201K     47%       6"
+              ]
+            },
+            {
+              "pid": 2495,
+              "type": "Tab",
+              "footprint": "76.7M",
+              "regions": [
+                "IOSurface                          144K       0K       0K       0K       0K       0K       0K        9 ",
+                "Memory Tag 241                     320K       0K       0K      80K       0K       0K       0K        2 ",
+                "Memory Tag 253                    48.0G    45.6M    41.8M    8112K       0K       0K       0K      931 ",
+                "Memory Tag 255                     1.4T    44.7M    17.8M    2992K       0K       0K       0K      690 ",
+                "Memory Tag 255 (reserved)          320K       0K       0K       0K       0K       0K       0K        5         reserved VM address space (unallocated)",
+                "TOTAL                              1.4T   667.1M    64.7M    12.0M       0K      16K       0K     7390 ",
+                "TOTAL                                       16.5M       304K       304K       144K       1673       235K       213K     48%       6"
+              ]
+            }
+          ],
+          "dom": {
+            "dpr": 2,
+            "terminals": 0,
+            "terminalCanvases": 0,
+            "canvases": [
+              {
+                "width": 1,
+                "height": 1
+              },
+              {
+                "width": 2360,
+                "height": 1712
+              }
+            ],
+            "guests": 0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -170,6 +170,9 @@ const VIEWER_LAG_MS = 5_000
 /** Pause the PTY while the headless screen has this much unparsed. */
 const SCREEN_BACKLOG_HIGH = 4 * 1024 * 1024
 const RESTORED_MARKER = '\r\n\x1b[90m--- restored session ---\x1b[0m\r\n'
+// Leave a crashed TUI's alternate buffer, mouse/focus reporting, bracketed
+// paste and extended keyboard modes without clearing normal scrollback.
+const SHELL_SCREEN_RESET = '\x1b[?1049l\x1b[!p\x1b>\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l\x1b[?2004l\x1b[?2026l\x1b[<u\x1b[>4;0m\r\n'
 
 interface Viewer {
   id: string
@@ -560,7 +563,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
   ): Promise<PtyProcess> => {
     let env = { ...TERMINAL_LINK_ENV, ...sanitizeEnv(deps.env()) }
     for (const contribute of envContributors) {
-      const info: SpawnInfo = { terminalId: id, panelId, cwd, launch: params.launch ?? null, executable, args, env }
+      const info: SpawnInfo = { terminalId: id, panelId, cwd, launch: params.launch ?? null, executable, args, env, ...(params.continueFrom ? { continueFrom: params.continueFrom } : {}) }
       try {
         const patch = await contribute(info)
         if (patch) env = { ...env, ...patch }
@@ -582,6 +585,14 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       const panelId = params.panelId || null
       const cwd = params.cwd ? await (deps.resolveCwd ? deps.resolveCwd(params.cwd) : params.cwd) : deps.root
       const plan = params.launch ? await resolveLaunch(params.launch, cwd, panelId) : {}
+      let continued = ''
+      if (params.continueFrom) {
+        const previous = get(params.continueFrom)
+        if (previous.alive || previous.panelId !== panelId) throw new RpcError('rejected', 'Only an exited PTY of the same panel can be continued')
+        const capture = previous.screen.capture()
+        continued = capture.screen + capture.pending.join('')
+        params = { ...params, cols: capture.cols, rows: capture.rows }
+      }
       const shell = plan.command ? null : resolveShell(params.shell || settings.defaultShellPath || undefined)
       const executable = plan.command?.executable ?? shell!.path
       const args = plan.command?.args ?? shell!.args
@@ -596,6 +607,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
         notify(exitObservers, id, CLOSED_EXIT_CODE)
         throw err
       }
+      if (params.continueFrom) service.close(params.continueFrom)
       const logKey = panelId ?? id
       const term: Term = {
         id,
@@ -628,7 +640,9 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
           log.warn('terminal log unavailable: %O', err)
         }
       }
-      if (restored) output(term, restored + RESTORED_MARKER, false)
+      if (continued) {
+        output(term, continued + SHELL_SCREEN_RESET, false)
+      } else if (restored) output(term, restored + RESTORED_MARKER, false)
       if (shell?.notice) output(term, shell.notice, false)
 
       pty.onData((data) => { if (term.alive) output(term, data, true) })
@@ -637,7 +651,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
 
       syncTimers()
       touch(term)
-      return { id, pid: pty.pid, shell: executable }
+      return { id, pid: pty.pid, shell: executable, ...(plan.command ? { command: true } : {}) }
     },
 
     write(id, data) {

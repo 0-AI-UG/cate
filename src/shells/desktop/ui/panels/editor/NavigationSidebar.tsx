@@ -4,14 +4,13 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FileExplorer, SearchView, panelSearchStore, releasePanelSearchStore } from '../../workspace/files'
+import { clientStateFor } from '@client/document'
 import { FileTreeModel, type FileTreeSavedState } from '@workspace/files/client'
 
 const MIN_WIDTH = 180
 const MAX_WIDTH = 480
 const COLLAPSE_OVERSHOOT = 64
 
-/** Expanded folders per panel, kept across remounts of the view. */
-const savedTrees = new Map<string, FileTreeSavedState>()
 
 function SidebarFrame({ visible, fill = false, onHide, children }: { visible: boolean; fill?: boolean; onHide: () => void; children: ReactNode }) {
   const sidebarRef = useRef<HTMLElement>(null)
@@ -97,10 +96,10 @@ export function NavigationSidebar({ workspaceId, panelId, root, view, visible, f
   // never load.
   const [owned, setOwned] = useState<FileTreeModel | null>(null)
   useLayoutEffect(() => {
-    const next = new FileTreeModel(root, workspaceId, { saved: savedTrees.get(panelId) })
+    const next = new FileTreeModel(root, workspaceId, { saved: clientStateFor(workspaceId)?.getSnapshot().panelViews[panelId]?.fileTree as FileTreeSavedState | undefined })
     setOwned(next)
     return () => {
-      savedTrees.set(panelId, next.capture())
+      clientStateFor(workspaceId)?.setPanelView(panelId, 'fileTree', next.capture())
       next.dispose()
     }
   }, [root, workspaceId, panelId])

@@ -359,6 +359,9 @@ Rules:
   notes. A request to show something (reveal a line, open a review at a file)
   is a one-shot `reveal` in the snapshot that each view applies once. How a
   client shows a review (split, wrap, whole files) is a client setting.
+- Panel view state belongs to the workspace's client-state store, not global
+  panel maps. It survives view unmounts; up to 200 removed panels retain view
+  state for undo. Disconnecting the workspace releases the store.
 - Undo is per client, over that client's own document ops (section 13.6).
 - A developer adding a feature declares which class its state is in and never
   writes sync code.
@@ -1416,6 +1419,14 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   OSC 8 hyperlinks (the view's terminal holds them), search, OSC 52
   clipboard and keymaps are view concerns.
 - **Consumers**: the terminal panel, the agents service's terminal agents, `cate.terminal.*`.
+  A spawn reports whether it runs a one-shot command. When that command
+  exits, the terminal panel session starts an ordinary shell in the same
+  panel and last cwd, without replaying the launch. The terminal service's
+  `continueFrom` spawn transfers the exited PTY's screen and grid and clears
+  TUI input modes; views attach to the replacement PTY normally. No extra
+  shell runs while the command is alive. Exiting an ordinary shell leaves
+  the terminal exited. The continuation is also reported to spawn env
+  contributors; agents clear the old resume stamp when the shell takes over.
 
 ### 10.2 Browser
 
@@ -1464,6 +1475,14 @@ downloads list and its views, and hands page work to it.
   workspace, off the canvas, behind a tab) stages it: the surface registry
   puts it in the window, transparent and without pointer input, until the op
   ends, and screenshots work wherever the panel is.
+  **Idle page lifetime (desktop).** A manual page may be discarded after ten
+  minutes off screen or in a background tab/workspace and reloads when shown
+  again. Only pages with a single Chromium history entry are eligible;
+  back/forward history, pinned tabs, edited forms, content-editable pages,
+  active media, downloads and dialogs keep a page alive. A page touched by
+  automation stays alive and unthrottled until its tab closes, including
+  between calls and while the person is away. The page host owns this client
+  view lifetime; tabs and URLs remain the runtime session's state.
   **Native dropdowns** open an OS menu page control cannot drive: snapshots
   list a `<select>`'s options under it (with a `value` that differs from the
   label), `select` takes a label or a value, a click on an option chooses
@@ -1667,7 +1686,11 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   place of the shell) or an idle one the caller names, in the
   caller's checkout, an existing worktree or a new one, next to the calling
   panel or where the call places it. Panels and worktrees come through ports
-  the composition root fills. Once
+  the composition root fills. Launch does not wait for installation or
+  account inspection: those remain background availability information.
+  New-panel creation acknowledges document placement before PTY startup;
+  its terminal session reports starting, running or failed to every client.
+  Once
   started it is an agent panel like any other: `cate.agent.*` reads,
   prompts and interrupts it by its panel. `types` lists the agent CLIs and
   whether each can start in a terminal here. The review panel starts its

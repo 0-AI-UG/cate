@@ -22,6 +22,8 @@ export type LaunchResolver = (params: unknown, spawn: { cwd: string; panelId: st
 
 /** Everything known about a PTY right before it spawns. */
 export interface SpawnInfo {
+  /** An exited PTY whose screen this fresh process continues. */
+  continueFrom?: string
   terminalId: string
   panelId: string | null
   cwd: string

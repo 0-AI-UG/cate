@@ -62,6 +62,11 @@ const settings = (): ClientSettings => clientSettingsTable.normalize(device.get(
 
 // Command-line switches must be set before ready; applies after a restart.
 if (settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
+// Keep canvas frames moving while a webview is busy. Chromium otherwise waits
+// up to four frames for a child surface; reuse its last frame immediately.
+if (!app.commandLine.hasSwitch('deadline-to-synchronize-surfaces')) {
+  app.commandLine.appendSwitch('deadline-to-synchronize-surfaces', '0')
+}
 
 const context = (): CommonContext => ({
   install_id: device.installId(),

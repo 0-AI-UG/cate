@@ -22,20 +22,17 @@ describe('agent setup', () => {
     probe.mockResolvedValue({ code: 0, stdout: '0.76.0' })
     const info = (await setup.inspect()).agents.find((agent) => agent.agentId === 'pi')!
     expect(info.installation).toMatchObject({ status: 'error', detail: expect.stringContaining('1.4.0') })
-    await expect(setup.ensureReady('pi')).rejects.toThrow('agent-cli-not-installed')
     expect(info.canInstall).toBe(true)
   })
   it('allows Cursor API authentication when native status reports no subscription login', async () => {
     const { setup, deps, probe } = await fixture()
     probe.mockImplementation(async (_command, args) => ({ code: 0, stdout: args[0] === '--version' ? '1.0.0' : '{"isAuthenticated":false}' }))
     deps.env = () => ({ CURSOR_API_KEY: 'private-runtime-key' })
-    await expect(setup.ensureReady('cursor')).resolves.toBeUndefined()
     const info = (await setup.inspect()).agents.find((agent) => agent.agentId === 'cursor')!
     expect(info.authentication).toMatchObject({ status: 'signed-in', method: 'api_key' })
     expect(JSON.stringify(info)).not.toContain('private-runtime-key')
     deps.env = () => ({})
-    await setup.inspect(true)
-    await expect(setup.ensureReady('cursor')).rejects.toThrow('signed-out')
+    expect((await setup.inspect(true)).agents.find((a) => a.agentId === 'cursor')?.authentication.status).toBe('signed-out')
   })
   const loginCommands: Record<AgentId, string[]> = {
     'claude-code': ['auth', 'login'], codex: ['login', '--device-auth'], cursor: ['login'],
@@ -46,7 +43,7 @@ describe('agent setup', () => {
     const { setup, deps, probe } = await fixture()
     deps.trust.requireTrusted = () => { throw new Error('untrusted') }
     for (const call of [
-      () => setup.inspect(), () => setup.ensureReady('codex'),
+      () => setup.inspect(),
       () => setup.begin({ agentId: 'codex', action: 'login' }),
     ]) await expect(call()).rejects.toThrow('untrusted')
     expect(() => setup.operation('op')).toThrow('untrusted')
@@ -84,7 +81,6 @@ describe('agent setup', () => {
     const { setup, deps, probe } = await fixture()
     probe.mockImplementation(async () => ({ code: 127, stdout: '', missing: true }))
     await expect(setup.begin({ agentId: id, action: 'login' })).rejects.toThrow('Install the CLI')
-    await expect(setup.ensureReady(id)).rejects.toThrow('not-installed')
     expect(deps.start.terminals.create).not.toHaveBeenCalled()
     probe.mockImplementation(async () => ({ code: 0, stdout: '1.4.0' }))
     vi.mocked(deps.start.terminals.create).mockRejectedValueOnce(new Error('private setup error'))
@@ -121,7 +117,7 @@ describe('agent setup', () => {
     const info = (await setup.inspect()).agents.find((a) => a.agentId === 'codex')!
     expect(deps.enable).toHaveBeenCalledWith('codex')
     expect(info.hooksReady).toBe(true)
-    await expect(setup.ensureReady('codex')).rejects.toThrow('signed-out')
+    expect(info.authentication.status).toBe('signed-out')
   })
   it('runs native setup in a terminal and persists operation outcomes across restart', async () => {
     const { setup, exits, deps } = await fixture()

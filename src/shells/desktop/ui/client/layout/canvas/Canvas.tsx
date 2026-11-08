@@ -49,10 +49,10 @@ function injectInteractionStyle(): void {
     .canvas-interacting .xterm * {
       cursor: grabbing !important;
     }
-    /* Keep each card on its own compositor layer while zooming, so live panel
+    /* Keep each card on its own compositor layer during pan and zoom, so live panel
        pixels are reused instead of repainting Monaco and xterm every frame.
-       Removed after settling so idle layers cost no memory. */
-    .canvas-world-zooming [data-node-id] {
+       Removed after settling so Chromium can reclaim cached layers. */
+    .canvas-world-moving [data-node-id] {
       will-change: transform;
     }
     /* Hand tool: presses on panel content fall through to the pan handler. */
@@ -175,7 +175,7 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
 
   // Pan and zoom write the transform straight to the DOM.
   useEffect(() => {
-    const applyTransform = (zoom: number, offset: Point, zoomChanged = false) => {
+    const applyTransform = (zoom: number, offset: Point) => {
       const transform = `scale(${zoom}) translate(${offset.x / zoom}px, ${offset.y / zoom}px)`
       const layers = [worldRef.current, topOverlayWorldRef.current, relationOverlayWorldRef.current]
       if (!layers.some(Boolean)) return
@@ -183,20 +183,26 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
         if (!el) continue
         el.style.transform = transform
       }
+      // Promote only once per gesture, before measuring native surfaces so
+      // the initial class/style change is consumed by that same sync pass.
+      for (const el of layers) if (el && el.style.willChange !== 'transform') el.style.willChange = 'transform'
+      if (worldRef.current && !worldRef.current.classList.contains('canvas-world-moving')) {
+        worldRef.current.classList.add('canvas-world-moving')
+      }
       // Native guests sit outside the world; realign them in this same task
       // or they trail their nodes by a frame while panning.
-      canvasSlots().syncSurfaces()
-      // Promote the world to a GPU layer for the gesture, then drop it once
-      // settled: while promoted Chromium scales the cached texture and thin
-      // icon strokes blur; removing will-change re-rasters them crisp.
-      for (const el of layers) if (el) el.style.willChange = 'transform'
-      if (zoomChanged) worldRef.current?.classList.add('canvas-world-zooming')
+      canvasSlots().syncSurfaces(worldRef.current ? {
+        world: worldRef.current,
+        companions: [topOverlayWorldRef.current, relationOverlayWorldRef.current].filter((el): el is HTMLDivElement => !!el),
+        zoom, offset,
+      } : undefined)
+      // Removing will-change after settling re-rasters thin strokes crisp.
       if (settleTimerRef.current) clearTimeout(settleTimerRef.current)
       settleTimerRef.current = setTimeout(() => {
         for (const el of [worldRef.current, topOverlayWorldRef.current, relationOverlayWorldRef.current]) {
           if (el) el.style.willChange = 'auto'
         }
-        worldRef.current?.classList.remove('canvas-world-zooming')
+        worldRef.current?.classList.remove('canvas-world-moving')
         settleTimerRef.current = null
       }, 150)
     }
@@ -204,13 +210,13 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
     applyTransform(zoomLevel, viewportOffset)
     const unsubscribe = store.subscribe((state, prev) => {
       if (state.zoomLevel !== prev.zoomLevel || state.viewportOffset !== prev.viewportOffset) {
-        applyTransform(state.zoomLevel, state.viewportOffset, state.zoomLevel !== prev.zoomLevel)
+        applyTransform(state.zoomLevel, state.viewportOffset)
       }
     })
     return () => {
       unsubscribe()
       if (settleTimerRef.current) clearTimeout(settleTimerRef.current)
-      worldRef.current?.classList.remove('canvas-world-zooming')
+      worldRef.current?.classList.remove('canvas-world-moving')
     }
   }, [store])
 

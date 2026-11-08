@@ -32,7 +32,7 @@ function fakeTerminal() {
         id, panelId: params.panelId ?? null, pid: 100 + seq, shell: '/bin/zsh', alive: true, exitCode: null,
         activity: { type: 'idle' }, ports: [], cwd: params.cwd ?? null, suspended: false, viewers: 0,
       }
-      return { id, pid: 100 + seq, shell: '/bin/zsh' }
+      return { id, pid: 100 + seq, shell: '/bin/zsh', command: params.launch?.kind === 'command' }
     },
     write: (id, data) => { writes.push({ id, data }) },
     kill: (id) => { killed.push(id) },
@@ -105,6 +105,46 @@ const ctx = { panelId: 'p1', method: 'cate.terminal.x' } as unknown as ApiSessio
 const opCtx = { clientId: 'c1', connectionId: 1 }
 
 describe('TerminalSession', () => {
+  it.each([0, 1])('continues a command exit (%s) with a shell in the same panel and cwd', async (exitCode) => {
+    const { session, terminal } = setup()
+    await session.start()
+    await session.launch({ kind: 'command', params: { executable: 'agent', args: ['original task'] } })
+    terminal.update('pty-2', { cwd: '/repo/sub', alive: false, exitCode })
+    // Repeated exit notifications must not spawn multiple shells.
+    terminal.update('pty-2', { alive: false, exitCode })
+    await vi.waitFor(() => expect(snap(session)).toMatchObject({ ptyId: 'pty-3', status: 'running', cwd: '/repo/sub' }))
+    expect(terminal.spawns).toHaveLength(3)
+    expect(terminal.spawns[2]).toMatchObject({ panelId: 'p1', cwd: '/repo/sub', continueFrom: 'pty-2' })
+    expect(terminal.spawns[2].launch).toBeUndefined()
+    expect(terminal.writes).toEqual([])
+    terminal.update('pty-3', { alive: false, exitCode: 0 })
+    await Promise.resolve()
+    expect(snap(session).status).toBe('exited')
+    expect(terminal.spawns).toHaveLength(3)
+  })
+
+  it('does not open a fallback shell after the panel is removed', async () => {
+    const { session, terminal } = setup()
+    await session.start()
+    await session.launch({ kind: 'command', params: { executable: 'agent', args: [] } })
+    terminal.update('pty-2', { alive: false, exitCode: 1 })
+    session.dispose('removed')
+    await Promise.resolve()
+    expect(terminal.spawns).toHaveLength(2)
+  })
+
+  it('shows a fallback shell failure without looping and releases the old PTY on removal', async () => {
+    const { session, terminal } = setup()
+    await session.start()
+    await session.launch({ kind: 'command', params: { executable: 'agent', args: [] } })
+    terminal.failOnce(new Error('shell unavailable'))
+    terminal.update('pty-2', { alive: false, exitCode: 1 })
+    await vi.waitFor(() => expect(snap(session)).toMatchObject({ status: 'failed', error: 'shell unavailable', ptyId: 'pty-2' }))
+    expect(terminal.spawns).toHaveLength(3)
+    session.dispose('removed')
+    expect(terminal.closed).toContain('pty-2')
+  })
+
   it('has no side effects until start, then spawns in its checkout', async () => {
     const { session, terminal } = setup({ worktreeId: 'wt' })
     expect(terminal.spawns).toEqual([])
@@ -238,6 +278,25 @@ describe('TerminalSession', () => {
 })
 
 describe('createTerminalPanels', () => {
+  it('acknowledges placement while session startup is still pending', async () => {
+    const terminal = fakeTerminal()
+    const panels = createTerminalPanels({ terminal: terminal.service, root: '/repo' })
+    const kit = {
+      newId: () => 'p1',
+      record: () => record(),
+      add: () => 'p1',
+      uniqueTitle: (title: string) => title,
+    }
+    let finish!: () => void
+    const started = new Promise<void>((resolve) => { finish = resolve })
+    const terminals = panels.agentTerminals(kit as never, { started: () => started })
+    await expect(terminals.create({ cwd: '/repo', title: 'Agent', launch: { kind: 'agents.start', params: { agentId: 'codex' } }, placement: {} })).resolves.toBe('p1')
+    expect(terminals.state('p1')).toMatchObject({ alive: false, starting: true })
+    expect(terminal.spawns).toHaveLength(0)
+    finish()
+    await started
+  })
+
   it('hands a pending launch to the first spawn only', async () => {
     const terminal = fakeTerminal()
     const panels = createTerminalPanels({ terminal: terminal.service, root: '/repo' })
@@ -261,6 +320,7 @@ describe('createTerminalPanels', () => {
     })
     const launch = { kind: 'agents.start', params: { agentId: 'codex', prompt: 'go' } }
     await expect(terminals.create({ cwd: '/repo', title: 'Agent', launch, placement: { near: 'canvas' } })).resolves.toBe('p1')
+    await vi.waitFor(() => expect(terminals.state('p1')).toEqual({ alive: true, busy: false }))
     expect(placed).toEqual({ near: 'canvas' })
     expect(terminal.spawns[0]).toMatchObject({ launch, cwd: '/repo' })
     expect(terminal.spawns[0].restore).toBeUndefined()

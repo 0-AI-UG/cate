@@ -55,6 +55,8 @@ export interface ClientStateStore {
   setViewport(canvasId: CanvasId, viewport: Viewport): void
   /** Null restores. */
   setMaximizedStack(windowId: WindowId, stackId: StackId | null): void
+  /** Keep live panel state and at most 200 removed panels for undo. */
+  retainPanelViews(panelIds: ReadonlySet<PanelId>): void
   setPanelView(panelId: PanelId, key: string, value: unknown): void
   /** Queues an intent; returns its id. */
   pushIntent(intent: Omit<Intent, 'id'>): number
@@ -78,6 +80,15 @@ export function createClientStateStore(): ClientStateStore {
     maximizedStacks: {},
     panelViews: {},
     intents: [],
+  }
+  let livePanels: ReadonlySet<PanelId> | null = null
+  const retainViews = (views: ClientState['panelViews']): ClientState['panelViews'] => {
+    const live = livePanels
+    if (!live) return views
+    const removed = Object.keys(views).filter((id) => !live.has(id))
+    if (removed.length <= 200) return views
+    const evict = new Set(removed.slice(0, removed.length - 200))
+    return Object.fromEntries(Object.entries(views).filter(([id]) => !evict.has(id)))
   }
   let nextIntent = 1
   const listeners = new Set<() => void>()
@@ -116,10 +127,15 @@ export function createClientStateStore(): ClientStateStore {
       if ((state.maximizedStacks[windowId] ?? null) === stackId) return
       update({ maximizedStacks: withEntry(state.maximizedStacks, windowId, stackId) })
     },
+    retainPanelViews(panelIds) {
+      livePanels = panelIds
+      const panelViews = retainViews(state.panelViews)
+      if (panelViews !== state.panelViews) update({ panelViews })
+    },
     setPanelView(panelId, key, value) {
       const view = state.panelViews[panelId]
       if (view && Object.is(view[key], value)) return
-      update({ panelViews: { ...state.panelViews, [panelId]: { ...view, [key]: value } } })
+      update({ panelViews: retainViews({ ...state.panelViews, [panelId]: { ...view, [key]: value } }) })
     },
     pushIntent(intent) {
       const id = nextIntent++

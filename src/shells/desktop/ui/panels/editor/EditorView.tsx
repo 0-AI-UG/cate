@@ -37,11 +37,6 @@ const FilePreview = lazy(() => import('./FilePreview'))
 
 type Reveal = { line: number; column?: number | null }
 
-/** The last runtime reveal each panel applied on this client. */
-const appliedReveals = new Map<string, number>()
-/** Sidebar presentation per panel on this client. */
-const sidebars = new Map<string, { visible: boolean; view: 'explorer' | 'search' }>()
-
 export default function EditorView({ workspaceId, panelId, record, send: sendOp, snapshot, visible, focused }: PanelViewProps<EditorSnapshot, EditorOp>) {
   const send = sendOp as (op: EditorOp) => Promise<unknown>
   const font = useEditorFont()
@@ -49,7 +44,8 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
   const fileViews = useFileViewsHost()
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const pendingReveal = useRef<Reveal | null>(null)
-  const [sidebar, setSidebarState] = useState(() => sidebars.get(panelId) ?? { visible: true, view: 'explorer' as const })
+  const [sidebar, setSidebar] = usePanelView(workspaceId, panelId, 'sidebar', { visible: true, view: 'explorer' as 'explorer' | 'search' })
+  const [appliedReveal, setAppliedReveal] = usePanelView<number | null>(workspaceId, panelId, 'appliedReveal', null)
   const [focusSearch, setFocusSearch] = useState(0)
   const [background, setBackground] = useState(() => getActiveTheme().editor.colors?.['editor.background'] ?? 'var(--surface-1)')
 
@@ -74,11 +70,6 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
   const markdown = useTextContent(mode === 'preview' && textual ? text : null)
 
   useEffect(() => subscribeTheme((theme) => setBackground(theme.editor.colors?.['editor.background'] ?? 'var(--surface-1)')), [])
-
-  const setSidebar = (next: { visible: boolean; view: 'explorer' | 'search' }) => {
-    sidebars.set(panelId, next)
-    setSidebarState(next)
-  }
 
   const run = useCallback(async (work: () => Promise<unknown>, failure: string) => {
     try {
@@ -105,11 +96,11 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
   }, [])
   const runtimeReveal = snapshot?.reveal ?? null
   useEffect(() => {
-    if (!runtimeReveal || appliedReveals.get(panelId) === runtimeReveal.seq) return
-    appliedReveals.set(panelId, runtimeReveal.seq)
+    if (!runtimeReveal || appliedReveal === runtimeReveal.seq) return
+    setAppliedReveal(runtimeReveal.seq)
     if (previewable) pickMode('code')
     applyReveal(runtimeReveal)
-  }, [runtimeReveal, panelId, applyReveal, previewable, pickMode])
+  }, [runtimeReveal, appliedReveal, setAppliedReveal, applyReveal, previewable, pickMode])
   const hasRevealIntent = useClientState(workspaceId, (state) => state.intents.some((intent) => intent.panelId === panelId && intent.kind === 'reveal'))
   useEffect(() => {
     if (!hasRevealIntent) return
