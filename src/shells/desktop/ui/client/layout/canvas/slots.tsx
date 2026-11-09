@@ -5,7 +5,7 @@
 import React from 'react'
 import type { DockNode, NodeId } from '@workspace/document/contract'
 import { PanelHost } from '../../host/PanelHost'
-import { syncPanelSurfaces } from '../../host/surfaceRegistry'
+import { syncPanelSurfaces, type SurfaceViewport } from '../../host/surfaceRegistry'
 import { DockView } from '../dock'
 
 export interface NodeDockProps {
@@ -28,7 +28,7 @@ export interface CanvasSlots {
   /** Realigns native surfaces (webviews in a fixed host outside the
    *  transformed canvas) in the same task as a viewport change, so they never
    *  trail their nodes by a frame. Installed by client/host. */
-  syncSurfaces: () => void
+  syncSurfaces: (viewport?: SurfaceViewport) => void
   /** Renders one panel; the list fallback of a client without `canvas` uses
    *  it. Installed by client/host. */
   PanelHost?: React.ComponentType<{ workspaceId: string; panelId: string }>

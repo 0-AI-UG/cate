@@ -3,14 +3,15 @@
 
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
+import { terminalSettings } from '@services/terminal/contract'
 import { createLinkProvider, createOsc8Handler, type LinkPorts } from './linkProvider'
 import { makeTerminalKeyEventHandler } from './input'
 import { registerOsc52ClipboardHandler, type ClipboardWriter } from './osc52'
 import type { TerminalOptionsFromSettings } from './settings'
 
-/** Chromium caps live WebGL contexts per GPU process; terminals past this
- *  many per client stay on xterm's DOM renderer, which always paints. */
-const MAX_WEBGL_TERMINALS = 6
+/** Bound per-terminal GPU backing stores; additional mounted terminals use
+ *  xterm's DOM renderer after the two accelerated slots are occupied. */
+const MAX_WEBGL_TERMINALS = 2
 let webglTerminals = 0
 
 export interface TerminalXtermOptions {
@@ -33,7 +34,7 @@ export interface TerminalXterm {
   gridBox(): { width: number; height: number } | null
   /** Re-measures the scrollbar width xterm caches at construction. */
   syncScrollBarWidth(): void
-  setOptions(options: Partial<TerminalOptionsFromSettings> & { theme?: ITheme }): void
+  setOptions(options: Partial<TerminalOptionsFromSettings> & { theme?: ITheme; scrollback?: number }): void
   isAtBottom(): boolean
   /** Drops the WebGL renderer for good and repaints on the DOM renderer, for
    *  a garbled GPU atlas. */
@@ -46,7 +47,7 @@ export function createTerminalXterm(config: TerminalXtermOptions): TerminalXterm
     ...config.options,
     theme: config.theme,
     allowProposedApi: true,
-    scrollback: 5000,
+    scrollback: terminalSettings.keys.terminalScrollback.default,
     altClickMovesCursor: true,
     linkHandler: createOsc8Handler(config.links, config.isMac),
   })

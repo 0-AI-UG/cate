@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createLogger } from '@kernel/log/contract'
 import { writeFileAtomic } from '@kernel/state/node'
-import { CANVAS_WALLPAPER_MAX_BYTES, canvasWallpaperExtension, canvasWallpaperMime } from '../contract'
+import { CANVAS_WALLPAPER_MAX_BYTES, canvasWallpaperExtension, canvasWallpaperMime, type CanvasBackgroundData } from '../contract'
 
 const log = createLogger('canvas-backgrounds')
 
@@ -17,8 +17,8 @@ export interface CanvasBackgrounds {
   importImage(source: string): Promise<string>
   /** Deletes every managed copy but `keepPath` (empty: all). Never throws. */
   prune(keepPath: string): void
-  /** A wallpaper as a data URL, or null (wrong type, too large, unreadable). */
-  read(filePath: string): Promise<string | null>
+  /** A wallpaper as bytes and MIME type, or null (wrong type, too large, unreadable). */
+  read(filePath: string): Promise<CanvasBackgroundData | null>
 }
 
 export function createCanvasBackgrounds(dir: string): CanvasBackgrounds {
@@ -59,7 +59,7 @@ export function createCanvasBackgrounds(dir: string): CanvasBackgrounds {
       try {
         const stat = await fs.promises.stat(filePath)
         if (!stat.isFile() || stat.size > CANVAS_WALLPAPER_MAX_BYTES) return null
-        return `data:${mime};base64,${(await fs.promises.readFile(filePath)).toString('base64')}`
+        return { bytes: await fs.promises.readFile(filePath), mimeType: mime }
       } catch (error) {
         log.warn('read of %s failed: %O', filePath, error)
         return null

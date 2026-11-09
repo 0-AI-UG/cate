@@ -28,6 +28,14 @@ function installFakeCodex(): void {
   launchLog = path.join(home, 'codex-launches.jsonl')
   writeFileSync(path.join(fakeBin, 'fake-codex.cjs'), `
 const fs = require('node:fs')
+const probeGate = ${JSON.stringify(path.join(home, 'hold-codex-probes'))}
+if (fs.existsSync(probeGate) && (process.argv.includes('--version') || process.argv[2] === 'login')) {
+  fs.writeFileSync(probeGate + '.started', 'yes')
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20000)
+}
+if (process.argv.includes('--version')) { console.log('codex-cli 1.0.0'); process.exit(0) }
+if (process.argv[2] === 'login' && process.argv[3] === 'status') { console.log('Logged in using ChatGPT'); process.exit(0) }
+if (process.argv[2] === 'app-server') { setInterval(() => {}, 1000); process.stdin.resume(); return }
 const launch = { argv: process.argv.slice(2), cwd: process.cwd() }
 fs.appendFileSync(process.env.CATE_FAKE_CODEX_LAUNCH_LOG, JSON.stringify(launch) + '\\n')
 console.log('FAKE_CODEX_STARTED ' + JSON.stringify(launch.argv))
@@ -88,6 +96,36 @@ test.afterEach(async () => closeApp(app, { home }))
 
 const launches = () => (existsSync(launchLog) ? readFileSync(launchLog, 'utf8').trim().split('\n').filter(Boolean) : [])
 
+test('places and launches a terminal while account inspection is stalled', async () => {
+  // Populate menu availability, then stall the next background refresh.
+  await page.getByRole('button', { name: 'New terminal', exact: true }).hover()
+  await page.getByRole('menuitem', { name: 'New Codex', exact: true }).click()
+  const gate = path.join(home, 'hold-codex-probes')
+  writeFileSync(gate, 'hold')
+  const inspection = page.evaluate(() => window.__cateE2E!.call('agents', 'setupInspect', { refresh: true })).catch(() => {})
+  await expect.poll(() => existsSync(gate + '.started')).toBe(true)
+  const before = await page.evaluate(() => window.__cateE2E!.panels().length)
+  await page.getByRole('button', { name: 'Create new terminal at position 1', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.__cateE2E!.panels().length), { timeout: 4000 }).toBe(before + 1)
+  await expect.poll(() => launches().length, { timeout: 4000 }).toBe(1)
+  await inspection
+})
+
+test('an exited agent becomes an ordinary terminal without replaying its task', async () => {
+  const started = await start('finish-e2e')
+  await expectTerminalText(page, started.panelId, 'FAKE_CODEX_STARTED')
+  const before = await page.evaluate((id) => window.__cateE2E!.sessionSnapshot(id), started.panelId) as { ptyId: string }
+  await page.evaluate((id) => window.__cateE2E!.writeTerminal(id, 'finish-e2e\r'), started.panelId)
+  await expect.poll(async () => {
+    const snapshot = await page.evaluate((id) => window.__cateE2E!.sessionSnapshot(id), started.panelId) as { ptyId: string; status: string }
+    return snapshot.status === 'running' && snapshot.ptyId !== before.ptyId
+  }).toBe(true)
+  await expectTerminalText(page, started.panelId, 'FAKE_CODEX_STARTED')
+  const shell = await runInTerminal(page, started.panelId, 'echo FALLBACK_SHELL_READY')
+  expect(shell).toMatchObject({ code: 0, output: 'FALLBACK_SHELL_READY' })
+  expect(launches()).toHaveLength(1)
+})
+
 test('starts a CLI agent with its prompt as argv, next to the calling terminal', async () => {
   test.setTimeout(120_000)
   const started = await start('--literal task; no shell')
@@ -133,4 +171,19 @@ test('restart does not replay a started agent\'s prompt', async () => {
   await launch()
   await page.waitForTimeout(3_000)
   expect(launches()).toHaveLength(1)
+})
+
+test('action bar agent launch reaches the CLI', async () => {
+  const samples: number[] = []
+  for (let i = 0; i < 3; i++) {
+    const started = performance.now()
+    await page.getByRole('button', { name: 'New terminal', exact: true }).hover()
+    await page.getByRole('menuitem', { name: 'New Codex', exact: true }).click()
+    // Placement picker: place the requested agent on the canvas.
+    await page.getByRole('button', { name: 'Create new terminal at position 1', exact: true }).click()
+    await expect.poll(() => launches().length, { timeout: 30_000 }).toBe(i + 1)
+    samples.push(performance.now() - started)
+    expect(samples.at(-1)).toBeLessThan(20_000)
+  }
+  console.log('action bar agent startup ms', samples)
 })

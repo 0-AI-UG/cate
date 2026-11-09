@@ -61,9 +61,29 @@ interface SurfaceRect {
 
 // All surfaces share one read phase per frame. DOM reads are cached before any
 // output styles are written, including ancestors shared by different slots.
+/** Canvas worlds use scale(zoom) translate(offset / zoom), with origin 0 0.
+ * Only that known transform can reuse the previous DOM measurement. */
+export interface SurfaceViewport {
+  world: HTMLElement
+  companions?: HTMLElement[]
+  zoom: number
+  offset: { x: number; y: number }
+}
+
+type GeometryStyle = Pick<CSSStyleDeclaration,
+  'display' | 'visibility' | 'opacity' | 'zIndex' | 'overflow' | 'overflowX' | 'overflowY' | 'pointerEvents'
+  | 'borderTopWidth' | 'borderRightWidth' | 'borderBottomWidth' | 'borderLeftWidth'
+  | 'borderRadius' | 'borderTopLeftRadius' | 'borderTopRightRadius' | 'borderBottomRightRadius' | 'borderBottomLeftRadius'>
+const STYLE_PROPERTIES: Array<keyof GeometryStyle> = [
+  'display', 'visibility', 'opacity', 'zIndex', 'overflow', 'overflowX', 'overflowY', 'pointerEvents',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
+  'borderRadius', 'borderTopLeftRadius', 'borderTopRightRadius', 'borderBottomRightRadius', 'borderBottomLeftRadius',
+]
+
 function frameGeometry() {
   const rects = new Map<Element, DOMRect>()
-  const styles = new Map<Element, CSSStyleDeclaration>()
+  const styles = new Map<Element, GeometryStyle>()
+  const sizes = new Map<HTMLElement, { width: number; height: number }>()
   const layers = new Map<Element, Array<{ element: HTMLElement; z: number }>>()
   const overlays = new Map<string, HTMLElement[]>()
   for (const element of document.querySelectorAll<HTMLElement>('[data-browser-surface-overlay]')) {
@@ -77,13 +97,17 @@ function frameGeometry() {
     if (!rects.has(element)) {
       perfCount('browserGeometryRect')
       rects.set(element, element.getBoundingClientRect())
+      const world = element.closest<HTMLElement>('[data-canvas-world], [data-canvas-top-overlay-world], [data-canvas-relation-overlay-world]')
+      if (world && world !== element) rect(world)
+      else if (world) size(world)
     }
     return rects.get(element)!
   }
-  const style = (element: Element): CSSStyleDeclaration => {
+  const style = (element: Element): GeometryStyle => {
     if (!styles.has(element)) {
       perfCount('browserGeometryStyle')
-      styles.set(element, getComputedStyle(element))
+      const computed = getComputedStyle(element)
+      styles.set(element, Object.fromEntries(STYLE_PROPERTIES.map(key => [key, computed[key]])) as GeometryStyle)
     }
     return styles.get(element)!
   }
@@ -99,7 +123,35 @@ function frameGeometry() {
     }
     return layers.get(layer)!
   }
-  return { rect, style, nodes, overlays }
+  const size = (element: HTMLElement) => {
+    if (!sizes.has(element)) sizes.set(element, { width: element.offsetWidth, height: element.offsetHeight })
+    return sizes.get(element)!
+  }
+  const move = (before: SurfaceViewport, after: SurfaceViewport): boolean => {
+    let moved = false
+    for (const world of [after.world, ...(after.companions ?? [])]) {
+      const bounds = rects.get(world)
+      if (!bounds) continue
+      const logical = size(world)
+      if (!logical.width || !logical.height || before.zoom <= 0) return false
+      const parentX = bounds.width / logical.width / before.zoom
+      const parentY = bounds.height / logical.height / before.zoom
+      const originX = bounds.left - before.offset.x * parentX
+      const originY = bounds.top - before.offset.y * parentY
+      const scale = after.zoom / before.zoom
+      for (const [element, boundsOfElement] of rects) {
+        if (element !== world && !world.contains(element)) continue
+        rects.set(element, new DOMRect(
+          originX + after.offset.x * parentX + (boundsOfElement.left - bounds.left) * scale,
+          originY + after.offset.y * parentY + (boundsOfElement.top - bounds.top) * scale,
+          boundsOfElement.width * scale, boundsOfElement.height * scale,
+        ))
+      }
+      moved = true
+    }
+    return moved
+  }
+  return { rect, style, nodes, overlays, size, move }
 }
 type FrameGeometry = ReturnType<typeof frameGeometry>
 
@@ -154,7 +206,7 @@ function surfaceBorderRadius(slot: HTMLElement, rect: DOMRect, scale: number, ge
   if (!node) return '0px'
   const bounds = geometry.rect(node)
   const style = geometry.style(node)
-  const border = (side: string): number => Number.parseFloat(style.getPropertyValue(`border-${side}-width`)) || 0
+  const border = (side: string): number => Number.parseFloat(style[`border${side[0].toUpperCase()}${side.slice(1)}Width` as keyof GeometryStyle]) || 0
   const left = Math.abs((rect.left - bounds.left) / scale - border('left')) < 1
   const right = Math.abs((bounds.right - rect.right) / scale - border('right')) < 1
   const top = Math.abs((rect.top - bounds.top) / scale - border('top')) < 1
@@ -301,8 +353,9 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
   }
 
   const rect = geometry.rect(slot)
-  const logicalWidth = slot.offsetWidth || rect.width
-  const logicalHeight = slot.offsetHeight || rect.height
+  const size = geometry.size(slot)
+  const logicalWidth = size.width || rect.width
+  const logicalHeight = size.height || rect.height
   const visible = rect.width > 0
     && rect.height > 0
     && geometry.style(slot).visibility !== 'hidden'
@@ -327,25 +380,43 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
     || (!!cover && geometry.style(cover).pointerEvents !== 'none')
   return () => writeSurface(surface, true, {
     visibility: 'visible',
-    position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`,
+    // Keep layout geometry fixed during canvas gestures. Positioning via the
+    // compositor avoids relaying out the guest host for every pan frame.
+    position: 'fixed', left: '0px', top: '0px',
     width: `${logicalWidth}px`, height: `${logicalHeight}px`, transformOrigin: '0 0',
-    transform: `scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`,
+    transform: `translate(${rect.left}px, ${rect.top}px) scale(${rect.width / logicalWidth}, ${rect.height / logicalHeight})`,
     borderRadius, overflow: 'hidden',
     clipPath, zIndex: nodeZIndex === 'auto' ? '1' : nodeZIndex,
     opacity: '1', pointerEvents: inert ? 'none' : 'auto',
   })
 }
 
+let cachedGeometry: FrameGeometry | null = null
+const viewports = new WeakMap<HTMLElement, SurfaceViewport>()
+let drainMutations: (() => void) | null = null
 let frame: number | null = null
 let cleanupTracking: (() => void) | null = null
 let rebuildTracking = false
 let tracked = new Set<HTMLElement>()
-const animatedElements = new Set<HTMLElement>()
-const geometryAnimations = new Map<HTMLElement, Animation[]>()
+const animatedElements = new Set<Element>()
+const geometryAnimations = new Map<Element, Animation[]>()
 
 // Color, shadow and activity-pulse animations must never start a geometry loop.
 const GEOMETRY_PROPERTIES = /^(transform|translate|rotate|scale|perspective|offsetPath|offsetDistance|offsetRotate|left|top|right|bottom|width|height|minWidth|maxWidth|minHeight|maxHeight|margin|padding|border.*Width|inset|flex|gap|rowGap|columnGap|grid|fontSize|lineHeight|display|visibility|opacity|clipPath|zIndex)/
 function refreshAnimations(): void {
+  // WAAPI animations do not emit CSS animation events. Discover relevant ones
+  // before reusing geometry, including ones started between input events.
+  for (const animation of document.getAnimations?.() ?? []) {
+    const effect = animation.effect as KeyframeEffect | null
+    const target = effect?.target
+    if (!(target instanceof Element) || animation.playState !== 'running') continue
+    const keyframes = effect?.getKeyframes() ?? []
+    const properties = keyframes.flatMap(keyframe => Object.keys(keyframe)).filter(property => GEOMETRY_PROPERTIES.test(property))
+    const affectsLayout = properties.some(property => !/^(transform|translate|rotate|scale|perspective|offset|visibility|opacity|clipPath|zIndex)/.test(property))
+    if (properties.length && (affectsLayout || [...tracked].some(element => target === element || target.contains(element)))) {
+      animatedElements.add(target)
+    }
+  }
   for (const element of animatedElements) {
     const animations = (element.getAnimations?.() ?? []).filter((animation) => (
       animation.playState === 'running'
@@ -373,9 +444,12 @@ function schedule(): void {
  * transform. Waiting for MutationObserver -> requestAnimationFrame puts the
  * fixed guest host one paint behind the canvas node that owns its slot.
  */
-export function syncPanelSurfaces(): void {
+export function syncPanelSurfaces(viewport?: SurfaceViewport): void {
+  const previous = viewport && viewports.get(viewport.world)
+  if (viewport) viewports.set(viewport.world, { ...viewport, offset: { ...viewport.offset } })
   if (!hasSurfaces()) return
   const started = PERF_ENABLED ? performance.now() : 0
+  drainMutations?.()
   if (rebuildTracking) watchSurfaces()
   refreshAnimations()
   // Background-workspace guests deliberately stay mounted so CLI/agent
@@ -390,13 +464,21 @@ export function syncPanelSurfaces(): void {
     return
   }
   perfCount('browserGeometryFrame')
-  const geometry = frameGeometry()
+  const reused = viewport && previous && cachedGeometry && !geometryAnimations.size
+    && cachedGeometry.move(previous, viewport)
+  if (!reused) cachedGeometry = frameGeometry()
+  const geometry = cachedGeometry!
+  perfCount(reused ? 'browserGeometryCacheReuse' : 'browserGeometryCacheRebuild')
   const writes = activeIds.map((id) => measureSurface(id, geometry))
   for (const write of writes) write()
   // Animated transforms produce no further mutations or resize notifications.
   for (const [element, animations] of geometryAnimations) {
     if (!animations.some((animation) => animation.playState === 'running')) geometryAnimations.delete(element)
   }
+  // The synchronous viewport pass consumed pending invalidations. Do not do
+  // the same geometry work again on the next animation frame.
+  if (frame !== null) { cancelAnimationFrame(frame); frame = null }
+  if (geometryAnimations.size) schedule()
   if (PERF_ENABLED) perfCount('browserGeometryMicros', Math.round((performance.now() - started) * 1000))
 }
 
@@ -412,27 +494,48 @@ function watchSurfaces(): void {
     frame = null
     return
   }
-  const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
-  const mutation = typeof MutationObserver === 'undefined' ? null : new MutationObserver((records) => {
+  const invalidate = () => { cachedGeometry = null; schedule() }
+  const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(invalidate)
+  const onMutation = (records: MutationRecord[]) => {
     // Canvas owns these transforms and synchronously aligns the fixed guests.
     // Observing their style/class writes would repeat that work next frame.
     // Child changes still rebuild the tracked node set.
-    const pending = records.filter((record) => record.type === 'childList' || !(
-      (record.target as HTMLElement).hasAttribute('data-canvas-world')
-      || (record.target as HTMLElement).hasAttribute('data-canvas-top-overlay-world')
-      || (record.target as HTMLElement).hasAttribute('data-canvas-grid')
-    ))
+    const pending = records.filter((record) => {
+      if (record.type !== 'attributes') return true
+      const target = record.target as HTMLElement
+      // DOMTokenList and style setters can emit records even when the final
+      // attribute is unchanged. Those writes must not enqueue a second pass.
+      if (record.attributeName && record.oldValue === target.getAttribute(record.attributeName)) return false
+      if (record.attributeName !== 'style') return true
+      if (target.hasAttribute('data-canvas-grid')) return false
+      if (!target.matches('[data-canvas-world], [data-canvas-top-overlay-world], [data-canvas-relation-overlay-world]')) return true
+      // Only the transform is owned by the imperative viewport pipeline. A
+      // class, overflow, size or other style change still needs fresh reads.
+      const previous = document.createElement('div')
+      previous.style.cssText = record.oldValue ?? ''
+      previous.style.removeProperty('transform')
+      const properties = Array.from(target.style).filter(property => property !== 'transform')
+      return properties.length !== previous.style.length || properties.some(property => (
+        target.style.getPropertyValue(property) !== previous.style.getPropertyValue(property)
+        || target.style.getPropertyPriority(property) !== previous.style.getPropertyPriority(property)
+      ))
+    })
     if (pending.length === 0) return
     if (pending.some((record) => record.type === 'childList')) rebuildTracking = true
     for (const record of pending) animatedElements.add(record.target as HTMLElement)
-    schedule()
-  })
+    invalidate()
+  }
+  const mutation = typeof MutationObserver === 'undefined' ? null : new MutationObserver(onMutation)
   const ancestors = new Set<HTMLElement>()
   const activeIds = [...slots.entries()]
     .filter(([id, slot]) => surfaces.has(id) && slot.isConnected)
     .map(([id]) => id)
-  for (const id of activeIds) {
-    for (let element: HTMLElement | null = slots.get(id) ?? null; element; element = element.parentElement) {
+  const sources = [
+    ...activeIds.map(id => slots.get(id)!),
+    ...document.querySelectorAll<HTMLElement>('[data-browser-surface-overlay]'),
+  ]
+  for (const source of sources) {
+    for (let element: HTMLElement | null = source; element; element = element.parentElement) {
       if (ancestors.has(element)) break
       ancestors.add(element)
     }
@@ -444,7 +547,7 @@ function watchSurfaces(): void {
     animatedElements.add(element)
     resize?.observe(element)
     mutation?.observe(element, {
-      attributes: true, attributeFilter: ['style', 'class', 'aria-hidden', 'hidden'], childList,
+      attributes: true, attributeOldValue: true, childList,
     })
   }
   for (const element of ancestors) observe(element, true)
@@ -453,22 +556,55 @@ function watchSurfaces(): void {
       if (sibling instanceof HTMLElement && !outputs.some((output) => sibling.contains(output))) observe(sibling, false)
     }
   }
+  // Portals can appear deep in a branch that did not contain a slot when
+  // tracking was built. Ignore ordinary terminal/editor content mutations.
+  const onStructure = (records: MutationRecord[]) => {
+    const relevant = records.some(record => record.type === 'attributes' || [...record.addedNodes, ...record.removedNodes].some(node => (
+      node instanceof Element && (node.matches('[data-browser-surface-overlay]') || node.querySelector('[data-browser-surface-overlay]'))
+    )))
+    if (relevant) { rebuildTracking = true; invalidate() }
+  }
+  const structure = typeof MutationObserver === 'undefined' ? null : new MutationObserver(onStructure)
+  structure?.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-browser-surface-overlay'] })
+  const stylesheet = typeof MutationObserver === 'undefined' ? null : new MutationObserver(invalidate)
+  stylesheet?.observe(document.head, { subtree: true, childList: true, characterData: true, attributes: true })
+  drainMutations = () => {
+    if (mutation) onMutation(mutation.takeRecords())
+    if (structure) onStructure(structure.takeRecords())
+    if (stylesheet?.takeRecords().length) invalidate()
+  }
+  const onStylesheetLoad = (event: Event): void => {
+    if (event.target instanceof HTMLLinkElement && event.target.rel === 'stylesheet') invalidate()
+  }
+  window.addEventListener('load', onStylesheetLoad, true)
+  // Pseudo-class rules can change source geometry without a style mutation.
+  const interactionEvents = ['focusin', 'focusout', 'pointerover', 'pointerout']
+  const onInteraction = (event: Event): void => {
+    if (event.target instanceof Element) invalidate()
+  }
+  for (const event of interactionEvents) window.addEventListener(event, onInteraction, true)
   const onAnimation = (event: Event): void => {
     const element = event.target as HTMLElement
     if (!tracked.has(element)) return
     animatedElements.add(element)
-    schedule()
+    invalidate()
   }
   const animationEvents = ['transitionrun', 'transitionend', 'transitioncancel', 'animationstart', 'animationend', 'animationcancel']
   for (const event of animationEvents) window.addEventListener(event, onAnimation, true)
-  window.addEventListener('resize', schedule)
-  window.addEventListener('scroll', schedule, true)
+  window.addEventListener('resize', invalidate)
+  window.addEventListener('scroll', invalidate, true)
   cleanupTracking = () => {
     resize?.disconnect()
     mutation?.disconnect()
+    structure?.disconnect()
+    stylesheet?.disconnect()
+    window.removeEventListener('load', onStylesheetLoad, true)
+    for (const event of interactionEvents) window.removeEventListener(event, onInteraction, true)
     for (const event of animationEvents) window.removeEventListener(event, onAnimation, true)
-    window.removeEventListener('resize', schedule)
-    window.removeEventListener('scroll', schedule, true)
+    window.removeEventListener('resize', invalidate)
+    window.removeEventListener('scroll', invalidate, true)
+    drainMutations = null
+    cachedGeometry = null
   }
 }
 
@@ -478,6 +614,7 @@ function refreshSurfaces(panelId: string): void {
   const surface = surfaces.get(panelId)
   if (surface && (!slots.has(panelId) || !surface.styles.width)) parkSurface(surface)
   rebuildTracking = true
+  cachedGeometry = null
   if (!hasSurfaces()) watchSurfaces()
   else schedule()
 }

@@ -71,6 +71,10 @@ export interface LaunchOptions {
   /** Put a canvas panel in the main window (default true when a workspace opens). */
   canvas?: boolean
   perf?: boolean
+  /** Additional Chromium switches for isolated profiling comparisons. */
+  chromiumArgs?: string[]
+  /** Alternate official engine or an isolated copy for GPU-cache profiling. */
+  executablePath?: string
   /** Terminals render with xterm's DOM renderer, so their text is in the DOM. */
   domTerminals?: boolean
   env?: Record<string, string>
@@ -108,8 +112,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
   const electronApp = await electron.launch({
     // Reproduce packaged-only failures with the released app and engine while
     // retaining this fixture's isolated profile and runtime.
-    executablePath: process.env.CATE_E2E_EXECUTABLE,
-    args: [process.env.CATE_E2E_APP_PATH ?? '.'],
+    executablePath: opts.executablePath ?? process.env.CATE_E2E_EXECUTABLE,
+    args: [...(opts.chromiumArgs ?? []), process.env.CATE_E2E_APP_PATH ?? '.'],
     cwd: REPO_ROOT,
     env,
   })

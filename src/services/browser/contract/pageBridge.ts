@@ -43,6 +43,9 @@ export type BrowserDownloadAction = 'cancel' | 'open' | 'show'
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
 
 export interface BrowserPageBridge {
+  /** Sticky protection for an automated page, including between calls. */
+  protectPage(webContentsId: number): Promise<void>
+  preparePageDiscard(webContentsId: number): Promise<boolean>
   /** Binds the page driver to a guest (after its `dom-ready`). */
   attach(guest: BrowserGuestRef): Promise<void>
   /** Runs one page-driver method on a bound guest. */
@@ -83,6 +86,8 @@ export interface BrowserPageBridge {
 
 /** IPC channel names between the shell preload and desktop main. */
 export const BROWSER_PAGE_CHANNELS = {
+  protectPage: 'cate:browser-page:protect',
+  preparePageDiscard: 'cate:browser-page:prepare-discard',
   attach: 'cate:browser-page:attach',
   execute: 'cate:browser-page:execute',
   restartIfHung: 'cate:browser-page:restart-if-hung',
@@ -107,6 +112,7 @@ export const BROWSER_PAGE_CHANNELS = {
 export const BROWSER_GUEST_CHANNELS = {
   passwordFocus: 'cate-browser-password-focus',
   passwordSubmit: 'cate-browser-password-submit',
+  dirty: 'cate-browser-dirty',
   userInput: 'cate-browser-user-input',
   automationInput: 'cate-browser-automation-input',
   dialog: 'cate-browser-dialog',

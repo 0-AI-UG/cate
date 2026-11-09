@@ -14,6 +14,8 @@ function listen<T>(channel: string, listener: (value: T) => void): () => void {
 
 export function createBrowserPageBridge(): BrowserPageBridge {
   return {
+    protectPage: id => ipcRenderer.invoke(C.protectPage, id),
+    preparePageDiscard: id => ipcRenderer.invoke(C.preparePageDiscard, id),
     attach: (guest) => ipcRenderer.invoke(C.attach, guest),
     execute: (guest, method, args) => ipcRenderer.invoke(C.execute, guest, method, args),
     restartIfHung: (guest) => ipcRenderer.invoke(C.restartIfHung, guest),

@@ -138,7 +138,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
     </PopoverSurface>}
     <ReviewFileFilter value={fileFilter} onChange={view.setFileFilter} allCollapsed={allCollapsed} disabled={!files.length} onToggleCollapsed={() => view.setCollapsed(allCollapsed ? [] : files.map(keyOf))} />
     {error && <p role="alert" className="px-3 py-2 text-xs text-red-400">{error}</p>}
-    <div ref={root} className="min-h-0 flex-1 overflow-auto">
+    <div ref={root} data-review-scroll className="min-h-0 flex-1 overflow-auto">
       {loading && <LoadingState label="Loading recorded changes" className="h-full p-4 text-xs" />}
       {!loading && !files.length && <p className="p-4 text-xs text-muted">{showHistory ? 'No recorded edits match these filters. This does not mean the agent made no changes.' : 'No active agent edits match these filters. Recorded history is still available from the review options.'}</p>}
       {files.slice(0, shownCount).map((file) => {

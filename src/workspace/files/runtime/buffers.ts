@@ -315,19 +315,23 @@ class OpenBuffer {
     }, delay)
   }
 
-  async persist(): Promise<void> {
+  persist(): Promise<void> {
     if (this.persistTimer) {
       clearTimeout(this.persistTimer)
       this.persistTimer = null
     }
-    if (this.needsPersist()) {
-      const meta: PersistedMeta = { path: this.path, baseHash: this.baseHash, baseText: this.baseText }
-      await writeFileAtomic(this.file, encodePersisted(meta, Y.encodeStateAsUpdate(this.doc)), { mode: 0o600 })
-      this.persisted = true
-    } else if (this.persisted) {
-      await fs.rm(this.file, { force: true })
-      this.persisted = false
-    }
+    // A save/drop must remove the snapshot after any in-flight dirty write,
+    // otherwise that late write can resurrect a buffer that is already clean.
+    return this.svc.deps.lock.run(pathKey(this.file), async () => {
+      if (this.needsPersist()) {
+        const meta: PersistedMeta = { path: this.path, baseHash: this.baseHash, baseText: this.baseText }
+        await writeFileAtomic(this.file, encodePersisted(meta, Y.encodeStateAsUpdate(this.doc)), { mode: 0o600 })
+        this.persisted = true
+      } else if (this.persisted) {
+        await fs.rm(this.file, { force: true })
+        this.persisted = false
+      }
+    })
   }
 
   destroy(): void {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bytesToBase64, detectTypeFromBytes, viewedArrayBuffer } from './fileBytes'
+import { detectTypeFromBytes, viewedArrayBuffer } from './fileBytes'
 
 describe('detectTypeFromBytes', () => {
   it('recognises documents and images by their magic bytes', () => {
@@ -21,11 +21,5 @@ describe('viewedArrayBuffer', () => {
     const backing = new Uint8Array([1, 2, 3, 4, 5, 6])
     const view = backing.subarray(2, 5)
     expect([...new Uint8Array(viewedArrayBuffer(view))]).toEqual([3, 4, 5])
-  })
-})
-
-describe('bytesToBase64', () => {
-  it('encodes bytes', () => {
-    expect(bytesToBase64(new TextEncoder().encode('hi!'))).toBe('aGkh')
   })
 })

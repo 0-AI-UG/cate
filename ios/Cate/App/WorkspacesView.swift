@@ -53,9 +53,8 @@ struct WorkspacesView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Button("Join a workspace", systemImage: "plus", action: join)
-                } label: { Image(systemName: "plus") }
+                Button("Join a workspace", systemImage: "plus", action: join)
+                .labelStyle(.iconOnly)
                 .disabled(!core.ready)
             }
         }

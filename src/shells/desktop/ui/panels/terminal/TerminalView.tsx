@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRuntime } from '../../kernel/rpc'
+import { useWorkspaceSetting } from '../../kernel/settings'
 import { Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { bindTerminal, type TerminalBinding } from '@services/terminal/client'
@@ -44,6 +45,7 @@ export default function TerminalView({
   const processRef = useRef(processProxy)
   processRef.current = processProxy
   const options = useTerminalOptions()
+  const scrollback = useWorkspaceSetting(workspaceId, 'terminalScrollback')
   const containerRef = useRef<HTMLDivElement>(null)
   const renderBoxRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<TerminalXterm | null>(null)
@@ -102,7 +104,7 @@ export default function TerminalView({
     }
   }, [workspaceId, panelId])
 
-  useEffect(() => { xtermRef.current?.setOptions(options) }, [options, ready])
+  useEffect(() => { xtermRef.current?.setOptions({ ...options, scrollback }) }, [options, scrollback, ready])
 
   // ---- The byte stream: one binding per PTY -------------------------------
 
@@ -114,6 +116,7 @@ export default function TerminalView({
       terminal: xterm.terminal,
       process: processProxy,
       id: ptyId,
+      scrollback: xterm.terminal.options.scrollback,
       visible,
       ...grid.bindingOptions(xterm),
     })
@@ -126,7 +129,7 @@ export default function TerminalView({
     }
     // `visible` is sent by its own effect; a new binding starts from the current value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, ptyId, processProxy])
+  }, [ready, ptyId, processProxy, scrollback])
 
   useEffect(() => { bindingRef.current?.setVisible(visible) }, [visible, ptyId])
 
@@ -362,6 +365,12 @@ export default function TerminalView({
             ['--cell-scale' as string]: String(cellScale.w),
           }}
         />
+        {snapshot?.status === 'starting' && (
+          <div role="status" className="absolute inset-0 flex items-center justify-center gap-2 text-xs text-secondary">
+            <Spinner size={14} />
+            <span>Starting terminal…</span>
+          </div>
+        )}
         {failed && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-surface-1/85 backdrop-blur-sm">
             <div className="max-w-md mx-6 rounded-lg border border-subtle bg-surface-3 p-4 text-center">

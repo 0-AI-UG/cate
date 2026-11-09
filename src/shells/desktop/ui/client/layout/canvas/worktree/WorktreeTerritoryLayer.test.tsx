@@ -3,9 +3,10 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
-const { disposeGL, drawGL, resizeGL, setViewGL, canvasListeners, canvasApi } = vi.hoisted(() => {
+const { disposeGL, drawGL, resizeGL, setViewGL, canvasListeners, canvasApi, membership } = vi.hoisted(() => {
   const listeners = new Set<() => void>()
   return {
+    membership: { groups: [{ worktreeId: 'wt', color: '#123456', nodeIds: [] as string[] }] },
     disposeGL: vi.fn(),
     drawGL: vi.fn(),
     resizeGL: vi.fn(),
@@ -22,7 +23,7 @@ const { disposeGL, drawGL, resizeGL, setViewGL, canvasListeners, canvasApi } = v
 })
 vi.mock('../context', () => ({ useCanvasViewStore: () => canvasApi }))
 vi.mock('../uiState', () => ({ useCanvasUi: { getState: () => ({ focusedWorktreeId: null }), subscribe: () => () => {} } }))
-vi.mock('./useWorktreeMembership', () => ({ useWorktreeMembership: () => ({ groups: [] }) }))
+vi.mock('./useWorktreeMembership', () => ({ useWorktreeMembership: () => membership }))
 vi.mock('./territoryGL', () => ({
   createTerritoryGL: () => ({
     resize: resizeGL,
@@ -145,6 +146,37 @@ it('coalesces repeated canvas changes into one territory frame', () => {
     act(() => root.unmount())
     host.remove()
     canvasListeners.clear()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
+})
+
+it('allocates territory only while worktree groups are present', () => {
+  vi.stubGlobal('requestAnimationFrame', () => 1)
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  const groups = membership.groups
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  disposeGL.mockClear()
+  try {
+    membership.groups = []
+    act(() => root.render(<WorktreeTerritoryLayer workspaceId="ws" containerWidth={800} containerHeight={600} />))
+    expect(host.querySelector('canvas')).toBeNull()
+    expect(canvasListeners.size).toBe(0)
+
+    membership.groups = groups
+    act(() => root.render(<WorktreeTerritoryLayer workspaceId="ws" containerWidth={801} containerHeight={600} />))
+    expect(host.querySelector('[data-worktree-territory]')).not.toBeNull()
+    expect(canvasListeners.size).toBe(1)
+
+    membership.groups = []
+    act(() => root.render(<WorktreeTerritoryLayer workspaceId="ws" containerWidth={802} containerHeight={600} />))
+    expect(host.querySelector('canvas')).toBeNull()
+    expect(disposeGL).toHaveBeenCalledTimes(1)
+    expect(canvasListeners.size).toBe(0)
+  } finally {
+    membership.groups = groups
+    act(() => root.unmount())
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   }

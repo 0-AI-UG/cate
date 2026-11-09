@@ -1,5 +1,5 @@
 // Canvas wallpaper formats. The picker, the managed copy under
-// `canvas-backgrounds/` and the data URL the renderer paints all use this map.
+// `canvas-backgrounds/` and the binary image the renderer paints all use this map.
 
 /** Largest accepted wallpaper. Import and read both enforce it. */
 export const CANVAS_WALLPAPER_MAX_BYTES = 40 * 1024 * 1024
@@ -28,4 +28,9 @@ export function canvasWallpaperExtension(filePath: string): string {
 
 export function canvasWallpaperMime(filePath: string): string | null {
   return CANVAS_WALLPAPER_MIME_BY_EXTENSION[canvasWallpaperExtension(filePath) as WallpaperExtension] ?? null
+}
+
+export interface CanvasBackgroundData {
+  bytes: Uint8Array
+  mimeType: string
 }

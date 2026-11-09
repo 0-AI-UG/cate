@@ -42,11 +42,17 @@ function CanvasBackgroundImage() {
       return
     }
     let cancelled = false
+    let objectUrl: string | undefined
+    setDataUrl(null)
     port.readImage(path).then(
-      (url) => { if (!cancelled) setDataUrl(url) },
+      (image) => {
+        if (cancelled || !image) return
+        objectUrl = URL.createObjectURL(new Blob([new Uint8Array(image.bytes)], { type: image.mimeType }))
+        setDataUrl(objectUrl)
+      },
       () => { if (!cancelled) setDataUrl(null) },
     )
-    return () => { cancelled = true }
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [path])
 
   if (!dataUrl) return null

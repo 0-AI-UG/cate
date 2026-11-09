@@ -50,9 +50,9 @@ describe('canvas backgrounds', () => {
     expect(fs.readdirSync(bgDir)).toHaveLength(0)
   })
 
-  test('reads wallpapers as data URLs and refuses other files', async () => {
+  test('reads wallpaper bytes and refuses other files', async () => {
     const managed = await backgrounds.importImage(writeSrc('c.webp', 'WEBP'))
-    expect(await backgrounds.read(managed)).toBe(`data:image/webp;base64,${Buffer.from('WEBP').toString('base64')}`)
+    expect(await backgrounds.read(managed)).toEqual({ bytes: Buffer.from('WEBP'), mimeType: 'image/webp' })
     expect(await backgrounds.read(writeSrc('secret.txt', 'x'))).toBeNull()
     expect(await backgrounds.read(path.join(src, 'missing.png'))).toBeNull()
   })

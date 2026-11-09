@@ -121,6 +121,37 @@ async function viewer(proc: Awaited<ReturnType<ReturnType<typeof setup>['connect
 }
 
 describe('terminal service', () => {
+  it('continues an exited command with its screen and fitted grid in a fresh shell', async () => {
+    const { service, ptys } = setup()
+    const first = await service.spawn({ cols: 80, rows: 24, panelId: 'p1', launch: { kind: 'command', params: { executable: 'agent', args: ['task'] } } })
+    expect(first.command).toBe(true)
+    service.fit({ id: first.id, cols: 100, rows: 30 })
+    ptys[0].emit('agent failed\r\n\x1b[?1049h\x1b[?1000h\x1b[?2004hTUI')
+    ptys[0].exit(1)
+    const second = await service.spawn({ cols: 80, rows: 24, panelId: 'p1', continueFrom: first.id })
+    expect(second.command).toBeUndefined()
+    expect(ptys[1].file).toBe('/bin/zsh')
+    expect(ptys[1].options).toMatchObject({ cols: 100, rows: 30 })
+    expect(service.statuses()[first.id]).toBeUndefined()
+    ptys[1].emit('shell ready\r\n')
+    await until(() => service.statuses()[second.id].alive)
+    const screen = await service.read(second.id)
+    expect(screen.text).toContain('agent failed')
+    expect(screen.text).toContain('shell ready')
+    expect(screen.alt).toBe(false)
+    service.write(second.id, '\x03')
+    expect(ptys[1].written).toEqual(['\x03'])
+  })
+
+  it('refuses to continue a live PTY or one belonging to another panel', async () => {
+    const { service, ptys } = setup()
+    const first = await service.spawn({ cols: 80, rows: 24, panelId: 'p1' })
+    await expect(service.spawn({ cols: 80, rows: 24, panelId: 'p1', continueFrom: first.id })).rejects.toMatchObject({ code: 'rejected' })
+    ptys[0].exit(0)
+    await expect(service.spawn({ cols: 80, rows: 24, panelId: 'p2', continueFrom: first.id })).rejects.toMatchObject({ code: 'rejected' })
+    expect(ptys).toHaveLength(1)
+  })
+
   it('fans output out to two viewers of one PTY', async () => {
     const { ptys, connect } = setup()
     const a = await connect()

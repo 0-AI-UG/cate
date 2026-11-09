@@ -284,6 +284,15 @@ describe('terminal agents', () => {
     expect(await restore()).toEqual({})
   })
 
+  it('clears a finished command\'s resume stamp when its panel continues as a shell', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    await post(env, 'codex', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    const restore = () => terminal.intents.get(TERMINAL_RESTORE_LAUNCH.kind)!(undefined, { cwd: root, panelId: 'term' })
+    expect(await restore()).toEqual({ input: 'codex resume sess-1' })
+    await terminal.spawn({ terminalId: 'pty-2', panelId: 'term', cwd: root, continueFrom: 'pty-1' })
+    expect(await restore()).toEqual({})
+  })
+
   it('resolves a start launch to the canonical argv', async () => {
     expect(await terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'opencode', prompt: 'Fix it' }, { cwd: root, panelId: 'w' }))
       .toEqual({ command: { executable: 'opencode', args: ['--prompt', 'Complete this coding task:\n\nFix it'] } })

@@ -43,7 +43,7 @@ function setup(bridge: Partial<BrowserPageBridge> | null = null) {
     panelId: 'p1',
     clientId: 'me',
     send: async (op) => { sent.push(op) },
-    bridge: bridge ? { onDialog: () => () => {}, ...bridge } as BrowserPageBridge : null,
+    bridge: bridge ? { protectPage: vi.fn(async () => {}), onDialog: () => () => {}, ...bridge } as BrowserPageBridge : null,
     nextFrame: async () => {},
   })
   return { host, sent }
@@ -158,6 +158,7 @@ describe('BrowserPageHost', () => {
 
   it('runs page-driver methods on the exact guest and stages uploads', async () => {
     const bridge = {
+      protectPage: vi.fn(async () => {}),
       attach: vi.fn(async () => {}), onDialog: () => () => {},
       execute: vi.fn(async () => ({ result: 'ok' })),
       stageUpload: vi.fn(async () => '/tmp/staged/file.txt'),
@@ -185,7 +186,7 @@ describe('BrowserPageHost', () => {
   })
 
   it('renders a parked page while an operation runs on it, instead of flagging it hidden', async () => {
-    const bridge = { attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
+    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
     const staged: string[] = []
     const host = new BrowserPageHost({
       panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
@@ -205,7 +206,7 @@ describe('BrowserPageHost', () => {
   })
 
   it('shows the session\'s active tab before a page operation runs on it', async () => {
-    const bridge = { attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
+    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
     const revealed: string[] = []
     const host = new BrowserPageHost({
       panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
@@ -282,7 +283,7 @@ describe('BrowserPageHost dialogs', () => {
 
 describe('browser surface requests', () => {
   it('route page operations to the mounted panel and wait for one to mount', async () => {
-    const bridge = { attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 1 })) }
+    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 1 })) }
     const { host } = setup(bridge)
     host.update(snapshot([tab()]))
     const webview = guest()

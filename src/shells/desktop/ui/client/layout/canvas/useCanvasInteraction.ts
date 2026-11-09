@@ -71,6 +71,17 @@ export function useCanvasInteraction(
   const zoomInteractionActive = useRef(false)
   const cursorViewPoint = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
 
+  const dragPanRaf = useRef(0)
+  const dragPanDelta = useRef({ x: 0, y: 0 })
+  const flushDragPan = useCallback(() => {
+    dragPanRaf.current = 0
+    const delta = dragPanDelta.current
+    dragPanDelta.current = { x: 0, y: 0 }
+    if (!delta.x && !delta.y) return
+    const { viewportOffset, setViewportOffset } = canvasStoreApi.getState()
+    setViewportOffset({ x: viewportOffset.x + delta.x, y: viewportOffset.y + delta.y })
+  }, [canvasStoreApi])
+
   // Wheel-pan throttle refs
   const panRafId = useRef<number>(0)
   const pendingPanDelta = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -122,6 +133,9 @@ export function useCanvasInteraction(
       releaseBodyClass('canvas-interacting')
       wheelPanActive.current = false
     }
+    if (dragPanRaf.current) cancelAnimationFrame(dragPanRaf.current)
+    dragPanRaf.current = 0
+    dragPanDelta.current = { x: 0, y: 0 }
     // Also stop the canvas store's own animateZoomTo rAF: it lives in a
     // module-level variable inside the canvas view store (not in this hook's refs),
     // so cancelling our local zoom rAF doesn't reach it. If a toolbar zoom or
@@ -348,7 +362,8 @@ export function useCanvasInteraction(
       // hit-testing while panning; remove it ~150ms after the wheel goes quiet.
       e.preventDefault()
       e.stopPropagation()
-      if (!wheelPanActive.current) {
+      const startingPan = !wheelPanActive.current
+      if (startingPan) {
         wheelPanActive.current = true
         acquireBodyClass('canvas-interacting', 'canvas-wheel-pan')
       }
@@ -361,19 +376,25 @@ export function useCanvasInteraction(
 
       pendingPanDelta.current.x += e.deltaX
       pendingPanDelta.current.y += e.deltaY
-      if (!panRafId.current) {
-        panRafId.current = requestAnimationFrame(() => {
-          panRafId.current = 0
-          const dx = pendingPanDelta.current.x
-          const dy = pendingPanDelta.current.y
-          pendingPanDelta.current.x = 0
-          pendingPanDelta.current.y = 0
-          const { viewportOffset: vo, setViewportOffset: setVO } = canvasStoreApi.getState()
-          setVO({ x: vo.x - dx, y: vo.y - dy })
-        })
+      const flushPan = () => {
+        panRafId.current = 0
+        const dx = pendingPanDelta.current.x
+        const dy = pendingPanDelta.current.y
+        pendingPanDelta.current.x = 0
+        pendingPanDelta.current.y = 0
+        const { viewportOffset: vo, setViewportOffset: setVO } = canvasStoreApi.getState()
+        setVO({ x: vo.x - dx, y: vo.y - dy })
+      }
+      // The first input after idle/activation must not wait for a new rAF.
+      // Subsequent deltas still coalesce to one write per frame.
+      if (startingPan) {
+        if (panRafId.current) cancelAnimationFrame(panRafId.current)
+        flushPan()
+      } else if (!panRafId.current) {
+        panRafId.current = requestAnimationFrame(flushPan)
       }
     },
-    [canvasRef, applyWheelZoom],
+    [applyWheelZoom, canvasStoreApi],
   )
 
   // ---------------------------------------------------------------------------
@@ -386,10 +407,7 @@ export function useCanvasInteraction(
   // preventDefault/return flow.
   const startPanDrag = useCallback(
     (button: number, clientX: number, clientY: number) => {
-      if (cancelInertia.current) {
-        cancelInertia.current()
-        cancelInertia.current = null
-      }
+      cancelAllAnimations()
       // A second pan press while one is already running (right button then
       // middle, or a nested canvas whose mousedown also bubbles to its parent
       // canvas) must not take a SECOND reference: endPanDrag is idempotent and
@@ -408,7 +426,7 @@ export function useCanvasInteraction(
       }
       acquireBodyClass('canvas-interacting', 'canvas-pan-drag')
     },
-    [canvasRef],
+    [canvasRef, cancelAllAnimations],
   )
 
   // Tear down an in-flight pan: clear the panning refs, the grabbing cursor, and
@@ -416,6 +434,8 @@ export function useCanvasInteraction(
   // (so the window-level mouseup/blur cleanup below can fire unconditionally).
   const endPanDrag = useCallback(() => {
     if (!isPanning.current) return
+    if (dragPanRaf.current) cancelAnimationFrame(dragPanRaf.current)
+    flushDragPan()
     isPanning.current = false
     panButton.current = null
     lastPanPos.current = null
@@ -424,7 +444,7 @@ export function useCanvasInteraction(
       canvasRef.current.style.cursor = idleCursorForTool()
     }
     releaseBodyClass('canvas-interacting')
-  }, [canvasRef])
+  }, [canvasRef, flushDragPan])
 
   // A pan can begin inside the canvas div but the mouse can be released OUTSIDE
   // it (over a panel, the sidebar, or off-window). The element-scoped
@@ -434,7 +454,12 @@ export function useCanvasInteraction(
   // same hazard. Both clear the pan via the idempotent endPanDrag.
   useEffect(() => {
     const onWindowMouseUp = () => endPanDrag()
-    const onWindowBlur = () => endPanDrag()
+    const onWindowBlur = () => {
+      endPanDrag()
+      // A paused wheel/zoom frame must not resume behind the next gesture.
+      // Reset the wheel-active ref together with its body-class ownership.
+      cancelAllAnimations()
+    }
     window.addEventListener('mouseup', onWindowMouseUp)
     window.addEventListener('blur', onWindowBlur)
     return () => {
@@ -442,7 +467,7 @@ export function useCanvasInteraction(
       window.removeEventListener('blur', onWindowBlur)
       endPanDrag()
     }
-  }, [endPanDrag])
+  }, [endPanDrag, cancelAllAnimations])
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -633,13 +658,11 @@ export function useCanvasInteraction(
       const dx = e.clientX - lastPanPos.current.x
       const dy = e.clientY - lastPanPos.current.y
 
-      const { viewportOffset, setViewportOffset } =
-        canvasStoreApi.getState()
-
-      setViewportOffset({
-        x: viewportOffset.x + dx,
-        y: viewportOffset.y + dy,
-      })
+      // High-rate mice can send several moves per display frame. Keep input
+      // deltas, but synchronize the world and native surfaces only once.
+      dragPanDelta.current.x += dx
+      dragPanDelta.current.y += dy
+      if (!dragPanRaf.current) dragPanRaf.current = requestAnimationFrame(flushDragPan)
 
       lastPanPos.current = { x: e.clientX, y: e.clientY }
 
@@ -650,7 +673,7 @@ export function useCanvasInteraction(
         if (velocityCount.current < 5) velocityCount.current++
       }
     },
-    [],
+    [flushDragPan],
   )
 
   const handleMouseUp = useCallback(

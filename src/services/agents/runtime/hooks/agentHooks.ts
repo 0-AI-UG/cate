@@ -770,9 +770,8 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       const excludeRels: string[] = []
       for (const agent of AGENTS) {
         const spec = AGENT_HOOK_SPECS[agent.id]
-        const mode = resolveAgentHookMode(config, agent.id)
-        const enabled = await hooksEnabled(agent.id, config, cwd, autoBaseCwd, launchedAgentId)
         if (!spec.projectFiles) continue
+        const mode = resolveAgentHookMode(config, agent.id)
         // 'off': reclaim anything we previously injected, then move on.
         if (mode === 'off') {
           for (const pf of spec.projectFiles) {
@@ -790,7 +789,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
           }
           continue
         }
-        if (!enabled) continue
+        if (!await hooksEnabled(agent.id, config, cwd, autoBaseCwd, launchedAgentId)) continue
         const ctx = state.contexts.get(agent.id)!
         for (const pf of spec.projectFiles) {
           const filePath = path.join(cwd, pf.relPath)

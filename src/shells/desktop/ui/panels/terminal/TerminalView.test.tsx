@@ -9,6 +9,9 @@ import type { SessionHandle } from '@client/connections'
 import { FILE_REFS_MIME } from '@workspace/files/contract'
 import type { TerminalOp, TerminalSnapshot } from '@panels/terminal/contract/types'
 
+const historySettings = vi.hoisted(() => ({ scrollback: 2000 }))
+vi.mock('../../kernel/settings', () => ({ useWorkspaceSetting: () => historySettings.scrollback }))
+
 const WS = 'ws'
 
 const xterms = vi.hoisted(() => [] as FakeTerminal[])
@@ -133,6 +136,7 @@ const buttonWithText = (text: string) => [...host.querySelectorAll('button')].fi
 
 beforeEach(() => {
   xterms.length = 0
+  historySettings.scrollback = 2000
   installMockClientUi({ promptLinkOpen: vi.fn(async () => 'cancel' as const), confirmCloseTerminal: vi.fn(async () => 'close' as const) })
   process_ = fakeProcess()
   restore = setRuntimeResolver((id) => (id === 'ws' ? ({ process: process_.proxy } as never) : null))
@@ -148,6 +152,30 @@ afterEach(() => {
 })
 
 describe('TerminalView', () => {
+  it('matches workspace scrollback and reattaches when its limit changes', () => {
+    render(<TerminalView {...props(snapshotOf())} />)
+    expect(xterms[0].options.scrollback).toBe(2000)
+    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 2000 }), expect.anything())
+
+    historySettings.scrollback = 5000
+    render(<TerminalView {...props(snapshotOf())} />)
+    expect(xterms).toHaveLength(1)
+    expect(xterms[0].options.scrollback).toBe(5000)
+    expect(process_.attaches[0].cancelled).toBe(true)
+    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 5000 }), expect.anything())
+
+    historySettings.scrollback = 500
+    render(<TerminalView {...props(snapshotOf())} />)
+    expect(xterms[0].options.scrollback).toBe(500)
+    expect(process_.attaches[1].cancelled).toBe(true)
+    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 500 }), expect.anything())
+  })
+
+  it('shows startup feedback before the PTY is ready', () => {
+    render(<TerminalView {...props(snapshotOf({ ptyId: null, status: 'starting' }))} />)
+    expect(host.textContent).toContain('Starting terminal…')
+    expect(process_.attaches).toHaveLength(0)
+  })
   it('reserves scrollbar space only while the active buffer has history', () => {
     const xterm = createTerminalXterm({
       options: { fontFamily: 'monospace', fontSize: 13, scrollSensitivity: 1, minimumContrastRatio: 1, cursorBlink: false, macOptionIsMeta: false },

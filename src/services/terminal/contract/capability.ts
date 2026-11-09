@@ -31,6 +31,8 @@ export interface SpawnParams {
   launch?: LaunchIntent
   /** Shows the panel's saved screen above the new shell. */
   restore?: boolean
+  /** Continue an exited PTY's screen and grid in a fresh process. */
+  continueFrom?: string
 }
 
 export interface SpawnResult {
@@ -38,6 +40,8 @@ export interface SpawnResult {
   pid: number
   /** The executable that runs: the resolved shell or the launch command. */
   shell: string
+  /** A one-shot command rather than an interactive shell. */
+  command?: boolean
 }
 
 export interface TerminalStatus {

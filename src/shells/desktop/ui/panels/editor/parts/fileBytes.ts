@@ -40,10 +40,3 @@ export function detectTypeFromBytes(bytes: Uint8Array): DetectedType | null {
 export function viewedArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return (bytes.buffer as ArrayBuffer).slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
 }
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const CHUNK = 0x8000
-  for (let i = 0; i < bytes.length; i += CHUNK) binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-  return btoa(binary)
-}

@@ -67,6 +67,7 @@ function keepAliveNodeIds(nodes: Record<NodeId, ViewNode>, keepMounted: Readonly
 function selectVisibleNodeIds(
   s: Pick<CanvasView, 'nodes' | 'viewportOffset' | 'zoomLevel' | 'containerSize' | 'selection' | 'selectionActive'>,
   keepMounted?: ReadonlySet<PanelId>,
+  marginScreens = 1,
 ): NodeId[] {
   canvasPerfCount('canvasCullEval')
   const { nodes, viewportOffset, zoomLevel: z, containerSize } = s
@@ -78,8 +79,8 @@ function selectVisibleNodeIds(
   if (cw === 0 || ch === 0 || z <= 0) return sorted.map((n) => n.id)
 
   const keepAlive = keepAliveNodeIds(nodes, keepMounted)
-  const marginX = cw / z
-  const marginY = ch / z
+  const marginX = cw / z * marginScreens
+  const marginY = ch / z * marginScreens
   const left = -viewportOffset.x / z - marginX
   const top = -viewportOffset.y / z - marginY
   const right = (cw - viewportOffset.x) / z + marginX
@@ -104,29 +105,41 @@ export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlyS
 
   useEffect(() => {
     let settleTimer: ReturnType<typeof setTimeout> | undefined
-    const publish = (ids: NodeId[]) => setVisible((current) => (shallowArrayEqual(current, ids) ? current : ids))
+    let published = new Set(selectVisibleNodeIds(store.getState(), keepMounted))
+    const publish = (ids: NodeId[]) => {
+      published = new Set(ids)
+      setVisible((current) => (shallowArrayEqual(current, ids) ? current : ids))
+    }
+    const settle = () => {
+      cancelPending()
+      settleTimer = setTimeout(() => {
+        settleTimer = undefined
+        publish(selectVisibleNodeIds(store.getState(), keepMounted))
+      }, 120)
+    }
     const cancelPending = () => {
       if (settleTimer) clearTimeout(settleTimer)
       settleTimer = undefined
     }
     // A smooth zoom updates every frame; publishing each intermediate cull
     // would mount and unmount Monaco and xterm mid-gesture. Hold the mounted
-    // set while zooming and reconcile once it settles. Pans and structural
-    // changes publish at once.
+    // set while zooming and reconcile once it settles. During pan, reuse the
+    // screen of overscan already mounted; replenish it after settling. If pan
+    // reaches genuinely new visible content, publish immediately.
     const unsubscribe = store.subscribe((state, previous) => {
       const structural = state.nodes !== previous.nodes
         || state.containerSize !== previous.containerSize
         || state.selection !== previous.selection
         || state.selectionActive !== previous.selectionActive
       if (state.zoomLevel !== previous.zoomLevel && !structural) {
-        cancelPending()
-        settleTimer = setTimeout(() => {
-          settleTimer = undefined
-          publish(selectVisibleNodeIds(store.getState(), keepMounted))
-        }, 120)
+        settle()
         return
       }
       if (state.viewportOffset === previous.viewportOffset && !structural) return
+      if (!structural && selectVisibleNodeIds(state, keepMounted, 0).every((id) => published.has(id))) {
+        settle()
+        return
+      }
       cancelPending()
       publish(selectVisibleNodeIds(state, keepMounted))
     })
@@ -140,16 +153,24 @@ export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlyS
   return visible
 }
 
-const NODE_MOUNT_BATCH = 6
+const NODE_MOUNT_BATCH = 1
 
-/** Spreads a large cold mount across frames: ids already mounted stay, new
- *  ones join a few per frame. */
+/** Bound new mounts on every visibility change, not just the first cold load.
+ * Retain existing nodes in creation order so native guests never move in DOM. */
 export function useStagedVisibleNodeIds(visible: NodeId[]): NodeId[] {
-  const [limit, setLimit] = useState(NODE_MOUNT_BATCH)
+  const [mounted, setMounted] = useState(() => visible.slice(0, NODE_MOUNT_BATCH))
   useEffect(() => {
-    if (limit >= visible.length) return
-    const frame = requestAnimationFrame(() => setLimit((current) => Math.min(current + NODE_MOUNT_BATCH, visible.length)))
+    const wanted = new Set(visible)
+    const current = mounted.filter((id) => wanted.has(id))
+    const existing = new Set(current)
+    const pending = visible.filter((id) => !existing.has(id))
+    if (pending.length === 0 && current.length === mounted.length) return
+    const frame = requestAnimationFrame(() => {
+      const next = new Set([...current, ...pending.slice(0, NODE_MOUNT_BATCH)])
+      setMounted(visible.filter((id) => next.has(id)))
+    })
     return () => cancelAnimationFrame(frame)
-  }, [limit, visible.length])
-  return visible.slice(0, limit)
+  }, [visible, mounted])
+  const mountedSet = new Set(mounted)
+  return visible.filter((id) => mountedSet.has(id))
 }

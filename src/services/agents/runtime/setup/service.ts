@@ -48,7 +48,6 @@ export interface AgentSetupService {
   invalidate(): void
   watch(listener: (state: AgentAvailability) => void): () => void
   inspect(refresh?: boolean): Promise<AgentSetupSnapshot>
-  ensureReady(agentId: AgentId): Promise<void>
   begin(input: { agentId: AgentId; action: 'login' | 'install' }): Promise<AgentSetupOperation>
   operation(id: string): AgentSetupOperation | null
   cancel(id: string): { ok: true }
@@ -94,15 +93,6 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
       if (agentId === 'cursor' && deps.env().CURSOR_API_KEY?.trim()) {
         authentication = { status: 'signed-in', method: 'api_key', detail: 'API key configured in the runtime environment.' }
       }
-      if (agentId === 'codex' && !deps.probe) {
-        try {
-          const account = await probeJsonLines<Record<string, unknown>>({ command, args: ['app-server'], cwd: deps.root, env: deps.env(),
-            converse(send, line) { if (!line) send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'cate_setup', version: '1.0.0' } } }); else if (line.id === 1) { send({ method: 'initialized' }); send({ id: 2, method: 'account/read', params: {} }) } },
-            answer(line) { return line.id === 2 ? record(record(line.result).account) : undefined },
-          })
-          authentication = { ...authentication, ...setupAuthentication(agentId, JSON.stringify({ account }), response.code), status: authentication.status }
-        } catch { /* Status remains valid when the richer account probe is unavailable. */ }
-      }
     }
     // Grok has no machine-readable whoami; do not infer authentication from config or token presence.
     const info: AgentSetupInfo = {
@@ -113,6 +103,22 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
       canLogin: installed, canInstall: !windowsUnsupported && !!(platform === 'win32' ? adapter.installer.windows : adapter.installer.unix),
     }
     cache.set(agentId, { at: Date.now(), info })
+    // Publish native login status first; enrich account metadata in the
+    // background for settings and availability menus.
+    if (agentId === 'codex' && installed && !deps.probe) {
+      void probeJsonLines<Record<string, unknown>>({ command, args: ['app-server'], cwd: deps.root, env: deps.env(),
+        converse(send, line) { if (!line) send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'cate_setup', version: '1.0.0' } } }); else if (line.id === 1) { send({ method: 'initialized' }); send({ id: 2, method: 'account/read', params: {} }) } },
+        answer(line) { return line.id === 2 ? record(record(line.result).account) : undefined },
+      }).then((account) => {
+        if (disposed || cache.get(agentId)?.info !== info) return
+        const updated = { ...info, authentication: { ...info.authentication, ...setupAuthentication(agentId, JSON.stringify({ account }), 0), status: info.authentication.status } }
+        cache.set(agentId, { at: Date.now(), info: updated })
+        if (availability.snapshot?.agents.includes(info)) {
+          const snapshot = { ...availability.snapshot, agents: availability.snapshot.agents.map((agent) => agent === info ? updated : agent) }
+          publish({ ...availability, snapshot, types: typesFor(snapshot.agents) })
+        }
+      }).catch(() => { /* Native login status remains authoritative. */ })
+    }
     return info
   }
   const finish = (id: string, status: AgentSetupOperation['status'], message?: string) => {
@@ -206,12 +212,6 @@ export function createAgentSetup(deps: AgentSetupDeps): AgentSetupService {
         } finally { inspection = null }
       })()
       return inspection
-    },
-    async ensureReady(agentId) {
-      deps.trust.requireTrusted(); requireAgent(agentId)
-      const info = (await service.inspect()).agents.find((agent) => agent.agentId === agentId)!
-      if (info.installation.status !== 'installed') throw new RpcError('rejected', 'agent-cli-not-installed: Open Agents settings to install this CLI.')
-      if (info.authentication.status === 'signed-out') throw new RpcError('rejected', 'agent-cli-signed-out: Open Agents settings to sign in.')
     },
     async begin(input) {
       deps.trust.requireTrusted(); requireAgent(input.agentId)

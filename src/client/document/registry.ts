@@ -68,6 +68,13 @@ export function attachDocument(connection: WorkspaceConnection): () => void {
     onReady,
   })
   const state = createClientStateStore()
+  let previousPanels = document.getSnapshot().panels
+  const stopViewCleanup = document.subscribe(() => {
+    const panels = document.getSnapshot().panels
+    if (panels === previousPanels) return
+    previousPanels = panels
+    state.retainPanelViews(new Set(Object.keys(panels)))
+  })
   const stopPresence = reportPresence(state, { report: (p) => connection.runtime.presence.report(p), onReady })
   const entry: Open = {
     connection,
@@ -75,6 +82,7 @@ export function attachDocument(connection: WorkspaceConnection): () => void {
     state,
     others: NO_CLIENTS,
     stop: () => {
+      stopViewCleanup()
       stopPresence()
       stopOthers()
       document.dispose()

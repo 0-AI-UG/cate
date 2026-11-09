@@ -41,3 +41,7 @@ cate-daemon-ws-*/
 
 # Superpowers planning artifacts (plans/specs) — scratch, not tracked
 docs/superpowers/
+
+# Local performance reports and samples; profiling tests remain versioned.
+/docs/performance/*.json
+/docs/performance/*.md

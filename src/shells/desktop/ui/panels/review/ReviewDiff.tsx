@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { Check, NotebookPen as NotePencil } from 'lucide-react'
 import type { GitDiffHunk, GitDiffLine } from '@workspace/repository/contract'
+import { DiffRows } from './DiffRows'
 import type { ReviewNote } from '@panels/review/contract'
 
 export interface NoteDraft {
@@ -30,27 +31,21 @@ function wordHighlight(text: string, other: string | undefined, enabled: boolean
   )
 }
 
-function counterpart(lines: GitDiffLine[], index: number): string | undefined {
-  const line = lines[index]
-  if (line.kind === 'delete') {
-    let start = index
-    while (start > 0 && lines[start - 1].kind === 'delete') start--
-    let addStart = index + 1
-    while (addStart < lines.length && lines[addStart].kind === 'delete') addStart++
-    if (lines[addStart]?.kind !== 'add') return undefined
-    return lines[addStart + (index - start)]?.kind === 'add' ? lines[addStart + (index - start)].text : undefined
+// Pair each deletion/addition run once, including pairs across virtual chunks.
+function counterpartTexts(lines: GitDiffLine[]): Array<string | undefined> {
+  const result: Array<string | undefined> = new Array(lines.length)
+  for (let i = 0; i < lines.length;) {
+    if (lines[i].kind !== 'delete') { i++; continue }
+    const start = i
+    while (lines[i]?.kind === 'delete') i++
+    const additions = i
+    while (lines[i]?.kind === 'add') i++
+    for (let n = 0; n < Math.min(additions - start, i - additions); n++) {
+      result[start + n] = lines[additions + n].text
+      result[additions + n] = lines[start + n].text
+    }
   }
-  if (line.kind === 'add') {
-    let addStart = index
-    while (addStart > 0 && lines[addStart - 1].kind === 'add') addStart--
-    const deleteEnd = addStart - 1
-    if (lines[deleteEnd]?.kind !== 'delete') return undefined
-    let deleteStart = deleteEnd
-    while (deleteStart > 0 && lines[deleteStart - 1].kind === 'delete') deleteStart--
-    const candidate = lines[deleteStart + (index - addStart)]
-    return candidate?.kind === 'delete' ? candidate.text : undefined
-  }
-  return undefined
+  return result
 }
 
 export function ReviewNoteComposer({
@@ -244,11 +239,9 @@ export function RecordedDiffHunk({
   submitNote?: (body: string, severity: NonNullable<ReviewNote['severity']>) => void
   cancelNote?: () => void
 }) {
-  const lines = hunk.lines.filter((line) => line.kind !== 'meta')
+  const lines = useMemo(() => hunk.lines.filter((line) => line.kind !== 'meta'), [hunk.lines])
   if (lines.length === 0) return null
-  if (addNote) return <HunkView hunk={{ ...hunk, lines }} split={split} wordDiff={wordDiff} wrap={wrap} notes={notes} addNote={addNote} toggleNote={toggleNote} noteDraft={noteDraft} submitNote={submitNote} cancelNote={cancelNote} />
-  if (split) return <>{splitRows(lines).map((row, index) => <div key={index} className={`grid divide-x divide-subtle text-primary/75 ${wrap ? 'grid-cols-2 min-w-0' : 'grid-cols-[minmax(360px,max-content)_minmax(360px,max-content)] min-w-full'}`}><SplitCell line={row.left} side="old" other={row.right?.text} wordDiff={wordDiff} addNote={noReviewAction} readOnly /><SplitCell line={row.right} side="new" other={row.left?.text} wordDiff={wordDiff} addNote={noReviewAction} readOnly /></div>)}</>
-  return <>{lines.map((line, index) => <UnifiedLine key={index} line={line} other={counterpart(lines, index)} wordDiff={wordDiff} readOnly notes={[]} addNote={noReviewAction} toggleNote={noReviewAction} noteDraft={null} submitNote={noReviewAction} cancelNote={noReviewAction} />)}</>
+  return <HunkView hunk={{ ...hunk, lines }} split={split} wordDiff={wordDiff} wrap={wrap} notes={notes} addNote={addNote ?? noReviewAction} toggleNote={toggleNote} noteDraft={noteDraft} submitNote={submitNote} cancelNote={cancelNote} readOnly={!addNote} />
 }
 
 interface SplitRow {
@@ -306,7 +299,7 @@ function SplitCell({
   )
 }
 
-export function HunkView({ hunk, split, wordDiff, wrap, notes, addNote, toggleNote, noteDraft, submitNote, cancelNote }: {
+export function HunkView({ hunk, split, wordDiff, wrap, notes, addNote, toggleNote, noteDraft, submitNote, cancelNote, readOnly = false }: {
   hunk: GitDiffHunk
   split: boolean
   wordDiff: boolean
@@ -317,14 +310,20 @@ export function HunkView({ hunk, split, wordDiff, wrap, notes, addNote, toggleNo
   noteDraft: NoteDraft | null
   submitNote: (body: string, severity: NonNullable<ReviewNote['severity']>) => void
   cancelNote: () => void
+  readOnly?: boolean
 }) {
+  const rows = useMemo(() => splitRows(hunk.lines), [hunk.lines])
+  const others = useMemo(() => counterpartTexts(hunk.lines), [hunk.lines])
+  const columns = useMemo(() => hunk.lines.reduce((max, line) => Math.max(max, line.text.length), 0), [hunk.lines])
+  const keepLine = (line?: GitDiffLine) => !!line && !!noteDraft && (noteDraft.side === 'old' ? line.oldLine : line.newLine) === noteDraft.line
   const metadataOnly = hunk.lines.every((line) => line.kind === 'meta')
   return (
     <div>
       {metadataOnly && <div className="px-3 py-1 text-blue-400/70 bg-blue-500/[0.07] border-y border-blue-500/10 select-text">{hunk.header}</div>}
       {metadataOnly ? hunk.lines.map((line, index) => (
         <div key={index} className="px-3 py-0.5 text-muted">{line.text}</div>
-      )) : split ? splitRows(hunk.lines).map((row, index) => {
+      )) : split ? <DiffRows count={rows.length} wrap={wrap} columns={columns * 2} keepRow={(index) => keepLine(rows[index].left) || keepLine(rows[index].right)} renderRow={(index) => {
+        const row = rows[index]
         const leftNotes = notes.filter((note) => note.side === 'old' && note.line === row.left?.oldLine)
         const rightNotes = notes.filter((note) => note.side === 'new' && note.line === row.right?.newLine)
         const editingLeft = noteDraft?.side === 'old' && noteDraft.line === row.left?.oldLine
@@ -336,8 +335,8 @@ export function HunkView({ hunk, split, wordDiff, wrap, notes, addNote, toggleNo
         return (
           <React.Fragment key={index}>
             <div className={`grid divide-x divide-subtle text-primary/75 ${gridClass}`}>
-              <SplitCell line={row.left} side="old" other={row.right?.text} wordDiff={wordDiff} addNote={addNote} />
-              <SplitCell line={row.right} side="new" other={row.left?.text} wordDiff={wordDiff} addNote={addNote} />
+              <SplitCell line={row.left} side="old" other={row.right?.text} wordDiff={wordDiff} addNote={addNote} readOnly={readOnly} />
+              <SplitCell line={row.right} side="new" other={row.left?.text} wordDiff={wordDiff} addNote={addNote} readOnly={readOnly} />
             </div>
             {hasComments && (
               <div className="sticky left-0 grid w-[100cqw] min-w-0 grid-cols-2 divide-x divide-blue-500/15 border-y border-blue-500/15 bg-blue-500/[0.035]">
@@ -359,9 +358,12 @@ export function HunkView({ hunk, split, wordDiff, wrap, notes, addNote, toggleNo
             )}
           </React.Fragment>
         )
-      }) : hunk.lines.map((line, index) => (
-        <UnifiedLine key={index} line={line} other={counterpart(hunk.lines, index)} wordDiff={wordDiff} notes={notes} addNote={addNote} toggleNote={toggleNote} noteDraft={noteDraft} submitNote={submitNote} cancelNote={cancelNote} />
-      ))}
+      }} /> : <DiffRows count={hunk.lines.length} wrap={wrap} columns={columns} keepRow={(index) => keepLine(hunk.lines[index])} renderRow={(index) => {
+        const line = hunk.lines[index]
+        return (
+        <UnifiedLine key={index} line={line} other={others[index]} readOnly={readOnly} wordDiff={wordDiff} notes={notes} addNote={addNote} toggleNote={toggleNote} noteDraft={noteDraft} submitNote={submitNote} cancelNote={cancelNote} />
+        )
+      }} />}
     </div>
   )
 }

@@ -403,7 +403,7 @@ export default function GitReviewView({ workspaceId, panelId, snapshot, send }: 
 
       {error && <div className="px-3 py-2 bg-red-500/10 text-red-400 text-[11px] border-b border-red-500/15">{error}</div>}
 
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      <div data-review-scroll className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {!loading && !error && notRepository && (
           <div data-review-not-repository className="h-full flex flex-col items-center justify-center gap-2 text-muted text-[12px]"><GitDiff size={28} /><span>This folder is not a Git repository</span></div>
         )}

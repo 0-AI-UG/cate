@@ -77,15 +77,16 @@ export function createTerminalPanels(deps: Omit<TerminalSessionDeps, 'takeLaunch
           launches.delete(id)
           throw new Error('could not place the terminal')
         }
-        await host.started(id)
-        const snapshot = liveSession(id).snapshot()
-        if (snapshot.status === 'failed') throw new Error(snapshot.error ?? 'terminal failed to start')
+        // Placement is acknowledged now; startup and its failure belong to
+        // the session snapshot, so a slow PTY never hides the new panel.
+        void host.started(id).finally(() => launches.delete(id)).catch(() => {})
         return id
       },
       relaunch: (panelId, { cwd, worktreeId, launch }) => liveSession(panelId).launch(launch, { cwd, worktreeId }),
       state(panelId) {
         const session = live.get(panelId)
-        if (!session) return null
+        if (!session) return launches.has(panelId) ? { alive: false, busy: false, starting: true } : null
+        if (session.snapshot().status === 'starting') return { alive: false, busy: false, starting: true }
         return { alive: session.snapshot().status === 'running', busy: session.busy() }
       },
     }),

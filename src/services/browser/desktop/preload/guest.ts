@@ -88,3 +88,11 @@ if (process.isMainFrame) installPasswordBridge(
   (channel, payload) => ipcRenderer.sendToHost(channel, payload),
   () => automationInput,
 )
+
+// A conservative lifetime signal: even input in a subframe protects the page.
+let dirtySent = false
+for (const name of ['input', 'change'] as const) {
+  document.addEventListener(name, () => {
+    if (!dirtySent) { dirtySent = true; ipcRenderer.send('cate-browser-dirty') }
+  }, true)
+}

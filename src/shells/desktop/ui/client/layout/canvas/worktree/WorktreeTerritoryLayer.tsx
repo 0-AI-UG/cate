@@ -120,8 +120,14 @@ function subscribeDrag(listener: () => void): () => void {
 }
 
 function WorktreeTerritoryLayerImpl({ workspaceId, containerWidth, containerHeight }: Props) {
-  const canvasApi = useCanvasViewStore()
   const { groups } = useWorktreeMembership(workspaceId)
+  // An empty territory needs no viewport-sized backing store or GL context.
+  // Unmounting also releases it when the last worktree group disappears.
+  return groups.length > 0 ? <TerritoryRenderer groups={groups} containerWidth={containerWidth} containerHeight={containerHeight} /> : null
+}
+
+function TerritoryRenderer({ groups, containerWidth, containerHeight }: Omit<Props, 'workspaceId'> & { groups: WorktreeGroup[] }) {
+  const canvasApi = useCanvasViewStore()
 
   const glCanvasRef = useRef<HTMLCanvasElement>(null)
   const cpuCanvasRef = useRef<HTMLCanvasElement>(null)
