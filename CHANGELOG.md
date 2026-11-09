@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.11] - 2026-11-09
+
+This beta reduces canvas rendering work and panel memory use, improves terminal and agent startup, and preserves page and review state while reclaiming resources. Compatibility version remains 1.
+
+### Changed
+
+- **Canvas performance**: reuse browser-surface geometry during gestures, coalesce pan updates, apply the first wheel movement immediately, and stage newly visible panels across frames.
+- **Panel memory**: virtualize long review diffs, release offscreen PDF canvases, use binary image data, and bound retained panel view state for undo.
+- **Browser lifetime**: discard eligible manual pages after ten minutes hidden while preserving automation, navigation history, edited forms, active media, downloads, and dialogs. Safety checks include nested shadow roots.
+- **Terminal and agent startup**: show new agent panels immediately while their process starts, load account details in the background, and return completed one-shot commands to a shell with their screen and working directory retained.
+- **Terminal rendering**: match client scrollback to the workspace setting and limit accelerated terminal backing stores.
+
+### Fixed
+
+- **Review text selection**: copying a selection across virtualized diff chunks retains every selected line while scrolling.
+- **Editor dragging**: hide the files sidebar while dragging its panel.
+- **Browser automation**: resolve focused editors inside nested frames.
+- **Canvas interaction**: cancel pending movement when the window loses focus and keep browser surfaces aligned with their panels and overlays.
+- **Update feedback**: keep update status messages visible above the application chrome.
+
 ## [2.1.0-beta.10] - 2026-11-05
 
 This beta adds canvas wallpapers and simplifies workspace navigation, collaboration, and agent setup. Compatibility version remains 1.

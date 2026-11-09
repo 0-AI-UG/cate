@@ -14,8 +14,8 @@ test('large review scrolls to the end and retains an offscreen comment draft', a
   const { electronApp: app, mainWindow: page } = await launchApp({ home, workspace: project })
   try {
     await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show(); w.focus() })
-    await create(page, 'review', { x: 20, y: 20 }, { repoPath: project })
-    await page.locator('[data-unfocused-overlay]').click()
+    const { nodeId } = await create(page, 'review', { x: 100, y: 140 }, { repoPath: project })
+    await page.locator(`[data-node-id="${nodeId}"] .dock-tab-bar`).click({ position: { x: 80, y: 12 } })
     const scroll = page.locator('[data-review-scroll]')
     await expect(page.getByRole('button', { name: 'Add review note on old line 1', exact: true })).toBeAttached()
     expect(await page.locator('[data-review-file] *').count()).toBeLessThan(10000)
