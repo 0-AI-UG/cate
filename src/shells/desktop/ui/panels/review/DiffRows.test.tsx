@@ -83,3 +83,40 @@ it('releases an offscreen chunk after its protected keyboard focus leaves', asyn
     expect(host.querySelector('[data-line="0"]')).toBeNull()
   } finally { act(() => root.unmount()); host.remove(); outside.remove() }
 })
+
+it('retains every chunk in a multi-chunk selection until the selection clears', () => {
+  const callbacks = new Map<Element, (entries: Array<{ isIntersecting: boolean }>) => void>()
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(private callback: (entries: Array<{ isIntersecting: boolean }>) => void) {}
+    observe(el: Element) { callbacks.set(el, this.callback) }
+    disconnect() {}
+  })
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const selection = window.getSelection()!
+  try {
+    act(() => root.render(<DiffRows count={200} columns={80} wrap={false} renderRow={i => <span data-line={i}>{`Line ${i}\n`}</span>} />))
+    const middle = host.querySelector('[data-diff-chunk="40"]')!
+    const last = host.querySelector('[data-diff-chunk="80"]')!
+    act(() => {
+      callbacks.get(middle)!([{ isIntersecting: true }])
+      callbacks.get(last)!([{ isIntersecting: true }])
+    })
+    const range = document.createRange()
+    range.setStartBefore(host.querySelector('[data-line="0"]')!)
+    range.setEndAfter(host.querySelector('[data-line="119"]')!)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    const selected = selection.toString()
+    act(() => callbacks.get(middle)!([{ isIntersecting: false }]))
+    expect(selection.toString()).toBe(selected)
+    expect(host.querySelector('[data-line="40"]')).not.toBeNull()
+    act(() => {
+      selection.removeAllRanges()
+      document.dispatchEvent(new Event('selectionchange'))
+    })
+    expect(host.querySelector('[data-line="40"]')).toBeNull()
+  } finally { selection.removeAllRanges(); act(() => root.unmount()); host.remove() }
+})

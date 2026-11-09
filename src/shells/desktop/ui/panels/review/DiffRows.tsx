@@ -4,7 +4,12 @@ const CHUNK_SIZE = 40
 
 function protectsInput(el: HTMLElement): boolean {
   const selection = window.getSelection()
-  return el.contains(document.activeElement) || !!(selection && !selection.isCollapsed && (el.contains(selection.anchorNode) || el.contains(selection.focusNode)))
+  if (el.contains(document.activeElement)) return true
+  if (!selection || selection.isCollapsed) return false
+  for (let i = 0; i < selection.rangeCount; i++) {
+    if (selection.getRangeAt(i).intersectsNode(el)) return true
+  }
+  return false
 }
 
 /** Keep long hunks out of the DOM, including their per-line buttons and icons.

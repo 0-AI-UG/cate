@@ -29,12 +29,20 @@ export function createPageLifecycle(deps: { busy(id: number): boolean }) {
       try {
         const safe = await Promise.race([
           Promise.all(page.mainFrame.framesInSubtree.map(frame => frame.executeJavaScript(`(() => {
-            if ([...document.querySelectorAll('audio,video')].some(e => !e.paused && !e.ended)) return false;
-            if (document.querySelector('[contenteditable]:not([contenteditable="false"])')) return false;
-            return [...document.querySelectorAll('input,textarea,select')].every(e => {
-              if (e.tagName === 'SELECT') return [...e.options].every(o => o.selected === o.defaultSelected);
-              return e.value === e.defaultValue && (!('checked' in e) || e.checked === e.defaultChecked);
-            });
+            const roots = [document];
+            for (let i = 0; i < roots.length; i++) {
+              const root = roots[i];
+              if ([...root.querySelectorAll('audio,video')].some(e => !e.paused && !e.ended)) return false;
+              if (root.querySelector('[contenteditable]:not([contenteditable="false"])')) return false;
+              if (![...root.querySelectorAll('input,textarea,select')].every(e => {
+                if (e.tagName === 'SELECT') return [...e.options].every(o => o.selected === o.defaultSelected);
+                return e.value === e.defaultValue && (!('checked' in e) || e.checked === e.defaultChecked);
+              })) return false;
+              for (const element of root.querySelectorAll('*')) {
+                if (element.shadowRoot) roots.push(element.shadowRoot);
+              }
+            }
+            return true;
           })()`))).then(values => values.every(Boolean)),
           new Promise<boolean>(resolve => { timer = setTimeout(() => { dirty.add(page); resolve(false) }, 500) }),
         ])
