@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.12] - 2026-11-09
+
+This beta restores consistent positioning for workspace connection notices. Compatibility version remains 1.
+
+### Fixed
+
+- **Workspace status**: center connection and reconnection notices consistently with runtime update dialogs, while keeping the canvas visible during reconnects.
+
 ## [2.1.0-beta.11] - 2026-11-09
 
 This beta reduces canvas rendering work and panel memory use, improves terminal and agent startup, and preserves page and review state while reclaiming resources. Compatibility version remains 1.
