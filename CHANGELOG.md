@@ -20,6 +20,7 @@ This beta reduces canvas rendering work and panel memory use, improves terminal 
 
 ### Fixed
 
+- **Unsaved buffer cleanup**: serialize snapshot writes and cleanup so saving a file cannot leave a stale recovery snapshot behind.
 - **Review text selection**: copying a selection across virtualized diff chunks retains every selected line while scrolling.
 - **Editor dragging**: hide the files sidebar while dragging its panel.
 - **Browser automation**: resolve focused editors inside nested frames.

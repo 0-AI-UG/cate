@@ -1,7 +1,7 @@
 // Open buffers: shared Yjs documents per file, saved against their base hash,
 // persisted while dirty, reconciled with external changes.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import * as Y from 'yjs'
@@ -135,6 +135,37 @@ describe('open buffers', () => {
       expect(next.buffers.openPaths()).toEqual([])
     } finally {
       await next.dispose()
+    }
+  })
+
+  it('removes a clean buffer snapshot after an in-flight dirty write finishes', async () => {
+    const handle = await ws.files.buffers.open(file)
+    let releaseWrite!: () => void
+    let noteWrite!: () => void
+    const gate = new Promise<void>((resolve) => { releaseWrite = resolve })
+    const started = new Promise<void>((resolve) => { noteWrite = resolve })
+    const rename = fs.rename.bind(fs)
+    const blocked = vi.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
+      if (String(target).startsWith(path.join(ws.data, 'buffers') + path.sep)) {
+        noteWrite()
+        await gate
+      }
+      await rename(source, target)
+    })
+    try {
+      handle.text.insert(0, 'unsaved ')
+      const flushing = ws.files.buffers.flush()
+      await started
+      await handle.save()
+      handle.close()
+      releaseWrite()
+      await flushing
+      await until(async () => (await bufferFiles()).length === 0)
+      expect(ws.files.buffers.openPaths()).toEqual([])
+    } finally {
+      releaseWrite()
+      blocked.mockRestore()
+      handle.close()
     }
   })
 
