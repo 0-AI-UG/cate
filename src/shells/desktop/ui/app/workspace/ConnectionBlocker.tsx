@@ -75,7 +75,7 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
     <div className="relative h-full">
       <div ref={content} className="h-full">{children}</div>
       {blocked && (
-        <div className={`absolute inset-0 z-[1000] flex ${quiet ? 'items-start justify-end bg-transparent pointer-events-auto p-3' : `items-center justify-center ${BACKDROP}`}`} data-connection-blocker>
+        <div className={`absolute inset-0 z-[1000] flex items-center justify-center ${quiet ? 'bg-transparent pointer-events-auto p-3' : BACKDROP}`} data-connection-blocker>
           {(runtimeMismatch(state, tryClientApp()?.version ?? '') || updating) && connection
             ? <RuntimeMismatchCard connection={connection} />
             : <ConnectionStatusCard workspaceId={workspaceId} connection={connection} state={state} compact={quiet} />}
