@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [iOS 0.1.1 (21)] - 2026-11-09
+
+This App Store submission updates the mobile app to the current main branch. Compatibility version remains 1.
+
+### Added
+
+- **Browser passwords**: fill saved workspace logins and confirm saving or updating submitted passwords from the iPhone browser.
+
+### Changed
+
+- **Joining a workspace** opens directly from the plus button.
+- **Forgetting a workspace** explicitly removes the saved entry through the shared client core.
+- **Client core** includes the current workspace and connection updates.
+
 ## [2.1.0-beta.11] - 2026-11-09
 
 This beta reduces canvas rendering work and panel memory use, improves terminal and agent startup, and preserves page and review state while reclaiming resources. Compatibility version remains 1.
