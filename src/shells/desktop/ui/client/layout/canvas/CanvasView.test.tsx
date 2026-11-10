@@ -114,6 +114,32 @@ it('applies the first trackpad delta immediately and drops pending movement on a
   expect(world.style.transform).toBe('scale(1) translate(-8px, -4px)')
 })
 
+it('starts a fresh pan after idle even when the previous frame and quiet timer were delayed', async () => {
+  act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
+  await frames()
+  const api = createCanvasE2E()
+  act(() => { api.setZoom(1); api.setViewportOffset({ x: 0, y: 0 }) })
+  let now = 1000
+  vi.spyOn(performance, 'now').mockImplementation(() => now)
+  const pending = new Map<number, FrameRequestCallback>()
+  let id = 0
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { pending.set(++id, callback); return id })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => pending.delete(id))
+  const canvas = container.querySelector<HTMLElement>('[data-canvas-container]')!
+  const world = container.querySelector<HTMLElement>('[data-canvas-world]')!
+  const wheel = () => canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaX: 4, deltaY: 2 }))
+  act(() => { wheel(); wheel() })
+  expect(world.style.transform).toBe('scale(1) translate(-4px, -2px)')
+  // Input can be processed before an overdue timer/frame after backgrounding.
+  now += 1000
+  act(() => { wheel() })
+  expect(world.style.transform).toBe('scale(1) translate(-8px, -4px)')
+  act(() => { for (const callback of pending.values()) callback(now) })
+  expect(world.style.transform).toBe('scale(1) translate(-8px, -4px)')
+  act(() => window.dispatchEvent(new Event('blur')))
+  expect(document.body.classList.contains('canvas-interacting')).toBe(false)
+})
+
 it('coalesces high-rate drag input and flushes the final movement on release', async () => {
   act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
   await frames()

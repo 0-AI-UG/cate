@@ -24,6 +24,7 @@ const RIGHT_CLICK_DRAG_THRESHOLD = 4
 // trackpad pinch uses.
 const MOUSE_WHEEL_ZOOM_FACTOR = 0.15
 const FRAME_MS_60HZ = 1000 / 60
+const WHEEL_PAN_QUIET_MS = 150
 
 // CSS cursor for the canvas when idle (not actively panning), per active tool.
 function idleCursorForTool(): string {
@@ -88,6 +89,7 @@ export function useCanvasInteraction(
   // Wheel-pan canvas-interacting class management
   // We add the class when a wheel pan starts and remove it after the wheel goes quiet.
   const wheelPanActive = useRef(false)
+  const lastWheelPanAt = useRef(0)
   const wheelPanEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cancelMarqueeRef = useRef<(() => void) | null>(null)
 
@@ -362,8 +364,20 @@ export function useCanvasInteraction(
       // hit-testing while panning; remove it ~150ms after the wheel goes quiet.
       e.preventDefault()
       e.stopPropagation()
-      const startingPan = !wheelPanActive.current
+      const now = performance.now()
+      const startingPan = !wheelPanActive.current || now - lastWheelPanAt.current >= WHEEL_PAN_QUIET_MS
+      lastWheelPanAt.current = now
+      // Input can run before an overdue quiet timer or rAF after backgrounding.
+      // A new gesture must not inherit the old frame's pending movement.
       if (startingPan) {
+        pendingPanDelta.current.x = 0
+        pendingPanDelta.current.y = 0
+        if (wheelPanActive.current) {
+          wheelPanActive.current = false
+          releaseBodyClass('canvas-interacting')
+        }
+      }
+      if (!wheelPanActive.current) {
         wheelPanActive.current = true
         acquireBodyClass('canvas-interacting', 'canvas-wheel-pan')
       }
@@ -372,7 +386,7 @@ export function useCanvasInteraction(
         wheelPanEndTimer.current = null
         wheelPanActive.current = false
         releaseBodyClass('canvas-interacting')
-      }, 150)
+      }, WHEEL_PAN_QUIET_MS)
 
       pendingPanDelta.current.x += e.deltaX
       pendingPanDelta.current.y += e.deltaY
