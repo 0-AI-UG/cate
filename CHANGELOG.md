@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.13] - 2026-11-10
+
+This beta fixes a canvas input scheduling race after idle or backgrounding. Compatibility version remains 1.
+
+### Fixed
+
+- **Canvas panning**: apply the first trackpad movement immediately when a new gesture arrives before an overdue idle timer or animation frame, discarding stale pending movement.
+
 ## [2.1.0-beta.12] - 2026-11-09
 
 This beta restores consistent positioning for workspace connection notices. Compatibility version remains 1.
