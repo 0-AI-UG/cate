@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-11
+
+Cate 2.1 brings shared workspace runtimes, secure connections across devices, remote workspaces, and terminal-based agents to the stable channel. This release includes the improvements from all thirteen 2.1 betas. Compatibility version remains 1.
+
+### Added
+
+- **Workspace runtimes**: each workspace runs in its own background process, keeping terminals, agents, files and shared panel state available across app restarts and connected clients.
+- **Secure device pairing**: join the same live workspace over the local network or Cate Connect, manage paired devices, and see who is connected.
+- **Remote workspaces**: open folders on SSH hosts and WSL, with runtime installation and authentication prompts handled in the app.
+- **iPhone connections**: the companion iOS app connects to paired workspaces, with agent chats, terminals, editors, browsers and reviews.
+- **Terminal agents**: start supported agent CLIs, including Pi, follow conversation history and usage, queue prompts, send attachments and interrupt or withdraw work through the runtime.
+- **Browser automation**: handle dialogs, frames, dropdowns, uploads, console and network logs, saved logins and offscreen screenshots.
+- **Canvas wallpapers**: choose the Lighthouse and Snowy Pass landscapes.
+
+### Changed
+
+- **Workspace navigation and sharing**: arrange workspaces across computers in one sidebar, reopen recent workspaces with retained access, and manage availability and sharing in dedicated controls.
+- **Agent setup**: agents use their CLI's native account and configuration.
+- **Runtime updates**: compatible older runtimes update automatically when idle, with a shared-runtime restart offered when needed. Connection compatibility is tracked independently from app versions.
+- **Canvas and panel performance**: reduce gesture rendering work, stage newly visible panels, virtualize review diffs, release offscreen PDF canvases and discard eligible hidden browser pages while preserving their state.
+- **Terminal startup**: show agent panels immediately, load account details in the background and return completed one-shot commands to a shell with their screen and working directory retained.
+- **Settings and CLI**: separate device and workspace settings, expose workspace availability choices, and generate CLI commands from the runtime API.
+
+### Fixed
+
+- **Canvas input**: apply the first pan movement immediately after idle or backgrounding, discard stale pending motion and keep browser surfaces aligned during gestures.
+- **Workspace recovery**: preserve document, panel and settings state across reconnects, prevent duplicate runtimes and improve Cate Connect recovery and connection notices.
+- **Editor and review state**: protect unsaved edits and recovery snapshots, preserve copied selections across virtualized diffs and hide the file sidebar during panel dragging.
+- **Agent and terminal reliability**: restore conversation history before the first prompt, retain CLI access after runtime updates and improve terminal sizing, prompt delivery and process cleanup.
+- **Browser reliability**: preserve native local networking, resolve focused editors in nested frames and avoid duplicate password-save prompts for matching saved logins.
+- **Bundled skills**: restore missing installed skill files while respecting explicit uninstalls.
+
+### Removed
+
+- **T3 Code, missions and Hermes integration**: agents run as terminal CLIs; `cate agent start` replaces missions and `cate codingAgent`.
+- **Cate credits and custom agent API providers**: agents use their own native account and configuration.
+- **`cate notify`** and its workspace setting.
+
+### Security
+
+- Encrypted, mutually authenticated network connections with pinned device keys, immediate device revocation and pairing-attempt limits.
+- Updated bundled dependencies and strengthened workspace trust and process cleanup.
+
 ## [2.1.0-beta.13] - 2026-11-10
 
 This beta fixes a canvas input scheduling race after idle or backgrounding. Compatibility version remains 1.
