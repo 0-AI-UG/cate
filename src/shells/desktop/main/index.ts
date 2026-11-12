@@ -62,6 +62,12 @@ const settings = (): ClientSettings => clientSettingsTable.normalize(device.get(
 
 // Command-line switches must be set before ready; applies after a restart.
 if (settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
+// Composite into one output surface on macOS. Passing each canvas layer to
+// CoreAnimation separately can block the first pan on Metal scheduling waits.
+if (process.platform === 'darwin') {
+  const disabled = app.commandLine.getSwitchValue('disable-features')
+  app.commandLine.appendSwitch('disable-features', [disabled, 'CoreAnimationRenderer'].filter(Boolean).join(','))
+}
 // Keep canvas frames moving while a webview is busy. Chromium otherwise waits
 // up to four frames for a child surface; reuse its last frame immediately.
 if (!app.commandLine.hasSwitch('deadline-to-synchronize-surfaces')) {

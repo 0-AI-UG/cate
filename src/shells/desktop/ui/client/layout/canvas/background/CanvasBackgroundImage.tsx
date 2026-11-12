@@ -63,6 +63,7 @@ function CanvasBackgroundImage() {
   return (
     <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
       <div
+        data-canvas-background-image
         style={{
           position: 'absolute',
           inset: 0,
@@ -72,6 +73,9 @@ function CanvasBackgroundImage() {
           backgroundRepeat: 'no-repeat',
           filter: treatment.filter,
           opacity: clampedOpacity,
+          // Keep the fixed picture out of the canvas's repainting layer.
+          // Re-decoding a purged wallpaper can otherwise block the first pan.
+          willChange: 'transform',
         }}
       />
       <div style={{ position: 'absolute', inset: 0, backgroundColor: 'var(--canvas-backdrop-scrim)' }} />
