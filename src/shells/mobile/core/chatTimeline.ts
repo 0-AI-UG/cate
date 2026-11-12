@@ -38,9 +38,18 @@ export function createChatTimeline(first: string | null = null): ChatTimeline {
   /** The prompt being sent (or just taken): its text and the message count
    *  when it was seen first. */
   let held: { id: string; text: string; from: number } | null = null
+  let generation: number | null = null
 
   return {
     update(conversation) {
+      if (conversation) {
+        if (generation !== null && generation !== conversation.generation) {
+          held = null
+          first = null
+          anchors.clear()
+        }
+        generation = conversation.generation
+      }
       const messages = conversation?.messages ?? []
       const prompts = conversation?.prompts ?? []
       const status = conversation?.status ?? null
@@ -50,8 +59,9 @@ export function createChatTimeline(first: string | null = null): ChatTimeline {
       const sending = prompts.find((prompt) => prompt.state === 'sending')
       if (sending) {
         if (held?.id !== sending.id) held = { id: sending.id, text: promptText(sending), from: messages.length }
-      } else if (held && (prompts.some((prompt) => prompt.id === held!.id) || messages.length > held.from)) {
+      } else if (held && (prompts.some((prompt) => prompt.id === held!.id) || messages.length !== held.from || held.text.trimStart().startsWith('/'))) {
         // Not taken (failed, or waiting again), or shown in the conversation.
+        // A clear drops history; slash commands can finish without a message.
         held = null
       }
 
@@ -95,6 +105,7 @@ export function createChatTimeline(first: string | null = null): ChatTimeline {
       const open = outgoing !== null || running
       const step = running && lastStep && lastStep.before === messages.length ? lastStep.step : null
       return {
+        generation: conversation?.generation ?? 0,
         loaded: conversation !== null,
         status,
         canReceivePrompt: conversation?.canReceivePrompt ?? false,

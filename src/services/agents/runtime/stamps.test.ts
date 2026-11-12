@@ -90,6 +90,15 @@ describe('kiro resumability gating', () => {
 })
 
 describe('a replacement session', () => {
+  it('does not restore an abandoned conversation on a late turn completion', () => {
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-start', 'old', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'session-start', 'new', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-end', 'old', '/w'))
+    stampsUnderTest.ingest(ev(tid, 'claude-code', 'turn-resume', 'old', '/w'))
+    expect(stampsUnderTest.latest(tid)?.sessionId).toBe('new')
+    expect(stamps(tid)).toEqual([{ agentId: 'claude-code', sessionId: 'old', cwd: '/w' }, null])
+  })
+
   it('clears the old stamp when a new session starts without ending it', () => {
     ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'turn-start', 'old', '/w'))
     ingestAgentSessionStamp(runtime, ev(tid, 'claude-code', 'session-start', 'new', '/w'))

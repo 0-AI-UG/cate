@@ -89,6 +89,8 @@ export interface AgentTerminals extends AgentPanelSource {
   conversationStamp(panelId: string): Promise<string | null>
   /** A panel's agent completed a tool call (its hooks reported it). */
   onStep(listener: (panelId: string, step: AgentStep) => void): () => void
+  /** The CLI replaced/cleared its visible conversation. */
+  onConversationReset(listener: (panelId: string) => void): () => void
   dispose(): void
 }
 

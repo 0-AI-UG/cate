@@ -66,6 +66,12 @@ struct RootView: View {
             next.append(route)
             path = next
         }
+        .alert("Close terminal?", isPresented: Binding(get: { core.confirmation != nil }, set: { _ in })) {
+            Button("Close", role: .destructive) { core.answerConfirmation(true) }
+            Button("Cancel", role: .cancel) { core.answerConfirmation(false) }
+        } message: {
+            Text(core.confirmation ?? "")
+        }
         .alert("Trust this workspace?", isPresented: Binding(get: { core.trustPrompt != nil }, set: { _ in })) {
             Button("Trust") { Task { _ = await core.action("workspaces.answerTrust", ["trusted": true]) } }
             Button("Not Now", role: .cancel) { Task { _ = await core.action("workspaces.answerTrust", ["trusted": false]) } }

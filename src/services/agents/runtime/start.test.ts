@@ -53,6 +53,7 @@ beforeEach(() => {
     conversation: async () => null,
     conversationStamp: async () => null,
     onStep: () => () => {},
+    onConversationReset: () => () => {},
     dispose: () => {},
   }))
   ports = {

@@ -6,6 +6,7 @@ import path from 'node:path'
 import { AGENT_DEFS, type AgentHookEvent } from '../../contract'
 import { createLiveChangeFixture, terminateLiveProcessTree } from '../changes/liveHarness'
 import { createAgentStatusMachine } from '../status'
+import { createConversationResets } from '../conversationResets'
 import { cleanHookEnv, configureHookCli } from './hookCliFixture'
 import { createHookMockProvider, type MockHookReply } from './hookMockProvider'
 
@@ -26,9 +27,11 @@ export async function piContractFixture(options: {
   const provider = await createHookMockProvider({ reply: options.reply })
   const fixture = await createLiveChangeFixture('pi', cleanHookEnv())
   const events: AgentHookEvent[] = []
+  let conversationResets = 0
+  const resets = createConversationResets(() => { conversationResets++ })
   const status = createAgentStatusMachine(() => {})
   status.notePresence(fixture.terminalId, true, false, 'pi')
-  const unsubscribe = fixture.hooks.subscribe((event) => { events.push(event); status.noteHookEvent(event) })
+  const unsubscribe = fixture.hooks.subscribe((event) => { resets.note(event); events.push(event); status.noteHookEvent(event) })
   const auditFile = path.join(fixture.directory, 'native-events.jsonl')
   try {
     const launch = await configureHookCli('pi', fixture.directory, fixture.cwd, fixture.env, provider, 'CATE_CONTRACT')
@@ -60,6 +63,7 @@ export async function piContractFixture(options: {
     `)
     return {
       ...fixture, provider, events, status, launch,
+      conversationResets: () => conversationResets,
       audit: async (): Promise<Array<{ type: string; sessionId: string; leafId: string | null }>> => {
         try { return (await readFile(auditFile, 'utf8')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)) } catch { return [] }
       },

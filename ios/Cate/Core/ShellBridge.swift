@@ -43,6 +43,8 @@ final class ShellBridge: NSObject, WKScriptMessageHandlerWithReply {
             return value
         }
         switch method {
+        case "app.confirm":
+            return await host?.confirm(try string("message")) ?? false
         case "app.info":
             // The client features this device has (12.2).
             // Web views route loopback through the workspace (LoopbackProxy).

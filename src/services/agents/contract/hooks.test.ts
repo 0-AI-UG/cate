@@ -87,7 +87,8 @@ describe('claude spec', () => {
     expect(norm('claude-code', { hook_event_name: 'UserPromptSubmit', ...base })?.kind).toBe('turn-start')
     expect(norm('claude-code', { hook_event_name: 'Stop', ...base })?.kind).toBe('turn-end')
     expect(norm('claude-code', { hook_event_name: 'StopFailure', ...base })?.kind).toBe('turn-end')
-    expect(norm('claude-code', { hook_event_name: 'SessionEnd', reason: 'clear', ...base })?.kind).toBe('session-end')
+    expect(norm('claude-code', { hook_event_name: 'SessionEnd', reason: 'clear', ...base })).toMatchObject({ kind: 'session-end', conversationReset: true })
+    expect(norm('claude-code', { hook_event_name: 'SessionEnd', reason: 'logout', ...base })?.conversationReset).toBeUndefined()
   })
 
   test('only a human-prompt notification maps to permission-wait', () => {

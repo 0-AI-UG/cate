@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [iOS 0.1.2 (22)] - 2026-11-12
+
+This update improves closing terminal panels and following agent conversations on iPhone. Compatibility version remains 1.
+
+### Fixed
+
+- **Closing terminal panels**: ask before stopping a running program or agent, and carry the confirmed choice when closing a panel or its canvas.
+- **Agent conversations**: replace cached messages, tool steps, row state and scroll history when the workspace runtime reports a cleared or selected conversation, including empty chats and Pi branch changes. Runtime-side conversation detection requires a runtime containing this update; the time of confirmation follows the CLI's native lifecycle signals.
+
+### Changed
+
+- **Agent regression CI**: every supported CLI runs the same native reset and saved-conversation switch contract against local provider fixtures.
+
 ## [2.1.0-beta.13] - 2026-11-10
 
 This beta fixes a canvas input scheduling race after idle or backgrounding. Compatibility version remains 1.

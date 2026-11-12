@@ -32,7 +32,7 @@ const messages = (count: number, from = 0): AgentConversationMessage[] => Array.
   : { role: 'assistant', text: `reply ${from + i}` })
 
 const load = (all: AgentConversationMessage[], steps: AgentConversation['steps'] = []) => conversation.emit({ kind: 'snapshot', rev: 0, snapshot: {
-  status: 'waitingForInput', canReceivePrompt: true, messages: all, steps, stepsSince: '2026-01-01T00:00:00.000Z', prompts: [],
+  generation: 0, status: 'waitingForInput', canReceivePrompt: true, messages: all, steps, stepsSince: '2026-01-01T00:00:00.000Z', prompts: [],
 } })
 
 const ids = (event: ChatEvent | undefined) => event?.items.map((item) => item.id)
@@ -127,9 +127,44 @@ it('opens again on the latest page when the conversation got shorter', () => {
   events.length = 0
   load(messages(50))
   conversation.emit({ kind: 'snapshot', rev: 1, snapshot: {
-    status: 'waitingForInput', canReceivePrompt: true, messages: messages(3), steps: [], stepsSince: '2026-01-01T00:00:00.000Z', prompts: [],
+    generation: 0, status: 'waitingForInput', canReceivePrompt: true, messages: messages(3), steps: [], stepsSince: '2026-01-01T00:00:00.000Z', prompts: [],
   } })
   expect(events.at(-1)).toMatchObject({ from: 0, earlier: false })
   expect(ids(events.at(-1))).toEqual(range(0, 3))
+  chats.unwatch('v')
+})
+
+it('removes every visible item when the conversation is cleared, including paginated history', () => {
+  const chats = createMobileConversations(bridge)
+  chats.watch({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
+  load(messages(50))
+  chats.more('v')
+  conversation.emit({ kind: 'change', rev: 1, change: { from: 0, messages: [], stepsFrom: 0, steps: [] } })
+  expect(events.at(-1)).toMatchObject({ loaded: true, from: 0, earlier: false, items: [], turn: null })
+  conversation.emit({ kind: 'change', rev: 2, change: { from: 0, messages: messages(1) } })
+  expect(ids(events.at(-1))).toEqual(['m0'])
+  chats.unwatch('v')
+})
+
+it('starts on the latest page when switching conversations with equally long histories', () => {
+  const chats = createMobileConversations(bridge)
+  chats.watch({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
+  load(messages(50))
+  chats.more('v')
+  expect(ids(events.at(-1))).toEqual(range(30, 50))
+  conversation.emit({ kind: 'change', rev: 1, change: { generation: 1 } })
+  expect(ids(events.at(-1))).toEqual(range(40, 50))
+  expect(events.at(-1)).toMatchObject({ generation: 1, from: 0 })
+  chats.unwatch('v')
+})
+
+it('notifies the native view when switching between two empty conversations', () => {
+  const chats = createMobileConversations(bridge)
+  chats.watch({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
+  load([])
+  const before = events.length
+  conversation.emit({ kind: 'change', rev: 1, change: { generation: 1 } })
+  expect(events).toHaveLength(before + 1)
+  expect(events.at(-1)).toMatchObject({ generation: 1, from: 0, items: [] })
   chats.unwatch('v')
 })

@@ -1,7 +1,7 @@
 # Installed agent hook regression CI
 
 `Agent CLI hooks` installs the latest Claude Code, Codex, Cursor, Grok, Kiro,
-and OpenCode on Linux. It runs on main pushes, pull requests to any branch (including
+OpenCode and Pi on Linux. It runs on main pushes, pull requests to any branch (including
 forks and stacked PRs), merge queues, daily at 06:23 UTC, and manual dispatch. The daily run
 catches upstream changes without waiting for a Cate commit. Each job prints
 the installed version and uploads a JUnit report.
@@ -61,6 +61,47 @@ from its real transcript; Kiro V3 has no native interrupt hook and uses Cate's P
 input recovery. Cursor and Kiro do not expose permission-wait hooks. Cursor and
 Grok do not support Cate's native prompt-context injection. The suite does not
 invent vendor events for those missing interfaces.
+
+## Conversation boundaries
+
+Every matrix entry runs `session-reset` in `hookLifecycle.itest.ts`. The real
+CLI completes a conversation, runs its adapter's native empty-chat command,
+completes a prompt in the new conversation, then resumes the original saved
+conversation under the same terminal ID. All CLIs have the same contract: the
+production boundary tracker emits exactly one reset per confirmed conversation
+change, no later than the first prompt in the new conversation. Earlier native
+signals are accepted. Typed slash commands are never treated as proof of a reset.
+The fixture-only `CONVERSATION_RESET_COMMANDS` table drives each CLI's native
+command; production consumers use one conversation-change path.
+
+| CLI | Empty-chat command | Observed hook timing in the tested binaries |
+| --- | --- | --- |
+| Claude Code | `/clear` | During the command |
+| Codex | `/clear` | On the next submitted prompt |
+| Cursor | `/new-chat` | On the next submitted prompt |
+| Grok | `/clear` | During the command |
+| OpenCode | `/new` | On the next submitted prompt |
+| Pi | `/new` | During the command |
+| Kiro | `/clear` | On the next submitted prompt |
+
+The timing above describes the hooks exercised in the installed-CLI tests,
+not a per-CLI runtime policy or proof that no earlier native signal exists.
+CI logs it for diagnosis and permits upstream improvements in timing.
+
+For CLIs with locally recorded transcripts the checks also require that the
+new model request and conversation reader exclude the abandoned history, and
+that resuming the original restores its history without importing the other
+chat. Cursor's fixture backend does not persist its server-owned transcript;
+its real hook identity transitions and resume are checked here, and its reader
+is covered by filesystem fixtures. This is an explicit coverage limit.
+
+Pi's native RPC contract additionally checks same-session tree navigation and
+cloning, while normal turns and renaming must not emit resets. Unit/integration
+tests verify that the runtime advances the conversation generation, clears old
+tool steps, rejects stale in-flight reads and old-session completion stamps,
+and that mobile clears held prompts and pagination even when chats are empty
+or equally long. These scenarios use real CLI events; the fixture never emits
+synthetic reset hooks.
 
 ## Terminal links
 

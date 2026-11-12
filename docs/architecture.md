@@ -1636,7 +1636,15 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     ended goes out with its reply; it looks again on every state change and
     while the agent works, reading the store only when its files moved, and
     sends the messages from the first one that changed, with the panel's
-    prompts on their way as they change;
+    prompts on their way as they change. The terminal-agent adapter owns
+    conversation boundaries (`conversationResets.ts`): native reset/tree
+    events and session identity changes become one `onConversationReset`
+    signal. A reset advances the conversation's `generation`, drops cached
+    messages and steps, and invalidates reads already in flight. Clients use
+    that generation to reset held prompts and pagination, including switches
+    between empty or identical chats. Replayed starts and title changes do
+    not reset it. A CLI that reports a new identity only on its next prompt
+    remains on the previous conversation until that authoritative signal;
   - the **prompts** on their way to each panel's agent (`prompts.ts`), in
     memory, since the agents run in this process. Every prompt takes one
     path, `sendToAgent`: `cate agent send`, the capability's `send` (every

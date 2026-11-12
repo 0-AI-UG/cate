@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { AGENT_HOOK_SPECS } from '../../contract'
-import { HOOK_LIFECYCLE_CASES, NATIVE_HOOK_KINDS, PI_MANUAL_COMPACTION_CASES, selectHookLifecycleCases } from './hookLifecycle.config'
+import { HOOK_LIFECYCLE_CASES, NATIVE_HOOK_KINDS, PI_MANUAL_COMPACTION_CASES, CONVERSATION_RESET_COMMANDS, selectHookLifecycleCases } from './hookLifecycle.config'
 
 test('real CLI scenarios cover every hook Cate installs', () => {
   expect(Object.keys(HOOK_LIFECYCLE_CASES).sort()).toEqual(Object.keys(AGENT_HOOK_SPECS).sort())
@@ -27,4 +27,12 @@ test('real CLI scenarios cover every hook Cate installs', () => {
 test('unknown and empty lifecycle selections fail instead of silently skipping', () => {
   for (const selection of ['', 'edit,', 'interupt']) expect(() => selectHookLifecycleCases('codex', selection)).toThrow('Unknown hook lifecycle case')
   expect(selectHookLifecycleCases('codex', 'edit,resume')).toEqual(['edit', 'resume'])
+})
+
+test('every CLI runs the same native reset/switch contract in CI', () => {
+  expect(Object.keys(CONVERSATION_RESET_COMMANDS).sort()).toEqual(Object.keys(AGENT_HOOK_SPECS).sort())
+  for (const [agent, command] of Object.entries(CONVERSATION_RESET_COMMANDS)) {
+    expect(command, agent).toMatch(/^\/\S+$/)
+    expect(HOOK_LIFECYCLE_CASES[agent as keyof typeof HOOK_LIFECYCLE_CASES], agent).toHaveProperty('session-reset')
+  }
 })
