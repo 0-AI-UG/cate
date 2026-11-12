@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.14] - 2026-11-12
+
+This beta improves native agent conversation tracking in shared workspace runtimes and supplies the runtime support for Cate Mobile 0.1.2. Compatibility version remains 1.
+
+### Fixed
+
+- **Agent conversations**: replace cached messages and tool steps when a CLI clears or switches conversations, including Pi branch changes. Ignore stale conversation reads and late completion events from an abandoned session.
+- **iPhone workspace controls**: support confirmed closing of running agent terminals from a canvas, including closing a canvas with active terminals.
+- **Mobile chat state**: synchronize conversation generations so the iPhone can reset held prompts, history loading, row caches and scroll state when the selected conversation changes.
+
+### Changed
+
+- **Agent regression checks**: all seven supported CLIs exercise the same native reset and saved-conversation switch contract against local provider fixtures. Reset timing follows the CLI's confirmed native lifecycle signals.
+
 ## [iOS 0.1.2 (22)] - 2026-11-12
 
 This update improves closing terminal panels and following agent conversations on iPhone. Compatibility version remains 1.
