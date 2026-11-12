@@ -5,7 +5,9 @@ import { setRuntimeResolver } from '@kernel/rpc/client'
 import type { ChannelEvent } from '@kernel/rpc/contract'
 import type { AgentPanelStates, AgentPanelStatesChange } from '@services/agents/contract'
 import { fakeStream } from '@services/agents/client/testing'
+import type { PanelType } from '@workspace/document/contract'
 import { AgentChangesPill } from './AgentChangesPill'
+import { AgentChangesOverlay } from './tabDecorations'
 import { setAgentChangesOpener } from './changesOpener'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -25,13 +27,28 @@ beforeEach(() => {
 
 afterEach(() => { for (const stop of cleanup) stop() })
 
-function render() {
+function render(type?: PanelType) {
   const host = document.createElement('div')
   const root = createRoot(host)
-  act(() => root.render(<AgentChangesPill workspaceId="ws" panelId="agent" />))
+  act(() => root.render(type
+    ? <AgentChangesOverlay workspaceId="ws" record={{ id: 'agent', type, title: type, fields: {} }} />
+    : <AgentChangesPill workspaceId="ws" panelId="agent" />))
   const click = () => act(async () => { host.querySelector<HTMLButtonElement>('[aria-label="Open agent changes"]')!.click() })
   return { host, click, unmount: () => act(() => root.unmount()) }
 }
+
+it.each(['review', 'editor', 'browser', 'canvas', 'surface'] as const)('omits the changes overlay on %s panels', (type) => {
+  const { host, unmount } = render(type)
+  expect(host.querySelector('[aria-label="Open agent changes"]')).toBeNull()
+  unmount()
+})
+
+it('keeps the changes overlay on terminal panels', async () => {
+  const { click, unmount } = render('terminal')
+  await click()
+  expect(open).toHaveBeenCalledWith({ workspaceId: 'ws', panelId: 'agent' })
+  unmount()
+})
 
 it('does not reserve label spacing while collapsed', () => {
   const { host, unmount } = render()

@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import type { PanelRecord } from '@workspace/document/contract'
+import { panelDefinition } from '@panels/definitions'
 import { AgentChangesPill } from './AgentChangesPill'
 import { AwaitingIndicator } from './indicators'
 import { agentInfoTitle } from './panelInfo'
@@ -33,8 +34,9 @@ export function useAgentTabDecorations(workspaceId: string): Record<string, {
   return out
 }
 
-/** The agent changes pill over a panel's top-right corner. */
+/** The agent changes pill over an execution panel's top-right corner. */
 export function AgentChangesOverlay({ workspaceId, record }: { workspaceId: string; record: PanelRecord }) {
+  if (!panelDefinition(record.type)?.relation?.execution) return null
   return <AgentChangesPill key={`changes:${record.id}`} workspaceId={workspaceId} panelId={record.id} />
 }
 
