@@ -11,6 +11,7 @@ import path from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { AGENT_DEFS, AGENT_HOOK_SPECS, AGENT_INTERRUPT_INPUT, agentStepGroups, type AgentConversationMessage, type AgentHookEvent, type AgentId, type AgentStep } from '../../contract'
 import { AGENT_SESSION_STORES } from '../sessions'
+import { createConversationResets } from '../conversationResets'
 import { agentStepOf } from '../steps'
 import { createAgentHooks } from '../hooks/agentHooks'
 import { createAgentChangesStore } from '../changes/store'
@@ -18,7 +19,7 @@ import { createAgentStatusMachine } from '../status'
 import { runLiveCli, runLiveTui } from '../changes/liveHarness'
 import { cleanHookEnv, configureHookCli } from './hookCliFixture'
 import { createHookMockProvider } from './hookMockProvider'
-import { HOOK_LIFECYCLE_CASES, NATIVE_HOOK_KINDS, selectHookLifecycleCases } from './hookLifecycle.config'
+import { HOOK_LIFECYCLE_CASES, NATIVE_HOOK_KINDS, CONVERSATION_RESET_COMMANDS, selectHookLifecycleCases } from './hookLifecycle.config'
 import { redactHookSmokeOutput, selectHookSmokeAgents } from './hookSmoke.config'
 
 const selected = selectHookSmokeAgents(process.env.CATE_HOOK_SMOKE_AGENTS)
@@ -86,6 +87,8 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const canAgentReceivePrompt = (id: string) => status.canReceivePrompt(id)
         const trace: Array<{ event: AgentHookEvent; state: unknown; ready: boolean; notifications: number }> = []
         const events: AgentHookEvent[] = []
+        let conversationResets = 0
+        const resets = createConversationResets(() => { conversationResets++ })
         const posts: Array<Record<string, unknown>> = []
         // Steps as the conversation runtime keeps them (`agentStep`), from the
         // tool calls the real CLI's hooks report.
@@ -93,6 +96,7 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
         const steps: AgentStep[] = []
         const offSteps = hooks.onToolCall((id, call) => { if (id === terminalId) steps.push(agentStepOf(call, cwd)) })
         const unsubscribe = hooks.subscribe((event) => {
+          resets.note(event)
           events.push(event); status.noteHookEvent(event)
           trace.push({ event, state: state(), ready: canAgentReceivePrompt(terminalId), notifications })
         })
@@ -149,6 +153,9 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           await writeFile(path.join(cwd, 'permission-target.txt'), 'disposable\n')
           await writeFile(path.join(directory, 'permission-target.txt'), 'disposable\n')
           await runLiveCli('git', ['init', '-q'], { cwd, env })
+          if (scenario === 'session-reset') {
+            await runLiveCli('git', ['-c', 'user.name=Cate fixture', '-c', 'user.email=cate@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-qm', 'Fixture'], { cwd, env })
+          }
           await hooks.prepareWorkspace(cwd, { [agentId]: 'on' })
           launch = await configureHookCli(agentId, directory, cwd, env, provider, 'CATE_LIFECYCLE: edit target.txt then finish.')
           if (agentId === 'pi') {
@@ -183,6 +190,8 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
           const terminalEnv = await hooks.envForPty(terminalId, env, { [agentId]: 'on' }, cwd, undefined, agentId)
           terminalEnv.CATE_HOOK_ENDPOINT = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`
           let sessionCommandAt = 0, sessionCommandSent = false, sessionReadyAt = 0
+          let resetPromptAt = 0, resetPromptSent = false, resetRequestBoundary = 0, resetsBeforePrompt = 0
+          const resetPrompt = `CATE_AFTER_RESET_${randomUUID()}`
           let approved = false
           let approvalMenuAt = 0
           let billingNoticeAcknowledged = false, billingNoticeAt = 0
@@ -204,9 +213,21 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
                 if (!sessionReadyAt && events.some((event) => event.kind === 'turn-end') && screen.replace(/\s/g, '').includes(provider.answer)) sessionReadyAt = Date.now()
                 if (!sessionCommandAt && sessionReadyAt && Date.now() - sessionReadyAt > 1500) {
                   sessionCommandAt = Date.now()
-                  return scenario === 'session-metadata' ? '/cate-metadata' : scenario === 'session-reset' ? agentId === 'pi' ? '/new' : '/clear' : agentId === 'pi' ? '/quit' : '/exit'
+                  return scenario === 'session-metadata' ? '/cate-metadata' : scenario === 'session-reset' ? CONVERSATION_RESET_COMMANDS[agentId] : agentId === 'pi' ? '/quit' : '/exit'
                 }
                 if (sessionCommandAt && !sessionCommandSent && Date.now() - sessionCommandAt > 500) { sessionCommandSent = true; return '\r' }
+                if (scenario === 'session-reset' && sessionCommandSent && !resetPromptAt && Date.now() - sessionCommandAt > 5000) {
+                  resetPromptAt = Date.now()
+                  resetsBeforePrompt = conversationResets
+                  resetRequestBoundary = provider.inputText.length
+                  followupAnswer = provider.answer + '-after-reset'
+                  return resetPrompt
+                }
+                if (resetPromptAt && !resetPromptSent && Date.now() - resetPromptAt > 500) {
+                  resetPromptSent = true
+                  hooks.noteInput(terminalId, '\r')
+                  return '\r'
+                }
                 return undefined
               }
               if (scenario === 'interrupt') {
@@ -271,7 +292,9 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
               }
               if (scenario === 'session-metadata') return posts.some((post) => post.type === 'session_tree') && posts.some((post) => post.type === 'session_info_changed')
               if (scenario === 'session-end') return events.some((event) => event.kind === 'session-end')
-              if (scenario === 'session-reset') return events.filter((event) => event.kind === 'session-start').length >= 2
+              if (scenario === 'session-reset') return resetPromptSent && conversationResets > 0
+                && events.filter((event) => event.kind === 'turn-end').length >= 2
+                && screen.replace(/\s/g, '').includes(followupAnswer!)
               const lastStart = events.findLastIndex((event) => event.kind === 'turn-start')
               return (scenario !== 'interrupt' || recoverySubmitted && events.filter((event) => event.kind === 'turn-start').length >= 2)
                 && events.slice(lastStart + 1).some((event) => event.kind === 'turn-end')
@@ -322,8 +345,50 @@ describe.skipIf(process.env.CATE_LIVE_AGENT_CLIS !== '1')('installed agent full 
             expect(await readFile(path.join(directory, 'permission-target.txt'), 'utf8')).toBe('disposable\n')
           }
           if (scenario === 'session-reset') {
-            const starts = events.filter((event) => event.kind === 'session-start')
-            expect(starts.at(-1)?.sessionId).not.toBe(starts[0].sessionId)
+            expect(conversationResets, 'native reset emits one normalized conversation boundary').toBe(1)
+            const first = events.find((event) => event.sessionId)!
+            const current = events.findLast((event) => event.kind === 'turn-start')!
+            console.info(`[conversation reset] ${agentId}: ${resetsBeforePrompt} before the next prompt`)
+            if (agentId === 'claude-code') expect(events.some((event) => event.kind === 'session-end' && event.conversationReset)).toBe(true)
+            const requests = provider.inputText.slice(resetRequestBoundary)
+            expect(current.sessionId, 'native reset selects a different conversation').not.toBe(first.sessionId)
+            if (agentId !== 'cursor') {
+              expect(requests.some((input) => input.includes(resetPrompt)), `new prompt reached the model; native submit: ${JSON.stringify(current.raw)}`).toBe(true)
+              expect(requests.every((input) => !input.includes('CATE_LIFECYCLE')), 'reset removed old model context').toBe(true)
+            }
+            if (agentId !== 'cursor') {
+              const messages = await readSession(agentId, env, directory, current)
+              expect(messages?.some((message) => message.text.includes(resetPrompt)), 'new conversation is readable').toBe(true)
+              expect(messages?.every((message) => !message.text.includes('CATE_LIFECYCLE')), 'reader dropped old messages').toBe(true)
+            }
+            // Switch back to a saved conversation under the same terminal id.
+            // This uses production resume argv and the real CLI's saved history.
+            const common = launch.args.slice(0, -1)
+            const resume = AGENT_DEFS[agentId].resume.args!(first.sessionId!)!
+            const switchPrompt = `CATE_SWITCHED_BACK_${randomUUID()}`
+            const args = agentId === 'codex' || agentId === 'kiro' ? [...resume, switchPrompt]
+              : agentId === 'opencode' ? [...common.slice(0, -1), ...resume]
+                : [...common, ...resume, switchPrompt]
+            followupAnswer = provider.answer + '-switched-back'
+            const boundary = events.length
+            let typedAt = 0, submitted = false
+            await runLiveTui(AGENT_DEFS[agentId].command, args, {
+              cwd, env: terminalEnv, renderScreen: true, timeout: 60_000,
+              respond: agentId === 'opencode' ? (screen) => {
+                if (!typedAt && screen.includes('ctrl+p')) { typedAt = Date.now(); return switchPrompt }
+                if (typedAt && !submitted && Date.now() - typedAt > 500) { submitted = true; return '\r' }
+                return undefined
+              } : undefined,
+              complete: (screen) => events.slice(boundary).some((event) => event.kind === 'turn-end') && screen.replace(/\s/g, '').includes(followupAnswer!),
+            })
+            expect(conversationResets, 'switching conversations emits another boundary').toBe(2)
+            expect(events.slice(boundary).some((event) => event.kind === 'turn-start')).toBe(true)
+            expect(events.slice(boundary).filter((event) => event.kind === 'turn-start').every((event) => event.sessionId === first.sessionId)).toBe(true)
+            if (agentId !== 'cursor') {
+              const messages = await readSession(agentId, env, directory, first)
+              expect(messages?.some((message) => message.text.includes('CATE_LIFECYCLE')), 'original history is restored').toBe(true)
+              expect(messages?.every((message) => !message.text.includes(resetPrompt)), 'other conversation is absent').toBe(true)
+            }
           }
           if (scenario === 'edit') {
             expect(await readFile(path.join(cwd, 'created.txt'), 'utf8')).toBe('after\n')

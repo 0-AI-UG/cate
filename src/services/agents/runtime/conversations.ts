@@ -20,7 +20,7 @@ import type { AgentPrompts } from './prompts'
 
 export interface AgentConversationsDeps {
   panels: Pick<AgentPanels, 'state' | 'subscribe'>
-  terminals: Pick<AgentTerminals, 'conversation' | 'conversationStamp' | 'onStep'>
+  terminals: Pick<AgentTerminals, 'conversation' | 'conversationStamp' | 'onStep' | 'onConversationReset'>
   prompts: Pick<AgentPrompts, 'of' | 'onChange'>
   /** Tests: the look cadence while working and otherwise, the looks after a
    *  state change, and how long a turn's end waits for its reply. */
@@ -44,6 +44,8 @@ interface Watch {
   current: AgentConversation
   ready: boolean
   stamp: string | null | undefined
+  generation: number
+  resetting: boolean
   reading: boolean
   /** Another look was asked for during a read; `forced` reads the store. */
   again: boolean
@@ -82,6 +84,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
   const endMs = deps.endMs ?? END_MS
   const watches = new Map<string, Watch>()
   const steps = new Map<string, AgentStep[]>()
+  const generations = new Map<string, number>()
   const stepsSince = new Date().toISOString()
   const stepsOf = (panelId: string): AgentStep[] => steps.get(panelId) ?? []
 
@@ -111,18 +114,20 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
 
   const read = async (panelId: string, watch: Watch, forced: boolean): Promise<AgentConversation> => {
     const state = panels.state(panelId)
+    const generation = watch.generation
     let messages = watch.current.messages
     if (state?.session) {
       const stamp = await terminals.conversationStamp(panelId).catch(() => null)
       if (forced || stamp === null || stamp !== watch.stamp) {
         const conversation = await terminals.conversation(panelId).catch(() => null)
-        if (conversation) {
+        if (conversation && generation === watch.generation) {
           messages = conversation.messages
           watch.stamp = stamp
         }
       }
     }
     const next = {
+      generation: watch.generation,
       status: state?.status ?? null,
       canReceivePrompt: state?.canReceivePrompt ?? false,
       messages,
@@ -131,7 +136,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
       prompts: prompts.of(panelId),
     }
     // The turn ended and its reply is not read yet: it still runs.
-    if (watch.current.status === 'running' && next.status !== 'running' && !replied(next)) {
+    if (!watch.resetting && watch.current.status === 'running' && next.status !== 'running' && !replied(next)) {
       watch.ending ??= Date.now()
       if (Date.now() - watch.ending < endMs) return { ...next, status: 'running', canReceivePrompt: false }
     }
@@ -151,8 +156,15 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
       do {
         watch.again = false
         watch.forced = false
+        const generation = watch.generation
         const next = await read(panelId, watch, force)
         if (watches.get(panelId) !== watch) return
+        if (generation !== watch.generation) {
+          watch.again = true
+          force = true
+          continue
+        }
+        watch.resetting = false
         publish(watch, next)
         force = watch.forced
       } while (watch.again)
@@ -176,6 +188,22 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
         return timer
       })
     }
+  })
+
+  const offResets = terminals.onConversationReset((panelId) => {
+    steps.delete(panelId)
+    generations.set(panelId, (generations.get(panelId) ?? 0) + 1)
+    const watch = watches.get(panelId)
+    if (!watch) return
+    watch.generation++
+    watch.resetting = true
+    watch.stamp = undefined
+    watch.ending = null
+    const cleared = { ...watch.current, generation: watch.generation, messages: [], steps: [] }
+    if (watch.ready) publish(watch, cleared)
+    else watch.current = cleared
+    // Hook handling finishes updating the session locator before the read.
+    queueMicrotask(() => { if (watches.get(panelId) === watch) void look(panelId, watch, true) })
   })
 
   const offSteps = terminals.onStep((panelId, step) => {
@@ -202,9 +230,11 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
       if (!watch) {
         watch = {
           listeners: new Set(),
-          current: { status: null, canReceivePrompt: false, messages: [], steps: [], stepsSince, prompts: [] },
+          current: { generation: generations.get(panelId) ?? 0, status: null, canReceivePrompt: false, messages: [], steps: [], stepsSince, prompts: [] },
           ready: false,
           stamp: undefined,
+          generation: generations.get(panelId) ?? 0,
+          resetting: false,
           reading: false,
           again: false,
           forced: false,
@@ -225,6 +255,7 @@ export function createAgentConversations(deps: AgentConversationsDeps): AgentCon
       }
     },
     dispose() {
+      offResets()
       offPanels()
       offSteps()
       offPrompts()

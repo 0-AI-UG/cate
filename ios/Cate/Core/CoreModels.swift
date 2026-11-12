@@ -461,6 +461,7 @@ struct ChatTurn: Decodable, Hashable, Sendable {
 /// its state, and its items from index `from` on.
 struct ChatEvent: Decodable, Sendable {
     let kind: String
+    let generation: Int
     let from: Int
     /// Items are the latest only: there are earlier ones (`agents.more`).
     let earlier: Bool

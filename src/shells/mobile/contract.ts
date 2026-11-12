@@ -28,6 +28,8 @@ export interface MobileAppInfo {
 
 export interface MobileBridgeMethods {
   'app.info': { params: Record<string, never>; result: MobileAppInfo }
+  /** A native confirmation before a destructive action. */
+  'app.confirm': { params: { message: string }; result: boolean }
   /** A device document as JSON text, or null when it does not exist yet. */
   'device.get': { params: { name: string }; result: string | null }
   'device.set': { params: { name: string; json: string }; result: null }
@@ -349,6 +351,8 @@ export interface MobileOutgoingPrompt {
 
 /** An agent chat as the app shows it (`chatTimeline.ts`). */
 export interface MobileChat {
+  /** A new generation replaces the conversation, including its row state. */
+  generation: number
   /** The conversation was read: false while it is on its way. */
   loaded: boolean
   /** The agent's state; null while the panel hosts no agent. */

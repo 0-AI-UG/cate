@@ -178,9 +178,11 @@ describe.skipIf(!enabled)('installed Pi integration assumptions', () => {
         await waitForPi(() => ended(fixture) === index + 1, message)
       }
       const original = locator(fixture)
+      expect(fixture.conversationResets(), 'ordinary turns keep the conversation').toBe(0)
       await pi.request({ type: 'prompt', message: '/cate-branch' })
       await waitForPi(() => fixture.events.some((event) => event.raw.type === 'session_tree'), 'branch metadata')
       const branch = locator(fixture)
+      expect(fixture.conversationResets(), 'same-session branch navigation replaces the chat').toBe(1)
       expect(branch.leafId).not.toBe(original.leafId)
       const atRoot = await piSessionStore.conversation({ homeDir: fixture.directory, session: branch })
       expect(atRoot?.map((message) => message.text)).toEqual(['CATE_ROOT', fixture.provider.answer])
@@ -189,6 +191,7 @@ describe.skipIf(!enabled)('installed Pi integration assumptions', () => {
       await pi.request({ type: 'set_session_name', name: 'CATE_NATIVE_TITLE' })
       await waitForPi(() => fixture.events.some((event) => event.raw.type === 'session_info_changed'), 'native title change')
       const active = locator(fixture)
+      expect(fixture.conversationResets(), 'rename and new messages do not reset the chat').toBe(1)
       expect(await piSessionStore.title({ homeDir: fixture.directory, session: active })).toBe('CATE_NATIVE_TITLE')
       const messages = await piSessionStore.conversation({ homeDir: fixture.directory, session: active })
       expect(messages?.some((message) => message.text === 'CATE_ACTIVE')).toBe(true)
@@ -196,6 +199,7 @@ describe.skipIf(!enabled)('installed Pi integration assumptions', () => {
       await pi.request({ type: 'clone' })
       await waitForPi(() => locator(fixture).sessionId !== original.sessionId, 'cloned session hooks')
       const cloned = locator(fixture)
+      expect(fixture.conversationResets(), 'selecting a cloned conversation replaces the chat').toBe(2)
       expect(await piSessionStore.conversation({ homeDir: fixture.directory, session: cloned })).toEqual(messages)
       const all = []
       for (const file of [original.transcriptPath!, cloned.transcriptPath!]) {

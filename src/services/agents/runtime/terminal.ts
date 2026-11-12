@@ -35,6 +35,7 @@ import { createAgentStatusMachine, type AgentStatusMachine } from './status'
 import { createResumeStamps, type ResumeStamps } from './stamps'
 import { agentStepOf } from './steps'
 import { typePrompt } from './promptInput'
+import { createConversationResets } from './conversationResets'
 
 /** The part of the terminal service the terminal agents use. */
 export type AgentTerminalService = Pick<TerminalService,
@@ -121,6 +122,11 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   const changeListeners = new Set<(panelId: string) => void>()
   const exitListeners = new Set<(panelId: string, exitCode: number) => void>()
   const stepListeners = new Set<(panelId: string, step: AgentStep) => void>()
+  const resetListeners = new Set<(panelId: string) => void>()
+  const resets = createConversationResets((terminalId) => {
+    const panelId = panelOf(terminalId)
+    if (panelId) for (const listener of resetListeners) listener(panelId)
+  })
   /** Contexts last published per terminal, to skip identical updates. */
   const sentContext = new Map<string, string | null>()
   /** The agent a hook came from in each terminal since its agent started. */
@@ -136,6 +142,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   const changed = (terminalId: string): void => {
     const panelId = panelOf(terminalId)
     if (!panelId) return
+    resets.observe(terminalId, sessionOf(panelId, terminalId))
     for (const listener of changeListeners) listener(panelId)
   }
 
@@ -177,6 +184,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   }
 
   const forget = (terminalId: string): void => {
+    resets.drop(terminalId)
     const info = terminals.get(terminalId)
     presence.drop(terminalId)
     hooks.forgetTerminal(terminalId)
@@ -318,6 +326,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   offs.push(hooks.subscribe((event) => {
     const panelId = panelOf(event.terminalId)
     if (!panelId) return
+    resets.note(event)
     // A hook post that registered the agent's pid proves it present now, not
     // at the next activity scan; the falling edge still comes from scans.
     const registered = presence.registeredAgent(event.terminalId)
@@ -517,6 +526,10 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     onStep(listener) {
       stepListeners.add(listener)
       return () => { stepListeners.delete(listener) }
+    },
+    onConversationReset(listener) {
+      resetListeners.add(listener)
+      return () => { resetListeners.delete(listener) }
     },
     onExit(listener) {
       exitListeners.add(listener)

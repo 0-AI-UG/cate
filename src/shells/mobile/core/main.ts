@@ -20,6 +20,7 @@ import { createMobileWorkspaceSettings } from './workspaceSettings'
 import { installClientUi } from '@kernel/interaction'
 import { createMobileClientUi } from './clientUi'
 import { createMobileLinks } from './links'
+import { installMobileCloseGuards } from './close'
 import { noteClientActivity } from '@client/document'
 
 declare global {
@@ -32,6 +33,7 @@ async function start(): Promise<void> {
   const bridge = nativeBridge()
   const links = createMobileLinks()
   installClientUi(createMobileClientUi(bridge, links))
+  installMobileCloseGuards()
   const client = await bootMobileClient(bridge)
   const views = createMobileViews(bridge)
   const agents = createMobileAgents(client, bridge)

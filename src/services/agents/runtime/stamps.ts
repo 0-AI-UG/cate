@@ -83,6 +83,10 @@ export function createResumeStamps(deps: ResumeStampsDeps): ResumeStamps {
         return
       }
       if (event.sessionId == null) return
+      // A late completion/tool event cannot select the conversation that a
+      // newer start replaced.
+      if (st.latest && (event.kind === 'turn-end' || event.kind === 'turn-resume')
+        && (st.latest.agentId !== event.agentId || st.latest.sessionId !== event.sessionId)) return
       st.seq++
       const { agentId, sessionId } = event
       const identity = { agentId, sessionId, ...(event.cwd ? { cwd: event.cwd } : {}),

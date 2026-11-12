@@ -1,5 +1,12 @@
 import type { AgentHookEventKind, AgentId } from '../../contract'
 
+/** Native commands used only to drive the real CLI fixtures. Production
+ * observes confirmed lifecycle events; it never interprets typed commands. */
+export const CONVERSATION_RESET_COMMANDS: Record<AgentId, string> = {
+  'claude-code': '/clear', codex: '/clear', cursor: '/new-chat', grok: '/clear',
+  opencode: '/new', pi: '/new', kiro: '/clear',
+}
+
 // Independent expectations: observing an HTTP post is insufficient if Cate
 // stops normalizing it. OpenCode's tool-part event is verified through storage.
 export const NATIVE_HOOK_KINDS: Record<string, AgentHookEventKind | 'stored-edit'> = {
@@ -44,6 +51,7 @@ export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
     'provider-failure': ['StopFailure'],
   },
   codex: {
+    'session-reset': [], // Native reset, followed by switching back to the original session.
     edit: ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'],
     interrupt: ['Interrupt'],
     resume: ['SessionStart', 'UserPromptSubmit', 'Stop'],
@@ -53,12 +61,14 @@ export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
     'tool-failure': ['PostToolUse', 'Stop'],
   },
   cursor: {
+    'session-reset': [], // Native reset, followed by switching back to the original session.
     edit: ['sessionStart', 'beforeSubmitPrompt', 'afterFileEdit', 'postToolUse', 'stop'],
     interrupt: ['stop'],
     resume: ['sessionStart', 'beforeSubmitPrompt', 'stop'],
     'session-end': ['sessionEnd'],
   },
   grok: {
+    'session-reset': [], // Native reset, followed by switching back to the original session.
     edit: ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop'],
     interrupt: ['StopCancelled'],
     resume: ['SessionStart', 'UserPromptSubmit', 'Stop'],
@@ -69,6 +79,7 @@ export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
     'provider-failure': ['StopFailure'],
   },
   opencode: {
+    'session-reset': [], // Native reset, followed by switching back to the original session.
     edit: ['session.created', 'session.status', 'message.part.updated'],
     interrupt: ['session.status'],
     resume: ['session.status'],
@@ -89,6 +100,7 @@ export const HOOK_LIFECYCLE_CASES: Record<AgentId, Record<string, string[]>> = {
     'provider-failure': ['agent_settled'],
   },
   kiro: {
+    'session-reset': [], // Native reset, followed by switching back to the original session.
     edit: ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop'],
     interrupt: [], // V3 has no native interrupt hook; Cate uses the PTY input.
     resume: ['SessionStart', 'UserPromptSubmit', 'Stop'],

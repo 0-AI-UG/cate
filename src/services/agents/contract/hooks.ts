@@ -65,6 +65,9 @@ export interface AgentHookEvent {
   transcriptPath?: string
   /** Active session-tree entry, when the CLI exposes branching. */
   leafId?: string | null
+  /** The CLI explicitly cleared/replaced the visible conversation, including
+   *  same-session tree navigation. Normalized only by its adapter. */
+  conversationReset?: true
   /** Present only for session-title events. */
   title?: string
   /** permission-check only: the CLI's resolved approval config, read on the
@@ -101,7 +104,7 @@ export interface AgentToolCall {
 }
 
 export type NormalizedHookFields = Pick<AgentHookEvent, 'kind' | 'sessionId'> &
-  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'leafId' | 'permission' | 'interrupted'>>
+  Partial<Pick<AgentHookEvent, 'cwd' | 'transcriptPath' | 'leafId' | 'permission' | 'interrupted' | 'conversationReset'>>
 
 // ---------------------------------------------------------------------------
 // Injection declarations
@@ -425,7 +428,7 @@ const claudeSpec: AgentHookSpec = {
       case 'PermissionDenied': return { kind: 'turn-resume', ...base }
       case 'Stop': return { kind: 'turn-end', ...base }
       case 'StopFailure': return { kind: 'turn-end', ...base }
-      case 'SessionEnd': return { kind: 'session-end', ...base }
+      case 'SessionEnd': return { kind: 'session-end', ...base, ...(p.reason === 'clear' ? { conversationReset: true as const } : {}) }
       // Other hooks may resolve a PermissionRequest automatically.
       case 'PermissionRequest': return { kind: 'permission-check', ...base, ...permission(p.message) }
       // This notification confirms a human prompt. Claude applies its own
@@ -1014,7 +1017,8 @@ const piSpec: AgentHookSpec = {
       transcriptPath: str(p.transcriptPath) ?? undefined,
       leafId: p.leafId === null ? null : str(p.leafId) ?? undefined }
     switch (p.type) {
-      case 'session_start': case 'session_tree': case 'session_info_changed': return { ...base, kind: 'session-start' }
+      case 'session_tree': return { ...base, kind: 'session-start', conversationReset: true }
+      case 'session_start': case 'session_info_changed': return { ...base, kind: 'session-start' }
       // Reload replaces the extension runtime, not the persisted conversation.
       case 'session_shutdown': return p.reason === 'reload' ? null : { ...base, kind: 'session-end' }
       case 'before_agent_start': case 'session_before_compact': return { ...base, kind: 'turn-start' }

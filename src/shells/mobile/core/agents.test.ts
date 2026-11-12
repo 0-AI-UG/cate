@@ -155,6 +155,7 @@ describe('mobile actions', () => {
       await actions['agents.watch']({ viewId: 'v', workspaceId: 'ws', panelId: 'p1' })
       expect(runtime.agents.conversation).toHaveBeenCalledWith({ panelId: 'p1' }, { resume: true })
       conversation.emit({ kind: 'snapshot', rev: 0, snapshot: {
+        generation: 0,
         status: 'waitingForInput',
         canReceivePrompt: true,
         messages: [{ role: 'user', text: 'Complete this coding task:\n\nSay hi', createdAt: '2026-01-01T00:00:01.000Z' }, { role: 'assistant', text: 'Hi.' }],
@@ -163,7 +164,7 @@ describe('mobile actions', () => {
         prompts: [],
       } })
       expect(events.at(-1)).toEqual({
-        kind: 'chat', loaded: true, status: 'waitingForInput', canReceivePrompt: true, queued: [], failed: [], turn: null, from: 0, earlier: false,
+        kind: 'chat', generation: 0, loaded: true, status: 'waitingForInput', canReceivePrompt: true, queued: [], failed: [], turn: null, from: 0, earlier: false,
         items: [
           { kind: 'prompt', id: 'm0', text: 'Say hi', sent: true },
           { kind: 'reply', id: 'm1', text: 'Hi.' },
@@ -181,7 +182,7 @@ describe('mobile actions', () => {
         status: 'running', canReceivePrompt: false, prompts: [], from: 2, messages: [{ role: 'user', text: 'go', createdAt: '2026-01-01T00:00:02.000Z' }],
       } })
       expect(events.at(-1)).toEqual({
-        kind: 'chat', loaded: true, status: 'running', canReceivePrompt: false, queued: [], failed: [], turn: { step: null }, from: 2, earlier: false,
+        kind: 'chat', generation: 0, loaded: true, status: 'running', canReceivePrompt: false, queued: [], failed: [], turn: { step: null }, from: 2, earlier: false,
         items: [{ kind: 'prompt', id: 'm2', text: 'go', sent: true }],
       })
 

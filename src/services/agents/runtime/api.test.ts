@@ -26,6 +26,7 @@ function fakeTerminals() {
     }),
     conversationStamp: async () => null,
     onStep: () => () => {},
+    onConversationReset: () => () => {},
     dispose: () => {},
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }

@@ -55,6 +55,7 @@ final class AgentConversation {
     }
 
     private(set) var items: [Item] = []
+    private(set) var generation = 0
     /// The items are the latest ones; earlier ones come on request (`more`).
     private(set) var earlier = false
     /// The agent's state; nil while the panel hosts no agent.
@@ -119,6 +120,12 @@ final class AgentConversation {
     }
 
     private func apply(_ event: ChatEvent) {
+        if event.loaded, event.generation != generation {
+            generation = event.generation
+            items = []
+            hasHistory = false
+            followedAt = Date()
+        }
         // What the conversation has when it comes in was there already, even
         // where the cache had not caught up; only what comes after is new.
         let live = hasHistory
@@ -177,7 +184,7 @@ final class AgentConversation {
             }
             return ChatItemData(kind: index.isMultiple(of: 2) ? "prompt" : "reply", id: "m\(index)", text: text, sent: true, steps: nil, ghost: nil)
         }
-        apply(ChatEvent(kind: "chat", from: 0, earlier: start > 0, loaded: true, status: "waitingForInput", canReceivePrompt: true, queued: [], failed: [], turn: nil, items: rows))
+        apply(ChatEvent(kind: "chat", generation: 0, from: 0, earlier: start > 0, loaded: true, status: "waitingForInput", canReceivePrompt: true, queued: [], failed: [], turn: nil, items: rows))
     }
     #endif
 }

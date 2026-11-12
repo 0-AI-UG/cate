@@ -395,6 +395,12 @@ private struct ConversationList: View {
             },
             onPositions: positionProbe
         )
+        .id(conversation?.generation ?? 0)
+        .onChange(of: conversation?.generation) { _, _ in
+            following = true
+            earlierFrom = nil
+            unseen = false
+        }
         .onChange(of: items.last?.id) { _, _ in
             if !following { unseen = true }
         }

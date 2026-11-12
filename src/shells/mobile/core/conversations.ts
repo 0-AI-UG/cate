@@ -37,6 +37,7 @@ export function createMobileConversations(bridge: MobileBridge): MobileConversat
       /** The first message shown; null until the conversation was read. */
       let start: number | null = null
       let readingEarlier = false
+      let generation: number | null = null
       let shown: (MobileChat & { earlier: boolean }) | null = null
       let shownItems: string[] = []
       const emit = (event: MobileViewEvent) => {
@@ -44,6 +45,12 @@ export function createMobileConversations(bridge: MobileBridge): MobileConversat
       }
       const update = () => {
         const conversation = handle.get()
+        if (conversation && generation !== conversation.generation) {
+          generation = conversation.generation
+          start = null
+          readingEarlier = false
+          shownItems = []
+        }
         const chat = timeline.update(conversation)
         const messages = conversation?.messages.length ?? 0
         if (!readingEarlier && chat.loaded && messages > 0) start = Math.max(0, messages - CHAT_PAGE)
@@ -60,6 +67,7 @@ export function createMobileConversations(bridge: MobileBridge): MobileConversat
         while (from < items.length && from < shownItems.length && items[from] === shownItems[from]) from++
         const before = shown
         const same = before !== null && from === items.length && from === shownItems.length
+          && before.generation === window.generation
           && before.loaded === window.loaded && before.status === window.status && before.canReceivePrompt === window.canReceivePrompt
           && before.earlier === window.earlier
           && JSON.stringify(before.queued) === JSON.stringify(window.queued) && JSON.stringify(before.failed) === JSON.stringify(window.failed)

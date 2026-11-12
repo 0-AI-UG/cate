@@ -7,7 +7,7 @@ import { createTerminalService, type ActivityScan, type EnvContributor, type Lau
 import { createLogger } from '@kernel/log/contract'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { TERMINAL_RESTORE_LAUNCH } from '@services/terminal/contract'
-import { AGENT_DEFS, AGENT_LAUNCH, ATTACHMENTS_ONLY_PROMPT, agentLaunchCommand, type AgentId, type AgentStep } from '../contract'
+import { AGENT_DEFS, AGENT_LAUNCH, ATTACHMENTS_ONLY_PROMPT, agentLaunchCommand, type AgentConversation, type AgentId, type AgentStep } from '../contract'
 import { createAgentsCore, type AgentsCore } from './core'
 import type { AgentsDocument } from './promptContext'
 import type { RelationContextMode } from '@workspace/relations/contract'
@@ -504,6 +504,25 @@ describe('terminal agents', () => {
     })
   })
 
+  it('clears the watched conversation after /clear rotates the hook session without a new transcript', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'claude')
+    await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    const seen: AgentConversation[] = []
+    const stop = agents.conversations.watch('term', (next) => seen.push(next))
+    await vi.waitFor(() => expect(seen.at(-1)?.messages).toEqual([{ role: 'user', text: 'hi' }]))
+    const read = vi.spyOn(agents.hooks, 'readConversation').mockResolvedValue(null)
+    await post(env, 'claude-code', { hook_event_name: 'SessionEnd', session_id: 'sess-1', cwd: root })
+    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-2', source: 'clear', cwd: root })
+    await vi.waitFor(() => {
+      expect(agents.panels.state('term')?.session?.sessionId).toBe('sess-2')
+      expect(seen.at(-1)?.messages).toEqual([])
+      expect(seen.at(-1)?.steps).toEqual([])
+    })
+    read.mockRestore()
+    stop()
+  })
+
   it('forgets the terminal when its PTY exits and reports the exit per panel', async () => {
     const exits: Array<[string, number]> = []
     agentTerminals.onExit((panelId, code) => exits.push([panelId, code]))
@@ -596,7 +615,7 @@ describe('terminal agents steps', () => {
     const seen: AgentStep[][] = []
     const stop = agents.conversations.watch('term', (conversation) => { seen.push(conversation.steps) })
     await vi.waitFor(() => expect(seen.length).toBeGreaterThan(0))
-    await post(env, 'claude-code', TOOL_POSTS['claude-code'].shell('npm test'))
+    await post(env, 'claude-code', { ...TOOL_POSTS['claude-code'].shell('npm test'), session_id: 'sess-1' })
     await vi.waitFor(() => expect(seen.at(-1)?.map((step) => step.subject)).toEqual(['npm test']))
     stop()
   })

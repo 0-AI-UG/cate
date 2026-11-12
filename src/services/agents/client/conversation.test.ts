@@ -8,6 +8,7 @@ import { fakeStream } from './testing'
 type ConversationEvent = ChannelEvent<AgentConversation, AgentConversationChange>
 
 const conversation = (patch: Partial<AgentConversation> = {}): AgentConversation => ({
+  generation: 0,
   status: 'waitingForInput', canReceivePrompt: true, messages: [], steps: [], stepsSince: '2026-01-01T00:00:00.000Z', prompts: [], ...patch,
 })
 

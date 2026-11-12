@@ -26,6 +26,8 @@ final class CoreHost {
     private(set) var linkOpenTarget = "ask"
     /// A tapped web link waiting for where it opens.
     private(set) var linkPrompt: LinkPrompt?
+    private(set) var confirmation: String?
+    @ObservationIgnored private var confirmationReply: CheckedContinuation<Bool, Never>?
     private(set) var ready = false
     /// Set when the core could not start; the app shows it instead.
     private(set) var failure: String?
@@ -59,6 +61,21 @@ final class CoreHost {
     @ObservationIgnored private var taken = 0
 
     private static let rememberedKey = "workspaces.remembered"
+
+    func confirm(_ message: String) async -> Bool {
+        guard confirmationReply == nil else { return false }
+        return await withCheckedContinuation { reply in
+            confirmationReply = reply
+            confirmation = message
+        }
+    }
+
+    func answerConfirmation(_ confirmed: Bool) {
+        let reply = confirmationReply
+        confirmationReply = nil
+        confirmation = nil
+        reply?.resume(returning: confirmed)
+    }
 
     init() {
         let remembered = (UserDefaults.standard.data(forKey: Self.rememberedKey))

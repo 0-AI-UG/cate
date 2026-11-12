@@ -56,6 +56,8 @@ export interface AgentPrompt {
  *  it: the messages and the agent's state, read together, so a turn that
  *  ended arrives with its reply. A message's id is its index. */
 export interface AgentConversation {
+  /** Changes when the adapter clears or selects another conversation. */
+  generation: number
   /** Null while the panel hosts no agent. */
   status: AgentStatus | null
   canReceivePrompt: boolean
@@ -72,6 +74,7 @@ export interface AgentConversation {
  *  replaced by `messages` (a reply growing, a turn appended), the steps
  *  from `stepsFrom` on by `steps`, and the prompts all at once. */
 export interface AgentConversationChange {
+  generation?: number
   status?: AgentStatus | null
   canReceivePrompt?: boolean
   from?: number
@@ -130,6 +133,7 @@ export function agentStep(call: Pick<AgentToolCall, 'name' | 'input'>, at: strin
 /** The change from `before` to `after`, or null when nothing changed. */
 export function diffAgentConversation(before: AgentConversation, after: AgentConversation): AgentConversationChange | null {
   const change: AgentConversationChange = {}
+  if (before.generation !== after.generation) change.generation = after.generation
   if (before.status !== after.status) change.status = after.status
   if (before.canReceivePrompt !== after.canReceivePrompt) change.canReceivePrompt = after.canReceivePrompt
   const from = firstChange(before.messages, after.messages, sameMessage)
@@ -149,6 +153,7 @@ export function diffAgentConversation(before: AgentConversation, after: AgentCon
 
 export function applyAgentConversationChange(conversation: AgentConversation, change: AgentConversationChange): AgentConversation {
   return {
+    generation: change.generation ?? conversation.generation,
     status: change.status !== undefined ? change.status : conversation.status,
     canReceivePrompt: change.canReceivePrompt ?? conversation.canReceivePrompt,
     messages: change.from !== undefined

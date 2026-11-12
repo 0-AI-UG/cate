@@ -9,10 +9,27 @@ const step = (tool: string, second: number): AgentStep => ({ tool, at: at(second
 const prompt = (id: string, text: string, state: AgentPrompt['state'], attachments: string[] = []): AgentPrompt => ({ id, text, attachments, state })
 
 function chat(status: AgentStatus | null, messages: AgentConversationMessage[], extra: Partial<AgentConversation> = {}): AgentConversation {
-  return { status, canReceivePrompt: status === 'waitingForInput', messages, steps: [], stepsSince: at(0), prompts: [], ...extra }
+  return { generation: 0, status, canReceivePrompt: status === 'waitingForInput', messages, steps: [], stepsSince: at(0), prompts: [], ...extra }
 }
 
 describe('chat timeline', () => {
+  it('drops a held prompt when an empty conversation is replaced by another empty one', () => {
+    const timeline = createChatTimeline()
+    timeline.update(chat('waitingForInput', [], { prompts: [prompt('a', 'old pending prompt', 'sending')] }))
+    expect(timeline.update(chat('waitingForInput', [], { generation: 1 }))).toMatchObject({ items: [], turn: null })
+  })
+
+  it('drops a completed /clear prompt and the old chat without waiting for a new message', () => {
+    const timeline = createChatTimeline()
+    const history = [user('hi', 1), reply('Hello.', 2)]
+    timeline.update(chat('waitingForInput', history, { prompts: [prompt('a', '/clear', 'sending')] }))
+    expect(timeline.update(chat('waitingForInput', history))).toMatchObject({ turn: null })
+    expect(timeline.update(chat('waitingForInput', []))).toMatchObject({ items: [], turn: null })
+    // A command sent into an already empty session also starts no turn.
+    timeline.update(chat('waitingForInput', [], { prompts: [prompt('b', '/clear', 'sending')] }))
+    expect(timeline.update(chat('waitingForInput', []))).toMatchObject({ items: [], turn: null })
+  })
+
   it('keeps reply timestamps so delayed history is not animated as new output', () => {
     const timeline = createChatTimeline()
     timeline.update(chat('notRunning', []))

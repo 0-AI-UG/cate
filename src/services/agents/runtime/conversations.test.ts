@@ -20,10 +20,12 @@ const session = { agentId: 'claude-code' as const, sessionId: 's1', cwd: '/repo'
 function setup() {
   const states = new Map<string, PanelAgentState>()
   const listeners = new Set<(panelId: string) => void>()
+  const resetListeners = new Set<(panelId: string) => void>()
+  const reset = () => { for (const listener of resetListeners) listener('p1') }
   const stepListeners = new Set<(panelId: string, step: AgentStep) => void>()
   let messages: AgentConversationMessage[] = []
   let stamp = 'a'
-  const conversation = vi.fn(async () => ({ session, messages: [...messages] }))
+  const conversation = vi.fn(async (): Promise<{ session: typeof session; messages: AgentConversationMessage[] } | null> => ({ session, messages: [...messages] }))
   const terminals: AgentTerminals = {
     state: (panelId) => states.get(panelId) ?? null,
     panelIds: () => states.keys(),
@@ -33,15 +35,16 @@ function setup() {
     conversationStamp: async () => stamp,
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     onStep: (listener) => { stepListeners.add(listener); return () => { stepListeners.delete(listener) } },
+    onConversationReset: (listener) => { resetListeners.add(listener); return () => { resetListeners.delete(listener) } },
     dispose: () => {},
   }
   const step = (panelId: string, next: AgentStep) => { for (const listener of stepListeners) listener(panelId, next) }
   const panels = createAgentPanels(terminals)
   const prompts = createAgentPrompts({ panels, terminals })
-  const setStatus = (status: AgentStatus) => {
+  const setStatus = (status: AgentStatus, activeSession = session) => {
     states.set('p1', {
       panelId: 'p1', agentId: 'claude-code', agentName: 'Claude Code', label: 'Claude Code', contextPolicy: null, status,
-      present: true, canReceivePrompt: status === 'waitingForInput', session,
+      present: true, canReceivePrompt: status === 'waitingForInput', session: activeSession,
     })
     for (const listener of listeners) listener('p1')
   }
@@ -54,7 +57,7 @@ function setup() {
     states.delete('p1')
     for (const listener of listeners) listener('p1')
   }
-  return { panels, terminals, prompts, conversation, setStatus, write, step, remove }
+  return { panels, terminals, prompts, conversation, setStatus, write, step, remove, reset }
 }
 
 describe('agent conversations', () => {
@@ -70,7 +73,7 @@ describe('agent conversations', () => {
     conversations.watch('p1', (conversation, change) => { seen.push({ conversation, change }) })
     await vi.advanceTimersByTimeAsync(0)
     expect(seen).toEqual([{
-      conversation: { status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'fix it' }], steps: [], stepsSince: expect.any(String), prompts: [] },
+      conversation: { generation: 0, status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'fix it' }], steps: [], stepsSince: expect.any(String), prompts: [] },
       change: null,
     }])
 
@@ -214,11 +217,61 @@ describe('agent conversations', () => {
     await vi.advanceTimersByTimeAsync(500)
     expect(conversation).toHaveBeenCalledTimes(1)
   })
+
+  it('clears messages and steps on session rotation before the new transcript exists', async () => {
+    const { panels, terminals, prompts, conversation, setStatus, write, step, reset } = setup()
+    setStatus('waitingForInput')
+    write([{ role: 'user', text: 'old prompt' }, { role: 'assistant', text: 'old reply' }])
+    const conversations = createAgentConversations({ panels, terminals, prompts, settleMs: [] })
+    const seen: AgentConversation[] = []
+    conversations.watch('p1', (next) => seen.push(next))
+    await vi.advanceTimersByTimeAsync(0)
+    step('p1', { tool: 'Bash', subject: 'old command', at: new Date().toISOString() })
+    conversation.mockResolvedValue(null)
+    reset()
+    setStatus('waitingForInput', { ...session, sessionId: 's2' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(seen.at(-1)).toMatchObject({ messages: [], steps: [], status: 'waitingForInput' })
+
+    // Even an unchanged file stamp must read the new session's transcript.
+    conversation.mockResolvedValue({ session: { ...session, sessionId: 's3' }, messages: [{ role: 'user', text: 'new prompt' }] })
+    reset()
+    setStatus('waitingForInput', { ...session, sessionId: 's3' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(seen.at(-1)?.messages).toEqual([{ role: 'user', text: 'new prompt' }])
+    conversations.dispose()
+  })
+
+  it('replaces a same-session conversation and ignores a previous generation read that finishes late', async () => {
+    const { panels, terminals, prompts, conversation, setStatus, write, step, reset } = setup()
+    setStatus('waitingForInput')
+    write([{ role: 'user', text: 'old branch' }])
+    const conversations = createAgentConversations({ panels, terminals, prompts, settleMs: [] })
+    const seen: AgentConversation[] = []
+    conversations.watch('p1', (next) => seen.push(next))
+    await vi.advanceTimersByTimeAsync(0)
+    step('p1', { tool: 'Bash', subject: 'old tool', at: new Date().toISOString() })
+    let finish!: (value: Awaited<ReturnType<typeof conversation>>) => void
+    conversation.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    setStatus('running')
+    await vi.advanceTimersByTimeAsync(0)
+    // Branch changes can have the same session id and the same file stamp.
+    reset()
+    expect(seen.at(-1)).toMatchObject({ messages: [], steps: [] })
+    conversation.mockResolvedValue({ session, messages: [{ role: 'user', text: 'selected branch' }] })
+    const afterReset = seen.length
+    finish({ session, messages: [{ role: 'user', text: 'late old branch' }] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(seen.at(-1)?.messages).toEqual([{ role: 'user', text: 'selected branch' }])
+    expect(seen.slice(afterReset).some((next) => next.messages.some((message) => message.text.includes('old branch')))).toBe(false)
+    expect(seen.at(-1)?.steps).toEqual([])
+    conversations.dispose()
+  })
 })
 
 describe('conversation changes', () => {
   const base: AgentConversation = {
-    status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'b' }], steps: [], stepsSince: 'x', prompts: [],
+    generation: 0, status: 'running', canReceivePrompt: false, messages: [{ role: 'user', text: 'a' }, { role: 'assistant', text: 'b' }], steps: [], stepsSince: 'x', prompts: [],
   }
 
   it('round-trips through apply', () => {
@@ -239,6 +292,13 @@ describe('conversation changes', () => {
   it('is null for the same conversation, and truncates a shorter one', () => {
     expect(diffAgentConversation(base, { ...base, messages: [...base.messages] })).toBeNull()
     expect(diffAgentConversation(base, { ...base, messages: base.messages.slice(0, 1) })).toEqual({ from: 1, messages: [] })
+  })
+
+  it('transports a conversation switch even when the displayed messages are identical', () => {
+    const next = { ...base, generation: 1 }
+    const change = diffAgentConversation(base, next)!
+    expect(change).toEqual({ generation: 1 })
+    expect(applyAgentConversationChange(base, change)).toEqual(next)
   })
 })
 
