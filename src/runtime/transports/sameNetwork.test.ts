@@ -3,7 +3,8 @@
 // handshake.
 
 import type os from 'node:os'
-import { afterEach, describe, expect, it } from 'vitest'
+import { once } from 'node:events'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket from 'ws'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
@@ -155,13 +156,40 @@ describe('same-network listener', () => {
   })
 
   it('drops a peer that stops answering pings, and keeps one that answers', async () => {
-    const url = await serve(undefined, 40)
-    const closedAfter = (autoPong: boolean) => new Promise<boolean>((resolve) => {
-      const socket = new WebSocket(url, { autoPong })
-      socket.on('close', () => resolve(true))
-      setTimeout(() => { socket.terminate(); resolve(false) }, 400)
+    // Drive heartbeats ourselves: a busy runner may not deliver a pong within
+    // the old 40 ms interval even when the peer is healthy.
+    const interval = globalThis.setInterval
+    let heartbeat!: () => void
+    vi.spyOn(globalThis, 'setInterval').mockImplementationOnce((callback) => {
+      heartbeat = callback as () => void
+      return interval(callback, 60_000)
     })
-    expect(await closedAfter(false)).toBe(true)
-    expect(await closedAfter(true)).toBe(false)
+    const ping = vi.spyOn(WebSocket.prototype, 'ping')
+    const url = await serve()
+    for (const autoPong of [false, true]) {
+      const socket = new WebSocket(url, { autoPong })
+      try {
+        await once(socket, 'open')
+        heartbeat()
+        const serverSocket = ping.mock.contexts.at(-1) as WebSocket
+        if (autoPong) await once(serverSocket, 'pong')
+        const closed = once(socket, 'close')
+        const pingCount = ping.mock.calls.length
+        heartbeat()
+        if (autoPong) {
+          expect(ping.mock.calls.length).toBe(pingCount + 1)
+          expect(socket.readyState).toBe(WebSocket.OPEN)
+        } else {
+          await closed
+          expect(ping.mock.calls.length).toBe(pingCount)
+        }
+      } finally {
+        if (socket.readyState !== WebSocket.CLOSED) {
+          const closed = once(socket, 'close')
+          socket.terminate()
+          await closed
+        }
+      }
+    }
   })
 })
