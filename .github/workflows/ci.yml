@@ -64,13 +64,15 @@ jobs:
         run: npm run lint:deps
 
       - name: Unit tests (including agent setup and providers)
-        run: npm run test -- --exclude src/runtime/connect/connect.test.ts
+        # Forward logs directly; Vitest's worker console RPC can still be
+        # pending when a native-network test tears down its environment.
+        run: npm run test -- --disableConsoleIntercept --exclude src/runtime/connect/connect.test.ts
 
       # Real native WebRTC/Noise handshakes share the runner's scheduling and
       # network resources. Run them without the rest of the suite competing
       # for CPU, so a busy runner does not turn key checks into timeouts.
       - name: Cate Connect integration tests
-        run: npm run test -- src/runtime/connect/connect.test.ts --maxWorkers=1
+        run: npm run test -- src/runtime/connect/connect.test.ts --maxWorkers=1 --disableConsoleIntercept
 
       # E2E and Electron smoke tests run locally only. Keep the npm scripts
       # available for browser and full-app validation.
