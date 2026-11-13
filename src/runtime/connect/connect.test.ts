@@ -220,7 +220,7 @@ describe.skipIf(process.platform === 'win32')('cate connect', { timeout: 30_000 
     await registered(silent)
     const error = await dial(service, networkIdOf(runtimeKeys.publicKey), 1_500).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(CateConnectError)
-    expect(error).toMatchObject({ code: 'no-path', message: CONNECTION_FAILED })
+    expect(error).toMatchObject({ code: 'no-path', message: CONNECTION_FAILED, cause: { reason: 'timeout' } })
     await expect(dial(service, 'offlineofflineof')).rejects.toMatchObject({ code: 'offline' })
   }, 20_000)
 

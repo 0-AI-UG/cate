@@ -8,7 +8,7 @@ import { AGENTS, AGENT_DEFS, type AgentId, type AgentAvailability } from '../../
 
 const directories: string[] = []
 const disposals: Array<() => void> = []
-afterEach(async () => { disposals.splice(0).forEach((dispose) => dispose()); await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))) })
+afterEach(async () => { disposals.splice(0).forEach((dispose) => dispose()); await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 10 }))) })
 async function fixture() {
   const f = await createSetupFixture()
   directories.push(f.root)
