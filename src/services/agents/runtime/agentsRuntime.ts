@@ -21,7 +21,7 @@ import { evaluateAgentCliHooks, inspectAgentCliHooks } from './hooks/readiness'
 import { createTerminalAgents, type AgentTerminalService, type TerminalAgents } from './terminal'
 import { createAgentStarter, type AgentStartArgs, type AgentStartPorts } from './start'
 import { AGENT_SESSION_STORES } from './sessions'
-import { createAgentUsage, type AgentUsageDeps } from './usage/usage'
+import type { AgentUsageService, AgentUsageDeps } from './usage/usage'
 
 export interface AgentsRuntimeDeps extends AgentsCoreDeps {
   /** The terminal service: the terminal agents plug into its extension points. */
@@ -73,16 +73,25 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
   void setup.inspect().catch(() => {})
   const offSettings = deps.onAgentSettingsChange?.(() => setup.invalidate())
   const starter = createAgentStarter(core, deps.start, setup)
-  const usage = createAgentUsage({
-    root: deps.root,
-    dataDir: path.join(deps.agentsDir, 'usage'),
-    homeDir: deps.homeDir ?? os.homedir(),
-    stores,
-    priceOverrides: () => deps.settings.usagePriceOverrides(),
-    env: deps.env,
-    log: deps.log,
-    ...deps.usageOptions,
-  })
+  let usageLoading: Promise<AgentUsageService> | undefined
+  const loadUsage = () => usageLoading ??= (async () => {
+    const { createAgentUsage } = await import('./usage/usage')
+    return createAgentUsage({
+      root: deps.root,
+      dataDir: path.join(deps.agentsDir, 'usage'),
+      homeDir: deps.homeDir ?? os.homedir(),
+      stores,
+      priceOverrides: () => deps.settings.usagePriceOverrides(),
+      env: deps.env,
+      log: deps.log,
+      ...deps.usageOptions,
+    })
+  })().catch((error: unknown) => { usageLoading = undefined; throw error })
+  const usage: AgentUsageService = {
+    summary: async (input) => (await loadUsage()).summary(input),
+    refreshRates: async () => (await loadUsage()).refreshRates(),
+    limits: async (refresh) => (await loadUsage()).limits(refresh),
+  }
 
   return {
     start: (callerPanelId, args) => starter.start(callerPanelId, args),

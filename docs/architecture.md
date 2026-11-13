@@ -440,13 +440,27 @@ the pieces that make it reachable and secure.
 
 ### 7.1 Daemon
 
-- **`runtime/daemon`**: the program (`main.ts`, bundled as `runtime.cjs`),
+- **`runtime/daemon`**: the program (`main.ts`, launched through `runtime.cjs`),
   release and install layout, lifetime, update, and the composition root:
   `entry.ts` builds the daemon around one workspace (data directory, socket,
   keys, pairing, network access, host capabilities) and
   `compose/workspace.ts` builds and registers every workspace, service and
   panel module. Its `node/` side installs releases and spawns the detached
   daemon; its `desktop/` side starts a local runtime for the desktop shell.
+- **Optional module loading.** `runtime.cjs` is a small launcher for the
+  split ESM graph in `runtime-modules/`; release packaging ships the current
+  build's complete graph. Development rebuilds retain earlier hashed chunks
+  so a running daemon can still activate its deferred features. Shared chunks
+  keep one module instance per daemon. Yjs loads when
+  a file buffer is acquired (including persisted dirty-buffer restoration),
+  headless xterm when a PTY is spawned, agent usage accounting when requested,
+  and browser password handling when credentials are requested. The offline
+  curated skill seed loads only when a catalog request needs the fallback.
+  Capabilities and factories remain registered at startup; calls and restored
+  resources activate the implementation without changing protocol or trust.
+  Active agent hooks, terminal status, networking availability and lifetime
+  tracking are never parked to save memory. Native PTY loading still precedes
+  the workspace watcher on macOS (the addons' exception-handling constraint).
 - **One workspace.** One daemon serves exactly one workspace root, with all its
   worktrees. It validates every path against that root, its worktree
   checkouts, its granted paths and, read-only, the screenshots and downloads
@@ -464,7 +478,7 @@ the pieces that make it reachable and secure.
   runtime whose key is lost (`secrets.json` deleted) gets a new network id,
   and devices pair again.
 - **Install.** One layout everywhere: `~/.cate/runtime/<build>/` holds the
-  daemon, its Node, ripgrep, the `cate` CLI, bundled skills and native
+  daemon and its module chunks, its Node, ripgrep, the `cate` CLI, bundled skills and native
   addons; `<build>` is the build id (section 7.10), which the tarball
   carries in its `BUILD` file. An install is complete once its `.ok` marker
   is written, last. An install is never replaced in place, and a daemon
@@ -1245,6 +1259,13 @@ treats a record that carries a `canvasId` as one that shows a canvas, never
 testing the type name. Each shell draws it
 (the desktop: `shells/desktop/ui/client/layout/canvas`).
 
+The desktop mounts canvas nodes within a quarter-screen margin of the viewport.
+During a pan it mounts new nodes as they enter that margin, before they enter
+the visible area; it also reconciles after a gesture settles. Focused, pinned
+and keep-mounted native-surface nodes
+remain exempt. Culling disposes client views only: the runtime keeps sessions
+and jobs alive, and views reattach to their existing state when remounted.
+
 ### 9.4 Files
 
 **`workspace/files`**:
@@ -1417,7 +1438,23 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   stream, and forwards keystrokes and resizes; and the status store of every
   PTY (ports, cwd, activity; `process.statuses`). Drawing and clicking links,
   OSC 8 hyperlinks (the view's terminal holds them), search, OSC 52
-  clipboard and keymaps are view concerns.
+  clipboard and keymaps are view concerns. Desktop views following live output
+  cache at most 128 scrollback rows, bounded by the configured workspace limit;
+  this cache does not change the runtime's authoritative retention. The first
+  upward scroll in the normal buffer (native viewport or public API), a search,
+  or macOS Select All reattaches with the full
+  configured history and awaits snapshot parsing. The view keeps that history
+  until unmount (including while selecting or searching); remount starts with
+  a tail again. Before reset, hydration captures the latest viewport and selection
+  and anchors them to row text in the replacement history, accounting for output
+  during the attach wait. A restored selection must reproduce the entire captured
+  selected text; otherwise it is cleared so copying cannot silently select different
+  content from repeated rows. Disposing a view explicitly releases its local history
+  cells, even if rendering caches still reference the xterm object. The binding drains preceding parser writes before replacing
+  the screen, orders size events with bytes, and acknowledges only parsed bytes
+  from the current snapshot generation. This uses the same attach protocol for
+  every transport; it neither fits nor restarts the PTY. Mobile and other callers
+  choose their own attach/cache limit.
 - **Consumers**: the terminal panel, the agents service's terminal agents, `cate.terminal.*`.
   A spawn reports whether it runs a one-shot command. When that command
   exits, the terminal panel session starts an ordinary shell in the same
@@ -1475,7 +1512,10 @@ downloads list and its views, and hands page work to it.
   workspace, off the canvas, behind a tab) stages it: the surface registry
   puts it in the window, transparent and without pointer input, until the op
   ends, and screenshots work wherever the panel is.
-  **Idle page lifetime (desktop).** A manual page may be discarded after ten
+  **Idle page lifetime (desktop).** An unused start page creates no guest
+  until navigation or page control needs it. Once created, a guest remains
+  subject to the same lifetime policy even on returning to the start page.
+  A manual page may be discarded after ten
   minutes off screen or in a background tab/workspace and reloads when shown
   again. Only pages with a single Chromium history entry are eligible;
   back/forward history, pinned tabs, edited forms, content-editable pages,

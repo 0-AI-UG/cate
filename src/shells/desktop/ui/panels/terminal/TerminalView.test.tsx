@@ -27,6 +27,7 @@ interface FakeTerminal {
   data: Set<(data: string) => void>
   disposed: boolean
   focus: () => void
+  selectAll: () => void
 }
 
 vi.mock('@xterm/xterm', () => ({
@@ -43,6 +44,7 @@ vi.mock('@xterm/xterm', () => ({
     buffer = { active: { viewportY: 0, baseY: 0, getLine: () => undefined } }
     parser = { registerOscHandler: () => ({ dispose() {} }) }
     focus = vi.fn()
+    selectAll = vi.fn()
     constructor(options: Record<string, unknown>) {
       this.options = { ...options }
       xterms.push(this as unknown as FakeTerminal)
@@ -64,6 +66,9 @@ vi.mock('@xterm/xterm', () => ({
     paste(text: string) { this.pasted.push(text) }
     input(data: string) { for (const l of this.data) l(data) }
     onData(l: (data: string) => void) { this.data.add(l); return { dispose: () => this.data.delete(l) } }
+    onScroll() { return { dispose() {} } }
+    getSelectionPosition() { return undefined }
+    scrollToLine() {}
     onResize() { return { dispose() {} } }
     onRender() { return { dispose() {} } }
     resize(cols: number, rows: number) { this.cols = cols; this.rows = rows }
@@ -152,23 +157,30 @@ afterEach(() => {
 })
 
 describe('TerminalView', () => {
-  it('matches workspace scrollback and reattaches when its limit changes', () => {
+  it('starts with a bounded tail and reattaches when workspace retention changes', () => {
     render(<TerminalView {...props(snapshotOf())} />)
-    expect(xterms[0].options.scrollback).toBe(2000)
-    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 2000 }), expect.anything())
+    expect(xterms[0].options.scrollback).toBe(128)
+    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 128 }), expect.anything())
 
     historySettings.scrollback = 5000
     render(<TerminalView {...props(snapshotOf())} />)
     expect(xterms).toHaveLength(1)
-    expect(xterms[0].options.scrollback).toBe(5000)
+    expect(xterms[0].options.scrollback).toBe(128)
     expect(process_.attaches[0].cancelled).toBe(true)
-    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 5000 }), expect.anything())
+    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 128 }), expect.anything())
 
     historySettings.scrollback = 500
     render(<TerminalView {...props(snapshotOf())} />)
-    expect(xterms[0].options.scrollback).toBe(500)
+    expect(xterms[0].options.scrollback).toBe(128)
     expect(process_.attaches[1].cancelled).toBe(true)
-    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 500 }), expect.anything())
+    expect(process_.proxy.attach).toHaveBeenLastCalledWith(expect.objectContaining({ scrollback: 128 }), expect.anything())
+  })
+
+  it('releases the local history cache when the view is disposed', () => {
+    render(<TerminalView {...props(snapshotOf())} />)
+    render(<div />)
+    expect(xterms[0].options.scrollback).toBe(0)
+    expect(xterms[0].disposed).toBe(true)
   })
 
   it('shows startup feedback before the PTY is ready', () => {

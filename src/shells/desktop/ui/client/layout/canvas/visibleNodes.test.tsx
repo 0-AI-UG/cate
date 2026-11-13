@@ -34,13 +34,13 @@ it('budgets new mounts after both expansion and equal-sized visibility swaps', (
   } finally { act(() => root.unmount()); vi.unstubAllGlobals() }
 })
 
-it('replenishes overscan after a pan settles but publishes newly exposed content immediately', async () => {
+it('prefetches new nodes during pan and prunes trailing nodes after settling', async () => {
   const { createCanvasView } = await import('./store')
   const { fakeDocument, canvasDocument } = await import('./testing.canvas')
   const { rect } = await import('@workspace/canvas/contract')
   const { useVisibleNodeIds } = await import('./visibleNodes')
   vi.useFakeTimers()
-  const document = fakeDocument(canvasDocument([0, 1800, 2200, 5000].map((x, i) => ({ nodeId: `n${i}`, panelId: `p${i}`, rect: rect(x, 0, 200, 200) }))))
+  const document = fakeDocument(canvasDocument([0, 1200, 1650, 2150, 5000].map((x, i) => ({ nodeId: `n${i}`, panelId: `p${i}`, rect: rect(x, 0, 200, 200) }))))
   const store = createCanvasView({ workspaceId: 'test', canvasId: 'c1', document, animate: false })
   store.getState().setContainerSize({ width: 1000, height: 800 })
   const host = globalThis.document.createElement('div')
@@ -50,11 +50,42 @@ it('replenishes overscan after a pan settles but publishes newly exposed content
   try {
     act(() => root.render(<Nodes />))
     expect(host.textContent).toBe('n0,n1')
-    act(() => store.getState().setViewportOffset({ x: -500, y: 0 }))
-    expect(host.textContent).toBe('n0,n1')
-    act(() => vi.advanceTimersByTime(120))
+    // n2 is outside the visible right edge (1400), inside the overscan.
+    act(() => store.getState().setViewportOffset({ x: -400, y: 0 }))
     expect(host.textContent).toBe('n0,n1,n2')
+    act(() => store.getState().setViewportOffset({ x: -500, y: 0 }))
+    expect(host.textContent).toBe('n0,n1,n2')
+    act(() => vi.advanceTimersByTime(120))
+    expect(host.textContent).toBe('n1,n2')
+    // n3 starts beyond the viewport's right edge (2050), but enters the
+    // overscan. Mount it during the gesture, before it becomes visible.
+    act(() => store.getState().setViewportOffset({ x: -1050, y: 0 }))
+    expect(host.textContent).toBe('n1,n2,n3')
     act(() => store.getState().setViewportOffset({ x: -4500, y: 0 }))
-    expect(host.textContent).toContain('n3')
+    expect(host.textContent).toContain('n4')
   } finally { act(() => root.unmount()); store.getState().dispose(); vi.useRealTimers() }
+})
+
+it('keeps focused, pinned and native-surface nodes mounted beyond the margin', async () => {
+  const { createCanvasView } = await import('./store')
+  const { fakeDocument, canvasDocument } = await import('./testing.canvas')
+  const { rect } = await import('@workspace/canvas/contract')
+  const { useVisibleNodeIds } = await import('./visibleNodes')
+  const document = fakeDocument(canvasDocument([5000, 6000, 7000, 8000].map((x, i) => ({ nodeId: `n${i}`, panelId: `p${i}`, rect: rect(x, 0, 200, 200) }))))
+  const store = createCanvasView({ workspaceId: 'test', canvasId: 'c1', document, animate: false })
+  store.getState().setContainerSize({ width: 1000, height: 800 })
+  store.getState().focusNode('n0')
+  store.getState().togglePin('n1')
+  const host = globalThis.document.createElement('div')
+  const root = createRoot(host)
+  const keep = new Set(['p2'])
+  function Nodes() { return <>{useVisibleNodeIds(store, keep).join(',')}</> }
+  try {
+    act(() => root.render(<Nodes />))
+    expect(host.textContent).toBe('n0,n1,n2')
+    act(() => store.getState().unfocus())
+    expect(host.textContent).toBe('n1,n2')
+    act(() => store.getState().togglePin('n1'))
+    expect(host.textContent).toBe('n2')
+  } finally { act(() => root.unmount()); store.getState().dispose() }
 })

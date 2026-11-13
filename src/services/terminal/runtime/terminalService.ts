@@ -40,7 +40,7 @@ import type {
   OutputObserver,
   SpawnInfo,
 } from './extensions'
-import { HeadlessScreen } from './headlessScreen'
+import type { HeadlessScreen } from './headlessScreen'
 import { activityForPid, countingScanner, systemScanner, type ProcessScanner } from './procScan'
 import { resolveShell as resolveHostShell } from './shellResolver'
 import { sanitizeEnv } from './loginEnv'
@@ -597,6 +597,7 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       const executable = plan.command?.executable ?? shell!.path
       const args = plan.command?.args ?? shell!.args
       const id = randomUUID()
+      const { HeadlessScreen } = await import('./headlessScreen')
 
       // From here the env contributors know the terminal: a spawn that fails
       // ends it for them like an exit.

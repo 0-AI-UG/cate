@@ -291,6 +291,40 @@ describe('terminal service', () => {
     await expect(proc.read({ id: 'nope' })).rejects.toSatisfy((e: unknown) => isRpcError(e, 'gone'))
   })
 
+  it('hydrates runtime history over the protocol while output, fits, TUIs and exited jobs retain their semantics', async () => {
+    const { ptys, connect } = setup()
+    const proc = await connect()
+    const { id } = await proc.spawn({ cols: 80, rows: 24 })
+    const term = new Terminal({ cols: 80, rows: 24, scrollback: 128, allowProposedApi: true })
+    const binding = bindTerminal({ terminal: term, process: proc, id, scrollback: 128, onSize: ({ cols, rows }) => term.resize(cols, rows) })
+    try {
+      await until(() => binding.viewer !== null)
+      ptys[0].emit(Array.from({ length: 3000 }, (_, i) => `row-${i} 界🚀 é\r\n`).join(''))
+      await until(() => screenText(term).includes('row-2999'))
+      expect(term.buffer.normal.length).toBe(152)
+      expect(screenText(term)).not.toContain('row-1500')
+      term.options.scrollback = 2000
+      const hydrated = binding.setScrollback(2000)
+      // These bytes may be pending in the runtime at the snapshot boundary.
+      ptys[0].emit('boundary-unique\r\n\x1b[?1049hTUI 界')
+      await hydrated
+      await until(() => term.buffer.active.type === 'alternate')
+      expect(screenText(term)).toContain('TUI 界')
+      await proc.fit({ id, cols: 90, rows: 28 })
+      ptys[0].emit('\x1b[?1049lAFTER-TUI\r\n')
+      await until(() => screenText(term).includes('AFTER-TUI'))
+      const text = screenText(term)
+      expect(text).toContain('row-1500')
+      expect(text.match(/boundary-unique/g)).toHaveLength(1)
+      expect(ptys[0].sizes.at(-1)).toEqual([90, 28])
+      expect(ptys[0].killed).toBe(false)
+      ptys[0].exit(0)
+      await binding.setScrollback(2000)
+      expect(screenText(term)).toContain('row-1500')
+      expect(screenText(term)).toContain('AFTER-TUI')
+    } finally { binding.dispose(); term.dispose() }
+  })
+
   it('finds the links on a viewer\'s row, counted from the end, whatever scrollback the viewer keeps', async () => {
     const { ptys, connect, dir } = setup()
     fs.mkdirSync(path.join(dir, 'src'))

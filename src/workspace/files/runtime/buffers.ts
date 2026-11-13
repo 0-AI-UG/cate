@@ -6,7 +6,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import * as Y from 'yjs'
+import type * as Y from 'yjs'
 import { RpcError } from '@kernel/rpc/contract'
 import type { KeyedLock } from '@kernel/state/contract'
 import { writeFileAtomic } from '@kernel/state/node'
@@ -112,8 +112,8 @@ function sameState(a: BufferState, b: BufferState): boolean {
 }
 
 class OpenBuffer {
-  readonly doc = new Y.Doc()
-  readonly text = this.doc.getText(BUFFER_TEXT)
+  readonly doc: Y.Doc
+  readonly text: Y.Text
   baseText = ''
   baseHash: string | null = null
   conflict: BufferConflict | null = null
@@ -133,7 +133,9 @@ class OpenBuffer {
   readonly stateListeners = new Set<(state: BufferState) => void>()
   readonly updateListeners = new Set<(update: Uint8Array, origin: unknown) => void>()
 
-  constructor(readonly path: string, readonly file: string, private readonly svc: BufferServiceImpl) {
+  constructor(readonly path: string, readonly file: string, private readonly svc: BufferServiceImpl, private readonly yjs: typeof Y) {
+    this.doc = new yjs.Doc()
+    this.text = this.doc.getText(BUFFER_TEXT)
     this.published = this.state()
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
       this.refresh()
@@ -198,7 +200,7 @@ class OpenBuffer {
     const saved = await readBytesOrNull(this.file)
     const persisted = saved ? decodePersisted(saved) : null
     if (persisted && pathKey(persisted.meta.path) === pathKey(this.path)) {
-      Y.applyUpdate(this.doc, persisted.update, RUNTIME_ORIGIN)
+      this.yjs.applyUpdate(this.doc, persisted.update, RUNTIME_ORIGIN)
       this.setBase(persisted.meta.baseText, persisted.meta.baseHash)
       this.persisted = true
       await this.checkDisk()
@@ -325,7 +327,7 @@ class OpenBuffer {
     return this.svc.deps.lock.run(pathKey(this.file), async () => {
       if (this.needsPersist()) {
         const meta: PersistedMeta = { path: this.path, baseHash: this.baseHash, baseText: this.baseText }
-        await writeFileAtomic(this.file, encodePersisted(meta, Y.encodeStateAsUpdate(this.doc)), { mode: 0o600 })
+        await writeFileAtomic(this.file, encodePersisted(meta, this.yjs.encodeStateAsUpdate(this.doc)), { mode: 0o600 })
         this.persisted = true
       } else if (this.persisted) {
         await fs.rm(this.file, { force: true })
@@ -363,7 +365,7 @@ class OpenBuffer {
       },
       applyUpdate: (update, origin) => {
         if (closed) throw new RpcError('gone', 'Buffer handle is closed')
-        Y.applyUpdate(this.doc, update, origin)
+        this.yjs.applyUpdate(this.doc, update, origin)
       },
       save: () => this.save(),
       resolveConflict: (resolution) => this.resolve(resolution),
@@ -388,10 +390,11 @@ class BufferServiceImpl implements BufferService {
 
   private async acquire(p: string, safe?: string): Promise<OpenBuffer> {
     safe ??= await this.deps.paths.strict(p)
+    const yjs = await import('yjs')
     const key = pathKey(safe)
     let buffer = this.buffers.get(key)
     if (!buffer) {
-      const created = new OpenBuffer(safe, this.fileFor(safe), this)
+      const created = new OpenBuffer(safe, this.fileFor(safe), this, yjs)
       created.ready = created.load().catch((err) => {
         if (this.buffers.get(key) === created) this.buffers.delete(key)
         created.destroy()

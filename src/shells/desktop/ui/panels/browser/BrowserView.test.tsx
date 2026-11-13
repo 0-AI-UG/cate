@@ -99,7 +99,7 @@ describe('BrowserView', () => {
 
   it('waits for the workspace partition, then renders once it is prepared', () => {
     preparing.add('ws')
-    render(snapshotOf([tab()]))
+    render(snapshotOf([tab({ url: 'https://a.test/' })]))
     expect(host.textContent).toContain('Loading')
     expect(host.querySelector('[data-browser-webview-slot]')).toBeNull()
 
@@ -108,12 +108,16 @@ describe('BrowserView', () => {
     expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
   })
 
-  it('renders the start page over a blank guest in the workspace partition', () => {
+  it('defers the start guest until navigation, then retains it on return', () => {
     render(snapshotOf([tab()]))
     expect(host.textContent).toContain('Enter a URL to open a page')
-    const slot = host.querySelector('[data-browser-webview-slot]')!
-    expect(slot.getAttribute('data-browser-src')).toBe('about:blank')
-    expect(slot.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
+    expect(host.querySelector('webview')).toBeNull()
+    render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })]))
+    const guest = host.querySelector('webview')
+    expect(guest).not.toBeNull()
+    expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
+    render(snapshotOf([tab({ nav: 2 })]))
+    expect(host.querySelector('webview')).toBe(guest)
   })
 
   it('sends address bar input as a navigate op', () => {
@@ -188,7 +192,7 @@ describe('BrowserView', () => {
   })
 
   it('loads a navigation under StrictMode, whose first mount is disposed', async () => {
-    render(snapshotOf([tab()]), { strict: true })
+    render(snapshotOf([tab({ url: 'about:blank' })]), { strict: true })
     const loadURL = vi.fn()
     const webview = Object.assign(host.querySelector('webview')!, {
       loadURL, getWebContentsId: () => 1, getURL: () => 'about:blank',

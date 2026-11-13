@@ -62,12 +62,12 @@ function keepAliveNodeIds(nodes: Record<NodeId, ViewNode>, keepMounted: Readonly
   return ids
 }
 
-/** Creation-ordered ids of the nodes to mount: those within a screen's
+/** Creation-ordered ids of the nodes to mount: those within a quarter-screen's
  *  margin of the viewport, plus the exempt ones. */
 function selectVisibleNodeIds(
   s: Pick<CanvasView, 'nodes' | 'viewportOffset' | 'zoomLevel' | 'containerSize' | 'selection' | 'selectionActive'>,
   keepMounted?: ReadonlySet<PanelId>,
-  marginScreens = 1,
+  marginScreens = 0.25,
 ): NodeId[] {
   canvasPerfCount('canvasCullEval')
   const { nodes, viewportOffset, zoomLevel: z, containerSize } = s
@@ -124,8 +124,8 @@ export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlyS
     // A smooth zoom updates every frame; publishing each intermediate cull
     // would mount and unmount Monaco and xterm mid-gesture. Hold the mounted
     // set while zooming and reconcile once it settles. During pan, reuse the
-    // screen of overscan already mounted; replenish it after settling. If pan
-    // reaches genuinely new visible content, publish immediately.
+    // margin of overscan already mounted; replenish it as new nodes enter the
+    // margin, before they become visible, or once the pan settles.
     const unsubscribe = store.subscribe((state, previous) => {
       const structural = state.nodes !== previous.nodes
         || state.containerSize !== previous.containerSize
@@ -136,7 +136,7 @@ export function useVisibleNodeIds(store: CanvasViewStore, keepMounted: ReadonlyS
         return
       }
       if (state.viewportOffset === previous.viewportOffset && !structural) return
-      if (!structural && selectVisibleNodeIds(state, keepMounted, 0).every((id) => published.has(id))) {
+      if (!structural && selectVisibleNodeIds(state, keepMounted).every((id) => published.has(id))) {
         settle()
         return
       }

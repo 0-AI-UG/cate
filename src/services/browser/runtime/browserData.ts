@@ -5,7 +5,7 @@ import type { DataPaths, SecretsFile } from '@runtime/data/runtime'
 import type { browserDataCapability } from '../contract'
 import { createDownloadsList, type DownloadsList } from './downloads'
 import { createHistoryStore, type HistoryStore } from './historyStore'
-import { createPasswordStore, type PasswordStore } from './passwords'
+import type { PasswordStore } from './passwords'
 import { authorizeUpload, openUploadStream, uploadName, type UploadPathScope } from './upload'
 
 export interface BrowserDataDeps {
@@ -20,7 +20,7 @@ export interface BrowserDataDeps {
 
 export interface BrowserDataRuntime {
   history: HistoryStore
-  passwords: PasswordStore
+  passwords(): Promise<PasswordStore>
   downloads: DownloadsList
   downloadsDir(): Promise<string>
   paths: UploadPathScope
@@ -30,7 +30,10 @@ export interface BrowserDataRuntime {
 export function createBrowserDataRuntime(deps: BrowserDataDeps): BrowserDataRuntime {
   const browserDir = deps.dataPaths.browser
   const history = createHistoryStore(browserDir, { now: deps.now, debounceMs: deps.debounceMs })
-  const passwords = createPasswordStore(deps.secrets, { now: deps.now, newId: deps.newId })
+  let passwordsLoading: Promise<PasswordStore> | undefined
+  const passwords = () => passwordsLoading ??= import('./passwords').then(({ createPasswordStore }) =>
+    createPasswordStore(deps.secrets, { now: deps.now, newId: deps.newId }),
+  ).catch((error: unknown) => { passwordsLoading = undefined; throw error })
   return {
     history,
     passwords,
@@ -59,14 +62,14 @@ export function browserDataCapabilityImpl(service: BrowserDataRuntime): Capabili
     addBookmark: ({ url, title }) => history.addBookmark(url, title),
     removeBookmark: ({ url }) => history.removeBookmark(url),
 
-    passwords: () => passwords.list(),
-    passwordSuggestions: ({ url }) => passwords.suggestions(url),
-    passwordSaveDisposition: ({ input }) => passwords.saveDisposition(input),
-    savePassword: ({ input }) => passwords.save(input),
-    importPasswords: ({ credentials }) => passwords.import(Array.isArray(credentials) ? credentials : []),
-    passwordForFill: ({ id, url }) => passwords.forFill(id, url),
-    removePassword: ({ id }) => passwords.remove(id),
-    clearPasswords: () => passwords.clear(),
+    passwords: async () => (await passwords()).list(),
+    passwordSuggestions: async ({ url }) => (await passwords()).suggestions(url),
+    passwordSaveDisposition: async ({ input }) => (await passwords()).saveDisposition(input),
+    savePassword: async ({ input }) => (await passwords()).save(input),
+    importPasswords: async ({ credentials }) => (await passwords()).import(Array.isArray(credentials) ? credentials : []),
+    passwordForFill: async ({ id, url }) => (await passwords()).forFill(id, url),
+    removePassword: async ({ id }) => (await passwords()).remove(id),
+    clearPasswords: async () => (await passwords()).clear(),
 
     downloadsDir: () => service.downloadsDir(),
     downloads: ({ panelId }) => downloads.list(panelId),

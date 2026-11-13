@@ -52,6 +52,25 @@ function setup(bridge: Partial<BrowserPageBridge> | null = null) {
 afterEach(() => vi.useRealTimers())
 
 describe('BrowserPageHost', () => {
+  it('requests a start guest for automation and keeps it protected between calls', async () => {
+    const { host } = setup()
+    const start = tab({ url: 'cate://newtab' })
+    host.update(snapshot([start]))
+    expect(host.needsGuest(start)).toBe(false)
+    const changed = vi.fn()
+    host.subscribe(changed)
+    const pending = host.ready({ tabId: start.id, nav: 0 })
+    expect(changed).toHaveBeenCalled()
+    expect(host.needsGuest(start)).toBe(true)
+    const webview = guest()
+    host.attachGuest(start.id, webview)
+    webview.fire('dom-ready')
+    await expect(pending).resolves.toMatchObject({ url: 'about:blank' })
+    host.attachGuest(start.id, null)
+    expect(host.needsGuest(start)).toBe(true)
+    host.dispose()
+  })
+
   it('follows navigation from elsewhere and never reports the load it made', () => {
     const { host, sent } = setup()
     host.update(snapshot([tab()]))

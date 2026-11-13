@@ -3,7 +3,6 @@
 // Deduplicated by repo and path; earlier feeds win.
 
 import type { Logger } from '@kernel/log/contract'
-import seedIndex from '../../../../registry/skills-index.json'
 import type { SkillEntry, SkillSource } from '../contract'
 import { fetchWithTimeout, listSkillsInRepo, rawText, type FetchLike } from './githubCrawl'
 
@@ -35,8 +34,10 @@ export function createSkillsRegistry(deps: SkillsRegistryDeps) {
 
   // The index committed in the repo, used until the remote one is reachable,
   // so curated skills work offline.
-  const seedEntries = (): SkillEntry[] =>
-    ((seedIndex as IndexFile).skills ?? []).map((s) => ({ ...s, provenance: 'curated' as const }))
+  const seedEntries = async (): Promise<SkillEntry[]> => {
+    const { default: seedIndex } = await import('../../../../registry/skills-index.json')
+    return ((seedIndex as IndexFile).skills ?? []).map((s) => ({ ...s, provenance: 'curated' as const }))
+  }
 
   async function fetchCurated(): Promise<SkillEntry[]> {
     const res = await fetchWithTimeout(deps.fetch, indexUrl, { 'Accept': 'application/json', 'User-Agent': 'Cate-skills' })
@@ -53,7 +54,7 @@ export function createSkillsRegistry(deps: SkillsRegistryDeps) {
       return entries
     } catch (err) {
       // Cache the fallback for the TTL so we don't re-hit (and re-log) each call.
-      const entries = curatedCache?.entries ?? seedEntries()
+      const entries = curatedCache?.entries ?? await seedEntries()
       deps.log.info('curated index unavailable, using bundled seed: %s', String(err).split('\n')[0])
       curatedCache = { at: now(), entries }
       return entries

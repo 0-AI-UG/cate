@@ -74,7 +74,7 @@ function world(surface?: Surface): World {
   const deps: BrowserSessionDeps = {
     browserData: {
       history: { recordVisit: (url, title) => { visits.push([url, title]) } },
-      passwords: {
+      passwords: async () => ({
         suggestions: savedFor,
         forFill: (id, url) => {
           const entry = savedFor(url).find((candidate) => candidate.id === id)
@@ -85,7 +85,7 @@ function world(surface?: Surface): World {
           const credential = { id: `c${stored.length}`, username: input.username, origin: input.origin }
           return { action: 'created', credential }
         },
-      },
+      }),
       downloads: {
         list: () => [],
         subscribe: (panelId, cb) => { downloads.set(panelId, cb); return () => downloads.delete(panelId) },
