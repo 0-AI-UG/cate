@@ -19,6 +19,6 @@ export async function createSetupFixture(overrides: Partial<AgentSetupDeps> = {}
     ...overrides,
   }
   const setup = createAgentSetup(deps)
-  return { root, deps, setup, exits, probe, launch, contributors, close: async () => { setup.dispose(); await rm(root, { recursive: true, force: true }) } }
+  return { root, deps, setup, exits, probe, launch, contributors, close: async () => { setup.dispose(); await rm(root, { recursive: true, force: true, maxRetries: 10 }) } }
 }
 

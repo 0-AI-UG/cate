@@ -1,8 +1,8 @@
 export type CateConnectErrorCode = 'unreachable' | 'offline' | 'refused' | 'no-path' | 'protocol'
 
 export class CateConnectError extends Error {
-  constructor(readonly code: CateConnectErrorCode, message: string) {
-    super(message)
+  constructor(readonly code: CateConnectErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options)
   }
 }
 
