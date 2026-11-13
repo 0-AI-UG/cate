@@ -121,7 +121,7 @@ export async function dialCateConnect(options: CateConnectOptions): Promise<Mess
         },
       })
     } catch (error) {
-      if (error instanceof DataChannelError) throw new CateConnectError('no-path', CONNECTION_FAILED)
+      if (error instanceof DataChannelError) throw new CateConnectError('no-path', CONNECTION_FAILED, { cause: error })
       throw error
     } finally {
       offMessages()
