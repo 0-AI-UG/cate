@@ -1475,7 +1475,10 @@ downloads list and its views, and hands page work to it.
   workspace, off the canvas, behind a tab) stages it: the surface registry
   puts it in the window, transparent and without pointer input, until the op
   ends, and screenshots work wherever the panel is.
-  **Idle page lifetime (desktop).** A manual page may be discarded after ten
+  **Idle page lifetime (desktop).** An unused start page creates no guest
+  until navigation or page control needs it. Once created, a guest remains
+  subject to the same lifetime policy even on returning to the start page.
+  A manual page may be discarded after ten
   minutes off screen or in a background tab/workspace and reloads when shown
   again. Only pages with a single Chromium history entry are eligible;
   back/forward history, pinned tabs, edited forms, content-editable pages,
