@@ -8,10 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [2.1.0-beta.15] - 2026-11-13
 
-This beta corrects where agent change summaries appear. Compatibility version remains 1.
+This beta reduces the first canvas pan delay after returning from idle and corrects where agent change summaries appear. Compatibility version remains 1.
 
 ### Fixed
 
+- **Canvas panning**: keep the wallpaper and grid cached while panning and reduce macOS display scheduling waits after idle. Preserve grid alignment at fractional zoom levels and large canvas offsets. The macOS improvement takes effect after a full app restart.
 - **Agent change summaries**: show the changes overlay only on agent execution panels, keeping it off related terminal panels.
 
 ## [2.1.0-beta.14] - 2026-11-12
