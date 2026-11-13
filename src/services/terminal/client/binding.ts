@@ -7,6 +7,22 @@
 import type { CapabilityProxy, Subscription } from '@kernel/rpc/contract'
 import type { AttachEnd, AttachEvent, processCapability } from '../contract'
 
+// xterm 5.5 keeps a UTF-32 scratch buffer sized to its largest write. Bound
+// each parser input so a large attach snapshot doesn't permanently grow it.
+const WRITE_CHUNK_SIZE = 16 * 1024
+
+function writeTerminal(terminal: XtermLike, data: string | Uint8Array, callback?: () => void): void {
+  if (data.length === 0) {
+    terminal.write(data, callback)
+    return
+  }
+  for (let offset = 0; offset < data.length; offset += WRITE_CHUNK_SIZE) {
+    const end = offset + WRITE_CHUNK_SIZE
+    const chunk = typeof data === 'string' ? data.slice(offset, end) : data.subarray(offset, end)
+    terminal.write(chunk, end >= data.length ? callback : undefined)
+  }
+}
+
 interface Disposable { dispose(): void }
 
 /** The part of an xterm `Terminal` the binding uses (browser or headless). */
@@ -70,7 +86,7 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
         viewer = event.viewer
         options.onSize?.({ cols: event.cols, rows: event.rows })
         terminal.reset()
-        if (event.data) terminal.write(event.data)
+        if (event.data) writeTerminal(terminal, event.data)
         // The view may have been hidden while the attach was in flight.
         view()
       } else if (event.kind === 'size') {
@@ -79,7 +95,7 @@ export function bindTerminal(options: BindTerminalOptions): TerminalBinding {
         options.onExit?.(event.code)
       }
     })
-    current.onBytes((bytes) => terminal.write(bytes, () => current.ack(bytes.length)))
+    current.onBytes((bytes) => writeTerminal(terminal, bytes, () => current.ack(bytes.length)))
     current.done.then(
       (end) => { if (end?.reason === 'lagged' && !disposed && sub === current) attach() },
       (error) => { if (!disposed && sub === current) options.onError?.(error) },
