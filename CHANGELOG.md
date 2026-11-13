@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0-beta.15] - 2026-11-13
+
+This beta corrects where agent change summaries appear. Compatibility version remains 1.
+
+### Fixed
+
+- **Agent change summaries**: show the changes overlay only on agent execution panels, keeping it off related terminal panels.
+
 ## [2.1.0-beta.14] - 2026-11-12
 
 This beta improves native agent conversation tracking in shared workspace runtimes and supplies the runtime support for Cate Mobile 0.1.2. Compatibility version remains 1.
