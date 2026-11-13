@@ -7814,5 +7814,37 @@
         "footprint": "18.0M"
       }
     ]
+  },
+  "followupLifecycle": {
+    "initialCandidateFocusExpectationFailures": 2,
+    "baselineFocusExpectationFailures": 1,
+    "baselineDiagnostic": {
+      "baseline": true,
+      "popupFocusPreserved": false,
+      "activeElement": {
+        "tag": "WEBVIEW",
+        "label": null
+      }
+    },
+    "note": "Both implementations focus the selected popup guest in a focused browser panel. This pre-existing behavior is documented, not changed by the RAM optimization.",
+    "retainedRuns": [
+      {
+        "baseline": false,
+        "popupFocusPreserved": false,
+        "activeElement": {
+          "tag": "WEBVIEW",
+          "label": null
+        }
+      },
+      {
+        "baseline": false,
+        "popupFocusPreserved": false,
+        "activeElement": {
+          "tag": "WEBVIEW",
+          "label": null
+        }
+      }
+    ],
+    "finalResult": "2 passed (3.8 seconds); candidate production build, TypeScript and targeted ESLint passed"
   }
 }

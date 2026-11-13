@@ -66,3 +66,17 @@ Passed: production desktop/runtime builds; 36 targeted host/view/native-lifetime
 The lifetime integration still discards only the eligible manual guest after its accelerated eleven-minute background interval. Automated, edited-form and multi-entry-history guests retain their identities and state. It additionally captured native physical-footprint samples in the raw bundle; these validate the existing discard behavior and are separate from the new start-page RSS comparison. Existing unit coverage checks loading, audible/download/dialog activity, silent media in nested shadow roots, form edits, history, and fail-closed probes. The change adds no new eligibility path for those pages.
 
 No push or merge was performed. No extra agents were spawned.
+
+## Follow-up lifecycle checks
+
+Added `e2e/browser-start-lifetime.spec.ts` for first accessibility demand on a guest-free start page, blank-page reload, navigation into a real local HTTP page, switching to an untouched manual start tab and back, JavaScript/form retention, reload/back/forward without guest replacement, popup ownership/control, and focus during page operations. Run it under the same lock:
+
+```sh
+python3 docs/performance/browser-ram-2026-11-13-lock.py node_modules/.bin/playwright test e2e/browser-start-lifetime.spec.ts --repeat-each=2 --output=/private/tmp/browser-start-lifetime
+```
+
+The first two candidate runs reached the popup successfully but failed an overly broad expectation that selecting the popup would preserve the host toolbar's focus. A diagnostic rebuild using committed HEAD's two browser implementation files reproduced the identical failure: the selected popup's `WEBVIEW` becomes `document.activeElement`. The existing view explicitly focuses a newly selected guest when the browser panel is logically focused. This is an existing focus limitation, not a change introduced by lazy start-page guests; no focus-policy change is included in this experiment. The final test checks that existing selection behavior and separately verifies subsequent page operations preserve a deliberately refocused host control, on both the popup and original tab. First blank demand and blank reload also preserve host focus.
+
+For that diagnostic only, `CATE_BROWSER_START_BASELINE=1` adjusts expected guest counts to HEAD's eager behavior. No production behavior depends on this test-only environment variable. The original candidate implementation and build were restored after the diagnostic. A queued test invocation also selected the old spec name after the new test was moved into its dedicated file and reported “No tests found”; it contributed no measurements.
+
+Final retained build: both lifecycle runs passed (3.8 seconds total), along with the production build, TypeScript, targeted ESLint and diff whitespace checks. Original memory measurements remain unchanged because this follow-up adds coverage and corrects a comment only. Follow-up diagnostic focus records are appended to the raw data bundle.

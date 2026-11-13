@@ -330,7 +330,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     const webview = host.webview()
     if (!webview) return
     const frame = requestAnimationFrame(() => {
-      // Start pages keep an invisible guest for automation; user focus belongs to the address bar.
+      // On start pages, user focus belongs to the address bar.
       if (isStartPage(activeTab.url)) return
       // Focusing a webview blurs the host window and cancels a pending canvas drag.
       if (document.body.classList.contains('canvas-dragging')) return
