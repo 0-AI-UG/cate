@@ -330,7 +330,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     const webview = host.webview()
     if (!webview) return
     const frame = requestAnimationFrame(() => {
-      // Start pages keep an invisible guest for automation; user focus belongs to the address bar.
+      // On start pages, user focus belongs to the address bar.
       if (isStartPage(activeTab.url)) return
       // Focusing a webview blurs the host window and cancels a pending canvas drag.
       if (document.body.classList.contains('canvas-dragging')) return
@@ -607,7 +607,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
 
           {/* Guests share the view's transform, so the page and the agent
               overlay always use the same coordinates. */}
-          {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) || host.isDiscarded(tab.id) ? null : (
+          {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) || host.isDiscarded(tab.id) || !host.needsGuest(tab) ? null : (
             <WebviewSlot
               key={`${panelId}:${partition}:${tab.id}`}
               tabId={tab.id}
@@ -621,8 +621,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
             />
           )))}
 
-          {/* The start page covers the active tab's about:blank guest, which
-              stays mounted so automation has a live target. */}
+          {/* Page control creates a blank guest on demand under the start page. */}
           {isStartPage(activeTab.url) && (
             <div className="absolute inset-0">
               <StartPage />

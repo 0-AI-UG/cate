@@ -1,0 +1,15 @@
+{
+  "version": "2.1.0-beta.15",
+  "node": "v22.22.2",
+  "moduleCount": 10,
+  "staleChunkExcluded": true,
+  "sha256": "7f15c45d537f97f474da7d1ef09674bb205bb83f0efb629133023b5ed563a0ec",
+  "calls": {
+    "spawnMs": 23.055083118379116,
+    "bufferLoaded": true,
+    "passwordsMs": 110.58733286336064,
+    "usageMs": 8.359583094716072,
+    "offlineSkillsCount": 950,
+    "offlineSkillsMs": 16.00783271715045
+  }
+}

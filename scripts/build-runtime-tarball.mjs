@@ -2,7 +2,8 @@
 // Build ONE self-contained cate-runtime tarball for a single target:
 //
 //   dist-runtime/cate-runtime-<version>-<target>.tgz
-//     runtime.cjs                       (esbuild bundle, runtime-agnostic)
+//     runtime.cjs                       (launcher)
+//     runtime-modules/*.mjs              (split esbuild modules, runtime-agnostic)
 //     node_modules/node-pty/...           (with prebuilds/<target>/pty.node
 //                                          + spawn-helper)
 //     node_modules/@parcel/watcher/...     (+ @parcel/watcher-<target>/watcher.node
@@ -50,7 +51,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
-import { runtimeBuildOptions, syncRuntimeVersion } from './build-runtime.mjs'
+import { runtimeBuildOptions, syncRuntimeVersion, buildRuntime } from './build-runtime.mjs'
 import { buildLinuxNodePty } from './linux-node-pty.mjs'
 
 // Bundled runtime version. Keep on a 22.x LTS line.
@@ -105,7 +106,7 @@ if (installOnly && existsSync(path.join(installDir, '.ok'))) {
   process.exit(0)
 }
 
-const version = await buildBundle()
+const { version, moduleFiles } = await buildBundle()
 const stageDir = path.join(dist, 'stage', targetArg)
 rmSync(stageDir, { recursive: true, force: true })
 mkdirSync(stageDir, { recursive: true })
@@ -124,6 +125,12 @@ rmSync(`${outTar}.sha256`, { force: true })
 // Unified runtime/bin/ layout; only the filename gains a `.exe` on win32 so the
 // install-dir depth (and thus the resolvers) stay identical across platforms.
 cpSync(path.join(dist, 'runtime.cjs'), path.join(stageDir, 'runtime.cjs'))
+for (const file of moduleFiles) {
+  const relative = path.relative(path.join(dist, 'runtime-modules'), file)
+  const target = path.join(stageDir, 'runtime-modules', relative)
+  mkdirSync(path.dirname(target), { recursive: true })
+  cpSync(file, target)
+}
 await stageNodePty(stageDir)
 await stageParcelWatcher(stageDir)
 await stageNodeDatachannel(stageDir)
@@ -139,6 +146,7 @@ signMacNatives(stageDir)
 // start would then reinstall it).
 const required = [
   `runtime.cjs`,
+  path.join('runtime-modules', 'main.mjs'),
   path.join('runtime', 'bin', `node${exe}`),
   path.join('runtime', 'bin', `rg${exe}`),
   path.join('cate', 'dist', 'cli.cjs'),
@@ -191,9 +199,9 @@ console.log(`[runtime] wrote ${path.relative(repoRoot, outTar)} (sha256 ${sha256
 
 async function buildBundle() {
   const v = syncRuntimeVersion()
-  await build(runtimeBuildOptions)
+  const meta = await buildRuntime()
   if (!existsSync(path.join(dist, 'runtime.cjs'))) throw new Error('esbuild did not produce runtime.cjs')
-  return v
+  return { version: v, moduleFiles: Object.keys(meta.outputs).map((file) => path.resolve(file)) }
 }
 
 /** Stage node-pty with only the target's native binary under prebuilds/<target>/. */

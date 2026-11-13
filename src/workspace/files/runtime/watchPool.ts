@@ -8,7 +8,7 @@
 // ancestor of `prefix`, and events fan out only to subscribers whose prefix
 // covers the changed path.
 
-import nativeWatcher from '@parcel/watcher'
+import type nativeWatcher from '@parcel/watcher'
 import { pathHasPrefix, type FsChangeType } from '../contract'
 
 // @parcel/watcher ships as a CJS `export =` namespace, so its types are
@@ -101,7 +101,12 @@ export function createWatchPool(
   onError?: (root: string, err: unknown) => void,
   deps: WatchPoolDeps = {},
 ): WatchPool {
-  const subscribe = deps.subscribe ?? (nativeWatcher.subscribe as WatchPoolDeps['subscribe'])!
+  // Loading a native ESM dependency at module scope would run it before
+  // main's loadPty side effect, reversing the required macOS addon order.
+  const subscribe: NonNullable<WatchPoolDeps['subscribe']> = deps.subscribe ?? (async (dir, fn, opts) => {
+    const { default: watcher } = await import('@parcel/watcher')
+    return watcher.subscribe(dir, fn, opts)
+  })
   const pool = new Map<string, SharedTree>()
   const firstRetryMs = deps.retryMs ?? 1_000
 

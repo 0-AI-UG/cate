@@ -130,6 +130,12 @@ export class BrowserPageHost {
   }
   isDiscarded(tabId: string): boolean { return this.discarded.has(tabId) }
 
+  /** The React start page needs no guest until navigation or page control.
+   *  Once attached, retain the guest even on a return to the start page. */
+  needsGuest(tab: BrowserTab): boolean {
+    return loadable(tab.url) || this.automated.has(tab.id) || this.pages.has(tab.id)
+  }
+
   private restore(tabId: string): void {
     this.inactiveAt.delete(tabId)
     if (this.discarded.delete(tabId)) this.changed()
@@ -143,8 +149,10 @@ export class BrowserPageHost {
   }
 
   private protect(tabId: string): void {
+    const first = !this.automated.has(tabId)
     this.automated.add(tabId)
     this.restore(tabId)
+    if (first) this.changed()
     const page = this.pages.get(tabId)
     if (page?.ready) {
       try { void this.deps.bridge?.protectPage(page.webview.getWebContentsId()).catch(() => {}) } catch { /* guest is being replaced */ }

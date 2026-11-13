@@ -13,7 +13,7 @@ import { BROWSER_ACTION_METHODS, type BrowserDriverResult } from '../contract/au
 import type { BrowserSurfaceArgs, BrowserSurfaceOp, BrowserSurfaceResult } from '../contract/surface'
 import { credentialOrigin } from '../contract/history'
 import { BROWSER_NEW_TAB_URL } from '../contract/types'
-import { generatePassword, type PasswordStore } from './passwords'
+import type { PasswordStore } from './passwords'
 
 /** A page operation's deadline and cancellation. */
 export interface PageCall {
@@ -49,7 +49,7 @@ export interface PageControlPanel {
 
 export interface PageControlDeps {
   /** The workspace's saved passwords, for an agent's `login`. */
-  passwords: Pick<PasswordStore, 'suggestions' | 'forFill' | 'save'>
+  passwords(): Pick<PasswordStore, 'suggestions' | 'forFill' | 'save'> | Promise<Pick<PasswordStore, 'suggestions' | 'forFill' | 'save'>>
 }
 
 /** The session methods of `cate.browser.*` that page control answers. */
@@ -161,7 +161,8 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     let host = ''
     try { host = new URL(url).hostname } catch { /* no page */ }
     if (!host) throw new RpcError('rejected', 'browser-login-no-saved-password: the tab shows no web page')
-    const saved = deps.passwords.suggestions(url)
+    const passwords = await deps.passwords()
+    const saved = passwords.suggestions(url)
     const names = saved.map((entry) => entry.username || '(no username)').join(', ')
     const matching = typeof rest.username === 'string' ? saved.filter((entry) => entry.username === rest.username) : saved
     if (!matching.length) {
@@ -173,7 +174,7 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
       throw new RpcError('rejected', `browser-login-ambiguous: ${host} has several saved logins (${names}); pick one with --user <name>`)
     }
     const [chosen] = matching
-    const fill = deps.passwords.forFill(chosen.id, url)
+    const fill = passwords.forFill(chosen.id, url)
     if (!fill) throw new RpcError('rejected', `browser-login-no-saved-password: there is no saved password for ${host}`)
     // The driver fills it only while the page still shows `origin`.
     const credential = { username: fill.username, password: fill.password, origin: credentialOrigin(url)! }
@@ -195,12 +196,13 @@ export function createPageControl(panel: PageControlPanel, deps: PageControlDeps
     if (!origin) throw new RpcError('rejected', 'browser-signup-no-page: the tab shows no web page')
     const host = new URL(origin).hostname
     const username = String(rest.username)
-    if (deps.passwords.suggestions(url).some((entry) => entry.username === username)) {
+    const passwords = await deps.passwords()
+    if (passwords.suggestions(url).some((entry) => entry.username === username)) {
       throw new RpcError('rejected', `browser-signup-exists: there is already a saved login for ${host} as ${username}; sign in with cate browser login`)
     }
-    const password = typeof suppliedPassword === 'string' ? suppliedPassword : generatePassword()
+    const password = typeof suppliedPassword === 'string' ? suppliedPassword : (await import('./passwords')).generatePassword()
     const result = await execute(tabId, 'signup', { ...rest, tabId, credential: { password, origin } }, false, call)
-    await deps.passwords.save({ origin, username, password })
+    await passwords.save({ origin, username, password })
     return result
   }
 

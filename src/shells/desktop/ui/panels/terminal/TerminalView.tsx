@@ -30,6 +30,7 @@ import { terminalOptions, terminalViewSettings, useTerminalOptions } from './par
 import { useTerminalGrid } from './parts/grid'
 import { createTerminalXterm, type TerminalXterm } from './parts/xterm'
 import { registerTerminalView } from './tabMenu'
+import { createTerminalHistory, LIVE_HISTORY_LINES } from './parts/history'
 
 const interacting = () => document.body.classList.contains('canvas-interacting')
 
@@ -50,6 +51,7 @@ export default function TerminalView({
   const renderBoxRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<TerminalXterm | null>(null)
   const bindingRef = useRef<TerminalBinding | null>(null)
+  const historyRef = useRef<ReturnType<typeof createTerminalHistory> | null>(null)
   /** Sizes the PTY to the panel (the grid, below). */
   const fitRef = useRef<() => void>(() => {})
   const snapshotRef = useRef(snapshot)
@@ -104,7 +106,7 @@ export default function TerminalView({
     }
   }, [workspaceId, panelId])
 
-  useEffect(() => { xtermRef.current?.setOptions({ ...options, scrollback }) }, [options, scrollback, ready])
+  useEffect(() => { xtermRef.current?.setOptions(options) }, [options, scrollback, ready])
 
   // ---- The byte stream: one binding per PTY -------------------------------
 
@@ -112,6 +114,7 @@ export default function TerminalView({
   useEffect(() => {
     const xterm = xtermRef.current
     if (!ready || !xterm || !ptyId || !processProxy) return
+    xterm.terminal.options.scrollback = Math.min(scrollback, LIVE_HISTORY_LINES)
     const binding = bindTerminal({
       terminal: xterm.terminal,
       process: processProxy,
@@ -121,9 +124,15 @@ export default function TerminalView({
       ...grid.bindingOptions(xterm),
     })
     bindingRef.current = binding
+    const history = createTerminalHistory(xterm.terminal, binding, scrollback, (error) => {
+      if (bindingRef.current === binding) clientUi().showError(`Could not load terminal history: ${String(error)}`)
+    })
+    historyRef.current = history
     // A new PTY, or this view laid out again: it takes the panel's grid.
     fitRef.current()
     return () => {
+      history.dispose()
+      if (historyRef.current === history) historyRef.current = null
       if (bindingRef.current === binding) bindingRef.current = null
       binding.dispose()
     }
@@ -261,7 +270,15 @@ export default function TerminalView({
 
   // ---- Search -----------------------------------------------------------------
 
-  const find = useCallback((value: string, direction: 'next' | 'previous' = 'next') => {
+  const findEpoch = useRef(0)
+  const find = useCallback(async (value: string, direction: 'next' | 'previous' = 'next') => {
+    const epoch = ++findEpoch.current
+    const history = historyRef.current
+    if (value) {
+      try { await history?.load() }
+      catch (error) { if (historyRef.current === history) clientUi().showError(`Could not load terminal history: ${String(error)}`); return }
+    }
+    if (epoch !== findEpoch.current || historyRef.current !== history) return
     const search = xtermRef.current?.search
     if (!search) return
     if (!value) search.clearDecorations()
@@ -275,6 +292,22 @@ export default function TerminalView({
     find('')
     xtermRef.current?.terminal.focus()
   }, [find])
+
+  const onKeyDownCapture = useCallback((event: React.KeyboardEvent) => {
+    const xterm = xtermRef.current
+    if (!xterm?.terminal.element?.contains(event.target as Node) || !isMacKeyboard() ||
+        !event.metaKey || event.ctrlKey || event.altKey || event.key.toLowerCase() !== 'a') return
+    // xterm's Cmd+A selects its entire local buffer. Hydrate first so this
+    // continues to mean all accessible history, including outside the tail.
+    event.preventDefault()
+    event.stopPropagation()
+    const history = historyRef.current
+    void history?.load().then(() => {
+      if (historyRef.current === history) xterm.terminal.selectAll()
+    }, (error) => {
+      if (historyRef.current === history) clientUi().showError(`Could not load terminal history: ${String(error)}`)
+    })
+  }, [])
 
   const onKeyDown = useCallback((event: React.KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'f') {
@@ -319,7 +352,7 @@ export default function TerminalView({
   const failed = snapshot?.status === 'failed'
 
   return (
-    <div className="relative w-full h-full flex flex-col" onKeyDown={onKeyDown}>
+    <div className="relative w-full h-full flex flex-col" onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture}>
       {showSearch && (
         <div className="flex items-center gap-1 px-2 py-1 bg-surface-3 border-b border-subtle shrink-0">
           <input

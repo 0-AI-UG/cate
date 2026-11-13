@@ -33,7 +33,6 @@ import {
   type fileCapability,
   type searchCapability,
 } from '../contract'
-import * as Y from 'yjs'
 import { createPathScope, type PathScope } from './pathScope'
 import { createWatchPool, type WatchPool, type WatchPoolDeps } from './watchPool'
 import { createBufferService, type BufferService } from './buffers'
@@ -427,6 +426,7 @@ export function fileCapabilityImpl(files: FilesRuntime): CapabilityImpl<typeof f
     },
 
     buffer: async ({ path: p, stateVector }, sink) => {
+      const Y = await import('yjs')
       const handle = await files.buffers.open(p)
       const token = Symbol('buffer-subscriber')
       try {
