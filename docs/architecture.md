@@ -1438,23 +1438,7 @@ Service logic runs in the runtime; the client side is a typed client and UI.
   stream, and forwards keystrokes and resizes; and the status store of every
   PTY (ports, cwd, activity; `process.statuses`). Drawing and clicking links,
   OSC 8 hyperlinks (the view's terminal holds them), search, OSC 52
-  clipboard and keymaps are view concerns. Desktop views following live output
-  cache at most 128 scrollback rows, bounded by the configured workspace limit;
-  this cache does not change the runtime's authoritative retention. The first
-  upward scroll in the normal buffer (native viewport or public API), a search,
-  or macOS Select All reattaches with the full
-  configured history and awaits snapshot parsing. The view keeps that history
-  until unmount (including while selecting or searching); remount starts with
-  a tail again. Before reset, hydration captures the latest viewport and selection
-  and anchors them to row text in the replacement history, accounting for output
-  during the attach wait. A restored selection must reproduce the entire captured
-  selected text; otherwise it is cleared so copying cannot silently select different
-  content from repeated rows. Disposing a view explicitly releases its local history
-  cells, even if rendering caches still reference the xterm object. The binding drains preceding parser writes before replacing
-  the screen, orders size events with bytes, and acknowledges only parsed bytes
-  from the current snapshot generation. This uses the same attach protocol for
-  every transport; it neither fits nor restarts the PTY. Mobile and other callers
-  choose their own attach/cache limit.
+  clipboard and keymaps are view concerns.
 - **Consumers**: the terminal panel, the agents service's terminal agents, `cate.terminal.*`.
   A spawn reports whether it runs a one-shot command. When that command
   exits, the terminal panel session starts an ordinary shell in the same

@@ -104,8 +104,7 @@ describe('mobile terminals', () => {
     t.attaches[0].emit({ kind: 'screen', viewer: 'v1', data: 'x', cols: 120, rows: 40 })
     t.attaches[0].emit({ kind: 'size', cols: 45, rows: 30 })
     await tick()
-    // Empty output writes are acknowledged parser barriers, with no screen content.
-    expect(t.events.filter((e) => e.kind !== 'state' && !(e.kind === 'output' && e.data === '')).map((e) => e.kind === 'size' ? [e.cols, e.rows] : e.kind))
+    expect(t.events.filter((e) => e.kind !== 'state').map((e) => e.kind === 'size' ? [e.cols, e.rows] : e.kind))
       .toEqual([[120, 40], 'reset', 'output', [45, 30]])
   })
 

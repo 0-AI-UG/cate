@@ -1,6 +1,20 @@
 # Consolidated RAM optimizations — 2026-11-13
 
-This branch combines all retained changes from the RAM experiments on current main (`c12247d1`, 2.1.0-beta.15). It replaces PR #826. The rejected usage-cache/worker lifecycle, browser-capture/staging and alternate-screen renderer-budget production candidates are excluded. Historical reports retain their original worktree references and validation outcomes; this page describes the consolidated change.
+This branch combines the retained changes from the RAM experiments on current main (`c12247d1`, 2.1.0-beta.15). It replaces PR #826. The rejected usage-cache/worker lifecycle, browser-capture/staging and alternate-screen renderer-budget production candidates are excluded. Historical reports retain their original worktree references and validation outcomes; this page describes the consolidated change.
+
+## Review decision — 2026-11-14
+
+The terminal history cache/hydration candidate has been removed. Five filled normal-buffer log views measured 141.5 → 88.8 MiB renderer footprint, but five continuously redrawing alternate-screen agent stand-ins measured 74.7 → 77.2 MiB, with essentially identical heap/backing storage. First Select All changed 56 → 116 ms; search 83 → 123 ms; upward scroll 13 → 117 ms in the log workload. The cache adds a second attach lifecycle, asynchronous search/selection and text-based restoration. That complexity is not justified for the agent TUI case. The runtime and desktop continue keeping the configured history; normal scroll/search/selection remain synchronous. Historical history reports and opt-in harnesses describe the rejected experiment, not shipped behavior.
+
+Lazy modules remain: a fresh paired ten-runtime active cohort measured 536.82 → 391.05 MiB summed physical footprint after settling. At five runtimes it was 278.85 → 219.28 MiB. The fully warmed first runtime was 42.58 → 47.57 MiB, so there is no established permanent saving after every optional module loads. Password first-use cost was 0.67 → 7.71 ms; catalog 6.30 → 9.65 ms. Splitting and demand-loading large optional implementations fits their existing ownership and avoids eviction/worker machinery.
+
+A smaller browser workload (one workspace, two unused start pages and one loaded task page) kept 1 rather than 3 guests. Median summed process RSS was 879.94 → 697.70 MiB; first page-control demand was 22 → 80 ms. The loaded guest and its form state survived. This is RSS accounting, not unique physical RAM, and must not be added to runtime footprint.
+
+The dense 48-job alternate-screen canvas kept 16 rather than 48 views. Settled renderer footprint medians were 336.83 → 174.53 MiB; post-pan medians 349.60 → 246.35 MiB. All PTYs remained live with their original IDs/PIDs and accepted input. This is a dense offscreen workload, not a typical small workspace; the retained policy is a small margin/preload change without an extra resource lifecycle. Baseline timing was noisy because another review ran validation during it; no general latency speedup is claimed.
+
+The parser comparison repeated three launches per variant: retained parser scratch was 512 → 64 KiB per affected view. Median attach times were 125.8 → 122.3 ms and live-write times 11.0 → 10.9 ms. The 20-view scratch reduction is 8.75 MiB; this small fixed write bound preserves the existing attach lifecycle.
+
+These are single paired macOS runs on a shared host, with Node 22 and production Electron builds. The five-terminal runs used filled logs and separate alternate-screen stand-ins; they are not authenticated agent turns. Renderer diagnostic samples request GC; runtime physical-footprint samples do not. GPU samples varied and are not claimed as a saving. The dense canvas baseline overlapped another review's validation and is noisy; repeated candidate comparisons must be read accordingly. Raw results: [review measurements](ram-review-2026-11-14-raw.json.gz).
 
 ## Included changes
 
@@ -9,7 +23,6 @@ This branch combines all retained changes from the RAM experiments on current ma
 | Bound terminal parser writes to 16 KiB | 512 to 64 KiB retained parser scratch per affected view; 8.75 MiB across 20 filled views | Applies to large replays. History, UTF-8/ANSI parsing and acknowledgement order stay intact. |
 | Create unused browser start-page guests on demand | 15 to 3 guests in a fixture with 12 start pages and 3 loaded pages; about 627 MiB less summed RSS | Only unused start pages. First navigation or automation pays guest startup. Loaded pages retain the existing lifetime policy. RSS is not unique physical RAM. |
 | Demand-load optional daemon modules | Ten continuously emitting terminal workspaces: 523.31 to 393.96 MiB summed daemon physical footprint | Most advantage disappears after every optional feature loads. First calls pay deferred initialization. Jobs, trust, networking and capabilities remain live. |
-| Cache live terminal tails, hydrate full history on demand | Fifty normal-buffer log views: 450.50 to 256.50 MiB renderer footprint | Runtime retains configured history. Upward scroll, search or macOS Select All hydrates it; local first hydration was roughly 125–150 ms. Empty-normal-buffer alternate-screen TUIs gain little. |
 | Reduce canvas overscan and preload entering views | 48 alternate-screen jobs: 48 to 16 mounted views; around 91 MiB less settled renderer footprint and 47 MiB less after initial pans. Long comparisons showed around 90–130 MiB less. | Helps offscreen disposable views, not fully visible overviews or loaded browser guests. Offscreen views remount more often. Very fast pans can briefly expose unready views; early preloading reduced first-fast-pan gaps in these samples. |
 
 These are distinct macOS workloads and metrics, with shared pages and GC/compositor variation. Do not add the savings into a whole-app total or treat them as universal percentages.
@@ -25,12 +38,12 @@ The experimental split builder removed the whole `runtime-modules` directory bef
 - [Terminal parser](terminal-ram-2026-11-13-parser.md)
 - [Unused browser start pages](browser-ram-2026-11-13-start-pages.md)
 - [Runtime module loading](runtime-footprint-round2-2026-11-13.md)
-- [On-demand terminal history](terminal-history-round2-2026-11-13.md)
+- [Rejected on-demand terminal history experiment](terminal-history-round2-2026-11-13.md)
 - [Canvas overscan, including rejected iterations and capture limitations](viewport-overscan-2026-11-13.md)
 
-The original raw JSON measurement archives are retained as gzip files to avoid tens of thousands of generated lines in the PR. Reproduction scripts and focused opt-in profiles accompany the retained changes. Extract an archive before using tooling that expects plain JSON. No fresh comparative RAM claim is made for the consolidation itself; the retained runtime/UI source is the measured implementation, with the development-build safety correction above.
+The original raw JSON measurement archives are retained as gzip files to avoid tens of thousands of generated lines in the PR. Reproduction scripts and focused opt-in profiles accompany the retained changes. Extract an archive before using tooling that expects plain JSON. The original consolidation made no fresh comparative RAM claim; review reruns above supplement it; the retained runtime/UI source is the measured implementation, with the development-build safety correction above and the terminal-history candidate removed during review.
 
-## Combined validation
+## Original combined validation (before review simplification)
 
 - Node 22.23.3; current main's 2.1.0-beta.15 version is preserved.
 - Typecheck, dependency checks, full ESLint (10 existing warnings, zero errors), production desktop/runtime builds and host runtime tarball build passed.

@@ -165,10 +165,6 @@ export function createTerminalXterm(config: TerminalXtermOptions): TerminalXterm
         try { cleanup() } catch { /* terminal already torn down */ }
       }
       releaseWebgl()
-      // A disposed view no longer owns a history cache. Release its cells even
-      // if xterm's renderer/atlas caches temporarily retain the terminal object.
-      // The runtime remains the history authority for the next view.
-      terminal.options.scrollback = 0
       disposeXtermTerminal(terminal)
     },
   }
