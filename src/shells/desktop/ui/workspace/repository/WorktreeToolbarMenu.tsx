@@ -393,17 +393,20 @@ const SpawnButton: React.FC<{
   cwd: string
   worktreeId: string
   onClick: () => void
-}> = ({ icon, title, workspaceId, panelType, cwd, worktreeId, onClick }) => (
+  disabled: boolean
+}> = ({ icon, title, workspaceId, panelType, cwd, worktreeId, onClick, disabled }) => (
   <Tooltip label={title}>
     <div
       role="button"
       aria-label={title}
-      draggable
+      aria-disabled={disabled}
+      draggable={!disabled}
       onDragStart={(e) => {
+        if (disabled) { e.preventDefault(); return }
         e.dataTransfer.effectAllowed = 'copy'
         e.dataTransfer.setData('application/cate-spawn', JSON.stringify({ workspaceId, panelType, cwd, worktreeId }))
       }}
-      onClick={(e) => { e.stopPropagation(); onClick() }}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onClick() }}
       className="w-5 h-5 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-surface-5 cursor-grab active:cursor-grabbing transition-colors"
     >
       {icon}
@@ -446,8 +449,8 @@ const WorktreeRow: React.FC<{
   const commitRename = useCallback(() => {
     setRenaming(false)
     const next = renameValue.trim()
-    if (next !== label) cb.onRename(next || undefined)
-  }, [renameValue, label, cb])
+    if (!disabled && next !== label) cb.onRename(next || undefined)
+  }, [renameValue, label, cb, disabled])
 
   const openMenu = useCallback(
     () =>
@@ -488,6 +491,7 @@ const WorktreeRow: React.FC<{
           <button
             onClick={(e) => { e.stopPropagation(); setRecoloring((v) => !v) }}
             aria-label="Change color"
+            disabled={disabled}
             className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded-full hover:scale-110 transition-transform"
           >
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
@@ -497,6 +501,7 @@ const WorktreeRow: React.FC<{
         {renaming ? (
           <input
             autoFocus
+            disabled={disabled}
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {
@@ -509,7 +514,7 @@ const WorktreeRow: React.FC<{
         ) : (
           <span
             className="flex-1 min-w-0 truncate text-[12px] text-secondary"
-            onDoubleClick={(e) => { if (!e.shiftKey) { setRenameValue(label); setRenaming(true) } }}
+            onDoubleClick={(e) => { if (!disabled && !e.shiftKey) { setRenameValue(label); setRenaming(true) } }}
           >
             {label}
           </span>
@@ -535,6 +540,7 @@ const WorktreeRow: React.FC<{
                 title={title}
                 workspaceId={workspaceId}
                 panelType={type}
+                disabled={disabled}
                 cwd={wt.path}
                 worktreeId={wt.id}
                 onClick={() => onLaunch(type)}
@@ -578,6 +584,7 @@ const WorktreeRow: React.FC<{
           {worktreePalette(theme).map(({ key, color: c }) => (
             <button
               key={key}
+              disabled={disabled}
               onClick={(e) => { e.stopPropagation(); cb.onRecolor(key); setRecoloring(false) }}
               className="w-3.5 h-3.5 rounded-full transition-transform hover:scale-110"
               style={{
