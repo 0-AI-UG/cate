@@ -43,6 +43,12 @@ The experimental split builder removed the whole `runtime-modules` directory bef
 
 The original raw JSON measurement archives are retained as gzip files to avoid tens of thousands of generated lines in the PR. Reproduction scripts and focused opt-in profiles accompany the retained changes. Extract an archive before using tooling that expects plain JSON. The original consolidation made no fresh comparative RAM claim; review reruns above supplement it; the retained runtime/UI source is the measured implementation, with the development-build safety correction above and the terminal-history candidate removed during review.
 
+## Validation after review simplification
+
+Typecheck, dependency rules, desktop/runtime production builds, changed-file ESLint and 88 focused terminal/canvas tests passed. Optional module/files/skills/browser unit coverage passed 230 tests across 27 files; the sandbox initially refused nine file-server socket binds, and that file passed all ten checks with socket permission. Fresh paired runtime, five-terminal log and alternate-screen, browser, dense-canvas and three-launch parser profiles passed.
+
+Thirteen final Electron browser/background/lifetime and terminal history/live-PTY checks passed; the parser profile remained skipped in that functional batch. The new start-page lifetime test exposed a race after returning from a popup: tab selection schedules guest focus for the next animation frame, while the test immediately focused a host button. Added an explicit wait for the selected guest's focus before the independent page-operation focus assertion. The revised lifetime test passed five consecutive runs. No product focus behavior was changed. The twelve-PTY lifecycle retained running jobs and remounted in 213 ms. Cross-platform CI remains the merge gate.
+
 ## Original combined validation (before review simplification)
 
 - Node 22.23.3; current main's 2.1.0-beta.15 version is preserved.

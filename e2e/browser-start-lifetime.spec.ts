@@ -70,6 +70,12 @@ test('lazy start guests support first demand, tab switching, reload, history, fo
     await expect(focusTarget).toBeFocused()
     expect(await browserInvoke(page, browser, 'selectTab', { tabId: browser.tabId })).toMatchObject({ ok: true })
     expect(await browserWebContentsId(page, panelId)).toBe(id)
+    // Tab selection schedules guest focus on the next animation frame. Wait
+    // for that transition before testing a separate host-focus interaction.
+    await expect.poll(() => page.evaluate(id => {
+      const active = document.activeElement as (HTMLElement & { getWebContentsId?(): number }) | null
+      return active?.tagName === 'WEBVIEW' && active.getWebContentsId?.() === id
+    }, id)).toBe(true)
     await focusTarget.focus()
     expect(await browserInvoke(page, browser, 'getAXState')).toMatchObject({ ok: true })
     await expect(focusTarget).toBeFocused()
