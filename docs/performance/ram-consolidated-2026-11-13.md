@@ -51,6 +51,10 @@ Typecheck, dependency rules, desktop/runtime production builds and changed-file 
 
 Thirteen final Electron browser/background/lifetime and terminal history/live-PTY checks passed; the parser profile remained skipped in that functional batch. The new start-page lifetime test exposed a race after returning from a popup: tab selection schedules guest focus for the next animation frame, while the test immediately focused a host button. Added an explicit wait for the selected guest's focus before the independent page-operation focus assertion. The revised lifetime test passed five consecutive runs. No product focus behavior was changed. The twelve-PTY lifecycle retained running jobs and remounted in 213 ms. Cross-platform CI remains the merge gate.
 
+## Combined integration validation
+
+The reviewed updates, loading feedback, browser defaults, Review/repository, worktree deletion and canvas regression were integrated locally with this simplified performance change. Typecheck, layering (1,109 modules), desktop/runtime builds and all 3,367 CI-equivalent unit tests passed (2 skipped), followed by all nine native Cate Connect integration tests in their separate run. Five combined Electron checks passed across browser lifetime, configured terminal history, runtime-stall canvas panning and both Review/repository flows; the opt-in resume diagnostic remained skipped. A one-runtime Node 22 smoke with protocol compatibility 2 exercised real PTY output and all optional first uses (Yjs buffer, passwords, usage, offline skills, network setting and pairing); all completed. This smoke verifies integration, not a new comparative memory claim.
+
 ## Original combined validation (before review simplification)
 
 - Node 22.23.3; current main's 2.1.0-beta.15 version is preserved.
