@@ -11,8 +11,8 @@ function setup(overrides: Partial<AutoUpdaterDeps> & { packaged?: boolean; versi
     allowPrerelease: false,
     forceDevUpdateConfig: false,
     disableDifferentialDownload: false,
-    checkForUpdatesAndNotify: vi.fn(() => Promise.resolve(null)),
-    checkForUpdates: vi.fn(() => Promise.resolve(null)),
+    checkForUpdatesAndNotify: vi.fn(() => Promise.resolve<unknown>({})),
+    checkForUpdates: vi.fn(() => Promise.resolve<unknown>({})),
     quitAndInstall: vi.fn(),
   })
   let record: UpdateRecord = overrides.record ?? { pendingVersion: null, attempts: 0 }
@@ -28,6 +28,8 @@ function setup(overrides: Partial<AutoUpdaterDeps> & { packaged?: boolean; versi
     openExternal: vi.fn(),
     canSelfUpdate: () => true,
     betaUpdatesEnabled: () => false,
+    restartForUpdate: vi.fn(async (install) => { setImmediate(install); return true }),
+    cancelUpdateRestart: vi.fn(),
     setTimeout: (fn) => { timers.push(fn) },
     setInterval: () => {},
     ...overrides,
@@ -48,6 +50,17 @@ describe('auto updater', () => {
     expect(statuses.at(-1)).toMatchObject({ state: 'disabled' })
     auto.checkManually()
     expect(statuses.at(-1)).toMatchObject({ state: 'disabled', manual: true })
+  })
+
+  it('does not get stuck checking an installation without an active updater', async () => {
+    const { auto, updater, deps } = setup({ showMessageBox: vi.fn(async () => ({ response: 0 })) })
+    updater.checkForUpdatesAndNotify.mockResolvedValue(null)
+    auto.start()
+    auto.checkManually()
+    await flush()
+    expect(auto.status()).toMatchObject({ state: 'disabled', message: expect.stringContaining('this installation') })
+    expect(deps.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ message: 'Update Cate manually' }))
+    expect(deps.openExternal).toHaveBeenCalledWith(RELEASES_URL)
   })
 
   it('mirrors eligibility into auto download/install and the beta opt-in into prereleases', () => {
@@ -117,6 +130,23 @@ describe('auto updater', () => {
     updater.emit('update-available', { version: '1.2.3' })
     await flush()
     expect(deps.showMessageBox).toHaveBeenCalledTimes(1)
+    expect(deps.openExternal).toHaveBeenCalledWith('https://github.com/0-AI-UG/cate/releases/tag/v1.2.3')
+  })
+
+  it('keeps the requested beta release in the manual fallback', async () => {
+    const { auto, updater, deps } = setup({ canSelfUpdate: () => false, showMessageBox: vi.fn(async () => ({ response: 0 })) })
+    auto.start()
+    updater.emit('update-available', { version: '2.1.0-beta.2' })
+    await flush()
+    expect(deps.openExternal).toHaveBeenCalledWith('https://github.com/0-AI-UG/cate/releases/tag/v2.1.0-beta.2')
+  })
+
+  it('uses the latest release page when the failed staged update has no version', async () => {
+    const { auto, updater, deps } = setup({ showMessageBox: vi.fn(async () => ({ response: 0 })) })
+    auto.start()
+    updater.emit('update-downloaded', {})
+    updater.emit('error', new Error('Install failed'))
+    await flush()
     expect(deps.openExternal).toHaveBeenCalledWith(RELEASES_URL)
   })
 
@@ -127,6 +157,7 @@ describe('auto updater', () => {
     updater.emit('update-downloaded', { version: '1.2.3' })
     updater.emit('error', new Error('ditto: could not read PKZip signature'))
     expect(auto.pendingInstall()).toBe(false)
+    expect(deps.cancelUpdateRestart).toHaveBeenCalledOnce()
     expect(deps.showMessageBox).toHaveBeenCalledTimes(1)
     expect(statuses.at(-1)).toMatchObject({ state: 'error', message: 'ditto: could not read PKZip signature' })
   })
@@ -179,10 +210,35 @@ describe('auto updater', () => {
   it('installs only a staged update', async () => {
     const { auto, updater } = setup()
     auto.start()
-    expect(auto.installNow()).toBe(false)
+    await expect(auto.installNow()).resolves.toBe(false)
     updater.emit('update-downloaded', { version: '1.2.3' })
-    expect(auto.installNow()).toBe(true)
+    await expect(auto.installNow()).resolves.toBe(true)
     await flush()
     expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
+  })
+
+  it('keeps the update staged when the quit controller cancels restart', async () => {
+    const { auto, updater, deps } = setup({ restartForUpdate: vi.fn(async () => false) })
+    auto.start()
+    updater.emit('update-downloaded', { version: '1.2.3' })
+    await expect(auto.installNow()).resolves.toBe(false)
+    await flush()
+    expect(deps.restartForUpdate).toHaveBeenCalledOnce()
+    expect(updater.quitAndInstall).not.toHaveBeenCalled()
+    expect(auto.status().state).toBe('downloaded')
+    expect(auto.pendingInstall()).toBe(true)
+  })
+
+  it('handles a synchronous installer failure like an updater error', async () => {
+    const { auto, updater, deps } = setup({ showMessageBox: vi.fn(async () => ({ response: 0 })) })
+    auto.start()
+    updater.emit('update-downloaded', { version: '2.1.0-beta.2' })
+    updater.quitAndInstall.mockImplementation(() => { throw new Error('Cannot launch installer') })
+    await expect(auto.installNow()).resolves.toBe(true)
+    await flush()
+    expect(auto.status()).toMatchObject({ state: 'error', message: 'Cannot launch installer' })
+    expect(auto.pendingInstall()).toBe(false)
+    expect(deps.cancelUpdateRestart).toHaveBeenCalledOnce()
+    expect(deps.openExternal).toHaveBeenCalledWith('https://github.com/0-AI-UG/cate/releases/tag/v2.1.0-beta.2')
   })
 })

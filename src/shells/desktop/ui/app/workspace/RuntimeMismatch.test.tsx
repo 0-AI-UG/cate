@@ -15,6 +15,8 @@ let updates: RuntimeUpdates | null = null
 function fakeConnection(state: ConnectionState) {
   const listeners = new Set<() => void>()
   const connection = {
+    clientId: 'self',
+    rpc: { remote: { epoch: 1, build: '2.0.4+new' } },
     workspaceId: 'local:/p/cate',
     state,
     getState: () => connection.state,
@@ -26,11 +28,12 @@ function fakeConnection(state: ConnectionState) {
         update: vi.fn(async (params: { ifIdle?: boolean }) => {
           if (params.ifIdle && !idle) throw Object.assign(new Error('the runtime has other clients or running work'), { code: 'dirty' })
         }),
-        info: vi.fn(async () => ({ pid: 727 })),
+        info: vi.fn(async () => ({ pid: 727, clients: [{ clientId: 'self' }] })),
         updateProgress: vi.fn(async () => progress),
       },
     },
     set(next: ConnectionState) {
+      if (next.kind === 'connected' || next.kind === 'incompatible') connection.rpc.remote.epoch++
       connection.state = next
       for (const l of [...listeners]) l()
     },
@@ -83,7 +86,7 @@ describe('RuntimeMismatchCard', () => {
     const connection = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.3' })
     await render(connection)
     expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
-    expect(card()?.textContent).toContain('Updating ends')
+    expect(card()?.textContent).toContain('Stops terminals and agents for everyone.')
     expect(card()?.textContent).not.toContain("can't talk to")
     await act(async () => button('Update and Stop Work…').click())
     expect(connection.runtime.runtime.update).toHaveBeenLastCalledWith({ version: '2.0.4', build: '2.0.4+new' })
@@ -99,9 +102,28 @@ describe('RuntimeMismatchCard', () => {
     expect(card()).toBeNull()
   })
 
+  it('keeps a compatible older shared workspace usable after an idle update is refused', async () => {
+    const connection = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.3' })
+    connection.runtime.runtime.info.mockResolvedValue({ pid: 727, clients: [{ clientId: 'self' }, { clientId: 'other' }] })
+    await render(connection)
+    expect(connection.runtime.runtime.update).toHaveBeenCalledWith({ version: '2.0.4', build: '2.0.4+new', ifIdle: true })
+    expect(card()).toBeNull()
+    expect(button('panel').closest('[inert]')).toBeNull()
+  })
+
+  it('updates a compatible older unshared workspace immediately when idle', async () => {
+    idle = true
+    const connection = fakeConnection({ kind: 'connected', runtimeVersion: '2.0.3' })
+    await render(connection)
+    expect(card()?.textContent).toContain('Reopening')
+    expect(button('Update and Stop Work')).toBeUndefined()
+    await act(async () => connection.set({ kind: 'connected', runtimeVersion: '2.0.4' }))
+    expect(card()).toBeNull()
+  })
+
   it('asks inside the workspace only: no dialog over the app, the sidebar stays usable', async () => {
     await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
-    expect(card()?.textContent).toContain('A workspace update is ready')
+    expect(card()?.textContent).toContain('Workspace update ready')
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(host.querySelector('[data-sidebar]')!.closest('[inert]')).toBeNull()
   })
@@ -171,7 +193,7 @@ describe('RuntimeMismatchCard', () => {
 
   it('offers an update for another version', async () => {
     await render(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.7.0' }))
-    expect(card()?.textContent).toContain('A workspace update is ready')
+    expect(card()?.textContent).toContain('Workspace update ready')
     expect(button('Update and Stop Work…')).toBeTruthy()
   })
 
@@ -190,7 +212,7 @@ describe('RuntimeMismatchCard', () => {
     const connection = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.1.0' })
     await render(connection)
     expect(connection.runtime.runtime.update).not.toHaveBeenCalled()
-    expect(card()?.textContent).toContain('Update Cate to use this workspace')
+    expect(card()?.textContent).toContain('Update Cate')
     expect(button('Update and Stop Work')).toBeUndefined()
   })
 })

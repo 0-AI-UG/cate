@@ -10,9 +10,9 @@
 // usable).
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Folder, RefreshCw } from 'lucide-react'
 import { ModalCard, ProgressBar, btn, Spinner } from '../../kernel/interaction'
-import { runtimeMismatch, type RuntimeUpdateRun, type WorkspaceConnection } from '@client/connections'
+import { runtimeMismatch, type RuntimeMismatch, type RuntimeUpdateRun, type WorkspaceConnection } from '@client/connections'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
 import { runWindowAction } from '../actions/run'
@@ -23,6 +23,15 @@ const noop = () => () => {}
 export function useRuntimeUpdate(connection: WorkspaceConnection | undefined): RuntimeUpdateRun | null {
   const updates = tryClientApp()?.runtimeUpdates
   return useSyncExternalStore(updates?.subscribe ?? noop, () => (connection && updates ? updates.run(connection) : null))
+}
+
+/** The core decides whether this workspace requires an update. */
+export function useRequiredRuntimeUpdate(connection: WorkspaceConnection | undefined): RuntimeMismatch | null {
+  const state = useConnectionState(connection)
+  const app = tryClientApp()
+  const updates = app?.runtimeUpdates
+  const required = useSyncExternalStore(updates?.subscribe ?? noop, () => (connection && updates ? updates.required(connection) : null))
+  return required ?? runtimeMismatch(state, app?.version ?? '')
 }
 
 const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1)
@@ -46,7 +55,7 @@ function UpdateProgressCard({ run }: { run: RuntimeUpdateRun }): JSX.Element {
     ? (progress.total ? `${mb(progress.received)} of ${mb(progress.total)} MB` : `${mb(progress.received)} MB`)
     : run.phase === 'restarting' ? 'The workspace reconnects when it is back.' : null
   return (
-    <ModalCard className="w-[440px] max-w-[92%]" bodyClassName="px-5 py-4">
+    <ModalCard className="w-[360px] max-w-[92%]" bodyClassName="px-5 py-4">
       <div role="status" className="flex flex-col gap-2.5">
         <p className="flex items-center gap-2 text-[13px] text-primary">
           <Spinner size={13} />
@@ -60,8 +69,8 @@ function UpdateProgressCard({ run }: { run: RuntimeUpdateRun }): JSX.Element {
 }
 
 export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConnection }): JSX.Element | null {
-  const state = useConnectionState(connection)
   const run = useRuntimeUpdate(connection)
+  const mismatch = useRequiredRuntimeUpdate(connection)
   const app = tryClientApp()
   const [error, setError] = useState<string | null>(null)
   const mounted = useRef(true)
@@ -73,24 +82,10 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
 
   const version = app?.version ?? ''
   if (run) return <UpdateProgressCard run={run} />
-  const mismatch = runtimeMismatch(state, version)
   if (!mismatch || !app) return null
   const name = app.workspaces.get(connection.workspaceId)?.name ?? connection.workspaceId
-  const icon = <AlertTriangle size={16} className="text-amber-400" />
-
-  if (mismatch.update === 'app') {
-    return (
-      <ModalCard className="w-[440px] max-w-[92%]" icon={icon} title="Update Cate to use this workspace" showClose={false} bodyClassName="px-5 py-4">
-        <p className="text-[13px] leading-relaxed text-secondary">
-          <span className="text-primary font-medium">{name}</span>
-          {` was opened with a newer version of Cate. Update this app to use the workspace.`}
-        </p>
-        <div className="mt-4 flex justify-end">
-          <button type="button" className={btn.primary} onClick={() => runWindowAction('checkForUpdates')}>Check for Updates…</button>
-        </div>
-      </ModalCard>
-    )
-  }
+  const icon = <AlertTriangle size={16} className="text-warning" />
+  const updateApp = mismatch.update === 'app'
 
   const confirm = async () => {
     setError(null)
@@ -100,33 +95,36 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
 
   return (
     <ModalCard
-      className="w-[440px] max-w-[92%]"
-      icon={icon}
-      title="A workspace update is ready"
+      className="w-[360px] max-w-[92%]"
+      icon={updateApp ? icon : <RefreshCw size={16} />}
+      title={updateApp ? 'Update Cate' : 'Workspace update ready'}
       showClose={false}
-      bodyClassName="px-5 py-4"
+      bodyClassName="min-h-0 overflow-auto"
     >
-      <p className="text-[13px] leading-relaxed text-secondary">
-        <span className="text-primary font-medium">{name}</span>
-         needs an update before it can open in this version of Cate.
-      </p>
+      <div className="space-y-3 px-5 py-4">
+        <div className="flex items-center gap-3 rounded-lg border border-subtle bg-surface-0/40 px-3 py-2.5">
+          <Folder size={18} className="shrink-0 text-secondary" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-[13px] font-medium text-primary">{name}</p>
+            <div className="mt-1 flex items-center gap-2 text-[11px]">
+              <span className="min-w-0 break-all font-mono text-muted"><span className="sr-only">Current version: </span>{updateApp ? version : mismatch.runtimeVersion}</span>
+              <ArrowRight size={12} className="shrink-0 text-muted" aria-hidden="true" />
+              <span className="min-w-0 break-all font-mono text-primary"><span className="sr-only">Update version: </span>{updateApp ? mismatch.runtimeVersion : version}</span>
+            </div>
+          </div>
+        </div>
 
-      <details className="mt-3 text-xs text-muted"><summary className="cursor-pointer">Details</summary><dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-2.5 py-2 rounded-md bg-surface-5 border border-subtle text-[12px]">
-        <dt className="text-muted">This app</dt>
-        <dd className="font-mono text-secondary break-all">{version}</dd>
-        <dt className="text-muted">Runtime</dt>
-        <dd className="font-mono text-secondary break-all">{mismatch.runtimeVersion}</dd>
-      </dl></details>
+        {updateApp ? <p className="text-[12px] leading-relaxed text-secondary">Update Cate to open this workspace.</p> : <div className="flex items-start gap-2.5 text-[12px] leading-relaxed text-secondary">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+          <p>Stops terminals and agents for everyone.</p>
+        </div>}
 
-      <p className="mt-3 text-[12px] leading-relaxed text-muted">
-        Updating ends the workspace's terminals and running agents for everyone connected to it.
-      </p>
+        {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
+      </div>
 
-      {error && <p className="mt-3 text-[12px] text-danger">{error}</p>}
-
-      <div className="mt-5 flex justify-end gap-2">
-        <button type="button" className={btn.primary} onClick={() => void confirm()}>
-          Update and Stop Work…
+      <div className="flex justify-end border-t border-subtle bg-surface-0/40 px-5 py-3">
+        <button type="button" className={btn.primary} onClick={() => updateApp ? runWindowAction('checkForUpdates') : void confirm()}>
+          {updateApp ? 'Check for Updates…' : 'Update and Stop Work…'}
         </button>
       </div>
     </ModalCard>

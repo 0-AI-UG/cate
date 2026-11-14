@@ -43,6 +43,10 @@ export interface AutoUpdaterDeps {
   /** False on macOS outside /Applications. */
   canSelfUpdate(): boolean
   betaUpdatesEnabled(): boolean
+  /** Confirms client-local blockers and flushes before running the installer.
+   *  False when the person cancels or another quit is already in progress. */
+  restartForUpdate(install: () => void): Promise<boolean>
+  cancelUpdateRestart(): void
   /** `CATE_DEV_UPDATE=1`: a local feed in an unpackaged build. */
   devUpdate?: boolean
   setTimeout?: (fn: () => void, ms: number) => unknown
@@ -54,8 +58,8 @@ export interface AutoUpdater {
   status(): UpdateStatus
   checkManually(): void
   dismiss(version: string): void
-  /** Quits and installs a staged update; false when none is staged. */
-  installNow(): boolean
+  /** Cleans up and installs a staged update; false when unavailable or cancelled. */
+  installNow(): Promise<boolean>
   setBetaUpdates(enabled: boolean): void
   /** An update is downloaded and installs on quit: do not hard-exit. */
   pendingInstall(): boolean
@@ -98,14 +102,17 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
     if (['up-to-date', 'downloaded', 'error', 'disabled'].includes(next.state)) manualCheck = false
   }
 
-  const promptManual = async (version: string, offerMove: boolean) => {
+  const promptManual = async (version: string, offerMove: boolean, reason: 'install' | 'unsupported' = 'install') => {
     if (manualPrompted) return
     manualPrompted = true
     track('update_manual_fallback_shown', { version: version || null })
-    const buttons = offerMove ? ['Download latest', 'Move to Applications', 'Later'] : ['Download latest', 'Later']
+    const downloadLabel = version ? 'Download update' : 'Open downloads'
+    const buttons = offerMove ? [downloadLabel, 'Move to Applications', 'Later'] : [downloadLabel, 'Later']
     const detail = offerMove
       ? 'Cate is running from outside the Applications folder, so it cannot update itself. Download the latest build, or move Cate into Applications to enable automatic updates.'
-      : 'Cate could not finish installing the update automatically. Download and install the latest build to get the newest version.'
+      : reason === 'unsupported'
+        ? 'This installation does not support automatic updates. Open the releases page to download the latest version of Cate.'
+        : 'Cate could not finish installing the update automatically. Download and install the update to get the newest version.'
     let response = buttons.length - 1
     try {
       ;({ response } = await deps.showMessageBox({
@@ -113,7 +120,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
         buttons,
         defaultId: 0,
         cancelId: buttons.length - 1,
-        message: version ? `Update available (v${version})` : 'Update available',
+        message: reason === 'unsupported' ? 'Update Cate manually' : version ? `Update available (v${version})` : 'Update available',
         detail,
       }))
     } catch (error) {
@@ -122,7 +129,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
     }
     if (response === 0) {
       track('update_manual_fallback_clicked', { version: version || null })
-      deps.openExternal(RELEASES_URL)
+      deps.openExternal(version ? `https://github.com/0-AI-UG/cate/releases/tag/v${encodeURIComponent(version)}` : RELEASES_URL)
     } else if (offerMove && response === 1) {
       try { deps.app.moveToApplicationsFolder() } catch (error) { log.error('move to Applications failed: %O', error) }
     }
@@ -138,6 +145,16 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
     push({ state: 'checking', version: availableVersion })
     inFlight = Promise.resolve()
       .then(() => (eligible ? updater.checkForUpdatesAndNotify() : updater.checkForUpdates()))
+      .then((result) => {
+        // Some packaged formats have no active updater (for example a Linux
+        // tarball). No events follow a null result; do not leave "checking" up.
+        if (result == null && status.state === 'checking') {
+          const offerDownload = manualCheck
+          push({ state: 'disabled', version: null, message: 'Automatic updates are unavailable for this installation. Download the latest release to update Cate.' })
+          if (offerDownload) void promptManual('', false, 'unsupported')
+        }
+        return result
+      })
       .catch((error) => {
         log.warn('check failed: %O', error)
         if (status.state !== 'error') push({ state: 'error', version: availableVersion, message: message(error, 'Could not check for updates. Try again.') })
@@ -145,6 +162,20 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
       })
       .finally(() => { inFlight = null })
     return inFlight
+  }
+
+  const onError = (error: unknown) => {
+    deps.cancelUpdateRestart()
+    const raw = error instanceof Error ? error.message : String(error)
+    log.error('updater error: %O', error)
+    track('update_error', { message: raw })
+    push({ state: 'error', version: availableVersion, message: message(error, 'Update failed. Try again.') })
+    // A known update that failed to apply: quit normally and offer the manual
+    // download. A bare check failure stays silent.
+    if (availableVersion || pendingInstall) {
+      pendingInstall = false
+      void promptManual(availableVersion ?? '', !eligible)
+    }
   }
 
   const wire = () => {
@@ -178,6 +209,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
     })
     updater.on('update-downloaded', (info: { version?: string } | undefined) => {
       const version = String(info?.version ?? '')
+      availableVersion = version || availableVersion
       pendingInstall = true
       if (persistInstallState) {
         // Keep the attempt count when the same version is staged again, or a
@@ -190,18 +222,7 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
       track('update_downloaded', { version: version || null })
       push({ state: 'downloaded', version: version || null, ...(version && version === dismissedVersion ? { dismissed: true } : {}) })
     })
-    updater.on('error', (error: unknown) => {
-      const raw = error instanceof Error ? error.message : String(error)
-      log.error('updater error: %O', error)
-      track('update_error', { message: raw })
-      push({ state: 'error', version: availableVersion, message: message(error, 'Update failed. Try again.') })
-      // A known update that failed to apply: quit normally and offer the manual
-      // download. A bare check failure stays silent.
-      if (availableVersion || pendingInstall) {
-        pendingInstall = false
-        void promptManual(availableVersion ?? '', !eligible)
-      }
-    })
+    updater.on('error', onError)
   }
 
   const evaluateInstallOutcome = () => {
@@ -255,13 +276,14 @@ export function createAutoUpdater(deps: AutoUpdaterDeps): AutoUpdater {
       dismissedVersion = version
       push({ ...status, dismissed: true })
     },
-    installNow() {
+    async installNow() {
       if (!pendingInstall || !deps.canSelfUpdate()) return false
       track('update_restart_clicked', { version: availableVersion })
-      // Quit first, let Squirrel swap the bundle with nothing running, then
-      // relaunch. Deferred so the caller's reply goes out before teardown.
-      setImmediate(() => updater.quitAndInstall(false, true))
-      return true
+      // Native installers can close windows or launch before before-quit.
+      // Cate must finish its own checks and cleanup before handing off.
+      return deps.restartForUpdate(() => {
+        try { updater.quitAndInstall(false, true) } catch (error) { onError(error) }
+      })
     },
     setBetaUpdates(on) {
       updater.allowPrerelease = on

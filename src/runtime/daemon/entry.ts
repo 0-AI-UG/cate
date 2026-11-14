@@ -315,9 +315,9 @@ export async function serveWorkspace(options: ServeOptions): Promise<ServeResult
       stoppingListeners.add(listener)
       return () => { stoppingListeners.delete(listener) }
     },
-    async update(next, onProgress) {
+    async prepareUpdate(next, onProgress) {
       const dir = await ensureRuntimeInstalled({ ...next, cateHome: cateHome(home), fetch: options.fetch, onProgress })
-      setTimeout(() => void stop({ kind: 'update', version: next.build ?? next.version, installDir: dir }), 20)
+      return () => { setTimeout(() => void stop({ kind: 'update', version: next.build ?? next.version, installDir: dir }), 20) }
     },
   }))
   rpc.register(settingsCapability, settingsCapabilityImpl(createSettingsHandlers(settings)))

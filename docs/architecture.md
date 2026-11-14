@@ -1038,14 +1038,24 @@ fails to compile when a registered capability is missing.
   it). A local runtime always finds the install the desktop app made.
   Updating stops the runtime's terminals and agents.
 - Every client runs the same flow, in the client core
-  (`client/connections` `RuntimeUpdates`); each shell only draws it. When
-  the runtime runs an older release or an incompatible protocol, the client
-  updates it without asking if nothing else uses it, once per connection:
-  it sends `ifIdle`, which the
-  daemon refuses (`dirty`) while another compatible client is connected
-  or work runs. Compatible runtimes ahead of the client stay usable and are
-  never downgraded. Otherwise the workspace shows both versions and says what
-  updating ends before it acts (an incompatible runtime answers only
+  (`client/connections` `RuntimeUpdates`); each shell only draws it. An older
+  release is updated immediately when this is its only compatible client and
+  no work runs, even when the protocol is compatible. Thus upgrading a desktop
+  app also updates its unshared workspace runtimes. This rule asks neither
+  which shell the client uses nor how it connected: sharing here means another
+  compatible client is connected, not a saved pairing or network setting.
+  The client tries once per outdated connection with `ifIdle`. The daemon
+  refuses (`dirty`, with reason `shared` or `busy`) while another compatible
+  client is connected or work runs, checking both before preparing the install
+  and again before committing the restart. A compatible shared runtime remains
+  usable at its current release; it is not covered or forced to update. A sole
+  client's busy runtime asks before stopping work. Incompatibility always
+  blocks use and asks when an idle update cannot run. Compatible runtimes ahead
+  of the client stay usable and are never downgraded.
+  The core exposes the required update separately from the running update;
+  release comparison alone never decides workspace availability. Every shell
+  uses the core's availability rule. When confirmation is required, the workspace shows both
+  versions and says what updating ends before it acts (an incompatible runtime answers only
   `anyVersion` methods, so it cannot list them): the desktop's cover, the
   iOS app's workspace screen. A runtime newer than the app is never moved
   back to the app's version: the workspace asks to update the app (the
@@ -1058,7 +1068,9 @@ fails to compile when a registered capability is missing.
   `runtime.updateProgress` (also `anyVersion`: the download's bytes, then
   the install) for a progress bar. The client that asked keeps the cover
   through the restart, saying it is restarting, until the new runtime
-  answers (or does not within a minute), instead of the offline cover.
+  answers with a new handshake epoch and a compatible, sufficiently recent
+  release (or fails to reconnect within a minute), instead of the offline
+  cover. A timeout, refusal or closed connection is not a successful update.
 - A workspace whose connection is not `connected`, for any reason, is
   covered and inert until it is: the cover names the state and offers its
   fix (retry, or the update question). It covers that workspace only: the
@@ -1066,6 +1078,69 @@ fails to compile when a registered capability is missing.
 - Runtimes never update on their own; a client asks. A local runtime started
   by the desktop app runs the app's build, so it matches the app after its
   next start.
+
+The desktop's user-facing updater and runtime updates are two stages of one
+flow. The desktop shell owns installing the app; the shared client core and
+the runtime own bringing each workspace forward afterwards:
+
+```mermaid
+flowchart TD
+  Release[Published release: installers, channel manifests, runtime tarballs]
+  Release --> Check[Desktop updater checks and downloads the app]
+  Check --> Choice{Apply app update}
+  Choice -->|Restart now| Cleanup[Quit controller: confirm local blockers, flush client]
+  Choice -->|Install on next quit| Cleanup
+  Cleanup --> Swap[Platform updater installs the app]
+  Swap --> Boot[New app starts and installs its bundled runtime build]
+  Boot --> Dial[Connect to existing workspace runtime, or start one if absent]
+  Dial --> Core[Shared core evaluates protocol and runtime release]
+  Core -->|Older release or protocol repair, safe to update idle| Update[Runtime prepares install and commits restart]
+  Core -->|Sole client busy, or protocol repair needs confirmation| Ask[Workspace asks before ending running work]
+  Core -->|Incompatible newer runtime| ClientUpdate[Update the client]
+  ClientUpdate --> Check
+  Core -->|Compatible and shared, or compatible current/newer| Use[Workspace stays usable]
+  Ask -->|Confirmed| Update
+  Update --> Restart[Daemon restarts; clients reconnect to a new epoch]
+  Restart --> Use
+```
+
+- **Release artifacts.** Release CI builds the runtime tarballs first, stages
+  those same bytes inside the desktop installers, then publishes only after
+  every installer, updater channel manifest, runtime tarball and checksum is
+  uploaded. `package.json` supplies the release version; the app and runtime
+  carry the same computed runtime build id. A downloaded app therefore brings
+  the runtime artifact its client core will request. iOS updates through the
+  App Store and enters the same core policy when its new core starts.
+- **Check and stage.** `shells/desktop/main/updater/autoUpdater` owns
+  `electron-updater`: check shortly after launch, then every 15 minutes, with
+  manual checks from the menu, sidebar and Updates settings. Stable/beta opt-in
+  selects releases. Downloading or dismissing an app update changes no running
+  workspace. Once staged, further checks stop so they cannot disturb the
+  platform updater's install/relaunch state.
+- **Apply.** Both restart controls (the ready dialog and sidebar) use the same
+  desktop IPC method. The quit controller checks client-local work and flushes
+  device state, browser storage and proxies before invoking the installer;
+  an explicit restart skips the generic quit warning. Cancelling a blocker
+  confirmation leaves the update staged. Installer errors restore normal quit
+  checks. An ordinary quit follows the same cleanup, then the platform's
+  install-on-quit path; it does not reopen the app. Neither path sends
+  `runtime.stop`: detached runtimes follow their own lifetime settings.
+- **Next launch.** Main installs the new app's bundled runtime into its
+  immutable build directory before local dials proceed; this does not replace
+  a running daemon. Local sockets and SSH/WSL bridges connect to existing
+  daemons first, starting the client's build only when none answers. Paired
+  network clients only connect. Once connected, every transport and shell uses
+  the runtime update policy above. Existing daemons keep using their own
+  immutable installs until an accepted update restarts them. CLI launchers in
+  workspace data continue to resolve the active runtime across replacement.
+- **Recovery.** `update-state.json` checks the app version on the next launch
+  and offers a manual reinstall after repeated unsuccessful app installs.
+  macOS outside Applications also offers a move or manual install. A known
+  target links to that release's page, including beta versions; only an unknown
+  target uses the latest release page. Installations whose platform updater
+  reports itself inactive show that status and offer a manual download when
+  checked explicitly. Runtime install/restart failures remain
+  workspace errors and do not roll back or reinstall the desktop app.
 
 ## 8. Settings
 

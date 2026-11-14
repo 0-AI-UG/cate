@@ -23,7 +23,7 @@ export interface MobileClient {
   workspaces: WorkspaceList
   /** Bringing runtimes of another version in line with this app. */
   runtimeUpdates: RuntimeUpdates
-  /** This app's version: only runtimes of it connect. */
+  /** Runtime release associated with this core; compatibility gates connecting. */
   version: string
   pair: NonNullable<ShellTransports['pair']>
   /** This device's client settings (the shared slices). */

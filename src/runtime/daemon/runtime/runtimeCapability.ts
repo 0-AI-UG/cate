@@ -22,9 +22,9 @@ export interface RuntimeCapabilityDeps {
   stop: () => void
   /** Runs `listener` when the runtime starts stopping, before connections close. */
   onStopping: (listener: (reason: RuntimeStopReason) => void) => () => void
-  /** Installs `build` (or release `version`) when missing, telling
-   *  `onProgress` how far it is; the runtime then restarts into it. */
-  update: (target: { version: string; build?: string }, onProgress: (progress: RuntimeUpdateProgress) => void) => Promise<void>
+  /** Prepares the install, then returns the action committing the restart.
+   *  Idle-only updates recheck safety after the asynchronous preparation. */
+  prepareUpdate: (target: { version: string; build?: string }, onProgress: (progress: RuntimeUpdateProgress) => void) => Promise<() => void>
 }
 
 interface Updating {
@@ -61,18 +61,24 @@ export function runtimeCapabilityImpl(deps: RuntimeCapabilityDeps): CapabilityIm
       if (build !== undefined && (typeof build !== 'string' || !isBuildId(build) || buildVersion(build) !== version)) {
         throw new RpcError('rejected', `invalid build ${String(build)} for version ${version}`)
       }
-      if (ifIdle) {
-        // A client of another version cannot use the runtime: it uses nothing.
+      const assertIdle = () => {
+        // An incompatible client cannot use the runtime: it uses nothing.
         const others = deps.rpc.connections().some((c) => c.client !== null && c.compatible && c.id !== ctx.connection.id)
-        if (others || deps.busy()) throw new RpcError('dirty', 'the runtime has other clients or running work')
+        if (others) throw new RpcError('dirty', 'the runtime has other clients', { reason: 'shared' })
+        if (deps.busy()) throw new RpcError('dirty', 'the runtime has running work', { reason: 'busy' })
       }
+      if (ifIdle) assertIdle()
       // One update at a time; a second caller for the same target waits on it.
       const key = build ?? version
       if (updating && updating.key !== key) throw new RpcError('conflict', `already updating to ${updating.key}`)
       if (!updating) {
         const current: Updating = { key, done: Promise.resolve(), progress: null }
         updating = current
-        current.done = deps.update({ version, ...(build ? { build } : {}) }, (progress) => { current.progress = progress })
+        current.done = (async () => {
+          const restart = await deps.prepareUpdate({ version, ...(build ? { build } : {}) }, (progress) => { current.progress = progress })
+          if (ifIdle) assertIdle()
+          restart()
+        })()
         current.done.catch(() => { if (updating === current) updating = null })
       }
       // The same version restarts too: a stale build of it is replaced by the

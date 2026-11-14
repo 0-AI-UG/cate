@@ -1,6 +1,6 @@
 // Bring older runtimes to this client's release, including compatible ones.
-// Try once per connection while idle; other clients or running work require
-// confirmation because restarting ends terminals and agents for everyone.
+// Try once per connection while idle. Compatible shared runtimes stay usable;
+// a sole busy client asks before stopping work. Incompatibility always blocks.
 
 import { compareSemver, type RuntimeUpdateProgress } from '@runtime/daemon/contract'
 import type { ConnectionState, WorkspaceConnection } from './connection'
@@ -20,14 +20,24 @@ export interface RuntimeMismatch {
   appVersion: string
 }
 
-/** An incompatible runtime or a compatible runtime behind this client. */
+/** A protocol mismatch that prevents using the workspace. */
 export function runtimeMismatch(state: ConnectionState, appVersion: string): RuntimeMismatch | null {
-  if (state.kind !== 'incompatible' && state.kind !== 'connected') return null
-  if (!state.runtimeVersion) return null
-  // Compatible newer runtimes stay usable; an older client never downgrades them.
-  if (state.kind === 'connected' && compareSemver(state.runtimeVersion, appVersion) >= 0) return null
+  if (state.kind !== 'incompatible') return null
   const newer = compareSemver(state.runtimeVersion, appVersion) > 0
   return { update: newer ? 'app' : 'runtime', runtimeVersion: state.runtimeVersion, appVersion }
+}
+
+/** Older compatible releases are candidates for an idle update, not blockers. */
+function updateCandidate(state: ConnectionState, appVersion: string): RuntimeMismatch | null {
+  if (state.kind === 'connected' && state.runtimeVersion && compareSemver(state.runtimeVersion, appVersion) < 0) {
+    return { update: 'runtime', runtimeVersion: state.runtimeVersion, appVersion }
+  }
+  return runtimeMismatch(state, appVersion)
+}
+
+/** One availability rule for every shell, including a confirmed restart. */
+export function connectionUsable(state: ConnectionState, required: RuntimeMismatch | null, updating: boolean): boolean {
+  return state.kind === 'connected' && required === null && !updating
 }
 
 /** An update this client runs: installing (with the runtime's progress, null
@@ -37,6 +47,9 @@ export type RuntimeUpdateRun =
   | { phase: 'restarting' }
 
 export interface RuntimeUpdates {
+  /** Required protocol repair, or a sole client's release update awaiting
+   *  confirmation. Compatible shared releases never require an update. */
+  required(connection: WorkspaceConnection): RuntimeMismatch | null
   /** The update this client runs on `connection`, if any. */
   run(connection: WorkspaceConnection): RuntimeUpdateRun | null
   subscribe(listener: () => void): () => void
@@ -66,7 +79,13 @@ function waitFor(connection: WorkspaceConnection, done: (kind: ConnectionState['
 export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
   const target = { version: deps.version, ...(deps.build ? { build: deps.build } : {}) }
   const runs = new Map<WorkspaceConnection, RuntimeUpdateRun>()
+  const required = new Map<WorkspaceConnection, RuntimeMismatch>()
   const listeners = new Set<() => void>()
+  const setRequired = (connection: WorkspaceConnection, mismatch: RuntimeMismatch | null): void => {
+    if (mismatch) required.set(connection, mismatch)
+    else required.delete(connection)
+    for (const listener of [...listeners]) listener()
+  }
   const setRun = (connection: WorkspaceConnection, run: RuntimeUpdateRun | null): void => {
     if (run) runs.set(connection, run)
     else runs.delete(connection)
@@ -76,6 +95,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
   const runUpdate = async (connection: WorkspaceConnection, ifIdle: boolean): Promise<string | null> => {
     if (runs.has(connection)) return 'An update is already running.'
     const beforeRestart = connection.state
+    const beforeEpoch = connection.rpc.remote?.epoch
     const api = connection.runtime.runtime
     setRun(connection, { phase: 'installing', progress: null })
     const poll = setInterval(() => {
@@ -100,10 +120,15 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
         ? `The runtime did not restart. Stop it (process ${pid}) and open the workspace again.`
         : 'The runtime did not restart. Stop it and open the workspace again.'
     }
-    const settled = (kind: ConnectionState['kind']) => kind === 'connected' || kind === 'incompatible' || kind === 'refused' || kind === 'stopped' || kind === 'closed'
-    await waitFor(connection, settled, RECONNECT_TIMEOUT_MS)
+    const settled = (kind: ConnectionState['kind']) => (kind === 'connected' || kind === 'incompatible')
+      ? connection.rpc.remote?.epoch !== beforeEpoch
+      : kind === 'refused' || kind === 'stopped' || kind === 'closed'
+    const reconnected = await waitFor(connection, settled, RECONNECT_TIMEOUT_MS)
     setRun(connection, null)
-    if (runtimeMismatch(connection.state, deps.version)) return 'The runtime restarted but still does not run this version.'
+    if (!reconnected || connection.state.kind !== 'connected') return 'The workspace did not reconnect after updating. Try connecting again.'
+    if (connection.state.runtimeVersion && compareSemver(connection.state.runtimeVersion, deps.version) < 0) return 'The runtime restarted but still does not run this version.'
+    if (connection.state.runtimeVersion === deps.version && deps.build && connection.rpc.remote?.build !== deps.build) return 'The runtime restarted but still does not run this build.'
+    setRequired(connection, null)
     return null
   }
 
@@ -111,14 +136,27 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
   const tried = new Set<WorkspaceConnection>()
   const watched = new Map<WorkspaceConnection, () => void>()
   const check = (connection: WorkspaceConnection): void => {
-    const mismatch = runtimeMismatch(connection.state, deps.version)
+    const mismatch = updateCandidate(connection.state, deps.version)
     if (!mismatch) {
+      setRequired(connection, null)
       tried.delete(connection)
       return
     }
+    if (connection.state.kind === 'incompatible') setRequired(connection, mismatch)
     if (mismatch.update !== 'runtime' || tried.has(connection) || runs.has(connection)) return
     tried.add(connection)
-    void runUpdate(connection, true)
+    void runUpdate(connection, true).then(async (failed) => {
+      if (!failed || connection.state.kind !== 'connected') return
+      // The runtime's connected clients determine sharing, not the shell,
+      // transport, saved pairings or an error's wording. This also keeps a
+      // compatible shared workspace usable after an install/restart failure.
+      const alone = await connection.runtime.runtime.info().then(
+        (info) => info.clients.every((client) => client.clientId === connection.clientId),
+        () => false,
+      )
+      const candidate = updateCandidate(connection.state, deps.version)
+      if (alone && candidate) setRequired(connection, candidate)
+    })
   }
   const sync = (): void => {
     const current = new Set(deps.connections.getSnapshot())
@@ -127,6 +165,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
       off()
       watched.delete(connection)
       tried.delete(connection)
+      required.delete(connection)
     }
     for (const connection of current) {
       if (watched.has(connection)) continue
@@ -138,6 +177,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
   sync()
 
   return {
+    required: (connection) => required.get(connection) ?? null,
     run: (connection) => runs.get(connection) ?? null,
     subscribe(listener) {
       listeners.add(listener)

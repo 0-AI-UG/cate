@@ -1,6 +1,9 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import path from 'node:path'
-import { machineRuntimeTarball } from './runtimeInstall'
+import { ensureRuntimeInstalled } from '@runtime/daemon/node'
+import { installBundledRuntime, machineRuntimeTarball } from './runtimeInstall'
+
+vi.mock('@runtime/daemon/node', () => ({ ensureRuntimeInstalled: vi.fn(async () => '/installed-runtime') }))
 
 const resources = path.join('/', 'res')
 const appPath = path.join('/', 'app')
@@ -22,4 +25,20 @@ it('needs the tarball built for the target in a checkout', () => {
   const checkout = { isPackaged: false, resourcesPath: resources, appPath, version: '2.0.5', exists: exists(file) }
   expect(machineRuntimeTarball(checkout, 'linux-x64')).toBe(file)
   expect(() => machineRuntimeTarball(checkout, 'linux-arm64')).toThrow('npm run runtime:tarball -- --target linux-arm64 --docker')
+})
+
+it.each([
+  ['darwin', 'arm64', 'runtime-host-arm64.tgz'],
+  ['darwin', 'x64', 'runtime-host-x64.tgz'],
+  ['linux', 'x64', 'runtime-host.tgz'],
+  ['win32', 'x64', 'runtime-host.tgz'],
+] as const)('installs the new packaged app runtime for %s-%s before local workspaces connect', async (platform, arch, file) => {
+  const tarball = path.join(resources, file)
+  await expect(installBundledRuntime({
+    isPackaged: true, resourcesPath: resources, appPath, home: '/test-home',
+    platform, arch, version: '2.1.0', build: '2.1.0+aaaaaaaaaaaa', exists: exists(tarball),
+  })).resolves.toBe('/installed-runtime')
+  expect(ensureRuntimeInstalled).toHaveBeenLastCalledWith(expect.objectContaining({
+    version: '2.1.0', build: '2.1.0+aaaaaaaaaaaa', platform, arch, tarball,
+  }))
 })

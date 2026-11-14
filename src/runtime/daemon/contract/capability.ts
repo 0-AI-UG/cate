@@ -60,7 +60,9 @@ export const runtimeCapability = defineCapability('runtime', {
      *  `version` downloaded from GitHub Releases when that build is not on
      *  this machine; a release of another build is refused. Also for its own
      *  version (another build of it). With `ifIdle`, fails `dirty` while
-     *  other clients are connected or work runs. Answered at any version, so
+     *  other compatible clients are connected (`data.reason: shared`) or work
+     *  runs (`data.reason: busy`), checked before and after preparing the
+     *  install. Answered at any version, so
      *  a runtime of another one can still be brought in line. */
     update: method<{ version: string; build?: string; ifIdle?: boolean }, void>({ mutates: true, anyVersion: true, timeoutMs: 0 }),
     /** Where the running `update` is (null: none), for a progress bar. */
