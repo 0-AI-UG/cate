@@ -73,7 +73,7 @@ struct AgentChatView: View {
             let state = agent.needsYou || conversation?.turn == nil ? AgentState.label(agent) : "Working"
             return "\(agent.where) · \(state)"
         } ?? workspace?.name ?? ""
-        let connected = workspace?.connection.kind == .connected
+        let connected = workspace?.connection.usable == true
         content(workspace, agent, panel)
             .navigationTitle(title)
             .navigationSubtitle(subtitle)
@@ -156,7 +156,7 @@ struct AgentChatView: View {
 
     /// The conversation is on its way and there is nothing to show yet.
     private func loading(_ workspace: Workspace?) -> Bool {
-        guard panelId != nil, workspace?.connection.kind == .connected else { return false }
+        guard panelId != nil, workspace?.connection.usable == true else { return false }
         guard let conversation else { return starting == nil }
         return !conversation.loaded && conversation.items.isEmpty
     }
@@ -164,7 +164,7 @@ struct AgentChatView: View {
     /// What the chat's last slot says: what the agent does while its turn
     /// runs, else why nothing more happens here.
     private func tail(_ workspace: Workspace?, _ agent: Agent?, _ panel: Panel?) -> TailContent? {
-        let connected = workspace?.connection.kind == .connected
+        let connected = workspace?.connection.usable == true
         // A new chat's agent starting.
         guard panelId != nil else { return sending ? .waiting : nil }
         if connected, let turn = conversation?.turn, alive(agent) {
@@ -190,7 +190,7 @@ struct AgentChatView: View {
     /// Why nothing more happens here, when the agent is not running.
     private func note(_ workspace: Workspace?, _ agent: Agent?, _ panel: Panel?) -> String? {
         guard panelId != nil, let workspace else { return nil }
-        guard workspace.connection.kind == .connected else { return workspace.connection.text }
+        guard workspace.connection.usable else { return workspace.connection.text }
         if workspace.panels != nil, panel == nil { return "The agent's panel was closed." }
         if agent == nil || agent?.present == false { return "The agent is not running. Open its panel to start it again." }
         return nil
@@ -199,7 +199,7 @@ struct AgentChatView: View {
     @ViewBuilder
     private func composer(_ workspace: Workspace?, _ agent: Agent?) -> some View {
         @Bindable var input = input
-        let connected = workspace?.connection.kind == .connected
+        let connected = workspace?.connection.usable == true
         if panelId == nil {
             AgentComposer(
                 text: $input.text,

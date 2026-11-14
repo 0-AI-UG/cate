@@ -140,6 +140,8 @@ export interface MobileConnection {
   /** Its runtime is being updated to this app's version (installing, then
    *  restarting until it answers again). */
   updating: boolean
+  /** Shared core availability: connected, with no required update or restart. */
+  usable: boolean
 }
 
 export interface MobilePanel {

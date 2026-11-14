@@ -5,11 +5,12 @@ import type { PerfSampler } from './perf'
 import { runtimeCapabilityImpl } from './runtimeCapability'
 
 function setup(opts: { clients?: number[]; otherVersions?: number[]; busy?: boolean } = {}) {
+  const restart = vi.fn()
   let finish!: () => void
   let report!: (progress: RuntimeUpdateProgress) => void
   const update = vi.fn((_target: unknown, onProgress: (progress: RuntimeUpdateProgress) => void) => {
     report = onProgress
-    return new Promise<void>((resolve) => { finish = resolve })
+    return new Promise<() => void>((resolve) => { finish = () => resolve(restart) })
   })
   const rpc = {
     connections: () => [
@@ -23,13 +24,13 @@ function setup(opts: { clients?: number[]; otherVersions?: number[]; busy?: bool
     busy: () => opts.busy ?? false,
     stop: () => {},
     onStopping: () => () => {},
-    update,
+    prepareUpdate: update,
   })
   const ctx = { connection: { id: 1 } } as unknown as CallContext
   const call = (params: { version: string; build?: string; ifIdle?: boolean }) =>
     (impl.update as (p: typeof params, c: CallContext) => Promise<void>)(params, ctx)
   const progress = () => (impl.updateProgress as () => RuntimeUpdateProgress | null)()
-  return { impl, call, update, progress, report: (p: RuntimeUpdateProgress) => report(p), finish: () => finish() }
+  return { impl, call, update, restart, progress, report: (p: RuntimeUpdateProgress) => report(p), finish: () => finish() }
 }
 
 it('says where paired devices reach it now', () => {
@@ -47,8 +48,8 @@ it('validates the version and build', async () => {
 })
 
 it('refuses an idle-only update while another client is connected or work runs', async () => {
-  await expect(setup({ clients: [1, 2] }).call({ version: '2.0.5', ifIdle: true })).rejects.toMatchObject({ code: 'dirty' })
-  await expect(setup({ busy: true }).call({ version: '2.0.5', ifIdle: true })).rejects.toMatchObject({ code: 'dirty' })
+  await expect(setup({ clients: [1, 2] }).call({ version: '2.0.5', ifIdle: true })).rejects.toMatchObject({ code: 'dirty', data: { reason: 'shared' } })
+  await expect(setup({ busy: true }).call({ version: '2.0.5', ifIdle: true })).rejects.toMatchObject({ code: 'dirty', data: { reason: 'busy' } })
   // The caller itself does not count, nor a client of another version (it
   // cannot use the runtime); without ifIdle other clients do not matter.
   const alone = setup({ otherVersions: [3] })
@@ -56,6 +57,22 @@ it('refuses an idle-only update while another client is connected or work runs',
   alone.finish()
   await done
   expect(alone.update).toHaveBeenCalledWith({ version: '2.0.5' }, expect.any(Function))
+})
+
+it.each(['shared', 'busy'])('does not restart if the workspace becomes %s during installation', async (reason) => {
+  const options = { clients: [1], busy: false }
+  const runtime = setup(options)
+  const done = runtime.call({ version: '2.0.5', ifIdle: true })
+  if (reason === 'shared') options.clients.push(2)
+  else options.busy = true
+  runtime.finish()
+  await expect(done).rejects.toMatchObject({ code: 'dirty', data: { reason } })
+  expect(runtime.restart).not.toHaveBeenCalled()
+  // The prepared install can be retried with an explicit choice.
+  const confirmed = runtime.call({ version: '2.0.5' })
+  runtime.finish()
+  await confirmed
+  expect(runtime.restart).toHaveBeenCalledTimes(1)
 })
 
 it('allows a confirmed shared restart even with other clients and running work', async () => {

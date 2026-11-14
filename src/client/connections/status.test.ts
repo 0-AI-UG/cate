@@ -59,8 +59,10 @@ describe('connection status', () => {
   })
 })
 
-it('offers updates for compatible older runtimes but leaves newer ones usable', () => {
+it('only asks a compatible client to update when the core requires it', () => {
   const context = { startsRuntime: true, version: '2.0.4' }
-  expect(connectionStatus({ kind: 'connected', runtimeVersion: '2.0.3' }, context)).toMatchObject({ remedies: ['updateRuntime'] })
+  const older = { kind: 'connected', runtimeVersion: '2.0.3' } as const
+  expect(connectionStatus(older, context)).toBeNull()
+  expect(connectionStatus(older, { ...context, requiredUpdate: { update: 'runtime', runtimeVersion: '2.0.3', appVersion: '2.0.4' } })).toMatchObject({ remedies: ['updateRuntime'] })
   expect(connectionStatus({ kind: 'connected', runtimeVersion: '2.0.5' }, context)).toBeNull()
 })

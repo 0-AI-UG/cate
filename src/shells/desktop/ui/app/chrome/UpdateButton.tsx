@@ -111,10 +111,10 @@ function UpdateButtonWith({ port, className }: { port: DesktopPort; className: s
         aria-disabled={busy || undefined}
         aria-busy={busy || undefined}
         onClick={() => void check()}
-        className={`relative shrink-0 flex items-center justify-center w-8 h-8 rounded-lg hover:bg-hover transition-colors ${ready ? 'text-blue-400' : failed ? 'text-red-400' : 'text-muted hover:text-secondary'} ${busy ? 'cursor-wait' : ''} ${className}`}
+        className={`relative shrink-0 flex items-center justify-center w-8 h-8 rounded-lg hover:bg-hover transition-colors ${ready ? 'text-focus-blue' : failed ? 'text-danger' : 'text-muted hover:text-secondary'} ${busy ? 'cursor-wait' : ''} ${className}`}
       >
         {checking ? <Spinner size={16} className="pointer-events-none" /> : <Icon size={16} className="pointer-events-none" />}
-        {downloading && <span className="absolute bottom-0 left-0 h-0.5 rounded-full bg-blue-400" style={{ width: `${status.percent ?? 0}%` }} />}
+        {downloading && <span className="absolute bottom-0 left-0 h-0.5 rounded-full bg-focus-blue" style={{ width: `${status.percent ?? 0}%` }} />}
       </button>
     </Tooltip>
     {feedback && createPortal(

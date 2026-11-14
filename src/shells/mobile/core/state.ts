@@ -3,7 +3,7 @@
 // change, coalesced to at most one push per frame (`PUSH_MS`); the app takes
 // only the parts that changed.
 
-import { clientIdentity, connectionStatus, type ConnectionRemedy, type ConnectionState } from '@client/connections'
+import { clientIdentity, connectionStatus, connectionUsable, type ConnectionRemedy, type ConnectionState, type RuntimeMismatch } from '@client/connections'
 import { documentStoreFor, otherClientsOf, subscribeDocumentStores } from '@client/document'
 import { trustStore, type PairedWorkspace } from '@client/workspaces'
 import { panelCheckoutHooks } from '@client/host'
@@ -26,11 +26,11 @@ const MOBILE_ACTIONS: Partial<Record<ConnectionRemedy, MobileConnectionAction>> 
   close: 'forget',
 }
 
-export function connectionOf(state: ConnectionState, version: string, startsRuntime = false, updating = false): MobileConnection {
-  const status = connectionStatus(state, { startsRuntime, version })
-  const text = status?.message ?? (state.kind === 'connected' ? 'Connected' : 'Not connected')
-  const actions = [...new Set((status?.remedies ?? []).map((r) => MOBILE_ACTIONS[r]).filter((a): a is MobileConnectionAction => !!a))]
-  return { kind: state.kind, title: status?.title ?? '', text, actions, updating }
+export function connectionOf(state: ConnectionState, version: string, startsRuntime = false, updating = false, requiredUpdate: RuntimeMismatch | null = null): MobileConnection {
+  const status = connectionStatus(state, { startsRuntime, version, requiredUpdate })
+  const text = updating ? 'The workspace will reconnect when the update finishes.' : status?.message ?? (state.kind === 'connected' ? 'Connected' : 'Not connected')
+  const actions = [...new Set((updating ? [] : status?.remedies ?? []).map((r) => MOBILE_ACTIONS[r]).filter((a): a is MobileConnectionAction => !!a))]
+  return { kind: state.kind, title: updating ? 'Updating workspace' : status?.title ?? '', text, actions, updating, usable: connectionUsable(state, requiredUpdate, updating) }
 }
 
 function canvasOfDoc(doc: WorkspaceDocument, canvasId: string | undefined): MobileCanvas | null {
@@ -93,7 +93,7 @@ export function snapshotOf(client: MobileClient, agents: MobileAgents, relations
         id: entry.id,
         name: entry.name,
         runtimeId: entry.runtimeId,
-        connection: connectionOf(connection?.getState() ?? { kind: 'closed' }, client.version, connection?.startsRuntime, !!connection && client.runtimeUpdates.run(connection) !== null),
+        connection: connectionOf(connection?.getState() ?? { kind: 'closed' }, client.version, connection?.startsRuntime, !!connection && client.runtimeUpdates.run(connection) !== null, connection ? client.runtimeUpdates.required(connection) : null),
         panels: connection ? panelsOf(entry.id) : null,
         worktrees: store?.isSynced() ? worktreesOf(store.getSnapshot()) : [],
         relations: relationsEnabled && store?.isSynced() ? relationsOf(store.getSnapshot()) : [],

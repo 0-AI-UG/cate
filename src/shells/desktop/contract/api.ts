@@ -239,7 +239,7 @@ export interface DesktopApi {
     status(): Promise<UpdateStatus>
     check(): Promise<void>
     dismiss(version: string): Promise<void>
-    /** Quit and install a downloaded update. False when none is staged. */
+    /** Clean up and install a downloaded update. False when unavailable or cancelled. */
     install(): Promise<boolean>
     onStatus(listener: (status: UpdateStatus) => void): () => void
   }

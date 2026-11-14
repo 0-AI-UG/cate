@@ -289,6 +289,11 @@ app.whenReady().then(() => {
     openExternal: (url) => { void shell.openExternal(url) },
     canSelfUpdate: () => canSelfUpdate(app),
     betaUpdatesEnabled: () => settings().betaUpdatesEnabled,
+    restartForUpdate: (install) => quit.restartForUpdate(install),
+    cancelUpdateRestart: () => {
+      quit.cancelUpdateRestart()
+      void partitions.refresh().catch((error) => log.warn('restoring browser networking after update failure: %O', error))
+    },
     devUpdate: process.env.CATE_DEV_UPDATE === '1',
   })
 

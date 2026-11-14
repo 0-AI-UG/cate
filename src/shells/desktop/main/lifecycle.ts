@@ -32,22 +32,26 @@ export interface QuitDeps {
 export interface QuitController {
   committed(): boolean
   install(): void
+  /** An explicit restart skips the generic quit warning, but still confirms
+   *  client-local blockers and flushes the client before invoking an installer. */
+  restartForUpdate(install: () => void): Promise<boolean>
+  /** An installer error leaves the client running with normal quit checks. */
+  cancelUpdateRestart(): void
 }
 
 export function createQuitController(deps: QuitDeps): QuitController {
-  let confirmed = false
   let committed = false
   let finishing = false
+  let updateRestart = false
   const show = deps.showMessageBox ?? ((parent, options) => (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)))
 
-  const install = () => {
-    app.on('before-quit', (event) => {
-      if (committed) return
-      event.preventDefault()
-      if (finishing) return
-      const prompt = confirmed ? null : decideQuitPrompt({ warnBeforeQuit: deps.warnBeforeQuit(), blockers: deps.blockers() })
+  const finish = async (action: () => void, warn: boolean): Promise<boolean> => {
+    if (finishing || committed) return false
+    finishing = true
+    try {
+      const prompt = decideQuitPrompt({ warnBeforeQuit: warn && deps.warnBeforeQuit(), blockers: deps.blockers() })
       if (prompt) {
-        void show(deps.parentWindow(), {
+        const { response } = await show(deps.parentWindow(), {
           type: 'warning',
           message: prompt.message,
           detail: prompt.detail,
@@ -55,22 +59,38 @@ export function createQuitController(deps: QuitDeps): QuitController {
           defaultId: 1,
           cancelId: 1,
           noLink: true,
-        }).then(({ response }) => {
-          if (response !== 0) return
-          confirmed = true
-          app.quit()
         })
-        return
+        if (response !== 0) return false
       }
-      finishing = true
-      void deps.beforeExit()
-        .catch((error) => log.warn('quit cleanup failed: %O', error))
-        .finally(() => {
-          committed = true
-          app.quit()
-        })
+      await deps.beforeExit().catch((error) => log.warn('quit cleanup failed: %O', error))
+      committed = true
+      action()
+      return true
+    } finally {
+      finishing = false
+    }
+  }
+
+  const install = () => {
+    app.on('before-quit', (event) => {
+      if (committed) return
+      event.preventDefault()
+      void finish(() => app.quit(), true).catch((error) => log.warn('quit failed: %O', error))
     })
   }
 
-  return { committed: () => committed, install }
+  return {
+    committed: () => committed,
+    install,
+    // Reply to the renderer before the installer can close its window.
+    restartForUpdate: (apply) => finish(() => {
+      updateRestart = true
+      setImmediate(() => { if (updateRestart) apply() })
+    }, false),
+    cancelUpdateRestart() {
+      if (!updateRestart) return
+      updateRestart = false
+      committed = false
+    },
+  }
 }

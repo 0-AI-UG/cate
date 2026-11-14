@@ -10,6 +10,7 @@ import { tryClientApp } from '../app'
 import { runWindowAction } from '../actions/run'
 import { closeWorkspace, openLocalFolder, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
+import { useRequiredRuntimeUpdate } from '../workspace/RuntimeMismatch'
 
 /** The dot color of a connection state. It pulses only while connecting:
  *  an offline connection that keeps retrying is a steady amber, since it
@@ -24,7 +25,8 @@ export function connectionDotClass(state: ConnectionState): string {
 /** The connection's state in words; null when connected or there is no
  *  connection. */
 export function statusOf(connection: WorkspaceConnection | undefined, state: ConnectionState): ConnectionStatus | null {
-  const status = connection ? connectionStatus(state, { startsRuntime: connection.startsRuntime, version: tryClientApp()?.version ?? '' }) : null
+  const app = tryClientApp()
+  const status = connection ? connectionStatus(state, { startsRuntime: connection.startsRuntime, version: app?.version ?? '', requiredUpdate: app?.runtimeUpdates.required(connection) }) : null
   if (status && state.kind === 'stopped') return { ...status, title: 'Workspace stopped' }
   return status
 }
@@ -76,6 +78,7 @@ export function WorkspaceToggle({ connection, canExpand, expanded, onToggle }: {
   onToggle: () => void
 }): JSX.Element {
   const state = useConnectionState(connection)
+  useRequiredRuntimeUpdate(connection)
   const status = statusOf(connection, state)
   const label = status ? `${status.title}: ${status.message}` : null
 
@@ -102,6 +105,7 @@ export function WorkspaceToggle({ connection, canExpand, expanded, onToggle }: {
 /** The connection's trouble as one line (the Availability settings page). Connecting says nothing: it is usually over in a beat. */
 export function ConnectionNotice({ connection }: { connection: WorkspaceConnection | undefined }): JSX.Element | null {
   const state = useConnectionState(connection)
+  useRequiredRuntimeUpdate(connection)
   const status = statusOf(connection, state)
   if (!status || state.kind === 'connecting') return null
   return (
