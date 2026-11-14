@@ -144,3 +144,12 @@ it('shows a catalog error without claiming the catalog is empty', async () => {
   expect(slot.textContent).toContain('Runtime unavailable')
   expect(slot.textContent).not.toContain('No catalog yet')
 })
+
+it('clears a catalog failure when refreshing succeeds', async () => {
+  fake.skills.index.mockRejectedValueOnce(new Error('Runtime unavailable'))
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Runtime unavailable')
+  await act(async () => slot.querySelector<HTMLButtonElement>('[aria-label="Refresh catalog"]')!.click())
+  expect(slot.textContent).toContain('Example skill')
+  expect(slot.textContent).not.toContain('Runtime unavailable')
+})

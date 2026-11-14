@@ -86,6 +86,7 @@ export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: 
       return
     }
     setLoading(true)
+    setError(null)
     try {
       setIndex(await skills.index({ refresh }))
     } catch (err) {
