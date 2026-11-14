@@ -31,6 +31,24 @@ function setup() {
 const dialer = (id: number, dial: LoopbackDialer['dial'], destroyed = false): LoopbackDialer => ({ id, isDestroyed: () => destroyed, dial })
 
 describe('web partitions', () => {
+  it('restores closed proxies and their live dialers when an update installer fails', async () => {
+    const { partitions, setProxy, close, dialLoopback, closeAllConnections } = setup()
+    const pipe = {} as ByteDuplex
+    const live = vi.fn(async () => pipe)
+    await partitions.partitionFor(RUNTIME, dialer(1, live), false)
+    await partitions.close()
+    expect(close).toHaveBeenCalledOnce()
+    expect(partitions.isPrepared(`persist:ws-${RUNTIME}`)).toBe(false)
+    expect(partitions.credentialsFor('127.0.0.1', 41234)).toBeNull()
+    await partitions.refresh()
+    expect(setProxy).toHaveBeenCalledTimes(2)
+    expect(closeAllConnections).toHaveBeenCalledOnce()
+    expect(partitions.isPrepared(`persist:ws-${RUNTIME}`)).toBe(true)
+    expect(partitions.credentialsFor('127.0.0.1', 41234)).toBe(partitions.credentials)
+    expect(await dialLoopback(3000)).toBe(pipe)
+    expect(live).toHaveBeenCalledWith(RUNTIME, 3000)
+  })
+
   it('lets the proxy reach this machine\'s network only while every connection to the runtime does', async () => {
     const { partitions, reachesClientNetwork } = setup()
     await partitions.partitionFor(RUNTIME, dialer(1, vi.fn()), true)

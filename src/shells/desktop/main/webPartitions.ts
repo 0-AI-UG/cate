@@ -156,6 +156,10 @@ export function createWebPartitions(deps: WebPartitionsDeps): WebPartitions {
       const all = [...proxies.values()]
       proxies.clear()
       await Promise.allSettled(all.map(async (p) => (await p).close()))
+      // A failed update installer can leave this client running. Refresh must
+      // then recreate its proxies instead of reusing their closed ports.
+      prepared.clear()
+      ports.clear()
     },
   }
 }
