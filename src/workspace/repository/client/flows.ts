@@ -54,83 +54,91 @@ export function pullRequestNotOpenMessage(pr: Pick<PullRequestItem, 'repository'
 }
 
 const isMissing = (err: unknown) =>
-  isRpcError(err, 'gone') || /\bENOENT\b|no such file or directory/i.test(String(err))
+  isRpcError(err, 'gone') || /\b(?:ENOENT|ENOTDIR)\b|no such file or directory/i.test(String(err))
 
-/** Discards a worktree after asking: deletes its checkout and branch and
- *  closes its panels. Failures go to `setError`; `setBusy` brackets the
- *  removal. */
-export async function discardWorktree(
-  wt: JoinedWorktree,
-  deps: {
-    host: Pick<RepositoryHost, 'root' | 'worktreePanelSummary' | 'prepareWorktreeClose'>
-    runtime: Pick<RuntimeProxy, 'vcs' | 'file'>
-    setError(message: string | null): void
-    setBusy?(worktreeId: string | null): void
-  },
-): Promise<void> {
-  const { host, runtime, setError, setBusy } = deps
-  if (!host.root || wt.isPrimary) return
-  const label = wt.label || wt.branch || wt.path
-  // Fresh status so the warnings and the force flag are right whichever
-  // surface asked.
-  let status: Awaited<ReturnType<typeof runtime.vcs.worktreeStatus>> = null
-  try {
-    status = await runtime.vcs.worktreeStatus({ path: wt.path })
-  } catch (err: unknown) {
-    setError(`Couldn’t verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
-    return
-  }
-  let missing = false
-  if (!status) {
-    try {
-      await runtime.file.stat({ path: wt.path })
-    } catch (err: unknown) {
-      missing = isMissing(err)
+/** Deletes one checkout and branch, with the same safeguards as bulk deletion. */
+export async function discardWorktree(wt: JoinedWorktree, deps: DiscardWorktreeDeps): Promise<void> {
+  await discardWorktrees([wt], deps)
+}
+
+interface DiscardWorktreeDeps {
+  host: Pick<RepositoryHost, 'root' | 'worktreePanelSummary' | 'prepareWorktreeClose'>
+  runtime: Pick<RuntimeProxy, 'vcs' | 'file'>
+  setError(message: string | null): void
+  setBusy?(worktreeId: string | null): void
+}
+
+/** Verifies every selected checkout before one confirmation. Returns removed
+ *  ids so a client can keep failed rows selected for retry. */
+export async function discardWorktrees(
+  worktrees: readonly JoinedWorktree[],
+  { host, runtime, setError, setBusy }: DiscardWorktreeDeps,
+): Promise<string[]> {
+  const targets = [...new Map(worktrees.filter((wt) => !wt.isPrimary).map((wt) => [wt.id, wt])).values()]
+  if (!host.root || targets.length === 0) return []
+  setError(null)
+  const checked = []
+  for (const wt of targets) {
+    const label = wt.label || wt.branch || wt.path
+    const status = await runtime.vcs.worktreeStatus({ path: wt.path }).catch(() => null)
+    let missing = false
+    if (!status) {
+      try {
+        await runtime.file.stat({ path: wt.path })
+      } catch (err: unknown) {
+        missing = isMissing(err)
+      }
     }
-    if (!missing) {
-      setError('Couldn’t verify this worktree before discarding it. No files were removed.')
-      return
-    }
-  }
-  const dirty = !!status?.dirty
-  const branchAhead = (status?.ahead ?? 0) > 0
-  const panels = host.worktreePanelSummary(wt.id)
-  const ok = await clientUi().confirm(
-    `Discard “${label}”?\n\n` +
-      `This deletes the parallel branch and everything in it.\n` +
+    const unknown = !status && !missing
+    const dirty = !!status?.dirty
+    const branchAhead = (status?.ahead ?? 0) > 0
+    const panels = host.worktreePanelSummary(wt.id)
+    const warning =
       (panels.count ? `\nIts ${panels.count} open ${panels.count === 1 ? 'panel' : 'panels'} will be closed.` : '') +
       (dirty ? '\nWARNING: uncommitted changes here will be lost.' : '') +
       (panels.hasDirtyEditor ? '\nWARNING: an editor has unsaved changes.' : '') +
       (branchAhead ? `\nWARNING: ${status?.ahead} unpublished commit(s) will be lost.` : '') +
-      (missing ? '\nThe worktree folder is missing. Its Git record and branch will be removed.' : ''),
-  )
-  if (!ok) return
-  if (!(await host.prepareWorktreeClose(wt.id))) return
-  // Saving an editor while asking may have dirtied the checkout since the
-  // first check; re-read before choosing git's force flag.
-  let removalDirty = dirty
-  if (!missing) {
+      (missing ? '\nThe worktree folder is missing. Its saved entry will be cleaned up.' : '') +
+      (unknown ? '\nWARNING: Git status could not be read. Removing this worktree may lose uncommitted changes and unpublished commits. If Git no longer recognises it, Cate will remove its saved entry and keep any remaining files.' : '')
+    checked.push({ wt, label, dirty, missing, unknown, panels, warning })
+  }
+  const message = checked.length === 1
+    ? `Discard “${checked[0].label}”?\n\nThis deletes the parallel branch and everything in it.\n` + checked[0].warning
+    : `Delete ${checked.length} worktrees?\n\nThis deletes their checkouts and branches and closes their panels.\n\n` + checked.map((entry) => `“${entry.label}”${entry.warning}`).join('\n\n')
+  if (!(await clientUi().confirm(message))) return []
+  // Resolve all unsaved-panel choices before removing any checkout.
+  for (const { wt } of checked) {
+    if (!(await host.prepareWorktreeClose(wt.id))) return []
+  }
+  const removed: string[] = []
+  const errors: string[] = []
+  for (const { wt, label, dirty, missing, unknown, panels } of checked) {
+    setBusy?.(wt.id)
     try {
-      removalDirty = !!(await runtime.vcs.worktreeStatus({ path: wt.path }))?.dirty
+      // Saving during the close guards may have changed the checkout.
+      const fresh = missing ? null : await runtime.vcs.worktreeStatus({ path: wt.path }).catch(() => null)
+      if (!missing && !unknown && !fresh) {
+        // The checkout may have disappeared while the confirmation was open.
+        let nowMissing = false
+        try { await runtime.file.stat({ path: wt.path }) } catch (err) { nowMissing = isMissing(err) }
+        if (!nowMissing) throw new Error(`Git status is unavailable for ${wt.path}. Try again to review removal with unknown status.`)
+      }
+      const result = await runtime.vcs.worktreeRemove({
+        worktreeId: wt.id,
+        force: unknown || dirty || !!fresh?.dirty || panels.hasDirtyEditor,
+      })
+      removed.push(wt.id)
+      if (result.branchDeleteError && wt.branch) {
+        errors.push(`Removed, but branch ${wt.branch} could not be deleted: ${result.branchDeleteError}`)
+      }
     } catch (err: unknown) {
-      setError(`Couldn’t re-verify this worktree before discarding it: ${errorMessage(err, 'Status is unavailable.')}`)
-      return
+      errors.push(`Discard failed for “${label}”: ${errorMessage(err, 'The worktree was not removed.')}`)
+    } finally {
+      setBusy?.(null)
     }
   }
-  setBusy?.(wt.id)
-  try {
-    const result = await runtime.vcs.worktreeRemove({
-      worktreeId: wt.id,
-      force: dirty || removalDirty || panels.hasDirtyEditor,
-    })
-    if (result.branchDeleteError && wt.branch) {
-      setError(`Removed, but branch ${wt.branch} could not be deleted: ${result.branchDeleteError}`)
-    }
-  } catch (err: unknown) {
-    setError(`Discard failed: ${errorMessage(err, 'The worktree was not removed.')}`)
-  } finally {
-    setBusy?.(null)
-  }
+  if (errors.length) setError(errors.join('\n'))
+  return removed
 }
 
 /** What the worktree flows report through: failures go to `setError` (null

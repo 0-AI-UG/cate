@@ -130,6 +130,9 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
   const runtime = useRuntime(workspaceId)
   const rootRef = useRef<HTMLDivElement>(null)
   const [creating, setCreating] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(host.focusedWorktreeId ? [host.focusedWorktreeId] : []))
+  const selectionAnchor = useRef<string | null>(host.focusedWorktreeId)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Worktree id with a slow git op (publish / PR / update / merge / discard) in
   // flight — drives that row's inline spinner so the work is visible.
@@ -162,12 +165,12 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
   }, [panels])
 
   const { statusByPath, prByPath, refreshPr } = useWorktreeStatuses(workspaceId, live)
-  const { createWorktree, checkoutPr, launchInWorktree, handlePrune, removeOrphan, makeCallbacks } = useParallelWork(
+  const { createWorktree, checkoutPr, launchInWorktree, handlePrune, removeOrphan, makeCallbacks, handleDeleteSelected } = useParallelWork(
     primaryLabel,
     { setError, onPrCreated: refreshPr, setBusy: setBusyId },
   )
 
-  useDismissableLayer({ open: true, contentRef: rootRef, triggerRefs: [triggerRef], onDismiss: onClose })
+  useDismissableLayer({ open: !deleting, contentRef: rootRef, triggerRefs: [triggerRef], onDismiss: onClose })
 
   // Never leave a worktree highlighted on the canvas once the menu is gone.
   useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
@@ -179,6 +182,36 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
     },
     [launchInWorktree, canvasPanelId, onClose],
   )
+
+  const selectWorktree = (id: string, extend: boolean) => {
+    if (deleting) return
+    if (extend) {
+      const anchor = live.findIndex((wt) => wt.id === selectionAnchor.current)
+      const end = live.findIndex((wt) => wt.id === id)
+      setSelected((current) => new Set([
+        ...current,
+        ...live.slice(anchor < 0 ? end : Math.min(anchor, end), Math.max(anchor, end) + 1).map((wt) => wt.id),
+      ]))
+      if (anchor < 0) selectionAnchor.current = id
+    } else {
+      const next = selected.size === 1 && selected.has(id) ? null : id
+      setSelected(new Set(next ? [next] : []))
+      selectionAnchor.current = next
+      focusWorktree(next)
+    }
+  }
+  const selectedWorktrees = live.filter((wt) => !wt.isPrimary && selected.has(wt.id))
+  const deleteSelected = async () => {
+    if (deleting || selectedWorktrees.length === 0) return
+    setDeleting(true)
+    try {
+      const removed = await handleDeleteSelected(selectedWorktrees)
+      setSelected((current) => new Set([...current].filter((id) => !removed.includes(id))))
+      if (focusedWorktreeId && removed.includes(focusedWorktreeId)) focusWorktree(null)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const handleInit = useCallback(async () => {
     if (!rootPath || !runtime) return
@@ -193,10 +226,11 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
   return (
     <div
       ref={rootRef}
-      className="fixed z-[1000] w-[256px] rounded-2xl border border-subtle shadow-xl py-1.5 text-xs"
+      className="fixed z-[1000] w-[256px] overflow-y-auto overscroll-contain rounded-2xl border border-subtle shadow-xl py-1.5 text-xs"
       style={{
         left: pos.left,
         bottom: pos.bottom,
+        maxHeight: `min(480px, calc(100dvh - ${pos.bottom + 12}px))`,
         background: 'color-mix(in srgb, var(--surface-0) 80%, transparent)',
         backdropFilter: 'blur(24px) saturate(1.5)',
         WebkitBackdropFilter: 'blur(24px) saturate(1.5)',
@@ -212,7 +246,13 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
         </div>
       )}
 
-      {!isRepo ? (
+      {rootPath && snapshot.loading ? (
+        <div className="flex items-center justify-center py-6">
+          <Spinner size={18} label="Loading worktrees" className="text-muted" />
+        </div>
+      ) : snapshot.error ? (
+        <div role="alert" className="px-3 py-4 text-center text-[11px] text-muted">{snapshot.error}</div>
+      ) : !isRepo ? (
         <div className="flex flex-col items-center gap-2.5 px-3 py-4 text-center">
           <ArrowsSplit size={18} className="text-muted opacity-50" />
           <span className="text-[11px] text-muted leading-relaxed">
@@ -247,17 +287,19 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
           </div>
           {live.map((wt) => (
             <WorktreeRow
-                workspaceId={workspaceId}
+              workspaceId={workspaceId}
               key={wt.id}
               wt={wt}
               primaryLabel={primaryLabel}
-              focused={focusedWorktreeId === wt.id}
+              focused={selected.has(wt.id)}
               status={humanStatus(statusByPath[wt.path], primaryLabel)}
               pr={prByPath[wt.path]}
               panels={panelCounts[wt.id]}
               busy={busyId === wt.id}
-              cb={makeCallbacks(wt)}
-              onFocus={() => focusWorktree(focusedWorktreeId === wt.id ? null : wt.id)}
+              cb={{ ...makeCallbacks(wt), ...(selected.has(wt.id) && selectedWorktrees.length > 0 ? { onDelete: () => void deleteSelected() } : {}) }}
+              deleteCount={selected.has(wt.id) ? selectedWorktrees.length : 0}
+              disabled={deleting}
+              onFocus={(extend) => selectWorktree(wt.id, extend)}
               onHover={(on) => setHoveredWorktree(on ? wt.id : null)}
               launchTypes={host.launchTypes}
               onLaunch={(type) => launch(wt, type)}
@@ -266,6 +308,7 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
           <div className="my-1 h-px bg-surface-5 mx-2.5" />
           <button
             onClick={() => setCreating(true)}
+            disabled={deleting}
             className="mx-1 w-[calc(100%-0.5rem)] flex items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"
           >
             <Plus size={13} className="flex-shrink-0" />
@@ -350,17 +393,20 @@ const SpawnButton: React.FC<{
   cwd: string
   worktreeId: string
   onClick: () => void
-}> = ({ icon, title, workspaceId, panelType, cwd, worktreeId, onClick }) => (
+  disabled: boolean
+}> = ({ icon, title, workspaceId, panelType, cwd, worktreeId, onClick, disabled }) => (
   <Tooltip label={title}>
     <div
       role="button"
       aria-label={title}
-      draggable
+      aria-disabled={disabled}
+      draggable={!disabled}
       onDragStart={(e) => {
+        if (disabled) { e.preventDefault(); return }
         e.dataTransfer.effectAllowed = 'copy'
         e.dataTransfer.setData('application/cate-spawn', JSON.stringify({ workspaceId, panelType, cwd, worktreeId }))
       }}
-      onClick={(e) => { e.stopPropagation(); onClick() }}
+      onClick={(e) => { e.stopPropagation(); if (!disabled) onClick() }}
       className="w-5 h-5 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-surface-5 cursor-grab active:cursor-grabbing transition-colors"
     >
       {icon}
@@ -384,11 +430,13 @@ const WorktreeRow: React.FC<{
   panels?: Partial<Record<string, number>>
   busy?: boolean
   cb: CardCallbacks
-  onFocus: () => void
+  deleteCount: number
+  disabled: boolean
+  onFocus: (extend: boolean) => void
   onHover: (on: boolean) => void
   launchTypes: readonly WorktreeLaunchType[]
   onLaunch: (type: string) => void
-}> = ({ workspaceId, wt, primaryLabel, focused, status, pr, panels, busy, cb, launchTypes, onFocus, onHover, onLaunch }) => {
+}> = ({ workspaceId, wt, primaryLabel, focused, status, pr, panels, busy, cb, launchTypes, deleteCount, disabled, onFocus, onHover, onLaunch }) => {
   const isPrimary = !!wt.isPrimary
   const label = wt.label || wt.branch || (isPrimary ? 'main' : '(detached)')
   const theme = useTheme()
@@ -401,8 +449,8 @@ const WorktreeRow: React.FC<{
   const commitRename = useCallback(() => {
     setRenaming(false)
     const next = renameValue.trim()
-    if (next !== label) cb.onRename(next || undefined)
-  }, [renameValue, label, cb])
+    if (!disabled && next !== label) cb.onRename(next || undefined)
+  }, [renameValue, label, cb, disabled])
 
   const openMenu = useCallback(
     () =>
@@ -414,8 +462,9 @@ const WorktreeRow: React.FC<{
         cb,
         beginRename: () => { setRenameValue(label); setRenaming(true) },
         beginRecolor: () => setRecoloring((v) => !v),
+        deleteCount,
       }),
-    [isPrimary, pr, primaryLabel, cb, label, wt.prNumber],
+    [isPrimary, pr, primaryLabel, cb, label, wt.prNumber, deleteCount],
   )
 
   return (
@@ -423,14 +472,15 @@ const WorktreeRow: React.FC<{
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       onClick={(e) => {
-        if (busy) return
+        if (busy || disabled) return
         if ((e.target as HTMLElement).closest('button, input, [role="button"]')) return
-        onFocus()
+        onFocus(e.shiftKey)
       }}
-      onContextMenu={(e) => { e.preventDefault(); if (!busy) void openMenu() }}
+      onContextMenu={(e) => { e.preventDefault(); if (!busy && !disabled) void openMenu() }}
       title={busy ? 'Discarding' : wt.path}
       aria-busy={busy || undefined}
-      className={`mx-1 px-1.5 py-1 rounded-lg transition-colors ${
+      aria-selected={focused}
+      className={`mx-1 px-1.5 py-1 rounded-lg select-none transition-colors ${
         busy ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-surface-4'
       }`}
       style={focused ? { backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)` } : undefined}
@@ -441,6 +491,7 @@ const WorktreeRow: React.FC<{
           <button
             onClick={(e) => { e.stopPropagation(); setRecoloring((v) => !v) }}
             aria-label="Change color"
+            disabled={disabled}
             className="flex-shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded-full hover:scale-110 transition-transform"
           >
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
@@ -450,6 +501,7 @@ const WorktreeRow: React.FC<{
         {renaming ? (
           <input
             autoFocus
+            disabled={disabled}
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {
@@ -462,7 +514,7 @@ const WorktreeRow: React.FC<{
         ) : (
           <span
             className="flex-1 min-w-0 truncate text-[12px] text-secondary"
-            onDoubleClick={() => { setRenameValue(label); setRenaming(true) }}
+            onDoubleClick={(e) => { if (!disabled && !e.shiftKey) { setRenameValue(label); setRenaming(true) } }}
           >
             {label}
           </span>
@@ -488,6 +540,7 @@ const WorktreeRow: React.FC<{
                 title={title}
                 workspaceId={workspaceId}
                 panelType={type}
+                disabled={disabled}
                 cwd={wt.path}
                 worktreeId={wt.id}
                 onClick={() => onLaunch(type)}
@@ -495,6 +548,7 @@ const WorktreeRow: React.FC<{
             ))}
             <Tooltip label="More actions">
               <button
+                disabled={disabled}
                 onClick={(e) => { e.stopPropagation(); void openMenu() }}
                 aria-label="More actions"
                 className="w-5 h-5 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-surface-5 transition-colors"
@@ -530,6 +584,7 @@ const WorktreeRow: React.FC<{
           {worktreePalette(theme).map(({ key, color: c }) => (
             <button
               key={key}
+              disabled={disabled}
               onClick={(e) => { e.stopPropagation(); cb.onRecolor(key); setRecoloring(false) }}
               className="w-3.5 h-3.5 rounded-full transition-transform hover:scale-110"
               style={{

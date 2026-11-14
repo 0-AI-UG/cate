@@ -107,12 +107,48 @@ describe('handleDelete', () => {
     expect(rt.vcs.worktreeRemove).toHaveBeenCalledWith({ worktreeId: 'wt', force: false })
   })
 
-  it('keeps an existing folder when its status is unavailable', async () => {
+  it('offers removal with an explicit warning when status is unavailable', async () => {
+    ui.confirm.mockResolvedValue(true)
     await render()
     await act(async () => { await api.handleDelete(wt) })
-    expect(ui.confirm).not.toHaveBeenCalled()
-    expect(setError).toHaveBeenCalledWith('Couldn’t verify this worktree before discarding it. No files were removed.')
+    expect(confirmText()).toContain('Git status could not be read')
+    expect(rt.vcs.worktreeRemove).toHaveBeenCalledWith({ worktreeId: 'wt', force: true })
   })
+
+  it('keeps files when the unknown-status warning is cancelled', async () => {
+    await render()
+    await api.handleDelete(wt)
+    expect(ui.confirm).toHaveBeenCalledTimes(1)
+    expect(rt.vcs.worktreeRemove).not.toHaveBeenCalled()
+  })
+
+  it('cleans up a missing folder even when Git status throws', async () => {
+    rt.vcs.worktreeStatus.mockRejectedValue(new Error('not a git repository'))
+    rt.file.stat.mockRejectedValue(new RpcError('gone', 'ENOENT'))
+    ui.confirm.mockResolvedValue(true)
+    await render()
+    await api.handleDelete(wt)
+    expect(confirmText()).toContain('The worktree folder is missing.')
+    expect(rt.vcs.worktreeRemove).toHaveBeenCalledWith({ worktreeId: 'wt', force: false })
+  })
+
+  it('does not treat a filesystem permission error as a missing folder', async () => {
+    rt.file.stat.mockRejectedValue(new Error('EACCES'))
+    await render()
+    await api.handleDelete(wt)
+    expect(confirmText()).toContain('Git status could not be read')
+    expect(confirmText()).not.toContain('The worktree folder is missing.')
+    expect(rt.vcs.worktreeRemove).not.toHaveBeenCalled()
+  })
+
+  it('silently completes cleanup when an unregistered checkout’s files were preserved', async () => {
+    rt.vcs.worktreeRemove.mockResolvedValue({ preservedPath: wt.path })
+    ui.confirm.mockResolvedValue(true)
+    await render()
+    await api.handleDelete(wt)
+    expect(setError).toHaveBeenLastCalledWith(null)
+  })
+
 })
 
 describe('other actions', () => {
@@ -136,5 +172,66 @@ describe('other actions', () => {
     const items = menu.mock.calls[0][0]
     expect(items.map((i) => i.id)).not.toContain('merge')
     expect(items.map((i) => i.id)).toContain('delete')
+  })
+})
+
+
+describe('bulk deletion', () => {
+  const second = { ...wt, id: 'wt2', branch: 'second', path: '/repo/.cate/worktrees/second' }
+  beforeEach(() => {
+    rt.vcs.worktreeStatus.mockResolvedValue({ branch: 'feat', dirty: true, ahead: 2, behind: 0, staged: 0, unstaged: 1, untracked: 0 })
+    ui.confirm.mockResolvedValue(true)
+  })
+
+  it('confirms once for all worktrees and excludes the primary checkout', async () => {
+    await render()
+    let removed: string[] = []
+    await act(async () => { removed = await api.handleDeleteSelected([wt, second, { ...wt, id: 'main', isPrimary: true }, wt]) })
+    expect(ui.confirm).toHaveBeenCalledTimes(1)
+    expect(confirmText()).toContain('Delete 2 worktrees?')
+    expect(confirmText()).toContain('“feat”')
+    expect(confirmText()).toContain('“second”')
+    expect(confirmText()).toContain('uncommitted changes')
+    expect(confirmText()).toContain('2 unpublished commit(s)')
+    expect(removed).toEqual(['wt', 'wt2'])
+    expect(rt.vcs.worktreeRemove).toHaveBeenCalledTimes(2)
+  })
+
+  it('includes unreadable checkouts in the combined warning instead of blocking the batch', async () => {
+    rt.vcs.worktreeStatus.mockResolvedValueOnce({ dirty: false, ahead: 0 }).mockRejectedValueOnce(new Error('offline'))
+    await render()
+    expect(await api.handleDeleteSelected([wt, second])).toEqual(['wt', 'wt2'])
+    expect(ui.confirm).toHaveBeenCalledTimes(1)
+    expect(confirmText()).toContain('Git status could not be read')
+    expect(rt.vcs.worktreeRemove).toHaveBeenCalledWith({ worktreeId: 'wt2', force: true })
+  })
+
+  it('removes nothing when any selected worktree’s close guard is cancelled', async () => {
+    await render(fakeHost({ prepareWorktreeClose: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false) }))
+    expect(await api.handleDeleteSelected([wt, second])).toEqual([])
+    expect(rt.vcs.worktreeRemove).not.toHaveBeenCalled()
+  })
+
+  it('continues after a removal failure and returns only successful ids', async () => {
+    rt.vcs.worktreeRemove.mockRejectedValueOnce(new Error('locked')).mockResolvedValueOnce({})
+    await render()
+    expect(await api.handleDeleteSelected([wt, second])).toEqual(['wt2'])
+    expect(setError).toHaveBeenLastCalledWith(expect.stringContaining('locked'))
+    expect(setBusy).toHaveBeenLastCalledWith(null)
+  })
+
+  it('cleans up a checkout that disappears while the confirmation is open', async () => {
+    rt.vcs.worktreeStatus.mockResolvedValueOnce({ dirty: false, ahead: 0 }).mockResolvedValueOnce(null)
+    rt.file.stat.mockRejectedValue(new RpcError('gone', 'ENOENT'))
+    await render()
+    expect(await api.handleDeleteSelected([wt])).toEqual(['wt'])
+    expect(rt.vcs.worktreeRemove).toHaveBeenCalledWith({ worktreeId: 'wt', force: false })
+  })
+
+  it('keeps a checkout if status disappears after confirmation', async () => {
+    rt.vcs.worktreeStatus.mockResolvedValueOnce({ dirty: false, ahead: 0 }).mockResolvedValueOnce(null)
+    await render()
+    expect(await api.handleDeleteSelected([wt])).toEqual([])
+    expect(rt.vcs.worktreeRemove).not.toHaveBeenCalled()
   })
 })
