@@ -181,7 +181,7 @@ it('retains the PR checkout at capture and notifies only after edits are readabl
   const off = store.onChange((cwd) => notifications.push(cwd))
   store.registerTerminal('pty', { cwd: '/repo', panelId: 'panel' })
   await store.ingestHook('pty', 'codex', null, { sessionId: 'session', name: 'apply_patch', input: { patch: patch('a.ts') }, output: null, callId: 'call' })
-  expect(notifications).toEqual(['/repo'])
+  expect(notifications).toEqual([path.resolve('/repo')])
   off()
   const records = await createAgentChangesStore(directory).list('/repo')
   expect(records[0]).toMatchObject({ prNumber: 42, sessionId: 'session' })
