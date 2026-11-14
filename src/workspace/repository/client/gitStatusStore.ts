@@ -3,21 +3,27 @@
 // pills). The runtime polls and pushes; this store only mirrors, and fetches
 // the tracked file list when the status moves.
 
+import { errorMessage } from '@kernel/interaction'
 import type { CapabilityProxy } from '@kernel/rpc/contract'
 import { checkoutPathKey, EMPTY_REPO_STATUS, type RepoStatus, type VcsCapability } from '../contract'
 
 export type GitStatusClient = Pick<CapabilityProxy<VcsCapability>, 'status' | 'lsFiles'>
 
 export interface GitStatusSnapshot extends RepoStatus {
+  /** Pending until the runtime sends the first status; false also on failure. */
+  loading: boolean
+  error: string | null
   /** Absolute forward-slash paths of tracked and untracked-not-ignored files,
    *  for dimming ignored files. */
   tracked: ReadonlySet<string>
-  /** Bumped on every change so derived views recompute once per change. */
+  /** Bumped on repository invalidations, not tracked-file decoration loading. */
   revision: number
 }
 
 export const EMPTY_GIT_STATUS: GitStatusSnapshot = Object.freeze({
   ...EMPTY_REPO_STATUS,
+  loading: true,
+  error: null,
   tracked: new Set<string>(),
   revision: 0,
 })
@@ -44,13 +50,14 @@ const posix = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '')
 
 export function createGitStatusStore(vcs: GitStatusClient): GitStatusStore {
   const entries = new Map<string, Entry>()
+  let revision = 0
 
   const notify = (entry: Entry) => {
     for (const listener of [...entry.listeners]) listener()
   }
 
-  const update = (entry: Entry, patch: Partial<GitStatusSnapshot>) => {
-    entry.snapshot = { ...entry.snapshot, ...patch, revision: entry.snapshot.revision + 1 }
+  const update = (entry: Entry, patch: Partial<GitStatusSnapshot>, contentChanged = false) => {
+    entry.snapshot = { ...entry.snapshot, ...patch, revision: contentChanged ? ++revision : entry.snapshot.revision }
     notify(entry)
   }
 
@@ -73,10 +80,10 @@ export function createGitStatusStore(vcs: GitStatusClient): GitStatusStore {
     )
   }
 
-  function open(cwd: string): Entry {
+  function open(cwd: string, previous?: Entry): Entry {
     const entry: Entry = {
       cwd,
-      snapshot: EMPTY_GIT_STATUS,
+      snapshot: previous?.snapshot ?? EMPTY_GIT_STATUS,
       listeners: new Set(),
       cancel: () => {},
       trackedSeq: 0,
@@ -87,21 +94,28 @@ export function createGitStatusStore(vcs: GitStatusClient): GitStatusStore {
     sub.onEvent((event) => {
       if (entry.closed) return
       const status = event.kind === 'snapshot' ? event.snapshot : event.change
-      update(entry, status)
+      update(entry, { ...status, loading: false, error: null }, true)
       refreshTracked(entry, status)
     })
-    sub.done.catch(() => {
-      // Untrusted, gone, or the connection dropped for good: show no repo.
-      if (!entry.closed) update(entry, { ...EMPTY_REPO_STATUS, tracked: new Set() })
+    sub.done.catch((err) => {
+      // A failed read is not evidence that this folder is not a repository.
+      if (!entry.closed) update(entry, { loading: false, error: errorMessage(err, 'Could not load Git status.') })
     })
     entry.cancel = () => sub.cancel()
     return entry
   }
 
   function close(key: string, entry: Entry): void {
+    if (entry.closed) return
     entry.closed = true
     entry.cancel()
+    // Keep the last snapshot for a warm reopen, but release its subscription.
     entries.delete(key)
+    entries.set(key, entry)
+    for (const [idleKey, idle] of entries) {
+      if (entries.size <= 64) break
+      if (idle.closed) entries.delete(idleKey)
+    }
   }
 
   return {
@@ -112,8 +126,8 @@ export function createGitStatusStore(vcs: GitStatusClient): GitStatusStore {
       if (!cwd) return () => {}
       const key = checkoutPathKey(cwd)
       let entry = entries.get(key)
-      if (!entry) {
-        entry = open(cwd)
+      if (!entry || entry.closed) {
+        entry = open(cwd, entry)
         entries.set(key, entry)
       }
       const current = entry
@@ -125,6 +139,7 @@ export function createGitStatusStore(vcs: GitStatusClient): GitStatusStore {
     },
     dispose() {
       for (const [key, entry] of [...entries]) close(key, entry)
+      entries.clear()
     },
   }
 }

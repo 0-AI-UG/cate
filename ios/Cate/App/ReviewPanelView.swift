@@ -1,41 +1,12 @@
-// A diff review panel: the comparison of its checkout (working tree, staged,
-// a commit, a branch) or an agent's recorded edits, as a file list with each
-// file's diff, as the desktop's review does. Working-tree files stage,
-// unstage and discard; staged changes commit; the branch checked out opens a
-// pull request. A line takes a review note; open notes go to an agent as a
-// change request, and an agent can review the changes in a terminal. Notes
-// copy as Markdown, the comparison as a `git apply` command. How diffs show
-// (wrapped, whole files, image previews) is this device's own.
+// Recorded agent edits grouped by commit, with on-demand diffs.
+// Git comparisons and mutations belong to the repository, outside this panel.
 
 import SwiftUI
 
 struct ReviewSnapshot: Decodable, Equatable {
-    struct Spec: Decodable, Equatable {
-        let kind: String
-        let commit: String?
-        let base: String?
-        let target: String?
-        let ignoreWhitespace: Bool?
-
-        /// The spec as an op sends it, with `change` applied.
-        func json(_ change: (inout [String: Any]) -> Void = { _ in }) -> [String: Any] {
-            var spec: [String: Any] = ["kind": kind]
-            if let commit { spec["commit"] = commit }
-            if let base { spec["base"] = base }
-            if let target { spec["target"] = target }
-            if ignoreWhitespace == true { spec["ignoreWhitespace"] = true }
-            change(&spec)
-            return spec
-        }
-    }
     struct Review: Decodable, Equatable {
         let repoPath: String
-        let spec: Spec
         let agentChanges: AgentFilter?
-        let showHistory: Bool?
-        let notes: [Note]?
-        let sourceAgent: SourceAgent?
-        let agentReview: AgentRun?
     }
     /// Present for recorded agent edits: whose edits show.
     struct AgentFilter: Decodable, Equatable {
@@ -44,56 +15,14 @@ struct ReviewSnapshot: Decodable, Equatable {
         let sessionId: String?
         let turnId: String?
     }
-    struct SourceAgent: Decodable, Equatable {
-        let panelId: String
-    }
-    /// An agent reviewing the changes in a terminal.
-    struct AgentRun: Decodable, Equatable {
-        let terminalPanelId: String
-        /// `working`, `complete` or `failed`.
-        let status: String
-    }
-    struct Note: Decodable, Equatable, Identifiable {
-        let id: String
-        let agentChangeId: String?
-        let path: String
-        /// `old`, `new` or `file`.
-        let side: String
-        let line: Int?
-        let body: String
-        let outdated: Bool?
-        let status: String?
-        let severity: String?
-        let author: String?
-
-        var resolved: Bool { status == "resolved" }
-        /// What a change request sends: open and still anchored.
-        var open: Bool { !resolved && outdated != true }
-    }
-    struct ChangedFile: Decodable, Equatable, Identifiable {
-        let path: String
-        let oldPath: String?
-        let status: String
-        let additions: Int?
-        let deletions: Int?
-        let binary: Bool
-        let staged: Bool
-        let working: Bool
-        let untracked: Bool?
-        var id: String { path }
-    }
-    struct Comparison: Decodable, Equatable {
-        let files: [ChangedFile]
-        let additions: Int
-        let deletions: Int
-        let currentBranch: String?
-    }
     struct RecordedFile: Decodable, Equatable, Identifiable {
         let recordId: String
         let path: String
         let oldPath: String?
         let additions: Int
         let deletions: Int
+        let commit: Commit?
+        let uncommitted: Bool?
         var id: String { recordId + "\u{0}" + path }
     }
     struct Recorded: Decodable, Equatable {
@@ -101,30 +30,17 @@ struct ReviewSnapshot: Decodable, Equatable {
         let error: String?
         let files: [RecordedFile]
     }
-    struct Branch: Decodable, Equatable, Identifiable {
-        let name: String
-        let current: Bool
-        let isRemote: Bool
-        var id: String { name }
-    }
     struct Commit: Decodable, Equatable, Identifiable {
         let hash: String
         let message: String
         var id: String { hash }
     }
     let review: Review
-    let comparison: Comparison?
-    let diffEpoch: Int
     let recorded: Recorded
     let loading: Bool
-    let busy: Bool
     let agentBusy: Bool
     let error: String?
-    let notRepository: Bool
-    let branches: [Branch]
-    let commits: [Commit]
 
-    var openNotes: [Note] { (review.notes ?? []).filter { $0.open && $0.side != "file" } }
 }
 
 /// A file's diff (`GitFileDiff`, `AgentChangedFile`).
@@ -141,8 +57,9 @@ struct FileDiff: Decodable {
         let newLine: Int?
     }
     let hunks: [Hunk]
-    let binary: Bool?
-    let tooLarge: Bool?
+    let page: Int
+    let pageCount: Int
+    let coverage: String
 }
 
 /// An agent a review can hand its work to (`MobileReviewAgent`).
@@ -153,16 +70,9 @@ struct ReviewAgent: Decodable, Identifiable, Equatable {
     var id: String { agentId }
 }
 
-private let comparisons: [(kind: String, label: String)] = [
-    ("uncommitted", "Uncommitted"), ("unstaged", "Unstaged"), ("staged", "Staged"),
-    ("commit", "Commit"), ("branch", "Branch"), ("agent", "Agent edits"),
-]
-
 /// How this device shows diffs.
 private enum ReviewDisplay {
     static let wrap = "review.wrap"
-    static let fullFile = "review.fullFile"
-    static let images = "review.images"
 }
 
 struct ReviewPanelView: View {
@@ -172,14 +82,9 @@ struct ReviewPanelView: View {
     let panel: Panel
     @State private var session = PanelSession<ReviewSnapshot>()
     @State private var agents: [ReviewAgent] = []
-    @State private var committing = false
-    @State private var message = ""
-    @State private var discarding: ReviewSnapshot.ChangedFile?
     @State private var opened: PanelRoute?
     @State private var failure: OpFailure?
     @AppStorage(ReviewDisplay.wrap) private var wrap = false
-    @AppStorage(ReviewDisplay.fullFile) private var fullFile = false
-    @AppStorage(ReviewDisplay.images) private var images = true
 
     var body: some View {
         Group {
@@ -191,30 +96,10 @@ struct ReviewPanelView: View {
         }
         .panelTitle(panel.title)
         .toolbar {
-            if onScreen, let snapshot = session.snapshot, !snapshot.notRepository {
+            if onScreen, let snapshot = session.snapshot {
                 ToolbarItem(placement: .primaryAction) { agentMenu(snapshot) }
                 ToolbarItem(placement: .primaryAction) { reviewMenu(snapshot) }
             }
-        }
-        .alert("Commit", isPresented: $committing) {
-            TextField("Message", text: $message)
-            Button("Commit") {
-                let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { return }
-                message = ""
-                run(["kind": "commit", "message": text])
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Commits the staged changes.")
-        }
-        .alert("Discard changes?", isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }), presenting: discarding) { file in
-            Button("Discard changes to \((file.path as NSString).lastPathComponent)", role: .destructive) {
-                run(["kind": "discard", "path": file.path, "untracked": file.untracked ?? false])
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { file in
-            Text(file.untracked == true ? "The file moves to the trash." : "Its working changes are lost. Staged changes stay.")
         }
         .alert(item: $failure) { Alert(title: Text("Could not complete that"), message: Text($0.message)) }
         .navigationDestination(item: $opened) { PanelView(route: $0) }
@@ -227,174 +112,30 @@ struct ReviewPanelView: View {
 
     // MARK: Menus
 
-    /// Hands the review to an agent: open notes as a change request, or a
-    /// review of the changes in a terminal.
+    /// Starts a reviewer; findings stay in the agent's terminal conversation.
     private func agentMenu(_ snapshot: ReviewSnapshot) -> some View {
-        let open = snapshot.openNotes.count
-        let reviewing = snapshot.review.agentReview?.status == "working"
-        return Menu {
-            Section(open == 0 ? "Add a note to request changes" : "Send \(open) open note\(open == 1 ? "" : "s")") {
-                if snapshot.review.sourceAgent != nil {
-                    Button("Request Changes", systemImage: "paperplane") { requestChanges(nil) }
-                        .disabled(open == 0)
-                }
-                Menu("Request Changes From") {
-                    ForEach(agents) { agent in
-                        Button(agent.name) { requestChanges(agent.agentId) }.disabled(!agent.ready)
-                    }
-                }
-                .disabled(open == 0 || agents.isEmpty)
-            }
-            Menu("Review in Terminal", systemImage: "terminal") {
-                ForEach(agents) { agent in
-                    Button(agent.name) { run(["kind": "reviewWithAgent", "agentId": agent.agentId]) }.disabled(!agent.ready)
-                }
-            }
-            .disabled(reviewing || agents.isEmpty)
-        } label: {
-            if snapshot.agentBusy || reviewing {
-                ProgressView()
-            } else {
-                Label("Agents", systemImage: "sparkles")
+        Menu("Review in Terminal", systemImage: "terminal") {
+            ForEach(agents) { agent in
+                Button(agent.name) { run(["kind": "reviewWithAgent", "agentId": agent.agentId]) }.disabled(!agent.ready)
             }
         }
-        .disabled(snapshot.agentBusy)
+        .disabled(snapshot.agentBusy || agents.isEmpty || snapshot.recorded.files.isEmpty)
     }
 
     private func reviewMenu(_ snapshot: ReviewSnapshot) -> some View {
-        let spec = snapshot.review.spec
-        let agent = snapshot.review.agentChanges != nil
-        let hasNotes = !(snapshot.review.notes ?? []).isEmpty
         return Menu {
-            Picker("Compare", selection: Binding(get: { kind(snapshot) }, set: { run(["kind": "selectComparison", "comparison": $0]) })) {
-                ForEach(comparisons, id: \.kind) { Text($0.label).tag($0.kind) }
-            }
-            .pickerStyle(.menu)
-            if !agent, spec.kind == "commit", !snapshot.commits.isEmpty {
-                Picker("Commit", selection: Binding(get: { spec.commit ?? "" }, set: { hash in setSpec(spec.json { $0["commit"] = hash }) })) {
-                    ForEach(snapshot.commits) { Text($0.message).tag($0.hash) }
-                }
-                .pickerStyle(.menu)
-            }
-            if !agent, spec.kind == "branch" {
-                branchPicker("Base", value: spec.base, snapshot) { name in setSpec(spec.json { $0["base"] = name }) }
-                branchPicker("Target", value: spec.target, snapshot) { name in setSpec(spec.json { $0["target"] = name }) }
-            }
             Button("Refresh", systemImage: "arrow.clockwise") { run(["kind": "refresh"]) }
-            if !agent, spec.kind == "staged" || spec.kind == "uncommitted" {
-                Button("Commit…", systemImage: "checkmark.circle") { committing = true }
-            }
-            if !agent, spec.kind == "branch", spec.target == snapshot.comparison?.currentBranch {
-                Button("Create Pull Request", systemImage: "arrow.triangle.pull") { createPullRequest() }
-            }
-            Section("Show") {
-                Toggle("Wrap Lines", systemImage: "text.word.spacing", isOn: $wrap)
-                Toggle("Full Files", systemImage: "doc.plaintext", isOn: $fullFile)
-                Toggle("Image Previews", systemImage: "photo", isOn: $images)
-                if agent {
-                    Toggle("Recorded History", systemImage: "clock.arrow.circlepath", isOn: Binding(
-                        get: { snapshot.review.showHistory == true },
-                        set: { run(["kind": "update", "patch": ["showHistory": $0]]) }
-                    ))
-                } else {
-                    Toggle("Ignore Whitespace", systemImage: "space", isOn: Binding(
-                        get: { spec.ignoreWhitespace == true },
-                        set: { on in setSpec(spec.json { $0["ignoreWhitespace"] = on }) }
-                    ))
-                }
-            }
-            Section {
-                if !agent {
-                    Button("Copy git apply Command", systemImage: "terminal") { copyApplyCommand() }
-                        .disabled(snapshot.comparison == nil || snapshot.busy)
-                }
-                Button("Copy Review Notes", systemImage: "doc.on.clipboard") { copyNotes() }
-                    .disabled(!hasNotes)
-            }
+            Toggle("Wrap Lines", systemImage: "text.word.spacing", isOn: $wrap)
         } label: {
             Label("Review Options", systemImage: "ellipsis.circle")
         }
-    }
-
-    private func branchPicker(_ title: String, value: String?, _ snapshot: ReviewSnapshot, set: @escaping (String) -> Void) -> some View {
-        Picker(title, selection: Binding(get: { value ?? "" }, set: set)) {
-            ForEach(snapshot.branches) { Text($0.name).tag($0.name) }
-        }
-        .pickerStyle(.menu)
-    }
-
-    private func kind(_ snapshot: ReviewSnapshot) -> String {
-        snapshot.review.agentChanges != nil ? "agent" : snapshot.review.spec.kind
     }
 
     // MARK: Lists
 
     @ViewBuilder
     private func content(_ snapshot: ReviewSnapshot) -> some View {
-        if snapshot.notRepository {
-            ContentUnavailableView("Not a Git repository", systemImage: "arrow.left.arrow.right", description: Text("This checkout has nothing to compare."))
-        } else if snapshot.review.agentChanges != nil {
-            agentFiles(snapshot)
-        } else {
-            gitFiles(snapshot)
-        }
-    }
-
-    private func gitFiles(_ snapshot: ReviewSnapshot) -> some View {
-        let spec = snapshot.review.spec.kind
-        let working = spec == "uncommitted" || spec == "unstaged"
-        return List {
-            Section {
-                if let error = snapshot.error {
-                    Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-                }
-                if let comparison = snapshot.comparison {
-                    LabeledContent(title(snapshot)) {
-                        Totals(additions: comparison.additions, deletions: comparison.deletions)
-                    }
-                } else if snapshot.loading {
-                    ProgressView()
-                }
-                agentRun(snapshot)
-            }
-            notes(snapshot)
-            if let files = snapshot.comparison?.files {
-                Section(files.isEmpty ? "No changes" : "\(files.count) file\(files.count == 1 ? "" : "s")") {
-                    ForEach(files) { file in
-                        NavigationLink {
-                            diffView(snapshot, path: file.path, oldPath: file.oldPath, source: .git)
-                        } label: {
-                            FileRow(status: file.status, path: file.oldPath.map { "\($0) → \(file.path)" } ?? file.path, additions: file.additions, deletions: file.deletions, notes: noteCount(snapshot, path: file.path, recordId: nil))
-                        }
-                        .contextMenu {
-                            Button("Open File", systemImage: "doc.text") { openFile(file.path) }
-                                .disabled(file.status == "deleted")
-                            Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = file.path }
-                            if working && file.working {
-                                Button("Stage", systemImage: "plus") { run(["kind": "stage", "path": file.path]) }
-                            }
-                            if spec == "staged" || (spec == "uncommitted" && file.staged) {
-                                Button("Unstage", systemImage: "minus") { run(["kind": "unstage", "path": file.path]) }
-                            }
-                            if working && file.working {
-                                Button("Discard Changes", systemImage: "trash", role: .destructive) { discarding = file }
-                            }
-                        }
-                        .swipeActions(edge: .trailing) {
-                            if working && file.working {
-                                Button("Discard", role: .destructive) { discarding = file }
-                                Button("Stage") { run(["kind": "stage", "path": file.path]) }.tint(.green)
-                            }
-                            if spec == "staged" || (spec == "uncommitted" && file.staged) {
-                                Button("Unstage") { run(["kind": "unstage", "path": file.path]) }.tint(.orange)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .disabled(snapshot.busy)
-        .refreshable { await session.send(["kind": "refresh"]) }
+        agentFiles(snapshot)
     }
 
     private func agentFiles(_ snapshot: ReviewSnapshot) -> some View {
@@ -423,14 +164,19 @@ struct ReviewPanelView: View {
             if snapshot.recorded.loading && snapshot.recorded.files.isEmpty {
                 ProgressView()
             }
-            agentRun(snapshot)
-            notes(snapshot)
             Section {
-                ForEach(snapshot.recorded.files) { file in
+                ForEach(Array(snapshot.recorded.files.enumerated()), id: \.element.id) { index, file in
+                    let group = file.commit?.hash ?? (file.uncommitted == true ? "uncommitted" : "unattributed")
+                    let previous = index > 0 ? snapshot.recorded.files[index - 1] : nil
+                    let previousGroup = previous.map { $0.commit?.hash ?? ($0.uncommitted == true ? "uncommitted" : "unattributed") }
+                    if group != previousGroup {
+                        Label(file.commit.map { "\($0.message) · \(String($0.hash.prefix(7)))" } ?? (file.uncommitted == true ? "Uncommitted changes" : "Other recorded edits"), systemImage: "point.3.connected.trianglepath.dotted")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     NavigationLink {
                         diffView(snapshot, path: file.path, oldPath: file.oldPath, source: .recorded(file.recordId))
                     } label: {
-                        FileRow(status: nil, path: file.path, additions: file.additions, deletions: file.deletions, notes: noteCount(snapshot, path: file.path, recordId: file.recordId))
+                        FileRow(status: nil, path: file.path, additions: file.additions, deletions: file.deletions)
                     }
                     .contextMenu {
                         Button("Open File", systemImage: "doc.text") { openFile(file.path) }
@@ -441,49 +187,15 @@ struct ReviewPanelView: View {
                 Text(snapshot.recorded.files.isEmpty ? "No recorded edits" : "Agent edits")
             } footer: {
                 if snapshot.recorded.files.isEmpty && !snapshot.recorded.loading {
-                    Text(snapshot.review.showHistory == true
-                        ? "No recorded edits match these filters. This does not mean the agent made no changes."
-                        : "No active agent edits match these filters. Recorded History in the options shows older ones.")
+                    Text("No recorded edits match these filters.")
                 }
             }
         }
         .refreshable { await session.send(["kind": "refresh"]) }
     }
 
-    /// The review's notes, open ones first; a swipe resolves or reopens one.
-    @ViewBuilder
-    private func notes(_ snapshot: ReviewSnapshot) -> some View {
-        let all = (snapshot.review.notes ?? []).sorted { $0.open && !$1.open }
-        if !all.isEmpty {
-            Section("Notes") {
-                ForEach(all) { note in
-                    NoteRow(note: note, showsPlace: true)
-                        .swipeActions(edge: .trailing) {
-                            Button(note.resolved ? "Reopen" : "Resolve") { run(["kind": "toggleNote", "noteId": note.id]) }
-                                .tint(note.resolved ? .orange : .green)
-                        }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func agentRun(_ snapshot: ReviewSnapshot) -> some View {
-        if let run = snapshot.review.agentReview {
-            switch run.status {
-            case "working": Label("An agent is reviewing these changes", systemImage: "sparkles")
-            case "complete": Label("The agent finished its review", systemImage: "checkmark.circle").foregroundStyle(.green)
-            default: Label("The agent's review failed", systemImage: "exclamationmark.triangle").foregroundStyle(.red)
-            }
-        }
-    }
-
     private func diffView(_ snapshot: ReviewSnapshot, path: String, oldPath: String?, source: DiffSource) -> some View {
-        DiffView(session: session, path: path, oldPath: oldPath, source: source, epoch: snapshot.diffEpoch, openFile: { openFile(path) })
-    }
-
-    private func noteCount(_ snapshot: ReviewSnapshot, path: String, recordId: String?) -> Int {
-        (snapshot.review.notes ?? []).filter { $0.path == path && $0.side != "file" && (recordId == nil || $0.agentChangeId == recordId) && !$0.resolved }.count
+        DiffView(session: session, path: path, oldPath: oldPath, source: source, openFile: { openFile(path) })
     }
 
     /// The filters on recorded edits, each with the patch that removes it.
@@ -501,64 +213,7 @@ struct ReviewPanelView: View {
         return chips
     }
 
-    private func title(_ snapshot: ReviewSnapshot) -> String {
-        let spec = snapshot.review.spec
-        switch spec.kind {
-        case "commit": return "Commit \(String((spec.commit ?? "").prefix(7)))"
-        case "branch": return "\(spec.base ?? "") → \(spec.target ?? "")"
-        default: return comparisons.first { $0.kind == spec.kind }?.label ?? spec.kind
-        }
-    }
-
     // MARK: Actions
-
-    private func setSpec(_ spec: [String: Any]) {
-        run(["kind": "setSpec", "spec": spec])
-    }
-
-    private func requestChanges(_ agentId: String?) {
-        Task {
-            var op: [String: Any] = ["kind": "requestChanges"]
-            if let agentId { op["agentId"] = agentId }
-            let reply = await session.send(op, as: String.self)
-            if !reply.ok {
-                failure = OpFailure(message: reply.message ?? "The change request could not be sent.")
-            } else if reply.result == "pick-agent" {
-                failure = OpFailure(message: "The agent that made these changes is gone. Pick one under Request Changes From.")
-            }
-        }
-    }
-
-    private func createPullRequest() {
-        Task {
-            struct Created: Decodable { let url: String }
-            let reply = await session.send(["kind": "createPullRequest"], as: Created.self)
-            if let url = reply.result.flatMap({ URL(string: $0.url) }) {
-                await UIApplication.shared.open(url)
-            } else {
-                failure = OpFailure(message: reply.message ?? "The pull request could not be created.")
-            }
-        }
-    }
-
-    private func copyApplyCommand() {
-        Task {
-            let reply = await session.send(["kind": "applyCommand"], as: String.self)
-            if let command = reply.result {
-                UIPasteboard.general.string = command
-            } else {
-                failure = OpFailure(message: reply.message ?? "Could not copy the patch.")
-            }
-        }
-    }
-
-    private func copyNotes() {
-        Task {
-            if let markdown = try? await session.call("review.notes", [:], as: String.self) {
-                UIPasteboard.general.string = markdown
-            }
-        }
-    }
 
     private func openFile(_ path: String) {
         Task {
@@ -583,7 +238,6 @@ private struct FileRow: View {
     let path: String
     let additions: Int?
     let deletions: Int?
-    let notes: Int
 
     var body: some View {
         HStack {
@@ -595,12 +249,6 @@ private struct FileRow: View {
                 .lineLimit(1)
                 .truncationMode(.head)
             Spacer()
-            if notes > 0 {
-                Label("\(notes)", systemImage: "text.bubble")
-                    .font(.caption2)
-                    .foregroundStyle(.blue)
-                    .labelStyle(.titleAndIcon)
-            }
             Totals(additions: additions, deletions: deletions)
         }
     }
@@ -640,108 +288,28 @@ private struct Totals: View {
     }
 }
 
-/// A review note: its severity, words and where it sits.
-private struct NoteRow: View {
-    let note: ReviewSnapshot.Note
-    let showsPlace: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: Self.symbol(note.severity))
-                .foregroundStyle(Self.color(note.severity))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(note.body)
-                    .strikethrough(note.resolved)
-                    .foregroundStyle(note.open ? .primary : .secondary)
-                if showsPlace || note.outdated == true || note.resolved {
-                    Text(place)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-            }
-        }
-    }
-
-    private var place: String {
-        var words = showsPlace ? (note.line.map { "\(note.path):\($0)" } ?? note.path) : ""
-        if note.author == "agent" { words += words.isEmpty ? "by an agent" : " · by an agent" }
-        if note.outdated == true { words += words.isEmpty ? "outdated" : " · outdated" }
-        else if note.resolved { words += words.isEmpty ? "resolved" : " · resolved" }
-        return words
-    }
-
-    static func symbol(_ severity: String?) -> String {
-        switch severity {
-        case "error": "xmark.octagon.fill"
-        case "warning": "exclamationmark.triangle.fill"
-        default: "info.circle.fill"
-        }
-    }
-
-    static func color(_ severity: String?) -> Color {
-        switch severity {
-        case "error": .red
-        case "warning": .orange
-        default: .blue
-        }
-    }
-}
-
 private enum DiffSource: Equatable {
-    case git
     /// A recorded agent edit.
     case recorded(String)
 }
 
-/// A line a note is being written for.
-private struct NoteDraft: Identifiable {
-    let side: String
-    let line: Int
-    let context: String
-    var id: String { "\(side):\(line)" }
-}
-
-/// One file's diff, fetched with an op and fetched again when the review's
-/// diffs may be stale or the display asks for more of it. A line takes a
-/// note from its menu; the file's notes sit under their lines.
 private struct DiffView: View {
     let session: PanelSession<ReviewSnapshot>
     let path: String
     let oldPath: String?
     let source: DiffSource
-    let epoch: Int
     let openFile: () -> Void
     @AppStorage(ReviewDisplay.wrap) private var wrap = false
-    @AppStorage(ReviewDisplay.fullFile) private var fullFile = false
-    @AppStorage(ReviewDisplay.images) private var showImages = true
     @State private var diff: FileDiff?
     @State private var error: String?
-    @State private var allowLarge = false
-    @State private var contextLines = 3
-    @State private var images: ReviewImages?
-    @State private var draft: NoteDraft?
-    @State private var failure: OpFailure?
-
-    private struct Load: Equatable {
-        let epoch: Int
-        let fullFile: Bool
-        let allowLarge: Bool
-        let contextLines: Int
-    }
+    @State private var page = 0
 
     var body: some View {
         Group {
             if let diff {
                 DiffContent(
                     diff: diff,
-                    wrap: wrap,
-                    notes: notes,
-                    images: showImages ? images : nil,
-                    addNote: { side, line, context in draft = NoteDraft(side: side, line: line, context: context) },
-                    toggleNote: { noteId in Task { _ = await session.send(["kind": "toggleNote", "noteId": noteId]) } },
-                    showLarge: { allowLarge = true }
+                    wrap: wrap
                 )
             } else if let error {
                 ContentUnavailableView("Could not load the diff", systemImage: "exclamationmark.triangle", description: Text(error))
@@ -755,10 +323,6 @@ private struct DiffView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Toggle("Wrap Lines", systemImage: "text.word.spacing", isOn: $wrap)
-                    Toggle("Full File", systemImage: "doc.plaintext", isOn: $fullFile)
-                    if source == .git && !fullFile {
-                        Button("Show More Context", systemImage: "arrow.up.and.down.text.horizontal") { contextLines += 20 }
-                    }
                     Divider()
                     Button("Open File", systemImage: "doc.text", action: openFile)
                     Button("Copy Path", systemImage: "doc.on.doc") { UIPasteboard.general.string = path }
@@ -767,39 +331,28 @@ private struct DiffView: View {
                 }
             }
         }
-        .sheet(item: $draft) { draft in
-            NoteEditor(path: path, draft: draft) { body, severity in add(draft, body: body, severity: severity) }
+        .safeAreaInset(edge: .bottom) {
+            if let diff, diff.pageCount > 1 {
+                HStack {
+                    Button("Previous") { page -= 1 }.disabled(page == 0)
+                    Spacer()
+                    Text("\(page + 1) / \(diff.pageCount)").font(.caption)
+                    Spacer()
+                    Button("Next") { page += 1 }.disabled(page + 1 >= diff.pageCount)
+                }.padding().background(.regularMaterial)
+            }
         }
-        .alert(item: $failure) { Alert(title: Text("Could not complete that"), message: Text($0.message)) }
-        .task(id: Load(epoch: epoch, fullFile: fullFile, allowLarge: allowLarge, contextLines: contextLines)) { await load() }
-        .task(id: showImages) {
-            guard showImages else { return }
-            var params: [String: Any] = ["path": path]
-            if let oldPath { params["oldPath"] = oldPath }
-            images = try? await session.call("review.images", params, as: ReviewImages?.self)
-        }
-    }
-
-    /// This file's notes (of this recorded edit for agent edits).
-    private var notes: [ReviewSnapshot.Note] {
-        (session.snapshot?.review.notes ?? []).filter { note in
-            guard note.path == path, note.side != "file" else { return false }
-            if case .recorded(let recordId) = source { return note.agentChangeId == recordId }
-            return true
-        }
+        .task(id: page) { await load() }
     }
 
     private func load() async {
         let op: [String: Any]
         switch source {
-        case .git:
-            var options: [String: Any] = ["contextLines": contextLines]
-            if fullFile { options["fullFile"] = true }
-            if allowLarge { options["allowLarge"] = true }
-            op = ["kind": "diff", "path": path, "options": options]
         case .recorded(let recordId):
-            op = ["kind": "recordedDiff", "recordId": recordId, "path": path]
+            op = ["kind": "recordedDiff", "recordId": recordId, "path": path, "page": page]
         }
+        diff = nil
+        error = nil
         let reply = await session.send(op, as: FileDiff.self)
         if let result = reply.result {
             diff = result
@@ -809,100 +362,16 @@ private struct DiffView: View {
         }
     }
 
-    private func add(_ draft: NoteDraft, body: String, severity: String) {
-        var note: [String: Any] = ["path": path, "side": draft.side, "line": draft.line, "context": draft.context, "body": body, "severity": severity]
-        if case .recorded(let recordId) = source { note["agentChangeId"] = recordId }
-        Task {
-            let reply = await session.send(["kind": "addNote", "note": note])
-            if !reply.ok { failure = OpFailure(message: reply.message ?? "The note could not be added.") }
-        }
-    }
-}
-
-/// A changed image's two versions (`review.images`), base64.
-private struct ReviewImages: Decodable {
-    let mime: String
-    let old: String?
-    let new: String?
-}
-
-/// Writes a note for one line.
-private struct NoteEditor: View {
-    let path: String
-    let draft: NoteDraft
-    let add: (String, String) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
-    @State private var severity = "info"
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Text(draft.context.trimmingCharacters(in: .whitespaces))
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                } header: {
-                    Text("\((path as NSString).lastPathComponent), \(draft.side == "old" ? "old" : "new") line \(draft.line)")
-                }
-                Section {
-                    TextField("What should change?", text: $text, axis: .vertical)
-                        .lineLimit(3...10)
-                        .focused($focused)
-                    Picker("Severity", selection: $severity) {
-                        Label("Info", systemImage: NoteRow.symbol("info")).tag("info")
-                        Label("Warning", systemImage: NoteRow.symbol("warning")).tag("warning")
-                        Label("Error", systemImage: NoteRow.symbol("error")).tag("error")
-                    }
-                }
-            }
-            .navigationTitle("Add Note")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", role: .cancel) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add", role: .confirm) {
-                        add(text.trimmingCharacters(in: .whitespacesAndNewlines), severity)
-                        dismiss()
-                    }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-            .onAppear { focused = true }
-        }
-        .presentationDetents([.medium, .large])
-    }
 }
 
 /// A file's diff: its hunks, scrolling both ways for long lines unless
-/// they wrap, with each line's notes under it.
+/// they wrap.
 private struct DiffContent: View {
     let diff: FileDiff
     let wrap: Bool
-    let notes: [ReviewSnapshot.Note]
-    let images: ReviewImages?
-    let addNote: (String, Int, String) -> Void
-    let toggleNote: (String) -> Void
-    let showLarge: () -> Void
 
     var body: some View {
-        if let images, images.old != nil || images.new != nil {
-            ScrollView { ImageComparison(images: images).padding() }
-        } else if diff.binary == true {
-            ContentUnavailableView("Binary file", systemImage: "doc")
-        } else if diff.tooLarge == true {
-            ContentUnavailableView {
-                Label("This diff is large", systemImage: "doc.text")
-            } description: {
-                Text("Showing it may take a moment.")
-            } actions: {
-                Button("Show Anyway", action: showLarge)
-            }
-        } else if diff.hunks.isEmpty {
+        if diff.hunks.isEmpty {
             ContentUnavailableView("No changes", systemImage: "equal")
         } else {
             GeometryReader { geometry in
@@ -917,21 +386,8 @@ private struct DiffContent: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Color.blue.opacity(0.08))
                             ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                                DiffLine(line: line, wrap: wrap)
+                                DiffLine(line: line, wrap: wrap, numbered: diff.coverage == "patch")
                                     .contextMenu { lineMenu(line) }
-                                ForEach(notes(of: line)) { note in
-                                    NoteRow(note: note, showsPlace: false)
-                                        .font(.callout)
-                                        .padding(10)
-                                        .frame(maxWidth: wrap ? .infinity : min(geometry.size.width, 560), alignment: .leading)
-                                        .background(.regularMaterial, in: .rect(cornerRadius: 10))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
-                                        .contextMenu {
-                                            Button(note.resolved ? "Reopen" : "Resolve", systemImage: note.resolved ? "arrow.uturn.backward" : "checkmark") { toggleNote(note.id) }
-                                            Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = note.body }
-                                        }
-                                }
                             }
                         }
                     }
@@ -944,64 +400,20 @@ private struct DiffContent: View {
 
     @ViewBuilder
     private func lineMenu(_ line: FileDiff.Line) -> some View {
-        if let new = line.newLine, line.kind != "delete" {
-            Button("Add Note…", systemImage: "text.bubble") { addNote("new", new, line.text) }
-        } else if let old = line.oldLine {
-            Button("Add Note…", systemImage: "text.bubble") { addNote("old", old, line.text) }
-        }
         Button("Copy Line", systemImage: "doc.on.doc") { UIPasteboard.general.string = line.text }
     }
 
-    private func notes(of line: FileDiff.Line) -> [ReviewSnapshot.Note] {
-        notes.filter { note in
-            switch note.side {
-            case "old": line.kind == "delete" && note.line == line.oldLine
-            default: line.kind != "delete" && note.line == line.newLine
-            }
-        }
-    }
-}
-
-/// A changed image before and after.
-private struct ImageComparison: View {
-    let images: ReviewImages
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            side("Before", images.old)
-            side("After", images.new)
-        }
-    }
-
-    @ViewBuilder
-    private func side(_ title: String, _ base64: String?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            if let base64, let data = Data(base64Encoded: base64), let image = UIImage(data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
-            } else {
-                Text(base64 == nil ? "None" : "Cannot be shown here")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 60)
-                    .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
-            }
-        }
-    }
 }
 
 private struct DiffLine: View {
     let line: FileDiff.Line
     let wrap: Bool
+    let numbered: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            Text(line.oldLine.map(String.init) ?? "").frame(width: 34, alignment: .trailing).foregroundStyle(.secondary)
-            Text(line.newLine.map(String.init) ?? "").frame(width: 34, alignment: .trailing).foregroundStyle(.secondary)
+            Text(numbered ? line.oldLine.map(String.init) ?? "" : "").frame(width: 34, alignment: .trailing).foregroundStyle(.secondary)
+            Text(numbered ? line.newLine.map(String.init) ?? "" : "").frame(width: 34, alignment: .trailing).foregroundStyle(.secondary)
             Text(marker + line.text)
                 .fixedSize(horizontal: !wrap, vertical: false)
                 .frame(maxWidth: wrap ? .infinity : nil, alignment: .leading)

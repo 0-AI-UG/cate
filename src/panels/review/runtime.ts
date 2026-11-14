@@ -9,7 +9,6 @@ export { definition as reviewDefinition }
 export {
   ReviewSession,
   type ReviewAgents,
-  type ReviewFiles,
   type ReviewRepository,
   type ReviewSessionDeps,
 } from './session'

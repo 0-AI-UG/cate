@@ -2,7 +2,7 @@
 // cheap probe (branch, tracked dirty flag, local branches) adaptively: 2 s
 // right after a change, doubling up to 30 s while nothing moves. A probe
 // change, a file change or a kick after a git write reads the full snapshot;
-// subscribers get it when it differs from the last one. File changes git
+// subscribers also get forced invalidations when only content changed. File changes git
 // ignores (build output, caches) read nothing. While inactive (untrusted) a
 // monitor runs no git and starts no watcher.
 
@@ -90,7 +90,7 @@ export function createStatusMonitors(deps: StatusMonitorDeps): StatusMonitors {
         const snapshot = await deps.snapshot(m.cwd)
         if (stale()) return
         const key = JSON.stringify(snapshot)
-        if (key !== m.snapshotKey) {
+        if (force || key !== m.snapshotKey) {
           m.snapshotKey = key
           m.last = snapshot
           changed = true

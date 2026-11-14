@@ -25,6 +25,7 @@ export type {
 export {
   createRuntimeUpdates,
   runtimeMismatch,
+  connectionUsable,
   type RuntimeMismatch,
   type RuntimeUpdateRun,
   type RuntimeUpdates,

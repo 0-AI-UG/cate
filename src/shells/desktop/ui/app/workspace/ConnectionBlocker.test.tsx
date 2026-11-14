@@ -80,7 +80,7 @@ describe('ConnectionBlocker', () => {
   it('covers an incompatible workspace at once with the way to resolve it, and makes it inert', async () => {
     mount(fakeConnection({ kind: 'incompatible', runtimeVersion: '1.9.0' }))
     await act(async () => { await Promise.resolve() })
-    expect(cover()?.textContent).toContain('A workspace update is ready')
+    expect(cover()?.textContent).toContain('Workspace update ready')
     expect(cover()?.textContent).toContain('Update and Stop Work')
     expect(content().hasAttribute('inert')).toBe(true)
   })

@@ -5,7 +5,7 @@
 // offered a start.
 
 import type { ConnectionState } from './connection'
-import { runtimeMismatch } from './runtimeUpdate'
+import { runtimeMismatch, type RuntimeMismatch } from './runtimeUpdate'
 
 /** "5 minutes ago", coarse. */
 export function relativeTime(then: number, now: number = Date.now()): string {
@@ -39,6 +39,8 @@ export interface StatusContext {
   startsRuntime: boolean
   /** This client's version. */
   version: string
+  /** The shared update controller's decision, not a release comparison. */
+  requiredUpdate?: RuntimeMismatch | null
   now?: number
 }
 
@@ -77,7 +79,7 @@ export function connectionStatus(state: ConnectionState, context: StatusContext)
         : { title: 'Not reachable', message: reason ? `${reason}.` : 'Its machine may be off or offline.', remedies: unreachable }
     }
     case 'connected':
-      return runtimeMismatch(state, version)
+      return context.requiredUpdate
         ? { title: 'Runtime update needed', message: `The workspace runs Cate ${state.runtimeVersion}. Update it to ${version} for this app's runtime fixes and features; that ends its terminals and running agents for everyone.`, remedies: ['updateRuntime'] }
         : null
     case 'incompatible':

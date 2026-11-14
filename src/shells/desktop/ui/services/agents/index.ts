@@ -19,10 +19,11 @@ export {
   useAgentInfoByPanel,
 } from './useAgentPanels'
 export { AwaitingIndicator } from './indicators'
-export { useAgentTabDecorations, AgentChangesOverlay, AgentHooksOffOverlay } from './tabDecorations'
+export { useAgentPanelDecorations, AgentChangesOverlay, AgentHooksOffOverlay } from './panelDecorations'
 export { AgentChangesPill } from './AgentChangesPill'
 export { agentContextPreview, useAgentContextTransport } from './contextTransport'
 export { setAgentChangesOpener, type AgentChangesOpener, type AgentChangesRequest } from './changesOpener'
 export { AgentSetupSettings } from './AgentSetupSettings'
 export { AgentSpawnFlyout } from './AgentSpawnFlyout'
+export { useAgentAvailability } from './useAgentAvailability'
 export { UsageOverview } from './usage'

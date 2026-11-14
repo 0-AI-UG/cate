@@ -56,6 +56,8 @@ export const CreateWorktreeForm: React.FC<{
   const [prsExpanded, setPrsExpanded] = useState(true)
   const [filter, setFilter] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [optionsLoading, setOptionsLoading] = useState(true)
+  const [optionsError, setOptionsError] = useState<string | null>(null)
   const busyRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const filterRef = useRef<HTMLInputElement>(null)
@@ -66,16 +68,24 @@ export const CreateWorktreeForm: React.FC<{
 
   const loadOptions = useCallback(async () => {
     if (!runtime) return
-    const [list, result] = await Promise.all([
-      runtime.vcs.prList({ cwd: rootPath }),
-      runtime.vcs.branchList({ cwd: rootPath }),
-    ])
-    setPrs(list)
-    setBranches(
-      result.branches
-        .filter((b) => !b.name.includes('/HEAD'))
-        .map((b) => ({ name: b.name, isRemote: b.isRemote })),
-    )
+    setOptionsLoading(true)
+    setOptionsError(null)
+    try {
+      const [list, result] = await Promise.all([
+        runtime.vcs.prList({ cwd: rootPath }),
+        runtime.vcs.branchList({ cwd: rootPath }),
+      ])
+      setPrs(list)
+      setBranches(
+        result.branches
+          .filter((b) => !b.name.includes('/HEAD'))
+          .map((b) => ({ name: b.name, isRemote: b.isRemote })),
+      )
+    } catch (err) {
+      setOptionsError(errorMessage(err, 'Could not load branches and pull requests.'))
+    } finally {
+      setOptionsLoading(false)
+    }
   }, [runtime, rootPath])
 
   useEffect(() => {
@@ -253,6 +263,8 @@ export const CreateWorktreeForm: React.FC<{
                 </Tooltip>
               </div>
               <div className="overflow-y-auto max-h-[220px]">
+                {!runtime || optionsLoading ? <div className="flex justify-center py-6"><Spinner size={16} label="Loading branches and pull requests" /></div> : optionsError ? <p role="alert" className="px-3 py-4 text-xs text-muted">{optionsError}</p> : <>
+
                 {localBranches.length > 0 && (
                   <div>
                     <button
@@ -331,6 +343,7 @@ export const CreateWorktreeForm: React.FC<{
                 {localBranches.length === 0 && remoteBranches.length === 0 && filteredPrs.length === 0 && (
                   <div className="px-2 py-2 text-[11px] text-muted text-center">No matches</div>
                 )}
+                </>}
               </div>
             </div>
           )

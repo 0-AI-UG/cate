@@ -47,6 +47,14 @@ describe('Git review comparisons', () => {
     expect(all.additions).toBeGreaterThanOrEqual(3)
   })
 
+  test('keeps staged files visible when working edits cancel their net diff', async () => {
+    await fs.writeFile(path.join(repo, 'tracked.txt'), 'staged\n')
+    await simpleGit(repo).add('tracked.txt')
+    await fs.writeFile(path.join(repo, 'tracked.txt'), 'base\n')
+    const all = await vcs.compare({ cwd: repo, spec: { kind: 'uncommitted' } })
+    expect(all.files).toEqual([expect.objectContaining({ path: 'tracked.txt', staged: true, working: true, additions: 0, deletions: 0 })])
+  })
+
   test('reviews staged changes before the first commit', async () => {
     const emptyRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-review-unborn-'))
     try {
@@ -190,4 +198,22 @@ describe('Git review comparisons', () => {
       ],
     })])
   })
+  test('exports complete tracked and untracked patches only on request', async () => {
+    await fs.writeFile(path.join(repo, 'tracked.txt'), 'changed\n')
+    await fs.writeFile(path.join(repo, 'new.txt'), 'new\n')
+    const { applyCommand } = vcs
+    const command = await applyCommand({ cwd: repo, spec: { kind: 'uncommitted' } })
+    expect(command).toContain('git -C')
+    expect(command).toContain('apply <<')
+    expect(command).toContain('+changed')
+    expect(command).toContain('+new')
+  })
+
+  test('bounds image preview payloads before encoding large working files', async () => {
+    await fs.writeFile(path.join(repo, 'image.png'), Buffer.alloc(2 * 1024 * 1024 + 1))
+    const content = await vcs.fileContent({ cwd: repo, spec: { kind: 'uncommitted' }, path: 'image.png', side: 'new' })
+    expect(content).toMatchObject({ exists: true, size: 2 * 1024 * 1024 + 1 })
+    expect(content.base64).toBeUndefined()
+  })
+
 })

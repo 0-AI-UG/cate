@@ -22,3 +22,4 @@ export {
 } from './flows'
 export type { RepositoryHost, ReviewRequest, WorktreeLaunchType } from './host'
 export { fetchWorktreePrs, fetchWorktreeStatuses, type WorktreeStatusClient } from './worktrees'
+export { createRepositoryReadCache, type RepositoryReadCache } from './readCache'

@@ -1,3 +1,4 @@
+import { COMPATIBILITY_VERSION } from './contract'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import {
   CancelledError,
@@ -182,7 +183,7 @@ describe('rpc server and client', () => {
 
   it('refuses a runtime of another compatibility version but still allows anyVersion methods', async () => {
     for (const version of ['1.0.1', '1.0.0-beta.1', '0.9.0']) {
-      const { api, client, connect } = setup({ server: { version, compatibilityVersion: 2 } })
+      const { api, client, connect } = setup({ server: { version, compatibilityVersion: COMPATIBILITY_VERSION + 1 } })
       const queued = api.read({ path: '/a' })
       await connect().ready
       expect(client.state).toBe('incompatible')
@@ -198,7 +199,7 @@ describe('rpc server and client', () => {
     server.serve(serverPort)
     const replies: Array<Record<string, unknown>> = []
     clientPort.onFrame((f) => { if (f.kind === 'msg') replies.push(f.msg as never) })
-    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '0.9.0', compatibilityVersion: 2, client: { clientId: 'old', device: { name: 'mac', publicKey: 'fp' }, features: [] } } })
+    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '0.9.0', compatibilityVersion: COMPATIBILITY_VERSION + 1, client: { clientId: 'old', device: { name: 'mac', publicKey: 'fp' }, features: [] } } })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 1, cap: 'test', method: 'read', params: { path: '/' } } })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 2, cap: 'test', method: 'info' } })
     await vi.waitFor(() => expect(replies).toHaveLength(3))
@@ -439,7 +440,7 @@ describe('rpc server and client', () => {
     const replies: unknown[] = []
     clientPort.onFrame((f) => { if (f.kind === 'msg') replies.push(f.msg) })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 1, cap: 'test', method: 'read', params: { path: '/' } } })
-    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '1.0.0', compatibilityVersion: 1, caller: { token: 't' } } })
+    clientPort.send({ kind: 'msg', msg: { t: 'hello', version: '1.0.0', compatibilityVersion: COMPATIBILITY_VERSION, caller: { token: 't' } } })
     clientPort.send({ kind: 'msg', msg: { t: 'req', id: 2, cap: 'test', method: 'bump', params: { by: 1 }, opId: 'c9:1' } })
     await vi.waitFor(() => expect(replies).toHaveLength(3))
     expect(replies[0]).toMatchObject({ t: 'res', id: 1, error: { code: 'rejected' } })

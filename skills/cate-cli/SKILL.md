@@ -42,7 +42,7 @@ guessing a flag:
 ```bash
 cate --help                  # command groups and global flags
 cate panel --help            # the commands of one group (or just: cate panel)
-cate review note add --help  # one command: arguments, flags and defaults
+cate agent send --help       # one command: arguments, flags and defaults
 ```
 
 A mistyped command suggests the closest one. Lists print as aligned tables,
@@ -116,20 +116,13 @@ Typing into a terminal is in `references/agents.md`.
 
 ## Review panels
 
-A Review panel compares changes; you record structured findings on it. Select
-it once, inspect the comparison, then add notes:
+Review panels show recorded agent edits grouped by commit, plus uncommitted
+edits. They capture what agents reported, not today's Git diff. Use the Review
+UI to select sources and start a reviewer in a terminal; findings stay in that
+agent's conversation. There are no dedicated Review CLI commands.
 
-```bash
-cate panel set <review-panel-id>
-cate review inspect
-cate review note add --file src/app.ts --line 42 --side new \
-  --severity error --body "Handle the rejected request"
-cate review note resolve <note-id>
-cate review complete
-```
-
-Run `complete` only when that Review panel assigned you as its review agent.
-Review commands record findings; they never modify, stage, commit or push.
+Use `cate agent read / send / wait` to collaborate with reviewers. For repository
+diffs, staging, commits and pull requests, use `git` and `gh` directly.
 
 ## Versions and serving
 

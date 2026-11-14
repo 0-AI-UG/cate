@@ -1,10 +1,8 @@
-// The review panel type: a Git comparison of a checkout, or an agent's
-// recorded edits, with notes. Pure.
+// The review panel type: recorded agent edits. Pure.
 
 import { channel } from '@kernel/rpc/contract'
 import { definePanel } from '@panels/framework/contract'
 import type { JsonObject } from '@workspace/document/contract'
-import { reviewApi } from './contract/api'
 import {
   reviewRepoPath,
   type ReviewCreateOptions,
@@ -21,17 +19,16 @@ function fields(repoPath: string, request: ReviewOpenRequest | undefined): JsonO
 
 export default definePanel({
   type: 'review',
-  label: 'Diff Review',
+  label: 'Agent Review',
   icon: 'git-compare',
-  defaultSize: { width: 1000, height: 700 },
+  defaultSize: { width: 640, height: 500 },
   minimumSize: { width: 320, height: 220 },
-  dropSize: { width: 820, height: 560 },
+  dropSize: { width: 540, height: 420 },
   canLiveOnCanvas: true,
   navigable: true,
   creation: { order: 8, toolbar: true, inWorktree: true },
-  defaultTitle: 'Diff Review',
+  defaultTitle: 'Agent Review',
   channel: channel<ReviewSnapshot, Partial<ReviewSnapshot>, ReviewOp>(),
-  api: reviewApi,
   fields: (options: ReviewCreateOptions) => fields(options.repoPath ?? '', options.request),
   create: (options: ReviewCreateOptions, kit) => {
     const bound = options.worktreeId ? kit.document().worktrees[options.worktreeId]?.path : undefined
@@ -51,15 +48,13 @@ export default definePanel({
   ],
   chrome: { worktreeChip: true },
   relation: {
-    produces: 'notes',
+    produces: 'changes',
     targetOptions: {
-      execution: [['verify', 'Review in'], ['use', 'Address notes in'], ['context', 'Reference']],
-      changes: [['verify', 'Review in'], ['context', 'Reference'], ['use', 'Address notes in']],
-      findings: [['verify', 'Review in'], ['context', 'Reference'], ['use', 'Address notes in']],
-      notes: [['context', 'Compare with'], ['verify', 'Review in'], ['use', 'Address notes in']],
+      execution: [['verify', 'Review in'], ['use', 'Use changes in'], ['context', 'Reference']],
+      changes: [['verify', 'Review in'], ['context', 'Reference'], ['use', 'Use changes in']],
+      findings: [['verify', 'Review in'], ['context', 'Reference'], ['use', 'Use changes in']],
+      notes: [['context', 'Compare with'], ['verify', 'Review in'], ['use', 'Use changes in']],
     },
-    instruction: (kind) => `${kind === 'verify'
-      ? 'Review its diff and record findings as notes'
-      : kind === 'use' ? 'Work through its open notes and resolve them' : 'Read its diff and notes'} through Cate review commands.`,
+    instruction: () => 'Review the recorded agent edits. Report findings in your response; do not edit files unless asked.',
   },
 })

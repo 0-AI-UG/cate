@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { RpcClient, createRuntimeProxy } from '@kernel/rpc/client'
-import { createMemoryPortPair } from '@kernel/rpc/contract'
+import { COMPATIBILITY_VERSION, createMemoryPortPair } from '@kernel/rpc/contract'
 import { RpcServer, type StreamSink } from '@kernel/rpc/runtime'
 import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
 import { surfaceCapability, type SurfaceRequest } from '@panels/framework/contract'
@@ -23,7 +23,7 @@ describe('serveSurfaces', () => {
     const servers: RpcServer[] = []
     let sink: StreamSink<SurfaceRequest> | undefined
     const replies: unknown[] = []
-    const connect = async (version: string, compatibilityVersion = 1) => {
+    const connect = async (version: string, compatibilityVersion = COMPATIBILITY_VERSION) => {
       const server = new RpcServer({ lifecycle: createLifecycleBus(), version, compatibilityVersion })
       servers.push(server)
       server.register(surfaceCapability, {
@@ -35,7 +35,7 @@ describe('serveSurfaces', () => {
       await rpc.attach(clientPort)
     }
     try {
-      await connect('1.0.0', 2)
+      await connect('1.0.0', COMPATIBILITY_VERSION + 1)
       expect(rpc.state).toBe('incompatible')
       await connect('2.0.0')
       expect(sink).toBeDefined()

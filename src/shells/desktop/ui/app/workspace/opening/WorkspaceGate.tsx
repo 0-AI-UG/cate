@@ -10,14 +10,14 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { documentStoreFor } from '@client/document'
 import { subscribeWorkspacePhase, trustStore, workspacePhaseOf, type WorkspacePhase } from '@client/workspaces'
-import { runtimeMismatch, type ConnectionState, type WorkspaceConnection } from '@client/connections'
+import type { ConnectionState, WorkspaceConnection } from '@client/connections'
 import { useConnectionState } from '../../../client/connections'
 import { panelViewsLoaded, preloadPanelViews } from '../../../client/host/views'
 import { tryClientApp } from '../../app'
 import { closeWorkspace, selectWorkspace } from '../../navigation'
 import { useUIStore } from '../../state/uiStore'
 import { ConnectionBlocker, ConnectionStatusCard, StatusCard, useWorkspaceConnection } from '../ConnectionBlocker'
-import { RuntimeMismatchCard, useRuntimeUpdate } from '../RuntimeMismatch'
+import { RuntimeMismatchCard, useRequiredRuntimeUpdate, useRuntimeUpdate } from '../RuntimeMismatch'
 import { useTrustInPlace, WorkspaceTrustCard } from './TrustQuestion'
 import { CateLogo } from '../../../kernel/interaction'
 
@@ -85,7 +85,7 @@ export function WorkspaceGate({ workspaceId, children }: { workspaceId: string |
   const updating = useRuntimeUpdate(connection) !== null
   const asking = useSyncExternalStore(trustStore.subscribe, () => !!workspaceId && trustStore.current()?.workspaceId === workspaceId)
   const opening = phase !== 'ready' || !viewsLoaded
-  const mismatch = runtimeMismatch(state, tryClientApp()?.version ?? '') !== null
+  const mismatch = useRequiredRuntimeUpdate(connection) !== null
   const immediate = mismatch || asking || updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
   const card = useOpeningCard(opening, immediate)
   // An overlay hides this place (or covers it in a detached window): the

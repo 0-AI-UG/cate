@@ -7,7 +7,7 @@ import { DiffRows } from './DiffRows'
 
 afterEach(() => vi.unstubAllGlobals())
 
-it('bounds a long diff, reveals distant rows, and retains a composing row offscreen', () => {
+it('bounds a long diff and mounts distant rows only when visible', () => {
   const observers = new Map<Element, (entries: Array<{ isIntersecting: boolean }>) => void>()
   vi.stubGlobal('IntersectionObserver', class {
     constructor(private callback: (entries: Array<{ isIntersecting: boolean }>) => void) {}
@@ -18,48 +18,19 @@ it('bounds a long diff, reveals distant rows, and retains a composing row offscr
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
-  const render = (keep?: number) => act(() => root.render(<DiffRows count={5000} columns={100} wrap={false} keepRow={i => i === keep} renderRow={i => <div data-line={i}>Line {i}</div>} />))
+  const render = () => act(() => root.render(<DiffRows count={5000} columns={100} wrap={false} renderRow={i => <div data-line={i}>Line {i}</div>} />))
   try {
     render()
     expect(host.querySelectorAll('[data-line]')).toHaveLength(40)
     const distant = host.querySelector('[data-diff-chunk="4000"]')!
     act(() => observers.get(distant)!([{ isIntersecting: true }]))
     expect(host.querySelector('[data-line="4000"]')).not.toBeNull()
-    render(4000)
     act(() => observers.get(distant)!([{ isIntersecting: false }]))
-    expect(host.querySelector('[data-line="4000"]')).not.toBeNull()
-    render()
     expect(host.querySelector('[data-line="4000"]')).toBeNull()
     expect(host.querySelectorAll('[data-line]')).toHaveLength(40)
   } finally { act(() => root.unmount()); host.remove() }
 })
 
-it('pairs distant changed lines and keeps split and wrapped comment drafts mounted', async () => {
-  const { HunkView } = await import('./ReviewDiff')
-  vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} })
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
-  const host = document.createElement('div')
-  const root = createRoot(host)
-  const hunk = {
-    header: '@@ -1,250 +1,250 @@', oldStart: 1, oldLines: 250, newStart: 1, newLines: 250,
-    lines: [
-      ...Array.from({ length: 250 }, (_, i) => ({ kind: 'delete' as const, oldLine: i + 1, newLine: null, text: `before value ${i}` })),
-      ...Array.from({ length: 250 }, (_, i) => ({ kind: 'add' as const, oldLine: null, newLine: i + 1, text: `after value ${i}` })),
-    ],
-  }
-  const render = (split: boolean, wrap: boolean) => act(() => root.render(<HunkView hunk={hunk} split={split} wrap={wrap} wordDiff notes={[]} addNote={() => {}} toggleNote={() => {}} noteDraft={{ filePath: 'file.ts', side: 'new', line: 250, context: 'after value 249' }} submitNote={() => {}} cancelNote={() => {}} />))
-  try {
-    render(false, false)
-    expect(host.querySelector('[aria-label="Add review note on new line 250"]')).not.toBeNull()
-    expect(host.querySelectorAll('button[aria-label^="Add review note"]')).toHaveLength(60)
-    expect(host.querySelector('[aria-label="Review note"]')).not.toBeNull()
-    expect(host.querySelector('span.bg-current\\/15')?.textContent).toBe('before')
-    render(true, true)
-    expect(host.querySelector('[aria-label="Add review note on new line 250"]')).not.toBeNull()
-    expect(host.querySelector('[aria-label="Review note"]')).not.toBeNull()
-    expect(host.querySelectorAll('button[aria-label^="Add review note"]').length).toBeLessThan(200)
-  } finally { act(() => root.unmount()); host.remove() }
-})
 
 it('releases an offscreen chunk after its protected keyboard focus leaves', async () => {
   const callbacks = new Map<Element, (entries: Array<{ isIntersecting: boolean }>) => void>()

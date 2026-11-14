@@ -2,7 +2,7 @@
 // and the agents running a turn. Listed and confirmed in the view before
 // `runtime.stop` or `runtime.update` is sent (7.4, 7.10).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Spinner } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
@@ -11,6 +11,7 @@ import type { RuntimeProxy } from '@kernel/rpc/contract'
 export interface RunningItem {
   id: string
   label: string
+  panelId?: string
 }
 
 export interface RunningWorkList {
@@ -33,9 +34,10 @@ export async function listRunningWork(
       .filter((t) => t.alive)
       .map((t) => ({
         id: t.id,
+        ...(t.panelId ? { panelId: t.panelId } : {}),
         label: (t.panelId && title(t.panelId)) || (t.activity.type === 'running' ? t.activity.processName : t.shell),
       })),
-    agents: busy.panelIds.map((panelId) => ({ id: panelId, label: title(panelId) ?? 'Agent' })),
+    agents: busy.panelIds.map((panelId) => ({ id: panelId, panelId, label: title(panelId) ?? 'Agent' })),
   }
 }
 
@@ -46,12 +48,13 @@ export interface RunningWorkConfirmProps {
   /** What happens, in one sentence. */
   consequence: string
   title?: (panelId: string) => string | undefined
+  renderPanelTitle?: (panelId: string) => ReactNode
   onConfirm: () => Promise<void>
   onCancel: () => void
 }
 
 /** Lists the running work and asks before acting on it. */
-export function RunningWorkConfirm({ runtime, actionLabel, consequence, title, onConfirm, onCancel }: RunningWorkConfirmProps): JSX.Element {
+export function RunningWorkConfirm({ runtime, actionLabel, consequence, title, renderPanelTitle, onConfirm, onCancel }: RunningWorkConfirmProps): JSX.Element {
   const [work, setWork] = useState<RunningWorkList | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -92,7 +95,7 @@ export function RunningWorkConfirm({ runtime, actionLabel, consequence, title, o
           {items.map((item) => (
             <li key={`${item.kind}:${item.id}`} className="flex gap-2">
               <span className="text-muted w-16 shrink-0">{item.kind}</span>
-              <span className="truncate">{item.label}</span>
+              <span className="flex min-w-0 flex-1">{(item.panelId && renderPanelTitle?.(item.panelId)) || item.label}</span>
             </li>
           ))}
         </ul>

@@ -2,6 +2,7 @@
 // everything. A node's indicator clips to its canvas.
 
 import React from 'react'
+import { PanelTitle, usePanelTitles } from '../../host'
 import { createPortal } from 'react-dom'
 import { sameDockRef } from '@workspace/document/contract'
 import { documentStoreFor } from '@client/document'
@@ -67,7 +68,7 @@ export function DragOverlay() {
         top={rect.top}
         width={rect.width}
         height={rect.height}
-        title={panel.title}
+        title={source ? <DragPanelTitle workspaceId={source.workspaceId} panel={panel} /> : <PanelTitle record={panel} iconSize={11} />}
       />
       {memberGhosts.map((m) => (
         <GhostWindow key={m.key} left={m.left} top={m.top} width={m.width} height={m.height} title="" />
@@ -123,7 +124,7 @@ function GhostWindow({
   top: number
   width: number
   height: number
-  title: string
+  title: React.ReactNode
 }) {
   return (
     <div
@@ -298,4 +299,10 @@ function lookupStackRect(target: DropTarget): { rect: Rect; clip: Rect | null } 
     }
   }
   return null
+}
+
+function DragPanelTitle({ workspaceId, panel }: { workspaceId: string; panel: { id: string; type: string; title: string } }) {
+  const titles = usePanelTitles(workspaceId)
+  const record = documentStoreFor(workspaceId)?.getSnapshot().panels[panel.id]
+  return <PanelTitle {...(record ? titles.props(record) : { record: panel, decoration: titles.decorations[panel.id] })} iconSize={11} />
 }

@@ -16,6 +16,7 @@ const savePassword = vi.fn(async () => ({
 }))
 const importPasswords = vi.fn(async () => ({ imported: 1, skipped: 0 }))
 const readChromePasswordCsv = vi.fn(async () => ({ canceled: false, credentials: [{ origin: 'https://a.example', username: 'a', password: 'p' }], skipped: 0 }))
+let passwords: ReturnType<typeof vi.fn>
 let host: HTMLDivElement
 let root: Root
 let restore: () => void
@@ -25,9 +26,10 @@ beforeEach(async () => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
+  passwords = vi.fn(async () => [{ id: 'credential-1', origin: 'https://example.com', username: 'person@example.com' }])
   const runtime = {
     browserData: {
-      passwords: vi.fn(async () => [{ id: 'credential-1', origin: 'https://example.com', username: 'person@example.com' }]),
+      passwords,
       removePassword,
       savePassword,
       importPasswords,
@@ -141,4 +143,22 @@ describe('BrowserPasswordManagerPage', () => {
     await click('Import anyway')
     expect(importPasswords).toHaveBeenCalledWith({ credentials: [{ origin: 'https://a.example', username: 'a', password: 'p' }] })
   })
+})
+
+
+it('waits for saved passwords before displaying the empty state', async () => {
+  let finish!: (value: []) => void
+  passwords.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+  await act(async () => root.render(<BrowserPasswordManagerPage key="pending" workspaceId="ws" />))
+  expect(host.textContent).toContain('Loading passwords')
+  expect(host.textContent).not.toContain('No saved passwords')
+  await act(async () => finish([]))
+  expect(host.textContent).toContain('No saved passwords')
+})
+
+it('reports a failed password read without claiming there are no passwords', async () => {
+  passwords.mockRejectedValue(new Error('Runtime unavailable'))
+  await act(async () => root.render(<BrowserPasswordManagerPage key="failed" workspaceId="ws" />))
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Runtime unavailable')
+  expect(host.textContent).not.toContain('No saved passwords')
 })

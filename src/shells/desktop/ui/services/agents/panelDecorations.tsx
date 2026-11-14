@@ -1,8 +1,8 @@
-// What agents add to dock tabs and panel chrome, registered into the dock's
+// What agents add to panel labels and chrome, registered into the client's
 // slots by the workspace views: a detected agent's logo and name, its status
 // mark, the agent changes pill and the hooks-off warning.
 
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import type { PanelRecord } from '@workspace/document/contract'
@@ -12,8 +12,8 @@ import { AwaitingIndicator } from './indicators'
 import { agentInfoTitle } from './panelInfo'
 import { useAgentInfoByPanel, useAgentPanelState } from './useAgentPanels'
 
-/** Agent status on tabs: logo, working shimmer, awaiting-input dot, title. */
-export function useAgentTabDecorations(workspaceId: string): Record<string, {
+/** Agent status on every panel label: logo, working shimmer, awaiting-input dot, title. */
+export function useAgentPanelDecorations(workspaceId: string): Record<string, {
   logo: string | null
   logoAlt: string | null
   status: ReactNode
@@ -21,17 +21,19 @@ export function useAgentTabDecorations(workspaceId: string): Record<string, {
   retitle: (title: string) => string
 }> {
   const info = useAgentInfoByPanel(workspaceId)
-  const out: ReturnType<typeof useAgentTabDecorations> = {}
-  for (const [panelId, agent] of Object.entries(info)) {
-    out[panelId] = {
-      logo: agent.logo,
-      logoAlt: agent.name,
-      status: agent.status === 'waitingForInput' ? <AwaitingIndicator /> : null,
-      busy: agent.status === 'running',
-      retitle: (title) => agentInfoTitle(title, agent),
+  return useMemo(() => {
+    const out: ReturnType<typeof useAgentPanelDecorations> = {}
+    for (const [panelId, agent] of Object.entries(info)) {
+      out[panelId] = {
+        logo: agent.logo,
+        logoAlt: agent.name,
+        status: agent.status === 'waitingForInput' ? <AwaitingIndicator /> : null,
+        busy: agent.status === 'running',
+        retitle: (title) => agentInfoTitle(title, agent),
+      }
     }
-  }
-  return out
+    return out
+  }, [info])
 }
 
 /** The agent changes pill over an execution panel's top-right corner. */

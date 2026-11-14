@@ -5,13 +5,14 @@ import React from 'react'
 import { clientStateFor } from '@client/document'
 import { useDocument } from '../../document'
 import { panelsOnCanvas, type WorkspaceDocument } from '@workspace/document/contract'
-import { panelDefinition } from './ports'
+import { PanelTitle, usePanelTitles } from '../../host'
 import { shallowArrayEqual } from './context'
 import { canvasSlots } from './slots'
 
 const LIST_ITEM_HEIGHT = 360
 
 export function CanvasPanelList({ workspaceId, canvasId }: { workspaceId: string; canvasId: string }): React.ReactElement {
+  const titles = usePanelTitles(workspaceId)
   const panelIds = useDocument(workspaceId, (d: WorkspaceDocument) => panelsOnCanvas(d, canvasId), shallowArrayEqual)
   const panels = useDocument(workspaceId, (d) => d.panels)
   const { PanelHost } = canvasSlots()
@@ -30,7 +31,7 @@ export function CanvasPanelList({ workspaceId, canvasId }: { workspaceId: string
               className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-hover"
               onClick={() => clientStateFor(workspaceId)?.focus(id)}
             >
-              {record.title || panelDefinition(record.type)?.label || record.type}
+              <PanelTitle {...titles.props(record)} />
             </button>
             {PanelHost && (
               <div style={{ height: LIST_ITEM_HEIGHT }}>

@@ -9,7 +9,8 @@ import { tryRuntimeFor } from '@kernel/rpc/client'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { revealPanel } from '@client/host'
 import type { AgentId } from '@services/agents/contract'
-import { registerPanelChromeOverlay, registerTabDecorations } from '../../client/layout/dock'
+import { registerPanelDecorations } from '../../client/host'
+import { registerPanelChromeOverlay } from '../../client/layout/dock'
 import {
   CanvasToolbarButton,
   canvasViewFor,
@@ -22,22 +23,24 @@ import {
   type CanvasToolbarItemProps,
   type SpawnFlyoutProps,
 } from '../../client/layout/canvas'
-import { AgentChangesOverlay, AgentHooksOffOverlay, AgentSpawnFlyout, UsageOverview, agentContextPreview, useAgentContextTransport, useAgentTabDecorations } from '../../services/agents'
+import { AgentChangesOverlay, AgentHooksOffOverlay, AgentSpawnFlyout, UsageOverview, agentContextPreview, useAgentContextTransport, useAgentPanelDecorations } from '../../services/agents'
 import { SkillsDialog } from '../../workspace/skills'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
 import {
   RepositoryOverview,
+  GitComparisonView,
   WorktreePill,
   WorktreeToolbarMenu,
   useRepositoryUi,
   type RepositoryTab,
 } from '../../workspace/repository'
-import { openPullRequest, pullRequestNotOpenMessage } from '@workspace/repository/client'
+import { openPullRequest, pullRequestNotOpenMessage, type ReviewRequest } from '@workspace/repository/client'
 import { PanelRelationContextToggle, installRelationUiPort } from '../../workspace/relations'
 import type { PanelRecord } from '@workspace/document/contract'
 import { OverlayHeader } from '../chrome/chrome'
 import { registerOverlay, type OverlayViewProps } from '../overlays'
+import { useUIStore } from '../state/uiStore'
 import { openTextPreview } from './textPreview'
 
 // --- Overlays --------------------------------------------------------------------
@@ -61,9 +64,20 @@ function SkillsOverlay({ workspaceId, onClose }: OverlayViewProps) {
   return <SkillsDialog workspaceId={workspaceId} onClose={onClose} container={slot} renderHeader={(actions) => <OverlayHeader title="Skills">{actions}</OverlayHeader>} />
 }
 
-function RepositoryOverlay({ workspaceId }: OverlayViewProps) {
+function RepositoryOverlay({ workspaceId, section }: OverlayViewProps) {
   const [tab, setTab] = useState<RepositoryTab>('changes')
+  const request = useMemo(() => {
+    if (!section?.startsWith('{')) return null
+    try { return JSON.parse(section) as ReviewRequest & { workspaceId: string } }
+    catch { return null }
+  }, [section])
   if (!workspaceId) return <ContentOverlay><OverlayHeader title="Repository" /></ContentOverlay>
+  if (request?.workspaceId === workspaceId) return <ContentOverlay>
+    <OverlayHeader title="Repository" />
+    <div className="mx-auto min-h-0 w-full max-w-[1040px] flex-1 px-6 py-4">
+      <GitComparisonView onOpenFile={() => useUIStore.getState().closeOverlay()} key={section} workspaceId={workspaceId} request={request} onBack={() => useUIStore.getState().openOverlay({ view: 'pullRequests' })} />
+    </div>
+  </ContentOverlay>
   return (
     <ContentOverlay>
       <RepositoryPane workspaceId={workspaceId} tab={tab} onTabChange={setTab} />
@@ -75,6 +89,7 @@ function RepositoryPane({ workspaceId, tab, onTabChange }: { workspaceId: string
   const host = useRepositoryUi()
   return (
     <RepositoryOverview
+      onOpenFile={() => useUIStore.getState().closeOverlay()}
       tab={tab}
       onTabChange={onTabChange}
       header={(actions) => <OverlayHeader title="Repository">{actions}</OverlayHeader>}
@@ -163,7 +178,7 @@ export function registerWorkspaceViews(): () => void {
     registerOverlay('skills', SkillsOverlay),
     registerOverlay('pullRequests', RepositoryOverlay),
     registerOverlay('usage', UsageOverlay),
-    registerTabDecorations(useAgentTabDecorations),
+    registerPanelDecorations(useAgentPanelDecorations),
     registerPanelChromeOverlay(WorktreeChip),
     registerPanelChromeOverlay(RelationToggle),
     registerPanelChromeOverlay(AgentChangesOverlay),

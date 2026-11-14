@@ -31,7 +31,7 @@ struct WorkspaceView: View {
 
     var body: some View {
         let workspace = core.workspace(workspaceId)
-        let connected = workspace?.connection.kind == .connected
+        let connected = workspace?.connection.usable == true
         let docked = (workspace?.panels ?? []).filter { $0.onCanvas == nil }
         let panel = selected.flatMap { id in docked.first { $0.id == id } }
         let canvas = panel?.type == "canvas" ? panel : nil
@@ -56,6 +56,8 @@ struct WorkspaceView: View {
                         ContentUnavailableView("Nothing in the dock", systemImage: "rectangle.stack", description: Text("Add a panel with +, or start an agent."))
                     }
                 }
+                .disabled(!connected)
+                .allowsHitTesting(connected)
                 .safeAreaInset(edge: .top) {
                     if !connected { ConnectionBanner(workspace: workspace) }
                 }
@@ -175,7 +177,9 @@ private struct ConnectionState: View {
     let workspace: Workspace
 
     var body: some View {
-        if workspace.connection.kind == .connecting {
+        if workspace.connection.updating {
+            ProgressView(workspace.connection.title)
+        } else if workspace.connection.kind == .connecting {
             ProgressView(workspace.connection.text)
         } else {
             ContentUnavailableView {
@@ -236,7 +240,7 @@ struct AgentsView: View {
         .navigationTitle("Agents")
         .navigationSubtitle(workspace?.name ?? "")
         .toolbar {
-            if workspace?.connection.kind == .connected {
+            if workspace?.connection.usable == true {
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
                     NavigationLink(value: NewAgentRoute(workspaceId: workspaceId)) {

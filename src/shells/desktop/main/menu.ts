@@ -133,6 +133,7 @@ export function showContextMenu(win: BrowserWindow, items: ContextMenuItem[]): P
     const build = (list: ContextMenuItem[]): MenuItemConstructorOptions[] => list.map((item) => {
       if (item.type === 'separator') return { type: 'separator' }
       const option: MenuItemConstructorOptions = { label: item.label ?? '', enabled: item.enabled !== false }
+      if (item.type === 'checkbox') { option.type = 'checkbox'; option.checked = item.checked === true }
       if (item.accelerator) option.accelerator = item.accelerator
       if (item.submenu?.length) option.submenu = build(item.submenu)
       else if (item.id) {

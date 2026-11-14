@@ -7,7 +7,7 @@ import type { WorkspaceDocument } from '@workspace/document/contract'
 import { activeNodePanelId } from './store'
 import { shallowArrayEqual, useCanvasView, useCanvasViewStore } from './context'
 import { useWorktreeMembership } from './worktree'
-import { useTabDecorations } from '../dock'
+import { usePanelDecorations } from '../../host'
 
 const selectPanels = (doc: WorkspaceDocument) => doc.panels
 
@@ -30,7 +30,7 @@ function Minimap({ workspaceId }: { workspaceId: string }) {
   )
   const panels = useDocument(workspaceId, selectPanels)
   const activeTabs = useClientState(workspaceId, (s) => s.activeTabs)
-  const decorations = useTabDecorations(workspaceId)
+  const decorations = usePanelDecorations(workspaceId)
   // The same membership the territory draws, so the two never disagree.
   const { groups } = useWorktreeMembership(workspaceId)
   // nodeId → worktree color, so each node rect can carry its branch color.

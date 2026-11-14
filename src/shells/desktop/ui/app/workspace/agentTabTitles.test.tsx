@@ -14,8 +14,9 @@ import { fakeStream } from '@services/agents/client/testing'
 import { createClientIdentity, installClientIdentity } from '@client/connections'
 import { registerPanelDefinitions } from '@client/host'
 import { add, attachTestWorkspace, buildDocument, testPanelDefinitions, type TestWorkspace } from '../../../../../test/clientWorkspace'
-import { DockView, registerTabDecorations } from '../../client/layout/dock'
-import { useAgentTabDecorations } from '../../services/agents'
+import { DockView } from '../../client/layout/dock'
+import { registerPanelDecorations } from '../../client/host'
+import { useAgentPanelDecorations } from '../../services/agents'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -34,7 +35,7 @@ beforeEach(() => {
   stream = fakeStream()
   const runtime = { agents: { panels: () => stream.sub } }
   stops.push(setRuntimeResolver((id) => (id === 'w' ? (runtime as never) : null)))
-  stops.push(registerTabDecorations(useAgentTabDecorations))
+  stops.push(registerPanelDecorations(useAgentPanelDecorations))
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)

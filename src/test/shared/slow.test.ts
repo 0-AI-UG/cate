@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { RefusedOp } from '@client/document'
+import type { ReviewSnapshot } from '@panels/review/contract'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
 import { startSharedWorkspace, until, untilState, type SharedWorkspace, type TestClient } from '../sharedWorkspace'
 
@@ -82,7 +83,7 @@ describe.skipIf(process.platform === 'win32')('shared workspace: slow links', ()
     await b.until(() => true, 10_000)
     const record = ws.a.document.getSnapshot().panels[id]!
     ws.a.document.propose({ kind: 'replacePanel', record: { ...record, type: 'review', title: 'Diff Review', fields: {} } })
-    const s = await b.until((s) => 'review' in s && 'comparison' in s && !(s as { loading?: boolean }).loading, 15_000)
+    const s = await b.until((s) => 'recorded' in s && !(s as unknown as ReviewSnapshot).recorded.loading, 15_000)
     expect(s).toMatchObject({ error: null })
   }, 30_000)
 

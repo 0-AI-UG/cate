@@ -1,40 +1,16 @@
 // The row of tab pills of a stack: icon, title (or the rename input), status
 // marks and the close button, then the new-tab button and a spacer.
 
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { X } from 'lucide-react'
-import type { DockStack, PanelRecord, WorktreeMeta } from '@workspace/document/contract'
-import { Icon, ShimmerText, Tooltip } from '../../../kernel/interaction'
-import { isIconName } from '@kernel/interaction/contract'
+import type { DockStack, PanelRecord } from '@workspace/document/contract'
+import { Tooltip } from '../../../kernel/interaction'
 import { useDocument } from '../../document'
 import { panelDefinition } from '@client/host'
-import { useWorktreeColor } from '../../../workspace/repository'
 import { isMiddleClick } from '../drag/dom'
 import { useDragStore } from '../drag/store'
 import { useTabSourceVisibility } from '../drag/selectors'
-import { useTabDecorations } from './decorations'
-
-/** The type's icon, or a detected agent's logo. */
-export function TabIcon({ type, size, logo, logoAlt }: { type: string; size: number; logo?: string | null; logoAlt?: string | null }) {
-  const [imgFailed, setImgFailed] = useState(false)
-  // A logo that failed once may load after an agent swap.
-  useEffect(() => { setImgFailed(false) }, [logo])
-  if (logo && !imgFailed) {
-    return (
-      <img
-        src={logo}
-        alt={logoAlt ?? ''}
-        width={size}
-        height={size}
-        style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
-        draggable={false}
-        onError={() => setImgFailed(true)}
-      />
-    )
-  }
-  const name = panelDefinition(type)?.icon
-  return <Icon name={isIconName(name) ? name : 'plus'} size={size} />
-}
+import { PanelTitle, usePanelTitles } from '../../host'
 
 /** A tab pill; hidden while it is the dragged tab. */
 export const TabPill = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & {
@@ -51,22 +27,6 @@ export const TabPill = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTM
     </div>
   )
 })
-
-/** The title, tinted with its worktree's color when the workspace has
- *  several worktrees, shimmering while busy. */
-function TabTitle({ record, worktree, busy, children }: {
-  record: PanelRecord | undefined
-  worktree: WorktreeMeta | undefined
-  busy: boolean
-  children: React.ReactNode
-}) {
-  const color = useWorktreeColor(worktree?.color)
-  return (
-    <ShimmerText className="min-w-0 flex-1 truncate" active={busy} color={record ? color : undefined}>
-      {children}
-    </ShimmerText>
-  )
-}
 
 export interface DockTabBarProps {
   workspaceId: string
@@ -97,12 +57,9 @@ export interface DockTabBarProps {
   onTabBarMouseDown?: (e: React.MouseEvent, panelId?: string) => void
 }
 
-const selectTabRecords = (stack: DockStack) => (doc: { panels: Record<string, PanelRecord>; worktrees: Record<string, WorktreeMeta> }) => ({
-  records: stack.panels.map((id) => doc.panels[id]),
-  worktrees: doc.worktrees,
-})
+const selectTabRecords = (stack: DockStack) => (doc: { panels: Record<string, PanelRecord> }) => stack.panels.map((id) => doc.panels[id])
 const sameTabRecords = (a: ReturnType<ReturnType<typeof selectTabRecords>>, b: ReturnType<ReturnType<typeof selectTabRecords>>) =>
-  a.worktrees === b.worktrees && a.records.length === b.records.length && a.records.every((r, i) => r === b.records[i])
+  a.length === b.length && a.every((record, index) => record === b[index])
 
 export function DockTabBar(props: DockTabBarProps) {
   const {
@@ -115,9 +72,8 @@ export function DockTabBar(props: DockTabBarProps) {
   } = props
 
   const selector = React.useMemo(() => selectTabRecords(stack), [stack])
-  const { records, worktrees } = useDocument(workspaceId, selector, sameTabRecords)
-  const decorations = useTabDecorations(workspaceId)
-  const tintWorktrees = Object.keys(worktrees).length >= 2
+  const records = useDocument(workspaceId, selector, sameTabRecords)
+  const titles = usePanelTitles(workspaceId)
 
   // Clamped to at least 1: a leading tab's drag lets the next tab take slot
   // 0 and the placeholder follows it.
@@ -155,10 +111,8 @@ export function DockTabBar(props: DockTabBarProps) {
         const record = records[stack.panels.indexOf(panelId)]
         const isActive = panelId === activePanelId
         const type = record?.type ?? ''
-        const decoration = decorations[panelId]
         const definition = panelDefinition(type)
-        const recordTitle = record ? record.title || definition?.label || type : ''
-        const title = decoration?.retitle ? decoration.retitle(recordTitle) : recordTitle
+        const title = record ? titles.label(record) : ''
         const pill = (
           <TabPill
             key={panelId}
@@ -200,9 +154,7 @@ export function DockTabBar(props: DockTabBarProps) {
             baseStyle={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             title={title}
           >
-            <span className={`shrink-0 ${isActive ? definition?.tint ?? 'text-secondary' : 'text-muted'}`}>
-              <TabIcon type={type} size={compact ? 11 : 13} logo={decoration?.logo} logoAlt={decoration?.logoAlt} />
-            </span>
+            {record && <PanelTitle {...titles.props(record)} iconSize={compact ? 11 : 13} iconClassName={isActive ? definition?.tint ?? 'text-secondary' : 'text-muted'}>
             {renameId === panelId ? (
               <input
                 ref={renameInputRef}
@@ -219,12 +171,8 @@ export function DockTabBar(props: DockTabBarProps) {
                 className="truncate flex-1 min-w-0 bg-transparent outline-none border-b border-focus text-primary px-0"
                 style={{ font: 'inherit' }}
               />
-            ) : (
-              <TabTitle record={record} worktree={tintWorktrees && record?.worktreeId ? worktrees[record.worktreeId] : undefined} busy={!!decoration?.busy}>
-                {title}{decoration?.dirty ? ' •' : ''}
-              </TabTitle>
-            )}
-            {decoration?.status}
+            ) : undefined}
+            </PanelTitle>}
             {onClosePanel && (
               <Tooltip label="Close panel" action={isActive ? 'closePanel' : undefined}>
                 <span

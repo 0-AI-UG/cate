@@ -26,7 +26,7 @@ vi.mock('@kernel/rpc/client', async (importOriginal) => ({
 
 import { registerPanelDefinitions } from '@client/host'
 import review from '../definition'
-import { agentCheckout, openAgentChanges, openReviewPanel } from './openReview'
+import { agentCheckout, openAgentChanges } from './openReview'
 
 registerPanelDefinitions([review])
 
@@ -40,24 +40,6 @@ beforeEach(() => {
   h.focused = null
   h.op.mockClear()
   h.focus.mockClear()
-})
-
-it('retargets the focused review of the checkout instead of adding one', async () => {
-  add('r1', 'review', { repoPath: '/repo' })
-  add('r2', 'review', { repoPath: '/repo' })
-  h.focused = 'r1'
-  expect(await openReviewPanel({ workspaceId: 'ws', repoPath: '/repo', spec: { kind: 'staged' }, focusedFile: 'a.ts' })).toBe('r1')
-  expect(h.op).toHaveBeenCalledWith({ panelId: 'r1', op: { kind: 'retarget', request: { spec: { kind: 'staged' }, focusedFile: 'a.ts' } } })
-  expect(Object.keys(h.doc.panels)).toEqual(['r1', 'r2'])
-})
-
-it('adds a review next to the source agent when the checkout has none', async () => {
-  add('term', 'terminal')
-  const id = await openReviewPanel({ workspaceId: 'ws', repoPath: '/repo', spec: { kind: 'uncommitted' }, sourceAgent: { panelId: 'term' } })
-  expect(id).toBeTruthy()
-  expect(h.doc.panels[id!]).toMatchObject({ type: 'review', fields: { repoPath: '/repo', request: { spec: { kind: 'uncommitted' } } } })
-  expect(h.focus).toHaveBeenCalledWith(id)
-  expect(h.op).not.toHaveBeenCalled()
 })
 
 it('opens agent changes in a new panel, or moves a chosen review to the agent checkout', async () => {

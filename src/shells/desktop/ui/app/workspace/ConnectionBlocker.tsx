@@ -18,12 +18,12 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { BACKDROP, ModalCard, btn, Spinner } from '../../kernel/interaction'
-import { runtimeMismatch, type ConnectionState, type WorkspaceConnection } from '@client/connections'
+import { connectionUsable, type ConnectionState, type WorkspaceConnection } from '@client/connections'
 import { machineLabel } from '@runtime/daemon/contract'
 import { useConnectionState } from '../../client/connections'
 import { tryClientApp } from '../app'
 import { connectionActions, connectionDotClass, statusOf, type ConnectionAction } from '../sidebar/connectionStatus'
-import { RuntimeMismatchCard, useRuntimeUpdate } from './RuntimeMismatch'
+import { RuntimeMismatchCard, useRequiredRuntimeUpdate, useRuntimeUpdate } from './RuntimeMismatch'
 import { InstallProgressView, installTargetOf, useInstallProgress } from './installProgress'
 
 const GRACE_MS = 400
@@ -45,23 +45,24 @@ export function useWorkspaceBlock(workspaceId: string | null): { blocked: boolea
   const connection = useWorkspaceConnection(workspaceId)
   const state = useConnectionState(connection)
   const updating = useRuntimeUpdate(connection) !== null
-  const mismatch = runtimeMismatch(state, tryClientApp()?.version ?? '') !== null
-  const immediate = mismatch || updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
+  const mismatch = useRequiredRuntimeUpdate(connection)
+  const immediate = !!mismatch || updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
   const [graced, setGraced] = useState(false)
   useEffect(() => {
     if (!blocks(state) || immediate) { setGraced(false); return }
     const timer = setTimeout(() => setGraced(true), GRACE_MS)
     return () => clearTimeout(timer)
   }, [state, immediate])
-  return { blocked: !!connection && (mismatch || updating || (blocks(state) && (immediate || graced))), connection, state, updating }
+  return { blocked: !!connection && state.kind !== 'closed' && !connectionUsable(state, mismatch, updating) && (immediate || graced), connection, state, updating }
 }
 
 /** Covers `children` (the workspace's windows) while its connection blocks. */
 export function ConnectionBlocker({ workspaceId, children }: { workspaceId: string | null; children: ReactNode }): JSX.Element {
   const { blocked, connection, state, updating } = useWorkspaceBlock(workspaceId)
+  const mismatch = useRequiredRuntimeUpdate(connection)
   const content = useRef<HTMLDivElement>(null)
   const unavailable = !!connection && (blocks(state) || blocked)
-  const quiet = !updating && !runtimeMismatch(state, tryClientApp()?.version ?? '') && (state.kind === 'connecting' || state.kind === 'offline')
+  const quiet = !updating && !mismatch && (state.kind === 'connecting' || state.kind === 'offline')
 
   // `inert` keeps focus, typing and shortcuts out of the covered panels.
   useEffect(() => {
@@ -76,7 +77,7 @@ export function ConnectionBlocker({ workspaceId, children }: { workspaceId: stri
       <div ref={content} className="h-full">{children}</div>
       {blocked && (
         <div className={`absolute inset-0 z-[1000] flex items-center justify-center ${quiet ? 'bg-transparent pointer-events-auto p-3' : BACKDROP}`} data-connection-blocker>
-          {(runtimeMismatch(state, tryClientApp()?.version ?? '') || updating) && connection
+          {(mismatch || updating) && connection
             ? <RuntimeMismatchCard connection={connection} />
             : <ConnectionStatusCard workspaceId={workspaceId} connection={connection} state={state} compact={quiet} />}
         </div>

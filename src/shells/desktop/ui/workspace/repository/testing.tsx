@@ -15,14 +15,14 @@ import { RepositoryUiProvider } from './context'
 type Fn = ReturnType<typeof vi.fn>
 
 /** A fake `vcs` whose `status` channel sends `statusFor(cwd)` as its snapshot. */
-export function fakeVcs(statusFor: (cwd: string) => Partial<RepoStatus> | null = () => null) {
+export function fakeVcs(statusFor: (cwd: string) => Partial<RepoStatus> | null | Promise<Partial<RepoStatus> | null> = () => null) {
   const status = vi.fn(({ cwd }: { cwd?: string }) => {
     const listeners = new Set<(event: { kind: 'snapshot'; rev: number; snapshot: RepoStatus }) => void>()
     const snapshot = statusFor(cwd ?? '')
     return {
       onEvent(l: (event: { kind: 'snapshot'; rev: number; snapshot: RepoStatus }) => void) {
         listeners.add(l)
-        if (snapshot) queueMicrotask(() => l({ kind: 'snapshot', rev: 0, snapshot: { ...EMPTY_REPO_STATUS, isRepo: true, ...snapshot } }))
+        void Promise.resolve(snapshot).then((value) => l({ kind: 'snapshot', rev: 0, snapshot: { ...EMPTY_REPO_STATUS, isRepo: value !== null, ...value } }))
         return () => listeners.delete(l)
       },
       done: new Promise(() => {}),
@@ -33,6 +33,10 @@ export function fakeVcs(statusFor: (cwd: string) => Partial<RepoStatus> | null =
   return {
     status,
     lsFiles: resolved([]),
+    compare: resolved({ spec: { kind: 'uncommitted' }, files: [], additions: 0, deletions: 0, resolvedBase: null, resolvedTarget: null, currentBranch: 'main' }),
+    applyCommand: resolved('git apply'),
+    fileContent: resolved({ exists: false, size: 0 }),
+    fileDiff: resolved({ path: '', binary: false, tooLarge: false, byteLength: 0, hunks: [] }),
     log: resolved([]),
     branchList: resolved({ current: 'main', branches: [] }),
     branchCreate: resolved(undefined),

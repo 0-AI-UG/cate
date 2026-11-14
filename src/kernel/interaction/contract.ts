@@ -27,7 +27,8 @@ export interface ContextMenuItem {
   label?: string
   accelerator?: string
   enabled?: boolean
-  type?: 'normal' | 'separator'
+  type?: 'normal' | 'separator' | 'checkbox'
+  checked?: boolean
   submenu?: ContextMenuItem[]
 }
 

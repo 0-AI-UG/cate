@@ -4,7 +4,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, Server } from 'lucide-react'
-import { Icon, ShimmerText, Tooltip } from '../../kernel/interaction'
+import { Tooltip } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
@@ -13,12 +13,10 @@ import { focusedLeafPanelId, panelRowLabel } from '@client/host'
 import { machineOf, type WorkspaceEntry } from '@client/workspaces'
 import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
-import { useWorktreeColor } from '../../workspace/repository'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
-import { AwaitingIndicator, agentInfoTitle, useAgentInfoByPanel, type AgentPanelInfo } from '../../services/agents'
+import { PanelTitle, panelTitleLabel, usePanelTitles, type PanelDecoration } from '../../client/host'
 import { clientApp } from '../app'
 import { closePanels, closeWorkspace, detachPanel, renamePanel, revealPanel, selectWorkspace } from '../navigation'
-import { panelIcon } from '../panels'
 import { panelsWithPorts, terminalCwd } from '@services/terminal/client'
 import { useTerminalStatuses } from '../state/statusStore'
 import { useUIStore } from '../state/uiStore'
@@ -67,7 +65,7 @@ export function WorkspaceRow({
   const tree = useMemo(() => workspacePanelTree(doc, { windowId, rootPath }), [doc, windowId, rootPath])
   const statuses = useTerminalStatuses(isOpen ? workspaceId : null)
   const ports = panelsWithPorts(statuses)
-  const agents = useAgentInfoByPanel(isOpen ? workspaceId : null)
+  const titles = usePanelTitles(isOpen ? workspaceId : null)
   const showSkills = useClientSetting('showSkillsInWorkspaceOverview')
   const skillsViewOpen = useUIStore((s) => s.overlay?.view === 'skills')
   const collapsed = useTreeCollapseStore((s) => s.collapsed)
@@ -161,7 +159,7 @@ export function WorkspaceRow({
       key={record.id}
       record={record}
       indent={indent}
-      agent={agents[record.id]}
+      decoration={titles.decorations[record.id]}
       hasPorts={ports.has(record.id)}
       worktreeKey={Object.keys(doc.worktrees).length >= 2 && record.worktreeId ? doc.worktrees[record.worktreeId]?.color : undefined}
       onClick={(e) => { e.stopPropagation(); void revealPanel(workspaceId, record.id) }}
@@ -303,7 +301,7 @@ interface PanelRowRename {
 interface WorkspacePanelRowProps {
   record: PanelRecord
   indent: boolean
-  agent?: AgentPanelInfo
+  decoration?: PanelDecoration
   hasPorts?: boolean
   /** The panel's worktree palette key, when worktrees are told apart. */
   worktreeKey?: string
@@ -318,7 +316,7 @@ interface WorkspacePanelRowProps {
 export function WorkspacePanelRow({
   record,
   indent,
-  agent,
+  decoration,
   hasPorts = false,
   worktreeKey,
   onClick,
@@ -327,10 +325,9 @@ export function WorkspacePanelRow({
   rename,
   onBeginRename,
 }: WorkspacePanelRowProps): JSX.Element {
-  const label = agentInfoTitle(panelRowLabel(record), agent)
-  const worktreeColor = useWorktreeColor(worktreeKey)
-  const running = agent?.status === 'running'
-  const awaiting = agent?.status === 'waitingForInput'
+  const label = panelTitleLabel(record, decoration)
+  const running = !!decoration?.busy
+  const awaiting = !!decoration?.status
   const inputRef = useRef<HTMLInputElement>(null)
   const renaming = !!rename
   useEffect(() => {
@@ -355,33 +352,18 @@ export function WorkspacePanelRow({
       title={label}
       data-panel-id={record.id}
     >
-      {agent?.logo ? (
-        <img src={agent.logo} alt="" width={11} height={11} draggable={false} className="flex-shrink-0" style={{ width: 11, height: 11, objectFit: 'contain', opacity: 0.95 }} />
-      ) : (
-        <Icon name={panelIcon(record.type)} size={11} className="flex-shrink-0" style={{ opacity: 0.6 }} />
-      )}
-      {rename ? (
-        <InlineEditInput
+      <PanelTitle record={record} decoration={decoration} worktreeKey={worktreeKey} iconSize={11}
+        onDoubleClick={(event) => { event.stopPropagation(); onBeginRename?.() }}>
+        {rename ? <InlineEditInput
           ref={inputRef}
           className="flex-1 min-w-0 text-[13px] bg-surface-3 border border-subtle rounded px-1 py-0 outline-none text-primary"
           value={rename.value}
           onChange={rename.onChange}
           onSubmit={rename.onSubmit}
           onCancel={rename.onCancel}
-        />
-      ) : (
-        <ShimmerText
-          className="min-w-0 flex-1 truncate"
-          active={running}
-          color={worktreeColor}
-          onDoubleClick={(e) => { e.stopPropagation(); onBeginRename?.() }}
-        >
-          {label}
-        </ShimmerText>
-      )}
-      {awaiting ? (
-        <AwaitingIndicator />
-      ) : !running && hasPorts ? (
+        /> : undefined}
+      </PanelTitle>
+      {!awaiting && !running && hasPorts ? (
         <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-muted opacity-50" aria-label="listening on a port" />
       ) : null}
     </button>
@@ -425,8 +407,7 @@ function CanvasRow({ record, hasChildren, collapsed, onToggle, onClick, onContex
       ) : (
         <span className="flex-shrink-0 w-[10px]" />
       )}
-      <Icon name={panelIcon(record.type)} size={11} className="flex-shrink-0" style={{ opacity: 0.6 }} />
-      <span className="truncate min-w-0 flex-1">{label}</span>
+      <PanelTitle record={record} iconSize={11} />
     </div>
   )
 }

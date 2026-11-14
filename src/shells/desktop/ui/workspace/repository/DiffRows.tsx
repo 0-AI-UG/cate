@@ -12,13 +12,12 @@ function protectsInput(el: HTMLElement): boolean {
   return false
 }
 
-/** Keep long hunks out of the DOM, including their per-line buttons and icons.
+/** Keep long hunks out of the DOM, including when a diff has many small hunks.
  * Heights are measured in layout pixels, so canvas zoom doesn't change them. */
-function DiffChunk({ start, end, renderRow, keepMounted, wrap, columns }: {
+function DiffChunk({ start, end, renderRow, wrap, columns }: {
   start: number
   end: number
   renderRow: (index: number) => React.ReactNode
-  keepMounted: boolean
   wrap: boolean
   columns: number
 }) {
@@ -26,7 +25,7 @@ function DiffChunk({ start, end, renderRow, keepMounted, wrap, columns }: {
   const [visible, setVisible] = useState(start === 0 || typeof IntersectionObserver === 'undefined')
   const [retained, setRetained] = useState(false)
   const [height, setHeight] = useState<number | null>(null)
-  const mounted = visible || keepMounted || retained
+  const mounted = visible || retained
   useEffect(() => {
     const el = ref.current
     if (!el || typeof IntersectionObserver === 'undefined') return
@@ -38,7 +37,7 @@ function DiffChunk({ start, end, renderRow, keepMounted, wrap, columns }: {
     return () => observer.disconnect()
   }, [])
   // Release a protected offscreen chunk when focus/selection moves away;
-  // otherwise repeatedly editing distant rows could retain the whole diff.
+  // otherwise repeatedly selecting distant rows could retain the whole diff.
   useEffect(() => {
     const el = ref.current
     if (!retained || !el) return
@@ -55,7 +54,7 @@ function DiffChunk({ start, end, renderRow, keepMounted, wrap, columns }: {
       document.removeEventListener('focusin', refresh)
       document.removeEventListener('focusout', blur)
     }
-  }, [retained, keepMounted])
+  }, [retained])
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || !mounted) return
@@ -76,10 +75,9 @@ function DiffChunk({ start, end, renderRow, keepMounted, wrap, columns }: {
   </div>
 }
 
-export function DiffRows({ count, renderRow, keepRow, wrap, columns }: {
+export function DiffRows({ count, renderRow, wrap, columns }: {
   count: number
   renderRow: (index: number) => React.ReactNode
-  keepRow?: (index: number) => boolean
   wrap: boolean
   columns: number
 }) {
@@ -88,8 +86,6 @@ export function DiffRows({ count, renderRow, keepRow, wrap, columns }: {
   return <>{Array.from({ length: Math.ceil(count / CHUNK_SIZE) }, (_, chunk) => {
     const start = chunk * CHUNK_SIZE
     const end = Math.min(count, start + CHUNK_SIZE)
-    let keepMounted = false
-    for (let i = start; i < end && !keepMounted; i++) keepMounted = keepRow?.(i) ?? false
-    return <DiffChunk key={start} start={start} end={end} renderRow={renderRow} keepMounted={keepMounted} wrap={wrap} columns={columns} />
+    return <DiffChunk key={start} start={start} end={end} renderRow={renderRow} wrap={wrap} columns={columns} />
   })}</>
 }

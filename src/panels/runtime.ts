@@ -98,32 +98,24 @@ const editor: PanelRuntime<'root' | 'files' | 'connectedEditors' | 'document'> =
   },
 })
 
-const review: PanelRuntime<'root' | 'repository' | 'files' | 'agents'> = (services) => {
-  const { git, monitors } = services.repository
+const review: PanelRuntime<'root' | 'repository' | 'agents'> = (services) => {
+  const { monitors } = services.repository
   const { agents } = services
   return reviewPanel({
     root: services.root,
-    // The repository's git checks trust and queues its writes.
     repository: {
-      ...git,
       watchStatus: (cwd, listener) => monitors.subscribe(cwd, listener),
       refreshStatus: (cwd) => monitors.kick(cwd),
     },
-    files: {
-      trash: async (p) => { await services.files.trash(p) },
-      writeText: async (p, text) => { await services.files.write(p, text) },
-    },
     agents: {
+      onChanges: (listener) => agents.onChanges(listener),
+      cachedChanges: (cwd) => agents.cachedChanges(cwd),
       readChanges: (cwd, knownRevision) => agents.changes(cwd, knownRevision),
       readiness: (cwd) => agents.readiness(cwd),
       async start(ownerPanelId, { at, ...args }) {
         const { panelId } = await agents.start(ownerPanelId, { ...args, ...(at ? { placement: { at } } : {}) })
         return { panelId }
       },
-      async send(panelId, prompt) {
-        agents.send(panelId, prompt)
-      },
-      onExit: (listener) => agents.onSessionEnded(listener),
     },
   })
 }

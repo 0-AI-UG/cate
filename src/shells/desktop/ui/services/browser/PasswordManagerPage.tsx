@@ -21,6 +21,8 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
   const [tab, setTab] = useState<PasswordManagerTab>('passwords')
   const [query, setQuery] = useState('')
   const [credentialState, setCredentialState] = useState<BrowserChromeProfiles | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [credentials, setCredentials] = useState<BrowserCredentialSuggestion[]>([])
   const [selectedProfile, setSelectedProfile] = useState('')
   const [adding, setAdding] = useState(false)
@@ -40,16 +42,24 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
 
   const load = useCallback(async () => {
     if (!runtime) return
-    const [profiles, saved] = await Promise.all([
-      bridge ? bridge.chromeProfiles() : Promise.resolve({ directImportSupported: false, profiles: [] }),
-      runtime.browserData.passwords(),
-    ])
-    setCredentialState(profiles)
-    setCredentials(saved)
-    setSelectedProfile((current) =>
-      profiles.profiles.some((profile) => profile.id === current)
-        ? current
-        : profiles.profiles[0]?.id ?? '')
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const [profiles, saved] = await Promise.all([
+        bridge ? bridge.chromeProfiles() : Promise.resolve({ directImportSupported: false, profiles: [] }),
+        runtime.browserData.passwords(),
+      ])
+      setCredentialState(profiles)
+      setCredentials(saved)
+      setSelectedProfile((current) =>
+        profiles.profiles.some((profile) => profile.id === current)
+          ? current
+          : profiles.profiles[0]?.id ?? '')
+    } catch (err) {
+      setLoadError(errorMessage(err, 'Could not load saved passwords.'))
+    } finally {
+      setLoading(false)
+    }
   }, [runtime, bridge])
 
   useEffect(() => {
@@ -248,7 +258,7 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
             )}
 
             <div className="overflow-hidden rounded-xl border border-subtle bg-surface-1">
-              {filteredCredentials.length === 0 ? (
+              {!runtime || (loading && !credentialState) ? <LoadingState label="Loading passwords" className="py-12 text-sm" /> : loadError ? <p role="alert" className="px-5 py-12 text-center text-sm text-muted">{loadError}</p> : filteredCredentials.length === 0 ? (
                 <div className="px-5 py-12 text-center text-sm text-muted">
                   {credentials.length === 0 ? 'No saved passwords' : 'No matching passwords'}
                 </div>
@@ -284,7 +294,7 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
               <p className="mb-4 text-xs text-muted">
                 Passwords are saved with the workspace, for every device connected to it.
               </p>
-              {!credentialState ? (
+              {loadError ? <p role="alert" className="text-xs text-muted">{loadError}</p> : !credentialState ? (
                 <LoadingState label="Looking for Chrome" size={13} className="justify-start text-xs" />
               ) : !bridge ? (
                 <span className="text-xs text-muted">Importing from Chrome is not available on this device</span>

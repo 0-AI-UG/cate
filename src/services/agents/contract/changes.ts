@@ -1,5 +1,5 @@
 import type { AgentId } from './registry'
-import type { GitDiffHunk } from '@workspace/repository/contract'
+import type { GitDiffHunk, GitCommitSummary } from '@workspace/repository/contract'
 
 /** Agent identity owns a change. A panel is only a place that displayed it:
  *  `panelIds` are the panels that showed the agent session, resolved by the
@@ -11,12 +11,19 @@ export interface AgentChangeRecord {
   turnId: string
   parentSessionId?: string
   panelIds: string[]
+  /** Source titles captured with the edit, so closed panels stay identifiable. */
+  panelTitles?: Record<string, string>
+  /** PR checkout associated with this edit at capture, not current commit membership. */
+  prNumber?: number
   cwd: string
   createdAt: string
   files: AgentChangedFile[]
 }
 
 export interface AgentChangedFile {
+  commit?: GitCommitSummary
+  /** True only when the reported edit is represented in the working tree. */
+  uncommitted?: boolean
   path: string
   oldPath?: string
   patch?: string
@@ -40,9 +47,6 @@ export interface AgentChangesSnapshot {
   records?: AgentChangeRecord[]
 }
 
-/** What the helpers below read of a record, stored or resolved. */
-type ChangeLike = Pick<AgentChangeRecord, 'agentId' | 'sessionId' | 'turnId' | 'parentSessionId' | 'createdAt' | 'files'>
-
 export function filterAgentChanges(records: readonly AgentChangeRecord[], filter: AgentChangesFilter): AgentChangeRecord[] {
   return records.filter((r) =>
     (!filter.agentId || r.agentId === filter.agentId)
@@ -50,23 +54,4 @@ export function filterAgentChanges(records: readonly AgentChangeRecord[], filter
     && (!filter.sessionId || r.sessionId === filter.sessionId || r.parentSessionId === filter.sessionId)
     && (!filter.turnId || r.turnId === filter.turnId),
   )
-}
-
-function comparablePath(value: string): string {
-  return value.replace(/\\/g, '/').replace(/^\.\//, '')
-}
-
-/** Recorded edits still represented by a staged or unstaged file in the
- *  checkout. The durable records remain available as history. */
-export function activeAgentChanges<R extends ChangeLike>(
-  records: readonly R[],
-  git: { isRepo: boolean; statusFiles: readonly { path: string }[] },
-): R[] {
-  if (!git.isRepo) return [...records]
-  const changed = new Set(git.statusFiles.map((file) => comparablePath(file.path)))
-  return records.flatMap((record) => {
-    const files = record.files.filter((file) => changed.has(comparablePath(file.path))
-      || (file.oldPath ? changed.has(comparablePath(file.oldPath)) : false))
-    return files.length ? [{ ...record, files }] : []
-  })
 }

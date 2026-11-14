@@ -27,7 +27,7 @@ describe('commands from specs', () => {
     expect(words).toEqual(expect.arrayContaining([
       'version', 'panel list', 'panel create', 'panel set', 'panel close', 'editor open',
       'terminal read', 'terminal type', 'terminal press',
-      'review note add', 'review note resolve', 'agent wait', 'agent start',
+      'agent wait', 'agent start',
     ]))
     // Every browser method is a command.
     expect(words).toEqual(expect.arrayContaining([
@@ -35,6 +35,7 @@ describe('commands from specs', () => {
       'browser tab list', 'browser tab new', 'browser tab select', 'browser tab close',
     ]))
     expect(words).not.toContain('browser run')
+    expect(words.some((word) => word.startsWith('review '))).toBe(false)
     expect(words).not.toContain('panel focus')
   })
 })
@@ -97,9 +98,6 @@ describe('parseCommandLine', () => {
     expect(call(['panel', 'close', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
     expect(call(['panel', 'close', '--no-discard', 'ab12']).args).toEqual({ panelId: 'ab12', discard: false })
     expect(call(['agent', 'start', '--agent=codex', 'fix', 'it']).args).toMatchObject({ agentId: 'codex', prompt: 'fix it' })
-    expect(call(['review', 'note', 'add', '--file=src/a.ts', '--line', '4', '--body', 'x', '--severity', 'error']).args).toEqual({
-      file: 'src/a.ts', line: 4, body: 'x', side: 'new', severity: 'error',
-    })
   })
 
   it('lets a positional argument come from its flag instead', () => {
@@ -128,8 +126,6 @@ describe('parseCommandLine', () => {
     [['terminal', 'read', '--lines'], /missing <lines>/],
     [['terminal', 'read', '--lines', 'x'], /invalid <lines>/],
     [['terminal', 'read', '--lines', '0'], />= 1/],
-    [['review', 'note', 'add', '--line', '3', '--body', 'b'], /missing --file/],
-    [['review', 'note', 'add', '--file', 'f', '--line', '3', '--body', 'b', '--side', 'mid'], /old\|new/],
     [['browser', 'fill'], /missing <text>/],
   ])('rejects %j', (argv, message) => {
     expect(() => parse(argv)).toThrow(message)
@@ -142,8 +138,6 @@ describe('parseCommandLine', () => {
       throw new Error('expected a usage error')
     }
     expect(caught(['panel', 'close']).context.command?.words).toEqual(['panel', 'close'])
-    expect(caught(['review', 'note', 'add', '--file', 'f', '--line', '3', '--body', 'b', '--side', 'mid']).context.command?.words)
-      .toEqual(['review', 'note', 'add'])
     expect(caught(['panel', 'clos']).context).toMatchObject({ prefix: ['panel'], hint: "Did you mean 'cate panel close'?" })
     expect(caught(['panl']).context.hint).toBe("Did you mean 'cate panel'?")
     expect(caught(['zzzzzz']).context.hint).toBeUndefined()
@@ -153,8 +147,7 @@ describe('parseCommandLine', () => {
     expect(parse(['--version'])).toEqual({ kind: 'version' })
     expect(parse(['--help'])).toMatchObject({ kind: 'help' })
     expect(parse([])).toMatchObject({ kind: 'help', text: expect.stringContaining('Commands:') })
-    expect(parse(['review', '--help'])).toMatchObject({ kind: 'help', text: expect.stringContaining('note add') })
-    expect(parse(['review'])).toMatchObject({ kind: 'help', text: expect.stringContaining('note resolve') })
+    expect(() => parse(['review'])).toThrow('unknown command: review')
     expect(parse(['help', 'panel', 'close'])).toMatchObject({ kind: 'help', text: expect.stringContaining('Usage:\n  cate panel close <panelId>') })
     expect(parse(['help', 'agent'])).toMatchObject({ kind: 'help', text: expect.stringContaining("Run 'cate agent <command> --help'") })
     expect(() => parse(['help', 'nope'])).toThrow(/unknown command: nope/)
@@ -166,13 +159,6 @@ describe('help', () => {
   const find = (words: string) => commands.find((c) => c.words.join(' ') === words)!
 
   it('prints synopses from the argument schemas, wrapped at argument boundaries', () => {
-    const wide = { width: 200, color: false }
-    expect(commandHelp(find('review note add'), wide)).toContain(
-      '  cate review note add --file <path> --line <number> --body <text> [--side old|new] [--severity info|warning|error] [--panel <id>]',
-    )
-    expect(commandHelp(find('review note add'))).toContain(
-      '  cate review note add --file <path> --line <number> --body <text>\n                       [--side old|new]',
-    )
     expect(commandHelp(find('agent send'))).toContain('  cate agent send <panelId>|--panel <panelId> <prompt...>')
     expect(commandHelp(find('agent wait'))).toContain('[<panelId...>] [--wait-timeout <ms>]')
   })
@@ -183,10 +169,6 @@ describe('help', () => {
     expect(close).toMatch(/Flags:\n {2}--discard +Discard unsaved changes instead of failing with dirty\n/)
     expect(close).not.toContain('Examples:')
     expect(close).not.toContain('Notes:')
-    const note = commandHelp(find('review note add'), { width: 120, color: false })
-    expect(note).toMatch(/--file <path> +Path as listed by review inspect \(required\)/)
-    expect(note).toMatch(/--side old\|new +Which side of the diff the line is on \(default new\)/)
-    expect(note).toMatch(/--panel <id> +Target review panel \(id or unique prefix\)/)
     expect(commandHelp(find('agent wait'))).toContain('(default 30000)')
     expect(commandHelp(find('agent send'), { width: 120, color: false })).toContain('from cate agent list (or --panel <panelId>)')
     expect(commandHelp(find('agent start'), { width: 120, color: false })).toMatch(/--agent <id> +Agent CLI: claude-code, codex/)

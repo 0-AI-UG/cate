@@ -8,7 +8,6 @@ import { agentApi } from '@services/agents/contract/api'
 import { terminalApi } from './terminal/contract/api'
 import { browserApi } from '@services/browser/contract/api'
 import { editorApi } from './editor/contract/api'
-import { reviewApi } from './review/contract/api'
 
 export const CATE_API: readonly CateApiNamespace<any>[] = [
   versionApi,
@@ -17,6 +16,5 @@ export const CATE_API: readonly CateApiNamespace<any>[] = [
   terminalApi,
   browserApi,
   editorApi,
-  reviewApi,
   agentApi,
 ]

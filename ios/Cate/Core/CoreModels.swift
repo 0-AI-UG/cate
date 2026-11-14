@@ -119,7 +119,7 @@ struct RememberedWorkspace: Codable, Equatable {
     var state: WorkspaceState {
         WorkspaceState(
             id: id, name: name, runtimeId: runtimeId,
-            connection: Connection(kind: .connecting, title: "", text: "Connecting…", actions: [], updating: false),
+            connection: Connection(kind: .connecting, title: "", text: "Connecting…", actions: [], updating: false, usable: false),
             panels: nil, worktrees: [], relations: [], relationsEnabled: false, agents: [],
             power: nil, whenClosed: nil, push: nil, others: []
         )
@@ -214,6 +214,8 @@ struct Connection: Decodable, Equatable, Hashable {
     let actions: [Action]
     /// Its runtime is being updated to this app's version.
     let updating: Bool
+    /// The shared core decides availability, including runtime updates.
+    let usable: Bool
 }
 
 struct Panel: Decodable, Equatable, Identifiable, Hashable {

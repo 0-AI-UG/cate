@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, rm, mkdir, symlink } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, rm, mkdir, symlink, readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { createAgentChangesStore } from './store'
@@ -9,6 +9,7 @@ import { AGENT_HOOK_SPECS, normalizeAgentHookPayload } from '../../contract'
 import type { AgentId } from '../../contract'
 import { createAgentHooks } from '../hooks/agentHooks'
 
+import type { PatchHistory } from '@workspace/repository/runtime'
 import type { StoredAgentChange } from './store'
 /** Stored records as the agents core resolves them: their panel. */
 const shown = (records: StoredAgentChange[]) => records.map((record) => ({
@@ -23,6 +24,15 @@ beforeEach(async () => { directory = await mkdtemp(path.join(os.tmpdir(), 'cate-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
 describe('reported agent changes', () => {
+  it('retains the source title after its panel and terminal are gone and the store restarts', async () => {
+    let title: string | undefined = 'Fix checkout races'
+    const store = createAgentChangesStore(directory, () => title)
+    store.registerTerminal('pty', { cwd: '/repo', panelId: 'panel' })
+    await store.ingestHook('pty', 'codex', null, { sessionId: 'session', name: 'apply_patch', input: { patch: patch('a.ts') }, output: null, callId: 'call' })
+    title = undefined
+    store.unregisterTerminal('pty')
+    expect((await createAgentChangesStore(directory).list('/repo'))[0].panelTitles).toEqual({ panel: 'Fix checkout races' })
+  })
   it.each([false, true])('captures Cursor afterFileEdit once alongside its Write completion (reverse=%s)', async (reverse) => {
     const store = createAgentChangesStore(directory)
     store.registerTerminal('pty', { cwd: '/repo', panelId: 'panel' })
@@ -115,4 +125,83 @@ describe('reported agent changes', () => {
     expect(records).toHaveLength(1)
     expect(records[0]).toMatchObject({ agentId, sessionId: 'session', panelId: 'panel', files: [{ path: 'a.ts' }] })
   })
+})
+
+it('stores a patch once and reconstructs its hunks after restart', async () => {
+  const store = createAgentChangesStore(directory)
+  store.registerTerminal('pty', { cwd: '/repo' })
+  await store.ingestHook('pty', 'codex', null, { sessionId: 'session', name: 'apply_patch', input: { patch: patch('a.ts') }, output: null, callId: 'call' })
+  const [folder] = await readdir(directory)
+  const [name] = await readdir(path.join(directory, folder))
+  const disk = JSON.parse(await readFile(path.join(directory, folder, name), 'utf8'))
+  expect(disk.record.files[0].patch).toBe(patch('a.ts'))
+  expect(disk.record.files[0]).not.toHaveProperty('hunks')
+  const original = await store.list('/repo')
+  expect(await createAgentChangesStore(directory).list('/repo')).toEqual(original)
+  expect(original[0].files[0].hunks).toHaveLength(1)
+})
+
+it('persists commit attribution, prunes reverted files and invalidates revisions without losing other files', async () => {
+  const commit = { hash: 'abc', message: 'Feature', date: '2026-11-13' }
+  let reverted = false
+  const history: PatchHistory = {
+    capture: async () => 'base',
+    reconcile: async (_cwd, patches) => new Map(patches.map((file) => [file.key, { commit, uncommitted: false, reverted: reverted && file.path === 'a.ts' }])),
+  }
+  const store = createAgentChangesStore(directory, undefined, history)
+  store.registerTerminal('pty', { cwd: '/repo' })
+  await store.ingestHook('pty', 'codex', null, { sessionId: 'session', name: 'apply_patch', input: { patch: patch('a.ts') + patch('b.ts') }, output: null, callId: 'call' })
+  const first = await store.readChanges('/repo')
+  expect(first.records?.[0].files.map((file) => file.commit)).toEqual([commit, commit])
+  const restarted = createAgentChangesStore(directory)
+  expect((await restarted.list('/repo'))[0].files[0].commit).toEqual(commit)
+  expect(await store.readChanges('/repo', first.revision)).toEqual({ revision: first.revision })
+  reverted = true
+  const next = await store.readChanges('/repo', first.revision)
+  expect(next.revision).not.toBe(first.revision)
+  expect(next.records?.[0].files.map((file) => file.path)).toEqual(['b.ts'])
+  expect((await createAgentChangesStore(directory).list('/repo'))[0].files.map((file) => file.path)).toEqual(['b.ts'])
+})
+
+it('removes fully reverted records from disk', async () => {
+  let reverted = false
+  const history: PatchHistory = { capture: async () => 'base', reconcile: async (_cwd, patches) => new Map(patches.map((file) => [file.key, { uncommitted: !reverted, reverted }])) }
+  const store = createAgentChangesStore(directory, undefined, history)
+  store.registerTerminal('pty', { cwd: '/repo' })
+  await store.ingestHook('pty', 'codex', null, { sessionId: 'session', name: 'apply_patch', input: { patch: patch('a.ts') }, output: null, callId: 'call' })
+  expect(await store.list('/repo')).toHaveLength(1)
+  reverted = true
+  expect(await store.list('/repo')).toEqual([])
+  expect(await createAgentChangesStore(directory).list('/repo')).toEqual([])
+})
+
+it('retains the PR checkout at capture and notifies only after edits are readable', async () => {
+  const store = createAgentChangesStore(directory, undefined, undefined, () => 42)
+  const notifications: string[] = []
+  const off = store.onChange((cwd) => notifications.push(cwd))
+  store.registerTerminal('pty', { cwd: '/repo', panelId: 'panel' })
+  await store.ingestHook('pty', 'codex', null, { sessionId: 'session', name: 'apply_patch', input: { patch: patch('a.ts') }, output: null, callId: 'call' })
+  expect(notifications).toEqual([path.resolve('/repo')])
+  off()
+  const records = await createAgentChangesStore(directory).list('/repo')
+  expect(records[0]).toMatchObject({ prNumber: 42, sessionId: 'session' })
+})
+
+it('coalesces concurrent readers and reruns once if a hook writes during reconciliation', async () => {
+  let finish!: (value: Map<string, never>) => void
+  const reconcile = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve })).mockResolvedValue(new Map())
+  const store = createAgentChangesStore(directory, undefined, { capture: async () => undefined, reconcile })
+  store.registerTerminal('pty', { cwd: '/repo' })
+  const call = (id: string) => ({ sessionId: 'session', name: 'apply_patch', input: { patch: patch(id + '.ts') }, output: null, callId: id })
+  await store.ingestHook('pty', 'codex', null, call('first'))
+  const first = store.readChanges('/repo')
+  const parallel = store.readChanges('/repo')
+  await vi.waitFor(() => expect(reconcile).toHaveBeenCalledOnce())
+  await store.ingestHook('pty', 'codex', null, call('second'))
+  const afterWrite = store.readChanges('/repo')
+  finish(new Map<string, never>())
+  const snapshots = await Promise.all([first, parallel, afterWrite])
+  expect(snapshots.every((snapshot) => snapshot.records?.length === 2)).toBe(true)
+  expect(reconcile).toHaveBeenCalledTimes(2)
+  expect(store.cached('/repo')?.records).toHaveLength(2)
 })
