@@ -195,6 +195,8 @@ export const EMPTY_REPO_STATUS: RepoStatus = Object.freeze({
 }) as RepoStatus
 
 export interface WorktreeRemoveResult {
+  /** Git no longer registered this checkout; only Cate metadata was removed. */
+  preservedPath?: string
   /** Set when the checkout went away but its branch could not be deleted. */
   branchDeleteError?: string
 }

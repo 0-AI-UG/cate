@@ -9,6 +9,7 @@ import {
   createWorktree as createWorktreeIn,
   createWorktreePr,
   discardWorktree,
+  discardWorktrees,
   mergeWorktree,
   publishWorktree,
   pruneWorktrees,
@@ -48,6 +49,7 @@ export async function runWorktreeContextMenu(opts: {
   cb: CardCallbacks
   beginRename?: () => void
   beginRecolor?: () => void
+  deleteCount?: number
 }): Promise<void> {
   const items: ContextMenuItem[] = [
     { id: 'publish', label: 'Publish branch' },
@@ -62,7 +64,7 @@ export async function runWorktreeContextMenu(opts: {
   if (opts.beginRecolor) items.push({ id: 'color', label: 'Change color…' })
   if (!opts.isPrimary) {
     items.push({ type: 'separator' })
-    items.push({ id: 'delete', label: 'Discard this work…' })
+    items.push({ id: 'delete', label: (opts.deleteCount ?? 0) > 1 ? `Discard selected work (${opts.deleteCount})…` : 'Discard this work…' })
   }
   let choice: string | null
   try {
@@ -95,6 +97,7 @@ export interface ParallelWork {
   handleUpdateFromMain: (wt: JoinedWorktree) => Promise<void>
   handleMerge: (wt: JoinedWorktree) => Promise<void>
   handleDelete: (wt: JoinedWorktree) => Promise<void>
+  handleDeleteSelected: (worktrees: JoinedWorktree[]) => Promise<string[]>
   /** Drops metadata whose checkout is gone (asks about their panels first). */
   handlePrune: (orphans: JoinedWorktree[]) => Promise<void>
   /** Drops one orphan's metadata and bound panels. */
@@ -149,6 +152,11 @@ export function useParallelWork(
 
   const handleDelete = useCallback(async (wt: JoinedWorktree) => {
     if (runtime) await discardWorktree(wt, { host, runtime, setError, setBusy })
+  }, [host, runtime, setBusy, setError])
+
+  const handleDeleteSelected = useCallback(async (worktrees: JoinedWorktree[]) => {
+    if (!runtime) return []
+    return discardWorktrees(worktrees, { host, runtime, setError, setBusy })
   }, [host, runtime, setBusy, setError])
 
   const handlePrune = useCallback(async (orphans: JoinedWorktree[]) => {
@@ -207,6 +215,7 @@ export function useParallelWork(
     handleUpdateFromMain,
     handleMerge,
     handleDelete,
+    handleDeleteSelected,
     handlePrune,
     removeOrphan,
     makeCallbacks,
