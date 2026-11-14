@@ -135,3 +135,28 @@ it('shows only a centered spinner until Git confirms whether this is a repositor
   expect(document.body.querySelector('[aria-label="Loading worktrees"]')).toBeNull()
   expect(document.body.textContent).toContain('Initialize git repository')
 })
+
+
+it('blocks panel launches and metadata edits while deletion is pending', async () => {
+  const ui = installMockClientUi({ showContextMenu: vi.fn().mockResolvedValue('delete') })
+  ui.confirm.mockResolvedValue(true)
+  rt.vcs.worktreeStatus.mockResolvedValue({ branch: 'a', dirty: false, ahead: 0, behind: 0, staged: 0, unstaged: 0, untracked: 0 })
+  let finish!: (allowed: boolean) => void
+  const host = fakeHost({ prepareWorktreeClose: vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve })), worktrees: [{ id: 'a', path: '/repo/.cate/worktrees/a', color: 'cyan', label: 'Feature A', status: 'ready' }] })
+  await m.render(<WorktreeToolbarMenu canvasPanelId="canvas" renderTrigger={trigger} />, host)
+  await act(async () => m.button('Parallel worktrees').click())
+  await clickRow('Feature A')
+  await act(async () => worktreeRow('Feature A').querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click())
+  // The selected row stays visible while an unsaved-panel guard is pending.
+  const row = worktreeRow('Feature A')
+  const launch = row.querySelector<HTMLElement>('[aria-label="Terminal"]')!
+  expect(launch.getAttribute('aria-disabled')).toBe('true')
+  expect(launch.draggable).toBe(false)
+  await act(async () => launch.click())
+  expect(host.launchInWorktree).not.toHaveBeenCalled()
+  expect(row.querySelector<HTMLButtonElement>('[aria-label="Change color"]')!.disabled).toBe(true)
+  await act(async () => row.querySelectorAll('span')[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+  expect(row.querySelector('input')).toBeNull()
+  await act(async () => finish(true))
+  expect(row.querySelector('[aria-label="Terminal"]')!.getAttribute('aria-disabled')).toBe('false')
+})
