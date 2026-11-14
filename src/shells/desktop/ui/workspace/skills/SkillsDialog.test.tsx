@@ -129,3 +129,18 @@ it('shows an install failure', async () => {
   await act(async () => buttons().find((b) => b.textContent === 'Claude Code')!.click())
   expect(slot.textContent).toContain('disk full')
 })
+
+
+it('waits for the selected workspace’s runtime instead of asking to open a workspace', async () => {
+  await act(async () => root.render(<SkillsDialog workspaceId="connecting" onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Loading skills')
+  expect(slot.textContent).not.toContain('Open a workspace to browse skills.')
+  expect(slot.textContent).not.toContain('No catalog yet')
+})
+
+it('shows a catalog error without claiming the catalog is empty', async () => {
+  fake.skills.index.mockRejectedValue(new Error('Runtime unavailable'))
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Runtime unavailable')
+  expect(slot.textContent).not.toContain('No catalog yet')
+})

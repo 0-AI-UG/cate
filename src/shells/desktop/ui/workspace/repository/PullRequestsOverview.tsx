@@ -110,7 +110,7 @@ export function PullRequestsOverview({ workspaceId, initialRepository = '', onOp
           </div>
         </div>}
         {login.status === 'error' && <p role="alert" className="mb-3 text-sm text-muted">{login.message}</p>}
-        {!result && loading ? <LoadingState label="Loading pull requests" className="py-12 text-sm" /> : result && result.status !== 'ready' ? (
+        {!result ? <LoadingState label="Loading pull requests" className="py-12 text-sm" /> : result && result.status !== 'ready' ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
             <Github size={28} className="text-muted" /><p className="max-w-md text-sm text-muted">{result.message}</p>
             {result.status === 'missing-cli' ? <button onClick={() => clientUi().openExternal('https://cli.github.com/')} className="rounded-lg bg-surface-2 px-4 py-2 text-sm">Get GitHub CLI</button> :

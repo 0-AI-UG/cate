@@ -41,7 +41,7 @@ export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, 
               disabled={disabled}
               onClick={() => onPick(agentId)}
               style={{ '--i': index, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}
-              className="cate-spawn-flyout-item h-9 w-9 shrink-0 flex items-center justify-center rounded-full text-secondary hover:bg-hover-strong hover:scale-110 active:scale-[0.92] transition-transform duration-100 disabled:opacity-40 disabled:pointer-events-none"
+              className="cate-spawn-flyout-item h-9 w-9 shrink-0 flex items-center justify-center rounded-full text-secondary hover:bg-hover-strong hover:scale-110 active:scale-[0.92] transition-transform duration-100 disabled:opacity-30 disabled:grayscale disabled:pointer-events-none"
             >
               <AgentMark agent={agentId} size={18} />
             </button>

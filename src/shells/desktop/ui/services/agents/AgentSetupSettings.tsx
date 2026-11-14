@@ -59,7 +59,8 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
     }
   }
 
-  if (!runtime) return <p className="py-2 text-xs text-muted">Open a workspace to set up agents on its runtime.</p>
+  if (!workspaceId) return <p className="py-2 text-xs text-muted">Open a workspace to set up agents on its runtime.</p>
+  if (!runtime) return <LoadingState label="Loading agents" size={14} className="justify-start py-3 text-xs" />
 
   const begin = (agentId: AgentId, action: 'login' | 'install') => perform(agentId, async () => {
     await runtime.agents.setupBegin({ agentId, action })
@@ -67,7 +68,7 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
 
   return (
     <SearchableBlock keywords="agents hooks activity setup install download login account claude codex cursor grok kiro opencode pi approvals permissions">
-      {availability?.refreshing && !snapshot && <LoadingState label="Loading agents" size={14} className="justify-start py-3 text-xs" />}
+      {!snapshot && !availability?.error && <LoadingState label="Loading agents" size={14} className="justify-start py-3 text-xs" />}
       {availability?.error && <p role="alert" className="py-2 text-xs text-muted">{availability.error}</p>}
       {hooks.error && <p role="alert" className="py-2 text-xs text-muted">{hooks.error}</p>}
       {snapshot?.agents.map((inspected) => {
