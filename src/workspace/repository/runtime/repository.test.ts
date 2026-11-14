@@ -174,10 +174,11 @@ describe('worktree lifecycle', () => {
 
   test('a broken .git link is cleaned up while preserving remaining files and branch', async () => {
     const meta = await repo.createWorktree({ branch: 'feature' })
+    const content = await fs.readFile(path.join(meta.path, 'README.md'))
     await fs.rm(path.join(meta.path, '.git'))
     expect(await repo.removeWorktree({ worktreeId: meta.id, force: true })).toEqual({ preservedPath: meta.path })
     expect(document.get().worktrees[meta.id]).toBeUndefined()
-    expect(await fs.readFile(path.join(meta.path, 'README.md'), 'utf8')).toBe('hello\n')
+    expect(await fs.readFile(path.join(meta.path, 'README.md'))).toEqual(content)
     expect((await simpleGit(root).branchLocal()).all).toContain('feature')
     await repo.reconcileWorktrees()
     expect(Object.values(document.get().worktrees).some((w) => w.path === meta.path)).toBe(false)
@@ -214,6 +215,7 @@ describe('worktree lifecycle', () => {
 
   test('filesystem access errors preserve the entry and files', async () => {
     const meta = await repo.createWorktree({ branch: 'feature' })
+    const content = await fs.readFile(path.join(meta.path, 'README.md'))
     const original = fs.lstat.bind(fs)
     const spy = vi.spyOn(fs, 'lstat').mockImplementation((async (target: string, ...args: unknown[]) => {
       if (target === meta.path) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' })
@@ -222,7 +224,7 @@ describe('worktree lifecycle', () => {
     try {
       await expect(repo.removeWorktree({ worktreeId: meta.id, force: true })).rejects.toMatchObject({ code: 'EACCES' })
       expect(document.get().worktrees[meta.id].status).toBe('ready')
-      expect(await fs.readFile(path.join(meta.path, 'README.md'), 'utf8')).toBe('hello\n')
+      expect(await fs.readFile(path.join(meta.path, 'README.md'))).toEqual(content)
     } finally {
       spy.mockRestore()
     }
