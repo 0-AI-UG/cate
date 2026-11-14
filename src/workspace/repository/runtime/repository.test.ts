@@ -159,6 +159,75 @@ describe('worktree lifecycle', () => {
     expect(checkouts.has(meta.path)).toBe(false)
   })
 
+  test('remove cleans up a checkout whose folder was deleted externally', async () => {
+    const meta = await repo.createWorktree({ branch: 'feature' })
+    await document.apply(addPanel(terminal('t1', meta.id)))
+    await fs.rm(meta.path, { recursive: true, force: true })
+
+    expect(await repo.removeWorktree({ worktreeId: meta.id })).toEqual({})
+    expect(document.get().worktrees[meta.id]).toBeUndefined()
+    expect(document.get().panels.t1).toBeUndefined()
+    expect(checkouts.has(meta.path)).toBe(false)
+    expect((await simpleGit(root).raw(['worktree', 'list', '--porcelain']))).not.toContain(meta.path)
+    expect((await simpleGit(root).branchLocal()).all).not.toContain('feature')
+  })
+
+  test('a broken .git link is cleaned up while preserving remaining files and branch', async () => {
+    const meta = await repo.createWorktree({ branch: 'feature' })
+    await fs.rm(path.join(meta.path, '.git'))
+    expect(await repo.removeWorktree({ worktreeId: meta.id, force: true })).toEqual({ preservedPath: meta.path })
+    expect(document.get().worktrees[meta.id]).toBeUndefined()
+    expect(await fs.readFile(path.join(meta.path, 'README.md'), 'utf8')).toBe('hello\n')
+    expect((await simpleGit(root).branchLocal()).all).toContain('feature')
+    await repo.reconcileWorktrees()
+    expect(Object.values(document.get().worktrees).some((w) => w.path === meta.path)).toBe(false)
+  })
+
+  test('remove cleans up metadata after Git has already removed the worktree', async () => {
+    const meta = await repo.createWorktree({ branch: 'feature' })
+    await simpleGit(root).raw(['worktree', 'remove', meta.path])
+    expect(await repo.removeWorktree({ worktreeId: meta.id })).toEqual({})
+    expect(document.get().worktrees[meta.id]).toBeUndefined()
+    // Without Git’s registration there is no reliable branch identity to delete.
+    expect((await simpleGit(root).branchLocal()).all).toContain('feature')
+  })
+
+  test('forgetting an unregistered worktree preserves a replacement folder and branch', async () => {
+    const meta = await repo.createWorktree({ branch: 'feature' })
+    await simpleGit(root).raw(['worktree', 'remove', meta.path])
+    await fs.mkdir(meta.path, { recursive: true })
+    await fs.writeFile(path.join(meta.path, 'keep.txt'), 'unrelated files')
+    expect(await repo.removeWorktree({ worktreeId: meta.id, force: true })).toEqual({ preservedPath: meta.path })
+    expect(document.get().worktrees[meta.id]).toBeUndefined()
+    expect(await fs.readFile(path.join(meta.path, 'keep.txt'), 'utf8')).toBe('unrelated files')
+    expect((await simpleGit(root).branchLocal()).all).toContain('feature')
+  })
+
+  test('missing-checkout metadata can be removed even when Git is unavailable', async () => {
+    const meta = await repo.createWorktree({ branch: 'feature' })
+    await fs.rm(meta.path, { recursive: true, force: true })
+    await fs.rename(path.join(root, '.git'), path.join(root, 'git-backup'))
+    expect(await repo.removeWorktree({ worktreeId: meta.id })).toEqual({})
+    expect(document.get().worktrees[meta.id]).toBeUndefined()
+    expect(checkouts.has(meta.path)).toBe(false)
+  })
+
+  test('filesystem access errors preserve the entry and files', async () => {
+    const meta = await repo.createWorktree({ branch: 'feature' })
+    const original = fs.lstat.bind(fs)
+    const spy = vi.spyOn(fs, 'lstat').mockImplementation((async (target: string, ...args: unknown[]) => {
+      if (target === meta.path) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' })
+      return original(target, ...args as [])
+    }) as typeof fs.lstat)
+    try {
+      await expect(repo.removeWorktree({ worktreeId: meta.id, force: true })).rejects.toMatchObject({ code: 'EACCES' })
+      expect(document.get().worktrees[meta.id].status).toBe('ready')
+      expect(await fs.readFile(path.join(meta.path, 'README.md'), 'utf8')).toBe('hello\n')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   test('remove moves bound panels to the main checkout when closing is off', async () => {
     closePanels = false
     await repo.reconcileWorktrees()

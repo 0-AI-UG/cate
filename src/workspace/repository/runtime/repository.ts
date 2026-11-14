@@ -265,14 +265,41 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
       await document.apply({ kind: 'setWorktree', worktree: { ...meta, status: 'removing' } })
 
       let branch: string | null = null
+      const result: WorktreeRemoveResult = {}
       try {
-        const listed = await raw.listWorktrees({})
-        branch = listed.find((w) => samePath(w.path, meta.path))?.branch ?? null
-        const exists = await fsp.stat(meta.path).then((s) => s.isDirectory(), () => false)
-        if (exists) {
-          await raw.removeWorktree({ targetPath: meta.path, force: params.force })
+        // Permission and I/O failures do not mean a checkout has disappeared.
+        const exists = await fsp.lstat(meta.path).then(() => true, (err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return false
+          throw err
+        })
+        const listed = await raw.listWorktrees({}).catch((err) => {
+          if (exists) throw err
+          deps.log?.warn('listing worktrees during missing-checkout cleanup failed: %s', errorText(err))
+          return []
+        })
+        const checkout = listed.find((w) => samePath(w.path, meta.path))
+        branch = checkout?.branch ?? null
+        if (exists && checkout) {
+          try {
+            await raw.removeWorktree({ targetPath: meta.path, force: params.force })
+          } catch (err) {
+            // Git refuses even forced removal when a checkout has lost its
+            // .git link. Let Git prune stale registrations, then forget the
+            // entry only if Git confirms it is no longer a worktree.
+            await raw.pruneWorktrees({}).catch(() => {})
+            const remaining = await raw.listWorktrees({})
+            if (remaining.some((w) => samePath(w.path, meta.path))) throw err
+            result.preservedPath = meta.path
+            branch = null
+            deps.paths.removeCheckout(meta.path)
+          }
         } else {
-          await raw.pruneWorktrees({})
+          // No Git registration: forget stale metadata without deleting a
+          // folder that may now contain unrelated files.
+          if (exists) result.preservedPath = meta.path
+          else await raw.pruneWorktrees({}).catch((err) => {
+            deps.log?.warn('pruning missing worktree %s failed: %s', meta.path, errorText(err))
+          })
           deps.paths.removeCheckout(meta.path)
         }
       } catch (err) {
@@ -281,7 +308,6 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
         throw err
       }
 
-      const result: WorktreeRemoveResult = {}
       if (branch && params.deleteBranch !== false) {
         try {
           await raw.branchDelete({ name: branch, force: true })

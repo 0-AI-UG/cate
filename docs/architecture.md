@@ -1415,7 +1415,12 @@ testing the type name. Each shell draws it
   display, bounded before/after image previews and explicit apply-command export
   also belong here. Forced status invalidations notify clients even
   when content changed without changing Git status labels.
-- A second identical create or remove joins the running one.
+- A second identical create or remove joins the running one. Missing
+  checkouts can be removed from Cate even when Git is unavailable. If Git no
+  longer registers a checkout but its folder remains, removal forgets Cate's
+  metadata and preserves that folder and its branch. An unreadable Git status
+  is disclosed in the removal confirmation rather than blocking cleanup;
+  filesystem permission and I/O errors are never treated as proof of absence.
 
 ### 9.6 Skills
 

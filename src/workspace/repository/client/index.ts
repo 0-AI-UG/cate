@@ -11,6 +11,7 @@ export {
   createWorktreePr,
   deleteMergedBranches,
   discardWorktree,
+  discardWorktrees,
   mergeWorktree,
   openPullRequest,
   publishWorktree,
