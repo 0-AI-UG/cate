@@ -25,64 +25,63 @@
    Theme tokens.
    The active theme is applied at runtime by applyTheme() (kernel/interaction), which
    writes every --var as an inline style on <html>.
-   This :root block is only the cold-launch / un-themed fallback — it mirrors
-   the dark-warm palette and MUST stay in sync with BASE_DARK in
-   src/kernel/interaction/contract/themes/base.ts.
+   This :root block is only the cold-launch / un-themed fallback — it follows
+   the standard Black theme in src/kernel/interaction/contract/themes/black.ts.
    ============================================================================= */
 
 :root {
   /* UI chrome font — native system stack. */
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
 
-  --surface-0: #1d1c1a;
-  --surface-1: #232220;
-  --surface-2: #282724;
-  --surface-3: #2c2b28;
-  --surface-4: #322f2c;
-  --surface-5: #3a3733;
-  --surface-6: #423f3a;
-  --titlebar-bg: #232220;
-  --canvas-bg: #161513;
-  --canvas-bg-alt: #1c1b19;
+  --surface-0: #000000;
+  --surface-1: #101010;
+  --surface-2: #1c1c1c;
+  --surface-3: #242424;
+  --surface-4: #2b2b2b;
+  --surface-5: #323232;
+  --surface-6: #3a3a3a;
+  --titlebar-bg: #0b0b0b;
+  --canvas-bg: #050505;
+  --canvas-bg-alt: #090909;
   --canvas-backdrop-scrim: rgba(0, 0, 0, 0.35);
-  --grid-dot: rgba(255, 255, 255, 0.077);
-  --grid-line: rgba(255, 255, 255, 0.03);
-  --border-subtle: rgba(255, 255, 255, 0.035);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --grid-dot: rgba(255, 255, 255, 0.05);
+  --grid-line: rgba(255, 255, 255, 0.022);
+  --border-subtle: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.20);
   /* Hairline width for inline-styled borders (canvas nodes, overlays). 1px on
      standard displays; overridden to 0.5px on hi-DPI (see the @media rule below)
      so panels get the same true 1-device-pixel line as the utility borders. */
   --hairline: 1px;
-  --border-focus: #4a9eff;
-  --text-primary: #e8e6e3;
-  --text-secondary: #a8a49e;
-  --text-muted: #78746e;
-  --text-inverse: #141311;
-  --focus-blue: #4a9eff;
-  --activity-green: #4dd964;
-  --activity-orange: #ff9f0a;
-  --shadow-node: rgba(0, 0, 0, 0.45);
-  --shadow-node-focused: rgba(74, 158, 255, 0.35);
-  --node-bg-active: #1a1917;
-  --node-dim-overlay: rgba(0, 0, 0, 0.18);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --border-focus: #5e86c3;
+  --text-primary: #eeeeee;
+  --text-secondary: #a0a0a0;
+  --text-muted: #7a7a7a;
+  --text-inverse: #101010;
+  --focus-blue: #5e86c3;
+  --activity-green: #5cae72;
+  --activity-orange: #cc8a4a;
+  --shadow-node: rgba(0, 0, 0, 0.55);
+  --shadow-node-focused: rgba(94, 134, 195, 0.28);
+  --node-bg-active: #000000;
+  --node-dim-overlay: rgba(0, 0, 0, 0.22);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.11);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
-  --surface-hover: rgba(255, 255, 255, 0.06);
-  --surface-hover-strong: rgba(255, 255, 255, 0.12);
-  --git-added: #4dd964;
-  --git-modified: #ff9f0a;
-  --git-deleted: #ff453a;
-  --git-untracked: #4a9eff;
-  --git-renamed: #bf5af2;
+  --surface-hover: rgba(255, 255, 255, 0.055);
+  --surface-hover-strong: rgba(255, 255, 255, 0.10);
+  --git-added: #5cae72;
+  --git-modified: #c9a24b;
+  --git-deleted: #d16a6a;
+  --git-untracked: #5e86c3;
+  --git-renamed: #a884c0;
   /* Minimap panel rects — muted variants tinted toward the active theme.
-     :root mirrors dark-warm for any un-themed render. */
-  --panel-terminal: #4a9960;
-  --panel-browser: #4a7ab0;
-  --panel-editor: #b07440;
-  --panel-canvas: #8857b0;
+     :root follows Black for any un-themed render. */
+  --panel-terminal: #5c9e7e;
+  --panel-browser: #5e86c3;
+  --panel-editor: #b0834a;
+  --panel-canvas: #8a72c0;
   /* Agent accent — RGB channels for Tailwind alpha modifier support. */
-  --agent-rgb: 74 158 255;
-  --agent-light-rgb: 147 197 255;
+  --agent-rgb: 94 134 195;
+  --agent-light-rgb: 150 178 220;
 }
 
 /* Semantic utility classes. Declared directly (not via Tailwind colors) so
@@ -320,29 +319,14 @@
 
 .dock-tab-bar-floating {
   background-color: transparent;
-  border-bottom: 1px solid transparent;
-  transition: background-color 160ms ease, border-color 160ms ease;
-}
-/* Inactive tabs float over the canvas with no chrome behind them, so give them a
-   translucent glass fill + backdrop blur — enough to read against the canvas grid
-   and separate from the content behind, while staying recessed vs the opaque
-   active tab. Scoped to the floating canvas bar; docked/mini-dock tab bars have a
-   solid chrome background already and keep their transparent-at-rest inactive
-   tabs. */
-.dock-tab-bar-floating .dock-tab-inactive {
-  background-color: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-.dock-tab-bar-floating .dock-tab-inactive:hover {
-  background-color: color-mix(in srgb, var(--surface-3) 72%, transparent);
+  border-bottom: 0;
+  transition: background-color 160ms ease;
 }
 
-/* Stays transparent at rest and on hover. Only lights up as a drop target while
-   something is being dragged onto it. */
+/* Canvas headers stay transparent while sharing the height of
+   other dock headers. The canvas owns its full viewport beneath the overlay. */
 .dock-tab-bar-floating.drop-active {
   background-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 14%, transparent);
-  border-bottom-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 45%, transparent);
 }
 
 /* Hairline borders on hi-DPI: render the 1px border utilities as a true
@@ -360,7 +344,6 @@
   .border-l { border-left-width: 0.5px; }
   .border-x { border-left-width: 0.5px; border-right-width: 0.5px; }
   .border-y { border-top-width: 0.5px; border-bottom-width: 0.5px; }
-  .dock-tab-bar-floating { border-bottom-width: 0.5px; }
 }
 
 /* Hide the scrollbar entirely while keeping the element scrollable (wheel/drag).

@@ -84,7 +84,7 @@ export function DockTabBar(props: DockTabBarProps) {
     <div
       key="__tab-placeholder__"
       aria-hidden
-      className={`flex flex-shrink-0 items-center justify-center whitespace-nowrap select-none rounded-[10px] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
+      className={`flex flex-shrink-0 items-center justify-center whitespace-nowrap select-none rounded ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
       style={{
         minWidth: 100,
         color: 'var(--focus-blue, #3b82f6)',
@@ -119,7 +119,7 @@ export function DockTabBar(props: DockTabBarProps) {
             panelId={panelId}
             className={`
               group relative flex items-center gap-1.5 whitespace-nowrap
-              cursor-grab select-none min-w-0 shrink rounded-[var(--node-tab-radius,10px)] transition-colors
+              cursor-grab select-none min-w-0 shrink rounded-[var(--node-tab-radius,4px)] transition-colors
               ${compact ? 'h-[22px] max-w-[160px] pl-2 text-[11px]' : 'h-6 max-w-[200px] pl-2.5 text-[12px]'}
               ${onClosePanel ? 'pr-1' : compact ? 'pr-2' : 'pr-2.5'}
               ${isActive ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover dock-tab-inactive'}

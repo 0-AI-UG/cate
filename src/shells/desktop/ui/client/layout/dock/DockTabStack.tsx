@@ -161,7 +161,7 @@ export function DockTabStack({
       }}
     >
       <div
-        className={`dock-tab-bar flex items-center overflow-hidden ${
+        className={`dock-tab-bar flex shrink-0 items-center overflow-hidden ${
           floating
             ? `dock-tab-bar-floating absolute top-0 left-0 right-0 z-20 ${showTabPlaceholder ? 'drop-active' : ''}`
             : compact || flush ? '' : 'border-b border-subtle'
@@ -258,7 +258,7 @@ export function DockTabStack({
         )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden relative" data-worktree-room>
+      <div className="flex-1 min-h-0 overflow-hidden relative bg-surface-0" data-worktree-room>
         {activePanelId ? (
           stack.panels.map((panelId) => {
             const isActive = panelId === activePanelId

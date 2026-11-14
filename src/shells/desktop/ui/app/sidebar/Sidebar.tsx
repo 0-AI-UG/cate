@@ -37,7 +37,7 @@ const DEFAULT_OVERLAY_BUTTONS: readonly SidebarOverlayButton[] = [
   { view: 'whatsNew', label: "What's New", action: 'whatsNew', icon: ScrollText },
 ]
 
-export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, overlayButtons = DEFAULT_OVERLAY_BUTTONS }: SidebarProps): JSX.Element {
+export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, overlayButtons = DEFAULT_OVERLAY_BUTTONS }: SidebarProps): JSX.Element {
   const tintOpacity = useClientSetting('sidebarTintOpacity')
   const hidden = useUIStore((s) => s.sidebarHidden)
   const overlay = useUIStore((s) => s.overlay)

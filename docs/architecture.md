@@ -1851,6 +1851,11 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   relation context transport (`useAgentContextTransport`), and the usage
   overview (the Usage overlay, `openUsage`): cost, tokens and limits of the
   shown workspace, with its custom model prices.
+- **Resume readiness**: agents whose resume command opens the normal prompt
+  declare `resume.opensAtPrompt`. A deliberately restored terminal seeds Ready
+  only after its exact CLI process opens the saved session with the matching
+  checkout binding. This fills the gap before a deferred SessionStart, without
+  a completion notification or overriding live hook events.
 - **Consumers**: the terminal panel, review (changes), sidebar and dock
   tabs (status), `cate.agent.*`.
 
@@ -2313,8 +2318,20 @@ a code).
   this computer as them; nothing is remembered. Wider access is the person's choice in that place; narrower access
   asks first, since it cuts devices off. The workspace's settings keep the
   same setting and the device list with revoke.
-- **Where it lives.** The desktop sidebar is one manually ordered workspace
-  list, with remote computer names on rows. Rows reorder across computers;
+- **Where it lives.** The desktop sidebar opens in Threads, aggregating terminal
+  and agent activity from connected open workspaces. Blocking human prompts
+  precede ready terminals, followed by running work; exited and acknowledged
+  ready items remain in a collapsible Settled section. A new running turn or
+  blocking prompt clears acknowledgement. Acknowledgements last only for the
+  live client observation, so work completed while disconnected resurfaces.
+  Settings > Sidebar chooses Threads (default) or Projects. Threads has search
+  and an All projects selector; both filters also apply to Settled. Projects
+  shows the manually ordered workspace list and open panel tree,
+  with remote computer names on rows. View choice and Settled expansion are
+  device UI state. Snooze is a separate timed action: deadlines persist on
+  the device, hide the thread until due, and can be cancelled in Snoozed.
+  Settled rows have an un-settle action that returns them to Ready for review.
+  Rows reorder across computers;
   next/previous workspace follows that same order. The opening picker sorts
   all remembered workspaces by last use, including closed ones. Closing
   disconnects this client and removes sidebar membership, retaining history

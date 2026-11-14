@@ -54,3 +54,18 @@ covers all registered CLIs and notification behavior;
 fake-provider lifecycle suite
 (`runtime/live/hookLifecycle.itest.ts`) verifies the human permission
 notification against each installed CLI.
+
+
+On terminal restoration, a Codex resume without an initial prompt opens its
+normal input prompt, but Codex defers SessionStart until the next submission.
+Cate seeds Ready only for a deliberately restored panel with a matching saved
+checkout binding, after the exact live CLI process confirms that it opened the
+requested saved session. A process name or an unrelated discovered session does
+not establish readiness. The seed emits no completion notification and never
+overrides a hook event; subsequent turns and permissions remain hook-driven.
+
+In Threads view, the desktop reconnects remembered local workspaces in the
+background so their threads remain visible after restarting Cate. Background
+observation never selects a workspace or asks for or grants trust. Untrusted
+workspaces disconnect; explicitly selecting one uses the normal trust flow.
+Remote workspaces connect only when opened explicitly.

@@ -15,7 +15,7 @@ export default function SurfaceView({ workspaceId, panelId, record }: PanelViewP
     const replacement = store && surfaceReplacement(store.getSnapshot(), record.id, type)
     if (replacement) store.propose({ kind: 'replacePanel', record: replacement })
   }
-  return <div className="flex h-full min-h-0 flex-col overflow-y-auto p-4">
+  return <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface-0 p-4">
     <div className="m-auto w-full max-w-lg py-4">
       <div role="group" aria-label="Open a surface" className="flex flex-col gap-1">
         {choices.map((definition) => (

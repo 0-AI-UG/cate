@@ -100,6 +100,7 @@ interface TerminalInfo {
   probing?: boolean
   probeAfter?: number
   processPid?: number
+  resumedSession?: TerminalResumeStamp
 }
 
 /** How long a sent prompt has to start a turn before the send reports it was
@@ -218,7 +219,11 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const launched = spawn.launch?.kind === AGENT_LAUNCH.start && isAgentId((spawn.launch.params as { agentId?: unknown })?.agentId)
       ? AGENT_DEFS[(spawn.launch.params as { agentId: AgentId }).agentId]
       : agentForLaunchCommand(spawn.executable)
-    terminals.set(spawn.terminalId, { panelId: spawn.panelId, cwd })
+    const saved = spawn.panelId ? stampsFile.get()[spawn.panelId] : undefined
+    const resumedSession = spawn.launch?.kind === TERMINAL_RESTORE_LAUNCH.kind && saved
+      && saved.binding === bindingOf(document.panel(spawn.panelId!)) && AGENT_DEFS[saved.agentId].resume.opensAtPrompt
+      ? saved : undefined
+    terminals.set(spawn.terminalId, { panelId: spawn.panelId, cwd, resumedSession })
     if (spawn.panelId) panelTerminal.set(spawn.panelId, spawn.terminalId)
     // A started agent's first prompt takes its attachments through the hook.
     const startParams = spawn.launch?.kind === AGENT_LAUNCH.start ? spawn.launch.params as { prompt?: unknown; attachments?: unknown } : null
@@ -297,6 +302,14 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
           if (disposed || terminals.get(scan.terminalId) !== info || info.processPid !== candidate.pid || stamps.latest(scan.terminalId)) return
           if (session) {
             const next = { agentId: session.agentId, sessionId: session.sessionId, cwd: session.cwd ?? info.cwd }
+            // Codex defers SessionStart until input even when Cate deliberately
+            // resumed it. Confirm the requested session through this exact pid
+            // before seeding its prompt state. Hook events always win the race.
+            const resumed = info.resumedSession
+            info.resumedSession = undefined
+            if (resumed?.agentId === next.agentId && resumed.sessionId === next.sessionId && resumed.cwd === next.cwd) {
+              status.noteResumedSession(scan.terminalId, next.agentId!, next.sessionId)
+            }
             const previous = processSessions.get(scan.terminalId)
             if (previous?.sessionId !== next.sessionId || previous.agentId !== next.agentId || previous.cwd !== next.cwd) {
               processSessions.set(scan.terminalId, next)

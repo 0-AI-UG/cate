@@ -392,7 +392,7 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
           data-testid="minimap-toggle"
           className="relative overflow-hidden border border-subtle shadow-[0_8px_24px_-6px_var(--shadow-node)]"
           style={{
-            borderRadius: 22,
+            borderRadius: minimapOpen ? 6 : 22,
             transition: 'width 300ms cubic-bezier(0.16,1,0.3,1), height 300ms cubic-bezier(0.16,1,0.3,1), background 200ms ease, backdrop-filter 200ms ease',
             width: minimapOpen ? 220 : 44,
             height: minimapOpen ? 160 : 44,

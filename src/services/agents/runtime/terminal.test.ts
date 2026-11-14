@@ -293,6 +293,42 @@ describe('terminal agents', () => {
     expect(await restore()).toEqual({})
   })
 
+  it('restores Codex readiness after a runtime restart without requiring another prompt', async () => {
+    const first = await terminal.spawn({ terminalId: 'old-pty', panelId: 'term', cwd: root })
+    await post(first, 'codex', { hook_event_name: 'SessionStart', session_id: 'saved-session', cwd: root })
+    agentTerminals.dispose()
+    agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile })
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockResolvedValue({ agentId: 'codex', sessionId: 'saved-session', cwd: root })
+    const env = await terminal.spawn({ terminalId: 'restored-pty', panelId: 'term', cwd: root, launch: TERMINAL_RESTORE_LAUNCH })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('restored-pty', 'term', 'codex')
+    await vi.waitFor(() => expect(agentTerminals.state('term')).toMatchObject({
+      status: 'waitingForInput', canReceivePrompt: true, session: { sessionId: 'saved-session' },
+    }))
+    expect(notifications).toEqual([])
+    // The next turn is hook-driven; rediscovery cannot turn it idle again.
+    await post(env, 'codex', { hook_event_name: 'UserPromptSubmit', session_id: 'saved-session', cwd: root })
+    terminal.scan('restored-pty', 'term', 'codex')
+    expect(agentTerminals.state('term')).toMatchObject({ status: 'running', canReceivePrompt: false })
+    identify.mockRestore()
+  })
+
+  it.each(['different-session', 'changed-checkout'])('does not seed readiness when resume identity does not match: %s', async (mismatch) => {
+    const first = await terminal.spawn({ terminalId: 'old-pty', panelId: 'term', cwd: root })
+    await post(first, 'codex', { hook_event_name: 'SessionStart', session_id: 'saved-session', cwd: root })
+    agentTerminals.dispose()
+    agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile })
+    if (mismatch === 'changed-checkout') doc.set('term', { worktreeId: 'other' })
+    const id = mismatch === 'different-session' ? 'different-session' : 'saved-session'
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockResolvedValue({ agentId: 'codex', sessionId: id, cwd: root })
+    await terminal.spawn({ terminalId: 'restored-pty', panelId: 'term', cwd: root, launch: TERMINAL_RESTORE_LAUNCH })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('restored-pty', 'term', 'codex')
+    await vi.waitFor(() => expect(agentTerminals.state('term')?.session?.sessionId).toBe(id))
+    expect(agentTerminals.state('term')).toMatchObject({ status: 'notRunning', canReceivePrompt: false })
+    identify.mockRestore()
+  })
+
   it('resolves a start launch to the canonical argv', async () => {
     expect(await terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'opencode', prompt: 'Fix it' }, { cwd: root, panelId: 'w' }))
       .toEqual({ command: { executable: 'opencode', args: ['--prompt', 'Complete this coding task:\n\nFix it'] } })

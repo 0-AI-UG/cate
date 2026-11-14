@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { popoverLayer } from './dialogLayers'
 
 type DismissEvent = 'mousedown' | 'click'
 const NO_TRIGGER_REFS: ReadonlyArray<RefObject<HTMLElement | null>> = []
@@ -29,6 +30,16 @@ export function useDismissableLayer({
     const onOutside = (event: MouseEvent): void => {
       const target = event.target as Node
       if (contentRef.current?.contains(target)) return
+      // A child selector portals beside its parent, rather than inside it.
+      // Follow its trigger back to the owning layer before dismissing.
+      let child = target instanceof Element ? target.closest('[data-popover-owner]') : null
+      const visited = new Set<Element>()
+      while (child && !visited.has(child)) {
+        visited.add(child)
+        const owner = document.getElementById(child.getAttribute('data-popover-owner') ?? '')
+        if (owner && contentRef.current?.contains(owner)) return
+        child = owner?.closest('[data-popover-owner]') ?? null
+      }
       if (triggerRefsRef.current.some((ref) => ref.current?.contains(target))) return
       dismissRef.current()
     }
@@ -45,7 +56,7 @@ export function useDismissableLayer({
 }
 
 export const POPOVER_SURFACE =
-  'rounded-2xl border border-subtle bg-surface-3 shadow-lg'
+  'rounded-md border border-subtle bg-surface-3 shadow-lg'
 
 export type ViewportPopoverPosition = {
   top: number
@@ -122,6 +133,7 @@ export function PopoverSurface({
   width,
   className = '',
   style,
+  ownerId,
   children,
 }: {
   popoverRef: RefObject<HTMLDivElement>
@@ -130,6 +142,7 @@ export function PopoverSurface({
   width: number
   className?: string
   style?: CSSProperties
+  ownerId?: string
   children: ReactNode
 }) {
   if (!pos || !portalTarget) return null
@@ -138,7 +151,9 @@ export function PopoverSurface({
       ref={popoverRef}
       className={`fixed ${POPOVER_SURFACE} z-[9999] ${className}`}
       data-placement={pos.placement}
+      data-popover-owner={ownerId}
       style={{
+        zIndex: popoverLayer(),
         top: pos.top,
         left: pos.left,
         width,

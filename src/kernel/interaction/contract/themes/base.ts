@@ -3,13 +3,13 @@
 //
 // Every theme's partial `app` map is merged over one of these (chosen by
 // Theme.type). These are the single source of truth for the full 44-var set in
-// TypeScript; they MUST stay in sync with the `:root` fallback block in
-// src/shells/desktop/renderer/styles/globals.css (BASE_DARK == :root == dark-warm).
+// TypeScript. Partial dark imports retain the Dark Warm inheritance palette;
+// the cold-launch CSS fallback follows the standard Black theme.
 // =============================================================================
 
 import type { AppColorKey } from '../theme'
 
-/** Dark base — identical to the dark-warm palette / globals.css `:root`. */
+/** Dark inheritance base, matching the Dark Warm palette. */
 export const BASE_DARK: Record<AppColorKey, string> = {
   'surface-0': '#1d1c1a',
   'surface-1': '#232220',

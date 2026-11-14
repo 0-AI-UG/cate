@@ -4,7 +4,7 @@
 // picker.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Search, X } from 'lucide-react'
 import { SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
@@ -13,6 +13,10 @@ import { useUIStore } from '../state/uiStore'
 import { OPEN_WORKSPACE_ANCHOR } from '../remote/OpenWorkspaceDialog'
 import { showMenu } from './menu'
 import { WorkspaceRow } from './WorkspaceRow'
+import { ThreadList } from './ThreadList'
+import { ProjectFilter } from './ProjectFilter'
+import { useUiState } from '../state/uiState'
+import { openTrusted } from '@client/workspaces'
 
 /** The ids in their new order after moving `from` to insertion slot `to`
  *  (0..n, n is after the last). */
@@ -30,6 +34,7 @@ interface WorkspaceListProps {
 }
 
 export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction }: WorkspaceListProps): JSX.Element {
+  const { sidebarView } = useUiState()
   const list = clientApp().workspaces
   const { entries, open } = useWorkspaceList(list)
   const selectedId = useUIStore((s) => s.selectedWorkspaceId)
@@ -39,6 +44,23 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
     if (ui.openDialogOpen) ui.closeWorkspacePicker()
     else ui.openWorkspacePicker()
   }
+  const observed = useRef(new Set<string>())
+  const mountedAt = useRef(Date.now())
+  useEffect(() => {
+    if (sidebarView !== 'threads') return
+    for (const entry of entries) {
+      // Remembered, non-closed local projects can still have running agents
+      // after a restart. Observe them without selecting or granting trust.
+      if (entry.kind !== 'local' || entry.lastOpenedAt >= mountedAt.current || open.includes(entry.id) || observed.current.has(entry.id)) continue
+      observed.current.add(entry.id)
+      const app = clientApp()
+      void openTrusted({ workspaces: list, connections: app.connections, prompt: false }, entry.id)
+        .then(({ trusted }) => trusted).catch(() => {})
+    }
+  }, [entries, open, sidebarView, list])
+  const [query, setQuery] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const selectedProject = entries.some((entry) => entry.id === projectId) ? projectId : ''
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [insertIndex, setInsertIndex] = useState<number | null>(null)
@@ -84,6 +106,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
   }, [multiSelected])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (sidebarView !== 'projects') return
     if ((e.key === 'Delete' || e.key === 'Backspace') && multiSelected.size > 0) {
       e.preventDefault()
       closeSelected()
@@ -128,7 +151,23 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
           </SidebarHeaderButton>
         )}
       />
-      <div className="flex-1 overflow-y-auto pb-1" role="tree" aria-label="Workspaces">
+      {entries.length > 0 && sidebarView === 'threads' && (
+        <div className="shrink-0 px-3 pb-2">
+          <div className="flex items-center gap-2 h-8 px-3 text-secondary focus-within:text-primary">
+            <Search size={16} className="shrink-0" />
+            <input type="search" aria-label="Search threads" placeholder="Search" value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setQuery('') } }}
+              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none" />
+            {query && <button type="button" aria-label="Clear thread search" onClick={() => setQuery('')} className="p-1 rounded hover:bg-hover"><X size={12} /></button>}
+          </div>
+        </div>
+      )}
+      {sidebarView === 'threads' && entries.length > 0 && <div className="shrink-0 px-3 pt-4 pb-1">
+        <ProjectFilter entries={entries} value={selectedProject} onChange={setProjectId} />
+      </div>}
+      {entries.length > 0 && <ThreadList entries={entries} open={open} hidden={sidebarView !== 'threads'} query={query} projectId={selectedProject} />}
+      <div className={`flex-1 overflow-y-auto pb-1 ${entries.length > 0 && sidebarView !== 'projects' ? 'hidden' : ''}`} role="tree" aria-label="Workspaces">
         {entries.length === 0 && (
           <p className="px-4 py-8 text-center text-xs text-muted">No workspaces yet</p>
         )}
