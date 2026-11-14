@@ -2,6 +2,7 @@
 // that was offline resumes with the session as it is now.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { ReviewSnapshot } from '@panels/review/contract'
 import type { TerminalSnapshot } from '@panels/terminal/contract'
 import { startSharedWorkspace, until, untilState, type SharedWorkspace } from '../sharedWorkspace'
 
@@ -85,7 +86,7 @@ describe.skipIf(process.platform === 'win32')('shared workspace: replaced sessio
     const record = ws.b.document.getSnapshot().panels[id]!
     ws.b.document.propose({ kind: 'replacePanel', record: { ...record, type: 'review', title: 'Diff Review', fields: {} } })
     for (const probe of [a, b]) {
-      const s = await probe.until((s) => 'review' in s && !(s as { loading?: boolean }).loading && 'comparison' in s)
+      const s = await probe.until((s) => 'recorded' in s && !(s as unknown as ReviewSnapshot).recorded.loading)
       expect(s).toMatchObject({ error: null })
     }
   })

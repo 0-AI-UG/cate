@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RpcError,
+  COMPATIBILITY_VERSION,
   framePortOver,
   type ByteDuplex,
 } from '@kernel/rpc/contract'
@@ -216,12 +217,12 @@ describe('WorkspaceConnection', () => {
   })
 
   it('connects across releases with the same compatibility version; rejects other protocols', async () => {
-    const older = openLocal(fakeRuntime({ version: '8.9.0', compatibilityVersion: 2 }))
+    const older = openLocal(fakeRuntime({ version: '8.9.0', compatibilityVersion: COMPATIBILITY_VERSION - 1 }))
     await vi.waitFor(() => expect(older.state).toEqual({ kind: 'incompatible', runtimeVersion: '8.9.0' }))
     await expect(older.runtime.workspace.info()).rejects.toThrow(/8\.9\.0/)
     registry!.close('ws1')
 
-    const newer = openLocal(fakeRuntime({ version: '9.0.1', compatibilityVersion: 2 }))
+    const newer = openLocal(fakeRuntime({ version: '9.0.1', compatibilityVersion: COMPATIBILITY_VERSION + 1 }))
     await vi.waitFor(() => expect(newer.state).toEqual({ kind: 'incompatible', runtimeVersion: '9.0.1' }))
     registry!.close('ws1')
 
