@@ -82,18 +82,20 @@ export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: 
 
   const loadIndex = useCallback(async (refresh = false) => {
     if (!skills) {
-      setLoading(false)
+      setLoading(!!workspaceId)
       return
     }
     setLoading(true)
+    setError(null)
     try {
       setIndex(await skills.index({ refresh }))
     } catch (err) {
       log.warn('index failed: %s', err)
+      setError(errorMessage(err, 'Could not load the skills catalog.'))
     } finally {
       setLoading(false)
     }
-  }, [skills])
+  }, [skills, workspaceId])
 
   useEffect(() => {
     setError(null)
@@ -242,9 +244,9 @@ export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: 
               <span className="truncate text-primary">{selectedRepo || 'Unknown repository'}</span>
             </div>
           )}
-          {loading && browseRows.length === 0 ? (
+          {(loading || (!!workspaceId && !skills)) && browseRows.length === 0 ? (
             <LoadingState label="Loading skills" size={15} className="px-4 py-6 text-[13px]" />
-          ) : browseMode === 'repositories' && selectedRepo !== null && visibleBrowseRows.length === 0 ? (
+          ) : error && browseRows.length === 0 ? null : browseMode === 'repositories' && selectedRepo !== null && visibleBrowseRows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[13px] text-muted">No available skills match in this repository.</div>
           ) : browseRows.length === 0 ? (
             <div className="px-4 py-6 text-center text-[13px] text-muted">

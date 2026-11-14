@@ -56,7 +56,7 @@ export function GitHubSettings({ workspaceId, onShowPullRequests }: GitHubSettin
           {!connection ? <LoadingState label="Checking GitHub" size={13} className="mt-2 justify-start text-xs" /> : <p role="status" className="mt-2 text-xs text-muted">{connected ? `Authenticated as ${connection.account}` : connection.message}</p>}
         </div>
         <div className="flex items-center gap-2">
-          {connected ? <SecondaryButton onClick={onShowPullRequests}>Pull requests</SecondaryButton> : connection?.status === 'missing-cli' ?
+          {!connection ? null : connected ? <SecondaryButton onClick={onShowPullRequests}>Pull requests</SecondaryButton> : connection?.status === 'missing-cli' ?
             <SecondaryButton onClick={() => clientUi().openExternal('https://cli.github.com/')}>Install GitHub CLI</SecondaryButton> :
             <SecondaryButton disabled={!connection || login.status === 'pending'} onClick={() => void changeLogin('start')}>Sign in to GitHub</SecondaryButton>}
           <SecondaryButton disabled={checking} onClick={() => void refresh()} aria-label="Recheck GitHub connection">{checking ? <Spinner size={14} /> : <RefreshCw size={14} />}Recheck</SecondaryButton>

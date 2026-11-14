@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { GitCompareArrows as GitDiff } from 'lucide-react'
 import { errorMessage } from '@kernel/interaction'
+import { Spinner } from '../../kernel/interaction'
 import { agentChangesOpener } from './changesOpener'
 
 const FAILED = 'Could not open agent changes'
@@ -22,7 +23,7 @@ export function AgentChangesPill({ workspaceId, panelId }: { workspaceId: string
         } catch (cause) { setError(errorMessage(cause, FAILED)) }
         finally { setBusy(false) }
       }}>
-      <GitDiff size={11} />
+      {busy ? <Spinner size={11} label="Opening agent changes" /> : <GitDiff size={11} />}
       <span className="max-w-0 overflow-hidden text-[10px] transition-all group-hover:max-w-20">Changes</span>
     </button>
     {error && <span role="alert" className="max-w-48 rounded bg-surface-2 px-2 text-[10px] text-red-400">{error}</span>}

@@ -33,3 +33,15 @@ it('submits the typed name with the picked base', async () => {
   await act(async () => m.host.querySelector<HTMLButtonElement>('[aria-label="Start"]')!.click())
   expect(onSubmit).toHaveBeenCalledWith('fix login', undefined)
 })
+
+
+it('waits for picker options instead of displaying No matches', async () => {
+  let finish!: (value: []) => void
+  rt.vcs.prList.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+  await m.render(<CreateWorktreeForm onSubmit={vi.fn()} onCheckoutPr={vi.fn()} onCancel={vi.fn()} defaultBaseBranch="main" workspaceId="ws" rootPath="/repo" />)
+  await act(async () => [...m.host.querySelectorAll('button')].find((b) => b.textContent?.includes('based on'))!.click())
+  expect(m.host.querySelector('[aria-label="Loading branches and pull requests"]')).not.toBeNull()
+  expect(m.host.textContent).not.toContain('No matches')
+  await act(async () => finish([]))
+  expect(m.host.querySelector('[aria-label="Loading branches and pull requests"]')).toBeNull()
+})

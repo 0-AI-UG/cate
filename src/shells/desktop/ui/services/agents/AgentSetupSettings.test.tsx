@@ -98,6 +98,12 @@ describe('AI & Agents settings', () => {
     vi.useRealTimers()
   })
 
+  it('waits for a selected workspace’s runtime instead of asking to open a workspace', async () => {
+    await act(async () => root.render(<AgentSetupSettings workspaceId="connecting" />))
+    expect(host.textContent).toContain('Loading agents')
+    expect(host.textContent).not.toContain('Open a workspace')
+  })
+
   it('requires a workspace rather than configuring the client machine accidentally', async () => {
     await render(null)
     expect(host.textContent).toContain('Open a workspace')
