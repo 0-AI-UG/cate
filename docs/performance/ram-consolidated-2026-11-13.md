@@ -41,6 +41,8 @@ The experimental split builder removed the whole `runtime-modules` directory bef
 - [Rejected on-demand terminal history experiment](terminal-history-round2-2026-11-13.md)
 - [Canvas overscan, including rejected iterations and capture limitations](viewport-overscan-2026-11-13.md)
 
+The runtime profile accepts `RAM2_COMPATIBILITY_VERSION` so historical and current protocol bundles can be measured separately. Set it to the target bundle’s `COMPATIBILITY_VERSION` (1 for these recorded baseline runs; 2 after #831). This is test-handshake metadata, not a compatibility fallback.
+
 The original raw JSON measurement archives are retained as gzip files to avoid tens of thousands of generated lines in the PR. Reproduction scripts and focused opt-in profiles accompany the retained changes. Extract an archive before using tooling that expects plain JSON. The original consolidation made no fresh comparative RAM claim; review reruns above supplement it; the retained runtime/UI source is the measured implementation, with the development-build safety correction above and the terminal-history candidate removed during review.
 
 ## Validation after review simplification

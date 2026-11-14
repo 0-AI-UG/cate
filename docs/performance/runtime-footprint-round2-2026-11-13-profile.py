@@ -1,8 +1,10 @@
 import os,sys,time,json,tempfile,subprocess,pathlib,signal,socket,struct
+# Match the target bundle: historical baseline 1, current protocol after #831 2.
+compatibility_version=int(os.environ.get('RAM2_COMPATIBILITY_VERSION','1'))
 class RPC:
  def __init__(self,endpoint):
   self.s=socket.socket(socket.AF_UNIX);self.s.settimeout(60);self.s.connect(endpoint);self.id=0
-  self.send({'t':'hello','version':'2.1.0-beta.14','compatibilityVersion':1,'client':{'clientId':'profile','device':{'name':'profile','publicKey':''},'features':[]}})
+  self.send({'t':'hello','version':'2.1.0-beta.14','compatibilityVersion':compatibility_version,'client':{'clientId':'profile','device':{'name':'profile','publicKey':''},'features':[]}})
   assert self.recv()['t']=='hello'
  def send(self,msg):
   body=b'\0'+json.dumps(msg).encode();self.s.sendall(struct.pack('>I',len(body))+body)
@@ -58,7 +60,7 @@ try:
    if infos:
     try:
      sock=socket.socket(socket.AF_UNIX);sock.settimeout(.3);sock.connect(json.loads(infos[0].read_text())['endpoints']['local'])
-     body=b'\0'+json.dumps({'t':'hello','version':'2.1.0-beta.14','compatibilityVersion':1,'client':{'clientId':'profile','device':{'name':'profile','publicKey':''},'features':[]}}).encode()
+     body=b'\0'+json.dumps({'t':'hello','version':'2.1.0-beta.14','compatibilityVersion':compatibility_version,'client':{'clientId':'profile','device':{'name':'profile','publicKey':''},'features':[]}}).encode()
      sock.sendall(struct.pack('>I',len(body))+body)
      if sock.recv(4096): break
     except (OSError,KeyError): pass
