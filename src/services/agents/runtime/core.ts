@@ -3,8 +3,12 @@
 // panel states over them and the prompts on their way to them (prompts.ts). Agents publish their notification events through
 // the workspace's notifications.
 
+import type { PatchHistory } from '@workspace/repository/runtime'
 import type { RelationRoleOf } from '@workspace/relations/contract'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { asObject } from '@kernel/state/contract'
+import { createJsonStateFile } from '@kernel/state/node'
 import type { Logger } from '@kernel/log/contract'
 import type {
   AgentChangesSnapshot,
@@ -45,6 +49,8 @@ export interface AgentsCoreDeps {
   root: string
   /** `dataPaths(dataDir).agents`: holds `hooks/` and `changes/`. */
   agentsDir: string
+  patchHistory?: PatchHistory
+  pullRequestNumber?: (cwd: string) => number | undefined
   trust: TrustGate
   settings: AgentsSettingsReader
   document: AgentsDocument
@@ -117,14 +123,37 @@ export interface AgentsCore extends AgentsBase {
   /** Recorded agent edits in a checkout, each with the panels that showed
    *  its session; an unchanged revision omits records. */
   changes(cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot>
+  cachedChanges(cwd: string): AgentChangesSnapshot | undefined
   dispose(): void
 }
 
 export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: AgentsBase) => AgentTerminals): AgentsCore {
+  // Keep the last displayed title when a source panel closes or is renamed
+  // after its final edit. The daemon is the sole writer of this archive.
+  const titles = createJsonStateFile<Record<string, string>>({
+    file: path.join(deps.agentsDir, 'panel-titles.json'), defaults: {}, mode: 0o600,
+    normalize: (raw) => Object.fromEntries(Object.entries(asObject(raw) ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string')),
+  })
+  titles.load()
+  let titleRevision = ''
+  const rememberTitles = () => {
+    const next = { ...titles.get() }
+    for (const panel of deps.document.panels()) if (deps.relationRole(panel.type)?.execution) next[panel.id] = panel.title
+    const revision = createHash('sha256').update(JSON.stringify(next)).digest('hex')
+    if (revision !== titleRevision) {
+      titles.set(next)
+      titleRevision = revision
+    }
+  }
+  rememberTitles()
+  const stopTitles = deps.document.onChange(rememberTitles)
   const presence = createAgentPresenceTracker({ snapshot: deps.snapshot, isAlive: deps.isAlive })
   const hooks = createAgentHooks({
     hooksDir: path.join(deps.agentsDir, 'hooks'),
     changesDir: path.join(deps.agentsDir, 'changes'),
+    patchHistory: deps.patchHistory,
+    pullRequestNumber: deps.pullRequestNumber,
+    panelTitle: (panelId) => deps.document.panel(panelId)?.title,
     homeDir: deps.homeDir,
     ...deps.hookOptions,
     onPost: ({ terminalId, agentId, pid }) =>
@@ -145,10 +174,18 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
   const prompts = createAgentPrompts({ panels, terminals })
   const conversations = createAgentConversations({ panels, terminals, prompts })
 
-  const resolve = ({ terminalId: _terminalId, panelId, ...rest }: StoredAgentChange) => ({ ...rest, panelIds: panelId ? [panelId] : [] })
+  const resolve = ({ terminalId: _terminalId, panelId, ...rest }: StoredAgentChange) => ({
+    ...rest, panelIds: panelId ? [panelId] : [],
+    ...(panelId && titles.get()[panelId] ? { panelTitles: { ...rest.panelTitles, [panelId]: titles.get()[panelId] } } : {}),
+  })
   const changes = async (cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot> => {
-    const snapshot = await hooks.readChanges(await deps.resolveCheckout(cwd), knownRevision)
-    return snapshot.records ? { revision: snapshot.revision, records: snapshot.records.map(resolve) } : { revision: snapshot.revision }
+    const [storeRevision, knownTitles] = knownRevision?.split(':') ?? []
+    const checkout = await deps.resolveCheckout(cwd)
+    const requestedTitles = titleRevision
+    let snapshot = await hooks.readChanges(checkout, knownTitles === requestedTitles ? storeRevision : undefined)
+    if (!snapshot.records && requestedTitles !== titleRevision) snapshot = await hooks.readChanges(checkout)
+    const revision = `${snapshot.revision}:${titleRevision}`
+    return snapshot.records ? { revision, records: snapshot.records.map(resolve) } : { revision }
   }
 
   return {
@@ -159,6 +196,10 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
     conversations,
     prompts,
     resolveCheckout: (cwd) => deps.resolveCheckout(cwd),
+    cachedChanges(cwd) {
+      const snapshot = hooks.cachedChanges(cwd)
+      return snapshot?.records ? { revision: `${snapshot.revision}:${titleRevision}`, records: snapshot.records.map(resolve) } : undefined
+    },
     async inspectHooks(cwd) {
       deps.trust.requireTrusted()
       return hooks.inspectWorkspace(await deps.resolveCheckout(cwd), { approvals: true })
@@ -181,6 +222,8 @@ export function createAgentsCore(deps: AgentsCoreDeps, createTerminals: (base: A
     hosting: () => Object.values(panels.all()).filter((state) => state.present).map((state) => state.panelId),
     changes,
     dispose() {
+      stopTitles()
+      titles.dispose()
       conversations.dispose()
       prompts.dispose()
       panels.dispose()

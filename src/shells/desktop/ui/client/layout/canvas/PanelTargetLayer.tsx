@@ -3,6 +3,8 @@
 
 import React, { useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { useDocument } from '../../document'
+import { PanelTitle, usePanelTitles } from '../../host'
 import { focusedNodeId as focusedNodeIdOf } from './selection'
 import { useCanvasView, useCanvasViewStore } from './context'
 
@@ -21,6 +23,9 @@ function injectStyles() {
 }
 
 const PanelTargetLayer: React.FC<{ canvasRef?: React.RefObject<HTMLDivElement | null> }> = ({ canvasRef }) => {
+  const workspaceId = useCanvasView((state) => state.workspaceId)
+  const panels = useDocument(workspaceId, (document) => document.panels)
+  const titles = usePanelTitles(workspaceId)
   const pending = useCanvasView((state) => state.pendingPanelTarget)
   const nodes = useCanvasView((state) => state.nodes)
   const focusedId = useCanvasView((state) => focusedNodeIdOf(state))
@@ -307,8 +312,8 @@ const PanelTargetLayer: React.FC<{ canvasRef?: React.RefObject<HTMLDivElement | 
                     }}
                   >
                     <strong>{pending.candidates.length + existingIndex + 1}</strong>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Use {candidate.title}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      Use {panels[candidate.panelId] ? <PanelTitle {...titles.props(panels[candidate.panelId])} /> : <PanelTitle record={{ type: pending.panelType, title: candidate.title }} />}
                     </span>
                   </button>
                 )

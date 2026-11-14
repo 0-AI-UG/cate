@@ -7,7 +7,7 @@ import type { AgentPanelStates, AgentPanelStatesChange } from '@services/agents/
 import { fakeStream } from '@services/agents/client/testing'
 import type { PanelType } from '@workspace/document/contract'
 import { AgentChangesPill } from './AgentChangesPill'
-import { AgentChangesOverlay } from './tabDecorations'
+import { AgentChangesOverlay } from './panelDecorations'
 import { setAgentChangesOpener } from './changesOpener'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

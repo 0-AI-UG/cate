@@ -11,9 +11,9 @@ import { AvailabilitySettings } from '../../runtime/daemon'
 import { GitHubSettings, WorktreeSettings } from '../../workspace/repository'
 import { SkillsSettings } from '../../workspace/skills'
 import { AgentSetupSettings } from '../../services/agents'
-import { documentStoreFor } from '@client/document'
 import { useUIStore } from '../state/uiStore'
-import { useOtherClients } from '../../client/document'
+import { useOtherClients, useDocument } from '../../client/document'
+import { PanelTitle, usePanelTitles } from '../../client/host'
 import { clientIdentity } from '@client/connections'
 import { tryClientApp } from '../app'
 import { DevicesPage } from '../pairing/DevicesPage'
@@ -32,11 +32,14 @@ function RuntimePage({ workspaceId }: SettingsPageProps): JSX.Element | null {
 function AvailabilityPage({ workspaceId }: { workspaceId: string }): JSX.Element {
   const connection = tryClientApp()?.connections.get(workspaceId)
   const others = useOtherClients(workspaceId)
+  const panels = useDocument(workspaceId, (document) => document.panels)
+  const titles = usePanelTitles(workspaceId)
   const ownKey = clientIdentity().device.publicKey
   return (
     <AvailabilitySettings
       workspaceId={workspaceId}
-      panelTitle={(panelId) => documentStoreFor(workspaceId)?.getSnapshot().panels[panelId]?.title}
+      panelTitle={(panelId) => panels[panelId] ? titles.label(panels[panelId]) : undefined}
+      renderPanelTitle={(panelId) => panels[panelId] ? <PanelTitle {...titles.props(panels[panelId])} /> : undefined}
       connected={['this device', ...new Set(others.filter((c) => c.device.publicKey !== ownKey).map((c) => c.device.name))]}
       onAddDevice={() => useUIStore.getState().openShare(workspaceId)}
     >

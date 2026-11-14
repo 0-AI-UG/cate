@@ -24,6 +24,7 @@
 // own node binary on a runtime-written JS file. Node is not guaranteed on the
 // user's PATH, but the runtime is always a working node on this host.
 
+import type { PatchHistory } from '@workspace/repository/runtime'
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import http from 'http'
 import os from 'os'
@@ -62,6 +63,8 @@ import {
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 export interface AgentHooks {
+  cachedChanges(cwd: string): StoredChangesSnapshot | undefined
+  onChanges(listener: (cwd: string) => void): () => void
   registerChangeTerminal(terminalId: string, terminal: AgentChangeTerminal): void
   unregisterChangeTerminal(terminalId: string): void
   listChanges(cwd: string): Promise<StoredAgentChange[]>
@@ -138,8 +141,12 @@ export interface AgentHooks {
 }
 
 export interface AgentHooksDeps {
+  pullRequestNumber?: (cwd: string) => number | undefined
+  patchHistory?: PatchHistory
   /** `<data>/agents/changes`: the change history. */
   changesDir: string
+  /** Captures a source panel's title with its recorded edits. */
+  panelTitle?: (panelId: string) => string | undefined
   /** `<data>/agents/hooks`: the stable bridge dir. */
   hooksDir: string
   /** The node binary the bridge wrappers exec. Default: this daemon's own
@@ -302,7 +309,7 @@ setTimeout(() => process.exit(0), 10000)
 `
 
 export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
-  const changes = createAgentChangesStore(deps.changesDir)
+  const changes = createAgentChangesStore(deps.changesDir, deps.panelTitle, deps.patchHistory, deps.pullRequestNumber)
   const homeDir = deps.homeDir ?? os.homedir()
   const listeners = new Set<(event: AgentHookEvent) => void>()
   const toolCallListeners = new Set<(terminalId: string, call: AgentToolCall) => void>()
@@ -730,6 +737,8 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     registerChangeTerminal: (terminalId, terminal) => changes.registerTerminal(terminalId, terminal),
     unregisterChangeTerminal: (terminalId) => changes.unregisterTerminal(terminalId),
     listChanges: (cwd) => changes.list(cwd),
+    onChanges: (listener) => changes.onChange(listener),
+    cachedChanges: (cwd) => changes.cached(cwd),
     readChanges: (cwd, knownRevision) => changes.readChanges(cwd, knownRevision),
     async envForPty(ptyId, env, config, cwd, baseCwd, launchedAgentId) {
       if (disposed) return env

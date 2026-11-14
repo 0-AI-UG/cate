@@ -5,6 +5,7 @@
 // every call while the workspace is untrusted, and the monitors run no git
 // until it is trusted.
 
+import type { PatchHistory } from './patchHistory'
 import { randomUUID } from 'node:crypto'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
@@ -79,7 +80,7 @@ const GIT_WRITES = [
   'branchDelete', 'checkout', 'stash', 'stashPop', 'worktreeMergeTo', 'worktreeUpdateFrom', 'createPr',
 ] as const satisfies readonly (keyof GitHost)[]
 const GIT_READS = [
-  'isRepo', 'findRepos', 'lsFiles', 'readStatus', 'remotes', 'fileWebUrl', 'compare', 'fileDiff', 'fileContent',
+  'isRepo', 'findRepos', 'lsFiles', 'readStatus', 'remotes', 'fileWebUrl', 'compare', 'fileDiff', 'fileContent', 'applyCommand',
   'log', 'branchList', 'worktreeList', 'worktreeStatus', 'worktreeReview', 'prStatus', 'prList',
 ] as const satisfies readonly (keyof GitHost)[]
 
@@ -95,6 +96,7 @@ type RemoveParams = ParamsOf<VcsCapability['methods']['worktreeRemove']>
 export interface RepositoryRuntime {
   readonly root: string
   readonly git: RepositoryGit
+  readonly patchHistory: PatchHistory
   readonly github: RepositoryGithub
   /** Status monitors; they read nothing while the workspace is untrusted. */
   readonly monitors: Pick<StatusMonitors, 'subscribe' | 'kick'>
@@ -359,6 +361,7 @@ export function createRepositoryRuntime(deps: RepositoryRuntimeDeps): Repository
   return {
     root,
     git,
+    patchHistory: { capture: gated((cwd, files) => raw.patchHistory.capture(cwd, files)), reconcile: gated((cwd, patches) => raw.patchHistory.reconcile(cwd, patches)) },
     github,
     monitors,
     trustChanged: () => monitors.kick(),
@@ -385,6 +388,10 @@ export function vcsCapabilityImpl(repo: RepositoryRuntime): CapabilityImpl<VcsCa
   const { git, github } = repo
   return {
     ...git,
+    async fileDiff(params) {
+      const { patch: _patch, ...diff } = await git.fileDiff(params)
+      return diff
+    },
     worktreeCreate: (p) => repo.createWorktree(p),
     worktreeRemove: (p) => repo.removeWorktree(p),
     worktreePrune: () => repo.pruneWorktrees(),

@@ -89,6 +89,9 @@ export interface GitPullResult {
   summary: { changes: number; insertions: number; deletions: number }
 }
 
+/** Stable commit identity used to group recorded patches. */
+export interface GitCommitSummary { hash: string; message: string; date: string }
+
 export interface GitLogEntry {
   hash: string
   message: string

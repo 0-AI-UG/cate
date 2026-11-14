@@ -17,7 +17,7 @@ import { FileViewsContext } from '../../workspace/files'
 import type { PanelRecord, WorktreeMeta } from '@workspace/document/contract'
 import { fileViewsHost } from './fileActions'
 
-/** Opens (or reuses) a review panel for a comparison. */
+/** Opens a Git comparison in the shell's repository overlay. */
 export type ReviewOpener = (request: ReviewRequest & { workspaceId: string }) => Promise<unknown>
 let reviewOpener: ReviewOpener | null = null
 

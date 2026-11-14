@@ -335,7 +335,7 @@ Every piece of state belongs to exactly one class.
 | Class | Owner | Examples | Shared with |
 |---|---|---|---|
 | **Document** | the runtime | panel records, windows and dock trees, canvases, nodes and geometry, node mini docks, relations, worktree metadata | every client of the workspace |
-| **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, a review's comparison, notes and agent review, agent status and the prompts on their way to the agent | every client viewing the panel |
+| **Session** | a panel session | terminal screen and scrollback, editor buffer and whether a conflict's diff is shown, browser tabs, URLs and viewport preset, a review's source filters, agent status and the prompts on their way to the agent | every client viewing the panel |
 | **Resource** | runtime capabilities | PTYs, files, git, agent processes, agent changes | through the runtime |
 | **Workspace data** | the runtime | workspace settings, secrets (browser passwords, the runtime key), browser history and bookmarks, skill sources, trust, granted paths, devices | every client of the workspace |
 | **Device** | one client device | client settings, workspace list, known runtimes, device key, main and detached window bounds, onboarding progress, per-workspace browser partitions (cookies) | never |
@@ -355,8 +355,7 @@ Rules:
   shows and the page's zoom, whether an editor shows a markdown file as
   source or preview, and a review's filter, focused file and expansions. What
   the panel is stays shared: the browser's tabs, URLs and viewport preset, the
-  file and whether a conflict's diff is shown, the review's comparison and
-  notes. A request to show something (reveal a line, open a review at a file)
+  file and whether a conflict's diff is shown, the review's source filters. A request to show something (reveal a line, open a review at a file)
   is a one-shot `reveal` in the snapshot that each view applies once. How a
   client shows a review (split, wrap, whole files) is a client setting.
 - Panel view state belongs to the workspace's client-state store, not global
@@ -1106,7 +1105,7 @@ or that changes shared state, is a **workspace** setting.
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
 | Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
-| Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines`, `reviewFullFiles`, `reviewImagePreviews` | |
+| Review (`panels/review`) | `reviewSplitDiff`, `reviewWordDiff`, `reviewWrapLines` | |
 | Sidebar (`shells/desktop`) | `sidebarTintOpacity`, `showSkillsInWorkspaceOverview` | |
 | Notifications (`workspace/notifications`) | `notificationsEnabled`, `notifyOnlyWhenUnfocused` | |
 | Machines (`shells/desktop`) | `sshMachines` | |
@@ -1323,7 +1322,24 @@ testing the type name. Each shell draws it
   pure `inheritWorktree`) gives a shell the checkout of the panel it creates
   from.
 - **Desktop UI** (`shells/desktop/ui/workspace/repository`): source control view, repository and PR overviews, worktree menus and
-  forms, GitHub settings.
+  forms, GitHub settings. Repository view reads share a per-runtime in-memory
+  cache (128 results / 32 MiB) for discovery, remotes, history, comparisons,
+  expanded diffs and image sides. Warm views show cached results immediately;
+  status revisions invalidate comparisons and diffs, and reopening revalidates
+  discovery/history. Status snapshots survive their last subscriber (up to 64
+  checkouts), while subscriptions are released. Content revisions do not change
+  for tracked-file decoration updates. General Git comparisons (working changes, staged
+  changes, commits and branches) open inside the repository overlay, through
+  `vcs`; they do not create Review panels. Working changes expand directly in
+  the initial source control view alongside the commit composer; partially staged
+  files show staged and working patches together. Commit and branch
+  comparisons use the same layout. Diff options use a native checkbox menu; repository/worktree selection
+  uses in-app controls. Collapse all occupies a fixed place in the changes header. The overlay lists all file summaries,
+  loads diffs only for expanded files, virtualizes the full row list, and dismisses
+  when opening a working file. Split, word, wrap, whitespace and full-context
+  display, bounded before/after image previews and explicit apply-command export
+  also belong here. Forced status invalidations notify clients even
+  when content changed without changing Git status labels.
 - A second identical create or remove joins the running one.
 
 ### 9.6 Skills
@@ -1617,8 +1633,23 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   - approval detection per agent (whether it is asking for a permission),
     and the tool steps its hooks report, kept in memory and sent with the
     conversation;
-  - change history per checkout (from terminal hooks) in
-    `agents/changes/`;
+  - recorded edits per checkout (from terminal hooks) in `agents/changes/`.
+    Successful capture notifies subscribers independently of Git status and retains
+    the known PR checkout number at capture. Missing association is left unknown.
+    A file stores either a reported patch or its parsed hunks, not duplicate
+    representations. The store caches directory listings and decoded records,
+    coalesces concurrent reads per checkout, retains decoded records and ready
+    snapshots for warm Review opens, persists verified commit attribution and
+    removes fully reverted file contributions (and empty records). Cold disk
+    records are shown before Git attribution finishes; cached results stay
+    visible during revalidation. The
+    repository owns Git evidence: exact reported-change matching against commit
+    diffs, with captured HEAD baselines for new edits. Revert pruning requires
+    a verified return to the baseline, considers staged changes and retains
+    commits on other branches. Git evidence is cached by HEAD, index and file
+    stamps; missing or ambiguous evidence never deletes records. Older records
+    with no provable commit remain visible as Other recorded edits;
+
   - session store readers per agent, conversation reads. A store may identify
     the interactive session from transcript files held open by the exact agent
     process under this PTY, before its first lifecycle hook. Codex defers that
@@ -1871,11 +1902,18 @@ Every panel type meets the same contract.
 | terminal | services/terminal, services/agents | pty status, title, cwd, activity, exit; screen as serialized stream | xterm | shows agent sessions (their state comes from the agents service's panel states, not the snapshot) |
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
-| review | workspace/repository, services/agents | source (git diff or agent changes), file list, notes, agent review, status, reveal | diff views | filter, focused file, collapsed and expanded files and context lines are per client |
+| review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
 
 ## 12. Client
+
+Desktop panel labels use `PanelTitle` (`ui/client/host`): the type icon or
+agent logo, derived title, working shimmer, worktree tint and status. Services
+contribute through `registerPanelDecorations`; generic title views never branch
+on panel or agent types. Lists read `usePanelTitles` once and pass its props to
+each label, sharing the existing agent stream. Review omits per-file source
+labels while a source panel filter already identifies that panel.
 
 The client core: everything a desktop app or the iOS app needs that is not
 drawing, with no Electron, no Node, no React and no DOM. It holds the
@@ -2306,8 +2344,7 @@ Everything outside the UI that drives Cate goes through one router.
   clients only.
 - **Access classes**: each method declares `read` or `control`. The workspace
   settings enable each class per area (the `cli*Enabled` keys; each module
-  declares its area with its methods, `defineCliArea`; review shares the
-  agents' area; a method may also need a further opt-in area, as
+  declares its area with its methods, `defineCliArea`; a method may also need a further opt-in area, as
   `browser.login` and `browser.signup` need browser passwords on top of
   browser control), behind the
   `cliEnabled` master switch; they apply to CLI callers. Client
@@ -2350,7 +2387,6 @@ Everything outside the UI that drives Cate goes through one router.
 | `cate.terminal.*` | `read`, `type`, `press` | terminal panel | session |
 | `cate.browser.*` | `listTabs`; tabs (`selectTab`, `createTab`, `closeTab`); page operations (`getAXState`, `getScreenshot`, `find`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, `setViewport`, `download`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`listTabs`) / session (the browser panel's, page methods through page control) |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
-| `cate.review.*` | `inspect`, `complete`, `note.add`, `note.resolve` | review panel | session |
 | `cate.agent.*` | `start`, `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
 
 There is no `cate.panel.focus`: focus is client state. Every browser method

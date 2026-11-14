@@ -11,8 +11,9 @@ import { pickNewPanelPlace, registerActions, revealPanel } from '@client/host'
 import { installFileDropHandler } from '../ui/client/layout/drag'
 import { installReviewOpener, openDroppedFiles, registerSettingsPage, registerWorkspaceViews } from '../ui/app'
 import { setAgentChangesOpener } from '../ui/services/agents'
-import { openAgentChanges, openReviewPanel } from '@panels/review/client'
+import { openAgentChanges } from '@panels/review/client'
 import type { DesktopApi, NativeAction } from '../contract'
+import { useUIStore } from '../ui/app/state/uiStore'
 import { quitBlockers } from './quitBlockers'
 import { syncMenuModel } from './menuModel'
 
@@ -84,7 +85,9 @@ const WINDOW_ACTIONS = defineActions({
 // --- Registration -----------------------------------------------------------------
 
 export function registerDesktopRenderer(api: DesktopApi): () => void {
-  installReviewOpener(openReviewPanel)
+  installReviewOpener(async (request) => {
+    useUIStore.getState().openOverlay({ view: 'pullRequests', section: JSON.stringify(request) })
+  })
   installFileDropHandler({
     openFiles: openDroppedFiles,
     // A copy is client-local work: quitting waits for it.

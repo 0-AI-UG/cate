@@ -63,7 +63,7 @@ export async function launchSharedPair(transport: Transport, opts: SharedPairOpt
     b = await launchApp({ home: homeB, workspace: false, domTerminals: true })
     const secret = await a.mainWindow.evaluate(async () => {
       await window.__cateE2E!.call('settings', 'set', { key: 'runtimeNetwork', value: 'sameNetwork' })
-      return window.__cateE2E!.call('pairing', 'createSecret', { mode: 'sameNetwork' })
+      return window.__cateE2E!.call('pairing', 'createSecret', { mode: 'sameNetwork', acknowledged: true })
     }) as { uri: string }
     bWorkspace = await b.mainWindow.evaluate((uri) => window.__cateE2E!.joinWorkspace(uri), secret.uri)
     await b.mainWindow.waitForFunction((ws) => !!window.__cateE2E!.document(ws), bWorkspace, { timeout: 30_000 })

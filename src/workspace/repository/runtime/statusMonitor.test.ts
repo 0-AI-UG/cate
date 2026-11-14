@@ -113,3 +113,22 @@ it('reads no snapshot for file changes git ignores', async () => {
   off()
   monitors.dispose()
 })
+
+it('invalidates content consumers even when a changed file keeps the same Git status', async () => {
+  vi.useFakeTimers()
+  let changed!: (path: string) => void
+  const listener = vi.fn()
+  const monitors = createStatusMonitors({
+    probe: async () => ({ branch: 'main', dirty: true, branches: ['main'] }),
+    snapshot: async () => status('main', true),
+    watch: (_cwd, notify) => { changed = notify; return () => {} },
+  })
+  const off = monitors.subscribe('/repo', listener)
+  await vi.advanceTimersByTimeAsync(0)
+  listener.mockClear()
+  changed('/repo/already-modified.ts')
+  await vi.advanceTimersByTimeAsync(150)
+  expect(listener).toHaveBeenCalledOnce()
+  expect(listener).toHaveBeenCalledWith(status('main', true))
+  off()
+})

@@ -8,6 +8,7 @@ import { FileText, Search as MagnifyingGlass } from 'lucide-react'
 import { Icon, LoadingState, PaletteDialogShell, PaletteTextInput, useResolvedShortcuts } from '../../kernel/interaction'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { useDocument } from '../../client/document'
+import { PanelTitle, usePanelTitles, type PanelTitleProps } from '../../client/host'
 import { useWorkspaceList } from '../../client/workspaces'
 import { availableActions, createPanel, creatableDefinitions, focusedPanelId, panelDefinition, worktreeChoices } from '@client/host'
 import { useActionsVersion } from '../../client/host/hooks'
@@ -36,6 +37,7 @@ function OpenPalette(): JSX.Element {
   useActionsVersion()
   const list = useWorkspaceList(clientApp().workspaces)
   const doc = useDocument(workspaceId, (d) => d)
+  const titles = usePanelTitles(workspaceId)
 
   const [searchText, setSearchText] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -57,7 +59,7 @@ function OpenPalette(): JSX.Element {
     },
   }, query)
   const workspaces = workspaceItems(list.entries, workspaceId, query)
-  const panels = useMemo(() => panelItems(doc, windowId, panelDefinition, query), [doc, windowId, query])
+  const panels = useMemo(() => panelItems(doc, windowId, panelDefinition, query, titles.label), [doc, windowId, query, titles.label])
 
   // File names: searched with a query (debounced), recent files without one.
   const filesAvailable = !!workspaceId && canOpenFiles()
@@ -178,7 +180,7 @@ function OpenPalette(): JSX.Element {
                     onClick={() => activate(item)}
                     onMouseEnter={() => setSelectedIndex(i)}
                   >
-                    <ItemRow item={item} />
+                    <ItemRow item={item} panelTitle={item.kind === 'panel' && doc.panels[item.panelId] ? titles.props(doc.panels[item.panelId]) : undefined} />
                   </div>
                 )
               })}
@@ -199,7 +201,7 @@ function itemKey(item: PaletteItem): string {
   }
 }
 
-function ItemRow({ item }: { item: PaletteItem }): JSX.Element {
+function ItemRow({ item, panelTitle }: { item: PaletteItem; panelTitle?: PanelTitleProps }): JSX.Element {
   switch (item.kind) {
     case 'command':
       return <>
@@ -218,8 +220,7 @@ function ItemRow({ item }: { item: PaletteItem }): JSX.Element {
       </>
     case 'panel':
       return <>
-        <span className="shrink-0 text-secondary"><Icon name={item.icon} size={ICON_SIZE} /></span>
-        <span className="text-[13px] text-primary flex-1 truncate">{item.title}</span>
+        {panelTitle && <PanelTitle {...panelTitle} iconSize={ICON_SIZE} className="text-[13px] text-primary" />}
         <span className="text-[11px] text-muted">{item.secondary}</span>
       </>
     case 'file':

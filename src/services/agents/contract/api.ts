@@ -43,13 +43,13 @@ export const agentCliArea = defineCliArea({
     key: 'cliAgentReadEnabled',
     code: 'agent-read-disabled',
     detail:
-      '`cate agent types / list / wait / read` and `cate review inspect`: observe workers, their conversations and terminal output, and review state.',
+      '`cate agent types / list / wait / read`: observe workers, their conversations and terminal output.',
   },
   control: {
     key: 'cliAgentControlEnabled',
     code: 'agent-control-disabled',
     detail:
-      '`cate agent start / send / interrupt` and `cate review note / complete`: start and steer terminal agents and record review results.',
+      '`cate agent start / send / interrupt`: start and steer terminal agents.',
   },
 })
 

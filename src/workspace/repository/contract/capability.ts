@@ -58,6 +58,9 @@ export const vcsCapability = defineCapability('vcs', {
     fileDiff: method<AtCwd & { spec: GitComparisonSpec; path: string; contextLines?: number; allowLarge?: boolean }, GitFileDiff>(),
     fileContent: method<AtCwd & { spec: GitComparisonSpec; path: string; side: 'old' | 'new' }, GitFileContent>(),
 
+    /** A complete comparison as a shell command, requested explicitly for export. */
+    applyCommand: method<AtCwd & { spec: GitComparisonSpec }, string>(),
+
     // Index and commits
     stage: method<AtCwd & { path: string }, void>({ mutates: true }),
     stageAll: method<AtCwd, void>({ mutates: true }),

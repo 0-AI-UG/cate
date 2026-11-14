@@ -2,15 +2,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { ApiSessionContext } from '@kernel/api/contract'
 import { createLogger } from '@kernel/log/contract'
-import { isRpcError } from '@kernel/rpc/contract'
 import { MAIN_WINDOW, type Json, type PanelRecord } from '@workspace/document/contract'
 import { createDocumentService, type DocumentService } from '@workspace/document/runtime'
 import type { RepoStatus } from '@workspace/repository/contract'
 import type { AgentChangeRecord } from '@services/agents/contract'
 import type { SessionKit, SessionStore } from '@panels/framework/runtime'
-import type { ReviewNote, ReviewOp, ReviewSnapshot, ReviewState } from './contract'
+import type { ReviewOp, ReviewSnapshot, ReviewState } from './contract'
 import { ReviewSession, type ReviewSessionDeps } from './session'
 
 const file = { path: 'src/a.ts', status: 'modified', additions: 1, deletions: 0, binary: false, staged: false, working: true }
@@ -27,7 +25,7 @@ let dir: string
 let document: DocumentService
 let stored: Json | undefined
 let statusListeners: Array<(status: RepoStatus) => void>
-let exitListeners: Array<(panelId: string) => void>
+let changeListeners: Array<(cwd: string) => void>
 let records: AgentChangeRecord[]
 let deps: ReviewSessionDeps
 let repo: Record<string, ReturnType<typeof vi.fn>>
@@ -36,17 +34,6 @@ let session: ReviewSession
 const snap = () => session.snapshot() as unknown as ReviewSnapshot
 const saved = () => stored as unknown as ReviewState
 const op = (value: ReviewOp) => session.handleOp(value, { clientId: 'c', connectionId: 1 })
-
-function ctx(callerPanelId?: string): ApiSessionContext {
-  return {
-    caller: { kind: 'cli', id: 'caller', panelId: callerPanelId },
-    method: 'cate.review.x',
-    signal: new AbortController().signal,
-    sticky: { get: () => undefined, set: () => {}, clear: () => {} },
-    panelId: 'review',
-    exclusive: true,
-  }
-}
 
 function makeSession(record: PanelRecord): ReviewSession {
   const store: SessionStore = { read: () => stored, write: (value) => { stored = value }, flush: async () => {} }
@@ -71,10 +58,10 @@ beforeEach(async () => {
   document = createDocumentService({ file: path.join(dir, 'document.json'), debounceMs: 60_000 })
   stored = undefined
   statusListeners = []
-  exitListeners = []
+  changeListeners = []
   records = []
   repo = {
-    compare: vi.fn(async () => ({ spec: { kind: 'uncommitted' }, files: [file], additions: 1, deletions: 0, resolvedBase: 'base', resolvedTarget: 'target', currentBranch: 'feature' })),
+    compare: vi.fn(async () => ({ spec: { kind: 'uncommitted' }, files: [file], additions: 1, deletions: 0, currentBranch: 'feature' })),
     fileDiff: vi.fn(async () => diff),
     fileContent: vi.fn(async ({ side }: { side: string }) => ({ exists: true, size: 1, base64: side })),
     stage: vi.fn(async () => {}),
@@ -96,20 +83,20 @@ beforeEach(async () => {
         return () => { statusListeners = statusListeners.filter((l) => l !== listener) }
       },
     },
-    files: { trash: vi.fn(async () => {}), writeText: vi.fn(async () => {}) },
     agents: {
+      cachedChanges: vi.fn(() => undefined),
       readChanges: vi.fn(async () => ({ revision: String(records.length), records })),
       readiness: vi.fn(async () => [{ agentId: 'codex' as const, ready: true }]),
       start: vi.fn(async () => ({ panelId: 'worker' })),
-      send: vi.fn(async () => {}),
-      onExit: (listener) => {
-        exitListeners.push(listener)
-        return () => { exitListeners = exitListeners.filter((l) => l !== listener) }
+      onChanges: (listener) => {
+        changeListeners.push(listener)
+        return () => { changeListeners = changeListeners.filter((l) => l !== listener) }
       },
     },
   }
   await start()
-  await vi.waitFor(() => expect(snap().comparison).not.toBeNull())
+  for (const listener of statusListeners) listener(repoStatus([]))
+  await vi.waitFor(() => expect(snap().recorded.loading).toBe(false))
 })
 
 afterEach(() => {
@@ -118,207 +105,166 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-it('stages, unstages and discards through the repository and refreshes the comparison', async () => {
-  const before = repo.compare.mock.calls.length
-  await op({ kind: 'stage', path: 'src/a.ts' })
-  await op({ kind: 'unstage', path: 'src/a.ts' })
-  await op({ kind: 'discard', path: 'src/a.ts', untracked: false })
-  await op({ kind: 'discard', path: 'new.ts', untracked: true })
-  expect(repo.stage).toHaveBeenCalledWith({ cwd: '/repo', path: 'src/a.ts' })
-  expect(repo.unstage).toHaveBeenCalledWith({ cwd: '/repo', path: 'src/a.ts' })
-  expect(repo.discardFile).toHaveBeenCalledWith({ cwd: '/repo', path: 'src/a.ts' })
-  expect(deps.files.trash).toHaveBeenCalledWith(path.join('/repo', 'new.ts'))
-  expect(repo.refreshStatus).toHaveBeenCalledTimes(4)
-  expect(repo.compare.mock.calls.length - before).toBe(4)
-  expect(snap()).toMatchObject({ busy: false, error: null })
-})
 
-it('reports file operation failures in the snapshot and fails the op', async () => {
-  repo.stage.mockRejectedValueOnce(new Error('index locked'))
-  await expect(op({ kind: 'stage', path: 'src/a.ts' })).rejects.toSatisfy((e) => isRpcError(e, 'rejected') && (e as Error).message === 'index locked')
-  expect(snap()).toMatchObject({ busy: false, error: 'index locked' })
-})
 
-it('adds, toggles and resolves notes, persisting them in the session file', async () => {
-  const note = await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'new', line: 4, context: 'return safe()', body: 'Check', severity: 'warning' } }) as ReviewNote
-  expect(note).toMatchObject({ author: 'human', status: 'open', resolvedBase: 'base', resolvedTarget: 'target' })
-  await op({ kind: 'toggleNote', noteId: note.id })
-  expect(saved().notes![0].status).toBe('resolved')
-  await op({ kind: 'toggleNote', noteId: note.id })
-  expect(await op({ kind: 'resolveNote', noteId: note.id.slice(0, 4) })).toBe(note.id)
-  expect(snap().review.notes![0].status).toBe('resolved')
-  await expect(op({ kind: 'resolveNote', noteId: 'missing' })).rejects.toSatisfy((e) => isRpcError(e, 'rejected') && (e as Error).message === 'review-note-not-found')
-})
-
-it('adds agent notes through cate.review.note.add on the live diff', async () => {
-  const human = await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'new', line: 4, context: 'return safe()', body: 'Human', severity: 'warning' } }) as ReviewNote
-  const note = await session.handleApi!('note.add', { file: 'src/a.ts', side: 'new', line: 4, body: 'Agent', severity: 'warning' }, ctx('reviewer'))
-  expect(note).toMatchObject({ author: 'agent', agentPanelId: 'reviewer', context: 'return safe()', contextHash: human.contextHash })
-  expect(saved().notes).toHaveLength(2)
-  await expect(session.handleApi!('note.add', { file: 'src/a.ts', side: 'new', line: 9, body: 'x', severity: 'warning' }, ctx('reviewer')))
-    .rejects.toThrow('line-not-in-diff')
-  await expect(session.handleApi!('note.add', { file: 'other.ts', side: 'new', line: 1, body: 'x', severity: 'warning' }, ctx('reviewer')))
-    .rejects.toThrow('file-not-in-review')
-})
-
-it('inspects the comparison for cate.review.inspect', async () => {
-  const result = await session.handleApi!('inspect', {}, ctx())
-  expect(result).toMatchObject({ panelId: 'review', repoPath: '/repo', resolvedBase: 'base', files: [file], notes: [] })
-})
-
-it('persists the history choice, never how a reader shows files', async () => {
-  await op({ kind: 'diff', path: 'src/a.ts', options: { fullFile: true } })
-  await op({ kind: 'update', patch: { showHistory: true } })
-  expect(saved()).toEqual(expect.objectContaining({ showHistory: true }))
-  expect(saved()).not.toHaveProperty('expandedFiles')
-  expect(saved()).not.toHaveProperty('contextLines')
-})
-
-it('loads a diff as the asking client shows it', async () => {
-  await op({ kind: 'diff', path: 'src/a.ts', options: { contextLines: 20 } })
-  expect(repo.fileDiff).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'uncommitted' }, path: 'src/a.ts', contextLines: 20, allowLarge: false })
-  await op({ kind: 'diff', path: 'src/a.ts', options: { fullFile: true } })
-  expect(repo.fileDiff).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'uncommitted' }, path: 'src/a.ts', contextLines: 999_999, allowLarge: true })
-})
-
-it('fetches diffs on demand and relocates line notes to them', async () => {
-  await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'new', line: 9, context: 'return safe()', body: 'Moved', severity: 'info' } })
-  expect(snap()).not.toHaveProperty('diffs')
-  expect(await op({ kind: 'diff', path: 'src/a.ts' })).toEqual(diff)
-  expect(repo.fileDiff).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'uncommitted' }, path: 'src/a.ts', contextLines: 3, allowLarge: false })
-  expect(saved().notes![0]).toMatchObject({ line: 4, outdated: false })
-})
-
-it('bumps the diff epoch when a refresh invalidates diffs', async () => {
-  const epoch = snap().diffEpoch
-  await op({ kind: 'refresh' })
-  expect(snap().diffEpoch).toBe(epoch + 1)
-})
-
-it('loads every line as context for a client showing whole files', async () => {
-  await op({ kind: 'diff', path: 'src/a.ts', options: { allLines: true } })
-  expect(repo.fileDiff).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'uncommitted' }, path: 'src/a.ts', contextLines: 999_999, allowLarge: false })
-})
-
-it('returns the git apply command and the created pull request instead of touching the client', async () => {
-  expect(await op({ kind: 'applyCommand' })).toContain('PATCH')
-  expect(await op({ kind: 'createPullRequest' })).toEqual({ url: 'https://example.test/pr/1' })
-  expect(repo.createPr).toHaveBeenCalledWith({ path: '/repo', branch: 'feature' })
-  await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'file', line: null, context: '', body: 'Check' } })
-  await op({ kind: 'saveNotes', path: '/out/notes.md' })
-  expect(deps.files.writeText).toHaveBeenCalledWith('/out/notes.md', expect.stringContaining('Check'))
-})
 
 it('merges an open request, keeping local state, and reveals its file once', async () => {
-  await op({ kind: 'update', patch: { showHistory: true } })
   expect(snap().reveal).toBeNull()
-  await op({ kind: 'retarget', request: { spec: { kind: 'staged' }, focusedFile: 'src/a.ts' } })
-  expect(saved()).toMatchObject({ spec: { kind: 'staged' }, showHistory: true })
+  await op({ kind: 'retarget', request: { agentChanges: { agentId: 'codex' }, focusedFile: 'src/a.ts' } })
+  expect(saved()).toMatchObject({ agentChanges: { agentId: 'codex' } })
   expect(saved()).not.toHaveProperty('focusedFile')
   const reveal = snap().reveal
   expect(reveal).toMatchObject({ path: 'src/a.ts' })
-  await op({ kind: 'retarget', request: { spec: { kind: 'staged' }, focusedFile: 'src/a.ts' } })
+  await op({ kind: 'retarget', request: { agentChanges: { agentId: 'codex' }, focusedFile: 'src/a.ts' } })
   expect(snap().reveal!.seq).toBeGreaterThan(reveal!.seq)
-  await vi.waitFor(() => expect(repo.compare).toHaveBeenLastCalledWith({ cwd: '/repo', spec: { kind: 'staged' } }))
 })
 
 it('switches worktrees by id and follows the checkout in the record', async () => {
   document.apply({ kind: 'setWorktree', worktree: { id: 'main', path: '/repo', color: 'green', status: 'ready' } })
   document.apply({ kind: 'setWorktree', worktree: { id: 'feature', path: '/feature', color: 'blue', status: 'ready' } })
-  await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'file', line: null, context: '', body: 'Main note' } })
+  await op({ kind: 'updateFilter', patch: { sessionId: 'main-session' } })
   await op({ kind: 'switchWorktree', worktreeId: 'feature' })
   expect(saved().repoPath).toBe('/feature')
-  expect(saved().notes).toEqual([])
+  expect(saved().agentChanges).toEqual({})
   expect(document.get().panels.review).toMatchObject({ worktreeId: 'feature', fields: { repoPath: '/feature' } })
   await op({ kind: 'switchWorktree', worktreeId: null })
   expect(saved().repoPath).toBe('/repo')
-  expect(saved().notes![0].body).toBe('Main note')
+  expect(saved().agentChanges?.sessionId).toBe('main-session')
 })
 
-it('follows a record checkout change that came while a commit ran, once it ends', async () => {
-  let finish!: () => void
-  repo.commit.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve }))
-  const committing = op({ kind: 'commit', message: 'm' })
-  await vi.waitFor(() => expect(snap().busy).toBe(true))
-  document.apply({ kind: 'updatePanel', id: 'review', patch: { fields: { repoPath: '/feature' } } })
-  session.updateRecord(document.get().panels.review!)
-  finish()
-  await committing
-  await vi.waitFor(() => expect(snap().review.repoPath).toBe('/feature'))
-})
 
-it('restores its persisted review instead of the record request', async () => {
-  await op({ kind: 'setSpec', spec: { kind: 'staged' } })
+
+
+it('defaults new Reviews to agent edits and returns bounded diff pages without a full patch', async () => {
   session.dispose('shutdown')
-  await start({ repoPath: '/repo', request: { spec: { kind: 'unstaged' } } })
-  expect(snap().review.spec).toEqual({ kind: 'staged' })
-})
-
-it('inspects across a concurrent status refresh but rejects a changed comparison', async () => {
-  let answer!: (value: unknown) => void
-  repo.compare.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve }))
-  const inspected = session.inspect()
-  void session.refresh()
-  answer({ files: [file], additions: 1, deletions: 0, resolvedBase: 'base', resolvedTarget: 'target' })
-  await expect(inspected).resolves.toMatchObject({ files: [file] })
-
-  repo.compare.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve }))
-  const changed = session.inspect()
-  await op({ kind: 'setSpec', spec: { kind: 'branch', base: 'main', target: 'HEAD' } })
-  answer({ files: [file], additions: 1, deletions: 0, resolvedBase: 'base', resolvedTarget: 'target' })
-  await expect(changed).rejects.toThrow('review-changed')
-})
-
-it('launches a reviewer and lets only that reviewer complete the review', async () => {
-  expect(await op({ kind: 'reviewWithAgent', agentId: 'codex' })).toBe(true)
-  expect(deps.agents.start).toHaveBeenCalledWith('review', expect.objectContaining({ agentId: 'codex', title: 'Review changes', prompt: expect.stringContaining('cate review inspect') }))
-  expect(saved().agentReview).toMatchObject({ terminalPanelId: 'worker', status: 'working' })
-  expect(await op({ kind: 'reviewWithAgent', agentId: 'codex' })).toBe(false)
-  await expect(session.handleApi!('complete', {}, ctx('reviewer'))).rejects.toThrow('review-agent-mismatch')
-  await session.handleApi!('complete', {}, ctx('worker'))
-  expect(saved().agentReview).toMatchObject({ terminalPanelId: 'worker', status: 'complete' })
-})
-
-it('marks a working review failed once its reviewer\'s terminal exited', async () => {
-  await op({ kind: 'reviewWithAgent', agentId: 'codex' })
-  for (const listener of exitListeners) listener('other')
-  expect(snap().review.agentReview).toMatchObject({ status: 'working' })
-  for (const listener of exitListeners) listener('worker')
-  expect(snap().review.agentReview).toMatchObject({ status: 'failed', completedAt: expect.any(Number) })
-})
-
-it('sends open findings to the source agent and asks for another agent when it is gone', async () => {
-  await op({ kind: 'retarget', request: { spec: { kind: 'uncommitted' }, sourceAgent: { panelId: 'term' } } })
-  expect(await op({ kind: 'requestChanges' })).toBe('cancelled')
-  await op({ kind: 'addNote', note: { path: 'src/a.ts', side: 'new', line: 4, context: 'return safe()', body: 'Fix it', severity: 'error' } })
-  expect(await op({ kind: 'requestChanges' })).toBe('done')
-  expect(deps.agents.send).toHaveBeenCalledWith('term', expect.stringContaining('Fix it'))
-  vi.mocked(deps.agents.send).mockRejectedValueOnce(new Error('gone'))
-  expect(await op({ kind: 'requestChanges' })).toBe('pick-agent')
-  expect(await op({ kind: 'requestChanges', agentId: 'claude-code' })).toBe('done')
-  expect(deps.agents.start).toHaveBeenLastCalledWith('review', expect.objectContaining({ agentId: 'claude-code', title: 'Address review findings' }))
-})
-
-it('lists recorded agent edits still changed in git, and serves their hunks on demand', async () => {
-  const hunk = diff.hunks[0]
-  records = [{
-    id: 'rec', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo',
-    createdAt: '1',
-    files: [
-      { path: 'src/a.ts', hunks: [hunk], additions: 1, deletions: 0, coverage: 'patch' },
-      { path: 'src/gone.ts', hunks: [hunk], additions: 1, deletions: 0, coverage: 'patch' },
-    ],
-  }]
-  await op({ kind: 'selectComparison', comparison: 'agent' })
-  expect(snap().recorded.loading).toBe(true)
+  stored = undefined
+  document.apply({ kind: 'updatePanel', id: 'review', patch: { fields: { request: null } } })
+  await start({ repoPath: '/repo' })
+  expect(snap().review.agentChanges).toEqual({})
+  records = [{ id: 'long', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['closed'], panelTitles: { closed: 'Implement login' }, cwd: '/repo', createdAt: '1', files: [{
+    path: 'src/a.ts', patch: 'FULL PATCH MUST NOT TRAVEL', additions: 1000, deletions: 0, coverage: 'patch',
+    hunks: [{ ...diff.hunks[0], lines: Array.from({ length: 1000 }, (_, index) => ({ kind: 'add', text: `line ${index + 1}`, oldLine: null, newLine: index + 1 })) }],
+  }] }]
   for (const listener of statusListeners) listener(repoStatus(['src/a.ts']))
-  await vi.waitFor(() => expect(snap().recorded).toMatchObject({ loading: false, files: [{ recordId: 'rec', path: 'src/a.ts', panelIds: ['term'], lineCount: 1 }] }))
-  expect(snap().recorded.files).toHaveLength(1)
-  expect(await op({ kind: 'recordedDiff', recordId: 'rec', path: 'src/a.ts' })).toMatchObject({ hunks: [hunk] })
-  await op({ kind: 'update', patch: { showHistory: true } })
-  expect(snap().recorded.files).toHaveLength(2)
+  await vi.waitFor(() => expect(snap().recorded.files).toHaveLength(1))
+  const page = await op({ kind: 'recordedDiff', recordId: 'long', path: 'src/a.ts', page: 2 }) as { page: number; pageCount: number; patch?: string; hunks: typeof diff.hunks }
+  expect(page).toMatchObject({ page: 2, pageCount: 5, totalLines: 1000 })
+  expect(page.hunks.flatMap((hunk) => hunk.lines)).toHaveLength(200)
+  expect(page.hunks[0].lines[0].newLine).toBe(401)
+  expect(page.patch).toBeUndefined()
   await op({ kind: 'updateFilter', patch: { agentId: 'claude-code' } })
   expect(snap().recorded.files).toHaveLength(0)
-  await op({ kind: 'updateFilter', patch: { agentId: null } })
-  expect(saved().agentChanges).toEqual({})
+  expect(snap().recorded.panels).toEqual([{ id: 'closed', title: 'Implement login', agentIds: ['codex'] }])
+})
+
+it('chooses the most active recorded agent and retains sources across all filters', async () => {
+  session.dispose('shutdown')
+  stored = undefined
+  document.apply({ kind: 'updatePanel', id: 'review', patch: { fields: { request: null } } })
+  const record = (id: string, agentId: AgentChangeRecord['agentId'], panel: string, paths: string[]): AgentChangeRecord => ({
+    id, agentId, sessionId: id, turnId: 't', panelIds: [panel], panelTitles: { [panel]: `Task ${panel}` }, cwd: '/repo', createdAt: id,
+    files: paths.map((path) => ({ path, uncommitted: agentId !== 'grok', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' })),
+  })
+  records = [record('1', 'claude-code', 'shared', ['c.ts']), record('2', 'codex', 'shared', ['a.ts', 'b.ts']), record('3', 'grok', 'old', ['old1', 'old2', 'old3'])]
+  await start({ repoPath: '/repo' })
+  for (const listener of statusListeners) listener(repoStatus(['a.ts', 'b.ts', 'c.ts']))
+  await vi.waitFor(() => expect(snap().review.agentChanges?.agentId).toBe('codex'))
+  expect(snap().recorded.files.map((file) => file.path)).toEqual(['a.ts', 'b.ts'])
+  expect(snap().recorded.agents).toContainEqual({ agentId: 'grok', edits: 3, uncommittedEdits: 0 })
+  expect(snap().recorded.panels?.find((source) => source.id === 'shared')?.agentIds).toEqual(['claude-code', 'codex'])
+  await op({ kind: 'updateFilter', patch: { agentId: 'grok', panelId: 'old' } })
+  expect(snap().recorded.files.map((file) => file.path)).toEqual(['old1', 'old2', 'old3'])
+  expect(snap().recorded.panels).toHaveLength(2)
+  await op({ kind: 'retarget', request: { agentChanges: { panelId: 'old' } } })
+  expect(snap().review.agentChanges?.agentId).toBe('grok')
+})
+
+it('does not accept the old Git panel operations', async () => {
+  for (const kind of ['stage', 'unstage', 'discard', 'commit', 'createPullRequest', 'applyCommand', 'diff', 'images', 'selectComparison', 'setSpec', 'update']) {
+    await expect(op({ kind } as ReviewOp)).rejects.toThrow()
+  }
+  expect(repo.compare).not.toHaveBeenCalled()
+  expect(repo.commit).not.toHaveBeenCalled()
+})
+
+it('retains saved edits in a clean checkout and groups summaries by commit', async () => {
+  const commit = { hash: 'abc', message: 'Implement login', date: '2026-11-13' }
+  const base = { agentId: 'codex' as const, sessionId: 's', turnId: 't', panelIds: [], cwd: '/repo', createdAt: '1' }
+  const file = { path: 'src/a.ts', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' as const }
+  records = [
+    { ...base, id: 'committed', files: [{ ...file, commit }] },
+    { ...base, id: 'pending', files: [{ ...file, uncommitted: true }] },
+    { ...base, id: 'older', files: [file] },
+    { ...base, id: 'same-commit', files: [{ ...file, commit }] },
+  ]
+  await op({ kind: 'refresh' })
+  expect(snap().recorded.files.map((file) => file.recordId)).toEqual(['pending', 'committed', 'same-commit', 'older'])
+  expect(snap().recorded.files[1].commit).toEqual(commit)
+  expect(snap().review).not.toHaveProperty('showHistory')
+})
+
+it('restores recorded edits from a clean checkout regardless of a saved Active preference', async () => {
+  session.dispose('shutdown')
+  stored = { repoPath: '/repo', spec: { kind: 'uncommitted' }, showHistory: false, agentChanges: { agentId: 'codex' }, notes: [] }
+  records = [{ id: 'saved', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['closed'], cwd: '/repo', createdAt: '1', files: [{ path: 'src/a.ts', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }] }]
+  await start()
+  for (const listener of statusListeners) listener(repoStatus([]))
+  await vi.waitFor(() => expect(snap().recorded.files).toHaveLength(1))
+  expect(snap().review).not.toHaveProperty('showHistory')
+  expect(snap().review).not.toHaveProperty('spec')
+})
+
+
+it('updates recorded edits when a hook arrives without any Git status change', async () => {
+  records = [{ id: 'hook', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo', createdAt: '1', files: [{ path: 'src/a.ts', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }] }]
+  for (const listener of changeListeners) listener('/repo')
+  await vi.waitFor(() => expect(snap().recorded.files.map((file) => file.recordId)).toEqual(['hook']))
+  session.dispose('shutdown')
+  expect(changeListeners).toHaveLength(0)
+})
+
+it('starts a terminal review with the selected edits and no Review CLI dependency', async () => {
+  records = [{ id: 'hook', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo', createdAt: '1', files: [{ path: 'src/a.ts', patch: '+safe', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }] }]
+  await op({ kind: 'refresh' })
+  expect(await op({ kind: 'reviewWithAgent', agentId: 'codex' })).toBe(true)
+  expect(deps.agents.start).toHaveBeenCalledWith('review', expect.objectContaining({ prompt: expect.stringContaining('+safe') }))
+  expect(vi.mocked(deps.agents.start).mock.calls[0][1].prompt).not.toContain('cate review note')
+  expect(snap().review).not.toHaveProperty('agentReview')
+})
+
+it('does not wait for Git status before showing recorded edits', async () => {
+  session.dispose('shutdown')
+  vi.mocked(deps.agents.readChanges).mockImplementation(async (_cwd, revision) => revision ? { revision } : { revision: 'empty', records: [] })
+  await start()
+  await vi.waitFor(() => expect(snap().recorded.loading).toBe(false))
+})
+
+it('refuses an oversized reviewer prompt without starting a partial review', async () => {
+  records = [{ id: 'large', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo', createdAt: '1', files: [{ path: 'large.ts', patch: 'x'.repeat(120001), hunks: [], additions: 1, deletions: 0, coverage: 'patch' }] }]
+  await op({ kind: 'refresh' })
+  expect(await op({ kind: 'reviewWithAgent', agentId: 'codex' })).toBe(false)
+  expect(deps.agents.start).not.toHaveBeenCalled()
+  expect(snap().error).toContain('too large for one review')
+})
+
+it('shows cached records immediately while Git attribution refresh is pending', async () => {
+  session.dispose('shutdown')
+  const cached: AgentChangeRecord[] = [{ id: 'warm', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo', createdAt: '1', files: [{ path: 'src/a.ts', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }] }]
+  vi.mocked(deps.agents.cachedChanges).mockReturnValue({ revision: 'cached', records: cached })
+  vi.mocked(deps.agents.readChanges).mockReturnValue(new Promise(() => {}))
+  await start()
+  expect(snap().recorded.loading).toBe(false)
+  expect(snap().recorded.files.map((file) => file.recordId)).toEqual(['warm'])
+})
+
+it('shows a cold disk snapshot before Git attribution finishes', async () => {
+  session.dispose('shutdown')
+  vi.mocked(deps.agents.readChanges).mockReturnValue(new Promise(() => {}))
+  await start()
+  expect(snap().recorded.loading).toBe(true)
+  const cached: AgentChangeRecord[] = [{ id: 'disk', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['term'], cwd: '/repo', createdAt: '1', files: [{ path: 'src/a.ts', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }] }]
+  vi.mocked(deps.agents.cachedChanges).mockReturnValue({ revision: 'disk', records: cached })
+  for (const listener of changeListeners) listener('/repo')
+  expect(snap().recorded.loading).toBe(false)
+  expect(snap().recorded.files.map((file) => file.recordId)).toEqual(['disk'])
 })

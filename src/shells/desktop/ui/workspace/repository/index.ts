@@ -19,7 +19,10 @@ export {
   type WorktreeMenuPopoverProps,
 } from './WorktreeToolbarMenu'
 export { SourceControlView, resetSourceControlViewState, type SourceControlViewProps } from './SourceControlView'
+export { GitComparisonView } from './GitComparisonView'
 export { PullRequestsOverview, type PullRequestsOverviewProps } from './PullRequestsOverview'
 export { RepositoryOverview, type RepositoryOverviewProps, type RepositoryTab } from './RepositoryOverview'
 export { GitHubSettings, type GitHubSettingsProps } from './GitHubSettings'
 export { WorktreeSettings } from './WorktreeSettings'
+
+export { GitDiff } from './GitDiff'

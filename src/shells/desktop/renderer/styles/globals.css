@@ -557,26 +557,25 @@
   .dock-new-tab-menu { animation: none; }
 }
 
-/* Adapt to the overlay's available width, including when the sidebar is open. */
-@container repository (min-width: 720px) {
-  .repository-changes-grid { grid-template-columns: minmax(0, 1fr) 300px; }
+/* Keep the file list scrollable while its composer stays available. */
+.repository-changes-grid { grid-template-rows: minmax(160px, 1fr) auto; }
+.repository-commit { max-height: 240px; }
+@container repository (min-width: 880px) {
+  .repository-changes-grid { grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: minmax(0, 1fr); }
+  .repository-commit { max-height: 100%; }
 }
 
 /* Review toolbars respond to panel width rather than the application window. */
-.review-toolbar .review-ref { flex: 1 1 120px; width: 120px; }
-.review-toolbar .review-comparison { max-width: 150px; }
 @container review-toolbar (max-width: 900px) {
-  .review-action-label, .review-run-prefix { display: none; }
+  .review-action-label { display: none; }
   .review-action { width: 28px; padding-inline: 0; gap: 0; }
 }
 @container review-toolbar (max-width: 640px) {
-  .review-line-stats { display: none; }
-  .review-toolbar .review-comparison { max-width: 120px; }
+  .review-source-label, .review-line-stats { display: none; }
 }
 @container review-toolbar (max-width: 480px) {
   .review-stats { display: none; }
   .review-toolbar, .review-toolbar-actions { gap: 2px; }
-  .review-run-status { width: 6px; height: 6px; overflow: hidden; font-size: 0; border-radius: 50%; background: currentColor; }
 }
 
 @keyframes screenshot-slide-from-right {

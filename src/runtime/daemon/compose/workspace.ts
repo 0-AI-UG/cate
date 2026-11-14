@@ -264,6 +264,8 @@ export function composeWorkspace(deps: WorkspaceDeps) {
   const agentsRuntime = createAgentsRuntime({
     root,
     agentsDir: paths.agents,
+    patchHistory: repository.patchHistory,
+    pullRequestNumber: (cwd) => Object.values(document.get().worktrees).find((tree) => path.resolve(tree.path) === path.resolve(cwd))?.prNumber,
     trust,
     settings: {
       agentHookInjection: () => settings.get('agentHookInjection'),

@@ -3,6 +3,7 @@
 
 export * from './contract/types'
 export * from './contract/patch'
+export * from './contract/diffPages'
 export * from './contract/github'
 export * from './contract/worktrees'
 export * from './contract/capability'

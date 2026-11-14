@@ -3,7 +3,7 @@
 // handed, so the listing rules are testable.
 
 import { displayString, isIconName, type ActionId, type ActionSpec, type IconName, type StoredShortcut } from '@kernel/interaction/contract'
-import { documentOrder, windowOf, type WindowId, type WorkspaceDocument } from '@workspace/document/contract'
+import { documentOrder, windowOf, type WindowId, type WorkspaceDocument, type PanelRecord } from '@workspace/document/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import { workspaceLocation, type WorkspaceEntry } from '@client/workspaces'
 
@@ -107,6 +107,7 @@ export function panelItems(
   windowId: WindowId,
   definition: (type: string) => AnyPanelDefinition | undefined,
   query: string,
+  label?: (record: PanelRecord) => string,
 ): PanelItem[] {
   const here: PanelItem[] = []
   const elsewhere: PanelItem[] = []
@@ -114,7 +115,7 @@ export function panelItems(
     const record = doc.panels[panelId]
     const def = record && definition(record.type)
     if (!record || !def?.navigable) continue
-    const title = record.title || def.label
+    const title = label?.(record) ?? (record.title || def.label)
     if (!matches(query, title)) continue
     const otherWindow = windowOf(doc, panelId) !== windowId
     const item: PanelItem = {

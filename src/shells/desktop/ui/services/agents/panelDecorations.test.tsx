@@ -7,7 +7,7 @@ import type { ChannelEvent } from '@kernel/rpc/contract'
 import type { AgentPanelStates, AgentPanelStatesChange } from '@services/agents/contract'
 import { fakeStream } from '@services/agents/client/testing'
 import type { PanelRecord } from '@workspace/document/contract'
-import { AgentHooksOffOverlay } from './tabDecorations'
+import { AgentHooksOffOverlay } from './panelDecorations'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

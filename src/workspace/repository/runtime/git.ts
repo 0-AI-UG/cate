@@ -1,6 +1,7 @@
 // Git on the runtime's host (simple-git plus `gh` for PR checkouts). Every
 // directory is resolved through the workspace path scope first.
 
+import { createPatchHistory, type PatchHistory } from './patchHistory'
 import { simpleGit, type SimpleGit } from 'simple-git'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -50,6 +51,7 @@ export interface StatusProbe {
 }
 
 export interface GitHost {
+  readonly patchHistory: PatchHistory
   isRepo: Op<'isRepo'>
   findRepos: Op<'findRepos'>
   init: Op<'init'>
@@ -57,6 +59,7 @@ export interface GitHost {
   readStatus: Op<'readStatus'>
   remotes: Op<'remotes'>
   fileWebUrl: Op<'fileWebUrl'>
+  applyCommand: Op<'applyCommand'>
   compare: Op<'compare'>
   fileDiff: Op<'fileDiff'>
   fileContent: Op<'fileContent'>
@@ -221,6 +224,7 @@ function guardGitMissing<T extends object>(host: T, env: () => NodeJS.ProcessEnv
     ))
   const guarded = {} as Record<string, unknown>
   for (const [key, method] of Object.entries(host)) {
+    if (typeof method !== 'function') { guarded[key] = method; continue }
     guarded[key] = async (...args: unknown[]) => {
       try {
         return await (method as (...a: unknown[]) => Promise<unknown>)(...args)
@@ -460,6 +464,7 @@ export function createGitHost(deps: GitHostDeps): GitHost {
   }
 
   const host: GitHost = {
+    patchHistory: createPatchHistory({ read: async (cwd, args) => gitAt(await dir(cwd)).raw(args) }),
     async isRepo({ cwd }) {
       return isGitRepo(await dir(cwd))
     },
@@ -510,6 +515,25 @@ export function createGitHost(deps: GitHostDeps): GitHost {
         behind: status.behind,
       }
     },
+    async applyCommand(params) {
+      const { repoRoot } = await repositoryContext(params.cwd)
+      const comparison = await host.compare(params)
+      const patches: string[] = []
+      let bytes = 0
+      for (const file of comparison.files) {
+        const diff = await host.fileDiff({ ...params, path: file.path })
+        if (diff.patch == null) throw new Error(`A complete patch cannot be exported for ${file.path}`)
+        bytes += Buffer.byteLength(diff.patch)
+        if (bytes > REVIEW_PATCH_MAX_BYTES) throw new Error('The comparison is too large to copy. Export it with git diff instead.')
+        patches.push(diff.patch)
+      }
+      const patch = patches.join('\n')
+      let marker = 'CATE_DIFF_PATCH'
+      const lines = new Set(patch.split('\n'))
+      while (lines.has(marker)) marker += '_'
+      const quotedRoot = "'" + repoRoot.replace(/'/g, "'\"'\"'") + "'"
+      return `git -C ${quotedRoot} apply <<'${marker}'\n${patch}\n${marker}`
+    },
     async compare({ cwd, spec }) {
       const { repoRoot, git } = await repositoryContext(cwd)
       const resolved = await resolveComparison(repoRoot, git, spec)
@@ -542,6 +566,16 @@ export function createGitHost(deps: GitHostDeps): GitHost {
         }
       })
 
+      // The source-control list must retain partially staged files even when
+      // working edits cancel their staged diff back to HEAD.
+      if (spec.kind === 'uncommitted' && !spec.ignoreWhitespace) {
+        const known = new Set(files.map((file) => file.path))
+        for (const current of status.files) {
+          if (known.has(current.path) || !current.index.trim() || current.index === '?' || !current.working_dir.trim() || current.working_dir === '?') continue
+          files.push({ path: current.path, status: 'modified', additions: 0, deletions: 0, binary: false, staged: true, working: true })
+        }
+      }
+
       if (spec.kind === 'uncommitted' || spec.kind === 'unstaged') {
         const known = new Set(files.map((file) => file.path))
         for (const current of status.files) {
@@ -569,6 +603,8 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       const untracked = (spec.kind === 'uncommitted' || spec.kind === 'unstaged')
         && status.files.some((file) => file.path === relativePath && file.working_dir === '?')
       if (untracked) {
+        const size = (await fsp.stat(path.join(repoRoot, relativePath))).size
+        if (!allowLarge && size > REVIEW_PATCH_MAX_BYTES) return { path: relativePath, binary: false, tooLarge: true, byteLength: size, hunks: [] }
         const content = await fsp.readFile(path.join(repoRoot, relativePath))
         const binary = content.includes(0)
         const byteLength = content.byteLength
@@ -625,6 +661,8 @@ export function createGitHost(deps: GitHostDeps): GitHost {
       try {
         let content: Buffer
         if (worktreeSide) {
+          const size = (await fsp.stat(path.join(repoRoot, relativePath))).size
+          if (size > REVIEW_PATCH_MAX_BYTES) return { exists: true, size }
           content = await fsp.readFile(path.join(repoRoot, relativePath))
         } else {
           let object: string | null = null
@@ -635,6 +673,8 @@ export function createGitHost(deps: GitHostDeps): GitHost {
             if (ref && ref !== 'WORKTREE' && ref !== 'INDEX') object = `${ref}:${relativePath}`
           }
           if (!object) throw new Error('File side does not exist')
+          const size = Number((await git.raw(['cat-file', '-s', object])).trim())
+          if (size > REVIEW_PATCH_MAX_BYTES) return { exists: true, size }
           content = await gitBuffer(repoRoot, ['show', object], env())
         }
         return { exists: true, size: content.byteLength, base64: content.toString('base64') }

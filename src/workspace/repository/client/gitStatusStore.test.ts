@@ -39,9 +39,10 @@ it('shares one subscription per checkout and mirrors its snapshots', async () =>
   const offB = store.subscribe('/repo/', vi.fn())
   expect(subs).toHaveLength(1)
   expect(store.getSnapshot('/repo')).toBe(EMPTY_GIT_STATUS)
+  expect(store.getSnapshot('/repo').loading).toBe(true)
 
   subs[0].emit(status({ dirty: true }))
-  expect(store.getSnapshot('/repo')).toMatchObject({ isRepo: true, branch: 'main', dirty: true, revision: 1 })
+  expect(store.getSnapshot('/repo')).toMatchObject({ isRepo: true, loading: false, error: null, branch: 'main', dirty: true, revision: 1 })
   await vi.waitFor(() => expect(store.getSnapshot('/repo').tracked).toEqual(new Set(['/repo/a.ts', '/repo/src/b.ts'])))
 
   // The same files and branch do not refetch the tracked list.
@@ -53,16 +54,57 @@ it('shares one subscription per checkout and mirrors its snapshots', async () =>
   expect(subs[0].cancel).not.toHaveBeenCalled()
   offB()
   expect(subs[0].cancel).toHaveBeenCalledOnce()
-  expect(store.getSnapshot('/repo')).toBe(EMPTY_GIT_STATUS)
+  expect(store.getSnapshot('/repo')).toMatchObject({ loading: false, dirty: true, ahead: 1 })
 })
 
-it('shows no repo when the subscription fails', async () => {
+it('reports a failed subscription without claiming the repository is gone', async () => {
   const { vcs, subs } = fakeVcs()
   const store = createGitStatusStore(vcs)
   store.subscribe('/repo', vi.fn())
   subs[0].emit(status())
   subs[0].fail(new Error('untrusted'))
-  await vi.waitFor(() => expect(store.getSnapshot('/repo').isRepo).toBe(false))
+  await vi.waitFor(() => expect(store.getSnapshot('/repo').error).toBe('untrusted'))
+  expect(store.getSnapshot('/repo')).toMatchObject({ isRepo: true, loading: false })
   store.dispose()
   expect(subs[0].cancel).toHaveBeenCalledOnce()
+})
+
+
+it('distinguishes a confirmed non-repository from an unanswered status read', () => {
+  const { vcs, subs } = fakeVcs()
+  const store = createGitStatusStore(vcs)
+  store.subscribe('/repo', vi.fn())
+  expect(store.getSnapshot('/repo').loading).toBe(true)
+  subs[0].emit({ ...EMPTY_REPO_STATUS })
+  expect(store.getSnapshot('/repo')).toMatchObject({ isRepo: false, loading: false, error: null })
+  store.dispose()
+})
+
+it('ends loading when the initial status request fails', async () => {
+  const { vcs, subs } = fakeVcs()
+  const store = createGitStatusStore(vcs)
+  store.subscribe('/repo', vi.fn())
+  subs[0].fail(new Error('offline'))
+  await vi.waitFor(() => expect(store.getSnapshot('/repo')).toMatchObject({ loading: false, error: 'offline' }))
+  store.dispose()
+})
+
+it('replays warm status on reopening while giving fresh content a new revision', async () => {
+  const { vcs, subs } = fakeVcs()
+  const store = createGitStatusStore(vcs)
+  const off = store.subscribe('/repo', vi.fn())
+  subs[0].emit(status({ dirty: true }))
+  await vi.waitFor(() => expect(store.getSnapshot('/repo').tracked.size).toBeGreaterThan(0))
+  const warm = store.getSnapshot('/repo')
+  expect(warm.revision).toBe(1)
+  off()
+  const offAgain = store.subscribe('/repo', vi.fn())
+  expect(store.getSnapshot('/repo')).toBe(warm)
+  expect(subs).toHaveLength(2)
+  subs[1].emit(status({ dirty: false }))
+  expect(store.getSnapshot('/repo').revision).toBeGreaterThan(warm.revision)
+  offAgain()
+  store.dispose()
+  expect(subs[1].cancel).toHaveBeenCalledOnce()
+  expect(store.getSnapshot('/repo')).toBe(EMPTY_GIT_STATUS)
 })

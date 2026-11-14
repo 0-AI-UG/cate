@@ -18,7 +18,7 @@ import { createAgentApiHandlers, sendToAgent } from './api'
 import { agentsCapabilityImpl } from './capability'
 import { createAgentsCore, type AgentsCoreDeps } from './core'
 import { evaluateAgentCliHooks, inspectAgentCliHooks } from './hooks/readiness'
-import { createTerminalAgents, type AgentTerminalService, type TerminalAgents } from './terminal'
+import { createTerminalAgents, type AgentTerminalService } from './terminal'
 import { createAgentStarter, type AgentStartArgs, type AgentStartPorts } from './start'
 import { AGENT_SESSION_STORES } from './sessions'
 import { createAgentUsage, type AgentUsageDeps } from './usage/usage'
@@ -49,10 +49,10 @@ export interface AgentsRuntime {
   /** Recorded agent edits in a checkout, each with the panels that showed
    *  its session; an unchanged revision omits records. */
   changes(cwd: string, knownRevision?: string): Promise<AgentChangesSnapshot>
+  cachedChanges(cwd: string): AgentChangesSnapshot | undefined
+  onChanges(listener: (cwd: string) => void): () => void
   /** Which agent CLIs can run a hook-backed turn in `cwd`. */
   readiness(cwd: string): Promise<{ agentId: AgentId; ready: boolean }[]>
-  /** A panel's agent session ended with its process. */
-  onSessionEnded(listener: (panelId: string) => void): () => void
   /** The `agents` capability and the `cate.agent.*` handlers. */
   capability(): CapabilityImpl<typeof agentsCapability>
   apiHandlers(): CateServiceHandlers<typeof agentApi>
@@ -60,10 +60,9 @@ export interface AgentsRuntime {
 }
 
 export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
-  let terminals!: TerminalAgents
   const stores = deps.hookOptions?.sessionStores ?? AGENT_SESSION_STORES
   const core = createAgentsCore({ ...deps, hookOptions: { ...deps.hookOptions, sessionStores: stores } }, (base) =>
-    terminals = createTerminalAgents(base, deps.terminal, { stampsFile: path.join(deps.agentsDir, 'stamps.json') }))
+    createTerminalAgents(base, deps.terminal, { stampsFile: path.join(deps.agentsDir, 'stamps.json') }))
   const setup = createAgentSetup({ root: deps.root, agentsDir: deps.agentsDir, homeDir: deps.homeDir, env: deps.env, trust: deps.trust, start: deps.start, terminal: deps.terminal, enable: deps.enableAgent, hooksReady: async (agentId) => {
     const states = await inspectAgentCliHooks((dir) => core.hooks.inspectFolders(dir), deps.root)
     const selected = states.find((state) => state.agent.id === agentId)
@@ -89,13 +88,14 @@ export function createAgentsRuntime(deps: AgentsRuntimeDeps): AgentsRuntime {
     send: (panelId, prompt) => sendToAgent(core, starter, panelId, prompt),
     busy: () => core.busy(),
     hosting: () => core.hosting(),
+    onChanges: (listener) => core.hooks.onChanges(listener),
+    cachedChanges: (cwd) => core.cachedChanges(cwd),
     changes: (cwd, knownRevision) => core.changes(cwd, knownRevision),
     async readiness(cwd) {
       const states = await inspectAgentCliHooks((dir) => core.hooks.inspectFolders(dir), cwd)
       const config = core.settings.agentHookInjection()
       return states.map((state) => ({ agentId: state.agent.id, ready: evaluateAgentCliHooks(state, config).ready }))
     },
-    onSessionEnded: (listener) => terminals.onExit((panelId) => listener(panelId)),
     capability: () => agentsCapabilityImpl(core, starter, usage, setup),
     apiHandlers: () => createAgentApiHandlers(core, starter),
     dispose: () => { offSettings?.(); setup.dispose(); core.dispose() },

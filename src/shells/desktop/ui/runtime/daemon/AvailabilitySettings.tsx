@@ -41,6 +41,7 @@ export interface AvailabilitySettingsProps {
   workspaceId: string | null
   /** Panel titles for the running-work list. */
   panelTitle?: (panelId: string) => string | undefined
+  renderPanelTitle?: (panelId: string) => ReactNode
   /** Names of the devices connected now, this one first. */
   connected?: readonly string[]
   /** Opens adding a device (Share). */
@@ -49,7 +50,7 @@ export interface AvailabilitySettingsProps {
   children?: ReactNode
 }
 
-export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAddDevice, children }: AvailabilitySettingsProps): JSX.Element | null {
+export function AvailabilitySettings({ workspaceId, panelTitle, renderPanelTitle, connected, onAddDevice, children }: AvailabilitySettingsProps): JSX.Element | null {
   const runtime = useRuntime(workspaceId)
   const triggers = useWorkspaceSetting(workspaceId, 'keepRunningWhile')
   const [info, setInfo] = useState<RuntimeStatus | null>(null)
@@ -166,6 +167,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, connected, onAdd
             actionLabel="Stop workspace"
             consequence="Stopping ends everything below for everyone in this workspace. Opening the workspace on its machine, or over SSH or WSL, starts it again; paired devices cannot."
             title={panelTitle}
+            renderPanelTitle={renderPanelTitle}
             onCancel={() => setConfirmingStop(false)}
             onConfirm={async () => {
               await runtime.runtime.stop()

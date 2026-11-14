@@ -22,8 +22,7 @@ export interface ReviewRequest {
   repoPath: string
   spec: GitComparisonSpec
   focusedFile?: string
-  openNew?: boolean
-  /** Title for the review panel (a PR opened in Cate). */
+  /** Title for the comparison (a PR opened in Cate). */
   title?: string
 }
 

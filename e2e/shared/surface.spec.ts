@@ -7,7 +7,7 @@ import { describeShared, doc, nodeOf, propose, seedShared, snapshot, type Shared
 const typeOf = async (c: SharedClient, id: string) => (await doc(c))?.panels[id]?.type
 
 describeShared('surface', (pair) => {
-  test('a surface made in A shows its picker in B; B picks Diff Review through the UI', async () => {
+  test('a surface made in A shows its picker in B; B picks Agent Review through the UI', async () => {
     const { a, b } = pair()
     const { panelId, nodeId } = await seedShared(pair(), a, 'surface', { x: 80, y: 80 })
     const picker = b.page.locator(`[data-node-id="${nodeId}"] [role="group"][aria-label="Open a surface"]`)
@@ -15,7 +15,7 @@ describeShared('surface', (pair) => {
     // The first click focuses the node (its unfocused overlay takes it).
     const overlay = b.page.locator(`[data-node-id="${nodeId}"] [data-unfocused-overlay]`)
     if (await overlay.count()) await overlay.click()
-    await picker.getByRole('button', { name: /Diff Review/ }).click()
+    await picker.getByRole('button', { name: /Agent Review/ }).click()
     for (const c of [a, b]) await expect.poll(() => typeOf(c, panelId)).toBe('review')
     // Same node, now rendering the review.
     await expect.poll(async () => (await nodeOf(a, nodeId))?.panelId).toBe(panelId)
@@ -23,10 +23,10 @@ describeShared('surface', (pair) => {
     // And it works: the comparison loads, without an error, for both.
     for (const c of [a, b]) {
       await expect.poll(async () => {
-        const s = await snapshot<{ comparison: unknown; error: string | null }>(c, panelId)
-        return s && { loaded: s.comparison !== null, error: s.error }
+        const s = await snapshot<{ recorded: { loading: boolean }; error: string | null }>(c, panelId)
+        return s && { loaded: !s.recorded.loading, error: s.error }
       }, { timeout: 20_000 }).toEqual({ loaded: true, error: null })
-      await expect(c.page.locator(`[data-node-id="${nodeId}"]`)).toContainText('No changes in this comparison', { timeout: 15_000 })
+      await expect(c.page.locator(`[data-node-id="${nodeId}"]`)).toContainText('No recorded changes yet', { timeout: 15_000 })
     }
   })
 

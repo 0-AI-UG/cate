@@ -4,19 +4,21 @@
 
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { GitBranch, Plus, Minus, ArrowUp, ArrowDown, Download, Trash, Archive, X, Check, GitCompareArrows as GitDiff } from 'lucide-react'
-import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, Undo2 as ArrowUUpLeft, SquareArrowOutUpRight as BoxArrowUp, History as ClockCounterClockwise } from 'lucide-react'
+import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, SquareArrowOutUpRight as BoxArrowUp, History as ClockCounterClockwise } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
-import { Button, Spinner, Tooltip } from '../../kernel/interaction'
+import { Button, LoadingState, Spinner, Tooltip } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
 import { pathDisplayName } from '@workspace/files/contract'
+import { GitComparisonView } from './GitComparisonView'
+import { repositoryReadCacheFor } from './readCache'
+import type { ReviewRequest } from '@workspace/repository/client'
 import { deleteMergedBranches } from '@workspace/repository/client'
-import { selectedWorktree, type GitBranchListResult, type GitComparisonSpec, type GitLogEntry, type GitStatusFile, type GitStatusResult } from '@workspace/repository/contract'
+import { selectedWorktree, type GitBranchListResult, type GitComparisonSpec, type GitLogEntry, type GitStatusResult } from '@workspace/repository/contract'
 import { useRepositoryUi } from './context'
 import { useGitStatus } from './gitStatus'
-import { useWorktrees } from './worktrees'
-import { WorktreeSelector } from './WorktreeSelector'
+import { useWorktrees, worktreeLabel } from './worktrees'
 
-type GitFileStatus = GitStatusFile
+type GitFileStatus = GitStatusResult['files'][number]
 type GitBranchInfo = GitBranchListResult['branches'][number]
 
 // Commit drafts per checkout and the Changes worktree per repository are
@@ -49,34 +51,6 @@ export function resetSourceControlViewState(seed: { drafts?: Record<string, stri
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function fileName(path: string): string {
-  return pathDisplayName(path) || path
-}
-
-function dirName(path: string): string {
-  const parts = path.split('/')
-  parts.pop()
-  return parts.join('/')
-}
-
-/** Last path segment of a repository path, for its Changes selector. */
-function repoDisplayName(rootPath: string): string {
-  const segs = rootPath.split(/[/\\]/).filter(Boolean)
-  return segs[segs.length - 1] || rootPath
-}
-
-function statusColor(status: string): string {
-  switch (status) {
-    case 'M': return 'text-yellow-400'
-    case 'A': return 'text-green-400'
-    case 'D': return 'text-red-400'
-    case 'R': return 'text-blue-400'
-    case '?': return 'text-muted'
-    case 'U': return 'text-orange-400'
-    default: return 'text-muted'
-  }
-}
 
 function relativeTime(dateStr: string): string {
   const date = new Date(dateStr)
@@ -128,70 +102,6 @@ const Section: React.FC<{
 }
 
 // ---------------------------------------------------------------------------
-// File Entry
-// ---------------------------------------------------------------------------
-
-const FileEntry: React.FC<{
-  file: GitFileStatus
-  statusChar: string
-  onStage?: () => void
-  onUnstage?: () => void
-  onDiscard?: () => void
-  onClick?: () => void
-}> = ({ file, statusChar, onStage, onUnstage, onDiscard, onClick }) => {
-  const dir = dirName(file.path)
-  return (
-    <div
-      className="group flex items-center gap-2 px-4 py-3 text-[13px] cursor-pointer hover:bg-hover"
-      onClick={onClick}
-    >
-      <span className={`w-4 text-center font-mono text-[11px] flex-shrink-0 ${statusColor(statusChar)}`}>
-        {statusChar}
-      </span>
-      <span className="truncate font-medium text-primary flex-1 min-w-0">
-        {fileName(file.path)}
-        {dir && <span className="text-muted ml-2 font-normal">{dir}</span>}
-      </span>
-      <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
-        {onDiscard && (
-          <Tooltip label="Discard changes">
-            <button
-              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-red-400"
-              onClick={(e) => { e.stopPropagation(); onDiscard() }}
-              aria-label="Discard changes"
-            >
-              <ArrowUUpLeft size={13} />
-            </button>
-          </Tooltip>
-        )}
-        {onStage && (
-          <Tooltip label="Stage file">
-            <button
-              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-              onClick={(e) => { e.stopPropagation(); onStage() }}
-              aria-label="Stage file"
-            >
-              <Plus size={13} />
-            </button>
-          </Tooltip>
-        )}
-        {onUnstage && (
-          <Tooltip label="Unstage file">
-            <button
-              className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-              onClick={(e) => { e.stopPropagation(); onUnstage() }}
-              aria-label="Unstage file"
-            >
-              <Minus size={13} />
-            </button>
-          </Tooltip>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Branch Picker — inline expandable within the sidebar
 // ---------------------------------------------------------------------------
 
@@ -205,7 +115,7 @@ const BranchPicker: React.FC<{
 }> = ({ workspaceId, repositoryRoot, checkoutRoot, currentBranch, onSwitch, onReview }) => {
   const runtime = useRuntime(workspaceId)
   const [isOpen, setIsOpen] = useState(true)
-  const [branches, setBranches] = useState<GitBranchInfo[]>([])
+  const [branches, setBranches] = useState<GitBranchInfo[] | null>(null)
   const [filter, setFilter] = useState('')
   const [creating, setCreating] = useState(false)
   const [cleaning, setCleaning] = useState(false)
@@ -217,7 +127,7 @@ const BranchPicker: React.FC<{
     try {
       const result = await runtime.vcs.branchList({ cwd: repositoryRoot })
       setBranches(result.branches)
-    } catch { /* ignore */ }
+    } catch (err) { setError(errorMessage(err, 'Could not load branches.')) }
   }, [runtime, repositoryRoot])
 
   useEffect(() => {
@@ -272,8 +182,8 @@ const BranchPicker: React.FC<{
     }
   }, [runtime, repositoryRoot, currentBranch, loadBranches])
 
-  const localBranches = branches.filter(b => !b.isRemote)
-  const remoteBranches = branches.filter(b => b.isRemote)
+  const localBranches = (branches ?? []).filter(b => !b.isRemote)
+  const remoteBranches = (branches ?? []).filter(b => b.isRemote)
 
   const handleCleanup = useCallback(async () => {
     if (cleaning || !runtime) return
@@ -292,7 +202,7 @@ const BranchPicker: React.FC<{
   const filtered = (list: GitBranchInfo[]) =>
     filter ? list.filter(b => b.name.toLowerCase().includes(filter.toLowerCase())) : list
 
-  const branchCount = branches.length || 1 // at least show current
+  const branchCount = branches?.length
 
   return (
     <div className="mb-4 overflow-hidden rounded-lg border border-subtle">
@@ -303,7 +213,7 @@ const BranchPicker: React.FC<{
       >
         {isOpen ? <CaretDown size={12} /> : <CaretRight size={12} />}
         <span className="flex-1">Branches</span>
-        <span className="min-w-6 rounded-full bg-surface-3 px-2 py-0.5 text-center text-[11px] font-medium text-secondary tabular-nums">{branchCount}</span>
+        {branchCount !== undefined && <span className="min-w-6 rounded-full bg-surface-3 px-2 py-0.5 text-center text-[11px] font-medium text-secondary tabular-nums">{branchCount}</span>}
         {!isOpen && (
           <span className="text-muted font-normal text-[10px] truncate max-w-[80px]">{currentBranch}</span>
         )}
@@ -366,6 +276,7 @@ const BranchPicker: React.FC<{
           )}
 
           {/* Branch list */}
+          {branches === null && !error && <LoadingState label="Loading branches" className="py-6 text-xs" />}
           {filtered(localBranches).map(b => {
             // git branch list is loaded from the canonical repository root, so
             // its `current` bit describes that checkout. The selected Changes
@@ -431,12 +342,14 @@ const BranchPicker: React.FC<{
 export interface SourceControlViewProps {
   /** The repository: the workspace root or a repository nested in it. */
   rootPath: string
+  onOpenFile?(): void
 }
 
-export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }) => {
+export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath, onOpenFile }) => {
   const host = useRepositoryUi()
   const selectedWorkspaceId = host.workspaceId
   const runtime = useRuntime(selectedWorkspaceId)
+  const [comparison, setComparison] = useState<ReviewRequest | null>(null)
   const [section, setSection] = useState<'changes' | 'branches' | 'history' | 'worktrees'>('changes')
   const repositorySnapshot = useGitStatus(selectedWorkspaceId, rootPath)
   // Status and worktrees come from the shared git status store, so this list
@@ -458,7 +371,8 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       }
     : null
 
-  const [logEntries, setLogEntries] = useState<GitLogEntry[]>([])
+  const cache = runtime ? repositoryReadCacheFor(runtime) : null
+  const [logEntries, setLogEntries] = useState<GitLogEntry[] | null>(() => cache?.peek('log', { cwd: rootPath, maxCount: 30 }) ?? null)
   const commitMessage = useViewState(() => drafts.get(checkoutRoot) ?? '')
   const setCommitMessage = useCallback((draft: string) => {
     setViewState(drafts, checkoutRoot, draft)
@@ -485,10 +399,10 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
     try {
       // History follows the repository root; the Changes worktree is
       // independent. Status needs no refresh: the runtime pushes changes.
-      const logResult = await runtime.vcs.log({ cwd: rootPath, maxCount: 30 })
+      const logResult = await repositoryReadCacheFor(runtime).read('log', { cwd: rootPath, maxCount: 30 })
       setLogEntries(logResult)
-    } catch {
-      setLogEntries([])
+    } catch (err) {
+      setActionError(errorMessage(err, 'Could not load commit history.'))
     } finally {
       setLoading(false)
     }
@@ -501,48 +415,29 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
   const openReview = useCallback((
     spec: GitComparisonSpec,
     focusedFile?: string,
-    openNew = false,
     repoPath = checkoutRoot,
   ) => {
-    void host.openReview({ repoPath, spec, focusedFile, openNew })
-  }, [checkoutRoot, host])
+    setComparison({ repoPath, spec, focusedFile })
+    setSection('changes')
+  }, [checkoutRoot])
 
   // -------------------------------------------------------------------------
   // Actions
   // -------------------------------------------------------------------------
 
-  const stageFile = useCallback(async (filePath: string) => {
-    await runtime?.vcs.stage({ cwd: checkoutRoot, path: filePath })
-    refresh()
-  }, [runtime, checkoutRoot, refresh])
-
-  const unstageFile = useCallback(async (filePath: string) => {
-    await runtime?.vcs.unstage({ cwd: checkoutRoot, path: filePath })
-    refresh()
-  }, [runtime, checkoutRoot, refresh])
-
-  const discardFile = useCallback(async (filePath: string) => {
+  const [staging, setStaging] = useState(false)
+  const updateStaging = useCallback(async (files: GitFileStatus[], action: 'stage' | 'unstage') => {
+    if (!runtime || staging) return
+    setStaging(true)
+    setActionError(null)
     try {
-      await runtime?.vcs.discardFile({ cwd: checkoutRoot, path: filePath })
-      refresh()
-    } catch (err: unknown) {
-      setActionError(errorMessage(err, 'Discard failed'))
+      for (const file of files) await runtime.vcs[action]({ cwd: checkoutRoot, path: file.path })
+    } catch (err) {
+      setActionError(errorMessage(err, 'Could not update staged files.'))
+    } finally {
+      setStaging(false)
     }
-  }, [runtime, checkoutRoot, refresh])
-
-  const stageAll = useCallback(async (files: GitFileStatus[]) => {
-    for (const f of files) {
-      await runtime?.vcs.stage({ cwd: checkoutRoot, path: f.path })
-    }
-    refresh()
-  }, [runtime, checkoutRoot, refresh])
-
-  const unstageAll = useCallback(async (files: GitFileStatus[]) => {
-    for (const f of files) {
-      await runtime?.vcs.unstage({ cwd: checkoutRoot, path: f.path })
-    }
-    refresh()
-  }, [runtime, checkoutRoot, refresh])
+  }, [runtime, checkoutRoot, staging])
 
   const commit = useCallback(async () => {
     if (!commitMessage.trim() || committing) return
@@ -662,7 +557,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
     )
   }
 
-  const repoName = repoDisplayName(rootPath)
+  const repoName = pathDisplayName(rootPath)
 
   const branchSubtitle = (
     <span className="flex items-center gap-1.5">
@@ -677,34 +572,35 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
     </span>
   )
 
-  const hasMultipleWorktrees = worktrees.filter((worktree) => !worktree.isOrphan).length > 1
-  const changesScope = hasMultipleWorktrees ? (
-    <WorktreeSelector
-      worktrees={worktrees}
-      value={changesWorktree?.id}
-      onChange={(id) => setSourceControlWorktree(rootPath, id)}
-      prefix="Changes in"
-      title={`Changes worktree for ${repoName}`}
-    />
-  ) : null
+  const liveWorktrees = worktrees.filter((worktree) => !worktree.isOrphan)
+  const changesScope = liveWorktrees.length > 1 ? (
+    <div role="group" aria-label={`Changes worktree for ${repoName}`} className="flex flex-wrap gap-1">
+      {liveWorktrees.map((worktree) => <button key={worktree.id} aria-label={`Changes worktree: ${worktreeLabel(worktree)}`} aria-pressed={changesWorktree?.id === worktree.id}
+        title={worktree.path} className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${changesWorktree?.id === worktree.id ? 'bg-surface-3 text-primary' : 'text-muted hover:bg-hover hover:text-primary'}`}
+        onClick={() => { setSourceControlWorktree(rootPath, worktree.id); setComparison(null) }}><GitBranch size={12} />{worktreeLabel(worktree)}</button>)}
+    </div>
+  ) : branchSubtitle
 
   const headerActions = <Button variant="ghost" size="sm" onClick={refresh} loading={loading}>{!loading && <ArrowClockwise size={14} />}Refresh</Button>
+
+  if (repositorySnapshot.loading || snapshot.loading) return <LoadingState label="Loading Git status" className="h-full text-xs" />
+  if (repositorySnapshot.error || snapshot.error) return <p role="alert" className="p-4 text-xs text-muted">{repositorySnapshot.error || snapshot.error}</p>
+  if (!snapshot.isRepo) return <p className="p-4 text-xs text-muted">This folder is not a Git repository.</p>
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden text-[12px]" style={{ containerType: 'inline-size', containerName: 'repository' }} data-worktree-room>
       <nav aria-label="Repository sections" className="mb-2 flex shrink-0 items-center gap-1 border-b border-subtle pb-3">
-        {(['changes', 'branches', 'history', 'worktrees'] as const).map(value => <Button variant="ghost" key={value} size="sm" aria-pressed={section === value} className={section === value ? 'bg-surface-3 font-semibold text-primary' : 'text-secondary'} onClick={() => setSection(value)}>{value === 'history' ? 'History' : value[0].toUpperCase() + value.slice(1)}</Button>)}
+        {(['changes', 'branches', 'history', 'worktrees'] as const).map(value => <Button variant="ghost" key={value} size="sm" aria-pressed={section === value} className={section === value ? 'bg-surface-3 font-semibold text-primary' : 'text-secondary'} onClick={() => { setSection(value); setComparison(null) }}>{value === 'history' ? 'History' : value[0].toUpperCase() + value.slice(1)}</Button>)}
         <div className="ml-auto">{headerActions}</div>
       </nav>
       {section === 'changes' && (
         <div className="px-1 pb-2">
           <div className="flex flex-wrap items-center justify-between gap-3 py-2">
-            <div className="flex items-center gap-3">{changesScope ?? branchSubtitle}<span className="text-muted">{status?.files.length ?? 0} files changed</span></div>
+            <div className="flex items-center gap-3">{changesScope}<span className="text-muted">{status?.files.length ?? 0} {(status?.files.length ?? 0) === 1 ? 'file' : 'files'} changed</span></div>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" onClick={fetch_} loading={fetching}>{!fetching && <Download size={14} />}Fetch</Button>
               <Button variant="ghost" size="sm" onClick={pull} loading={pulling}>{!pulling && <ArrowDown size={14} />}Pull</Button>
               <Button variant="ghost" size="sm" onClick={push} loading={pushing}>{!pushing && <ArrowUp size={14} />}Push{status?.ahead ? ` (${status.ahead})` : ''}</Button>
-              <Button variant="ghost" size="sm" onClick={() => openReview({ kind: 'uncommitted' })}><GitDiff size={14} />Review changes</Button>
             </div>
           </div>
         </div>
@@ -723,12 +619,16 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
         </div>
       )}
 
-      <div className={section === 'changes' ? 'repository-changes-grid grid min-h-0 flex-1 grid-cols-1 gap-4 content-start overflow-y-auto pt-2 pb-6' : 'min-h-0 flex-1 overflow-y-auto pt-2 pb-6'}>
+      <div className={section === 'changes' ? 'repository-changes-grid grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden pt-2 pb-4' : 'min-h-0 flex-1 overflow-y-auto pt-2 pb-6'}>
       {/* Commit area */}
       {section === 'changes' && (
-      <div className="order-2 self-start rounded-lg border border-subtle bg-surface-1 p-4">
-        <h2 className="mb-1 text-sm font-semibold">Commit staged changes</h2>
+      <div className="repository-commit order-2 self-start min-h-0 overflow-y-auto rounded-xl border border-subtle bg-surface-1 p-4">
+        <h2 className="mb-1 text-sm font-semibold">Commit</h2>
         <p className="mb-4 text-xs text-muted">{stagedFiles.length} staged {stagedFiles.length === 1 ? 'file' : 'files'} · {status?.current ?? 'Detached HEAD'}</p>
+        <div className="mb-3 flex flex-wrap gap-1">
+          <Button variant="ghost" size="sm" disabled={staging || (!changedFiles.length && !untrackedFiles.length)} onClick={() => void updateStaging([...changedFiles, ...untrackedFiles], 'stage')}><Plus size={12} />Stage all</Button>
+          <Button variant="ghost" size="sm" disabled={staging || !stagedFiles.length} onClick={() => void updateStaging(stagedFiles, 'unstage')}><Minus size={12} />Unstage all</Button>
+        </div>
         <textarea
           ref={textareaRef}
           className="w-full bg-surface-2 border border-subtle rounded-lg px-2 py-1.5 text-[12px] text-primary placeholder:text-muted resize-none focus:outline-none focus:border-subtle min-h-[72px] no-scrollbar"
@@ -775,103 +675,12 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
       </div>
 
       )}
-      {/* Changes share a bounded column beside the commit composer. */}
-      <div className="min-w-0">
-        {section === 'changes' && <>
-        {/* Staged Changes */}
-        <Section
-          title="Staged Changes"
-          count={stagedFiles.length}
-          actions={
-            <>
-              <Tooltip label="Review staged changes">
-                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'staged' })} aria-label="Review staged changes"><GitDiff size={13} /></button>
-              </Tooltip>
-              <Tooltip label="Unstage all">
-                <button
-                  className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-                  onClick={() => unstageAll(stagedFiles)}
-                  aria-label="Unstage all"
-                >
-                  <Minus size={13} />
-                </button>
-              </Tooltip>
-            </>
-          }
-        >
-          {stagedFiles.map((f) => (
-            <FileEntry
-              key={`staged-${f.path}`}
-              file={f}
-              statusChar={f.index}
-              onUnstage={() => unstageFile(f.path)}
-              onClick={() => openReview({ kind: 'staged' }, f.path)}
-            />
-          ))}
-        </Section>
-
-        {/* Changes */}
-        <Section
-          title="Changes"
-          count={changedFiles.length}
-          actions={
-            <>
-              <Tooltip label="Review changes">
-                <button className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary" onClick={() => openReview({ kind: 'unstaged' })} aria-label="Review changes"><GitDiff size={13} /></button>
-              </Tooltip>
-              <Tooltip label="Stage all">
-                <button
-                  className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-                  onClick={() => stageAll(changedFiles)}
-                  aria-label="Stage all"
-                >
-                  <Plus size={13} />
-                </button>
-              </Tooltip>
-            </>
-          }
-        >
-          {changedFiles.map((f) => (
-            <FileEntry
-              key={`changed-${f.path}`}
-              file={f}
-              statusChar={f.working_dir}
-              onStage={() => stageFile(f.path)}
-              onDiscard={() => discardFile(f.path)}
-              onClick={() => openReview({ kind: 'unstaged' }, f.path)}
-            />
-          ))}
-        </Section>
-
-        {/* Untracked */}
-        <Section
-          title="Untracked"
-          count={untrackedFiles.length}
-          defaultOpen={false}
-          actions={
-            <Tooltip label="Stage all">
-              <button
-                className="p-0.5 rounded-lg hover:bg-hover text-muted hover:text-primary"
-                onClick={() => stageAll(untrackedFiles)}
-                aria-label="Stage all"
-              >
-                <Plus size={13} />
-              </button>
-            </Tooltip>
-          }
-        >
-          {untrackedFiles.map((f) => (
-            <FileEntry
-              key={`untracked-${f.path}`}
-              file={f}
-              statusChar="?"
-              onStage={() => stageFile(f.path)}
-              onClick={() => openReview({ kind: 'unstaged' }, f.path)}
-            />
-          ))}
-        </Section>
-
-        </>}
+      <div className="min-h-0 min-w-0">
+        {section === 'changes' && <GitComparisonView onOpenFile={onOpenFile}
+          key={comparison ? JSON.stringify(comparison) : checkoutRoot}
+          workspaceId={selectedWorkspaceId}
+          request={comparison ?? { repoPath: checkoutRoot, spec: { kind: 'uncommitted' } }}
+          onBack={comparison ? () => setComparison(null) : undefined} />}
         {section === 'branches' && <>
         {/* Branches */}
         <BranchPicker
@@ -882,20 +691,20 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
           onSwitch={refresh}
           onReview={(base) => {
             const target = repositorySnapshot.branch
-            if (target && target !== base) openReview({ kind: 'branch', base, target }, undefined, false, rootPath)
+            if (target && target !== base) openReview({ kind: 'branch', base, target }, undefined, rootPath)
           }}
         />
 
         </>}
         {section === 'history' && <>
-        {!logEntries.length && <p className="p-6 text-sm text-muted">No commits to display.</p>}
+        {logEntries === null ? !actionError && <LoadingState label="Loading commits" className="p-6 text-xs" /> : !logEntries.length && <p className="p-6 text-sm text-muted">No commits to display.</p>}
         {/* Commit Log */}
-        <Section title="Commit history" count={logEntries.length}>
-          {logEntries.map((entry) => (
+        {logEntries !== null && <Section title="Commit history" count={logEntries.length}>
+          {logEntries?.map((entry) => (
             <div
               key={entry.hash}
               className="flex items-start gap-3 px-4 py-3 hover:bg-hover text-xs cursor-pointer"
-              onClick={() => openReview({ kind: 'commit', commit: entry.hash }, undefined, false, rootPath)}
+              onClick={() => openReview({ kind: 'commit', commit: entry.hash }, undefined, rootPath)}
             >
               <ClockCounterClockwise size={11} className="text-muted flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
@@ -908,7 +717,7 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
               </div>
             </div>
           ))}
-        </Section>
+        </Section>}
 
         </>}
         {section === 'worktrees' && <>
@@ -941,12 +750,6 @@ export const SourceControlView: React.FC<SourceControlViewProps> = ({ rootPath }
         </Section>
 
         </>}
-        {/* Empty state */}
-        {section === 'changes' && status && stagedFiles.length === 0 && changedFiles.length === 0 && untrackedFiles.length === 0 && (
-          <div className="flex items-center justify-center py-8 text-muted text-[11px]">
-            No changes detected
-          </div>
-        )}
       </div>
       </div>
       </>

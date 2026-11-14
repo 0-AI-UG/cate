@@ -28,7 +28,7 @@ type TimeoutFn<S extends ArgShape> = { fn(args: OutArgs<S>): number }['fn']
 
 export interface CateApiCliSpec<S extends ArgShape> {
   /** Command words. Defaults to the namespace followed by the method name split
-   *  on dots (`review.note.add` is `cate review note add`). `false` keeps the
+   *  on dots (`browser.tab.new` is `cate browser tab new`). `false` keeps the
    *  method off the CLI (called by code cells or clients only). */
   command?: readonly string[] | false
   /** Pure adjustment after parsing, before validation (for example splitting
@@ -75,7 +75,7 @@ export interface CateApiNamespaceOptions {
 export interface CateApiMethod<S extends ArgShape = ArgShape> extends CateApiMethodSpec<S> {
   /** Name inside the namespace (`note.add`). */
   name: string
-  /** Full wire name (`cate.review.note.add`). */
+  /** Full wire name (`cate.browser.tab.new`). */
   method: string
   namespace: string
   area?: CliPermissionArea

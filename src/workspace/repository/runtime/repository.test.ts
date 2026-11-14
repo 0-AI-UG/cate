@@ -14,7 +14,7 @@ import {
   type PanelRecord,
   type WorkspaceDocument,
 } from '@workspace/document/contract'
-import { checkoutPathKey, samePath } from '../contract'
+import { checkoutPathKey, parseReviewPatch, samePath } from '../contract'
 import { createRepositoryRuntime, vcsCapabilityImpl, type RepositoryRuntime } from './repository'
 
 /** Applies ops with the real reducer and records them. */
@@ -91,6 +91,17 @@ describe('worktree lifecycle', () => {
 
   const statuses = () => document.changes().flatMap((c) =>
     c.kind === 'setWorktree' ? [`${c.worktree.id}:${c.worktree.status}`] : c.kind === 'removeWorktree' ? [`${c.id}:gone`] : [])
+
+  test('provides trust-gated patch evidence through the repository runtime', async () => {
+    await fs.writeFile(path.join(root, 'README.md'), 'updated\n')
+    const hunks = parseReviewPatch(await simpleGit(root).diff())
+    const baseCommit = await repo.patchHistory.capture(root, [{ path: 'README.md', hunks }])
+    expect(baseCommit).toBeTruthy()
+    const evidence = await repo.patchHistory.reconcile(root, [{ key: 'edit', path: 'README.md', hunks, baseCommit, createdAt: new Date().toISOString() }])
+    expect(evidence.get('edit')).toEqual({ uncommitted: true })
+    trusted = false
+    expect(() => repo.patchHistory.reconcile(root, [])).toThrow('untrusted')
+  })
 
   test('create writes creating, then ready, and makes the checkout', async () => {
     const meta = await repo.createWorktree({ branch: 'fix the bug' })

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { PanelRecord } from '@workspace/document/contract'
 import { AGENTS } from '@services/agents/contract'
 import { agentLogo, type AgentPanelInfo } from '../../services/agents'
+import type { PanelDecoration } from '../../client/host'
 import { WorkspacePanelRow } from './WorkspaceRow'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -28,7 +29,7 @@ afterEach(() => {
 
 const record = (title: string): PanelRecord => ({ id: 't1', type: 'terminal', title, fields: {} })
 const rowText = (title: string, agent?: AgentPanelInfo) => {
-  act(() => root.render(<WorkspacePanelRow record={record(title)} indent={false} agent={agent} onClick={() => {}} />))
+  act(() => root.render(<WorkspacePanelRow record={record(title)} indent={false} decoration={agent ? { logo: agent.logo, logoAlt: agent.name, busy: agent.status === 'running', retitle: (title) => agent.name && title === 'Terminal 1' ? agent.name : title } satisfies PanelDecoration : undefined} onClick={() => {}} />))
   return container.textContent ?? ''
 }
 

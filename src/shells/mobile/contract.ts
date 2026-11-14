@@ -591,17 +591,9 @@ export interface MobileCoreMethods {
   /** A review view's agents that can review or take its findings, by name
    *  (`reviewAgents`). */
   'review.agents': { params: { viewId: string }; result: MobileReviewAgent[] }
-  /** The review's notes as Markdown, as the desktop copies them. */
-  'review.notes': { params: { viewId: string }; result: string }
   /** Opens a changed file in a new editor panel next to the review; its id,
    *  or null. */
   'review.openFile': { params: { viewId: string; path: string }; result: string | null }
-  /** A changed image's versions, base64; null for a file that is no image. */
-  'review.images': {
-    params: { viewId: string; path: string; oldPath?: string }
-    result: { mime: string; old: string | null; new: string | null } | null
-  }
-
   /** Moves a canvas node to `origin` (canvas coordinates), keeping its
    *  size; false when the op failed. */
   'canvas.moveNode': { params: { workspaceId: string; canvasId: string; nodeId: string; origin: { x: number; y: number } }; result: boolean }

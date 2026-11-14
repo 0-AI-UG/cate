@@ -1,49 +1,9 @@
-// What other modules add to dock tabs and panel chrome without the dock
-// knowing them: a tab's logo, status mark and title (shimmering while busy), a dirty mark, extra tab
-// menu items, and the overlays over a panel's top-right corner. Register at startup, before
-// the first dock renders: decoration hooks run as React hooks.
+// Dock menu contributions and panel chrome overlays. Title presentation
+// is shared by every panel label through client/host.
 
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType } from 'react'
 import type { PanelRecord } from '@workspace/document/contract'
 import type { ContextMenuItem } from '@kernel/interaction/contract'
-
-export interface TabDecoration {
-  /** Replaces the type icon. */
-  logo?: string | null
-  logoAlt?: string | null
-  /** A status mark drawn after the title. */
-  status?: ReactNode
-  /** The title shimmers (work in progress). */
-  busy?: boolean
-  /** The title ends with a dot (unsaved changes). */
-  dirty?: boolean
-  /** The title to show for the record's title. */
-  retitle?: (title: string) => string
-}
-
-/** A React hook: decorations for the workspace's panels, keyed by id. */
-export type TabDecorationHook = (workspaceId: string) => Readonly<Record<string, TabDecoration>>
-
-const decorationHooks: TabDecorationHook[] = []
-
-export function registerTabDecorations(hook: TabDecorationHook): () => void {
-  decorationHooks.push(hook)
-  return () => {
-    const index = decorationHooks.indexOf(hook)
-    if (index >= 0) decorationHooks.splice(index, 1)
-  }
-}
-
-/** Every registered decoration merged per panel. */
-export function useTabDecorations(workspaceId: string): Record<string, TabDecoration> {
-  const out: Record<string, TabDecoration> = {}
-  for (const hook of decorationHooks) {
-    for (const [panelId, decoration] of Object.entries(hook(workspaceId))) {
-      out[panelId] = { ...out[panelId], ...decoration }
-    }
-  }
-  return out
-}
 
 // --- Tab menu items ------------------------------------------------------------
 
