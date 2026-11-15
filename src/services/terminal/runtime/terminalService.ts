@@ -643,7 +643,11 @@ export function createTerminalService(deps: TerminalServiceDeps): TerminalServic
       }
       if (continued) {
         output(term, continued + SHELL_SCREEN_RESET, false)
-      } else if (restored) output(term, restored + RESTORED_MARKER, false)
+      } else if (restored) {
+        // The saved screen belongs to the old process. A fresh shell must
+        // not inherit its mouse/focus reporting or other TUI input modes.
+        output(term, restored + SHELL_SCREEN_RESET + RESTORED_MARKER, false)
+      }
       if (shell?.notice) output(term, shell.notice, false)
 
       pty.onData((data) => { if (term.alive) output(term, data, true) })
