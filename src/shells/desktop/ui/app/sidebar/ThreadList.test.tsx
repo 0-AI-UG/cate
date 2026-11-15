@@ -232,7 +232,7 @@ it('explains Codex hook approval without claiming it is working', () => {
 
 
 it('shows reported activity separately from the thread name and never substitutes the prompt', () => {
-  const chat = { status: 'running' as const, canReceivePrompt: false, stepsSince: '2026-11-07T20:00:00Z', prompts: [],
+  const chat = { generation: 0, status: 'running' as const, canReceivePrompt: false, stepsSince: '2026-11-07T20:00:00Z', prompts: [],
     messages: [{ role: 'user' as const, text: 'explain this', createdAt: '2026-11-07T20:00:00Z' }], steps: [] }
   expect(threadActivityText(chat)).toBeNull()
   expect(threadActivityText({ ...chat, steps: [{ tool: 'Read', subject: 'README.md', at: '2026-11-07T20:00:02Z' }] })).toBe('Read: README.md')

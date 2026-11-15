@@ -33,7 +33,7 @@ function render(node: ReactNode): void {
 
 describe('shared UI primitives', () => {
   it('keeps popup surfaces aligned with the Cate menu treatment', () => {
-    expect(POPOVER_SURFACE).toContain('rounded-2xl')
+    expect(POPOVER_SURFACE).toContain('rounded-md')
     expect(POPOVER_SURFACE).toContain('border-subtle')
     expect(POPOVER_SURFACE).toContain('bg-surface-3')
     expect(POPOVER_SURFACE).toContain('shadow-lg')
