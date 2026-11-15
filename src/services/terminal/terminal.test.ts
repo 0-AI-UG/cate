@@ -440,6 +440,31 @@ describe('terminal service', () => {
     }
   })
 
+  it.each(['scrollback', 'log'])('clears restored TUI input modes before a fresh shell (%s)', async (source) => {
+    const { service, dir, connect } = setup()
+    const logDir = path.join(dir, 'terminal-logs')
+    fs.mkdirSync(logDir, { recursive: true })
+    // A saved Codex screen can retain all-motion mouse reporting without
+    // SGR encoding. Its coordinate bytes become zsh editing commands/text.
+    fs.writeFileSync(path.join(logDir, `p1.${source}`),
+      'old shell history\r\n\x1b[?1049hCodex screen\x1b[?1003h\x1b[?1004h\x1b[?2004h\x1b[?1h\x1b=')
+    const proc = await connect()
+    const { id } = await proc.spawn({ cols: 80, rows: 24, panelId: 'p1', restore: true })
+    const v = await viewer(proc, id)
+    try {
+      await service.read(id)
+      await flushed(v.term)
+      expect(v.term.modes.mouseTrackingMode).toBe('none')
+      expect(v.term.modes.sendFocusMode).toBe(false)
+      expect(v.term.modes.bracketedPasteMode).toBe(false)
+      expect(v.term.modes.applicationCursorKeysMode).toBe(false)
+      expect(v.term.modes.applicationKeypadMode).toBe(false)
+      expect(v.term.buffer.active.type).toBe('normal')
+      expect(screenText(v.term)).toContain('old shell history')
+      expect(screenText(v.term)).toContain('--- restored session ---')
+    } finally { v.binding.dispose(); v.term.dispose() }
+  })
+
   it('restores a panel\'s saved screen above a fresh shell', async () => {
     const { service, ptys, connect } = setup()
     const proc = await connect()
