@@ -282,6 +282,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     () => (showSuggestions ? queryBrowserHistoryEntries(history, inputUrl, 8) : []),
     [showSuggestions, inputUrl, history],
   )
+  const suggestionsOpen = suggestions.length > 0
   const navigate = useCallback((input: string) => {
     if (input.trim()) quietly({ kind: 'navigate', input, tabId: shownTabId })
   }, [quietly, shownTabId])
@@ -466,11 +467,18 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
             </Tooltip>
           </div>
 
-          <div className="flex-1 relative">
+          <div className="flex-1 relative h-7">
+           {/* One card: the input frame and its suggestions expand together. */}
+           <div
+             className={`absolute inset-x-0 top-0 z-30 rounded-[10px] ${suggestionsOpen ? 'bg-surface-2' : ''}`}
+             style={suggestionsOpen ? { boxShadow: '0 0 0 1px var(--border-subtle), 0 10px 28px rgba(0,0,0,0.35)' } : undefined}
+           >
             <div
-              data-input-frame
+              {...(suggestionsOpen ? {} : { 'data-input-frame': '' })}
               className={`flex h-7 items-center gap-2 rounded-[10px] border px-3 transition-colors ${
-                isStartPage(currentUrl)
+                suggestionsOpen
+                  ? 'border-transparent bg-transparent'
+                  : isStartPage(currentUrl)
                   ? 'border-strong bg-surface-1 focus-within:border-strong'
                   : 'border-transparent bg-transparent hover:bg-surface-2 focus-within:border-strong focus-within:bg-surface-1'
               }`}
@@ -507,6 +515,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
               onPick={(url) => { setShowSuggestions(false); navigate(url) }}
               onHover={setActiveSuggestion}
             />
+           </div>
           </div>
 
           {downloads.length > 0 && (

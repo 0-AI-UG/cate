@@ -3,18 +3,19 @@
 @tailwind utilities;
 
 :where(button, [role='button'], a[href], input[type='checkbox'], input[type='radio'], input[type='range'], input[type='color'], input[type='file']):focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
+  /* Keyboard focus: a neutral ring, not the theme accent. */
+  outline: 1.5px solid color-mix(in srgb, var(--text-primary) 40%, transparent);
+  outline-offset: 1px;
 }
 
 /* Text fields use their rounded border, not an outline around the text inside.
    Compound fields put the focus border on their shared frame. */
 :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select):focus {
   outline: none;
-  border-color: var(--border-focus);
+  border-color: var(--border-strong);
 }
 [data-input-frame]:has(input:focus, textarea:focus, select:focus) {
-  border-color: var(--border-focus);
+  border-color: var(--border-strong);
 }
 [data-input-frame] :where(input, textarea, select):focus {
   outline: none;
@@ -26,62 +27,62 @@
    The active theme is applied at runtime by applyTheme() (kernel/interaction), which
    writes every --var as an inline style on <html>.
    This :root block is only the cold-launch / un-themed fallback — it follows
-   the standard Black theme in src/kernel/interaction/contract/themes/black.ts.
+   the standard Graphite theme in src/kernel/interaction/contract/themes/graphite.ts.
    ============================================================================= */
 
 :root {
-  /* UI chrome font — native system stack. */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  /* UI chrome font — bundled Inter Variable, system stack as fallback. */
+  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
 
-  --surface-0: #000000;
+  --surface-0: #141414;
   --surface-1: #101010;
-  --surface-2: #1c1c1c;
-  --surface-3: #242424;
-  --surface-4: #2b2b2b;
-  --surface-5: #323232;
-  --surface-6: #3a3a3a;
-  --titlebar-bg: #0b0b0b;
-  --canvas-bg: #050505;
-  --canvas-bg-alt: #090909;
+  --surface-2: #1b1b1b;
+  --surface-3: #222222;
+  --surface-4: #292929;
+  --surface-5: #303030;
+  --surface-6: #373737;
+  --titlebar-bg: #101010;
+  --canvas-bg: #0b0b0b;
+  --canvas-bg-alt: #0c0c0c;
   --canvas-backdrop-scrim: rgba(0, 0, 0, 0.35);
-  --grid-dot: rgba(255, 255, 255, 0.05);
-  --grid-line: rgba(255, 255, 255, 0.022);
-  --border-subtle: rgba(255, 255, 255, 0.10);
-  --border-strong: rgba(255, 255, 255, 0.20);
+  --grid-dot: rgba(255, 255, 255, 0.07);
+  --grid-line: rgba(255, 255, 255, 0.03);
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
   /* Hairline width for inline-styled borders (canvas nodes, overlays). 1px on
      standard displays; overridden to 0.5px on hi-DPI (see the @media rule below)
      so panels get the same true 1-device-pixel line as the utility borders. */
   --hairline: 1px;
-  --border-focus: #5e86c3;
-  --text-primary: #eeeeee;
-  --text-secondary: #a0a0a0;
-  --text-muted: #7a7a7a;
+  --border-focus: #a9b8cf;
+  --text-primary: #ececec;
+  --text-secondary: #b0b0b0;
+  --text-muted: #858585;
   --text-inverse: #101010;
-  --focus-blue: #5e86c3;
+  --focus-blue: #a9b8cf;
   --activity-green: #5cae72;
   --activity-orange: #cc8a4a;
   --shadow-node: rgba(0, 0, 0, 0.55);
-  --shadow-node-focused: rgba(94, 134, 195, 0.28);
-  --node-bg-active: #000000;
+  --shadow-node-focused: rgba(169, 184, 207, 0.30);
+  --node-bg-active: #141414;
   --node-dim-overlay: rgba(0, 0, 0, 0.22);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.11);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
-  --surface-hover: rgba(255, 255, 255, 0.055);
-  --surface-hover-strong: rgba(255, 255, 255, 0.10);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.14);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-hover-strong: rgba(255, 255, 255, 0.11);
   --git-added: #5cae72;
   --git-modified: #c9a24b;
   --git-deleted: #d16a6a;
-  --git-untracked: #5e86c3;
+  --git-untracked: #a9b8cf;
   --git-renamed: #a884c0;
   /* Minimap panel rects — muted variants tinted toward the active theme.
-     :root follows Black for any un-themed render. */
+     :root follows Graphite for any un-themed render. */
   --panel-terminal: #5c9e7e;
-  --panel-browser: #5e86c3;
+  --panel-browser: #8a9bb8;
   --panel-editor: #b0834a;
-  --panel-canvas: #8a72c0;
+  --panel-canvas: #a9b8cf;
   /* Agent accent — RGB channels for Tailwind alpha modifier support. */
-  --agent-rgb: 94 134 195;
-  --agent-light-rgb: 150 178 220;
+  --agent-rgb: 169 184 207;
+  --agent-light-rgb: 205 214 228;
 }
 
 /* Semantic utility classes. Declared directly (not via Tailwind colors) so
@@ -229,31 +230,30 @@
   }
 }
 
-/* Sidebar scrollbars: the same thin rounded floating pill as the base, but only
-   visible while the pointer is over the sidebar. The thumb is transparent until
-   then (its track space stays reserved, so revealing it doesn't shift the
-   content). Unlayered so it overrides the @layer base defaults above. */
+/* Sidebar scrollbars: a thin, subtle pill, visible only while the pointer is
+   over the sidebar. The scrollers pull themselves 6px into the sidebar's right
+   padding (-mr-1.5), so the bar overlays that padding and reserves no content
+   space. Unlayered so it overrides the @layer base defaults above. */
 [data-sidebar-scrollarea] ::-webkit-scrollbar {
-  width: 13.52px;
-  height: 13.52px;
+  width: 6px;
+  height: 6px;
 }
 [data-sidebar-scrollarea] ::-webkit-scrollbar-thumb {
   background-color: transparent;
   border-radius: 9999px;
-  /* Same right-hugging asymmetric inset as the base scrollbar. */
+  /* Visible pill is 3px wide, hugging the right edge of the 6px track. */
   border-top: 2px solid transparent;
   border-bottom: 2px solid transparent;
-  border-left: 3px solid transparent;
-  border-right: 1px solid transparent;
+  border-left: 1px solid transparent;
+  border-right: 2px solid transparent;
   background-clip: padding-box;
-  /* Fade the thumb in/out as the pointer enters/leaves the sidebar. */
   transition: background-color 280ms ease;
 }
 [data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb {
-  background-color: var(--scrollbar-thumb);
+  background-color: color-mix(in srgb, var(--text-primary) 12%, transparent);
 }
 [data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--scrollbar-thumb-hover);
+  background-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
 }
 
 /* Terminal scrollbar: the same thin rounded floating pill as the base, but only
@@ -399,7 +399,31 @@
   animation: cate-spawn-flyout-item-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
   animation-delay: calc(40ms + var(--i, 0) * 35ms);
 }
+/* Content of a card that slides out of a toolbar rises a few pixels and fades
+   in, child by child. `cate-rise` starts with the bottom child (nearest the
+   toolbar) and works up; `cate-stagger` goes in reading order. No scaling, so
+   nothing shifts the layout. */
+@keyframes cate-rise-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.cate-stagger > *, .cate-rise > * {
+  animation: cate-rise-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.cate-stagger > :nth-child(1) { animation-delay: 70ms; }
+.cate-stagger > :nth-child(2) { animation-delay: 100ms; }
+.cate-stagger > :nth-child(3) { animation-delay: 130ms; }
+.cate-stagger > :nth-child(4) { animation-delay: 160ms; }
+.cate-stagger > :nth-child(n+5) { animation-delay: 190ms; }
+.cate-rise > :nth-last-child(1) { animation-delay: 60ms; }
+.cate-rise > :nth-last-child(2) { animation-delay: 90ms; }
+.cate-rise > :nth-last-child(3) { animation-delay: 120ms; }
+.cate-rise > :nth-last-child(4) { animation-delay: 150ms; }
+.cate-rise > :nth-last-child(5) { animation-delay: 180ms; }
+.cate-rise > :nth-last-child(n+6) { animation-delay: 210ms; }
 @media (prefers-reduced-motion: reduce) {
+  .cate-stagger > *,
+  .cate-rise > *,
   .cate-spawn-flyout,
   .cate-spawn-flyout-item {
     animation-duration: 1ms;
@@ -517,8 +541,8 @@
   border-radius: 9999px;
 }
 .app-header-bar {
-  height: 44px;
-  min-height: 44px;
+  height: 36px;
+  min-height: 36px;
   padding-inline: 12px;
   display: flex;
   align-items: center;
@@ -578,4 +602,41 @@
 
 @media (prefers-reduced-motion: reduce) {
   .screenshot-viewer-image-in { animation: none !important; }
+}
+
+
+/* The map in the zoom card opens by growing its row. */
+.canvas-map { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.canvas-map[data-open] { grid-template-rows: 1fr; }
+.canvas-map-inner { overflow: hidden; min-height: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .canvas-map { transition: none; }
+}
+
+
+/* A menu that slides up out from behind the bar it belongs to, and back in. */
+@keyframes cate-slide-up-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes cate-slide-down-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+.cate-slide-up-in { animation: cate-slide-up-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.cate-slide-down-out { animation: cate-slide-down-out 200ms cubic-bezier(0.4, 0, 1, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .cate-slide-up-in, .cate-slide-down-out { animation: none; }
+}
+
+
+/* Bars and the cards that slide out of them: a very faint outline drawn inside
+   the box (so the global hairline border rules never touch it). A bar gains a
+   soft shadow on hover; a card has no bottom edge, where it meets its bar. */
+.bar-outline {
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--border-subtle) 60%, transparent);
+  transition: box-shadow 150ms ease;
+}
+.bar-outline:hover {
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--border-subtle) 60%, transparent), 0 2px 8px -3px var(--shadow-node);
+}
+.card-outline {
+  box-shadow:
+    inset 0 0.5px 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent),
+    inset 0.5px 0 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent),
+    inset -0.5px 0 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent);
 }

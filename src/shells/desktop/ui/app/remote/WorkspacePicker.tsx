@@ -163,7 +163,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
           lastSection = item.section
           return (
             <div key={item.key} className="group">
-              {header && <div className="px-2 pt-3 pb-1 text-[11px] font-semibold text-muted">{header}</div>}
+              {header && <div className="px-2.5 pt-3 pb-1 text-[12px] font-medium text-muted">{header}</div>}
               <div className="relative">
                 {item.key === 'join' && request ? (
                   <InlineJoinForm key={`${request.code ?? ''}|${request.machine ?? ''}`} request={request} />
@@ -187,11 +187,11 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
                     data-active={index === active}
                     onMouseMove={() => setActive(index)}
                     onClick={() => item.run()}
-                    className={`w-full h-8 flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${item.remove ? 'pr-7' : ''} ${index === active ? 'bg-hover' : ''}`}
+                    className={`w-full min-h-8 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left ${item.remove ? 'pr-7' : ''} ${index === active ? 'bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]' : ''}`}
                   >
                     <span className="shrink-0 text-muted">{item.icon}</span>
                     <span className={`text-[13px] truncate ${item.always ? 'text-secondary' : 'text-primary'}`}>{item.label}</span>
-                    {item.detail && <span className="min-w-0 text-xs text-muted truncate">{item.detail}</span>}
+                    {item.detail && <span className="min-w-0 text-[12px] text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)] truncate">{item.detail}</span>}
                     {item.hint && <span className={`ml-auto shrink-0 text-xs text-secondary ${item.remove ? 'mr-6' : ''} ${index === active ? '' : 'opacity-0 group-hover:opacity-100'}`}>{item.hint}</span>}
                   </button>
                 )}

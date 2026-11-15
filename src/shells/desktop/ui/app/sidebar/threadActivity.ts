@@ -16,7 +16,7 @@ export function threadActivity(agent: PanelAgentState | undefined, terminal: Ter
     ? { phase: 'ready', label: 'Ready for your next prompt' }
     : { phase: 'blocked', label: 'Needs your response' }
   if (agent?.status === 'finished') return { phase: 'settled', label: 'Agent exited' }
-  if (agent?.present) return { phase: 'unknown', label: agent.hooksMissing ? 'Hooks off' : 'Status unavailable' }
+  if (agent?.present) return { phase: 'unknown', label: agent.hooksMissing ? 'Hooks off' : agent.hooksNeedApproval ? 'Hooks need approval' : 'Status unavailable' }
   if (!terminal) return null
   if (!terminal.alive) return { phase: 'settled', label: terminal.exitCode ? `Exited with code ${terminal.exitCode}` : 'Finished' }
   if (terminal.suspended) return { phase: 'settled', label: 'Suspended' }

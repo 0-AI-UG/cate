@@ -287,7 +287,7 @@ shell's native side.
 
 | What | Where |
 |---|---|
-| Rendering the document: docks, canvas view, nodes, minimap, territory layer, relation drawing | shell UI |
+| Rendering the document: docks, canvas view, nodes, minimap, relation drawing | shell UI |
 | Panel views: xterm, Monaco, diff views (desktop); native views (iOS) | shell UI |
 | Input, drag and drop | shell UI |
 | Dialogs, confirmations, notification display, clipboard (`ClientUi`, including the in-app save-path dialog over the workspace's files) | shell UI |
@@ -487,6 +487,9 @@ the pieces that make it reachable and secure.
   one command installs it (`curl -fsSL <install url> | sh`, checked against
   the `.sha256` published beside the tarball) with a `cate` launcher that
   runs the current install.
+  The desktop shell pins its installed build with an `in-use/<pid>` marker,
+  just as a daemon does: it may need to start another workspace later.
+  Development install cleanup respects these live markers too.
 - **`cate serve [path] [--connect]`** shares a workspace of the machine it
   runs on. It runs the install's `runtime.cjs bridge <root>` (7.3), which
   starts the runtime when nothing answers, and over it, as a local client,
@@ -1190,7 +1193,7 @@ or that changes shared state, is a **workspace** setting.
 |---|---|---|
 | Appearance (`kernel/interaction`) | `activeThemeId`, `systemLightThemeId`, `systemDarkThemeId`, `customThemes`, `uiScale` | |
 | Editor (`panels/editor`) | `editorFontSize`, `editorFontFamily`, `filesTreeOnOpen`, `filesTreeOpenFileIn` | |
-| Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
+| Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
 | Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
@@ -2551,7 +2554,7 @@ shell, with `--json` when it parses results.
   - **ui**: the desktop UI, all of it, in React, mirroring where each piece
     belongs: the kernel components and theme manager (`ui/kernel/interaction`), panel
     hosting and native surfaces (`ui/client/host`), the dock, the canvas
-    view (its view store, nodes, minimap, territory layer), dragging and
+    view (its view store, nodes, minimap), dragging and
     detached windows (`ui/client/layout`), the app frame: sidebar, palette,
     settings, pairing, onboarding, dialogs and the e2e harness
     (`window.__cateE2E`) (`ui/app`), every module's

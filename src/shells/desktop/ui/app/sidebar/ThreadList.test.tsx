@@ -221,6 +221,15 @@ it('explains missing hooks instead of claiming the agent is working', () => {
   expect(host.querySelector('[data-thread-phase="running"]')).toBeNull()
 })
 
+it('explains Codex hook approval without claiming it is working', () => {
+  agent('untrusted', 'notRunning')
+  data.agents.untrusted.hooksNeedApproval = true
+  render()
+  expect(host.textContent).toContain('Hooks need approval')
+  expect(host.textContent).toContain('Open /hooks in Codex')
+  expect(host.querySelector('[data-thread-phase="running"]')).toBeNull()
+})
+
 
 it('shows reported activity separately from the thread name and never substitutes the prompt', () => {
   const chat = { status: 'running' as const, canReceivePrompt: false, stepsSince: '2026-11-07T20:00:00Z', prompts: [],

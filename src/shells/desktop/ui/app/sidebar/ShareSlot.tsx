@@ -63,16 +63,6 @@ export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
     )
   }
 
-  return (
-    <Tooltip label="Invite to workspace…">
-      <button
-        className={`${SLOT} h-5 px-1 text-secondary hover:text-primary transition-opacity ${isSelected ? 'opacity-60' : 'opacity-0'} group-hover:opacity-80 hover:!opacity-100 focus-visible:opacity-100`}
-        onClick={share}
-        aria-label="Invite to workspace…"
-      >
-        <UserPlus size={13} />
-        {isSelected && <span className="ml-1 text-xs">Invite</span>}
-      </button>
-    </Tooltip>
-  )
+  // Inviting is in the workspace's actions menu, not on the card.
+  return <></>
 }

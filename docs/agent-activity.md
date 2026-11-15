@@ -24,6 +24,14 @@ Settings → Agents → Codex settings shows a read-only label: **Approvals:
 Automatic / Manual / Unknown**. There are no approval overrides and Cate never
 modifies the CLI's permission policy.
 
+Codex hook trust is separate from tool approvals and Cate's integration toggle.
+The runtime reads Codex's `hooks/list` API to inspect only Cate's project hooks.
+Untrusted or modified hooks show **Hooks need approval** in Settings and Threads,
+with instructions to review them in Codex's `/hooks` menu. Unsupported or failed
+inspection stays unknown. Cate never grants trust or writes Codex's trust state.
+Silent terminal agents are rechecked at most once every 15 seconds; a received
+lifecycle hook supersedes the warning. Trust alone never proves idle or busy.
+
 For Codex, `approvals_reviewer = auto_review` (or `guardian_subagent`) and
 `approval_policy = never` mean automatic. The default `user` reviewer means
 manual. Unknown/read failures stay Running without an attention notification.

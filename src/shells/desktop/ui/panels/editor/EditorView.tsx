@@ -247,7 +247,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
   return (
     <div className="w-full h-full flex flex-col" onKeyDownCapture={onKeyDownCapture} data-dirty={dirty || undefined}>
       {conflict && <ConflictBanner kind={conflict} showDiff={mode === 'merge'} onAction={onConflict} />}
-      <div className="relative h-10 shrink-0 border-b border-subtle" style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}>
+      <div className="relative h-8 shrink-0 border-b border-subtle" style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}>
         <div className="no-scrollbar h-full overflow-x-auto px-2 flex items-center gap-1 text-xs" data-worktree-room>
           <button
             onClick={() => copyPath(editorVisible ? filePath : root)}

@@ -12,11 +12,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, ChevronRight, Folder, SlidersHorizontal, LayoutGrid, List, X, Check, ChevronDown as CaretDown, SquareArrowOutUpRight as ArrowSquareOut } from 'lucide-react'
-import { Search as MagnifyingGlass, RefreshCw as ArrowsClockwise } from 'lucide-react'
+import { RefreshCw as ArrowsClockwise } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
-import { IconButton, InlineNotice, LoadingState, Spinner, POPOVER_SURFACE, PaletteTextInput, Tooltip } from '../../kernel/interaction'
+import { IconButton, InlineNotice, LoadingState, Spinner, POPOVER_SURFACE, SearchField, Tooltip } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { groupSkillsByRepository, skillRows, skillSearchTerms, type InstalledSkill, type SkillEntry, type SkillTarget, type SkillTargetId } from '@workspace/skills/contract'
 
@@ -51,7 +51,7 @@ export interface SkillsDialogProps {
 
 function DefaultHeader({ children }: { children: ReactNode }) {
   return (
-    <header className="relative z-10 flex h-11 shrink-0 items-center gap-2 bg-canvas-bg px-6 text-primary after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent">
+    <header className="relative z-10 flex h-9 shrink-0 items-center gap-2 bg-canvas-bg px-6 text-primary after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent">
       <h1 className="min-w-0 flex-1 truncate text-[13px] font-medium">Skills</h1>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
     </header>
@@ -171,16 +171,7 @@ export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: 
       {renderHeader ? renderHeader(headerActions) : <DefaultHeader>{headerActions}</DefaultHeader>}
       <div className="mx-auto flex w-full max-w-[1040px] min-h-0 flex-1 flex-col px-6">
         <div className="py-4 shrink-0 flex items-center gap-2">
-          <PaletteTextInput
-              icon={<MagnifyingGlass size={14} />}
-              containerClassName="flex-1"
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape' && query) { e.stopPropagation(); setQuery('') } }}
-              placeholder="Search skills…"
-              spellCheck={false}
-          />
+          <SearchField autoFocus value={query} onValueChange={setQuery} placeholder="Search skills…" containerClassName="flex-1" />
           <IconBtn
             title={viewMode === 'list' ? 'Card view' : 'List view'}
             onClick={() => setViewMode((mode) => mode === 'list' ? 'card' : 'list')}

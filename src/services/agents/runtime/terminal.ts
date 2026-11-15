@@ -135,9 +135,9 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   /** The attachments of the prompt each terminal's agent takes next, for its
    *  submit hook (taken by the turn that starts). */
   const attachmentContext = new Map<string, string>()
-  /** Whether each terminal's agent has Cate's hook files where it runs,
-   *  inspected once per agent run (absent while unknown). */
-  const hookFiles = new Map<string, { agentId: AgentId; installed: boolean | null }>()
+  /** Hook installation and CLI-owned trust for silent agents, rechecked
+   *  every 15 seconds until a lifecycle hook proves the integration works. */
+  const hookFiles = new Map<string, { agentId: AgentId; installed: boolean | null; needsApproval?: boolean; checkedAt: number }>()
 
   const panelOf = (terminalId: string): string | null => terminals.get(terminalId)?.panelId ?? null
   const changed = (terminalId: string): void => {
@@ -333,6 +333,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const agentId = opened?.id ?? hook.agentId
     const wasPresent = status.present(scan.terminalId)
     status.notePresence(scan.terminalId, hook.agentPresent || opened !== null, !hook.agentPresent, agentId)
+    if (status.present(scan.terminalId) && agentId && hookAgent.get(scan.terminalId) !== agentId) hooksMissing(scan.terminalId, agentId)
     if (wasPresent !== status.present(scan.terminalId)) changed(scan.terminalId)
   }))
 
@@ -400,16 +401,19 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
    *  terminal's checkout. Unknown until inspected (not missing). */
   const hooksMissing = (terminalId: string, agentId: AgentId): boolean => {
     if (hookAgent.get(terminalId) === agentId) return false
-    const files = hookFiles.get(terminalId)
-    if (files?.agentId === agentId) return files.installed === false
+    const cached = hookFiles.get(terminalId)
+    const files = cached?.agentId === agentId ? cached : undefined
+    if (files && Date.now() - files.checkedAt < 15_000) return files.installed === false
     const cwd = terminals.get(terminalId)?.cwd
     if (!cwd) return false
-    const entry = { agentId, installed: null as boolean | null }
+    const entry = { agentId, installed: files?.installed ?? null, needsApproval: files?.needsApproval, checkedAt: Date.now() }
     hookFiles.set(terminalId, entry)
-    void hooks.hooksInstalled(cwd, agentId).then((installed) => {
+    void hooks.hooksInstalled(cwd, agentId).then(async (installed) => {
+      const trust = installed ? await hooks.hookTrust(cwd, agentId) : 'unknown'
       if (hookFiles.get(terminalId) !== entry) return
       entry.installed = installed
-      if (!installed) changed(terminalId)
+      entry.needsApproval = trust === 'approval-required'
+      if (files?.installed !== installed || files?.needsApproval !== entry.needsApproval) changed(terminalId)
     }, () => {})
     return false
   }
@@ -436,6 +440,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       canReceivePrompt: status.canReceivePrompt(terminalId),
       session: sessionOf(panelId, terminalId),
       ...(present && agentId && hooksMissing(terminalId, agentId) ? { hooksMissing: true as const } : {}),
+      ...(present && agentId && hookAgent.get(terminalId) !== agentId && hookFiles.get(terminalId)?.needsApproval ? { hooksNeedApproval: true as const } : {}),
     }
   }
 

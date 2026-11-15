@@ -4,18 +4,17 @@
 // picker.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Plus, Search, X } from 'lucide-react'
-import { SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
+import { Folders, MessagesSquare, Plus } from 'lucide-react'
+import { SearchField, SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
 import { closeWorkspaces, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
-import { OPEN_WORKSPACE_ANCHOR } from '../remote/OpenWorkspaceDialog'
 import { showMenu } from './menu'
 import { WorkspaceRow } from './WorkspaceRow'
 import { ThreadList } from './ThreadList'
 import { ProjectFilter } from './ProjectFilter'
-import { useUiState } from '../state/uiState'
+import { setUiState, useUiState } from '../state/uiState'
 import { openTrusted } from '@client/workspaces'
 
 /** The ids in their new order after moving `from` to insertion slot `to`
@@ -31,9 +30,11 @@ export function moveId(ids: readonly string[], from: number, to: number): string
 interface WorkspaceListProps {
   headerTitle?: React.ReactNode
   headerLeadingAction?: React.ReactNode
+  /** Sits just left of the "+". */
+  headerTrailingAction?: React.ReactNode
 }
 
-export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction }: WorkspaceListProps): JSX.Element {
+export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction, headerTrailingAction }: WorkspaceListProps): JSX.Element {
   const { sidebarView } = useUiState()
   const list = clientApp().workspaces
   const { entries, open } = useWorkspaceList(list)
@@ -62,7 +63,8 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
   const [projectId, setProjectId] = useState('')
   const selectedProject = entries.some((entry) => entry.id === projectId) ? projectId : ''
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Workspaces show their panels unless collapsed here.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [insertIndex, setInsertIndex] = useState<number | null>(null)
   const anchorRef = useRef<number | null>(null)
   /** The workspace row being dragged. */
@@ -126,7 +128,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
     return true
   }
 
-  const toggleExpanded = (id: string) => setExpanded((prev) => {
+  const toggleExpanded = (id: string) => setCollapsed((prev) => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id)
     else next.add(id)
@@ -145,29 +147,29 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
         large
         leadingAction={headerLeadingAction}
         // With none, the welcome page shows the picker itself.
-        actions={entries.length > 0 && (
-          <SidebarHeaderButton action="openWorkspace" onClick={toggleOpenPicker} title="Open Workspace…" aria-expanded={pickerOpen} {...{ [OPEN_WORKSPACE_ANCHOR]: '' }}>
+        actions={(headerTrailingAction || entries.length > 0) && (<>
+          {entries.length > 0 && <SidebarHeaderButton action="openWorkspace" onClick={toggleOpenPicker} title="Open Workspace…" aria-expanded={pickerOpen}>
             <Plus size={14} />
-          </SidebarHeaderButton>
-        )}
+          </SidebarHeaderButton>}
+          {entries.length > 0 && (
+            <SidebarHeaderButton onClick={() => setUiState('sidebarView', sidebarView === 'threads' ? 'projects' : 'threads')}
+              title={sidebarView === 'threads' ? 'Show projects' : 'Show threads'}>
+              {sidebarView === 'threads' ? <Folders size={14} /> : <MessagesSquare size={14} />}
+            </SidebarHeaderButton>
+          )}
+          {headerTrailingAction}
+        </>)}
       />
       {entries.length > 0 && sidebarView === 'threads' && (
-        <div className="shrink-0 px-3 pb-2">
-          <div className="flex items-center gap-2 h-8 px-3 text-secondary focus-within:text-primary">
-            <Search size={16} className="shrink-0" />
-            <input type="search" aria-label="Search threads" placeholder="Search" value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setQuery('') } }}
-              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none" />
-            {query && <button type="button" aria-label="Clear thread search" onClick={() => setQuery('')} className="p-1 rounded hover:bg-hover"><X size={12} /></button>}
-          </div>
+        <div className="shrink-0 px-2 pt-1 pb-1">
+          <SearchField aria-label="Search threads" value={query} onValueChange={setQuery} />
         </div>
       )}
-      {sidebarView === 'threads' && entries.length > 0 && <div className="shrink-0 px-3 pt-4 pb-1">
+      {sidebarView === 'threads' && entries.length > 0 && <div className="shrink-0 px-2 pb-1">
         <ProjectFilter entries={entries} value={selectedProject} onChange={setProjectId} />
       </div>}
       {entries.length > 0 && <ThreadList entries={entries} open={open} hidden={sidebarView !== 'threads'} query={query} projectId={selectedProject} />}
-      <div className={`flex-1 overflow-y-auto pb-1 ${entries.length > 0 && sidebarView !== 'projects' ? 'hidden' : ''}`} role="tree" aria-label="Workspaces">
+      <div className={`flex-1 overflow-y-auto -mr-1.5 pb-1 ${entries.length > 0 && sidebarView !== 'projects' ? 'hidden' : ''}`} role="tree" aria-label="Workspaces">
         {entries.length === 0 && (
           <p className="px-4 py-8 text-center text-xs text-muted">No workspaces yet</p>
         )}
@@ -205,7 +207,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
                 isOpen={open.includes(entry.id)}
                 isSelected={entry.id === selectedId}
                 isMultiSelected={multiSelected.has(entry.id)}
-                isExpanded={expanded.has(entry.id)}
+                isExpanded={!collapsed.has(entry.id)}
                 onToggleExpand={() => toggleExpanded(entry.id)}
                 onClick={(e) => handleClick(index, entry.id, e)}
                 onBulkContextMenu={(e) => handleBulkContextMenu(e, entry.id)}

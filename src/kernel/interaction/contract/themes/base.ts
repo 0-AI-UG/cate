@@ -4,7 +4,7 @@
 // Every theme's partial `app` map is merged over one of these (chosen by
 // Theme.type). These are the single source of truth for the full 44-var set in
 // TypeScript. Partial dark imports retain the Dark Warm inheritance palette;
-// the cold-launch CSS fallback follows the standard Black theme.
+// the cold-launch CSS fallback follows the standard Graphite theme.
 // =============================================================================
 
 import type { AppColorKey } from '../theme'

@@ -5,6 +5,15 @@ const starts = { startsRuntime: true, version: '2.0.0' }
 const paired = { startsRuntime: false, version: '2.0.0' }
 
 describe('connection status', () => {
+  it('summarizes a runtime build mismatch and preserves the complete diagnostic separately', () => {
+    const error = 'The Cate runtime could not be installed: runtime tarball /tmp/download.tgz is build 2.1.0+new, not 2.1.0+old. Rebuild it with npm run runtime:tarball.'
+    const status = connectionStatus({ kind: 'offline', lastSeen: null, retrying: false, error }, starts)!
+    expect(status.title).toBe('Runtime builds don’t match')
+    expect(status.message).not.toContain('/tmp')
+    expect(status.message).not.toContain('npm')
+    expect(status.details).toBe(error)
+    expect(status.remedies).toEqual(['retry', 'close'])
+  })
   it('says when an offline runtime was last seen', () => {
     const now = 10 * 60_000
     expect(relativeTime(now - 5 * 60_000, now)).toBe('5 minutes ago')

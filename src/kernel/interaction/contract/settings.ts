@@ -7,9 +7,9 @@ export const appearanceSettings = defineSettings({
   scope: 'client',
   keys: {
     /** 'system' (follow OS light/dark) or a theme id. */
-    activeThemeId: setting<ThemeSelection>('black'),
+    activeThemeId: setting<ThemeSelection>('graphite'),
     systemLightThemeId: setting('light-subtle'),
-    systemDarkThemeId: setting('black'),
+    systemDarkThemeId: setting('graphite'),
     customThemes: setting<Theme[]>([], everyItem((theme) => validateTheme(theme).ok)),
     /** Zoom of Cate's own chrome (not web pages in browser panels). */
     uiScale: setting(1.0, numberIn(0.8, 1.5)),

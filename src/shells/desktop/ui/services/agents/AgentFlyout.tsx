@@ -9,7 +9,7 @@ import { AgentMark } from './AgentMark'
 export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, onPick, children, footer }: {
   agents: readonly AgentId[]
   /** The side of the button it opens on; the column grows away from it. */
-  side: 'up' | 'down' | 'left'
+  side: 'up' | 'down' | 'left' | 'right'
   label: string
   itemLabel(name: string, agentId: AgentId): string
   disabled?: boolean
@@ -20,6 +20,32 @@ export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, 
   footer?: React.ReactNode
 }): React.ReactElement {
   const down = side === 'down'
+  if (side === 'right') {
+    // Inline: a row of slim buttons inside the toolbar pill that holds the button.
+    return (
+      <div role="menu" aria-label={label} className="cate-stagger flex items-center gap-px">
+        {children ?? agents.map((agentId) => {
+          const name = itemLabel(agentDisplayName(agentId), agentId)
+          return (
+            <Tooltip key={agentId} label={name} placement="top">
+              <button
+                type="button"
+                role="menuitem"
+                aria-label={name}
+                disabled={disabled}
+                onClick={() => onPick(agentId)}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-secondary hover:bg-hover-strong active:scale-[0.94] transition-colors duration-100 disabled:opacity-30 disabled:grayscale disabled:pointer-events-none"
+              >
+                <AgentMark agent={agentId} size={16} />
+              </button>
+            </Tooltip>
+          )
+        })}
+        {footer}
+      </div>
+    )
+  }
   return (
     <div
       role="menu"

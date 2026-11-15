@@ -7,23 +7,17 @@ import { useClientState, useDocument } from '../../client/document'
 import { Button, Spinner, Tooltip } from '../../kernel/interaction'
 import { useConnectionState } from '../../client/connections'
 import { AgentMark, useAgentPanels } from '../../services/agents'
+import { useCanvasUi } from '../../client/layout/canvas'
 import { clientApp } from '../app'
 import { runWindowAction } from '../actions/run'
 import { revealPanel, selectWorkspace } from '../navigation'
+import { peekPanel } from '@client/host'
 import { useTerminalStatuses } from '../state/statusStore'
 import { setUiState, useUiState } from '../state/uiState'
 import { useUIStore } from '../state/uiStore'
 import { groupThreads, threadActivity, threadAge, threadKey, type SidebarThread } from './threadActivity'
 import { ThreadSnooze } from './ThreadSnooze'
-
-const PROJECT_BADGE_COLORS = ['bg-lime-400/10 text-lime-400', 'bg-pink-400/10 text-pink-400', 'bg-blue-400/10 text-blue-400', 'bg-violet-400/10 text-violet-400', 'bg-amber-400/10 text-amber-400']
-
-function ProjectBadge({ name }: { name: string }) {
-  const words = name.split(/[^a-zA-Z0-9]+/).filter(Boolean)
-  const initials = words.length > 1 ? words[0][0] + words.at(-1)![0] : name.slice(0, 2)
-  const color = PROJECT_BADGE_COLORS[Math.max(0, (name.toUpperCase().charCodeAt(0) || 65) - 65) % PROJECT_BADGE_COLORS.length]
-  return <span aria-hidden="true" className={`flex h-4 w-4 shrink-0 items-center justify-center rounded text-[9px] font-semibold ${color}`}>{initials.toUpperCase()}</span>
-}
+import { ProjectBadge } from './ProjectBadge'
 
 function ThreadDetails({ thread }: { thread: SidebarThread }) {
   return (
@@ -205,17 +199,49 @@ export function ThreadList({ entries, open, hidden, query = '', projectId = '' }
     const next = { ...sidebarThreadSnoozes }; delete next[thread.key]
     setUiState('sidebarThreadSnoozes', next)
   }
+  // Hovering a thread lights its panel up on the canvas. A thread of another
+  // workspace shows that workspace meanwhile. A hidden tab is switched to and a
+  // separate window raised; the tabs, the view and the workspace all go back on
+  // leave (a click commits instead).
+  const undoPeek = useRef<(() => void) | null>(null)
+  const peekToken = useRef(0)
+  const peek = (thread: SidebarThread | null) => {
+    const token = ++peekToken.current
+    undoPeek.current?.()
+    undoPeek.current = null
+    useCanvasUi.getState().setPeekedPanel(null)
+    if (!thread) return
+    const show = (): (() => void) | null => {
+      useCanvasUi.getState().setPeekedPanel(thread.panel.id)
+      return peekPanel(thread.workspaceId, thread.panel.id)
+    }
+    const shown = useUIStore.getState().selectedWorkspaceId
+    if (thread.workspaceId === shown) {
+      const undoTabs = show()
+      undoPeek.current = () => { undoTabs?.() }
+      return
+    }
+    let undoTabs: (() => void) | null = null
+    undoPeek.current = () => {
+      undoTabs?.()
+      if (shown) void selectWorkspace(shown)
+    }
+    void selectWorkspace(thread.workspaceId).then((ok) => {
+      if (ok && peekToken.current === token) undoTabs = show()
+    })
+  }
+  useEffect(() => () => { undoPeek.current?.(); useCanvasUi.getState().setPeekedPanel(null) }, [])
   const row = (thread: SidebarThread) => (
     <Tooltip key={thread.key} placement="right" suppressed={actionThread === thread.key || snoozeMenuThread === thread.key} label={`${thread.title}, ${thread.workspaceName}, ${thread.label}`} content={
       <ThreadDetails thread={thread} />
     }>
-      <div className={`group relative mx-2 my-1 rounded-md transition-colors ${thread.focused && thread.workspaceId === selectedWorkspaceId ? 'bg-surface-2' : 'hover:bg-surface-2 focus-within:bg-surface-2'}`} data-thread-phase={thread.phase}>
+      <div onMouseEnter={() => peek(thread)} onMouseLeave={() => peek(null)} className={`group relative mx-2 my-1 rounded-md transition-colors ${thread.focused && thread.workspaceId === selectedWorkspaceId ? 'bg-surface-2' : 'hover:bg-surface-2 focus-within:bg-surface-2'}`} data-thread-phase={thread.phase}>
         <button type="button" className="block w-full min-w-0 rounded-md px-2.5 py-2.5 text-left focus-visible:outline-offset-[-2px]"
           aria-label={`${thread.title}, ${thread.workspaceName}: ${thread.label}`}
-          onClick={() => { useUIStore.getState().closeOverlay(); void revealPanel(thread.workspaceId, thread.panel.id) }}>
+          onClick={() => { peekToken.current++; undoPeek.current = null; useCanvasUi.getState().setPeekedPanel(null, true); useUIStore.getState().closeOverlay(); void revealPanel(thread.workspaceId, thread.panel.id) }}>
           <span className="mb-1 flex min-w-0 items-center gap-1.5">
             <ProjectBadge name={thread.workspaceName} />
-            <span className={`min-w-0 flex-1 truncate text-xs text-secondary ${thread.phase === 'ready' && !settledThreads.includes(thread.key) ? 'group-hover:pr-[78px] group-focus-within:pr-[78px]' : 'group-hover:pr-6 group-focus-within:pr-6'}`}>{thread.workspaceName}</span>
+            <span className={`min-w-0 flex-1 truncate text-[13px] text-secondary ${thread.phase === 'ready' && !settledThreads.includes(thread.key) ? 'group-hover:pr-[78px] group-focus-within:pr-[78px]' : 'group-hover:pr-6 group-focus-within:pr-6'}`}>{thread.workspaceName}</span>
             <span className={`flex shrink-0 items-center gap-1 text-[11px] group-hover:invisible group-focus-within:invisible ${thread.phase === 'running' ? 'text-blue-400' : thread.phase === 'blocked' ? 'text-amber-400' : 'text-secondary'}`}>
               {thread.phase === 'running' && <><Spinner size={11} /><span>Working</span></>}
               {thread.phase === 'blocked' && <><CircleHelp size={12} /><span>Needs you</span></>}
@@ -235,6 +261,9 @@ export function ThreadList({ entries, open, hidden, query = '', projectId = '' }
             Enable status tracking
           </button>
         )}
+        {thread.phase === 'unknown' && thread.label === 'Hooks need approval' && (
+          <p className="px-2.5 pb-2 text-[11px] text-secondary">Open /hooks in Codex to review and trust Cate’s hooks.</p>
+        )}
         {thread.phase !== 'settled' && !settledThreads.includes(thread.key) && (
           <div className="absolute right-2.5 top-2 flex h-5 items-center gap-2 bg-surface-2 pl-1 text-xs text-secondary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             onMouseEnter={() => setActionThread(thread.key)} onMouseLeave={() => setActionThread(null)} onFocus={() => setActionThread(thread.key)} onBlur={() => setActionThread(null)}>
@@ -249,21 +278,21 @@ export function ThreadList({ entries, open, hidden, query = '', projectId = '' }
   return (
     <div className={hidden ? 'hidden' : 'flex flex-col flex-1 min-h-0'} aria-label="Threads">
       {entries.filter((e) => open.includes(e.id)).map((entry) => <WorkspaceThreads key={entry.id} entry={entry} report={report} />)}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto -mr-1.5">
         {blocked.length > 0 && <section aria-label="Needs attention">
-          <div className="px-3 pt-3 pb-1 flex justify-between text-xs text-amber-400"><span>Needs your response</span><span>{blocked.length}</span></div>
+          <div className="px-[18px] pt-4 pb-1.5 flex justify-between text-xs text-amber-400"><span>Needs your response</span><span>{blocked.length}</span></div>
           {blocked.map(row)}
         </section>}
         {ready.length > 0 && <section aria-label="Ready for review">
-          <div className="px-3 pt-3 pb-1 flex justify-between text-xs text-secondary"><span>Ready for review</span><span>{ready.length}</span></div>
+          <div className="px-[18px] pt-4 pb-1.5 flex justify-between text-xs text-secondary"><span>Ready for review</span><span>{ready.length}</span></div>
           {ready.map(row)}
         </section>}
         {working.length > 0 && <section aria-label="In progress">
-          <div className="px-3 pt-3 pb-1 flex justify-between text-xs text-muted"><span>Working</span><span>{working.length}</span></div>
+          <div className="px-[18px] pt-4 pb-1.5 flex justify-between text-xs text-muted"><span>Working</span><span>{working.length}</span></div>
           {working.map(row)}
         </section>}
         {unknown.length > 0 && <section aria-label="Check status">
-          <div className="px-3 pt-3 pb-1 flex justify-between text-xs text-secondary"><span>Check status</span><span>{unknown.length}</span></div>
+          <div className="px-[18px] pt-4 pb-1.5 flex justify-between text-xs text-secondary"><span>Check status</span><span>{unknown.length}</span></div>
           {unknown.map(row)}
         </section>}
         {attention.length === 0 && working.length === 0 && unknown.length === 0 && <div className="mx-3 mt-4 px-1 py-3">
@@ -273,7 +302,7 @@ export function ThreadList({ entries, open, hidden, query = '', projectId = '' }
         </div>}
       </div>
       {snoozed.length > 0 && <section className="shrink-0 max-h-[25%] overflow-y-auto" aria-label="Snoozed threads">
-        <button type="button" aria-expanded={snoozedOpen} onClick={() => setSnoozedOpen(!snoozedOpen)} className="flex w-full items-center gap-2 px-3 py-2 text-xs text-muted hover:text-primary">
+        <button type="button" aria-expanded={snoozedOpen} onClick={() => setSnoozedOpen(!snoozedOpen)} className="flex w-full items-center gap-2 px-[18px] py-2 text-xs text-muted hover:text-primary">
           <span className="flex-1 text-left">Snoozed</span><span>{snoozed.length}</span>{snoozedOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </button>
         {snoozedOpen && snoozed.map((thread) => <div key={thread.key} className="group mx-2 my-1 flex items-center gap-2 rounded-md px-2.5 py-2 hover:bg-surface-2">
@@ -284,7 +313,7 @@ export function ThreadList({ entries, open, hidden, query = '', projectId = '' }
       <section className="shrink-0 flex flex-col max-h-[35%] min-h-0 pb-1" aria-label="Settled threads">
         <button type="button" aria-expanded={sidebarSettledOpen} aria-controls="sidebar-settled-threads"
           onClick={() => setUiState('sidebarSettledOpen', !sidebarSettledOpen)}
-          className="flex items-center gap-2 px-3 py-2 text-xs text-muted hover:text-primary">
+          className="flex items-center gap-2 px-[18px] py-2 text-xs text-muted hover:text-primary">
           <span className="flex-1 text-left">Settled</span><span>{done.length}</span>
           {sidebarSettledOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </button>

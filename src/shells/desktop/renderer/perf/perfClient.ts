@@ -4,7 +4,7 @@
 // no-op until `enablePerf()` runs.
 
 import { setSurfacePerfCounter } from '../../ui/client/host/surfaceRegistry'
-import { setCanvasPerfCounter, setTerritoryPerfCounter } from '../../ui/client/layout/canvas'
+import { setCanvasPerfCounter } from '../../ui/client/layout/canvas'
 import { createMeasurementWindow } from './measurementWindow'
 
 let enabled = false
@@ -58,7 +58,6 @@ export function enablePerf(): void {
   if (enabled) return
   enabled = true
   setSurfacePerfCounter(perfCount)
-  setTerritoryPerfCounter(perfCount)
   setCanvasPerfCounter(perfCount)
   window.__catePerf = {
     frames: testWindow.frames,

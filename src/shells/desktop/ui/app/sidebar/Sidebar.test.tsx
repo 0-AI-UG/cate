@@ -159,7 +159,7 @@ describe('Sidebar', () => {
       rowOf('cate').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
       rowOf('site').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
     })
-    expect(rowOf('cate').className).toContain('ring-1')
+    expect(rowOf('cate').closest('[data-workspace-id]')!.className).toContain('--surface-2')
     const container = host.querySelector('[data-sidebar-keynav]') as HTMLElement
     await act(async () => { container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })) })
     expect(list.close).toHaveBeenCalledWith('local:/p/cate')

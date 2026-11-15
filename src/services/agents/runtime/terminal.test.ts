@@ -163,6 +163,36 @@ afterEach(() => {
 })
 
 describe('terminal agents', () => {
+  it('reports untrusted hooks and clears the warning when real lifecycle events arrive', async () => {
+    vi.spyOn(agents.hooks, 'hooksInstalled').mockResolvedValue(true)
+    vi.spyOn(agents.hooks, 'hookTrust').mockResolvedValue('approval-required')
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('pty-1', 'term', 'codex')
+    await vi.waitFor(() => expect(agents.panels.state('term')?.hooksNeedApproval).toBe(true))
+    expect(agents.panels.state('term')?.canReceivePrompt).toBe(false)
+    await post(env, 'codex', { hook_event_name: 'UserPromptSubmit', session_id: 'approved', cwd: root })
+    expect(agents.panels.state('term')?.hooksNeedApproval).toBeUndefined()
+    expect(agents.panels.state('term')?.status).toBe('running')
+  })
+
+  it('rechecks silent agents after hook trust changes without inventing lifecycle state', async () => {
+    vi.spyOn(agents.hooks, 'hooksInstalled').mockResolvedValue(true)
+    const trust = vi.spyOn(agents.hooks, 'hookTrust').mockResolvedValue('approval-required')
+    await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('pty-1', 'term', 'codex')
+    await vi.waitFor(() => expect(agents.panels.state('term')?.hooksNeedApproval).toBe(true))
+    trust.mockResolvedValue('trusted')
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 16_000)
+    try {
+      terminal.scan('pty-1', 'term', 'codex')
+      await vi.waitFor(() => expect(agents.panels.state('term')?.hooksNeedApproval).toBeUndefined())
+      expect(agents.panels.state('term')?.canReceivePrompt).toBe(false)
+      expect(agents.panels.state('term')?.status).toBe('notRunning')
+    } finally { clock.mockRestore() }
+  })
+
   it('reads an exactly identified process session before Codex sends its first hook', async () => {
     const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockResolvedValue({ agentId: 'codex', sessionId: 'resumed', cwd: root })
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })

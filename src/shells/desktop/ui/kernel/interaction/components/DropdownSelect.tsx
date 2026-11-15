@@ -6,7 +6,7 @@ import { useDialogLayer } from './dialogLayers'
 export interface DropdownSelectOption { value: string; label: string }
 
 export function DropdownSelect({ options: allOptions, value, onChange, label, labelledBy, searchable = false,
-  searchPlaceholder = 'Search…', emptyLabel = 'No matches.', icon, disabled = false, title, side = false, matchTriggerWidth = false, quiet = false,
+  searchPlaceholder = 'Search…', emptyLabel = 'No matches.', icon, disabled = false, title, side = false, matchTriggerWidth = false, quiet = false, chevron = true,
   className = 'inline-flex h-8 min-w-0 max-w-full items-center gap-2 rounded-md border border-subtle bg-surface-2 px-2 text-xs text-primary',
 }: {
   options: readonly DropdownSelectOption[]
@@ -23,6 +23,8 @@ export function DropdownSelect({ options: allOptions, value, onChange, label, la
   side?: boolean
   matchTriggerWidth?: boolean
   quiet?: boolean
+  /** Shows the open/close arrow (default). */
+  chevron?: boolean
   className?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -56,7 +58,7 @@ export function DropdownSelect({ options: allOptions, value, onChange, label, la
       className={`${className} ${open && !quiet ? 'bg-hover text-primary ring-1 ring-inset ring-[var(--border-strong)]' : ''} cursor-pointer disabled:opacity-40 disabled:cursor-default`}
       onClick={() => open ? setOpen(false) : show()}
       onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); show() } }}>
-      {icon}<span className="min-w-0 flex-1 truncate">{current}</span>{side ? <ChevronLeft size={12} className="shrink-0" /> : <ChevronDown size={12} className="shrink-0" />}
+      {icon}<span className="min-w-0 flex-1 truncate">{current}</span>{!chevron ? null : side ? <ChevronLeft size={12} className="shrink-0" /> : <ChevronDown size={12} className="shrink-0" />}
     </button>
     {open && <PopoverSurface popoverRef={popover} pos={menuPos} portalTarget={portalTarget} ownerId={`${listId}-trigger`} width={menuWidth} className="p-1.5">
       <div onKeyDown={(event) => {

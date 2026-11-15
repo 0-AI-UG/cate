@@ -98,7 +98,7 @@ export function WorkspaceGate({ workspaceId, children }: { workspaceId: string |
     <div className="h-full overflow-y-auto" data-workspace-opening>
       {/* The logo and the card are centered together. */}
       <div className="flex min-h-full flex-col items-center justify-center gap-5 px-4 py-6">
-        <CateLogo size={61} className="shrink-0 text-muted opacity-60" aria-hidden="true" />
+        {(!card || asking) && <CateLogo size={44} className="shrink-0 text-muted opacity-50" aria-hidden="true" />}
         {card && workspaceId && (asking
           ? <WorkspaceTrustCard workspaceId={workspaceId} />
           : (

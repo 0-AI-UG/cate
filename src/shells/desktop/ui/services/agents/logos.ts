@@ -3,7 +3,6 @@
 
 import type { AgentId } from '@services/agents/contract'
 import claudeLogo from './logos/claude.svg?url'
-// OpenAI brand mark exported from the installed @phosphor-icons/react library.
 import codexLogo from './logos/codex.svg?url'
 import cursorLogo from './logos/cursor.svg?url'
 import grokLogo from './logos/grok.svg?url'

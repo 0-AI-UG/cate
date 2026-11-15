@@ -24,7 +24,7 @@ import { useDragStore } from '../drag/store'
 import { useDragOp } from '../drag/useDragOp'
 import { panelChromeOverlays } from './decorations'
 import { DockTabBar } from './DockTabBar'
-import { NewTabButton, newTabItems } from './NewTabMenu'
+import { NewTabButton } from './NewTabMenu'
 import { canSplitLayout, canSplitPane, layoutMinimum } from './sizing'
 import { useDockTabActions } from './useDockTabActions'
 
@@ -123,7 +123,6 @@ export function DockTabStack({
 
   const actions = useDockTabActions({ workspaceId, dock, stack, activePanelId, canSplit })
   const { handleDragStart } = useDragOp()
-  const menuItems = useMemo(() => newTabItems({ onCanvas }), [onCanvas])
   const onEmptyContextMenu = useCallback((e: React.MouseEvent) => { void actions.handleTabBarContextMenu(e) }, [actions])
 
   const springLoadTimer = useRef<number | null>(null)
@@ -168,6 +167,8 @@ export function DockTabStack({
         } ${compact ? 'min-h-[26px] px-0.5' : 'app-header-bar'}`}
         style={{
           ...(!compact && !floating ? { backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' } : null),
+          // Side gap equals the top gap above a 24px tab in the 36px bar.
+          ...(!compact ? { paddingInline: 6 } : null),
           ...(onTabBarMouseDown ? { cursor: 'grab' } : null),
           ...(leadingInset ? { paddingLeft: leadingInset } : null),
         }}
@@ -205,13 +206,13 @@ export function DockTabStack({
           showTabPlaceholder={showTabPlaceholder}
           selfTabDrag={selfTabDrag}
           onTabBarMouseDown={onTabBarMouseDown}
-          newTabControl={newTabControl ?? <NewTabButton canvasAttached={onCanvas} compact={compact} items={menuItems} onPick={actions.addTabOfType} />}
+          newTabControl={newTabControl ?? <NewTabButton compact={compact} onNewTab={() => actions.addTabOfType('surface')} />}
         />
 
         {activePanelId && (
           <Tooltip label={splitAllowed ? 'Split right' : 'Not enough space to split'}>
             <button
-              className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
+              className={`flex items-center justify-center self-center rounded-[var(--node-tab-radius,6px)] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
               aria-label="Split Right"
               disabled={!splitAllowed}
               style={!splitAllowed ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
@@ -228,7 +229,7 @@ export function DockTabStack({
               type="button"
               aria-label={restorable ? 'Restore' : 'Maximize'}
               aria-pressed={restorable}
-              className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
+              className={`flex items-center justify-center self-center rounded-[var(--node-tab-radius,6px)] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
               onMouseDown={(event) => event.stopPropagation()}
               onClick={toggleMaximized}
             >
@@ -242,7 +243,7 @@ export function DockTabStack({
             <button
               type="button"
               aria-label="Move into Dock"
-              className={`flex items-center justify-center self-center rounded-[10px] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
+              className={`flex items-center justify-center self-center rounded-[var(--node-tab-radius,6px)] text-muted hover:text-primary hover:bg-hover cursor-pointer ${buttonSize}`}
               onMouseDown={(event) => event.stopPropagation()}
               onClick={() => moveIntoDock(workspaceId, activePanelId)}
             >

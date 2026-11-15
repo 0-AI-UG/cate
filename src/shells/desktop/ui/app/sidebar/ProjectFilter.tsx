@@ -6,8 +6,8 @@ export function ProjectFilter({ entries, value, onChange }: {
   value: string
   onChange: (id: string) => void
 }) {
-  return <DropdownSelect label="Filter threads by project" value={value} onChange={onChange} searchable matchTriggerWidth quiet
+  return <DropdownSelect label="Filter threads by project" value={value} onChange={onChange} searchable matchTriggerWidth quiet chevron={false}
     searchPlaceholder="Search projects" emptyLabel="No matching projects."
-    className="flex w-full min-w-0 items-center gap-2 rounded py-1 text-left text-[14px] font-medium leading-5 text-primary"
+    className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2.5 text-left text-[13px] text-secondary transition-colors hover:bg-hover hover:text-primary"
     options={[{ value: '', label: 'All projects' }, ...entries.map((entry) => ({ value: entry.id, label: entry.name }))]} />
 }

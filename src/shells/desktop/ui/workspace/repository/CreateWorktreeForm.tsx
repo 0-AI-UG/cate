@@ -160,20 +160,20 @@ export const CreateWorktreeForm: React.FC<{
   }, [canSubmit, selectedPr, name, baseRef, onSubmit, onCheckoutPr])
 
   return (
-    <div className="px-1 pt-1">
+    <div className="px-1.5">
       <div
         data-input-frame
-        className={`flex items-center gap-1 h-8 px-1.5 border border-transparent rounded-lg text-secondary transition-colors ${
+        className={`flex items-center gap-1 ${flat ? 'h-7 rounded-md' : 'h-8 rounded-[10px]'} px-1 border border-transparent text-secondary transition-colors ${
           flat ? 'bg-white/[0.05] focus-within:bg-white/[0.08]' : 'bg-surface-3 focus-within:bg-surface-4'
         }`}
       >
         {selectedPr ? (
-          <GitPullRequest size={14} className="flex-shrink-0 opacity-60 ml-1" />
+          <GitPullRequest size={flat ? 12 : 14} className="flex-shrink-0 opacity-60 ml-1" />
         ) : (
-          <GitBranch size={14} className="flex-shrink-0 opacity-60 ml-1" />
+          <GitBranch size={flat ? 12 : 14} className="flex-shrink-0 opacity-60 ml-1" />
         )}
         {selectedPr ? (
-          <div className="flex-1 min-w-0 flex items-center gap-1.5 text-[14px] text-primary">
+          <div className={`flex-1 min-w-0 flex items-center gap-1.5 ${flat ? 'text-[12px]' : 'text-[14px]'} text-primary`}>
             <span className="text-muted tabular-nums flex-shrink-0">#{selectedPr.number}</span>
             <span className="truncate">{selectedPr.title}</span>
           </div>
@@ -188,30 +188,30 @@ export const CreateWorktreeForm: React.FC<{
             }}
             placeholder="What are you working on?"
             disabled={busy}
-            className="flex-1 min-w-0 text-[14px] bg-transparent outline-none text-primary placeholder:text-muted"
+            className={`flex-1 min-w-0 ${flat ? 'text-[12px]' : 'text-[14px]'} bg-transparent outline-none text-primary placeholder:text-muted`}
           />
         )}
         <Tooltip label={selectedPr ? 'Check out pull request' : 'Start'}>
           <button
             onClick={submit}
             disabled={!canSubmit || busy}
-            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            className={`flex-shrink-0 ${flat ? 'w-5 h-5' : 'w-6 h-6'} flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent transition-colors`}
             aria-label={selectedPr ? 'Check out pull request' : 'Start'}
           >
-            {busy ? <Spinner size={14} /> : <Check size={14} />}
+            {busy ? <Spinner size={flat ? 12 : 14} /> : <Check size={flat ? 12 : 14} />}
           </button>
         </Tooltip>
         <Tooltip label="Cancel">
           <button
             onClick={onCancel}
-            className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-primary hover:bg-hover transition-colors"
+            className={`flex-shrink-0 ${flat ? 'w-5 h-5' : 'w-6 h-6'} flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-hover transition-colors`}
             aria-label="Cancel"
           >
-            <X size={14} />
+            <X size={flat ? 12 : 14} />
           </button>
         </Tooltip>
       </div>
-      <div className={`relative ${flat ? 'px-1' : 'px-2'} pt-1 pb-1`} ref={pickerRef}>
+      <div className="relative px-2 pt-1.5 pb-1" ref={pickerRef}>
         <button
           onClick={() => { setPickerOpen((v) => !v); setFilter('') }}
           className="flex items-center gap-0.5 text-[11px] text-muted hover:text-secondary transition-colors"
@@ -228,7 +228,7 @@ export const CreateWorktreeForm: React.FC<{
               className={
                 flat
                   ? 'flex flex-col border-t border-subtle'
-                  : 'rounded-xl border border-subtle shadow-lg flex flex-col overflow-hidden'
+                  : 'rounded-[10px] border border-subtle shadow-lg flex flex-col overflow-hidden'
               }
               style={
                 flat
