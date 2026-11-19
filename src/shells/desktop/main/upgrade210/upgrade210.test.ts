@@ -14,7 +14,7 @@ const dirs: string[] = []
 const devices: DeviceFiles[] = []
 afterEach(() => { devices.forEach(d => d.dispose()); dirs.forEach(d => fs.rmSync(d, { recursive: true, force: true })); devices.length = dirs.length = 0 })
 function fixture() {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cate-upgrade-')))
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'cate-upgrade-')))
   dirs.push(tmp)
   const userData = path.join(tmp, 'device')
   const root = path.join(tmp, 'project')
@@ -144,6 +144,12 @@ it('the production buffer service restores imported edits and flags disk conflic
   const paths = createPathScope({ root: f.root, dataDir: f.data })
   const buffers = createBufferService({ paths, dir: path.join(f.data, 'buffers'), lock: new KeyedLock(), watch: () => () => {} })
   try {
+    for (const name of fs.readdirSync(path.join(f.data, 'buffers'))) {
+      const bytes = fs.readFileSync(path.join(f.data, 'buffers', name))
+      const meta = JSON.parse(bytes.subarray(4, 4 + bytes.readUInt32BE(0)).toString())
+      const safe = await paths.strict(meta.path)
+      expect(`${contentHash(pathKey(safe)).slice(0, 32)}.bin`).toBe(name)
+    }
     const restored = await buffers.restore()
     expect(restored).toHaveLength(2)
     const file = await buffers.open(path.join(f.root, 'file.ts'))

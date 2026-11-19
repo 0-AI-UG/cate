@@ -43,11 +43,28 @@ function legacyWorkspace(root: string) {
   throw new Error(`No readable 2.0 workspace at ${root}`)
 }
 
+// Match Node's asynchronous realpath used by runtime path scopes. On Windows
+// realpathSync can retain a short (8.3) name while realpath expands it.
+async function canonicalFile(file: string): Promise<string> {
+  let current = file
+  const missing: string[] = []
+  for (let depth = 0; depth < 128; depth++) {
+    try { return path.join(await fs.promises.realpath(current), ...missing) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    const parent = path.dirname(current)
+    if (parent === current) throw new Error(`Cannot resolve ${file}`)
+    missing.unshift(path.basename(current))
+    current = parent
+  }
+  throw new Error(`Path is too deeply nested: ${file}`)
+}
+
 async function saveRecovery(dir: string, recovery: Recovery[]) {
   if (!recovery.length) return
   const Y = await import('yjs')
   const seen = new Map<string, string>()
   for (const item of recovery) {
+    item.file = await canonicalFile(item.file)
     const key = pathKey(item.file)
     if (seen.get(key) === item.content) continue
     if (seen.has(key)) throw new Error(`Multiple different unsaved buffers for ${item.file}; original sessions need review`)
@@ -114,7 +131,7 @@ export async function upgrade210(options: Upgrade210Options): Promise<void> {
   const warnings: string[] = []
   for (const root of roots) {
     if (!fs.existsSync(root)) { warnings.push(`Missing workspace: ${root}`); continue }
-    const canonical = fs.realpathSync(root)
+    const canonical = await fs.promises.realpath(root)
     if (local.some(entry => entry.root === canonical)) continue
     const runtimeId = runtimeIdFromCanonicalRoot(canonical)
     const dir = workspaceDataDir(runtimeId, options.home ?? os.homedir())
@@ -139,6 +156,11 @@ export async function upgrade210(options: Upgrade210Options): Promise<void> {
     try {
       for (const [id, state] of Object.entries(converted.sessions)) writeJsonAtomicSync(path.join(stage, 'sessions', `${id}.json`), state, { mode: 0o600 })
       await saveRecovery(stage, converted.recovery)
+      const grantsFile = path.join(userData, 'granted-paths.json')
+      if (fs.existsSync(grantsFile)) {
+        const grants: unknown = JSON.parse(fs.readFileSync(grantsFile, 'utf8'))
+        writeJsonAtomicSync(path.join(stage, 'grants.json'), strings(grants))
+      }
       writeJsonAtomicSync(path.join(stage, 'settings.json'), workspaceSettingsTable.normalize(oldSettings))
       writeJsonAtomicSync(path.join(stage, 'trust.json'), { trusted: true, decidedAt: Date.now() })
       if (passwords.length) writeJsonAtomicSync(path.join(stage, 'secrets.json'), { browserPasswords: passwords }, { mode: 0o600 })
