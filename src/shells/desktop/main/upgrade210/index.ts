@@ -33,7 +33,7 @@ function legacyWorkspace(root: string) {
   const file = path.join(root, '.cate', 'workspace.json')
   let current: Record<string, unknown> = {}
   try { current = read(file) } catch { /* the backup may be intact */ }
-  const nodes = (w: Record<string, unknown>) => Object.values(object(w.canvases)).reduce((count, value) => count + Object.keys(object(object(value).canvasNodes)).length, 0)
+  const nodes = (w: Record<string, unknown>) => Object.values(object(w.canvases)).reduce<number>((count, value) => count + Object.keys(object(object(value).canvasNodes)).length, 0)
   if (current.version === 1 && (nodes(current) > 0 || current.emptyLayout === true)) return current
   let backup: Record<string, unknown> = {}
   try { backup = read(`${file}.bak`) } catch { /* primary may still be valid */ }
@@ -46,11 +46,12 @@ function legacyWorkspace(root: string) {
 async function saveRecovery(dir: string, recovery: Recovery[]) {
   if (!recovery.length) return
   const Y = await import('yjs')
-  const seen = new Set<string>()
+  const seen = new Map<string, string>()
   for (const item of recovery) {
     const key = pathKey(item.file)
-    if (seen.has(key)) throw new Error(`Multiple unsaved buffers for ${item.file}; original sessions need review`)
-    seen.add(key)
+    if (seen.get(key) === item.content) continue
+    if (seen.has(key)) throw new Error(`Multiple different unsaved buffers for ${item.file}; original sessions need review`)
+    seen.set(key, item.content)
     let bytes: Buffer | undefined
     try { bytes = fs.readFileSync(item.file) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     const baseText = item.baseline ?? bytes?.toString('utf8') ?? ''

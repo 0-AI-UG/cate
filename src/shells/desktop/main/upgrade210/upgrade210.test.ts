@@ -169,3 +169,11 @@ it('uses old recovery backups when the primary layout is unexpectedly empty and 
   expect(parsed.ok && parsed.doc.panels.edit.title).toBe('File')
   expect(fs.readdirSync(path.join(f.data, 'buffers'))).toHaveLength(2)
 })
+
+it('coalesces identical unsaved content from multiple panels for the same file', async () => {
+  const f = fixture()
+  f.write(path.join(f.root, '.cate', 'workspace.json'), { ...f.workspace, panels: { ...f.workspace.panels, duplicate: f.workspace.panels.edit } })
+  f.write(path.join(f.root, '.cate', 'session.json'), { ...f.session, panels: { ...f.session.panels, duplicate: f.session.panels.edit } })
+  await f.run()
+  expect(fs.readdirSync(path.join(f.data, 'buffers'))).toHaveLength(2)
+})
