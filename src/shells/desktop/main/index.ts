@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, nativeTheme, net, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, net, safeStorage, session, shell } from 'electron'
 import { autoUpdater as electronUpdater } from 'electron-updater'
 import { localRootOf } from '@client/workspaces'
 import { createLogger, installLogSink } from '@kernel/log/contract'
@@ -231,7 +231,16 @@ let appIpc: ReturnType<typeof registerAppIpc> | null = null
 
 app.on('window-all-closed', () => app.quit())
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Temporary stable 2.0.x import; remove upgrade210/ and this block after 2.1.0.
+  const { upgrade210 } = await import('./upgrade210')
+  try {
+    await upgrade210({ device, version: app.getVersion(), decryptPassword: value => safeStorage.decryptString(value), warn: message => log.warn('%s', message) })
+  } catch (error) {
+    dialog.showErrorBox('Could not import your previous Cate workspaces', `Your original files have been preserved. Cate will retry on the next launch.\n\n${(error as Error).message}`)
+    app.quit()
+    return
+  }
   log.info('Cate %s (electron %s, %s)', app.getVersion(), process.versions.electron, process.platform)
   if (process.platform === 'darwin') {
     app.setAboutPanelOptions({ applicationName: app.getName(), applicationVersion: app.getVersion(), version: app.getVersion(), copyright: `© ${new Date().getFullYear()} Cate` })
