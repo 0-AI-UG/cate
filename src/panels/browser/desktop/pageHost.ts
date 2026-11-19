@@ -51,6 +51,7 @@ interface LocalPageState {
 /** Saved-password suggestions for the focused field of the shown page. */
 interface BrowserAutofill {
   targetId: string
+  origin: string
   rect: { left: number; bottom: number; width: number; height: number }
   suggestions: Array<{ id: string; username: string; origin: string }>
 }
@@ -116,6 +117,7 @@ export class BrowserPageHost {
   /** JavaScript dialogs the pages of this panel wait on, by tab. */
   private readonly dialogs = new Map<string, BrowserDialog & { id: string; webContentsId: number }>()
   private readonly unsubscribeDialogs: () => void
+  private readonly unsubscribePasswords: () => void
   private readonly automated = new Set<string>()
   private readonly discarded = new Set<string>()
   private readonly inactiveAt = new Map<string, number>()
@@ -181,6 +183,11 @@ export class BrowserPageHost {
   constructor(private readonly deps: PageHostDeps) {
     this.lifetimeTimer = setInterval(() => { void this.discardInactive() }, 30_000)
     this.unsubscribeDialogs = deps.bridge?.onDialog((event) => this.dialogChanged(event)) ?? (() => {})
+    this.unsubscribePasswords = deps.bridge?.onPassword((event) => {
+      const tabId = this.tabForGuest(event.webContentsId)
+      const page = tabId && tabId === this.shownTabId ? this.pages.get(tabId) : undefined
+      if (page) void (event.channel === 'focus' ? this.autofillRequested(page, event.payload) : this.offerToSave(event.payload))
+    }) ?? (() => {})
   }
 
   get panelId(): string { return this.deps.panelId }
@@ -345,9 +352,6 @@ export class BrowserPageHost {
         if ((event?.reason ?? 'crashed') === 'clean-exit') return
         if (active()) this.setLocal({ crashed: true, isLoading: false })
         reportLoad({ crashed: true })
-      },
-      'ipc-message': (event) => {
-        if (active()) void this.guestMessage(page, event)
       },
     }
     // Every guest event may settle a readiness wait.
@@ -577,11 +581,6 @@ export class BrowserPageHost {
 
   // ---- Passwords --------------------------------------------------------------
 
-  private async guestMessage(page: Page, event: { channel?: string; args?: unknown[] }): Promise<void> {
-    if (event?.channel === 'cate-browser-password-focus') await this.autofillRequested(page, event.args?.[0])
-    else if (event?.channel === 'cate-browser-password-submit') await this.offerToSave(event.args?.[0])
-  }
-
   /** The page's bridge reports a focused password field. */
   private async autofillRequested(page: Page, payload: unknown): Promise<void> {
     const request = ++this.autofillRequest
@@ -589,14 +588,12 @@ export class BrowserPageHost {
     const focus = payload as (Partial<BrowserAutofill> & { dismiss?: boolean }) | undefined
     if (focus?.dismiss) return this.dismissAutofill()
     const rect = focus?.rect
-    if (!focus || typeof focus.targetId !== 'string' || !rect || ![rect.left, rect.bottom, rect.width, rect.height].every(Number.isFinite)) return
-    let url: string
-    try { url = page.webview.getURL() } catch { return }
+    if (!focus || typeof focus.targetId !== 'string' || typeof focus.origin !== 'string' || !rect || ![rect.left, rect.bottom, rect.width, rect.height].every(Number.isFinite)) return
     try {
-      const suggestions = await this.deps.passwords.suggestions(url)
+      const suggestions = await this.deps.passwords.suggestions(focus.origin)
       if (request !== this.autofillRequest || this.filling) return
       const current = this.shownTabId ? this.pages.get(this.shownTabId) === page : false
-      this.autofill = current && suggestions.length ? { targetId: focus.targetId, rect, suggestions } : null
+      this.autofill = current && suggestions.length ? { targetId: focus.targetId, origin: focus.origin, rect, suggestions } : null
     } catch {
       if (request === this.autofillRequest) this.autofill = null
     }
@@ -619,10 +616,9 @@ export class BrowserPageHost {
     if (!popup || !page || !this.deps.passwords || !this.deps.bridge) return
     this.filling = true
     try {
-      const url = page.webview.getURL()
-      const credential = await this.deps.passwords.forFill(credentialId, url)
+      const credential = await this.deps.passwords.forFill(credentialId, popup.origin)
       if (!credential) return
-      await this.deps.bridge.fillCredential(page.webview.getWebContentsId(), popup.targetId, credential)
+      await this.deps.bridge.fillCredential(page.webview.getWebContentsId(), popup.targetId, popup.origin, credential)
     } finally {
       this.filling = false
     }
@@ -667,6 +663,7 @@ export class BrowserPageHost {
     this.disposed = true
     clearInterval(this.lifetimeTimer)
     this.unsubscribeDialogs()
+    this.unsubscribePasswords()
     for (const page of this.pages.values()) page.detach()
     this.pages.clear()
     for (const check of [...this.waiters]) check()

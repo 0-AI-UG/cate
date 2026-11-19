@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { BrowserPageBridge } from '@services/browser/contract'
+import type { BrowserPageBridge, BrowserPasswordEvent } from '@services/browser/contract'
 import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
 import { BrowserPageHost, type BrowserGuest } from '@panels/browser/desktop'
 import { registerSurface, runSurfaceRequest, subscribeDemandedSurfaces, demandedSurfaces } from '@client/host'
@@ -43,7 +43,7 @@ function setup(bridge: Partial<BrowserPageBridge> | null = null) {
     panelId: 'p1',
     clientId: 'me',
     send: async (op) => { sent.push(op) },
-    bridge: bridge ? { protectPage: vi.fn(async () => {}), onDialog: () => () => {}, ...bridge } as BrowserPageBridge : null,
+    bridge: bridge ? { protectPage: vi.fn(async () => {}), onDialog: () => () => {}, onPassword: () => () => {}, ...bridge } as BrowserPageBridge : null,
     nextFrame: async () => {},
   })
   return { host, sent }
@@ -178,7 +178,7 @@ describe('BrowserPageHost', () => {
   it('runs page-driver methods on the exact guest and stages uploads', async () => {
     const bridge = {
       protectPage: vi.fn(async () => {}),
-      attach: vi.fn(async () => {}), onDialog: () => () => {},
+      attach: vi.fn(async () => {}), onDialog: () => () => {}, onPassword: () => () => {},
       execute: vi.fn(async () => ({ result: 'ok' })),
       stageUpload: vi.fn(async () => '/tmp/staged/file.txt'),
     }
@@ -205,7 +205,7 @@ describe('BrowserPageHost', () => {
   })
 
   it('renders a parked page while an operation runs on it, instead of flagging it hidden', async () => {
-    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
+    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, onPassword: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
     const staged: string[] = []
     const host = new BrowserPageHost({
       panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
@@ -225,7 +225,7 @@ describe('BrowserPageHost', () => {
   })
 
   it('shows the session\'s active tab before a page operation runs on it', async () => {
-    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
+    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, onPassword: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
     const revealed: string[] = []
     const host = new BrowserPageHost({
       panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
@@ -249,14 +249,16 @@ describe('BrowserPageHost', () => {
     const save = vi.fn(async () => ({}))
     const confirmSave = vi.fn(async () => false)
     const saveDisposition = vi.fn(async () => disposition)
+    let passwordEvent!: (event: BrowserPasswordEvent) => void
     const host = new BrowserPageHost({
-      panelId: 'p1', clientId: 'me', send: async () => {}, bridge: null, confirmSave,
+      panelId: 'p1', clientId: 'me', send: async () => {},
+      bridge: { onDialog: () => () => {}, onPassword: (listener: typeof passwordEvent) => { passwordEvent = listener; return () => {} } } as unknown as BrowserPageBridge, confirmSave,
       passwords: { suggestions: async () => [], forFill: async () => null, saveDisposition, save },
     })
     host.update(snapshot([tab()]))
     const webview = guest()
     host.attachGuest('t1', webview)
-    webview.fire('ipc-message', { channel: 'cate-browser-password-submit', args: [{ origin: 'https://a.test', username: 'me', password: 'pw', automated: true }] })
+    passwordEvent({ webContentsId: 7, channel: 'submit', payload: { origin: 'https://a.test', username: 'me', password: 'pw', automated: true } })
     await vi.waitFor(() => expect(saveDisposition).toHaveBeenCalled())
     if (disposition === 'unchanged') expect(save).not.toHaveBeenCalled()
     else expect(save).toHaveBeenCalledWith(expect.objectContaining({ origin: 'https://a.test', password: 'pw' }))
@@ -266,14 +268,16 @@ describe('BrowserPageHost', () => {
   it('offers to save a submitted password through the runtime', async () => {
     const save = vi.fn(async () => ({}))
     const confirmSave = vi.fn(async () => true)
+    let passwordEvent!: (event: BrowserPasswordEvent) => void
     const host = new BrowserPageHost({
-      panelId: 'p1', clientId: 'me', send: async () => {}, bridge: null, confirmSave,
+      panelId: 'p1', clientId: 'me', send: async () => {},
+      bridge: { onDialog: () => () => {}, onPassword: (listener: typeof passwordEvent) => { passwordEvent = listener; return () => {} } } as unknown as BrowserPageBridge, confirmSave,
       passwords: { suggestions: async () => [], forFill: async () => null, saveDisposition: async () => 'create', save },
     })
     host.update(snapshot([tab()]))
     const webview = guest()
     host.attachGuest('t1', webview)
-    webview.fire('ipc-message', { channel: 'cate-browser-password-submit', args: [{ origin: 'https://a.test', username: 'me', password: 'pw' }] })
+    passwordEvent({ webContentsId: 7, channel: 'submit', payload: { origin: 'https://a.test', username: 'me', password: 'pw' } })
     await vi.waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ origin: 'https://a.test', password: 'pw' })))
     expect(confirmSave).toHaveBeenCalledWith('Save the password for a.test (me)?')
   })
@@ -285,7 +289,7 @@ describe('BrowserPageHost dialogs', () => {
     const answerDialog = vi.fn(async () => {})
     const host = new BrowserPageHost({
       panelId: 'p1', clientId: 'me', send: async () => {}, nextFrame: async () => {},
-      bridge: { onDialog: (next: typeof listener) => { listener = next; return () => {} }, answerDialog } as never,
+      bridge: { onPassword: () => () => {}, onDialog: (next: typeof listener) => { listener = next; return () => {} }, answerDialog } as never,
     })
     host.update(snapshot([tab()]))
     host.attachGuest('t1', guest(42))
@@ -302,7 +306,7 @@ describe('BrowserPageHost dialogs', () => {
 
 describe('browser surface requests', () => {
   it('route page operations to the mounted panel and wait for one to mount', async () => {
-    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, execute: vi.fn(async () => ({ result: 1 })) }
+    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, onPassword: () => () => {}, execute: vi.fn(async () => ({ result: 1 })) }
     const { host } = setup(bridge)
     host.update(snapshot([tab()]))
     const webview = guest()
@@ -325,4 +329,32 @@ describe('browser surface requests', () => {
     await vi.advanceTimersByTimeAsync(5_000)
     await settled
   })
+})
+
+it('looks up and fills credentials for the focused login frame rather than its embedding page', async () => {
+  let passwordEvent!: (event: BrowserPasswordEvent) => void
+  const forFill = vi.fn(async () => ({ username: 'apple-user', password: 'synthetic' }))
+  const suggestions = vi.fn(async () => [{ id: 'saved', username: 'apple-user', origin: 'https://idmsa.apple.com' }])
+  const fillCredential = vi.fn(async () => ({ ok: true as const }))
+  const host = new BrowserPageHost({
+    panelId: 'p1', clientId: 'me', send: async () => {},
+    bridge: {
+      onDialog: () => () => {},
+      onPassword: (listener: typeof passwordEvent) => { passwordEvent = listener; return () => {} },
+      fillCredential,
+    } as unknown as BrowserPageBridge,
+    passwords: { suggestions, forFill, saveDisposition: async () => 'create', save: async () => ({}) },
+  })
+  try {
+    host.update(snapshot([tab({ url: 'https://appstoreconnect.apple.com/login' })]))
+    host.attachGuest('t1', guest())
+    passwordEvent({ webContentsId: 7, channel: 'focus', payload: {
+      targetId: 'apple-field', origin: 'https://idmsa.apple.com', rect: { left: 50, bottom: 100, width: 200, height: 30 },
+    } })
+    await vi.waitFor(() => expect(host.autofill).not.toBeNull())
+    await host.fillCredential('saved')
+    expect(suggestions).toHaveBeenCalledWith('https://idmsa.apple.com')
+    expect(forFill).toHaveBeenCalledWith('saved', 'https://idmsa.apple.com')
+    expect(fillCredential).toHaveBeenCalledWith(7, 'apple-field', 'https://idmsa.apple.com', { username: 'apple-user', password: 'synthetic' })
+  } finally { host.dispose() }
 })

@@ -130,11 +130,11 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     return downloads.read(event.sender.id, webContentsId, downloadId)
   })
 
-  handle(BROWSER_PAGE_CHANNELS.fillCredential, (event, webContentsId: number, targetId: string, credential: { username: string; password: string }) => {
+  handle(BROWSER_PAGE_CHANNELS.fillCredential, (event, webContentsId: number, targetId: string, origin: string, credential: { username: string; password: string }) => {
     const contents = hostedGuest(event, webContentsId)
     if (!contents) return { error: 'no-guest' }
-    if (typeof targetId !== 'string' || typeof credential?.password !== 'string') return { error: 'invalid-credential' }
-    return drivers.fillCredential(contents.id, targetId, { username: String(credential.username ?? ''), password: credential.password })
+    if (typeof targetId !== 'string' || typeof origin !== 'string' || typeof credential?.password !== 'string') return { error: 'invalid-credential' }
+    return drivers.fillCredential(contents.id, targetId, origin, { username: String(credential.username ?? ''), password: credential.password })
   })
 
   handle(BROWSER_PAGE_CHANNELS.answerDialog, (event, webContentsId: number, dialogId: string, answer: { accept?: unknown; text?: unknown }) => {

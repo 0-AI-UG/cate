@@ -42,6 +42,13 @@ export type BrowserDownloadAction = 'cancel' | 'open' | 'show'
 
 export type BrowserShortcutAction = 'reload' | 'reloadHard' | 'back' | 'forward' | 'focusUrl'
 
+/** Password events from an isolated world in a guest frame. */
+export interface BrowserPasswordEvent {
+  webContentsId: number
+  channel: 'focus' | 'submit'
+  payload: unknown
+}
+
 export interface BrowserPageBridge {
   /** Sticky protection for an automated page, including between calls. */
   protectPage(webContentsId: number): Promise<void>
@@ -60,9 +67,10 @@ export interface BrowserPageBridge {
    *  is gone or too large. */
   readDownload(webContentsId: number, downloadId: string): Promise<Uint8Array | null>
   /** Fills a credential into the password field the guest marked `targetId`. */
-  fillCredential(webContentsId: number, targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }>
+  fillCredential(webContentsId: number, targetId: string, origin: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }>
   /** Answers the JavaScript dialog `dialogId` the guest waits on (the person's answer). */
   answerDialog(webContentsId: number, dialogId: string, answer: { accept: boolean; text?: string }): Promise<void>
+  onPassword(listener: (event: BrowserPasswordEvent) => void): () => void
   /** Dialogs of the guests this window hosts opening and closing. */
   onDialog(listener: (event: BrowserDialogEvent) => void): () => void
   /** Writes bytes for a file input to a private temp file; returns its path. */
@@ -95,6 +103,7 @@ export const BROWSER_PAGE_CHANNELS = {
   downloadAction: 'cate:browser-page:download-action',
   readDownload: 'cate:browser-page:read-download',
   fillCredential: 'cate:browser-page:fill-credential',
+  password: 'cate:browser-page:password',
   stageUpload: 'cate:browser-page:stage-upload',
   answerDialog: 'cate:browser-page:answer-dialog',
   dialog: 'cate:browser-page:dialog',

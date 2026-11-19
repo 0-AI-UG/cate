@@ -12,3 +12,13 @@ it('finds the session a frame lives in through the frames holding it', () => {
   expect(frames.frameOfSession('s1')).toBeUndefined()
   expect(frames.sessionIds()).toEqual([])
 })
+
+it('keeps the parent of an out-of-process target whose tree starts at that child', () => {
+  const frames = new FrameTree()
+  frames.record({ frame: { id: 'main' } })
+  frames.attachSession('login', 's1')
+  frames.record({ frame: { id: 'login', parentId: 'main' } })
+  frames.record({ frame: { id: 'login' } })
+  expect(frames.parent('login')).toBe('main')
+  expect(frames.sessionOf(frames.parent('login'))).toBeUndefined()
+})
