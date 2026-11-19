@@ -183,3 +183,16 @@ it('coalesces identical unsaved content from multiple panels for the same file',
   await f.run()
   expect(fs.readdirSync(path.join(f.data, 'buffers'))).toHaveLength(2)
 })
+
+it('resolves repository-relative editor paths against their original worktree, not the primary checkout', async () => {
+  const f = fixture()
+  const worktree = path.join(f.root, '.cate', 'worktrees', 'feature')
+  fs.mkdirSync(worktree, { recursive: true })
+  fs.writeFileSync(path.join(worktree, 'file.ts'), 'worktree version')
+  f.write(path.join(f.root, '.cate', 'session.json'), { ...f.session, panels: { ...f.session.panels, edit: { ...f.session.panels.edit, worktreeId: 'feature' } }, worktrees: [{ id: 'feature', path: worktree, color: '#123456', label: 'Feature' }] })
+  await f.run()
+  const parsed = parseDocument(fs.readFileSync(path.join(f.data, 'document.json'), 'utf8'))
+  expect(parsed.ok && parsed.doc.panels.edit.fields.filePath).toBe(path.join(worktree, 'file.ts'))
+  expect(fs.existsSync(path.join(f.data, 'buffers', `${contentHash(pathKey(path.join(worktree, 'file.ts'))).slice(0, 32)}.bin`))).toBe(true)
+  expect(fs.readFileSync(path.join(f.root, 'file.ts'), 'utf8')).toBe('changed on disk')
+})

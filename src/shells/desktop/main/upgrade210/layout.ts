@@ -41,16 +41,17 @@ export function convertLayout(root: string, workspace: Record<string, unknown>, 
       const fields: JsonObject = {}
       const record: PanelRecord = { id, type: ref.type, title: text(ref.title, ref.type), fields }
       if (typeof state.worktreeId === 'string' && doc.worktrees[state.worktreeId]) record.worktreeId = state.worktreeId
+      const checkout = record.worktreeId ? doc.worktrees[record.worktreeId].path : root
       if (ref.titleUserOverridden === true) fields.titleUserOverridden = true
       if (ref.type === 'canvas') {
         record.canvasId = id
         doc.canvases[id] = { id, nodes: {} }
       } else if (ref.type === 'terminal') {
-        const cwd = text(state.workingDirectory, text(ref.cwd, root))
+        const cwd = text(state.workingDirectory, text(ref.cwd, checkout))
         fields.cwd = cwd
         sessions[id] = { cwd }
       } else if (ref.type === 'editor') {
-        const file = typeof ref.filePath === 'string' && ref.filePath ? path.resolve(root, ref.filePath) : path.join(root, '.cate', 'tmp', `${randomUUID()}.md`)
+        const file = typeof ref.filePath === 'string' && ref.filePath ? path.resolve(checkout, ref.filePath) : path.join(checkout, '.cate', 'tmp', `${randomUUID()}.md`)
         fields.filePath = file
         if (ref.sidebarVisible === true && !ref.filePath) fields.treeOnly = true
         sessions[id] = { filePath: file }
