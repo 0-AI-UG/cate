@@ -34,6 +34,8 @@ import { readBrowserAX } from './ax'
 import { parseKey } from './keys'
 import { PageLog } from './pageLog'
 import { FrameTree } from './frames'
+import { PasswordFrames } from './passwordFrames'
+import { BROWSER_PAGE_CHANNELS } from '../contract/pageBridge'
 import { EMPTY_PASSWORD_FIELD, FILE_INPUT_OF, PASSWORD_FIELD, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
 import type { GuestDialogs } from './dialogs'
 
@@ -158,6 +160,7 @@ export class PageDriver {
   /** In-flight document and data requests, by request id, with their start time. */
   private requests = new Map<string, number>()
   private readonly frames = new FrameTree()
+  private readonly passwords: PasswordFrames
   private attached = false
   /** A CDP command timed out: the page's main thread does not yield. */
   private hung = false
@@ -177,6 +180,7 @@ export class PageDriver {
     this.hung = false
     this.intercepting = false
     this.frames.clear()
+    this.passwords.clear()
   }
   private readonly onDebuggerMessage = (_event: Electron.Event, method: string, params: unknown, sessionId?: string): void => {
     // The top frame's events come with an empty session id.
@@ -187,6 +191,19 @@ export class PageDriver {
     this.contents = contents
     this.identity = identity
     this.dialogs = options.dialogs
+    this.passwords = new PasswordFrames({
+      send: (method, params, sessionId) => this.send(method, params, sessionId),
+      offset: async frameId => {
+        await this.currentFrameIds()
+        // Chromium omits out-of-process children from the root frame tree.
+        for (const sessionId of this.frames.sessionIds()) this.frames.record((await this.send('Page.getFrameTree', {}, sessionId)).frameTree)
+        return this.frameOffset(frameId, false)
+      },
+      automated: () => this.agentInputDepth > 0,
+      emit: (channel, payload) => {
+        try { contents.hostWebContents?.send(BROWSER_PAGE_CHANNELS.password, { webContentsId: contents.id, channel, payload }) } catch { /* host closed */ }
+      },
+    })
     contents.once('destroyed', () => this.dispose())
   }
 
@@ -228,6 +245,7 @@ export class PageDriver {
         // the default action of trusted keys (Enter submitting a form).
         this.send('Emulation.setFocusEmulationEnabled', { enabled: true }),
       ])
+      await this.passwords.install()
     } catch (error) {
       this.onDebuggerDetach()
       throw error
@@ -241,6 +259,7 @@ export class PageDriver {
     this.stableIds.clear()
     this.observations.clear()
     this.frames.clear()
+    this.passwords.clear()
     if (!this.contents.isDestroyed()) {
       this.contents.debugger.removeListener('message', this.onDebuggerMessage)
       this.contents.debugger.removeListener('detach', this.onDebuggerDetach)
@@ -328,10 +347,9 @@ export class PageDriver {
     this.activeGuard?.()
   }
 
-  async fillCredential(targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
+  async fillCredential(targetId: string, origin: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
     return this.enqueue(async () => {
-      const selector = `[data-cate-autofill-target=${JSON.stringify(targetId)}]`
-      const field = await this.resolveSelector(selector)
+      const field = await this.passwords.resolve(targetId, origin)
       const password = await this.locate(field, PASSWORD_FIELD)
       if (password) await this.fillLogin(password, credential)
       else await this.fillUsername(field, credential.username)
@@ -433,6 +451,7 @@ export class PageDriver {
   }
 
   private handleEvent(event: CdpEvent): void {
+    this.passwords.handle(event.method, event.params, event.sessionId)
     this.log.record(event)
     if (event.method === 'Page.fileChooserOpened') {
       if (this.intercepting && typeof event.params.backendNodeId === 'number') {
@@ -445,6 +464,7 @@ export class PageDriver {
       const sessionId = typeof event.params.sessionId === 'string' ? event.params.sessionId : undefined
       const frameId = typeof targetInfo.targetId === 'string' ? targetInfo.targetId : undefined
       if (targetInfo.type === 'iframe' && sessionId && frameId) {
+        if (typeof targetInfo.parentFrameId === 'string') this.frames.setParent(frameId, targetInfo.parentFrameId)
         this.frames.attachSession(frameId, sessionId)
         void this.enableSession(sessionId)
       }
@@ -475,7 +495,7 @@ export class PageDriver {
     }
     if (event.method === 'Page.frameDetached') {
       const frameId = typeof event.params.frameId === 'string' ? event.params.frameId : undefined
-      if (frameId) this.dropFrame(frameId)
+      if (frameId && event.params.reason !== 'swap') this.dropFrame(frameId)
       return
     }
     if (event.method === 'Page.frameNavigated') {
@@ -500,6 +520,7 @@ export class PageDriver {
   private async enableSession(sessionId: string): Promise<void> {
     try {
       await Promise.all([
+        this.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId),
         this.send('Page.enable', {}, sessionId),
         this.send('DOM.enable', {}, sessionId),
         this.send('Runtime.enable', {}, sessionId),
@@ -507,6 +528,7 @@ export class PageDriver {
         this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId),
         ...(this.intercepting ? [this.send('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId)] : []),
       ])
+      await this.passwords.install(sessionId)
     } catch {
       this.dropFrameSession(sessionId)
     }
@@ -527,6 +549,7 @@ export class PageDriver {
   }
 
   private dropFrameSession(sessionId: string): void {
+    this.passwords.clear(sessionId)
     const frameId = this.frames.frameOfSession(sessionId)
     if (frameId) this.dropFrame(frameId)
     else this.dropRefsForFrame('', sessionId)
@@ -724,21 +747,6 @@ export class PageDriver {
       }
     })()`)
     if (typeof copied === 'string' && copied) clipboard.writeText(copied)
-  }
-
-  private async resolveSelector(selector: string): Promise<ElementTarget> {
-    const response = await this.send('Runtime.evaluate', {
-      expression: `document.querySelector(${JSON.stringify(selector)})`,
-      objectGroup: 'cate-browser',
-      returnByValue: false,
-    })
-    const result = objectValue(response.result)
-    const objectId = typeof result.objectId === 'string' ? result.objectId : undefined
-    if (!objectId || result.subtype === 'null') throw new Error('element-not-found')
-    const described = await this.send('DOM.describeNode', { objectId })
-    const node = objectValue(described.node)
-    if (typeof node.backendNodeId !== 'number') throw new Error('element-not-found')
-    return { objectId, backendNodeId: node.backendNodeId }
   }
 
   private async callOn(target: ElementTarget, functionDeclaration: string, returnByValue = true, executionContextId?: number): Promise<Record<string, unknown>> {
@@ -1667,8 +1675,8 @@ export class PageDriverRegistry {
     return driver.execute(method, args)
   }
 
-  async fillCredential(webContentsId: number, targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
+  async fillCredential(webContentsId: number, targetId: string, origin: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
     const driver = this.drivers.get(webContentsId)
-    return driver ? driver.fillCredential(targetId, credential) : { error: 'browser-target-not-registered' }
+    return driver ? driver.fillCredential(targetId, origin, credential) : { error: 'browser-target-not-registered' }
   }
 }

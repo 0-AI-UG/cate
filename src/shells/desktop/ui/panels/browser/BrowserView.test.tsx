@@ -62,7 +62,7 @@ beforeEach(() => {
   })
   installBrowserPageBridge({
     protectPage: vi.fn(async () => {}),
-    attach: vi.fn(async () => {}), restartIfHung: vi.fn(async () => false), onDialog: () => () => {},
+    attach: vi.fn(async () => {}), restartIfHung: vi.fn(async () => false), onDialog: () => () => {}, onPassword: () => () => {},
     onOpenTab: () => () => {},
     onShortcut: () => () => {},
     onDownloads: () => () => {},

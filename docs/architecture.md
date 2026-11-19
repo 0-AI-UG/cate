@@ -1624,9 +1624,13 @@ downloads list and its views, and hands page work to it.
   fills it only while the page still shows the origin chosen for that operation.
   Saved passwords match exact origins first, then sibling HTTPS hosts within
   the same registrable domain and port (including private public suffixes).
-  The guest offers autofill on username and password fields and captures
-  native submissions, login-button clicks and Enter before page handlers
-  clear the form. Agent submissions save without a confirmation; manual
+  The page driver installs password detection in a named isolated world in
+  every frame, including cross-origin login frames. A world-scoped CDP
+  binding reports focus and submissions without exposing a bridge to page
+  scripts. Autofill targets stay bound to their frame document and origin,
+  expire on navigation, and position suggestions in the top-level viewport.
+  Native submissions, login-button clicks and Enter are captured before page
+  handlers clear the form. Agent submissions save without a confirmation; manual
   submissions ask before saving or updating. Passkeys are
   never stored by Cate: the native addon calls the OS, which keeps them in
   the user's keychain. It needs the signed app's entitlement, a window and
