@@ -6,6 +6,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-19
+
+Cate 2.1 brings shared workspace runtimes, encrypted device pairing, remote machines and terminal-based agents to the stable channel. Connection compatibility version is 2; paired clients must support the same compatibility version.
+
+### Added
+
+- **Shared workspaces**: one background runtime per workspace keeps terminals, agents and files available across app restarts, with live layouts and presence for connected devices.
+- **Remote access**: pair devices over the local network or Cate Connect, and open folders on SSH hosts and WSL with runtime installation handled by Cate.
+- **iPhone companion**: connect to paired workspaces to follow agent chats and use terminals, editors, browsers and reviews.
+- **Terminal agents**: start supported agent CLIs, including Pi, follow conversation history and usage, queue prompts, send attachments and interrupt or withdraw work.
+- **Browser automation**: handle page dialogs, frames, dropdowns, uploads, console and network logs, saved logins and offscreen screenshots without taking focus from your work.
+- **Canvas wallpapers**: choose the Lighthouse and Snowy Pass landscapes.
+- **One-time stable upgrade import**: when upgrading from a recorded stable version before 2.1.0, import trusted local workspace layouts, supported panels, worktree metadata, relations, unsaved editor content, terminal history, workspace settings and shared browser data. Original files remain intact. Fresh installs and beta installations are excluded, and existing runtime state is never overwritten.
+
+### Changed
+
+- **Review and Git**: Review focuses on recorded agent edits; working changes, comparisons, commits and branches live in the repository overlay.
+- **Workspace navigation**: arrange local, remote and paired workspaces in one sidebar, reopen recent workspaces with retained access, and manage availability and sharing in dedicated controls.
+- **Runtime updates**: install the bundled runtime automatically and update older runtimes when safe, with explicit confirmation when a restart would interrupt work.
+- **Memory and responsiveness**: load optional runtime modules and browser guests on demand, cull offscreen canvas panels, virtualize review diffs and release offscreen previews and idle browser pages while preserving their state.
+- **Worktrees**: delete multiple worktrees together and recover missing checkout paths.
+- **Settings and CLI**: separate device and workspace settings, generate CLI commands from the runtime API, and use each agent CLI's native account and configuration.
+- **PDF previews**: show all pages in one continuous scroll.
+
+### Fixed
+
+- **Canvas input**: apply the first pan immediately after idle or backgrounding and keep browser surfaces aligned during gestures.
+- **Workspace feedback**: show clear loading, connection and failure states in runtime-backed views, including during reconnects and updates.
+- **Terminal recovery**: reset TUI input modes when returning to a shell, retain CLI access after runtime updates and preserve the screen and working directory after one-shot commands.
+- **Agent conversations**: restore history before the first prompt and replace stale messages and tool steps when a CLI resets or switches conversations.
+- **Editors and reviews**: protect unsaved recovery snapshots, retain copied selections across virtualized diffs and hide the files sidebar during dragging.
+- **Browsers and skills**: retain native local networking, resolve focused editors inside nested frames, avoid duplicate password-save prompts and restore missing bundled skill files while respecting explicit uninstalls.
+
+### Removed
+
+- **T3 Code, missions and Hermes integration**: supported agents run as terminal CLIs; `cate agent start` replaces missions and `cate codingAgent`.
+- **Cate credits and workspace-managed agent API providers**: agents use their native accounts and configuration.
+- **`cate notify`** and its setting; the former Review CLI and review completion protocol.
+
+### Upgrade notes
+
+- Beta installations already use the new workspace model and skip the stable upgrade importer entirely.
+- Local projects without a recorded trust decision require reopening and trusting them. Their original layout files remain available but are not imported automatically.
+- SSH and WSL connection details are retained; their older workspace layouts remain on the remote host and require manual recreation. Removed T3 and comparison-review panels remain only in the original files. Running processes and old agent sessions are not resumed by the import.
+- If an import fails, Cate leaves the original files intact, reports the error and retries on the next launch.
+
+### Security
+
+- Use mutually authenticated encrypted connections with pinned device keys, immediate revocation and pairing-attempt limits.
+- Updated bundled dependencies and strengthened workspace trust and process cleanup.
+
 ## [2.1.0-beta.15] - 2026-11-13
 
 This beta reduces the first canvas pan delay after returning from idle and corrects where agent change summaries appear. Compatibility version remains 1.
