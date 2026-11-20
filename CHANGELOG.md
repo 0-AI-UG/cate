@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-20
+
+This patch improves workspace stability, preserves canvas views between visits, and simplifies context sharing between related agents. Connection compatibility version remains 2.
+
+### Fixed
+
+- **Workspace stability**: prevent runtime crashes when Git exits before reading a batch of changed file paths, including in folders without a Git repository. Handle local client disconnects safely while a workspace is starting.
+- **Browser connections**: handle disconnected CONNECT and WebSocket clients during proxy setup and error responses, and release pending connections when the proxy closes.
+- **Canvas views**: remember each workspace's pan and zoom on the client device when switching workspaces or reopening the app.
+- **Cursor agents**: support native prompt hooks for injecting context from related panels.
+
+### Changed
+
+- **Agent context**: share related-panel context automatically and simplify the connection controls.
+
+### Removed
+
+- **Legacy stable upgrade import**: remove the one-time importer shipped in 2.1.0. Upgrade older stable installations through 2.1.0 first to import supported workspace state.
+
 ## [2.1.0] - 2026-11-20
 
 Cate 2.1 brings shared workspace runtimes, encrypted device pairing, remote machines and terminal-based agents to the stable channel. Connection compatibility version is 2; paired clients must support the same compatibility version.
