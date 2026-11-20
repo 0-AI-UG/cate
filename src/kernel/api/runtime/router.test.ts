@@ -164,6 +164,14 @@ describe('ApiRouter dispatch', () => {
     expect(sessionCalls[0].ctx.method).toBe('cate.terminal.read')
   })
 
+  it('rejects empty explicit targets instead of selecting a panel automatically', async () => {
+    const { router, cli, sessionCalls } = setup([{ id: 'term-1', type: 'terminal' }])
+    for (const panelId of ['', '   ']) {
+      await expect(router.call(cli.caller, 'cate.terminal.read', { panelId })).rejects.toThrow('non-empty string')
+    }
+    expect(sessionCalls).toHaveLength(0)
+  })
+
   it('refuses a second handler for the same method', () => {
     const { router } = setup()
     router.registerService(versionApi, { version: () => 1 })

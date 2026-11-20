@@ -58,6 +58,19 @@ describe('parseCommandLine', () => {
     expect(call(['terminal', 'read', '--lines', '20']).args).toEqual({ lines: 20 })
   })
 
+  it('accepts a positional id or --panel for every explicit single-panel command', () => {
+    for (const words of [['panel', 'close'], ['panel', 'set'], ['agent', 'read']]) {
+      expect(call([...words, '--panel', 'abc']).args).toEqual(call([...words, 'abc']).args)
+    }
+  })
+
+  it('rejects empty session targets and unsupported click counts before connecting', () => {
+    for (const target of ['', '   ']) {
+      expect(() => call(['browser', 'click', '12', `--panel=${target}`])).toThrow('non-empty string')
+    }
+    expect(() => call(['browser', 'click', '12', '--count', '4'])).toThrow()
+  })
+
   it('parses browser page commands on the active tab', () => {
     expect(call(['browser', 'click', '12'])).toEqual({ method: 'cate.browser.click', args: { target: 12 }, json: false })
     expect(call(['browser', 'click', '[40,80]', '--count', '2']).args).toEqual({ target: [40, 80], clickCount: 2 })
@@ -283,7 +296,7 @@ describe('runCli', () => {
     expect(await runCli(['panel', 'close'], CATE_API, d)).toBe(2)
     expect(err).toEqual([
       'cate: missing <panelId>',
-      'Usage: cate panel close <panelId> [--discard]',
+      'Usage: cate panel close <panelId>|--panel <panelId> [--discard]',
       "Run 'cate panel close --help' for usage.",
     ])
     err.length = 0
@@ -343,6 +356,10 @@ describe('runCli', () => {
     const { d, out, connect } = deps({ call: vi.fn() }, { extraCommands: { serve: { summary: 'Serve it', run } } })
     expect(await runCli(['serve', '/repo', '--connect'], CATE_API, d)).toBe(7)
     expect(run).toHaveBeenCalledWith(['/repo', '--connect'])
+    expect(await runCli(['--json', 'serve', '/repo'], CATE_API, d)).toBe(7)
+    expect(run).toHaveBeenLastCalledWith(['--json', '/repo'])
+    expect(await runCli(['--help', 'serve'], CATE_API, d)).toBe(7)
+    expect(run).toHaveBeenLastCalledWith(['--help'])
     expect(await runCli(['help', 'serve'], CATE_API, d)).toBe(7)
     expect(run).toHaveBeenLastCalledWith(['--help'])
     expect(await runCli(['--help'], CATE_API, d)).toBe(0)

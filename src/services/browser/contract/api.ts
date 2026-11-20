@@ -2,8 +2,8 @@
 // panel: they act on its active tab and reach the page through
 // `withSurface()`. Elements are named by the numeric ids of the latest
 // accessibility snapshot, or found by role and name (`--role button --name
-// Save`). Tabs have short per-panel handles (`t2`); `listTabs` is a service
-// method over every browser panel.
+// Save`). Tabs have short per-panel handles (`t2`); tab methods target one
+// browser panel.
 
 import { BROWSER_WAIT_MAX_MS } from './automation'
 import {
@@ -16,7 +16,6 @@ import {
   num,
   oneOf,
   opt,
-  panel,
   str,
   path,
   type CateApiCliSpec,
@@ -132,9 +131,9 @@ export const browserApi = defineCateApi(
   {
     listTabs: {
       access: 'read',
-      handler: 'service',
-      summary: 'List the tabs of browser panels',
-      args: { panelId: opt(panel('browser')).flag('panel', 'id').help('Only this browser panel') },
+      handler: 'session',
+      summary: 'List the tabs of the browser panel',
+      args: {},
       timeoutMs: BROWSER_PAGE_TIMEOUT_MS,
       format: 'browserTabs',
       cli: { command: ['browser', 'tab', 'list'] },
@@ -175,7 +174,7 @@ export const browserApi = defineCateApi(
 
     getAXState: page('read', {
       within: opt(num.int()).pos('id').help('Print only this element and what is inside it (an id from an earlier snapshot, such as the main landmark)'),
-      screenshot: opt(bool).help('Also save a screenshot (needs the panel on screen)'),
+      screenshot: opt(bool).help('Also save a screenshot'),
       profile: opt(bool).help('Add phase timings'),
     }, command('snapshot', 'Print the accessibility tree with element ids')),
     getScreenshot: page('read', { profile: opt(bool).help('Add phase timings') }, command('screenshot', 'Save a screenshot of the viewport')),
@@ -196,7 +195,7 @@ export const browserApi = defineCateApi(
     click: page('control', {
       ...located,
       mouseButton: opt(oneOf('left', 'right', 'middle')).flag('button').help('Mouse button (default left)'),
-      clickCount: opt(num.int().min(1)).flag('count', 'n').help('2 for a double click'),
+      clickCount: opt(num.int().min(1).max(3)).flag('count', 'n').help('2 for a double click'),
       timeoutMs: opt(num.int().min(0).max(BROWSER_WAIT_MAX_MS)).flag('timeout', 'ms').help('How long to wait for the element (default 5000)'),
     }, command('click', 'Click an element (or [x,y])')),
     hover: page('control', located, command('hover', 'Move the mouse over an element (or [x,y])')),
