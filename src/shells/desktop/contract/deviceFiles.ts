@@ -3,7 +3,7 @@
 
 /** Documents the renderer may read, write and subscribe to by name. A name is
  *  the file's base name without `.json` (`workspaces` is `workspaces.json`). */
-export const SHARED_DEVICE_DOCUMENTS = ['settings', 'ui-state', 'boot', 'workspaces', 'known-runtimes'] as const
+export const SHARED_DEVICE_DOCUMENTS = ['settings', 'ui-state', 'boot', 'workspaces', 'known-runtimes', 'workspace-views'] as const
 
 export type SharedDeviceDocument = (typeof SHARED_DEVICE_DOCUMENTS)[number]
 

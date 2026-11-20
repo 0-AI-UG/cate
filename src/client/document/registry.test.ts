@@ -12,6 +12,8 @@ import {
 import { WorkspaceConnections, createClientIdentity } from '@client/connections'
 import { attachDocuments, clientStateFor, documentStoreFor } from './registry'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
+import { createMemoryDeviceStore } from '@kernel/state/contract'
+import { loadWorkspaceViews } from './workspaceViews'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 
 function pipe(): [ByteDuplex, ByteDuplex] {
@@ -61,12 +63,16 @@ describe('attachDocuments', () => {
         dialLoopbackTcp: () => new Promise(() => {}),
       },
     })
-    const detach = attachDocuments(connections)
+    const device = createMemoryDeviceStore({ 'workspace-views': { ws: { c1: { x: -50, y: 70, zoom: 0.8 } } } })
+    const views = await loadWorkspaceViews(device)
+    cleanup.push(() => views.dispose())
+    const detach = attachDocuments(connections, views)
     cleanup.push(detach, () => connections.dispose())
 
     connections.open('ws', { kind: 'local', root: '/w' })
     const store = documentStoreFor('ws')!
     const state = clientStateFor('ws')!
+    expect(state.getSnapshot().viewports.c1).toEqual({ x: -50, y: 70, zoom: 0.8 })
     await store.ready
     store.propose({
       kind: 'addPanel',
@@ -77,8 +83,12 @@ describe('attachDocuments', () => {
     state.focus('p1')
     await vi.waitFor(() => expect(reports.at(-1)).toEqual({ viewing: [], focused: 'p1', attentive: true }))
 
+    state.setViewport('c1', { x: 123, y: -456, zoom: 1.2 })
     connections.close('ws')
     expect(documentStoreFor('ws')).toBeNull()
     expect(clientStateFor('ws')).toBeNull()
+    connections.open('ws', { kind: 'local', root: '/w' })
+    expect(clientStateFor('ws')!.getSnapshot().viewports.c1).toEqual({ x: 123, y: -456, zoom: 1.2 })
+    expect(await device.get('workspace-views')).toEqual({ ws: { c1: { x: 123, y: -456, zoom: 1.2 } } })
   })
 })

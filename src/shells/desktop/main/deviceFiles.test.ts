@@ -33,6 +33,17 @@ describe('device files', () => {
     again.dispose()
   })
 
+  test('persists workspace cameras through the renderer device port and restart', async () => {
+    const { dir, files } = open()
+    const value = { ws: { canvas: { x: -123, y: 456, zoom: 0.75 } } }
+    await deviceStoreOf(files).set('workspace-views', value)
+    files.flushSync()
+    files.dispose()
+    const again = createDeviceFiles(dir)
+    expect(await deviceStoreOf(again).get('workspace-views')).toEqual(value)
+    again.dispose()
+  })
+
   test('announces sets with their origin', () => {
     const { files } = open()
     const listener = vi.fn()
