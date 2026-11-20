@@ -18,8 +18,7 @@ import type { PanelFactory, PanelSessionClass, SessionHost, SurfaceBroker } from
 import { createTerminalPanels } from './terminal/runtime'
 import { editorPanel, registerEditorApi } from './editor/runtime'
 import { reviewPanel } from './review/runtime'
-import { browserPanel, browserServiceHandlers } from './browser/runtime'
-import { browserApi } from '@services/browser/contract'
+import { browserPanel } from './browser/runtime'
 import { surfacePanel } from './surface/runtime'
 import { canvasPanel } from './canvas/runtime'
 
@@ -120,15 +119,12 @@ const review: PanelRuntime<'root' | 'repository' | 'agents'> = (services) => {
   })
 }
 
-const browser: PanelRuntime<'browserData' | 'settings' | 'files' | 'document'> = (services) => ({
+const browser: PanelRuntime<'browserData' | 'settings' | 'files'> = (services) => ({
   ...browserPanel({
     browserData: services.browserData,
     settings: { get: (key) => services.settings.get(key as never) },
     files: { serveUrl: (p) => services.files.serveUrl(p), servedPath: (url) => services.files.servedPath(url) },
   }),
-  attach: ({ host, router }) => {
-    router.registerService(browserApi, browserServiceHandlers({ sessions: host, document: services.document }))
-  },
 })
 
 const canvas: PanelRuntime = () => canvasPanel()

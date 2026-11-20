@@ -117,8 +117,8 @@ export class ApiRouter {
     let explicit: string | undefined
     if (method.handler === 'session') {
       const value = input[TARGET_ARG]
-      if (value !== undefined && typeof value !== 'string') throw new RpcError('rejected', `invalid ${TARGET_ARG}: expected a string`)
-      explicit = value || undefined
+      if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) throw new RpcError('rejected', `invalid ${TARGET_ARG}: expected a non-empty string`)
+      explicit = value as string | undefined
       const { [TARGET_ARG]: _target, ...rest } = input
       input = rest
     }

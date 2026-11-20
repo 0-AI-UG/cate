@@ -139,12 +139,18 @@ act on the panel's active tab, the one it shows; `goto`, `back`, `forward`
 and `reload` change what that tab shows and never open or switch tabs.
 
 ```bash
-cate browser tab list              # tabs of every browser panel; * marks each panel's active tab
+cate browser tab list              # tabs of the target browser panel; * marks its active tab
+cate browser tab list --panel <id> # choose a browser panel explicitly
 cate browser tab new https://example.com   # opens a tab and switches to it
 cate browser tab select t2         # switch the panel to t2
 cate browser tab close             # the active tab, or: tab close t3
 cate browser tab close --mine      # every tab you opened with tab new
 ```
+
+All four tab commands use the same target panel: `--panel <id>`, the panel
+you selected with `cate panel set`, or the automatic choice. `tab list` and
+`tab close --mine` cover only that panel. To find other browser panels, use
+`cate panel list`.
 
 `tab list` says who opened each tab: `you`, another `agent`, the `person`,
 or `page in t1` for a popup. A link or script that opens a new window

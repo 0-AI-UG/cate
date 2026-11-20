@@ -3,7 +3,7 @@
 import { defineCateApi } from './define'
 
 /** Bumped when a method is removed or changes incompatibly. */
-export const CATE_API_VERSION = 11
+export const CATE_API_VERSION = 12
 
 export const versionApi = defineCateApi('', {
   version: {

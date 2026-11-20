@@ -42,7 +42,9 @@ cate agent send <panel-id> "Please add the missing regression test"   # prints t
 cate agent wait <panel-id> [<panel-id>...] --wait-timeout 10000
 ```
 
-Panel ids may be the unique short ids `agent list` prints. `wait` accepts
+Panel ids may be the unique short ids `agent list` prints. `read`, `send`,
+`withdraw` and `interrupt` require an explicit id, either positionally or
+with `--panel <id>`; they do not use `cate panel set`. `wait` accepts
 5000 to 60000 milliseconds and, with no ids, monitors every live agent panel;
 it exits 1 when it timed out, after printing the states.
 

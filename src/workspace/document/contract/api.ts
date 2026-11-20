@@ -34,7 +34,7 @@ export const panelApi = defineCateApi(
       handler: 'service',
       summary: 'Close a panel',
       args: {
-        panelId: panel().pos().help('Panel id or unique prefix, from cate panel list'),
+        panelId: panel().pos().flag('panel').help('Panel id or unique prefix, from cate panel list'),
         discard: opt(bool, false).help('Discard unsaved changes instead of failing with dirty'),
       },
     },
@@ -52,7 +52,7 @@ export const panelApi = defineCateApi(
       access: 'read',
       handler: 'service',
       summary: 'Select the panel later commands target',
-      args: { panelId: panel().pos().help('Panel id or unique prefix, from cate panel list') },
+      args: { panelId: panel().pos().flag('panel').help('Panel id or unique prefix, from cate panel list') },
       format: 'panelTarget',
       cli: { command: ['panel', 'set'] },
     },

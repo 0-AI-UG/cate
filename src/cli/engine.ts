@@ -9,6 +9,7 @@ import {
   ArgError,
   TARGET_ARG,
   cateApiTimeoutMs,
+  panel,
   validateCateArgs,
   type AnyArgSchema,
   type CateApiMethod,
@@ -100,7 +101,7 @@ function cliArgs(method: CateApiMethod): CliArg[] {
   if (method.handler === 'session' && !out.some((arg) => arg.flag === TARGET_FLAG)) {
     out.push({
       key: TARGET_ARG,
-      schema: undefined as unknown as AnyArgSchema,
+      schema: panel().help(`Target ${method.panelType} panel (id or unique prefix)`),
       flag: TARGET_FLAG,
       positional: false,
       rest: false,
@@ -323,7 +324,10 @@ function parseCall(
 
   const target = values[TARGET_ARG]
   const isSessionTarget = command.method.handler === 'session' && target !== undefined
-  if (isSessionTarget) delete values[TARGET_ARG]
+  if (isSessionTarget) {
+    if (typeof target !== 'string' || target.trim() === '') throw new UsageError(`invalid ${TARGET_ARG}: expected a non-empty string`)
+    delete values[TARGET_ARG]
+  }
   let callArgs = command.method.cli?.transform ? command.method.cli.transform(values) : values
   // Validate here so mistakes are usage errors (exit 2) before any connection.
   callArgs = validateCateArgs(command.method, callArgs)
@@ -594,8 +598,9 @@ export async function runCli(
   deps: CliDeps,
 ): Promise<number> {
   const extras = deps.extraCommands ?? {}
-  const extra = argv[0] !== undefined ? extras[argv[0]] : undefined
-  if (extra) return extra.run(argv.slice(1))
+  const extraIndex = argv.findIndex((token) => token !== '--json' && token !== '--help' && token !== '-h')
+  const extra = extraIndex >= 0 ? extras[argv[extraIndex]] : undefined
+  if (extra) return extra.run([...argv.slice(0, extraIndex), ...argv.slice(extraIndex + 1)])
   const helpExtra = argv[0] === 'help' && argv[1] !== undefined ? extras[argv[1]] : undefined
   if (helpExtra) return helpExtra.run(['--help'])
 
