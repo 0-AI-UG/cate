@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import fs from 'node:fs'
 import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import { defineCapability, framePortOver, method } from '@kernel/rpc/contract'
 import { RpcClient, createCapabilityProxy } from '@kernel/rpc/client'
@@ -12,7 +13,7 @@ import { serveLocal } from './runtime'
 const pingCap = defineCapability('ping', { methods: { ping: method<void, string>() } })
 
 let dir: string
-beforeEach(() => { dir = fs.mkdtempSync('/tmp/cate-t-') })
+beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-t-')) })
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
 it.skipIf(process.platform === 'win32')('holds connections that arrive before open, then serves them', async () => {
