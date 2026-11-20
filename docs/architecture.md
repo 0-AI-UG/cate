@@ -2721,13 +2721,6 @@ client's e2e hooks. The Cate Connect service is not in this repository.
 
 ## 18. Working rules
 
-The 2.1.0 stable release makes one temporary exception to the clean-cut rule:
-`src/shells/desktop/main/upgrade210/` imports recorded stable pre-2.1 device
-and trusted local workspace files before the first window or workspace opens.
-Its single startup call and the entire folder are removed from main after
-2.1.0 has been built. Beta installs, fresh installs and existing runtime data
-are excluded. Original files are retained; no legacy reader enters the runtime.
-
 - **Clean cuts.** No migration code, no compatibility layers. A changed name,
   op or persisted format replaces the old one outright; old files are
   ignored, not read or mapped.
