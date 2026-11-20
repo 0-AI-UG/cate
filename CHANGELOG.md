@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
-## [2.1.0] - 2026-11-19
+## [2.1.0] - 2026-11-20
 
 Cate 2.1 brings shared workspace runtimes, encrypted device pairing, remote machines and terminal-based agents to the stable channel. Connection compatibility version is 2; paired clients must support the same compatibility version.
 
