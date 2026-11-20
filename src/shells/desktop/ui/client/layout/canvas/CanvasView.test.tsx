@@ -173,3 +173,23 @@ it('releases temporary compositor layers after canvas interaction settles', asyn
   expect(world.classList.contains('canvas-world-moving')).toBe(false)
   expect(world.style.willChange).toBe('auto')
 })
+
+it('preserves the restored camera across initial and sidebar resize observations', () => {
+  let resize: ResizeObserverCallback
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) { resize = callback }
+    observe() {}
+    disconnect() {}
+  })
+  const camera = { x: -125, y: 87, zoom: 1.5 }
+  clientStateFor('ws')!.setViewport('c1', camera)
+  act(() => root.render(<CanvasView workspaceId="ws" canvasId="c1" canvasPanelId="canvas-panel" />))
+  const canvas = container.querySelector<HTMLElement>('[data-canvas-container]')!
+  const bounds = vi.spyOn(canvas, 'getBoundingClientRect')
+  for (const width of [1000, 900, 800]) {
+    bounds.mockReturnValue({ left: 0, right: width, width } as DOMRect)
+    act(() => resize([{ target: canvas, contentRect: { width, height: 700 }, borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] } as unknown as ResizeObserverEntry], {} as ResizeObserver))
+    expect(clientStateFor('ws')!.getSnapshot().viewports.c1).toEqual(camera)
+  }
+  expect(container.querySelector<HTMLElement>('[data-canvas-world]')!.style.transform).toBe('scale(1.5) translate(-83.33333333333333px, 58px)')
+})

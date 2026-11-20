@@ -27,3 +27,5 @@ export {
   subscribeDocumentStores,
   documentStoresVersion,
 } from './registry'
+
+export { loadWorkspaceViews, type WorkspaceViewsStore } from './workspaceViews'

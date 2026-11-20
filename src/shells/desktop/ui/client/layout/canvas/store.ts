@@ -297,7 +297,6 @@ function fitRects(rects: readonly Rect[], container: Size, padding: number, maxZ
 }
 
 const EXIT_KEEP_MS = 200
-const VIEWPORT_MIRROR_MS = 250
 
 // --- Factory ----------------------------------------------------------------------
 
@@ -1043,7 +1042,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
   syncDocument()
   const stopDocument = document.subscribe(syncDocument)
 
-  // Mirror viewport (once it settles) and selection into the client state.
+  // Mirror the current viewport and selection into the client state.
   // A selection that loses its active node leaves attention on the canvas:
   // focus held by a panel on it returns to the canvas panel.
   const releaseFocus = (sink: CanvasClientStateSink) => {
@@ -1052,7 +1051,6 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
     const host = canvasPanelOf(doc, canvasId)
     if (host && focused && canvasOf(doc, focused) === canvasId) sink.focus(host.id)
   }
-  let viewportTimer: ReturnType<typeof setTimeout> | undefined
   const stopMirror = clientState
     ? store.subscribe((state, prev) => {
       const active = focusedNodeId(state)
@@ -1062,12 +1060,7 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
         if (wasActive && !active) releaseFocus(clientState)
       }
       if (state.zoomLevel !== prev.zoomLevel || state.viewportOffset !== prev.viewportOffset) {
-        if (viewportTimer) clearTimeout(viewportTimer)
-        viewportTimer = setTimeout(() => {
-          viewportTimer = undefined
-          const s = store.getState()
-          clientState.setViewport(canvasId, { x: s.viewportOffset.x, y: s.viewportOffset.y, zoom: s.zoomLevel })
-        }, VIEWPORT_MIRROR_MS)
+        clientState.setViewport(canvasId, { x: state.viewportOffset.x, y: state.viewportOffset.y, zoom: state.zoomLevel })
       }
     })
     : () => {}

@@ -1,5 +1,6 @@
 // Client state of one workspace (section 5): what this client shows and
-// where its attention is. Held in memory, never sent to the runtime, except
+// where its attention is. Viewports are remembered on this device; other state
+// is held in memory. Never sent to the runtime, except
 // the viewed and focused panel, which presence reports.
 
 import type { CanvasId, NodeId, PanelId, StackId, WindowId } from '@workspace/document/contract'
@@ -69,14 +70,14 @@ function withEntry<K extends string, V>(map: Readonly<Record<K, V>>, key: K, val
   return (value === null ? rest : { ...rest, [key]: value }) as Record<K, V>
 }
 
-export function createClientStateStore(): ClientStateStore {
+export function createClientStateStore(viewports: ClientState['viewports'] = {}): ClientStateStore {
   let state: ClientState = {
     activeTabs: {},
     focusedPanelId: null,
     focusEpoch: 0,
     viewing: [],
     selection: {},
-    viewports: {},
+    viewports,
     maximizedStacks: {},
     panelViews: {},
     intents: [],

@@ -179,7 +179,7 @@ export interface DesktopApi {
      *  attention. Assume attention until told otherwise. */
     onAttention(listener: (attentive: boolean) => void): () => void
   }
-  /** `settings`, `ui-state`, `boot`, `workspaces`, `known-runtimes`. */
+  /** `settings`, `ui-state`, `boot`, `workspaces`, `known-runtimes`, `workspace-views`. */
   device: DeviceStore
   windows: {
     /** Opens (or focuses) the native window for a detached document window,

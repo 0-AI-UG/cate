@@ -361,6 +361,11 @@ Rules:
 - Panel view state belongs to the workspace's client-state store, not global
   panel maps. It survives view unmounts; up to 200 removed panels retain view
   state for undo. Disconnecting the workspace releases the store.
+- Canvas viewports are remembered per workspace and canvas on this device
+  through `DeviceStore` (`workspace-views.json`), loaded before document views
+  attach. Only pan and zoom are persisted; other client state stays in memory.
+  Viewport updates reach the device store immediately; its file layer debounces
+  disk writes and flushes on quit. Layout resizing does not change the camera.
 - Undo is per client, over that client's own document ops (section 13.6).
 - A developer adding a feature declares which class its state is in and never
   writes sync code.
@@ -2637,7 +2642,7 @@ client-local work (a file drop still importing).
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
 | Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/` |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
-| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
+| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `workspace-views.json` (per-workspace canvas pan and zoom), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
 Every JSON state file above is written through `kernel/state` (a temporary
 file renamed over the old one, fsynced first for the `0600` files: secrets,
