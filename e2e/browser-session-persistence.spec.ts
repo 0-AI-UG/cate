@@ -27,10 +27,20 @@ test.beforeAll(async () => {
       response.end(`<!doctype html><title>Account</title><h1>${authenticated ? 'Persistent session' : 'Signed out'}</h1>`)
       return
     }
+    if (url.pathname === '/embedded') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      response.end(`<!doctype html><title>Embedded login</title><iframe style="margin:40px;width:700px;height:400px" src="${origin.replace('127.0.0.1', 'localhost')}/frame-login"></iframe>`)
+      return
+    }
+    if (url.pathname === '/frame-login') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      response.end('<!doctype html><title>Identity provider</title><form onsubmit="event.preventDefault();this.remove()"><label>Email <input name="email" type="email" autocomplete="username"></label><label>Password <input name="password" type="password" autocomplete="current-password"></label><button>Sign in</button></form>')
+      return
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     response.end('<!doctype html><title>Login</title><form method="post" action="/session"><label>Email <input id="email" name="email" type="email" autocomplete="username"></label><label>Password <input id="password" name="password" type="password" autocomplete="current-password"></label><button id="login">Sign in</button></form>')
   })
-  server.listen(0, '127.0.0.1')
+  server.listen(0)
   await once(server, 'listening')
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
 })
@@ -141,6 +151,56 @@ test('lists a saved password and autofills username and password without exposin
     const managerPage = page.locator(`[data-browser-surface="${manager.panelId}"] [data-browser-password-manager]`)
     await expect(managerPage).toContainText('saved@example.test')
     await expect(managerPage).not.toContainText('autofill secret')
+  } finally {
+    await closeApp(app)
+  }
+})
+
+test('saves a manual cross-origin iframe login and offers autofill in that frame', async () => {
+  const { electronApp: app, mainWindow: page } = await launchApp()
+  const frameOrigin = origin.replace('127.0.0.1', 'localhost')
+  try {
+    await app.evaluate(({ dialog }) => {
+      const messages: string[] = []
+      ;(globalThis as any).__passwordPrompts = messages
+      dialog.showMessageBox = (async (...args: unknown[]) => {
+        messages.push((args.at(-1) as { message: string }).message)
+        return { response: 0, checkboxChecked: false }
+      }) as typeof dialog.showMessageBox
+    })
+    const browser = await createBrowser(page, `${origin}/embedded`, { x: 100, y: 100 })
+    const id = (await browserWebContentsId(page, browser.panelId))!
+    // Populate and submit as a manual page interaction, outside the agent
+    // driver: an automated submission intentionally skips confirmation.
+    const inFrame = (expression: string) => app.evaluate(async ({ webContents }, { id, frameOrigin, expression }) => {
+      const frame = webContents.fromId(id)!.mainFrame.framesInSubtree.find(frame => frame.url.startsWith(frameOrigin))
+      if (!frame) throw new Error('login frame not ready')
+      return frame.executeJavaScript(expression)
+    }, { id, frameOrigin, expression })
+    await expect.poll(() => inFrame('!!document.querySelector("input[type=password]")')).toBe(true)
+    await inFrame('document.querySelector("input[type=email]").value="iframe@example.test"; document.querySelector("input[type=password]").value="iframe secret"; document.querySelector("form").requestSubmit()')
+    await expect.poll(() => app.evaluate(() => (globalThis as any).__passwordPrompts)).toContain(`Save the password for localhost (iframe@example.test)?`)
+    await expect.poll(() => page.evaluate((url) => window.__cateE2E!.call('browserData', 'passwordSuggestions', { url }), frameOrigin))
+      .toEqual([expect.objectContaining({ origin: frameOrigin, username: 'iframe@example.test' })])
+
+    // Reload creates a new frame document. Its isolated listener must be
+    // installed again, and the popup must fill that frame rather than the host.
+    await app.evaluate(({ webContents }, id) => webContents.fromId(id)!.reload(), id)
+    await expect.poll(() => inFrame('!!document.querySelector("input[type=password]")')).toBe(true)
+    await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
+    await inFrame('document.querySelector("input[type=password]").focus()')
+    const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
+    const popup = surface.locator('[data-browser-autofill]')
+    await expect(popup).toBeVisible()
+    const field = await inFrame('JSON.parse(JSON.stringify(document.querySelector("input[type=password]").getBoundingClientRect()))') as { bottom: number }
+    const parent = await app.evaluate(({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('JSON.parse(JSON.stringify(document.querySelector("iframe").getBoundingClientRect()))'), id) as { top: number }
+    const guestBox = (await surface.locator('webview').boundingBox())!
+    const guestWidth = await surface.locator('webview').evaluate(element => (element as HTMLElement).offsetWidth)
+    const scale = guestBox.width / guestWidth
+    await expect.poll(async () => Math.abs((await popup.boundingBox())!.y - (guestBox.y + (parent.top + 2 + field.bottom) * scale + 6 * scale))).toBeLessThan(3)
+    await popup.getByRole('button', { name: /iframe@example.test/ }).click()
+    await expect.poll(() => inFrame('document.querySelector("input[type=password]").value')).toBe('iframe secret')
+    await expect.poll(() => inFrame('document.querySelector("input[type=email]").value')).toBe('iframe@example.test')
   } finally {
     await closeApp(app)
   }

@@ -42,3 +42,13 @@ it('captures native form submissions and prefers the replacement password', () =
   document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   expect(send).toHaveBeenCalledWith('cate-browser-password-submit', expect.objectContaining({ username: 'me', password: 'new' }))
 })
+
+it('remembers the Apple account on a German username-first continue button', () => {
+  const send = vi.fn()
+  cleanup = installPasswordBridge(send, () => false)
+  document.body.innerHTML = '<input id="account_name" value="apple-user"><button type="button">Fortfahren</button>'
+  document.querySelector('button')!.click()
+  document.body.innerHTML = '<input type="password" value="synthetic"><button type="button" aria-label="Anmelden"></button>'
+  document.querySelector('button')!.click()
+  expect(send).toHaveBeenCalledWith('cate-browser-password-submit', expect.objectContaining({ username: 'apple-user', password: 'synthetic' }))
+})

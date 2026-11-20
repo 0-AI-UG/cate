@@ -25,7 +25,7 @@ export function installPasswordBridge(
     marked = input
     const rect = input.getBoundingClientRect()
     send('cate-browser-password-focus', {
-      targetId, rect: { left: rect.left, bottom: rect.bottom, width: rect.width, height: rect.height },
+      targetId, origin: location.origin, rect: { left: rect.left, bottom: rect.bottom, width: rect.width, height: rect.height },
     })
   }, options)
   document.addEventListener('scroll', dismiss, options)
@@ -56,7 +56,7 @@ export function installPasswordBridge(
     if (!button || button.hasAttribute('disabled')) return
     const label = button.textContent || button.getAttribute('value') || button.getAttribute('aria-label') || ''
     const submits = (button instanceof HTMLButtonElement || button instanceof HTMLInputElement) && button.type === 'submit'
-    if (!submits && !/sign\s*in|log\s*in|sign\s*up|register|continue|next|anmelden|weiter/i.test(label)) return
+    if (!submits && !/sign\s*in|log\s*in|sign\s*up|register|continue|next|anmelden|weiter|fortfahren/i.test(label)) return
     const form = (button instanceof HTMLButtonElement || button instanceof HTMLInputElement) ? button.form : button.closest('form')
     capture(form ?? document.body)
   }, options)
@@ -64,5 +64,9 @@ export function installPasswordBridge(
     if (event.key === 'Escape') dismiss()
     if (event.key === 'Enter' && event.target instanceof HTMLInputElement) capture(event.target.form ?? document.body)
   }, options)
+  // The driver can attach after the page has already focused its login field.
+  if (document.activeElement instanceof HTMLInputElement) {
+    document.activeElement.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+  }
   return () => controller.abort()
 }
