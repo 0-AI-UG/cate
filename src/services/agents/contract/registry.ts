@@ -85,9 +85,9 @@ export interface AgentDef {
   matchProcess: (procName: string) => boolean
   /** Native post-submit extension point that adds relation context without
    *  touching PTY input: the turn-start hook response as JSON
-   *  `additionalContext` or plain text, or an in-process plugin that fetches it
+   *  `additionalContext` / `additional_context` or plain text, or an in-process plugin that fetches it
    *  from the hook endpoint's /prompt-context. */
-  promptContextHook: 'additional-context' | 'plain-text' | 'endpoint' | null
+  promptContextHook: 'additional-context' | 'additional-context-snake' | 'plain-text' | 'endpoint' | null
   /** Extra guidance appended to relation context for this agent. */
   promptGuidance: string | null
   /** Project-skills integration, or null when Cate installs none. */
@@ -157,7 +157,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     startArgs: [],
     interruptKeys: ['escape'],
     matchProcess: (n) => n === 'cursor-agent' || n === 'cursor',
-    promptContextHook: null,
+    promptContextHook: 'additional-context-snake',
     promptGuidance: null,
     // ~/.cursor/skills-cursor is cursor's internal built-ins dir; never written.
     skills: folderSkills('cursor', ['.cursor', 'skills']),

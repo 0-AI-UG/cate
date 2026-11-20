@@ -11,6 +11,7 @@ export type RelationMenuItem =
 export interface RelationContextTransport {
   /** When context last went with the panel's prompt (epoch ms). */
   sentAt?: number
+  pending?: boolean
   /** Context cannot reach the agent: a short label and why. */
   blocked?: { label: string; reason: string }
 }

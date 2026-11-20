@@ -1466,8 +1466,8 @@ and jobs alive, and views reattach to their existing state when remounted.
   definition; a type without one, a canvas or a surface, is never a
   relation's end), `relationReach` (the flow from an execution surface up to the
   next ones), `compileRelationContext` over it, which the agents service
-  uses for prompt context, and the relation context mode (`once`, `always`,
-  `off`: a record field with its one parser). It imports only contracts.
+  uses for prompt context, and the relation context mode (`auto` (default), `once`,
+  `always`, `off`: a record field with its one parser). It imports only contracts.
   What a prompt would take is the runtime's own preview
   (`agents.previewContext`); clients never compile it themselves, and count
   connected panels with `relationReach`. The relation rule
@@ -1486,7 +1486,10 @@ and jobs alive, and views reattach to their existing state when remounted.
   the personal label library (`savedPanelRelationLabels`: remember, rename,
   forget) over a client's settings.
 - **Desktop UI** (`shells/desktop/ui/workspace/relations`): the relation handle, selector and context toggle. Relation drawing
-  is in the desktop UI (`shells/desktop/ui/client/layout/canvas`).
+  is in the desktop UI (`shells/desktop/ui/client/layout/canvas`): a flow is
+  bright only when its source's runtime `contextPending` says it will inject
+  context next turn, otherwise dim. Command activity and outcomes do not
+  affect relation rendering; no transient command connections are tracked.
 
 ## 10. Services
 
@@ -1809,7 +1812,17 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     with its prompts gone out, or one failed;
   - the panel states (`panels.ts`): what each terminal panel hosts, with
     when relation context last went with its prompt, published as changes;
-  - prompt context from relations, and agent notification events;
+  - prompt context from relations: one shared delivery policy for all native
+    context transports. Auto sends on first injection, conversation reset or
+    changed compiled routing instructions (stable relation order, geometry
+    ignored). Delivery state stays in memory, separate from the document's
+    user-selected mode; explicit Off stays off. The native response or endpoint
+    resolves and consumes the payload after session boundaries are observed,
+    never merely because a turn started. CLI adapters without an injection
+    surface report unsupported. Cursor's `beforeSubmitPrompt` uses top-level
+    `additional_context` with the same policy; Grok remains unsupported.
+    Compaction alone does not yet invalidate it;
+  - agent notification events;
   - **usage** (`usage/`, the `usage`, `refreshUsageRates` and `usageLimits`
     methods): what the agent CLIs used in this workspace. Each session store
     declares where its CLI records usage (`AgentSessionStore.usage`):

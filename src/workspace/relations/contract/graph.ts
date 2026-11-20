@@ -352,7 +352,7 @@ export function compileRelationContext(
     relatedPanelIds: relatedPanelIds(steps),
     text: [
       '<cate-connected-panels>',
-      'Routing context:',
+      'Routing context (replaces any previous connected-panel routing):',
       ...instructions.map((instruction, index) => `${index + 1}. ${instruction}`),
       '</cate-connected-panels>',
     ].join('\n'),

@@ -69,9 +69,9 @@ export interface AgentHooks {
   unregisterChangeTerminal(terminalId: string): void
   listChanges(cwd: string): Promise<StoredAgentChange[]>
   readChanges(cwd: string, knownRevision?: string): Promise<StoredChangesSnapshot>
-  /** Replace the graph context returned by this terminal's next and later
-   * native prompt-submit hooks. Null clears it. */
-  setPromptContext(terminalId: string, context: string | null): void
+  /** Resolve context at the actual injection boundary, after lifecycle events.
+   *  A static value is useful for callers without a delivery policy. */
+  setPromptContext(terminalId: string, context: string | null | ((agentId: AgentId, sessionId?: string) => string | null)): void
   /** The full spawn env for a PTY: hook endpoint + this terminal's derived
    *  token + CATE_TERMINAL_ID=ptyId. Agent-agnostic (the per-agent tri-state
    *  is enforced by prepareWorkspace, the only injection channel) and repo-free,
@@ -318,7 +318,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
   const inputSessions = new Map<string, Pick<AgentHookEvent, 'agentId' | 'sessionId'>>()
   /** Terminals with a hook-proven turn in flight (and its id, when known). */
   const activeTurns = new Map<string, string | undefined>()
-  const promptContexts = new Map<string, string>()
+  const promptContexts = new Map<string, string | ((agentId: AgentId, sessionId?: string) => string | null)>()
   /** The env each PTY's CLI resolves its config with (approval inspection). */
   const approvalEnvs = new Map<string, NodeJS.ProcessEnv>()
   const approvalCache = new Map<string, { time: number; value: Promise<AgentApprovalDetection> }>()
@@ -346,10 +346,16 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     return value
   }
 
-  const encodedPromptContext = (agentId: AgentId, terminalId: string): string => {
-    const context = promptContexts.get(terminalId)
-    if (!context) return ''
+  const takePromptContext = (agentId: AgentId, terminalId: string, sessionId?: string): string => {
+    const source = promptContexts.get(terminalId)
+    return (typeof source === 'function' ? source(agentId, sessionId) : source) ?? ''
+  }
+  const encodedPromptContext = (agentId: AgentId, terminalId: string, sessionId?: string): string => {
     const hook = AGENT_DEFS[agentId]?.promptContextHook
+    if (hook !== 'additional-context' && hook !== 'additional-context-snake' && hook !== 'plain-text') return ''
+    const context = takePromptContext(agentId, terminalId, sessionId)
+    if (!context) return ''
+    if (hook === 'additional-context-snake') return JSON.stringify({ additional_context: context })
     if (hook === 'additional-context') {
       return JSON.stringify({
         hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: context },
@@ -527,6 +533,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
             terminalId?: unknown
             pid?: unknown
             payload?: unknown
+            sessionId?: unknown
           }
           if (req.url === '/prompt-context') {
             const hook = AGENTS.find((agent) => agent.id === body.agentId)?.promptContextHook
@@ -534,7 +541,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
               || !tokenMatches(req.headers.authorization, secret, body.terminalId)) {
               res.statusCode = 401; res.end(); return
             }
-            const context = promptContexts.get(body.terminalId) ?? ''
+            const context = takePromptContext(body.agentId as AgentId, body.terminalId, typeof body.sessionId === 'string' ? body.sessionId : undefined)
             res.statusCode = 200
             res.setHeader('content-type', 'text/plain; charset=utf-8')
             res.end(context)
@@ -592,11 +599,11 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
                   try { listener(terminalId, call) } catch { /* a subscriber must not break ingestion */ }
                 }
               }
-              // Read the context the submit hook answers with before subscribers
-              // see the turn-start: a one-shot context is disarmed by it.
-              if (event?.kind === 'turn-start') output = encodedPromptContext(agentId as AgentId, terminalId)
               if (event) {
                 emit(event)
+                // Boundaries (including an identity first reported on submit)
+                // are resolved before selecting and consuming the exact payload.
+                if (event.kind === 'turn-start') output = encodedPromptContext(agentId as AgentId, terminalId, event.sessionId ?? undefined)
                 // Awaited (a cheap local stat) so the watch is armed by the time
                 // the bridge's post resolves — no window where the interrupt
                 // marker could land before the baseline is taken.

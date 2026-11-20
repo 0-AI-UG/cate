@@ -266,7 +266,6 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
               stroke="var(--focus-blue)"
               strokeWidth="2.25"
               strokeLinecap="round"
-              className="cate-panel-connection-active"
             />
           </svg>
           {drag.target?.ports.map((port) => (
@@ -304,7 +303,6 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
             strokeWidth="2.25"
             strokeLinecap="round"
             strokeDasharray="6 5"
-            className="cate-panel-connection-active"
           />
         </svg>,
         relationOverlayTarget,

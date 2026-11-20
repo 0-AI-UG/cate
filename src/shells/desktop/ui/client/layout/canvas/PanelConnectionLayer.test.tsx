@@ -3,13 +3,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRoot, type Root } from 'react-dom/client'
 import { clientStateFor, documentStoreFor } from '@client/document'
 import { MAIN_WINDOW, createDocument, type PanelRecord, type WorkspaceDocument } from '@workspace/document/contract'
-import { addRelation, beginPanelInteraction, clearPanelInteractions, setRelationContextMode } from '../../../workspace/relations'
+import { addRelation } from '../../../workspace/relations'
 import { openTestDocument, testRelationHost } from './testing'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
 import { createCanvasView, type CanvasViewStore } from './store'
 import { installCanvasDrag, type CanvasDragState } from './ports'
 import { CanvasRelationOverlayContext, CanvasViewProvider } from './context'
 import { PanelConnectionLayer } from './PanelConnectionLayer'
+import type { AgentPanelStates } from '@services/agents/contract'
+
+let agentStates: AgentPanelStates = {}
+vi.mock('../../../services/agents', () => ({
+  useAgentPanels: (_workspaceId: string, select: (states: AgentPanelStates) => unknown) => select(agentStates),
+}))
+
+function setPending(pending: boolean) {
+  agentStates = { agent: { panelId: 'agent', agentId: 'claude-code', agentName: 'Claude', label: 'Claude',
+    contextPolicy: 'supported', contextPending: pending, present: true, canReceivePrompt: true,
+    session: null, status: 'waitingForInput' } }
+}
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -67,8 +79,8 @@ function render(view: CanvasViewStore, overlay?: HTMLElement) {
 const relations = () => Object.values(documentStoreFor(WS)!.getSnapshot().relations)
 
 beforeEach(() => {
+  setPending(true)
   settings = testRelationHost({ definitions: [...PANEL_DEFINITIONS] })
-  clearPanelInteractions()
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -77,7 +89,6 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount())
   container.remove()
-  clearPanelInteractions()
   installCanvasDrag(null)
   settings.uninstall()
   store?.getState().dispose()
@@ -86,12 +97,9 @@ afterEach(() => {
 })
 
 describe('PanelConnectionLayer', () => {
-  it('overlays resolved CLI activity as a directed path', () => {
+  it('draws only declared relations', () => {
     render(open(standardDocument()))
-    act(() => { beginPanelInteraction({ workspaceId: WS, sourcePanelId: 'agent', targetPanelId: 'browser', kind: 'control' }) })
-    const path = container.querySelector('[data-panel-connection="active"]')
-    expect(path).not.toBeNull()
-    expect(path?.getAttribute('marker-end')).toContain('active')
+    expect(container.querySelector('[data-panel-connection]')).toBeNull()
   })
 
   it('renders a user-declared relation with a horizontal meaning selector', () => {
@@ -111,19 +119,21 @@ describe('PanelConnectionLayer', () => {
       .filter((item) => item.textContent?.includes('Recommended'))).toHaveLength(1)
   })
 
-  it('dims the whole flow of a source whose prompt context is off', () => {
+  it('dims the whole flow when the runtime has no context pending for its next turn', () => {
     const doc = standardDocument()
-    doc.panels.agent = panel('agent', 'terminal', { relationContextMode: 'off' })
+    setPending(false)
     const view = open(doc, false)
     addRelation(WS, 'agent', 'worker', 'trigger')
     render(view)
     const path = () => container.querySelector('[data-panel-connection="relation"]')
-    expect(path()?.getAttribute('data-panel-relation-context-off')).toBe('true')
+    expect(path()?.getAttribute('data-panel-relation-context-pending')).toBe('false')
     expect(path()?.getAttribute('opacity')).toBe('0.3')
     expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-50')).toBe(true)
 
-    act(() => { setRelationContextMode(WS, 'agent', 'always') })
-    expect(path()?.hasAttribute('data-panel-relation-context-off')).toBe(false)
+    setPending(true)
+    render(view)
+    expect(path()?.getAttribute('data-panel-relation-context-pending')).toBe('true')
+    expect(path()?.hasAttribute('opacity')).toBe(false)
     expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-50')).toBe(false)
   })
 
@@ -161,15 +171,14 @@ describe('PanelConnectionLayer', () => {
     expect(container.querySelector('[data-panel-connection="relation"]')).not.toBeNull()
   })
 
-  it('hides user relations while preserving agent activity connections when disabled', () => {
+  it('hides relations when disabled', () => {
     const view = open(standardDocument(), false)
     addRelation(WS, 'agent', 'worker', 'trigger')
     settings.setEnabled(false)
     render(view)
-    act(() => { beginPanelInteraction({ workspaceId: WS, sourcePanelId: 'agent', targetPanelId: 'worker', kind: 'agent' }) })
     expect(container.querySelector('[data-panel-connection="relation"]')).toBeNull()
     expect(container.querySelector('[data-panel-relation-selector]')).toBeNull()
-    expect(container.querySelector('[data-panel-connection="active"]')).not.toBeNull()
+    expect(container.querySelector('[data-panel-connection]')).toBeNull()
   })
 
   it('starts a different-colored flow at every terminal panel', () => {
@@ -313,15 +322,18 @@ describe('PanelConnectionLayer', () => {
     expect(container.querySelector('[data-panel-relation-selector]')).not.toBeNull()
   })
 
-  it('animates the existing relation path while that panel pair is active', () => {
+  it('uses only pending context, regardless of command activity or outcome', () => {
     const view = open(standardDocument())
     addRelation(WS, 'agent', 'browser', 'use')
     render(view)
-    const idlePath = container.querySelector('[data-panel-connection="relation"]')
-    act(() => { beginPanelInteraction({ workspaceId: WS, sourcePanelId: 'agent', targetPanelId: 'browser', kind: 'control' }) })
-    const activePath = container.querySelector('[data-panel-connection="active"]')
-    expect(activePath).toBe(idlePath)
-    expect(activePath?.classList.contains('cate-panel-connection-active')).toBe(true)
+    const path = () => container.querySelector('[data-panel-connection="relation"]')!
+    const color = path().getAttribute('stroke')
+    expect(path().hasAttribute('opacity')).toBe(false)
+    setPending(false)
+    render(view)
+    expect(path().getAttribute('opacity')).toBe('0.3')
+    expect(path().getAttribute('stroke')).toBe(color)
+    expect(path().getAttribute('class')).toBe('cate-panel-connection')
     expect(container.querySelectorAll('path[data-panel-connection]')).toHaveLength(1)
   })
 })
