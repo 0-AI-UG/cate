@@ -2,7 +2,7 @@
 // on the client device. Portable client code reaches it only through this port;
 // each shell implements it (the desktop shell with kernel/state files).
 // Documents are named without an extension: `settings`, `ui-state`, `boot`,
-// `workspaces`, `known-runtimes`.
+// `workspaces`, `known-runtimes`, `workspace-views`.
 
 export interface DeviceStore {
   /** The named document, or undefined when it does not exist yet. */
