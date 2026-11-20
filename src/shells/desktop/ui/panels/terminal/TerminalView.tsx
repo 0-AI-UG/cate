@@ -7,7 +7,7 @@
 // The xterm has the PTY's grid (parts/grid); a Fit button fits the PTY to
 // this view when it fits another.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRuntime } from '../../kernel/rpc'
 import { useWorkspaceSetting } from '../../kernel/settings'
 import { Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
@@ -45,6 +45,7 @@ export default function TerminalView({
   const processRef = useRef(processProxy)
   processRef.current = processProxy
   const options = useTerminalOptions()
+  const theme = useSyncExternalStore(subscribeTheme, getActiveTheme)
   const scrollback = useWorkspaceSetting(workspaceId, 'terminalScrollback')
   const containerRef = useRef<HTMLDivElement>(null)
   const renderBoxRef = useRef<HTMLDivElement>(null)
@@ -345,6 +346,9 @@ export default function TerminalView({
       <div
         ref={containerRef}
         className="flex-1 relative min-h-0 overflow-hidden"
+        // Cover the whole panel while xterm still has its initial grid, and
+        // any space left around a fitted or shared PTY grid.
+        style={{ backgroundColor: theme.terminal.background }}
         data-filedrop="terminal"
         data-filedrop-label="Drop to paste path"
         onDragOver={onDragOver}
