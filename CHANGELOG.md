@@ -37,7 +37,7 @@ Cate 2.1 brings shared workspace runtimes, encrypted device pairing, remote mach
 - **Terminal recovery**: reset TUI input modes when returning to a shell, retain CLI access after runtime updates and preserve the screen and working directory after one-shot commands.
 - **Agent conversations**: restore history before the first prompt and replace stale messages and tool steps when a CLI resets or switches conversations.
 - **Editors and reviews**: protect unsaved recovery snapshots, retain copied selections across virtualized diffs and hide the files sidebar during dragging.
-- **Browsers and skills**: retain native local networking, resolve focused editors inside nested frames, avoid duplicate password-save prompts and restore missing bundled skill files while respecting explicit uninstalls.
+- **Browsers and skills**: retain native local networking, resolve focused editors and login forms inside nested or cross-origin frames, avoid duplicate password-save prompts and restore missing bundled skill files while respecting explicit uninstalls.
 
 ### Removed
 
