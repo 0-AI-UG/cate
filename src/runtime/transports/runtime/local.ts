@@ -27,6 +27,8 @@ export function serveLocal(server: net.Server, rpc: RpcServer): LocalListener {
     if (!socket.destroyed) rpc.serve(framePortOver(socketDuplex(socket), FRAME_MODE.local))
   }
   const onConnection = (socket: net.Socket) => {
+    // Startup can hold clients before socketDuplex installs its handlers.
+    socket.on('error', () => socket.destroy())
     sockets.add(socket)
     socket.once('close', () => sockets.delete(socket))
     if (waiting) waiting.push(socket)

@@ -116,6 +116,9 @@ function gitBuffer(cwd: string, args: string[], env: NodeJS.ProcessEnv, input?: 
       if (error) reject(error)
       else resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout))
     })
+    // Git can exit before reading stdin (for example, outside a repository).
+    // Stream errors are asynchronous; keep them within this operation.
+    child.stdin?.on('error', reject)
     if (input !== undefined) child.stdin?.end(input)
   })
 }
