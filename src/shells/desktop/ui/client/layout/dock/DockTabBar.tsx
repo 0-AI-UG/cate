@@ -84,13 +84,12 @@ export function DockTabBar(props: DockTabBarProps) {
     <div
       key="__tab-placeholder__"
       aria-hidden
-      className={`flex flex-shrink-0 items-center justify-center whitespace-nowrap select-none rounded-[10px] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
+      className={`flex flex-shrink-0 items-center justify-center whitespace-nowrap select-none rounded-[var(--node-tab-radius,6px)] ${compact ? 'h-[22px] px-2 text-[11px]' : 'h-6 px-3 text-[12px]'}`}
       style={{
         minWidth: 100,
         color: 'var(--focus-blue, #3b82f6)',
         backgroundColor: 'color-mix(in srgb, var(--focus-blue, #3b82f6) 18%, transparent)',
         border: '1px dashed color-mix(in srgb, var(--focus-blue, #3b82f6) 70%, transparent)',
-        borderRadius: 10,
       }}
     >
       + new tab
@@ -113,16 +112,17 @@ export function DockTabBar(props: DockTabBarProps) {
         const type = record?.type ?? ''
         const definition = panelDefinition(type)
         const title = record ? titles.label(record) : ''
+        const tint = record ? titles.tint(record) : undefined
         const pill = (
           <TabPill
             key={panelId}
             panelId={panelId}
             className={`
               group relative flex items-center gap-1.5 whitespace-nowrap
-              cursor-grab select-none min-w-0 shrink rounded-[var(--node-tab-radius,10px)] transition-colors
+              cursor-grab select-none min-w-0 shrink rounded-[var(--node-tab-radius,6px)] transition-colors
               ${compact ? 'h-[22px] max-w-[160px] pl-2 text-[11px]' : 'h-6 max-w-[200px] pl-2.5 text-[12px]'}
               ${onClosePanel ? 'pr-1' : compact ? 'pr-2' : 'pr-2.5'}
-              ${isActive ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover dock-tab-inactive'}
+              ${isActive ? `${tint ? '' : 'bg-surface-2 '}text-primary` : `text-muted hover:text-secondary ${tint ? '' : 'bg-[color-mix(in_srgb,var(--surface-2)_45%,transparent)] hover:bg-surface-2 '}dock-tab-inactive`}
             `}
             onClick={() => onTabClick(panelId)}
             onMouseDown={(e) => {
@@ -151,7 +151,12 @@ export function DockTabBar(props: DockTabBarProps) {
                 springLoadTimer.current = null
               }
             }}
-            baseStyle={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            baseStyle={{
+              WebkitAppRegion: 'no-drag',
+              ...(tint ? {
+                backgroundColor: `color-mix(in srgb, ${tint} ${isActive ? 18 : 9}%, ${isActive ? 'var(--surface-2)' : 'transparent'})`,
+              } : null),
+            } as React.CSSProperties}
             title={title}
           >
             {record && <PanelTitle {...titles.props(record)} iconSize={compact ? 11 : 13} iconClassName={isActive ? definition?.tint ?? 'text-secondary' : 'text-muted'}>

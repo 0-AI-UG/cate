@@ -1,8 +1,8 @@
-// The settings window: a nav (search, scope tabs, grouped pages, scroll-spy)
-// beside a scrollable column of the tab's pages. Two tabs: Device (client
+// The settings window: a nav (search, grouped pages, scroll-spy) beside a
+// scrollable column of pages. One list holds two sections: Device (client
 // settings) and, while a workspace is active, Workspace (that workspace's
-// settings, for everyone in it). With no workspace only the device pages
-// exist and the tabs are hidden. A search spans both tabs.
+// settings, for everyone in it), each under its own heading. With no
+// workspace only the device pages exist. A search spans both.
 //
 // The search box filters rows across every page (SettingsSearchContext from
 // kernel/interaction); empty pages collapse and the nav lists only pages with matches.
@@ -10,7 +10,7 @@
 // into the shell's `settings-content-slot` when both exist, else the window
 // takes the whole screen.
 
-import { useDialogLayer } from '../../kernel/interaction'
+import { SearchField, useDialogLayer } from '../../kernel/interaction'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -20,7 +20,6 @@ import {
   GitBranch,
   Laptop,
   LayoutDashboard,
-  Search as MagnifyingGlass,
   RotateCcw,
   Server,
   Settings2,
@@ -95,10 +94,9 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const [visible, setVisible] = useState<Set<string>>(() => new Set(pages.map((p) => p.id)))
   const query = rawQuery.trim().toLowerCase()
   const searching = query !== ''
-  const [tab, setTab] = useState<SettingsScope>('client')
-  const scope: SettingsScope = workspaceId ? tab : 'client'
-  const shownScopes = searching ? SETTINGS_SCOPES : [scope]
-  const shownPages = useMemo(() => pages.filter((p) => searching || p.scope === scope), [pages, searching, scope])
+  // Both scopes share one list, each under its own heading.
+  const shownScopes = SETTINGS_SCOPES
+  const shownPages = pages
 
   useLayoutEffect(() => {
     const sidebar = document.getElementById('overlay-sidebar-slot')
@@ -112,7 +110,6 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     setConfirmingReset(false)
     const target = resolveSectionId(section, pages)
     if (!target) return
-    setTab(pages.find((p) => p.id === target)?.scope ?? 'client')
     setActiveIds(new Set([target]))
     requestAnimationFrame(() => {
       scrollRef.current?.querySelector(`#${sectionDomId(target)}`)?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
@@ -187,11 +184,6 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     setActiveIds(new Set([id]))
   }
 
-  const selectTab = (next: SettingsScope): void => {
-    setTab(next)
-    scrollRef.current?.scrollTo?.({ top: 0 })
-  }
-
   const navPages = shownPages.filter((p) => !searching || visible.has(p.id))
 
   const renderPage = (page: SettingsPage): JSX.Element => {
@@ -213,56 +205,20 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const navigation = (
     <div className="min-h-0 flex-1 flex flex-col text-primary">
       <div className="px-3 pb-2">
-        <div className="relative">
-          <MagnifyingGlass size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
-          <input
-            type="search"
-            aria-label="Search settings"
-            value={rawQuery}
-            onChange={(e) => setRawQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && rawQuery) {
-                e.stopPropagation()
-                setRawQuery('')
-              }
-            }}
-            placeholder="Search settings…"
-            className="w-full h-7 pl-7 pr-2 rounded-md bg-surface-2 text-xs text-primary placeholder:text-muted outline-none focus-visible:ring-1 focus-visible:ring-focus-blue"
-          />
-        </div>
+        <SearchField aria-label="Search settings" value={rawQuery} onValueChange={setRawQuery} placeholder="Search settings…" />
       </div>
-      {workspaceId && !searching && (
-        <div role="tablist" aria-label="Settings scope" className="mx-3 mb-3 grid grid-cols-2 gap-0.5 rounded-lg bg-surface-2 p-0.5">
-          {SETTINGS_SCOPES.map((option) => {
-            const Icon = SCOPE_ICONS[option]
-            const selected = option === scope
-            return (
-              <button
-                type="button"
-                role="tab"
-                key={option}
-                aria-selected={selected}
-                title={scopeDescription(option)}
-                onClick={() => selectTab(option)}
-                className={`h-7 flex items-center justify-center gap-1.5 rounded-md text-xs transition-colors ${
-                  selected ? 'bg-surface-4 text-primary shadow-sm' : 'text-secondary hover:text-primary'
-                }`}
-              >
-                <Icon size={13} />
-                {option === 'client' ? 'Device' : 'Workspace'}
-              </button>
-            )
-          })}
-        </div>
-      )}
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {shownScopes.map((shown) => {
           const scoped = navPages.filter((p) => p.scope === shown)
           if (scoped.length === 0) return null
+          const ScopeIcon = SCOPE_ICONS[shown]
           return (
-            <div key={shown}>
-              {searching && workspaceId && (
-                <div className="px-2 pt-1 pb-2 text-[13px] font-medium text-primary truncate">{scopeTitle(shown)}</div>
+            <div key={shown} className="[&:not(:first-child)]:mt-5">
+              {workspaceId && (
+                <div title={scopeDescription(shown)} className="flex items-center gap-1.5 px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                  <ScopeIcon size={11} className="shrink-0" />
+                  <span className="truncate">{shown === 'client' ? 'Device' : workspace?.name ?? 'Workspace'}</span>
+                </div>
               )}
               {SETTINGS_GROUPS.map((group) => {
                 const children = scoped.filter((p) => p.group === group.id)
@@ -326,7 +282,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     <main className="relative h-full min-w-0 flex-1 flex flex-col bg-canvas-bg text-primary pointer-events-auto">
       <LeftSidebarReopen />
       <OverlayHeader title="Settings">
-        {desktop && scope === 'client' && (
+        {desktop && (
           <button
             onClick={() => void openSettingsFile()}
             title="Open this device's settings.json"
@@ -340,14 +296,15 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
           type="button"
           onClick={restoreDefaults}
           title="Restore this device's settings to their defaults (workspace settings stay)"
-          className="flex items-center gap-1.5 px-2 h-7 rounded-md text-secondary hover:bg-hover hover:text-primary text-xs"
+          aria-label={confirmingReset ? 'Confirm restore' : 'Restore defaults'}
+          className={`flex items-center justify-center gap-1.5 h-7 rounded-md text-secondary hover:bg-hover hover:text-primary text-xs ${confirmingReset ? 'px-2' : 'w-7'}`}
         >
           <RotateCcw size={14} />
-          {confirmingReset ? 'Confirm restore' : 'Restore defaults'}
+          {confirmingReset && 'Confirm restore'}
         </button>
       </OverlayHeader>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="w-full max-w-[860px] mx-auto flex flex-col gap-12 pb-12">
+        <div className="w-full max-w-[860px] mx-auto flex flex-col gap-16 pb-12">
           {shownScopes.map((shown) => {
             const scoped = shownPages.filter((p) => p.scope === shown)
             if (scoped.length === 0) return null

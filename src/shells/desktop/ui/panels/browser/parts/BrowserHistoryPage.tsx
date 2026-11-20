@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { History as ClockCounterClockwise, Search as MagnifyingGlass, Trash } from 'lucide-react'
+import { History as ClockCounterClockwise, Trash } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
-import { SecondaryButton } from '../../../kernel/interaction'
+import { SearchField, SecondaryButton } from '../../../kernel/interaction'
 import type { BrowserHistoryEntry } from '@services/browser/contract'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from '@panels/browser/contract'
@@ -40,18 +40,7 @@ export function BrowserHistoryPage({ history, onNavigate, onRemove: removeHistor
         </div>
 
         <div className="mb-6 flex items-center gap-3">
-          <label className="relative block min-w-0 flex-1">
-            <MagnifyingGlass
-              size={15}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-            />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search history"
-              className="w-full rounded-lg border border-subtle bg-surface-2 py-2 pl-9 pr-3 text-sm outline-none focus:border-focus-blue"
-            />
-          </label>
+          <SearchField value={query} onValueChange={setQuery} placeholder="Search history" containerClassName="min-w-0 flex-1" />
           <SecondaryButton onClick={clearAll} disabled={history.length === 0}>
             Clear history
           </SecondaryButton>

@@ -86,6 +86,7 @@
     }
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
     "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",

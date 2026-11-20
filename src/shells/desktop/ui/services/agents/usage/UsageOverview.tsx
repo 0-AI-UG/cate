@@ -107,7 +107,7 @@ export function UsageOverview({ workspace, header }: {
   return (
     <section aria-label="Usage overview" className="flex min-h-0 flex-1 flex-col bg-canvas-bg text-primary">
       {header}
-      <div className="flex h-11 shrink-0 items-center gap-3 px-6 text-[13px] leading-5">
+      <div className="flex h-9 shrink-0 items-center gap-3 px-6 text-[13px] leading-5">
         <nav aria-label="Usage breadcrumb" className="min-w-0">
           {workspace && <WorkspaceMenu workspace={workspace} usage={usage} showUsageStatus={!showingLimits} />}
         </nav>

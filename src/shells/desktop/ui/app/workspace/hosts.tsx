@@ -16,6 +16,7 @@ import { RepositoryUiProvider } from '../../workspace/repository'
 import { FileViewsContext } from '../../workspace/files'
 import type { PanelRecord, WorktreeMeta } from '@workspace/document/contract'
 import { fileViewsHost } from './fileActions'
+import { useUIStore } from '../state/uiStore'
 
 /** Opens a Git comparison in the shell's repository overlay. */
 export type ReviewOpener = (request: ReviewRequest & { workspaceId: string }) => Promise<unknown>
@@ -80,7 +81,9 @@ export function RepositoryHost({ workspaceId, children }: { workspaceId: string;
       })
     },
     async openReview(request) {
-      await reviewOpener?.({ workspaceId, ...request })
+      const panelId = await reviewOpener?.({ workspaceId, ...request })
+      const ui = useUIStore.getState()
+      if (panelId && ui.overlay?.view === 'pullRequests') ui.closeOverlay()
     },
     focusWorktree: (worktreeId) => useCanvasUi.getState().setFocusedWorktree(worktreeId),
     setHoveredWorktree: (worktreeId) => useCanvasUi.getState().setHoveredWorktree(worktreeId),

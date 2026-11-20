@@ -28,10 +28,15 @@ interface StyleArgs {
   worktreeHighlight?: boolean
   /** The lens is on another worktree: this node recedes. */
   worktreeDim?: boolean
+  /** A sidebar thread pointing at one of this node's panels is hovered. */
+  peeked?: boolean
 }
 
+/** A thread row in the sidebar points here. */
+const PEEK_RING = '0 0 0 1px rgba(255, 255, 255, 0.4), 0 0 26px -2px rgba(255, 255, 255, 0.22)'
+
 export function useCanvasNodeStyle(args: StyleArgs) {
-  const { node, isFocused, isSelected, isHovered, isWholeNodeDragSource, worktreeColor, worktreeHighlight, worktreeDim } = args
+  const { node, isFocused, isSelected, isHovered, isWholeNodeDragSource, worktreeColor, worktreeHighlight, worktreeDim, peeked } = args
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     if (!node) return { display: 'none' }
@@ -69,7 +74,7 @@ export function useCanvasNodeStyle(args: StyleArgs) {
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
     if (!node) return null
-    if (!(isFocused || isSelected || worktreeHighlight)) return null
+    if (!(isFocused || isSelected || worktreeHighlight || peeked)) return null
     if (isWholeNodeDragSource) return null
     const entering = node.animationState === 'entering'
     const exiting = node.animationState === 'exiting'
@@ -85,14 +90,14 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       borderRadius: NODE_CORNER_RADIUS,
       boxShadow:
         worktreeHighlight && worktreeColor
-          ? `0 0 0 2px ${worktreeColor}, 0 0 18px -2px ${worktreeColor}`
-          : isFocused ? FOCUS_GLOW : SELECTION_RING,
+          ? `0 0 0 1.5px color-mix(in srgb, ${worktreeColor} 28%, transparent), 0 0 18px -4px color-mix(in srgb, ${worktreeColor} 20%, transparent)`
+          : peeked ? PEEK_RING : isFocused ? FOCUS_GLOW : SELECTION_RING,
       pointerEvents: 'none',
       transform: entering ? 'scale(0.85)' : exiting ? 'scale(0.9)' : 'scale(1)',
       opacity: entering || exiting ? 0 : 1,
       transition: 'transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 150ms ease-out, box-shadow 200ms ease',
     }
-  }, [node, isFocused, isSelected, isWholeNodeDragSource, worktreeHighlight, worktreeColor])
+  }, [node, isFocused, isSelected, isWholeNodeDragSource, worktreeHighlight, worktreeColor, peeked])
 
   return { containerStyle, glowStyle }
 }

@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom'
 import { Coffee, Infinity as InfinityIcon, Power } from 'lucide-react'
 import { mirrorChannel } from '@kernel/rpc/client'
 import { useRuntime } from '../../../kernel/rpc'
-import { Tooltip, useDismissableLayer } from '../../../kernel/interaction'
+import { AttachedFlyout, Tooltip, useDismissableLayer } from '../../../kernel/interaction'
 import type { KeepAwakeDuration, PowerState } from '@runtime/power/contract/capability'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 
@@ -113,6 +113,29 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
   }
 
   const on = state.requested
+  const menu = (
+    <div role="menu" aria-label="Keep awake duration" className="flex flex-row items-center gap-px p-1">
+      {[
+        ...durations.map(({ label, minutes }) => ({ key: label, duration: minutes as KeepAwakeDuration, tip: `Keep awake for ${label}`, content: label as React.ReactNode })),
+        { key: 'unlimited', duration: null as KeepAwakeDuration, tip: 'Keep awake unlimited', content: <InfinityIcon size={13} /> as React.ReactNode },
+        ...(on ? [{ key: 'off', duration: false as KeepAwakeDuration, tip: 'Turn off', content: <Power size={12} /> as React.ReactNode }] : []),
+      ].map((item, index) => (
+        <Tooltip key={item.key} label={item.tip} placement={side === 'up' ? 'right' : 'left'}>
+          <button
+            type="button"
+            role="menuitem"
+            aria-label={item.tip}
+            disabled={pending}
+            onClick={() => void select(item.duration)}
+            style={{ '--i': index, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}
+            className="cate-spawn-flyout-item h-6 min-w-[36px] px-2 shrink-0 flex items-center justify-center rounded-md text-[11px] text-secondary hover:bg-hover-strong hover:text-primary active:scale-[0.96] transition-colors duration-100"
+          >
+            {item.content}
+          </button>
+        </Tooltip>
+      ))}
+    </div>
+  )
   return (
     <div className="flex shrink-0" onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
       <CanvasToolbarButton
@@ -129,49 +152,33 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
         className="relative"
       >
         <span ref={iconRef} className="flex" aria-hidden="true">
-          <Coffee size={18} fill={on ? 'currentColor' : 'none'} />
+          <Coffee size={16} fill={on ? 'currentColor' : 'none'} />
         </span>
         {on && <span className="absolute -top-1 -left-2 rounded-md border border-subtle bg-surface-3 px-1 text-[9px] font-semibold leading-4 text-primary whitespace-nowrap pointer-events-none" aria-hidden="true">{remainingLabel(state.endsAt, now)}</span>}
       </CanvasToolbarButton>
-      {anchor && createPortal(
-        <div
-          ref={popoverRef}
-          className="fixed z-[90]"
-          onMouseEnter={clearHoverTimer}
-          onMouseLeave={hoverOut}
-          style={side === 'up'
-            ? { left: anchor.left + anchor.width / 2, bottom: window.innerHeight - anchor.top, transform: 'translateX(-50%)', paddingBottom: 10 }
-            : { right: window.innerWidth - anchor.left, bottom: window.innerHeight - anchor.bottom, paddingRight: 10 }}
-        >
-          <div
-            role="menu"
-            aria-label="Keep awake duration"
-            className="cate-spawn-flyout flex flex-col-reverse items-center gap-1 p-1 rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
-            style={{ transformOrigin: side === 'up' ? 'bottom center' : 'bottom right' }}
+      {side === 'up'
+        ? (
+          <AttachedFlyout
+            bar={buttonRef.current?.closest<HTMLElement>('[data-toolbar-card]') ?? buttonRef.current}
+            open={open}
+            onMouseEnter={clearHoverTimer}
+            onMouseLeave={hoverOut}
           >
-            {[
-              ...durations.map(({ label, minutes }) => ({ key: label, duration: minutes as KeepAwakeDuration, tip: `Keep awake for ${label}`, content: label as React.ReactNode })),
-              { key: 'unlimited', duration: null as KeepAwakeDuration, tip: 'Keep awake unlimited', content: <InfinityIcon size={16} /> as React.ReactNode },
-              ...(on ? [{ key: 'off', duration: false as KeepAwakeDuration, tip: 'Turn off', content: <Power size={15} /> as React.ReactNode }] : []),
-            ].map((item, index) => (
-              <Tooltip key={item.key} label={item.tip} placement={side === 'up' ? 'right' : 'left'}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label={item.tip}
-                  disabled={pending}
-                  onClick={() => void select(item.duration)}
-                  style={{ '--i': index, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}
-                  className="cate-spawn-flyout-item h-9 w-9 shrink-0 flex items-center justify-center rounded-full text-xs font-medium text-primary hover:bg-hover-strong hover:scale-110 active:scale-[0.92] transition-transform duration-100"
-                >
-                  {item.content}
-                </button>
-              </Tooltip>
-            ))}
-          </div>
-        </div>,
-        document.body,
-      )}
+            <div ref={popoverRef} className="flex justify-center">{menu}</div>
+          </AttachedFlyout>
+        )
+        : anchor && createPortal(
+          <div
+            ref={popoverRef}
+            className="fixed z-[90]"
+            onMouseEnter={clearHoverTimer}
+            onMouseLeave={hoverOut}
+            style={{ right: window.innerWidth - anchor.left, bottom: window.innerHeight - anchor.bottom, paddingRight: 10 }}
+          >
+            <div className="cate-spawn-flyout rounded-lg border border-subtle bg-[color-mix(in_srgb,var(--surface-1)_96%,transparent)] shadow-lg" style={{ transformOrigin: 'bottom right' }}>{menu}</div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

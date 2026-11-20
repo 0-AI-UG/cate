@@ -3,12 +3,24 @@
 // traffic lights) comes from the desktop port; other shells report none.
 
 import { useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
-import { PanelLeft } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
 import { desktopPort, subscribeDesktopPort } from '../desktop'
 import { useUIStore } from '../state/uiStore'
 
 const REOPEN_BUTTON_WIDTH = 40
+
+/** The sidebar toggle's glyph: a window with the sidebar split on the left. The
+ *  sidebar pane fills in while the sidebar is hidden, and the fill fades as it
+ *  opens or closes. */
+export function SidebarToggleIcon({ filled, size = 16 }: { filled: boolean; size?: number }): JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 3h4v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" fill="currentColor" stroke="none" style={{ opacity: filled ? 0.9 : 0, transition: 'opacity 200ms ease-in-out' }} />
+      <rect width="18" height="18" x="3" y="3" rx="2" />
+      <path d="M9 3v18" />
+    </svg>
+  )
+}
 
 function subscribeInset(listener: () => void): () => void {
   let off = desktopPort()?.onWindowControlsInsetChange(listener) ?? (() => {})
@@ -40,16 +52,16 @@ export function LeftSidebarReopen(): JSX.Element | null {
   return (
     <div
       className="absolute top-0 left-0 z-40 flex items-center select-none"
-      style={{ height: 44, paddingLeft: controls || 8, WebkitAppRegion: 'no-drag' } as CSSProperties}
+      style={{ height: 36, paddingLeft: controls || 8, WebkitAppRegion: 'no-drag' } as CSSProperties}
     >
       <Tooltip action="toggleSidebar" label="Show sidebar" placement="bottom">
         <button
           type="button"
           aria-label="Show sidebar"
           onClick={() => useUIStore.getState().setSidebarHidden(false)}
-          className="flex items-center justify-center w-7 h-7 rounded-[10px] text-muted hover:text-primary hover:bg-hover transition-colors"
+          className="flex items-center justify-center w-6 h-6 rounded-md text-muted hover:text-primary hover:bg-hover transition-colors"
         >
-          <PanelLeft size={16} />
+          <SidebarToggleIcon filled />
         </button>
       </Tooltip>
     </div>
@@ -61,7 +73,7 @@ export function OverlayHeader({ title, children }: { title: string; children?: R
   const inset = useLeftChromeInset()
   return (
     <header
-      className="relative z-10 flex h-11 shrink-0 items-center gap-2 bg-canvas-bg px-6 text-primary after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent"
+      className="relative z-10 flex h-9 shrink-0 items-center gap-2 bg-canvas-bg pl-6 pr-2 text-primary after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent"
       style={{ paddingLeft: Math.max(24, inset) }}
     >
       <h1 className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</h1>

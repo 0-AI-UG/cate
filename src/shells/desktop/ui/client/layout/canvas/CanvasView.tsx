@@ -1,10 +1,11 @@
 // A canvas as a panel view: the surface, its nodes (viewport-culled and
 // staged across frames on a cold mount), relation drawing and the toolbar.
 
-import React, { useCallback, useEffect, useMemo } from 'react'
-import { clientStateFor } from '@client/document'
+import React, { useCallback, useEffect, useMemo, useRef } from 'react'
+import { clientStateFor, documentStoreFor } from '@client/document'
 import { useClientState, useDocument } from '../../document'
-import type { NodeId } from '@workspace/document/contract'
+import { isCanvasDock, placementOf, type NodeId } from '@workspace/document/contract'
+import { useCanvasUi } from './uiState'
 import { CANVAS_REVEAL_INTENT } from '@client/host'
 import { useKeepMountedPanelIds } from '../../host/hooks'
 import { canvasViewFor } from './registry'
@@ -79,6 +80,35 @@ export function CanvasView({ workspaceId, canvasId, canvasPanelId }: CanvasViewP
     const nodeId = (reveal?.data as { nodeId?: string } | undefined)?.nodeId
     if (nodeId) store.getState().focusAndCenter(nodeId)
   }, [intents, store, workspaceId, canvasPanelId])
+
+  // A sidebar thread under the pointer: glide to its node, and back when the
+  // pointer leaves (unless a click committed the view).
+  const peeked = useCanvasUi((s) => s.peekedPanelId)
+  const restore = useRef<{ x: number; y: number } | null>(null)
+  useEffect(() => {
+    if (!store) return
+    const doc = documentStoreFor(workspaceId)?.getSnapshot()
+    const nodeId = peeked && doc ? (() => {
+      const placement = placementOf(doc, peeked)
+      return placement && isCanvasDock(placement.dock) && placement.dock.canvasId === canvasId ? placement.dock.nodeId : null
+    })() : null
+    if (nodeId) {
+      const previous = store.getState().peekNode(nodeId)
+      if (previous && !restore.current) restore.current = previous
+      return
+    }
+    const origin = restore.current
+    restore.current = null
+    if (origin && !useCanvasUi.getState().peekKeepView) store.getState().restoreViewport(origin)
+  }, [peeked, store, workspaceId, canvasId])
+
+  // The canvas can unmount while peeked (its tab is switched back): the
+  // viewport must not keep the peeked position.
+  useEffect(() => () => {
+    const origin = restore.current
+    restore.current = null
+    if (store && origin && !useCanvasUi.getState().peekKeepView) store.getState().setViewportOffset(origin)
+  }, [store])
 
   const handlePointerDown = useCallback(() => {
     clientStateFor(workspaceId)?.focus(canvasPanelId)

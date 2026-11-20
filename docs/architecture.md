@@ -287,7 +287,7 @@ shell's native side.
 
 | What | Where |
 |---|---|
-| Rendering the document: docks, canvas view, nodes, minimap, territory layer, relation drawing | shell UI |
+| Rendering the document: docks, canvas view, nodes, minimap, relation drawing | shell UI |
 | Panel views: xterm, Monaco, diff views (desktop); native views (iOS) | shell UI |
 | Input, drag and drop | shell UI |
 | Dialogs, confirmations, notification display, clipboard (`ClientUi`, including the in-app save-path dialog over the workspace's files) | shell UI |
@@ -487,6 +487,9 @@ the pieces that make it reachable and secure.
   one command installs it (`curl -fsSL <install url> | sh`, checked against
   the `.sha256` published beside the tarball) with a `cate` launcher that
   runs the current install.
+  The desktop shell pins its installed build with an `in-use/<pid>` marker,
+  just as a daemon does: it may need to start another workspace later.
+  Development install cleanup respects these live markers too.
 - **`cate serve [path] [--connect]`** shares a workspace of the machine it
   runs on. It runs the install's `runtime.cjs bridge <root>` (7.3), which
   starts the runtime when nothing answers, and over it, as a local client,
@@ -1190,7 +1193,7 @@ or that changes shared state, is a **workspace** setting.
 |---|---|---|
 | Appearance (`kernel/interaction`) | `activeThemeId`, `systemLightThemeId`, `systemDarkThemeId`, `customThemes`, `uiScale` | |
 | Editor (`panels/editor`) | `editorFontSize`, `editorFontFamily`, `filesTreeOnOpen`, `filesTreeOpenFileIn` | |
-| Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `showWorktreeTerritory`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
+| Canvas (`shells/desktop`) | `zoomSpeed`, `canvasGridStyle`, `canvasBackgroundImagePath`, `canvasBackgroundImageOpacity`, `snapToGrid`, `placementPicker`, `autoFocusLargestVisibleNode` | |
 | Relations (`workspace/relations`) | `savedPanelRelationLabels` (a personal label library) | `panelRelationsEnabled` |
 | Terminal (`services/terminal`) | `terminalFontFamily`, `terminalFontSize`, `terminalScrollSpeed`, `terminalContrast`, `terminalCursorBlink`, `terminalOptionIsMeta` | `defaultShellPath`, `terminalScrollback` (kept by the headless terminal), `autoSuspendIdleTerminals` |
 | Browser (`services/browser`) | `browserProxyUrl` (the client's own upstream proxy; may hold credentials), `linkOpenTarget` (where clicked web links open on this device, section 12.3) | `browserHomepage`, `browserSearchEngine`, `browserNewTabBehavior` |
@@ -1855,6 +1858,11 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
   relation context transport (`useAgentContextTransport`), and the usage
   overview (the Usage overlay, `openUsage`): cost, tokens and limits of the
   shown workspace, with its custom model prices.
+- **Resume readiness**: agents whose resume command opens the normal prompt
+  declare `resume.opensAtPrompt`. A deliberately restored terminal seeds Ready
+  only after its exact CLI process opens the saved session with the matching
+  checkout binding. This fills the gap before a deferred SessionStart, without
+  a completion notification or overriding live hook events.
 - **Consumers**: the terminal panel, review (changes), sidebar and dock
   tabs (status), `cate.agent.*`.
 
@@ -2317,8 +2325,20 @@ a code).
   this computer as them; nothing is remembered. Wider access is the person's choice in that place; narrower access
   asks first, since it cuts devices off. The workspace's settings keep the
   same setting and the device list with revoke.
-- **Where it lives.** The desktop sidebar is one manually ordered workspace
-  list, with remote computer names on rows. Rows reorder across computers;
+- **Where it lives.** The desktop sidebar opens in Threads, aggregating terminal
+  and agent activity from connected open workspaces. Blocking human prompts
+  precede ready terminals, followed by running work; exited and acknowledged
+  ready items remain in a collapsible Settled section. A new running turn or
+  blocking prompt clears acknowledgement. Acknowledgements last only for the
+  live client observation, so work completed while disconnected resurfaces.
+  Settings > Sidebar chooses Threads (default) or Projects. Threads has search
+  and an All projects selector; both filters also apply to Settled. Projects
+  shows the manually ordered workspace list and open panel tree,
+  with remote computer names on rows. View choice and Settled expansion are
+  device UI state. Snooze is a separate timed action: deadlines persist on
+  the device, hide the thread until due, and can be cancelled in Snoozed.
+  Settled rows have an un-settle action that returns them to Ready for review.
+  Rows reorder across computers;
   next/previous workspace follows that same order. The opening picker sorts
   all remembered workspaces by last use, including closed ones. Closing
   disconnects this client and removes sidebar membership, retaining history
@@ -2538,7 +2558,7 @@ shell, with `--json` when it parses results.
   - **ui**: the desktop UI, all of it, in React, mirroring where each piece
     belongs: the kernel components and theme manager (`ui/kernel/interaction`), panel
     hosting and native surfaces (`ui/client/host`), the dock, the canvas
-    view (its view store, nodes, minimap, territory layer), dragging and
+    view (its view store, nodes, minimap), dragging and
     detached windows (`ui/client/layout`), the app frame: sidebar, palette,
     settings, pairing, onboarding, dialogs and the e2e harness
     (`window.__cateE2E`) (`ui/app`), every module's

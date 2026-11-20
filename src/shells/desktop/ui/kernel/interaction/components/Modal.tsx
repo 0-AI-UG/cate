@@ -307,3 +307,88 @@ export function Modal({
     document.body,
   )
 }
+
+/** One keyboard hint in a dialog footer: its keys and what they do. */
+export interface DialogHint { keys: readonly string[]; label: string }
+
+/** A key cap: a quiet tinted chip, no border. */
+export function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="pointer-events-none inline-flex h-5 min-w-5 select-none items-center justify-center rounded px-1 font-sans text-[11px] font-medium leading-none text-primary bg-[color-mix(in_srgb,var(--text-primary)_9%,transparent)]">
+      {children}
+    </kbd>
+  )
+}
+
+/** The highlight of the row under the pointer or cursor in a list dialog. */
+export const LIST_ROW_HIGHLIGHT = 'bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]'
+
+interface ListDialogProps {
+  onClose: () => void
+  ariaLabel: string
+  /** Card width in px. */
+  width?: number
+  /** Title row above the list. */
+  icon?: ReactNode
+  title: ReactNode
+  /** Smaller line under the title. */
+  subtitle?: ReactNode
+  /** Keyboard hints shown in the footer. */
+  hints?: readonly DialogHint[]
+  /** Called for keys pressed anywhere in the dialog (arrows, Enter, digits). */
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLDivElement>) => void
+  children: ReactNode
+}
+
+/** The quiet list dialog: a lightly dimmed backdrop, a card that sits close to
+ *  the app's own surfaces, a title row, the list, and a footer of shortcuts.
+ *  Used by the workspace picker and the workspace actions. */
+export function ListDialog({ onClose, ariaLabel, width = 520, icon, title, subtitle, hints = [], onKeyDown, children }: ListDialogProps) {
+  useRestoreFocusOnUnmount()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const order = useDialogLayer((event) => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    onClose()
+  })
+  useDialogFocus(dialogRef, order)
+  return createPortal(
+    <div
+      className="modal-backdrop-in fixed inset-0 flex items-start justify-center bg-black/60 pt-[12vh] backdrop-blur-[6px]"
+      style={{ zIndex: order }}
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        tabIndex={-1}
+        className="modal-card-in flex max-h-[72vh] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-white/[0.08] shadow-[inset_0_1px_rgb(255_255_255/0.04),0_24px_72px_-20px_rgb(0_0_0/0.9)]"
+        style={{ width, background: 'color-mix(in srgb, var(--surface-1) 82%, transparent)', backdropFilter: 'blur(12px) saturate(1.14)', WebkitBackdropFilter: 'blur(12px) saturate(1.14)' }}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(event) => { trapDialogFocus(event); onKeyDown?.(event) }}
+      >
+        <div className="flex shrink-0 items-center gap-2.5 px-5 pb-2 pt-4">
+          {icon && <span className="shrink-0 text-muted">{icon}</span>}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[14px] font-medium text-primary">{title}</div>
+            {subtitle && <div className="mt-0.5 truncate text-[12px] text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)]">{subtitle}</div>}
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col px-2 pb-2 pt-1">{children}</div>
+        {hints.length > 0 && (
+          <div className="flex shrink-0 flex-nowrap items-center gap-x-3 overflow-hidden whitespace-nowrap border-t border-white/[0.07] bg-white/[0.025] px-5 py-2.5 text-[12px] font-medium text-muted">
+            {hints.map((hint) => (
+              <span key={hint.label} className="inline-flex shrink-0 items-center gap-1.5">
+                <span className="inline-flex items-center gap-1">{hint.keys.map((key) => <Kbd key={key}>{key}</Kbd>)}</span>
+                {hint.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+}

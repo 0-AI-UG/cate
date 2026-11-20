@@ -26,7 +26,7 @@ export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ titl
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {leadingAction && (
-          <div className="flex items-center mr-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className="flex items-center mr-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             {leadingAction}
           </div>
         )}

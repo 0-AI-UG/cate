@@ -1,6 +1,6 @@
 import React, { useRef } from 'react'
-import { FileSearch as FileMagnifyingGlass, Terminal } from 'lucide-react'
-import { Spinner, Tooltip, useDismissableLayer, useHoverIntent } from '../../kernel/interaction'
+import { Terminal } from 'lucide-react'
+import { SearchField, Spinner, Tooltip, useDismissableLayer, useHoverIntent } from '../../kernel/interaction'
 import type { AgentId } from '@services/agents/contract'
 import type { ReviewAgentChoice } from '@panels/review/contract'
 import { AgentFlyout } from '../../services/agents'
@@ -50,9 +50,8 @@ export function ReviewStats({ files, additions, deletions }: { files: number; ad
 }
 
 export function ReviewFileFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return <div className="flex items-center gap-2 px-2 py-1.5 border-b border-subtle flex-shrink-0">
-    <FileMagnifyingGlass size={14} className="text-muted" />
-    <input aria-label="Filter changed files" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Filter changed files" className="bg-transparent flex-1 min-w-0 text-[12px] focus:outline-none" />
+  return <div className="px-2 py-1.5 border-b border-subtle flex-shrink-0">
+    <SearchField value={value} onValueChange={onChange} placeholder="Filter changed files" />
   </div>
 }
 
