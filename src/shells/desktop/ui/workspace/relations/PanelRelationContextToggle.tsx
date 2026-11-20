@@ -1,6 +1,6 @@
 // The execution panel's chip for connected-panel context: how many panels
-// are attached and when they go with a prompt (next message, every message,
-// off). Spelled out while context is armed and for a moment after it was
+// are attached and when they go with a prompt (auto, next message, every
+// message, off). Spelled out while context is armed and for a moment after it was
 // sent; an icon otherwise. Hidden when relations are off, nothing is
 // connected, or no agent runs in the panel. A warning while the agent cannot
 // take context (no prompt context hook).
@@ -33,7 +33,9 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
     return steps ? relatedPanelIds(steps).length : 0
   }, [panel.id, records, relationMap])
   const mode = relationContextMode(currentPanel.fields)
-  const enabled = mode !== 'off'
+  const enabled = mode !== 'off' && transport?.pending === true
+  const modeLabel = mode === 'auto' ? `Auto · ${transport?.pending === false ? 'Up to date' : 'Next'}`
+    : mode === 'once' ? 'Next' : mode === 'always' ? 'Always' : 'Off'
   const justSent = useJustSent(transport?.sentAt)
   const blocked = transport?.blocked
   const expanded = hovered || keyboardFocused || menuOpen || enabled || justSent || !!blocked
@@ -48,13 +50,14 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
           : []),
         { label: `${count} connected panel${count === 1 ? '' : 's'} attached`, enabled: false },
         { type: 'separator' },
+        { id: 'auto', label: `${mode === 'auto' ? '✓ ' : ''}Automatic` },
         { id: 'once', label: `${mode === 'once' ? '✓ ' : ''}Next message` },
         { id: 'always', label: `${mode === 'always' ? '✓ ' : ''}Every message` },
         { id: 'off', label: `${mode === 'off' ? '✓ ' : ''}Off` },
         { type: 'separator' },
         { id: 'preview', label: 'Preview sent context…' },
       ])
-      if (choice === 'once' || choice === 'always' || choice === 'off') {
+      if (choice === 'auto' || choice === 'once' || choice === 'always' || choice === 'off') {
         setRelationContextMode(workspaceId, panel.id, choice)
       } else if (choice === 'preview') {
         // What the runtime would send, guidance included.
@@ -74,7 +77,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
       aria-pressed={enabled}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
-      aria-label={`${count} connected panels, ${blocked ? `not sent: ${blocked.label}` : mode === 'once' ? 'next message' : mode === 'always' ? 'every message' : 'off'}`}
+      aria-label={`${count} connected panels, ${blocked ? `not sent: ${blocked.label}` : mode === 'auto' ? modeLabel.toLowerCase() : mode === 'once' ? 'next message' : mode === 'always' ? 'every message' : 'off'}`}
       title={blocked?.reason ?? 'Choose when connected panels are included'}
       className={`inline-flex h-[20px] min-w-0 items-center rounded-full border transition-[border-color,background-color,color,filter] ${blocked
         ? 'border-transparent bg-warning text-black/85 hover:brightness-110'
@@ -105,7 +108,7 @@ export function PanelRelationContextToggle({ panel, workspaceId }: {
           transition: 'max-width 150ms ease, opacity 150ms ease',
         }}
       >
-        {justSent ? 'Context sent · ' : ''}{count} panel{count === 1 ? '' : 's'}{justSent ? '' : ` · ${blocked ? blocked.label : mode === 'once' ? 'Next' : mode === 'always' ? 'Always' : 'Off'}`}
+        {justSent ? 'Context sent · ' : ''}{count} panel{count === 1 ? '' : 's'}{justSent ? '' : ` · ${blocked ? blocked.label : modeLabel}`}
       </span>
     </button>
   )

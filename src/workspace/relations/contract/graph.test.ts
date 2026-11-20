@@ -102,7 +102,7 @@ describe('panel relation prompt context', () => {
 
     expect(context.text).toBe([
       '<cate-connected-panels>',
-      'Routing context:',
+      'Routing context (replaces any previous connected-panel routing):',
       "1. Browser 8ba53edf — Write frontend summary in here. Use it through Cate browser automation; don't open another browser.",
       '</cate-connected-panels>',
     ].join('\n'))

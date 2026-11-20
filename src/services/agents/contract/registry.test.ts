@@ -23,7 +23,7 @@ describe('agent registry coverage', () => {
     expect(Object.fromEntries(AGENTS.map((agent) => [agent.id, agent.promptContextHook]))).toEqual({
       'claude-code': 'additional-context',
       codex: 'additional-context',
-      cursor: null,
+      cursor: 'additional-context-snake',
       grok: null,
       kiro: 'plain-text',
       opencode: 'endpoint',

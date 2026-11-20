@@ -66,6 +66,8 @@ export async function createHookMockProvider(options: {
   const modelInputs: Array<{ protocol: string; input: Record<string, unknown> }> = []
   const inputText: string[] = []
   let cursorToolFinished: (() => void) | undefined
+  const cursorTextReplies = new Map<string, () => void>()
+  const cursorInputs = new Set<string>()
   // Unpredictable and absent from the prompt: proves the CLI used this fixture,
   // rather than an accidentally inherited account or external model endpoint.
   const answer = `cate-${randomUUID().slice(0, 8)}`
@@ -134,12 +136,25 @@ export async function createHookMockProvider(options: {
           const args = call.arguments
           const write = Buffer.concat([field(1, String(args.path)), field(2, String(args.text)), field(3, call.id)])
           frame(field(2, Buffer.concat([Buffer.from([8, 1]), field(15, 'cate-exec-result'), field(3, write)])))
-        } else complete()
+        } else {
+          // RunSSE opens with only a request id. The user action (including
+          // hook context) arrives on BidiAppend; answering before it arrives
+          // can cancel the upload and falsely pass a prompt-delivery test.
+          const id = byteFields(bytes.subarray(5)).get(1)?.toString() ?? ''
+          if (cursorInputs.delete(id)) complete()
+          else cursorTextReplies.set(id, complete)
+        }
       } else if (route.startsWith('/aiserver.v1.')) {
         if (route.endsWith('/BidiAppend')) {
           const fields = byteFields(bytes)
           const message = fields.get(4) ?? Buffer.from(fields.get(1)?.toString() ?? '', 'hex')
           inputText.push(message.toString('utf8'))
+          if (byteFields(message).has(1) || byteFields(message).has(4)) {
+            const id = byteFields(fields.get(2) ?? Buffer.alloc(0)).get(1)?.toString() ?? ''
+            const reply = cursorTextReplies.get(id)
+            if (reply) { cursorTextReplies.delete(id); reply() }
+            else cursorInputs.add(id)
+          }
           if (byteFields(message).has(2)) { // AgentClientMessage.exec_client_message
             cursorToolFinished?.()
             cursorToolFinished = undefined

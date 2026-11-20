@@ -1,3 +1,4 @@
+import { AGENTS } from '../contract'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { panelDefinition } from '@panels/definitions'
@@ -37,6 +38,8 @@ beforeEach(() => {
   ], [{ id: 'relation', fromPanelId: 'source', toPanelId: 'browser', kind: 'use' }])
   modes = fake.modes
   setMode = fake.document.setRelationContextMode
+  fake.document.setRelationContextMode('source', 'once')
+  modes.clear()
   context = createPromptContext({ document: fake.document, relationsEnabled: () => enabled, relationRole })
 })
 
@@ -86,5 +89,69 @@ describe('one-shot panel relation context', () => {
     enabled = false
     expect(context.consume('source', null)).toBeNull()
     expect(modes.get('source')).toBeUndefined()
+  })
+})
+
+
+describe('automatic relation context', () => {
+  function automatic() {
+    const panels: PanelRecord[] = [
+      { id: 'source', type: 'terminal', title: 'Agent', fields: {} },
+      { id: 'browser', type: 'browser', title: 'Browser', fields: {} },
+      { id: 'other', type: 'terminal', title: 'Other', fields: {} },
+    ]
+    const relations: PanelRelation[] = [{ id: 'r', fromPanelId: 'source', toPanelId: 'browser', kind: 'use' }]
+    const { document, modes } = fakeDocument(panels, relations)
+    const context = createPromptContext({ document, relationsEnabled: () => enabled, relationRole })
+    return { context, document, modes, panels, relations }
+  }
+
+  it.each(AGENTS.map(({ id }) => id))('%s uses the same automatic policy', (agentId) => {
+    const { context, modes } = automatic()
+    expect(context.peek('source', agentId)).toContain('Browser')
+    expect(context.peek('source', agentId)).toContain('Browser') // previews do not consume
+    expect(context.consume('source', agentId)).toContain('Browser')
+    expect(context.peek('source', agentId)).toBeNull()
+    expect(modes.size).toBe(0) // delivery never changes Auto to Off
+    context.reset('source')
+    expect(context.peek('source', agentId)).toContain('Browser')
+  })
+
+  it('resends changed routing, ignoring geometry, unrelated changes and relation order', () => {
+    const { context, panels, relations } = automatic()
+    relations.push({ id: 's', fromPanelId: 'source', toPanelId: 'other', kind: 'trigger' })
+    context.consume('source', null)
+    relations.reverse()
+    relations[0].waypoint = { x: 20, y: 30 }
+    panels.push({ id: 'unrelated', type: 'editor', title: 'Unrelated', fields: {} })
+    expect(context.peek('source', null)).toBeNull()
+    relations[0].label = 'Review the result'
+    expect(context.consume('source', null)).toContain('Review the result')
+    expect(context.peek('source', null)).toBeNull()
+    panels[1].title = 'New browser'
+    expect(context.peek('source', null)).toContain('New browser')
+  })
+
+  it('withdraws routing when the last relation is removed, then sends new connections', () => {
+    const { context, relations } = automatic()
+    context.consume('source', null)
+    const relation = relations.pop()!
+    expect(context.consume('source', null)).toContain('No connected panels remain')
+    expect(context.peek('source', null)).toBeNull()
+    relations.push(relation)
+    expect(context.peek('source', null)).toContain('Browser')
+  })
+
+  it('keeps explicit Off across resets and edits and isolates delivery per panel', () => {
+    const { context, document, relations } = automatic()
+    relations.push({ id: 'other', fromPanelId: 'other', toPanelId: 'browser', kind: 'use' })
+    context.consume('source', null)
+    expect(context.peek('other', null)).toContain('Browser')
+    document.setRelationContextMode('source', 'off')
+    context.reset('source')
+    relations[0].label = 'Changed'
+    expect(context.peek('source', null)).toBeNull()
+    document.setRelationContextMode('source', 'auto')
+    expect(context.peek('source', null)).toContain('Changed')
   })
 })

@@ -2,16 +2,16 @@ import { useId, useMemo } from 'react'
 import type { Point } from '@workspace/canvas/contract'
 import { dockStacks, type DockNode, type PanelId, type PanelRecord, type PanelRelation } from '@workspace/document/contract'
 import { panelConnectionMidpoint, panelConnectionPath } from '@workspace/canvas/contract'
-import { isExecutionSurface, relationContextMode, relationFlows, relationPanels, relationReach } from '@workspace/relations/contract'
+import { relationFlows, relationPanels, relationReach } from '@workspace/relations/contract'
 import {
   PanelRelationSelector,
   RelationCanvasProvider,
   relationRoleOf,
-  usePanelInteractionStore,
   useRelationUi,
   useRelationsEnabled,
-  type PanelInteraction,
 } from '../../../workspace/relations'
+import { useAgentPanels } from '../../../services/agents'
+import type { AgentPanelStates } from '@services/agents/contract'
 import { useClientState, useDocument } from '../../document'
 import type { CanvasDragState } from './ports'
 import type { ViewNode } from './store'
@@ -23,10 +23,9 @@ interface RenderedConnection {
   source: ViewNode
   target: ViewNode
   flowIndex?: number
-  /** Its flow's source has prompt context turned off. */
-  contextOff?: boolean
-  interaction?: PanelInteraction
-  relation?: PanelRelation
+  /** Its flow's context will go with the next turn. */
+  pending: boolean
+  relation: PanelRelation
 }
 
 const EMPTY_RELATIONS: PanelRelation[] = []
@@ -36,19 +35,19 @@ function flowColor(index: number): string {
   return `hsl(${Math.round((211 + index * FLOW_HUE_STEP) % 360)} 72% 58%)`
 }
 
-/** The relations in flows whose source has prompt context off: what
- *  its agent would not be told about. */
-function contextOffRelationIds(
+/** Only the runtime decides whether a source will inject context next turn. */
+function pendingRelationIds(
   relations: readonly PanelRelation[],
   panels: Readonly<Record<string, PanelRecord>>,
+  agents: AgentPanelStates,
 ): Set<string> {
-  const off = new Set<string>()
+  const pending = new Set<string>()
   const graph = relationPanels(Object.values(panels), relationRoleOf)
-  for (const source of Object.values(graph)) {
-    if (!isExecutionSurface(source) || relationContextMode(source.fields) !== 'off') continue
-    for (const step of relationReach(source.id, graph, relations) ?? []) off.add(step.relation.id)
+  for (const source of Object.values(agents)) {
+    if (!source.contextPending) continue
+    for (const step of relationReach(source.panelId, graph, relations) ?? []) pending.add(step.relation.id)
   }
-  return off
+  return pending
 }
 
 /** The panel each stack shows: its active tab, else its first. */
@@ -69,7 +68,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
   const panels = useDocument(workspaceId, (doc) => doc.panels)
   const relationMap = useDocument(workspaceId, (doc) => doc.relations)
   const relations = useMemo(() => Object.values(relationMap), [relationMap])
-  const interactions = usePanelInteractionStore((state) => state.interactions)
+  const agents = useAgentPanels(workspaceId, (states) => states)
   const waypointPreview = useRelationUi((state) => state.waypointPreview)
   const panelRelationsEnabled = useRelationsEnabled(workspaceId)
   const dragSourceNodeId = useCanvasDrag(selectSourceNode)
@@ -78,7 +77,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
   const connections = useMemo(() => {
     const enabledRelations = panelRelationsEnabled ? relations : EMPTY_RELATIONS
     const flowIndexes = relationFlows(enabledRelations, panels, relationRoleOf)
-    const contextOff = contextOffRelationIds(enabledRelations, panels)
+    const pending = pendingRelationIds(enabledRelations, panels, agents)
     const panelToNode = new Map<string, ViewNode>()
     for (const node of Object.values(nodes)) {
       if (node.animationState === 'exiting') continue
@@ -94,52 +93,30 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
     }
 
     const byNodePair = new Map<string, RenderedConnection>()
-    const add = (
-      sourcePanelId: string,
-      targetPanelId: string,
-      interaction?: PanelInteraction,
-      relation?: PanelRelation,
-    ) => {
-      const source = panelToNode.get(sourcePanelId)
-      const target = panelToNode.get(targetPanelId)
-      if (!source || !target || source.id === target.id) return
-      const key = `${source.id}\0${target.id}`
-      const previous = byNodePair.get(key)
-      byNodePair.set(key, {
-        key,
-        source,
-        target,
-        flowIndex: relation ? flowIndexes.get(relation.id) : previous?.flowIndex,
-        contextOff: relation ? contextOff.has(relation.id) : previous?.contextOff,
-        interaction: !interaction
-          ? previous?.interaction
-          : !previous?.interaction || interaction.updatedAt >= previous.interaction.updatedAt
-            ? interaction
-            : previous.interaction,
-        relation: relation ?? previous?.relation,
-      })
-    }
-
-    for (const interaction of Object.values(interactions)) {
-      if (interaction.workspaceId !== workspaceId) continue
-      add(interaction.sourcePanelId, interaction.targetPanelId, interaction)
-    }
     for (const relation of enabledRelations) {
       const preview = waypointPreview[relation.id]
-      add(relation.fromPanelId, relation.toPanelId, undefined, preview ? { ...relation, waypoint: preview } : relation)
+      const source = panelToNode.get(relation.fromPanelId)
+      const target = panelToNode.get(relation.toPanelId)
+      if (!source || !target || source.id === target.id) continue
+      const key = `${source.id}\0${target.id}`
+      byNodePair.set(key, {
+        key, source, target,
+        flowIndex: flowIndexes.get(relation.id),
+        pending: pending.has(relation.id),
+        relation: preview ? { ...relation, waypoint: preview } : relation,
+      })
     }
     return [...byNodePair.values()]
-  }, [activeTabs, dragGhost, dragSourceNodeId, interactions, nodes, panels, panelRelationsEnabled, relations, waypointPreview, workspaceId])
+  }, [activeTabs, agents, dragGhost, dragSourceNodeId, nodes, panels, panelRelationsEnabled, relations, waypointPreview])
 
   if (connections.length === 0) return null
 
-  const marker = (phase: 'active' | 'succeeded' | 'failed') => `${markerPrefix}-${phase}`
+  const defaultMarker = `${markerPrefix}-relation`
   const flowMarker = (flowIndex: number) => `${markerPrefix}-flow-${flowIndex}`
   const flowIndexes = [...new Set(connections
     .map((connection) => connection.flowIndex)
     .filter((index): index is number => index !== undefined))]
   const selectors = connections.map((connection) => {
-    if (!connection.relation) return null
     const sourcePanel = panels[connection.relation.fromPanelId]
     const targetPanel = panels[connection.relation.toPanelId]
     if (!sourcePanel || !targetPanel) return null
@@ -159,7 +136,7 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         sourcePanel={sourcePanel}
         targetPanel={targetPanel}
         position={position}
-        muted={connection.contextOff}
+        muted={!connection.pending}
       />
     )
   })
@@ -174,24 +151,18 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
         style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 500 }}
       >
         <defs>
-          {(['active', 'succeeded', 'failed'] as const).map((phase) => (
-            <marker
-              key={phase}
-              id={marker(phase)}
-              viewBox="0 0 8 8"
-              refX="7"
-              refY="4"
-              markerWidth="8"
-              markerHeight="8"
-              orient="auto"
-              markerUnits="userSpaceOnUse"
-            >
-              <path
-                d="M 0 0 L 8 4 L 0 8 z"
-                fill={phase === 'failed' ? 'var(--git-deleted)' : 'var(--focus-blue)'}
-              />
-            </marker>
-          ))}
+          <marker
+            id={defaultMarker}
+            viewBox="0 0 8 8"
+            refX="7"
+            refY="4"
+            markerWidth="8"
+            markerHeight="8"
+            orient="auto"
+            markerUnits="userSpaceOnUse"
+          >
+            <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--focus-blue)" />
+          </marker>
           {flowIndexes.map((flowIndex) => (
             <marker
               key={`flow-${flowIndex}`}
@@ -212,38 +183,29 @@ export function PanelConnectionLayer({ workspaceId }: { workspaceId: string }) {
           const path = panelConnectionPath(
             { origin: connection.source.origin, size: connection.source.size },
             { origin: connection.target.origin, size: connection.target.size },
-            connection.relation?.fromSide,
-            connection.relation?.toSide,
-            connection.relation?.waypoint,
+            connection.relation.fromSide,
+            connection.relation.toSide,
+            connection.relation.waypoint,
           )
           if (!path) return null
-          const phase = connection.interaction?.phase
-          const visualState = phase ?? 'relation'
-          const markerState = phase ?? 'active'
           const relationColor = connection.flowIndex === undefined ? undefined : flowColor(connection.flowIndex)
-          // Live activity shows in full even on a relation whose context is off.
-          const dimmed = connection.contextOff && !phase
+          const dimmed = !connection.pending
           return (
             <path
               key={connection.key}
-              data-panel-connection={visualState}
-              data-panel-connection-base={connection.relation ? 'relation' : undefined}
-              data-panel-relation-id={connection.relation?.id}
+              data-panel-connection="relation"
+              data-panel-relation-id={connection.relation.id}
               data-panel-flow={connection.flowIndex}
-              data-panel-relation-context-off={dimmed || undefined}
+              data-panel-relation-context-pending={connection.pending}
               d={path}
               fill="none"
-              stroke={phase === 'failed' ? 'var(--git-deleted)' : relationColor ?? 'var(--focus-blue)'}
+              stroke={relationColor ?? 'var(--focus-blue)'}
               strokeWidth={2.25}
               opacity={dimmed ? 0.3 : undefined}
               strokeLinecap="round"
-              markerEnd={`url(#${relationColor && phase !== 'failed'
-                ? flowMarker(connection.flowIndex!)
-                : marker(markerState)})`}
+              markerEnd={`url(#${relationColor ? flowMarker(connection.flowIndex!) : defaultMarker})`}
               vectorEffect="non-scaling-stroke"
-              className={`cate-panel-connection${phase === 'active'
-                ? ' cate-panel-connection-active'
-                : phase && !connection.relation ? ' cate-panel-connection-finished' : ''}`}
+              className="cate-panel-connection"
             />
           )
         })}

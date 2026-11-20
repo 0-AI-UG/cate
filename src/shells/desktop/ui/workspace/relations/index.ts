@@ -21,14 +21,6 @@ export {
   type RelationContextTransport,
 } from './port'
 export {
-  beginPanelInteraction,
-  clearPanelInteractions,
-  usePanelInteractionStore,
-  type PanelInteraction,
-  type PanelInteractionKind,
-  type PanelInteractionPhase,
-} from './interactions'
-export {
   installRelationUiHost,
   relatable,
   relationRoleOf,

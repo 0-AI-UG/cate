@@ -22,6 +22,7 @@ describe('PanelRelationContextToggle', () => {
   let root: Root
   let detach: () => void
   let supported: boolean
+  let pending: boolean
   let sentAt: number | undefined
   let blocked: { label: string; reason: string } | undefined
   let settings: ReturnType<typeof testRelationHost>
@@ -30,6 +31,7 @@ describe('PanelRelationContextToggle', () => {
 
   beforeEach(() => {
     supported = true
+    pending = true
     sentAt = undefined
     blocked = undefined
     settings = testRelationHost({ definitions: [...PANEL_DEFINITIONS] })
@@ -38,7 +40,7 @@ describe('PanelRelationContextToggle', () => {
     installRelationUiPort({
       showMenu,
       openTextPreview,
-      useContextTransport: () => (supported ? { sentAt, blocked } : null),
+      useContextTransport: () => (supported ? { sentAt, pending, blocked } : null),
       previewContext: async () => 'what the runtime would send',
     })
     detach = openTestDocument('ws', {
@@ -75,7 +77,16 @@ describe('PanelRelationContextToggle', () => {
     await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
     const label = host.querySelector('button span') as HTMLSpanElement
     expect(label.style.maxWidth).toBe('180px')
-    expect(label.textContent).toBe('1 panel · Next')
+    expect(label.textContent).toBe('1 panel · Auto · Next')
+  })
+
+  it('shows Auto as up to date and muted after its context was delivered', async () => {
+    pending = false
+    await act(async () => root.render(<PanelRelationContextToggle panel={source} workspaceId="ws" />))
+    const button = host.querySelector('button')!
+    expect(button.querySelector('span')?.textContent).toBe('1 panel · Auto · Up to date')
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    expect(button.classList.contains('bg-surface-3')).toBe(true)
   })
 
   it('says for a moment that context was sent', async () => {
@@ -116,6 +127,7 @@ describe('PanelRelationContextToggle', () => {
     expect(documentStoreFor('ws')!.getSnapshot().panels.source.fields.relationContextMode).toBe('off')
     expect(showMenu).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ label: '1 connected panel attached', enabled: false }),
+      expect.objectContaining({ id: 'auto' }),
       expect.objectContaining({ id: 'once' }),
       expect.objectContaining({ id: 'always' }),
       expect.objectContaining({ id: 'off' }),

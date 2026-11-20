@@ -34,6 +34,12 @@ Every CLI runs a native file-writing tool, completes a turn, gets interrupted
 mid-response, completes a recovery turn, and resumes its saved session with
 Cate's production resume arguments. Edits must reach Cate's change store. Native
 prompt context must reach the model request for each CLI that supports it.
+`promptContext.itest.ts` also drives ten native turns through the production
+relation policy: initial Auto delivery, an unchanged follow-up, changed routing,
+Off, Next becoming Off, repeated Always, and Auto after a native conversation
+reset. It checks both injection counts and the context in model-bound requests.
+Cursor's response is top-level `additional_context`, not Claude's envelope;
+its fake backend waits for the actual user action before replying.
 
 | CLI | Additional lifecycle paths |
 | --- | --- |
@@ -58,8 +64,8 @@ turn events and the settings display. There are no user-set approval overrides.
 
 CLI limitations are asserted rather than hidden: Claude cancellation is recovered
 from its real transcript; Kiro V3 has no native interrupt hook and uses Cate's PTY
-input recovery. Cursor and Kiro do not expose permission-wait hooks. Cursor and
-Grok do not support Cate's native prompt-context injection. The suite does not
+input recovery. Cursor and Kiro do not expose permission-wait hooks. Cursor uses `beforeSubmitPrompt`'s top-level `additional_context`; Grok's
+prompt-submit hook still discards context output, so it remains unsupported. The suite does not
 invent vendor events for those missing interfaces.
 
 ## Conversation boundaries
