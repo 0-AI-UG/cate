@@ -5,7 +5,9 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import { installPasskeyPageBridge } from './passkeyPageBridge'
 
-if (process.isMainFrame && ipcRenderer.sendSync('cate-passkeys-available')) {
+// Desktop main registers the synchronous availability handler only on macOS.
+// Sending it on Windows or Linux blocks the guest preload waiting for a reply.
+if (process.isMainFrame && process.platform === 'darwin' && ipcRenderer.sendSync('cate-passkeys-available')) {
   contextBridge.exposeInMainWorld('__catePasskeys', {
     request: (input: unknown) => ipcRenderer.invoke('cate-passkeys-request', input),
     cancel: (id: string) => ipcRenderer.send('cate-passkeys-cancel', id),

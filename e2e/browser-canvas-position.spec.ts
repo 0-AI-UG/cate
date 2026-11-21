@@ -41,7 +41,6 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
     await installPerfHelpers(page)
     const { panelId } = await create(page, 'browser', { x: 100, y: 100 }, { url })
     const guestId = await waitForBrowserGuest(page, panelId)
-    await page.locator('[data-unfocused-overlay]').click()
     await expect.poll(() => app.evaluate(({ webContents }, id) => {
       const guest = webContents.fromId(id)!
       return { url: guest.getURL(), loading: guest.isLoadingMainFrame(), crashed: guest.isCrashed() }
@@ -49,6 +48,7 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
     await expect.poll(() => app.evaluate(({ webContents }, id) =>
       webContents.fromId(id)!.executeJavaScript('document.querySelector("button")?.textContent ?? ""'),
     guestId), { message: 'page loads in the webview' }).toBe('Click after moving')
+    await page.locator('[data-unfocused-overlay]').click()
     for (const [index, zoom] of [0.55, 1, 0.8].entries()) {
       await page.evaluate(({ zoom, index }) => {
         window.__cateE2E!.setZoom(zoom)
