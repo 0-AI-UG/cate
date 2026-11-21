@@ -19,7 +19,7 @@ import { createMachineProvisioner, dialMachine, listSshHosts, listWslDistros, No
 import { isRuntimeInstalled } from '@runtime/daemon/node'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { createBrowserDesktop, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
-import { CANVAS_BACKGROUNDS_DIR, DESKTOP_CHANNELS as C, desktopClientFeatures, PRIVATE_DEVICE_FILES, usesAppleSiliconWebviewGraphics, type UpdateStatus } from '../contract'
+import { CANVAS_BACKGROUNDS_DIR, DESKTOP_CHANNELS as C, desktopClientFeatures, PRIVATE_DEVICE_FILES, type UpdateStatus } from '../contract'
 import { ANALYTICS_ENDPOINT, createAnalytics, type CommonContext } from './analytics/analytics'
 import { registerAppIpc } from './appIpc'
 import { createCanvasBackgrounds } from './canvasBackgrounds'
@@ -61,9 +61,10 @@ const device = createDeviceFiles(userData)
 const settings = (): ClientSettings => clientSettingsTable.normalize(device.get('settings'))
 
 // Command-line switches must be set before ready; applies after a restart.
-const useAppleSiliconGraphics = usesAppleSiliconWebviewGraphics(process)
-if (useAppleSiliconGraphics || settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
-if (useAppleSiliconGraphics) {
+// Profiles can compare the app defaults with Chromium's graphics defaults.
+const profileStockGraphics = IS_E2E && process.env.CATE_E2E_STOCK_WEBVIEW_GRAPHICS === '1'
+if (settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
+if (process.platform === 'darwin' && process.arch === 'arm64' && !profileStockGraphics) {
   // Cold page raster and compositor pipeline creation can block each other
   // on Chromium's shared GPU thread. Keep GPU compositing and native input.
   app.commandLine.appendSwitch('disable-skia-graphite')

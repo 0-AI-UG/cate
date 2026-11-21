@@ -29,15 +29,15 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
       gl: app.commandLine.getSwitchValue('use-gl'),
     }))
     console.log('Webview graphics', JSON.stringify(graphics))
-    if (graphics.platform === 'darwin' && graphics.arch === 'arm64') {
-      expect(graphics).toMatchObject({ rasterizationDisabled: true, graphiteDisabled: true, angle: 'gl' })
-    }
+    const appleSilicon = graphics.platform === 'darwin' && graphics.arch === 'arm64'
+    expect(graphics).toMatchObject({ rasterizationDisabled: false, graphiteDisabled: appleSilicon })
+    expect([graphics.gl, graphics.angle]).toEqual(appleSilicon ? ['angle', 'gl'] : chromiumArgs.length ? ['angle', 'swiftshader'] : ['', ''])
     await test.step('Open a workspace and canvas', async () => {
       await openWorkspace(page, makeProject(home))
       await addCanvas(page)
     })
     await installPerfHelpers(page)
-    const { panelId } = await create(page, 'browser', { x: 100, y: 100 }, { url })
+    const { panelId, nodeId } = await create(page, 'browser', { x: 100, y: 100 }, { url })
     const guestId = await waitForBrowserGuest(page, panelId)
     await expect.poll(() => app.evaluate(({ webContents }, id) => {
       const guest = webContents.fromId(id)!
@@ -46,7 +46,10 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
     await expect.poll(() => app.evaluate(({ webContents }, id) =>
       webContents.fromId(id)!.executeJavaScript('document.querySelector("button")?.textContent ?? ""'),
     guestId), { message: 'page loads in the webview' }).toBe('Click after moving')
-    await page.locator('[data-unfocused-overlay]').click()
+    // Activate the node before testing native input inside the guest.
+    const node = page.locator(`[data-node-id="${nodeId}"]`)
+    await node.locator('[data-unfocused-overlay]').dispatchEvent('click')
+    await expect(node).toHaveAttribute('data-node-active', 'true')
     for (const [index, zoom] of [0.55, 1, 0.8].entries()) {
       await page.evaluate(({ zoom, index }) => {
         window.__cateE2E!.setZoom(zoom)

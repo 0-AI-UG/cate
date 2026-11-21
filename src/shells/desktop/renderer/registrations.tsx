@@ -12,7 +12,7 @@ import { installFileDropHandler } from '../ui/client/layout/drag'
 import { installReviewOpener, openDroppedFiles, registerSettingsPage, registerWorkspaceViews } from '../ui/app'
 import { setAgentChangesOpener } from '../ui/services/agents'
 import { openAgentChanges } from '@panels/review/client'
-import { usesAppleSiliconWebviewGraphics, type DesktopApi, type DesktopAppInfo, type NativeAction } from '../contract'
+import type { DesktopApi, NativeAction } from '../contract'
 import { useUIStore } from '../ui/app/state/uiStore'
 import { quitBlockers } from './quitBlockers'
 import { syncMenuModel } from './menuModel'
@@ -50,7 +50,7 @@ function GeneralPage() {
   )
 }
 
-function UpdatesPage({ fixedRasterMode }: { fixedRasterMode: boolean }) {
+function UpdatesPage() {
   const beta = useClientSetting('betaUpdatesEnabled')
   const gpu = useClientSetting('disableGpuRasterization')
   return (
@@ -61,9 +61,9 @@ function UpdatesPage({ fixedRasterMode }: { fixedRasterMode: boolean }) {
       >
         <Toggle checked={beta} onChange={(v) => setClientSetting('betaUpdatesEnabled', v)} />
       </SettingRow>
-      {!fixedRasterMode && <SettingRow label="Disable GPU rasterization" description="Works around garbled text on some GPUs. Applies after a restart.">
+      <SettingRow label="Disable GPU rasterization" description="Works around garbled text on some GPUs. Applies after a restart.">
         <Toggle checked={gpu} onChange={(v) => setClientSetting('disableGpuRasterization', v)} />
-      </SettingRow>}
+      </SettingRow>
     </div>
   )
 }
@@ -84,7 +84,7 @@ const WINDOW_ACTIONS = defineActions({
 
 // --- Registration -----------------------------------------------------------------
 
-export function registerDesktopRenderer(api: DesktopApi, info: DesktopAppInfo): () => void {
+export function registerDesktopRenderer(api: DesktopApi): () => void {
   installReviewOpener(async (request) => {
     useUIStore.getState().openOverlay({ view: 'pullRequests', section: JSON.stringify(request) })
   })
@@ -119,7 +119,7 @@ export function registerDesktopRenderer(api: DesktopApi, info: DesktopAppInfo): 
       return id !== null
     }),
     registerSettingsPage({ id: 'general', title: 'General', scope: 'client', group: 'general', order: 0, component: GeneralPage }),
-    registerSettingsPage({ id: 'updates', title: 'Updates', scope: 'client', group: 'general', order: 90, component: () => <UpdatesPage fixedRasterMode={usesAppleSiliconWebviewGraphics(info)} /> }),
+    registerSettingsPage({ id: 'updates', title: 'Updates', scope: 'client', group: 'general', order: 90, component: UpdatesPage }),
   ]
   return () => {
     for (const stop of stops.splice(0)) stop()

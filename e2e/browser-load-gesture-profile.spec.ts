@@ -92,9 +92,17 @@ test('browser navigation and loading overlap canvas gestures', async () => {
   if (process.env.CATE_BROWSER_LOAD_PRECOMPILE === '1') chromiumArgs.push('--enable-skia-graphite-precompilation')
   if (process.env.CATE_BROWSER_LOAD_DRDC === '1') chromiumArgs.push('--enable-features=EnableDrDc')
   if (process.env.CATE_BROWSER_LOAD_DRDC === 'separate') chromiumArgs.push('--enable-features=EnableDrDc', '--disable-features=GraphiteContextIsThreadSafe')
-  if (process.env.CATE_BROWSER_LOAD_ANGLE === 'gl') chromiumArgs.push('--use-angle=gl')
+  if (process.env.CATE_BROWSER_LOAD_ANGLE === 'gl') chromiumArgs.push('--use-gl=angle', '--use-angle=gl')
   let coldBundle: string | undefined
   const env: Record<string, string> = process.env.CATE_BROWSER_LOAD_DRDC === 'separate' ? { CATE_E2E_BACKGROUND_THROTTLING: '1' } : {}
+  // Apply explicit graphics experiments to the same baseline as before.
+  if (process.env.CATE_BROWSER_LOAD_BASELINE === '1' || [
+    process.env.CATE_BROWSER_LOAD_CPU_RASTER,
+    process.env.CATE_BROWSER_LOAD_GRAPHITE,
+    process.env.CATE_BROWSER_LOAD_PRECOMPILE,
+    process.env.CATE_BROWSER_LOAD_DRDC,
+    process.env.CATE_BROWSER_LOAD_ANGLE,
+  ].some(value => value !== undefined)) env.CATE_E2E_STOCK_WEBVIEW_GRAPHICS = '1'
   if (process.env.CATE_BROWSER_LOAD_COLD_BUNDLE === '1') {
     const source = process.env.CATE_E2E_EXECUTABLE ?? require('electron') as string
     const copy = copyElectronForColdGpuCache(source)
@@ -112,8 +120,14 @@ test('browser navigation and loading overlap canvas gestures', async () => {
     await page.waitForFunction(() => !!window.__catePerf)
     const ids: number[] = []
     for (let i = 0; i < Number(process.env.CATE_BROWSER_LOAD_COUNT ?? 1); i++) {
-      const { panelId } = await create(page, 'browser', { x: 300 + i % 2 * 400, y: 60 + Math.floor(i / 2) * 340 }, { url: origin + '/settled' })
-      ids.push(await waitForBrowserGuest(page, panelId))
+      const url = origin + '/settled'
+      const { panelId } = await create(page, 'browser', { x: 300 + i % 2 * 400, y: 60 + Math.floor(i / 2) * 340 }, { url })
+      const id = await waitForBrowserGuest(page, panelId)
+      await expect.poll(() => app.evaluate(({ webContents }, { id, url }) => {
+        const guest = webContents.fromId(id)!
+        return guest.getURL() === url && !guest.isLoadingMainFrame()
+      }, { id, url }), { message: 'initial webview navigation completes before profiling' }).toBe(true)
+      ids.push(id)
     }
     await app.evaluate(({ webContents }, ids) => {
       for (const id of ids) {
