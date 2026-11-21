@@ -52,7 +52,6 @@ function GeneralPage() {
 
 function UpdatesPage() {
   const beta = useClientSetting('betaUpdatesEnabled')
-  const gpu = useClientSetting('disableGpuRasterization')
   return (
     <div className="flex flex-col gap-1">
       <SettingRow
@@ -60,9 +59,6 @@ function UpdatesPage() {
         description="Get early access to less stable pre-release builds. Turning this off keeps any beta you've installed until stable catches up."
       >
         <Toggle checked={beta} onChange={(v) => setClientSetting('betaUpdatesEnabled', v)} />
-      </SettingRow>
-      <SettingRow label="Disable GPU rasterization" description="Works around garbled text on some GPUs. Applies after a restart.">
-        <Toggle checked={gpu} onChange={(v) => setClientSetting('disableGpuRasterization', v)} />
       </SettingRow>
     </div>
   )

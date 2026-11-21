@@ -1,7 +1,6 @@
 import { expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({}))
 import { setupGuest, identity, domSnapshot } from './pageDriver.testSupport'
-import { isAgentKeyInput } from './pageDriver'
 import { GuestDialogs } from './dialogs'
 
 it('binds every operation to the full guest identity', async () => {
@@ -327,15 +326,11 @@ it('types the US-layout shifted character for Shift with a digit or symbol', asy
   expect(chars().at(-1)).toEqual({ type: 'char', keyCode: '_', modifiers: ['shift'] })
 })
 
-it('sends keys to its own guest, marked as agent input, never as CDP key events', async () => {
+it('sends agent keys to its own page widget', async () => {
   const { observe, execute, contents } = await setupGuest()
   const observation = await observe()
-  const marked: boolean[] = []
-  contents.sendInputEvent.mockImplementation(() => { marked.push(isAgentKeyInput(contents as never)) })
   await execute('pressKey', { key: 'Enter', observationId: observation.observationId })
   expect(contents.sendInputEvent.mock.calls.map(([event]) => event.type)).toEqual(['keyDown', 'char', 'keyUp'])
-  expect(marked).toEqual([true, true, true])
-  expect(isAgentKeyInput(contents as never)).toBe(false)
   expect(contents.debugger.sendCommand.mock.calls.some(([method]) => method === 'Input.dispatchKeyEvent')).toBe(false)
 })
 

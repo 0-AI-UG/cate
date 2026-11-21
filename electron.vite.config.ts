@@ -30,7 +30,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           // The desktop shell's main (architecture 15).
-          shell: resolve(__dirname, 'src/shells/desktop/main/index.ts'),
+          shell: resolve(__dirname, 'src/shells/desktop/main/entry.ts'),
         }
       }
     }

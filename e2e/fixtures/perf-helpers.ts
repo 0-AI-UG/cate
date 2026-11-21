@@ -18,7 +18,7 @@ export async function installPerfHelpers(page: Page): Promise<void> {
       try { return guest ? guest.getWebContentsId() : null } catch { return null }
     }
     w.__perfE2E = {
-      browserWebContentsId: (panelId: string) => guestId(`[data-browser-surface="${panelId}"] webview`),
+      browserWebContentsId: (panelId: string) => guestId(`[data-browser-surface="${panelId}"] [data-browser-engine]`),
       panelOfNode: (nodeId: string) => window.__cateE2E!.nodes().find((n) => n.id === nodeId)?.panelId ?? null,
       async ptyIdOfNode(nodeId: string) {
         const panelId = window.__cateE2E!.nodes().find((n) => n.id === nodeId)?.panelId

@@ -62,3 +62,5 @@ export function subscribeBrowserPartitions(listener: () => void): () => void {
 }
 
 export { createPageOps, type PageOps, type PageOpsDeps, type PageOpTarget } from './pageOps'
+
+export { openEngineSurface } from './engineSurface'

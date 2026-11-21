@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import { writeFile } from 'node:fs/promises'
 import sharp from 'sharp'
 import { createServer, type Server } from 'node:http'
@@ -24,7 +25,7 @@ test('large-form observations report latency and keep screenshots independent of
     const browser = await createBrowser(page, url, { x: 100, y: 100 })
     await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 }).toMatchObject({ ok: true })
     const guestId = await browserWebContentsId(page, browser.panelId)
-    await app.evaluate(({ webContents }, id) => {
+    await engineEvaluate(app, ({ webContents }, id) => {
       const guest = webContents.fromId(id!)! as any
       const send = guest.debugger.sendCommand.bind(guest.debugger)
       guest.__observationCalls = []
@@ -43,7 +44,7 @@ test('large-form observations report latency and keep screenshots independent of
       await browserInvoke(page, browser, method, { disableDiffing: true, ...extra })
       const samples: Array<Record<string, any>> = []
       for (let i = 0; i < 5; i++) {
-        await app.evaluate(({ webContents }, id) => { (webContents.fromId(id!)! as any).__observationCalls = [] }, guestId)
+        await engineEvaluate(app, ({ webContents }, id) => { (webContents.fromId(id!)! as any).__observationCalls = [] }, guestId)
         const started = performance.now()
         const result = await browserInvoke(page, browser, method, { disableDiffing: true, profile: true, ...extra }) as any
         const elapsedMs = performance.now() - started
@@ -62,7 +63,7 @@ test('large-form observations report latency and keep screenshots independent of
           expect(observation.screenshot.width).toBe(observation.viewport.width)
           expect(observation.screenshot.height).toBe(observation.viewport.height)
         }
-        const calls = await app.evaluate(({ webContents }, id) => (webContents.fromId(id!)! as any).__observationCalls as string[], guestId)
+        const calls = await engineEvaluate(app, ({ webContents }, id) => (webContents.fromId(id!)! as any).__observationCalls as string[], guestId)
         samples.push({ elapsedMs, cdpCalls: calls.length, axCalls: calls.filter(method => method.startsWith('Accessibility.')).length,
           imageBytes: observation.screenshot ? Buffer.from(observation.screenshot.data, 'base64').length : 0,
           phases: observation.performance })

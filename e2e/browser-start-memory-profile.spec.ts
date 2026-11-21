@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import { writeFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 import { launchApp, closeApp, makeProject, openWorkspace, addCanvas, seedOnCanvas } from './fixtures/electron-app'
@@ -28,7 +29,7 @@ test('profiles unused start pages across workspaces and demand creation', async 
       live.push({ browser, id: await browserWebContentsId(page, browser.panelId) })
     }
     await audit.sample('three-workspaces-twelve-start-pages-three-agent-pages')
-    const guestsBefore = await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(w => w.getType() === 'webview').length)
+    const guestsBefore = await engineEvaluate(app, ({ webContents }) => webContents.getAllWebContents().length)
     const start = starts.at(-1)!
     const began = Date.now()
     expect(await browserInvoke(page, start, 'getAXState', { disableDiffing: true })).toMatchObject({ ok: true })

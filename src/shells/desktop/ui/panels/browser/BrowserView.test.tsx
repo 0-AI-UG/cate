@@ -6,7 +6,7 @@ import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { installMockClientUi } from '../../../../../test/clientUi'
 import { createClientIdentity, installClientIdentity, type SessionHandle } from '@client/connections'
 import type { PanelRecord } from '@workspace/document/contract'
-import { installBrowserPageBridge, installBrowserPartitions } from '@services/browser/desktop/renderer'
+import { installBrowserPageBridge, installBrowserPartitions, openEngineSurface } from '@services/browser/desktop/renderer'
 import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/contract'
 import BrowserView from './BrowserView'
 
@@ -19,6 +19,15 @@ vi.mock('../../client/document', async (importOriginal) => {
   }
 })
 import { runSurfaceRequest } from '@client/host'
+
+vi.mock('@services/browser/desktop/renderer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@services/browser/desktop/renderer')>()),
+  openEngineSurface: vi.fn(),
+}))
+vi.mock('../../client/host/surfaceRegistry', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../client/host/surfaceRegistry')>()),
+  surfaceDisplayScale: () => 1,
+}))
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -49,6 +58,16 @@ function render(snapshot: BrowserSnapshot | null, props: { focused?: boolean; st
 
 beforeEach(() => {
   send.mockClear()
+  vi.mocked(openEngineSurface).mockImplementation(async (canvas, _input, _secure, options) => ({
+    surface: Object.assign(canvas, {
+      getWebContentsId: () => 1, getURL: () => options.url, getTitle: () => '',
+      loadURL: vi.fn(async () => {}), canGoBack: () => false, canGoForward: () => false,
+      isLoading: () => false, goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn(),
+      reloadIgnoringCache: vi.fn(), getZoomFactor: () => 1, setZoomFactor: vi.fn(),
+      insertCSS: async () => '', setVisible: vi.fn(),
+    }),
+    dispose: vi.fn(),
+  }))
   installMockClientUi()
   installClientIdentity(createClientIdentity({ device: { name: 'test', publicKey: 'f' }, features: ['webview', 'pageDriver'] }))
   preparing = new Set()
@@ -82,8 +101,8 @@ beforeEach(() => {
   root = createRoot(host)
 })
 
-afterEach(() => {
-  act(() => root.unmount())
+afterEach(async () => {
+  await act(async () => root.unmount())
   host.remove()
   restoreRuntime()
   installBrowserPageBridge(null)
@@ -101,23 +120,24 @@ describe('BrowserView', () => {
     preparing.add('ws')
     render(snapshotOf([tab({ url: 'https://a.test/' })]))
     expect(host.textContent).toContain('Loading')
-    expect(host.querySelector('[data-browser-webview-slot]')).toBeNull()
+    expect(host.querySelector('[data-browser-page-slot]')).toBeNull()
 
     preparing.delete('ws')
     act(() => { for (const listener of [...partitionListeners]) listener() })
-    expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
+    expect(host.querySelector('[data-browser-page-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
   })
 
-  it('defers the start guest until navigation, then retains it on return', () => {
+  it('defers the start guest until navigation, then retains it on return', async () => {
     render(snapshotOf([tab()]))
     expect(host.textContent).toContain('Enter a URL to open a page')
-    expect(host.querySelector('webview')).toBeNull()
+    expect(host.querySelector('canvas')).toBeNull()
     render(snapshotOf([tab({ url: 'https://a.test/', nav: 1 })]))
-    const guest = host.querySelector('webview')
+    await act(async () => {})
+    const guest = host.querySelector('canvas')
     expect(guest).not.toBeNull()
-    expect(host.querySelector('[data-browser-webview-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
+    expect(host.querySelector('[data-browser-page-slot]')?.getAttribute('data-browser-partition')).toBe('persist:ws-ws-runtime')
     render(snapshotOf([tab({ nav: 2 })]))
-    expect(host.querySelector('webview')).toBe(guest)
+    expect(host.querySelector('canvas')).toBe(guest)
   })
 
   it('sends address bar input as a navigate op', () => {
@@ -141,7 +161,7 @@ describe('BrowserView', () => {
 
   it('shows its own tab: another client\'s selection does not move it, a caller\'s does', () => {
     const tabs = [tab({ url: 'https://a.test/' }), tab({ id: 't2', url: 'https://b.test/', title: 'B' }), tab({ id: 't3', url: 'https://c.test/' })]
-    const shown = () => host.querySelector('[data-browser-webview-slot]:not(.invisible)')?.getAttribute('data-browser-src')
+    const shown = () => host.querySelector('[data-browser-page-slot]:not(.invisible)')?.getAttribute('data-browser-src')
     render(snapshotOf(tabs))
     expect(shown()).toBe('https://a.test/')
     render(snapshotOf(tabs, { activeTabId: 't2', activeSource: 'someone-else' }))
@@ -154,21 +174,23 @@ describe('BrowserView', () => {
   })
 
   it('mounts a tab\'s page only once this client shows it, then keeps it', () => {
-    const slots = () => [...host.querySelectorAll('[data-browser-webview-slot]')].map((slot) => slot.getAttribute('data-browser-src'))
+    const slots = () => [...host.querySelectorAll('[data-browser-page-slot]')].map((slot) => slot.getAttribute('data-browser-src'))
     const tabs = [tab({ url: 'https://a.test/' }), tab({ id: 't2', url: 'https://b.test/', title: 'B' })]
     render(snapshotOf(tabs))
     render(snapshotOf(tabs, { activeTabId: 't2', activeSource: 'someone-else' }))
     expect(slots()).toEqual(['https://a.test/'])
+    const firstSurface = host.querySelector('canvas')
+    expect(firstSurface).not.toBeNull()
     act(() => host.querySelector<HTMLElement>('[title^="B ·"]')?.click())
     expect(slots()).toEqual(['https://a.test/', 'https://b.test/'])
-    expect(host.querySelector('webview')?.getAttribute('style')).not.toContain('display')
+    expect(host.querySelector('canvas')).toBe(firstSurface)
   })
 
-  it('renders internal pages instead of a webview', async () => {
+  it('renders internal pages without an engine surface', async () => {
     render(snapshotOf([tab({ url: 'chrome://history/' })]))
     await act(async () => { await Promise.resolve() })
     expect(host.querySelector('[data-browser-history]')).not.toBeNull()
-    expect(host.querySelector('[data-browser-webview-slot]')).toBeNull()
+    expect(host.querySelector('[data-browser-page-slot]')).toBeNull()
   })
 
   it('registers its pages for page operations when this client drives pages', async () => {
@@ -193,8 +215,9 @@ describe('BrowserView', () => {
 
   it('loads a navigation under StrictMode, whose first mount is disposed', async () => {
     render(snapshotOf([tab({ url: 'about:blank' })]), { strict: true })
+    await act(async () => {})
     const loadURL = vi.fn()
-    const webview = Object.assign(host.querySelector('webview')!, {
+    const webview = Object.assign(host.querySelector('canvas')!, {
       loadURL, getWebContentsId: () => 1, getURL: () => 'about:blank',
       setZoomFactor: () => {}, insertCSS: async () => {},
     })

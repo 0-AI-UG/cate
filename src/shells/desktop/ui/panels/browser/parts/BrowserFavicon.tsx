@@ -1,8 +1,10 @@
 // BrowserFavicon: a tab/bookmark favicon with a graceful fallback. Renders the
 // page-reported favicon as an <img>; on a load error (or when no favicon is
 // known yet) it falls back to a globe glyph so the tab always has an icon.
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { Globe } from 'lucide-react'
+
+export const BrowserIconPartition = createContext<string | null>(null)
 
 interface Props {
   src?: string
@@ -11,17 +13,26 @@ interface Props {
 }
 
 export function BrowserFavicon({ src, size = 14, className = '' }: Props): JSX.Element {
+  const partition = useContext(BrowserIconPartition)
+  const [image, setImage] = useState<string | undefined>(() => src?.startsWith('data:image/png;base64,') ? src : undefined)
+  useEffect(() => {
+    let current = true
+    if (src?.startsWith('data:image/png;base64,')) { setImage(src); return }
+    setImage(undefined)
+    if (partition && src && window.cateBrowserEngine) void window.cateBrowserEngine.icon(partition, src).then(value => { if (current) setImage(value ?? undefined) }).catch(() => {})
+    return () => { current = false }
+  }, [partition, src])
   const [errored, setErrored] = useState(false)
   // Reset the error flag whenever the source changes so a new favicon gets a
   // fresh load attempt (a stuck `errored` would keep showing the globe).
   useEffect(() => setErrored(false), [src])
 
-  if (!src || errored) {
+  if (!image || errored) {
     return <Globe size={size} className={`text-muted shrink-0 ${className}`} />
   }
   return (
     <img
-      src={src}
+      src={image}
       alt=""
       width={size}
       height={size}

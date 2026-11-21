@@ -19,26 +19,49 @@ interface TrackedDownload {
   dispose(): void
 }
 
+export interface BrowserDownloadOwner {
+  id: number
+  send(channel: string, event: unknown): void
+  once?(event: 'destroyed', listener: () => void): unknown
+}
+
 interface DownloadGroup {
-  host: WebContents
+  host: BrowserDownloadOwner
   downloads: TrackedDownload[]
 }
 
 export interface GuestDownloadsDeps {
+  owner(page: WebContents): BrowserDownloadOwner | undefined
   /** Where downloads are saved on this machine. */
   downloadDir(): string
-  notify(host: WebContents, event: { webContentsId: number; downloads: BrowserDownloadEntry[] }): void
+  notify(host: BrowserDownloadOwner, event: { webContentsId: number; downloads: BrowserDownloadEntry[] }): void
 }
 
 export class GuestDownloads {
   private readonly groups = new Map<number, DownloadGroup>()
-  private readonly hosts = new WeakSet<WebContents>()
+  private readonly hosts = new WeakSet<BrowserDownloadOwner>()
   private readonly sessions = new WeakSet<Session>()
 
   constructor(private readonly deps: GuestDownloadsDeps) {}
 
   list(webContentsId: number): BrowserDownloadEntry[] {
     return (this.groups.get(webContentsId)?.downloads ?? []).map(({ entry }) => ({ ...entry }))
+  }
+
+  /** Metadata from a separate browser engine; completed files and their OS
+   *  actions stay available even after that engine or its page closes. */
+  adopt(host: BrowserDownloadOwner, id: number, entries: BrowserDownloadEntry[]): void {
+    this.trackHost(host)
+    this.groups.set(id, { host, downloads: entries.map(entry => ({ entry: { ...entry }, dispose() {} })) })
+    this.pruneCompleted(host)
+  }
+
+  interruptRemote(): void {
+    for (const [id, group] of this.groups) {
+      let changed = false
+      for (const tracked of group.downloads) if (!tracked.item && (tracked.entry.state === 'progressing' || tracked.entry.state === 'paused')) { tracked.entry.state = 'interrupted'; changed = true }
+      if (changed) this.notify(id, group)
+    }
   }
 
   /** Tracks every download of a partition's guests. Idempotent. */
@@ -87,7 +110,7 @@ export class GuestDownloads {
     try { this.deps.notify(group.host, { webContentsId: id, downloads: this.list(id) }) } catch { /* host gone */ }
   }
 
-  private trackHost(host: WebContents): void {
+  private trackHost(host: BrowserDownloadOwner): void {
     if (this.hosts.has(host)) return
     this.hosts.add(host)
     host.once?.('destroyed', () => {
@@ -99,11 +122,11 @@ export class GuestDownloads {
     })
   }
 
-  private pruneCompleted(host: WebContents): void {
+  private pruneCompleted(host: BrowserDownloadOwner): void {
     const completed: Array<{ id: number; group: DownloadGroup; tracked: TrackedDownload }> = []
     for (const [id, group] of this.groups) {
       if (group.host !== host) continue
-      for (const tracked of group.downloads) if (!tracked.item) completed.push({ id, group, tracked })
+      for (const tracked of group.downloads) if (!tracked.item && tracked.entry.state !== 'progressing' && tracked.entry.state !== 'paused') completed.push({ id, group, tracked })
     }
     completed.sort((a, b) => a.tracked.entry.at - b.tracked.entry.at)
     for (const { id, group, tracked } of completed.slice(0, -COMPLETED_DOWNLOADS_PER_HOST)) {
@@ -115,7 +138,7 @@ export class GuestDownloads {
 
   private track(item: DownloadItem, guest: WebContents | undefined): void {
     const id = guest?.id
-    const host = guest?.hostWebContents
+    const host = guest && this.deps.owner(guest)
     if (id === undefined || !host) return
     this.trackHost(host)
     // Guests are embedded, so pick a deterministic, collision-free destination
@@ -124,7 +147,7 @@ export class GuestDownloads {
     fs.mkdirSync(dir, { recursive: true })
     const filename = path.basename(item.getFilename() || 'download')
     item.setSavePath(path.join(dir, `${Date.now()}-${filename}`))
-    const group = this.groups.get(id) ?? { host, downloads: [] }
+    const group: DownloadGroup = this.groups.get(id) ?? { host, downloads: [] }
     const entry: BrowserDownloadEntry = {
       id: `download-${randomUUID()}`,
       url: item.getURL(),

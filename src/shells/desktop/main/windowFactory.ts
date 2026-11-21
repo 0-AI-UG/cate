@@ -95,7 +95,6 @@ export function createWindowFactory(options: WindowFactoryOptions): WindowFactor
         nodeIntegration: false,
         sandbox: !featureFlags.disableRendererSandbox(),
         webSecurity: true,
-        webviewTag: true,
         // Hidden page drivers must keep answering while the window is in the background.
         backgroundThrottling: false,
         ...(IS_E2E ? { paintWhenInitiallyHidden: true } : {}),

@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 // Opt-in page-load/gesture overlap, with local fixtures and optional real GitHub pages.
 import { test, expect } from '@playwright/test'
 import { createServer } from 'node:http'
@@ -115,7 +116,7 @@ test('browser navigation and loading overlap canvas gestures', async () => {
       const { panelId } = await create(page, 'browser', { x: 300 + i % 2 * 400, y: 60 + Math.floor(i / 2) * 340 }, { url: origin + '/settled' })
       ids.push(await waitForBrowserGuest(page, panelId))
     }
-    await app.evaluate(({ webContents }, ids) => {
+    await engineEvaluate(app, ({ webContents }, ids) => {
       for (const id of ids) {
         const guest = webContents.fromId(id)! as any
         guest.__gestureAudit = { events: [], cdp: {} }
@@ -124,32 +125,32 @@ test('browser navigation and loading overlap canvas gestures', async () => {
         guest.debugger.on('message', (_e: unknown, method: string) => { const c = guest.__gestureAudit.cdp; c[method] = (c[method] ?? 0) + 1 })
       }
     }, ids)
-    const sample = () => app.evaluate(({ app, webContents, BrowserWindow }, ids) => ({ at: Date.now(), focused: BrowserWindow.getAllWindows()[0].isFocused(), metrics: app.getAppMetrics(), guests: ids.map(id => { const w = webContents.fromId(id)!; return { id, pid: w.getOSProcessId(), loading: w.isLoading(), url: w.getURL() } }) }), ids)
+    const sample = async () => ({ focused: await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()), ...await engineEvaluate(app, ({ app, webContents }, ids) => ({ at: Date.now(), metrics: app.getAppMetrics(), guests: ids.map(id => { const w = webContents.fromId(id)!; return { id, pid: w.getOSProcessId(), loading: w.isLoading(), url: w.getURL() } }) }), ids) })
     for (const kind of (process.env.CATE_BROWSER_LOAD_CASES ?? 'settled,network,script,images,combined').split(',')) {
       for (const action of ['pan', 'zoom']) {
         for (let repeat = 0; repeat < Number(process.env.CATE_BROWSER_LOAD_REPEATS ?? 2); repeat++) {
           await page.waitForFunction(() => !document.body.classList.contains('canvas-zooming') && !document.body.classList.contains('canvas-interacting'))
-          await app.evaluate(async ({ webContents }, { ids, origin }) => { await Promise.all(ids.map(id => webContents.fromId(id)!.loadURL(origin + '/settled'))) }, { ids, origin })
+          await engineEvaluate(app, async ({ webContents }, { ids, origin }) => { await Promise.all(ids.map(id => webContents.fromId(id)!.loadURL(origin + '/settled'))) }, { ids, origin })
           await page.evaluate(() => { window.__cateE2E!.setZoom(.8); window.__cateE2E!.resetViewport() })
           await page.waitForTimeout(800)
-          await app.evaluate(({ webContents }, ids) => { for (const id of ids) (webContents.fromId(id)! as any).__gestureAudit = { events: [], cdp: {} } }, ids)
+          await engineEvaluate(app, ({ webContents }, ids) => { for (const id of ids) (webContents.fromId(id)! as any).__gestureAudit = { events: [], cdp: {} } }, ids)
           const remote = kind === 'github-home' || kind === 'github-repository'
-          if (remote && repeat === 0) await app.evaluate(async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.session.clearCache())) }, ids)
-          if (remote && process.env.CATE_BROWSER_LOAD_SHADER_COLD === '1') await app.evaluate(async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.session.clearStorageData({ storages: ['shadercache'] }))) }, ids)
+          if (remote && repeat === 0) await engineEvaluate(app, async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.session.clearCache())) }, ids)
+          if (remote && process.env.CATE_BROWSER_LOAD_SHADER_COLD === '1') await engineEvaluate(app, async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.session.clearStorageData({ storages: ['shadercache'] }))) }, ids)
           const trace = process.env.CATE_BROWSER_LOAD_TRACE && kind === (process.env.CATE_BROWSER_LOAD_TRACE_CASE ?? 'combined') && action === (process.env.CATE_BROWSER_LOAD_TRACE_ACTION ?? 'zoom') && repeat === 0
           if (trace) await app.evaluate(async ({ contentTracing }) => contentTracing.startRecording({ included_categories: ['devtools.timeline', 'cc', 'gpu', 'viz', 'blink.user_timing', 'toplevel', 'skia', 'disabled-by-default-skia.gpu', 'disabled-by-default-gpu.service', 'disabled-by-default-gpu.dawn'] }))
           const samples = [await sample()]
-          if (process.env.CATE_BROWSER_LOAD_FREEZE === '1') await app.evaluate(async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.debugger.sendCommand('Page.setWebLifecycleState', { state: 'frozen' }))) }, ids)
+          if (process.env.CATE_BROWSER_LOAD_FREEZE === '1') await engineEvaluate(app, async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.debugger.sendCommand('Page.setWebLifecycleState', { state: 'frozen' }))) }, ids)
           const timer = setInterval(() => { void sample().then(s => samples.push(s)).catch(() => {}) }, 1000)
           const movement = measureBrowserGesture(page, action)
           await page.waitForFunction(() => (window as unknown as { __loadGestureRunning: boolean }).__loadGestureRunning)
-          if (kind !== 'settled') await app.evaluate(({ webContents }, { ids, url }) => { ids.forEach(id => { void webContents.fromId(id)!.loadURL(url).catch(() => {}) }) }, { ids, url: kind === 'github-home' ? 'https://github.com/' : kind === 'github-repository' ? 'https://github.com/microsoft/vscode' : `${origin}/${kind}?run=${Date.now()}` })
+          if (kind !== 'settled') await engineEvaluate(app, ({ webContents }, { ids, url }) => { ids.forEach(id => { void webContents.fromId(id)!.loadURL(url).catch(() => {}) }) }, { ids, url: kind === 'github-home' ? 'https://github.com/' : kind === 'github-repository' ? 'https://github.com/microsoft/vscode' : `${origin}/${kind}?run=${Date.now()}` })
           let gesture: Awaited<ReturnType<typeof measureBrowserGesture>>
           try { gesture = await movement } finally { clearInterval(timer) }
-          if (process.env.CATE_BROWSER_LOAD_FREEZE === '1') await app.evaluate(async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.debugger.sendCommand('Page.setWebLifecycleState', { state: 'active' }))) }, ids)
+          if (process.env.CATE_BROWSER_LOAD_FREEZE === '1') await engineEvaluate(app, async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.debugger.sendCommand('Page.setWebLifecycleState', { state: 'active' }))) }, ids)
           samples.push(await sample())
           if (trace) await app.evaluate(async ({ contentTracing }, destination) => contentTracing.stopRecording(destination), process.env.CATE_BROWSER_LOAD_TRACE!)
-          const guestState = await app.evaluate(async ({ webContents }, ids) => Promise.all(ids.map(async id => { const w = webContents.fromId(id)! as any; return { id, audit: w.__gestureAudit, page: await w.executeJavaScript(`({ loadProfile: window.__loadProfile, readyState: document.readyState, textLength: document.body?.innerText.length, navigation: performance.getEntriesByType('navigation')[0]?.toJSON() })`) } })), ids)
+          const guestState = await engineEvaluate(app, async ({ webContents }, ids) => Promise.all(ids.map(async id => { const w = webContents.fromId(id)! as any; return { id, audit: w.__gestureAudit, page: await w.executeJavaScript(`({ loadProfile: window.__loadProfile, readyState: document.readyState, textLength: document.body?.innerText.length, navigation: performance.getEntriesByType('navigation')[0]?.toJSON() })`) } })), ids)
           rows.push({ kind, action, repeat, cache: remote ? (repeat === 0 ? 'cold' : 'warm') : 'no-store', gesture, samples, guestState })
           if (gesture.p95Ms >= 16.7 || gesture.p99Ms >= 25 || gesture.maxMs! >= 25) budgetFailures.push(`${kind}/${action}/${repeat}: p95=${gesture.p95Ms.toFixed(1)} p99=${gesture.p99Ms.toFixed(1)} max=${gesture.maxMs!.toFixed(1)} ms`)
           writeFileSync(process.env.CATE_BROWSER_LOAD_OUTPUT ?? test.info().outputPath('browser-load-gestures.json'), JSON.stringify({ at: new Date().toISOString(), engine, browserCount: ids.length, surfaceDeadline: engine.surfaceDeadline || 'default', imageBytes: image.length, budgetFailures, rows, requests }, null, 2))

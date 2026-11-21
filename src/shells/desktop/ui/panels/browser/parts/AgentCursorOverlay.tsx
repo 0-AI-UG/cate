@@ -6,7 +6,7 @@
 // draws the missing pointer: a ghost cursor that moves to the target and
 // communicates actions through motion instead of exposing command text.
 //
-// It renders in the RENDERER, above the <webview>, not inside the guest page:
+// It renders in the RENDERER, above the page surface, not inside the guest page:
 //  • the page cannot see, style or block it (an injected overlay can be hidden
 //    by the site's own CSS, and breaks under a strict CSP),
 //  • it survives navigation, and works over cross-origin frames,

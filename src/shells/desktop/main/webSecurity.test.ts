@@ -16,7 +16,7 @@ const h = vi.hoisted(() => {
 vi.mock('electron', () => ({ app: h.app, session: { fromPartition: h.fromPartition } }))
 vi.mock('@services/browser/desktop', () => ({ isAgentKeyInput: () => false, sendBrowserShortcut: vi.fn(), sendOpenTabRequest: vi.fn() }))
 
-import { browserActionForInput, forwardedActionForInput, installWebSecurity, isAllowedGuestUrl, isTrustedAppUrl } from './webSecurity'
+import { browserActionForInput, forwardedActionForInput, installWebSecurity, isTrustedAppUrl } from './webSecurity'
 
 function contents(type: string) {
   return Object.assign(new EventEmitter(), { getType: () => type, setWindowOpenHandler: vi.fn(), session: h.guestSession, hostWebContents: { send: vi.fn() } })
@@ -25,13 +25,7 @@ function contents(type: string) {
 describe('web security', () => {
   beforeEach(() => {
     h.app.removeAllListeners()
-    installWebSecurity({
-      guestPreload: '/app/preload/shellGuest.js',
-      hardeningDisabled: () => false,
-      guestKeys: () => [],
-      isPreparedPartition: (partition) => partition === 'persist:ws-abcdefghijklmnop',
-      platform: 'darwin',
-    })
+    installWebSecurity({ rendererUrl: 'http://localhost:5173' })
   })
 
   const attach = (partition: string | undefined, src = 'https://example.com', preload = '/evil.js') => {
@@ -44,18 +38,9 @@ describe('web security', () => {
     return { event, webPreferences, params }
   }
 
-  it('pins the guest preload and sandbox on a prepared workspace partition', () => {
-    const { event, webPreferences, params } = attach('persist:ws-abcdefghijklmnop')
-    expect(event.preventDefault).not.toHaveBeenCalled()
-    expect(webPreferences).toMatchObject({ preload: '/app/preload/shellGuest.js', nodeIntegration: false, sandbox: true, contextIsolation: true })
-    expect(params.allowpopups).toBe('true')
-    expect(h.guestSession.setUserAgent).toHaveBeenCalledWith('Mozilla/5.0 Chrome/140.0.0.0', 'en')
-  })
-
-  it('refuses a guest outside a prepared workspace partition (loopback must mean the runtime)', () => {
+  it('refuses embedded page attachment in a UI window', () => {
+    expect(attach('persist:ws-abcdefghijklmnop').event.preventDefault).toHaveBeenCalled()
     expect(attach(undefined).event.preventDefault).toHaveBeenCalled()
-    expect(attach('persist:other').event.preventDefault).toHaveBeenCalled()
-    expect(attach('persist:ws-abcdefghijklmnop', 'javascript:alert(1)').event.preventDefault).toHaveBeenCalled()
   })
 
   it('keeps app windows on the app', () => {
@@ -67,12 +52,6 @@ describe('web security', () => {
     const event = { preventDefault: vi.fn() }
     host.emit('will-navigate', event, 'https://evil.test/')
     expect(event.preventDefault).toHaveBeenCalled()
-  })
-
-  it('allows only web, file and data pages in guests', () => {
-    for (const url of ['about:blank', 'https://a.test', 'http://localhost:3000', 'data:text/html,hi']) expect(isAllowedGuestUrl(url)).toBe(true)
-    // A client's disk is never a page: workspace files come from the runtime's file server.
-    for (const url of ['javascript:alert(1)', 'chrome://settings', 'file:///x.html', 'not a url']) expect(isAllowedGuestUrl(url)).toBe(false)
   })
 
   it('maps guest keys to browser actions and forwarded canvas shortcuts', () => {

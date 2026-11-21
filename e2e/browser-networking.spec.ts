@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { WebSocketServer } from 'ws'
@@ -48,7 +49,7 @@ test('preserves loopback HTTP and WebSockets and blocks private targets after pr
   ;({ electronApp: app, mainWindow: page } = await launchApp())
   const browser = await createBrowser(page, origin)
   const id = (await browserWebContentsId(page, browser.panelId))!
-  const echo = () => app.evaluate(async ({ webContents }, { id, url }) => {
+  const echo = () => engineEvaluate(app, async ({ webContents }, { id, url }) => {
     return webContents.fromId(id)!.executeJavaScript(`new Promise((resolve, reject) => {
       const socket = new WebSocket(${JSON.stringify(url)});
       socket.onopen = () => socket.send('echo');
@@ -64,12 +65,12 @@ test('preserves loopback HTTP and WebSockets and blocks private targets after pr
     const info = await window.__cateE2E!.call('workspace', 'info', {}, workspaceId) as { runtimeId: string }
     await window.cateDesktop.web.partitionFor({ runtimeId: info.runtimeId, reachesClientNetwork: false })
   }, browser.workspaceId)
-  const route = await app.evaluate(({ webContents }, { id, url }) => webContents.fromId(id)!.session.resolveProxy(url), { id, url: origin })
+  const route = await engineEvaluate(app, ({ webContents }, { id, url }) => webContents.fromId(id)!.session.resolveProxy(url), { id, url: origin })
   expect(route).toMatch(/^PROXY 127\.0\.0\.1:\d+$/)
-  await app.evaluate(({ webContents }, { id, url }) => webContents.fromId(id)!.loadURL(url), { id, url: `${origin}/protected` })
-  expect(await app.evaluate(({ webContents }, id) => webContents.fromId(id)!.getTitle(), id)).toBe('Native loopback')
+  await engineEvaluate(app, ({ webContents }, { id, url }) => webContents.fromId(id)!.loadURL(url), { id, url: `${origin}/protected` })
+  expect(await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id)!.getTitle(), id)).toBe('Native loopback')
   expect(await echo()).toBe('echo')
-  const privateStatus = await app.evaluate(async ({ webContents }, id) => {
+  const privateStatus = await engineEvaluate(app, async ({ webContents }, id) => {
     const response = await webContents.fromId(id)!.session.fetch('http://192.168.1.1:12345/')
     return response.status
   }, id)
@@ -82,9 +83,9 @@ test('uses Chromium system networking and applies authenticated proxy and PAC se
   ;({ electronApp: app, mainWindow: page } = await launchApp())
   const browser = await createBrowser(page, origin)
   const id = (await browserWebContentsId(page, browser.panelId))!
-  const title = () => app.evaluate(({ webContents }, id) => webContents.fromId(id)!.getTitle(), id)
-  const resolveProxy = (url: string) => app.evaluate(({ webContents }, { id, url }) => webContents.fromId(id)!.session.resolveProxy(url), { id, url })
-  const navigate = (url: string) => app.evaluate(({ webContents }, { id, url }) => webContents.fromId(id)!.loadURL(url), { id, url })
+  const title = () => engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id)!.getTitle(), id)
+  const resolveProxy = (url: string) => engineEvaluate(app, ({ webContents }, { id, url }) => webContents.fromId(id)!.session.resolveProxy(url), { id, url })
+  const navigate = (url: string) => engineEvaluate(app, ({ webContents }, { id, url }) => webContents.fromId(id)!.loadURL(url), { id, url })
   const setProxy = (value: string) => page.evaluate(async (value) => {
     const settings = await window.cateDesktop.device.get('settings')
     await window.cateDesktop.device.set('settings', { ...settings, browserProxyUrl: value })

@@ -1,4 +1,4 @@
-// The pages of one browser panel on this client: one <webview> per tab. It
+// The pages of one browser panel on this client: one engine surface per tab. It
 // follows the session (loads a tab's URL when its `nav` moves and the change
 // came from elsewhere), reports what its own pages do, and has the page of the
 // session's active tab ready when this client drives a page operation
@@ -19,7 +19,7 @@ import type { BrowserOp, BrowserSnapshot, BrowserTab } from '@panels/browser/con
 import { pageLoadErrorFrom } from '@panels/browser/contract'
 import { createBrowserTabFollower, loadableTabUrl } from '@panels/browser/client'
 
-/** The Electron <webview> element methods the view uses. */
+/** A cached DOM view of a page owned by the isolated engine. */
 export interface BrowserGuest extends HTMLElement {
   loadURL(url: string): Promise<void> | void
   goBack(): void
@@ -31,11 +31,13 @@ export interface BrowserGuest extends HTMLElement {
   isLoading(): boolean
   getURL(): string
   getTitle(): string
+  /** Opaque engine handle; never a shell Electron webContents id. */
   getWebContentsId(): number
   insertCSS(css: string): Promise<string>
   getZoomFactor(): number
   setZoomFactor(factor: number): void
   focus(): void
+  setVisible?(visible: boolean): void
 }
 
 /** What this client's page of the shown tab shows, for the toolbar. */
@@ -70,8 +72,6 @@ interface PageHostDeps {
   send(op: BrowserOp): Promise<unknown>
   /** Shows a tab on this client (a page operation runs on it). */
   reveal?(tabId: string): void
-  /** Renders the panel's parked pages, unseen, until the returned call. */
-  stage?(): () => void
   bridge: BrowserPageBridge | null
   /** Saved passwords come from the runtime. */
   passwords?: {
@@ -144,7 +144,8 @@ export class BrowserPageHost {
   }
 
   private noteVisibility(): void {
-    for (const id of this.pages.keys()) {
+    for (const [id, page] of this.pages) {
+      page.webview.setVisible?.(this.visible && id === this.shownTabId)
       if (this.visible && id === this.shownTabId) this.inactiveAt.delete(id)
       else if (!this.inactiveAt.has(id)) this.inactiveAt.set(id, Date.now())
     }
@@ -278,7 +279,7 @@ export class BrowserPageHost {
 
   // ---- Guests ---------------------------------------------------------------
 
-  /** The view hands over each tab's <webview> (null on unmount). */
+  /** The view hands over each tab's page surface (null on unmount). */
   attachGuest(tabId: string, webview: BrowserGuest | null): void {
     const previous = this.pages.get(tabId)
     if (previous?.webview === webview) return
@@ -288,6 +289,7 @@ export class BrowserPageHost {
       const page: Page = { webview, ready: false, pending: null, detach: () => {} }
       page.detach = this.listen(tabId, page)
       this.pages.set(tabId, page)
+      this.noteVisibility()
     }
     this.changed()
   }
@@ -432,7 +434,7 @@ export class BrowserPageHost {
   /** Back, forward or reload on this client's page. False without history. */
   historyAction(action: 'back' | 'forward' | 'reload' | 'reloadHard', tabId = this.shownTabId): boolean {
     const page = tabId ? this.pages.get(tabId) : undefined
-    if (!page?.ready) return false
+    if (!page || (!page.ready && action !== 'reload' && action !== 'reloadHard')) return false
     const { webview } = page
     try {
       if (action === 'back') {
@@ -542,9 +544,6 @@ export class BrowserPageHost {
     this.requireActive(tabId)
     return {
       guest: this.guestRef(tabId, page),
-      document: page.webview.ownerDocument,
-      hidden: !this.visible,
-      ...(this.deps.stage ? { stage: this.deps.stage } : {}),
       check: () => { this.requireActive(tabId) },
     }
   }

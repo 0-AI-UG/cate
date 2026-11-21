@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import sharp from 'sharp'
 import { writeFile } from 'node:fs/promises'
 import { expect, test, type TestInfo } from '@playwright/test'
@@ -17,7 +18,7 @@ async function saveCapture(testInfo: TestInfo, name: string, png: Buffer): Promi
 }
 
 async function recordNativeCapture(guestId: number | null): Promise<void> {
-  await app.evaluate(({ webContents }, id) => {
+  await engineEvaluate(app, ({ webContents }, id) => {
     const guest = webContents.fromId(id!)! as any
     const capture = guest.capturePage.bind(guest)
     guest.capturePage = async (...args: unknown[]) => {
@@ -103,7 +104,7 @@ test('paired observations and native screenshots preserve scroll and renderer fo
   const guestId = await browserWebContentsId(page, browser.panelId)
   await recordNativeCapture(guestId)
   for (const zoom of [1, 1.25]) {
-    await app.evaluate(({ webContents }, { id, zoom }) => webContents.fromId(id!)!.setZoomFactor(zoom), { id: guestId, zoom })
+    await engineEvaluate(app, ({ webContents }, { id, zoom }) => webContents.fromId(id!)!.setZoomFactor(zoom), { id: guestId, zoom })
     const before = await evaluate('scrollY')
     const observation = await observe(page, browser, true)
     expect(observation.elements.find((item) => item.name === 'Offscreen')?.offscreen).toBe(true)
@@ -118,7 +119,7 @@ test('paired observations and native screenshots preserve scroll and renderer fo
     const sample = [...data.subarray(center, center + info.channels)]
     await saveCapture(testInfo, `native-viewport-zoom-${zoom}`, Buffer.from(screenshot.data, 'base64'))
     if ([20, 180, 70].some((expected, channel) => Math.abs(sample[channel] - expected) > 5)) {
-      const native = await app.evaluate(({ webContents }, id) => (webContents.fromId(id!)! as any).__cateLastNativeCapture.toPNG().toString('base64'), guestId)
+      const native = await engineEvaluate(app, ({ webContents }, id) => (webContents.fromId(id!)! as any).__cateLastNativeCapture.toPNG().toString('base64'), guestId)
       await saveCapture(testInfo, `original-native-zoom-${zoom}`, Buffer.from(native, 'base64'))
     }
     // Native capture passes through the display color profile.
@@ -152,7 +153,7 @@ test('paired screenshots stay fresh across alternating zoom and page generations
   for (let generation = 0; generation < 12; generation++) {
     const zoom = generation % 2 ? 1.25 : 1
     const rgb = [30 + generation * 13, 190 - generation * 9, 60 + generation * 11]
-    await app.evaluate(async ({ webContents }, { id, zoom, generation, rgb }) => {
+    await engineEvaluate(app, async ({ webContents }, { id, zoom, generation, rgb }) => {
       const guest = webContents.fromId(id!)!
       guest.setZoomFactor(zoom)
       await guest.executeJavaScript(`(() => {
@@ -175,7 +176,7 @@ test('paired screenshots stay fresh across alternating zoom and page generations
       await expect(rendererFocusTarget).toBeFocused()
     } catch (error) {
       await saveCapture(testInfo, `generation-${generation}-output`, Buffer.from(screenshot.data, 'base64'))
-      const original = await app.evaluate(({ webContents }, id) => {
+      const original = await engineEvaluate(app, ({ webContents }, id) => {
         const image = (webContents.fromId(id!)! as any).__cateLastNativeCapture
         return { size: image.getSize(), png: image.toPNG().toString('base64') }
       }, guestId)
@@ -250,7 +251,7 @@ for (const method of ['setValue', 'typeText']) {
     await expect(cursor).toBeVisible()
     await expect(cursor.locator('svg')).toHaveCSS('animation-name', 'cate-agent-pointer-type')
     const field = await evaluate(`(() => {const r=document.querySelector('#name').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,width:innerWidth};})()`)
-    const guest = await surface.locator('webview').boundingBox()
+    const guest = await surface.locator('[data-browser-engine]').boundingBox()
     expect(guest).not.toBeNull()
     await expect.poll(async () => {
       const pointer = await cursor.boundingBox()

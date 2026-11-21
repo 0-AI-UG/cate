@@ -1,3 +1,4 @@
+import { engineEvaluate } from './browser-engine'
 // E2E fixture: launch the built desktop shell (`dist/main/shell.js`) with an
 // isolated device and home.
 //
@@ -310,21 +311,21 @@ export async function waitForGhost(page: Page, timeout = 8000): Promise<{ x: num
 }
 
 // -----------------------------------------------------------------------------
-// Webview guests
+// Isolated browser pages
 // -----------------------------------------------------------------------------
 
-/** Runs `expression` in the first webview guest whose URL starts with
+/** Runs `expression` in the first engine page whose URL starts with
  *  `urlPrefix` (an oracle from main, not the browser panel's own API). */
 export async function guestEvaluate(app: ElectronApplication, urlPrefix: string, expression: string): Promise<unknown> {
-  return app.evaluate(async ({ webContents }, { urlPrefix, expression }) => {
-    const guest = webContents.getAllWebContents().find((wc) => wc.getType() === 'webview' && wc.getURL().startsWith(urlPrefix))
+  return engineEvaluate(app, async ({ webContents }, { urlPrefix, expression }) => {
+    const guest = webContents.getAllWebContents().find((wc) => wc.getURL().startsWith(urlPrefix))
     if (!guest) throw new Error(`no guest at ${urlPrefix}`)
     return guest.executeJavaScript(expression)
   }, { urlPrefix, expression })
 }
 
 export async function guestUrls(app: ElectronApplication): Promise<string[]> {
-  return app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((wc) => wc.getType() === 'webview').map((wc) => wc.getURL()))
+  return engineEvaluate(app, ({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()))
 }
 
 /** Answers every native message box of `app` (confirmations) with button

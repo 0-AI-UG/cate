@@ -35,7 +35,6 @@ import { parseKey } from './keys'
 import { PageLog } from './pageLog'
 import { FrameTree } from './frames'
 import { PasswordFrames } from './passwordFrames'
-import { BROWSER_PAGE_CHANNELS } from '../contract/pageBridge'
 import { EMPTY_PASSWORD_FIELD, FILE_INPUT_OF, PASSWORD_FIELD, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
 import type { GuestDialogs } from './dialogs'
 
@@ -44,6 +43,9 @@ type BrowserArgs = Record<string, unknown>
 export type { BrowserPageIdentity }
 
 export interface PageDriverOptions {
+  chooseFiles?(webContentsId: number, options: { multiple: boolean; directory: boolean; accept: string }): Promise<string[] | null>
+  notifyInputContext?(webContentsId: number, context: unknown): void
+  notifyPassword?(webContentsId: number, channel: 'focus' | 'submit', payload: unknown): void
   /** The guests' JavaScript dialogs: a call a dialog interrupts returns it,
    *  and `dialog` answers it. */
   dialogs?: Pick<GuestDialogs, 'current' | 'subscribe' | 'answer'>
@@ -72,14 +74,6 @@ interface CdpEvent {
   method: string
   params: Record<string, unknown>
   sessionId?: string
-}
-
-/** Guests receiving a driver's key events right now. */
-const sendingKeys = new WeakSet<WebContents>()
-/** True while `contents` receives an agent's key event: the page's key,
- *  never an app shortcut. */
-export function isAgentKeyInput(contents: WebContents): boolean {
-  return sendingKeys.has(contents)
 }
 
 /** How long one CDP command may take before the page counts as hung. */
@@ -162,8 +156,10 @@ export class PageDriver {
   private readonly frames = new FrameTree()
   private readonly passwords: PasswordFrames
   private attached = false
+  private attaching?: Promise<void>
   /** A CDP command timed out: the page's main thread does not yield. */
   private hung = false
+  private readonly chooseFiles?: PageDriverOptions['chooseFiles']
   private readonly dialogs?: PageDriverOptions['dialogs']
   /** Set while an agent action may open a file chooser: the chooser is
    *  reported to the driver instead of shown. */
@@ -191,6 +187,7 @@ export class PageDriver {
     this.contents = contents
     this.identity = identity
     this.dialogs = options.dialogs
+    this.chooseFiles = options.chooseFiles
     this.passwords = new PasswordFrames({
       send: (method, params, sessionId) => this.send(method, params, sessionId),
       offset: async frameId => {
@@ -200,8 +197,9 @@ export class PageDriver {
         return this.frameOffset(frameId, false)
       },
       automated: () => this.agentInputDepth > 0,
+      inputContext: context => options.notifyInputContext?.(contents.id, context),
       emit: (channel, payload) => {
-        try { contents.hostWebContents?.send(BROWSER_PAGE_CHANNELS.password, { webContentsId: contents.id, channel, payload }) } catch { /* host closed */ }
+        if (options.notifyPassword) options.notifyPassword(contents.id, channel, payload)
       },
     })
     contents.once('destroyed', () => this.dispose())
@@ -216,14 +214,21 @@ export class PageDriver {
     this.identity = identity
   }
 
-  noteUserInput(): void {
-    if (this.agentInputDepth > 0) return
+  noteUserInput(force = false): void {
+    if (this.agentInputDepth > 0 && !force) return
     this.userInputEpoch += 1
     // The person's own clicks open the system file chooser.
     if (this.intercepting) void this.interceptFileChooser(false)
   }
 
   async attach(): Promise<void> {
+    if (this.attaching) return this.attaching
+    const task = this.attachToPage()
+    this.attaching = task
+    try { await task } finally { if (this.attaching === task) this.attaching = undefined }
+  }
+
+  private async attachToPage(): Promise<void> {
     if (this.attached || this.contents.isDestroyed()) return
     if (!this.contents.debugger.isAttached()) this.contents.debugger.attach('1.3')
     this.contents.debugger.on('message', this.onDebuggerMessage)
@@ -240,6 +245,7 @@ export class PageDriver {
         this.send('DOM.enable'),
         this.send('Runtime.enable'),
         this.send('Accessibility.enable'),
+        ...(this.chooseFiles ? [this.send('Page.setInterceptFileChooserDialog', { enabled: true })] : []),
         this.send('Network.enable'),
         // The guest is rarely the OS-focused view; without this Chromium drops
         // the default action of trusted keys (Enter submitting a form).
@@ -321,6 +327,8 @@ export class PageDriver {
       if (this.userInputEpoch !== epoch) throw new Error('browser-action-preempted-by-user')
     }
     const run = this.queue.then(async () => {
+      guard()
+      await this.attach()
       guard()
       this.activeGuard = guard
       try {
@@ -447,15 +455,27 @@ export class PageDriver {
     if (this.intercepting === enabled || this.contents.isDestroyed() || !this.attached) return
     this.intercepting = enabled
     await Promise.allSettled([undefined, ...this.frames.sessionIds()].map(sessionId =>
-      this.command('Page.setInterceptFileChooserDialog', { enabled }, sessionId)))
+      this.command('Page.setInterceptFileChooserDialog', { enabled: enabled || !!this.chooseFiles }, sessionId)))
+  }
+
+  private async openNativeFileChooser(event: CdpEvent): Promise<void> {
+    const epoch = this.documentEpoch
+    const backendNodeId = Number(event.params.backendNodeId)
+    const node = objectValue((await this.send('DOM.describeNode', { backendNodeId }, event.sessionId)).node)
+    const attributes = Array.isArray(node.attributes) ? node.attributes : []
+    const acceptAt = attributes.indexOf('accept')
+    const files = await this.chooseFiles!(this.contents.id, { multiple: event.params.mode === 'selectMultiple', directory: attributes.includes('webkitdirectory'), accept: acceptAt >= 0 ? String(attributes[acceptAt + 1]) : '' })
+    if (!files || this.contents.isDestroyed() || this.documentEpoch !== epoch) return
+    await this.send('DOM.setFileInputFiles', { backendNodeId, files }, event.sessionId)
   }
 
   private handleEvent(event: CdpEvent): void {
     this.passwords.handle(event.method, event.params, event.sessionId)
     this.log.record(event)
     if (event.method === 'Page.fileChooserOpened') {
-      if (this.intercepting && typeof event.params.backendNodeId === 'number') {
-        this.fileChooser = { backendNodeId: event.params.backendNodeId, sessionId: event.sessionId, documentEpoch: this.documentEpoch }
+      if (typeof event.params.backendNodeId === 'number') {
+        if (this.intercepting) this.fileChooser = { backendNodeId: event.params.backendNodeId, sessionId: event.sessionId, documentEpoch: this.documentEpoch }
+        else if (this.chooseFiles) void this.openNativeFileChooser(event).catch(() => {})
       }
       return
     }
@@ -526,7 +546,7 @@ export class PageDriver {
         this.send('Runtime.enable', {}, sessionId),
         this.send('Accessibility.enable', {}, sessionId),
         this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId),
-        ...(this.intercepting ? [this.send('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId)] : []),
+        ...(this.intercepting || this.chooseFiles ? [this.send('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId)] : []),
       ])
       await this.passwords.install(sessionId)
     } catch {
@@ -572,7 +592,7 @@ export class PageDriver {
   }
 
   private async send(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<Record<string, unknown>> {
-    await this.attach()
+    if (!this.attached) await this.attach()
     // Always allow paired releases so takeover cannot leave a button/key held.
     // Session setup also runs from debugger events, independently of commands.
     const releasingInput = method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased'
@@ -679,9 +699,8 @@ export class PageDriver {
     }
   }
 
-  /** Sends key events to this guest's own widget. Input.dispatchKeyEvent
-   *  would deliver them to the window's focused guest, whichever that is (and
-   *  drop them while none is), and a key press must not take the user's focus. */
+  /** Sends agent keys to the page's own widget with emulated focus, without
+   *  activating an engine window or moving Cate's keyboard focus. */
   private async dispatchKey(events: Electron.KeyboardInputEvent[], command?: string): Promise<void> {
     this.inputSent = true
     this.agentInputDepth += 1
@@ -689,12 +708,7 @@ export class PageDriver {
     try {
       // A page that handles the shortcut itself cancels its keydown.
       const cancelled = command ? await this.watchKeydownCancel() : undefined
-      sendingKeys.add(this.contents)
-      try {
-        for (const event of events) this.contents.sendInputEvent(event)
-      } finally {
-        sendingKeys.delete(this.contents)
-      }
+      for (const event of events) this.contents.sendInputEvent(event)
       if (command && !await cancelled?.()) await this.editingCommand(command)
       // The guest handles input in order: once a task runs, the keys are in.
       await this.evaluate('new Promise(resolve => setTimeout(() => resolve(true), 0))')
@@ -1656,8 +1670,8 @@ export class PageDriverRegistry {
     else await driver.attach()
   }
 
-  noteUserInput(webContentsId: number): void {
-    this.drivers.get(webContentsId)?.noteUserInput()
+  noteUserInput(webContentsId: number, force = false): void {
+    this.drivers.get(webContentsId)?.noteUserInput(force)
   }
 
   /** Restarts the guest's page when it stopped responding (`PageDriver.restartIfHung`). */

@@ -7,7 +7,8 @@
 import type { BrowserDialog, BrowserDriverResult, BrowserPageIdentity } from './automation'
 import type { BrowserCredentialImport, BrowserDownloadEntry } from './types'
 
-/** A guest webContents this window hosts, bound to its panel tab. */
+/** An opaque page handle this window owns, bound to its panel tab. The
+ *  handle is never reused after an engine restart; native ids stay in the engine. */
 export interface BrowserGuestRef extends BrowserPageIdentity {
   webContentsId: number
 }

@@ -1,5 +1,6 @@
 // Password detection runs in a named isolated world in every frame. No Node
 // integration or callable bridge is exposed to the site's JavaScript.
+import { installInputBridge } from './preload/inputBridge'
 import { installPasswordBridge } from './preload/passwordBridge'
 
 const WORLD = 'cate-passwords'
@@ -12,11 +13,13 @@ export class PasswordFrames {
   private readonly contexts = new Map<string, Context>()
   private readonly targets = new Map<string, Context & { origin: string }>()
   private focusRevision = 0
+  private inputRevision = 0
 
   constructor(private readonly deps: {
     send: Send
     offset(frameId: string): Promise<{ x: number; y: number }>
     emit(channel: 'focus' | 'submit', payload: unknown): void
+    inputContext?(context: unknown): void
     automated(): boolean
   }) {}
 
@@ -26,12 +29,14 @@ export class PasswordFrames {
       worldName: WORLD, runImmediately: true,
       source: `if (!globalThis.__catePasswordsInstalled) {
         globalThis.__catePasswordsInstalled = true;
+        (${installInputBridge.toString()})(payload => globalThis.${BINDING}(JSON.stringify({channel:'input-context', payload})));
         (${installPasswordBridge.toString()})((channel, payload) => globalThis.${BINDING}(JSON.stringify({channel, payload})), () => false);
       }`,
     }, sessionId)
   }
 
   clear(sessionId?: string): void {
+    this.inputRevision++
     for (const [key, context] of this.contexts) if (!sessionId || context.sessionId === sessionId) this.contexts.delete(key)
     this.dismiss()
   }
@@ -61,7 +66,14 @@ export class PasswordFrames {
 
   private async receive(context: Context, json: string): Promise<void> {
     const event = object(JSON.parse(json)), payload = object(event.payload)
-    if (event.channel === 'cate-browser-password-submit') {
+    if (event.channel === 'input-context') {
+      const revision = ++this.inputRevision
+      this.deps.inputContext?.({ ...payload, caret: null })
+      const caret = object(payload.caret)
+      const offset = await this.deps.offset(context.frameId)
+      if (revision !== this.inputRevision) return
+      this.deps.inputContext?.({ ...payload, caret: payload.caret ? { ...caret, x: Number(caret.x) + offset.x, y: Number(caret.y) + offset.y } : null })
+    } else if (event.channel === 'cate-browser-password-submit') {
       // The payload comes only from our isolated-world listener, never a
       // page-authored postMessage. Keep the frame's own origin on the entry.
       this.deps.emit('submit', { ...payload, automated: this.deps.automated() })

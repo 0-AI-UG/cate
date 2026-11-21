@@ -287,7 +287,7 @@ test('completes authenticated shopping and cross-origin documentation flows', as
   await expect(browserInvoke(page, browser, 'setViewport', { preset: 'compact', width: 640, height: 480 })).resolves
     .toMatchObject({ ok: true, result: { preset: 'compact', width: 640, height: 480 } })
   await expect.poll(() => page.evaluate((panelId) => {
-    const webview = document.querySelector(`[data-browser-surface="${panelId}"] webview`) as HTMLElement | null
+    const webview = document.querySelector(`[data-browser-surface="${panelId}"] :is(webview,[data-browser-engine])`) as HTMLElement | null
     return webview?.style.width ?? ''
   }, browser.panelId), { timeout: 20_000 }).toContain('%')
   const screenshot = await browserInvoke(page, browser, 'getScreenshot') as {

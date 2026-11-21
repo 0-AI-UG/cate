@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 // Native app activation + input latency. macOS-only and opt-in.
 import { test, expect } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
@@ -58,7 +59,7 @@ test('first canvas pan after macOS application activation', async () => {
         for (const action of (process.env.CATE_ACTIVATION_ACTIONS ?? 'wheel,drag').split(',')) {
           for (let repeat = 0; repeat < Number(process.env.CATE_ACTIVATION_REPEATS ?? 2); repeat++) {
             await page.waitForFunction(() => !document.body.classList.contains('canvas-interacting'))
-            if (guestId !== null) await app.evaluate(async ({ webContents }, id) => { await webContents.fromId(id)!.loadURL('data:text/html,<title>Settled</title><h1>Settled</h1>') }, guestId)
+            if (guestId !== null) await engineEvaluate(app, async ({ webContents }, id) => { await webContents.fromId(id)!.loadURL('data:text/html,<title>Settled</title><h1>Settled</h1>') }, guestId)
             await page.evaluate(() => { window.__cateE2E!.setZoom(.8); window.__cateE2E!.resetViewport() })
             await page.waitForTimeout(500)
             const point = await page.evaluate(() => {
@@ -80,7 +81,7 @@ test('first canvas pan after macOS application activation', async () => {
               const rect = root.getBoundingClientRect()
               return { x: Math.round(rect.left + 8), y: Math.round(rect.top + 120) }
             })
-            if (scenario === 'browser-loading') await app.evaluate(({ webContents }, { id, url }) => { void webContents.fromId(id!)!.loadURL(url).catch(() => {}) }, { id: guestId, url })
+            if (scenario === 'browser-loading') await engineEvaluate(app, ({ webContents }, { id, url }) => { void webContents.fromId(id!)!.loadURL(url).catch(() => {}) }, { id: guestId, url })
             execFileSync('/usr/bin/open', ['-a', 'Finder'])
             await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused())).toBe(false)
             await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(false)

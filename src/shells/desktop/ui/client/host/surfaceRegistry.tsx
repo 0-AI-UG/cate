@@ -41,12 +41,19 @@ interface SurfaceEntry {
   container: HTMLDivElement
   styles: Partial<SurfaceStyles>
   backgroundRoot: HTMLDivElement | null
-  /** Page operations that need the parked surface rendered (`stageSurface`). */
-  staged: number
 }
 
 const slots = new Map<string, HTMLDivElement>()
 const surfaces = new Map<string, SurfaceEntry>()
+
+/** Use the canvas viewport, so a new panel's entrance animation does not
+ *  affect the native resolution picked for its page. */
+export function surfaceDisplayScale(panelId: string): number | undefined {
+  const slot = slots.get(panelId)
+  if (!slot?.isConnected) return undefined
+  const world = slot.closest<HTMLElement>('[data-canvas-world]')
+  return (world && viewports.get(world)?.zoom) || 1
+}
 
 function hasSurfaces(): boolean {
   return surfaces.size > 0
@@ -320,29 +327,10 @@ function writeSurface(surface: SurfaceEntry, visible: boolean, styles: Partial<S
 }
 
 function parkSurface(surface: SurfaceEntry): void {
-  // Chromium paints no frames for a guest that is hidden or off screen; a
-  // staged one sits in the window, transparent and out of input's way.
-  const staged = surface.staged > 0
   writeSurface(surface, false, {
-    position: 'fixed', left: staged ? '0' : '-20000px', top: '0', width: surface.styles.width ?? '1200px', height: surface.styles.height ?? '800px',
-    transform: 'none', clipPath: 'none', opacity: '0', pointerEvents: 'none', visibility: staged ? 'visible' : 'hidden',
+    position: 'fixed', left: '-20000px', top: '0', width: surface.styles.width ?? '1200px', height: surface.styles.height ?? '800px',
+    transform: 'none', clipPath: 'none', opacity: '0', pointerEvents: 'none', visibility: 'hidden',
   })
-}
-
-/** Renders the panel's surface while it is parked, still unseen, so a page
- *  operation can capture it. Returns the release. */
-export function stageSurface(panelId: string): () => void {
-  const surface = surfaces.get(panelId)
-  if (!surface) return () => {}
-  surface.staged++
-  if (!isSurfaceVisible(panelId)) parkSurface(surface)
-  let released = false
-  return () => {
-    if (released) return
-    released = true
-    surface.staged--
-    if (surface.staged === 0 && surfaces.get(panelId) === surface && !isSurfaceVisible(panelId)) parkSurface(surface)
-  }
 }
 
 function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
@@ -637,10 +625,25 @@ export function registerPanelSurface(
   backgroundRoot: HTMLDivElement | null,
 ): () => void {
   if (backgroundRoot && container.parentElement !== backgroundRoot) backgroundRoot.appendChild(container)
-  const surface: SurfaceEntry = { panelId, container, styles: {}, backgroundRoot, staged: 0 }
+  // A persistent view is portaled outside its layout/canvas. Let the slot's
+  // wheel policy choose between canvas gestures and scrolling the surface.
+  const wheel = (event: WheelEvent) => {
+    const slot = slots.get(panelId)
+    if (!slot?.isConnected) return
+    const forwarded = new WheelEvent('wheel', {
+      bubbles: true, cancelable: true, deltaX: event.deltaX, deltaY: event.deltaY, deltaZ: event.deltaZ, deltaMode: event.deltaMode,
+      clientX: event.clientX, clientY: event.clientY, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey,
+    })
+    Object.defineProperty(forwarded, 'wheelDeltaY', { value: (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY })
+    slot.dispatchEvent(forwarded)
+    if (forwarded.defaultPrevented) { event.preventDefault(); event.stopPropagation() }
+  }
+  container.addEventListener('wheel', wheel, { capture: true, passive: false })
+  const surface: SurfaceEntry = { panelId, container, styles: {}, backgroundRoot }
   surfaces.set(panelId, surface)
   refreshSurfaces(panelId)
   return () => {
+    container.removeEventListener('wheel', wheel, { capture: true })
     if (surfaces.get(panelId) !== surface) return
     surfaces.delete(panelId)
     refreshSurfaces(panelId)
@@ -659,5 +662,5 @@ export function PanelSurfaceSlot({ panelId }: { panelId: string }): React.ReactE
     }
   }, [panelId])
 
-  return <div ref={ref} data-browser-surface-slot={panelId} className="relative h-full w-full" />
+  return <div ref={ref} data-scroll-surface data-browser-surface-slot={panelId} className="relative h-full w-full" />
 }

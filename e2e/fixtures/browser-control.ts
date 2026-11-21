@@ -18,7 +18,7 @@ export async function createBrowser(page: Page, url: string, origin = { x: 120, 
   await expect.poll(() => browserWebContentsId(page, panelId), { timeout: 20_000, message: 'browser guest mounts' }).not.toBeNull()
   // Best effort: the first document finished loading, so early input is not lost.
   await page.waitForFunction((panelId) => {
-    const views = [...document.querySelectorAll(`[data-browser-surface="${panelId}"] webview`)] as (HTMLElement & { isLoading(): boolean; getURL(): string })[]
+    const views = [...document.querySelectorAll(`[data-browser-surface="${panelId}"] [data-browser-engine]`)] as (HTMLElement & { isLoading(): boolean; getURL(): string })[]
     try { return views.some((v) => v.getURL() !== '' && !v.isLoading()) } catch { return false }
   }, panelId, { timeout: 15_000 }).catch(() => {})
   return { workspaceId, panelId, nodeId }
@@ -28,9 +28,9 @@ export async function createBrowser(page: Page, url: string, origin = { x: 120, 
 export async function browserWebContentsId(page: Page, panelId: string): Promise<number | null> {
   return page.evaluate((panelId) => {
     const surface = document.querySelector(`[data-browser-surface="${panelId}"]`)
-    const views = [...(surface?.querySelectorAll('webview') ?? [])] as (HTMLElement & { getWebContentsId(): number })[]
+    const views = [...(surface?.querySelectorAll('[data-browser-engine]') ?? [])] as (HTMLElement & { getWebContentsId(): number })[]
     // A tab that is not shown keeps its page in an invisible slot.
-    const active = views.find((v) => !v.closest('[data-browser-webview-slot]')?.classList.contains('invisible')) ?? views[0]
+    const active = views.find((v) => !v.closest('[data-browser-page-slot]')?.classList.contains('invisible')) ?? views[0]
     try { return active ? active.getWebContentsId() : null } catch { return null }
   }, panelId)
 }
@@ -113,7 +113,7 @@ export async function fixtureEvaluate(app: ElectronApplication, page: Page, brow
     id = await browserWebContentsId(page, browser.panelId)
     return id
   }, { timeout: 20_000, message: 'browser fixture guest is mounted' }).not.toBeNull()
-  return app.evaluate(({ webContents }, { id, expression }) => webContents.fromId(id!)!.executeJavaScript(expression), { id, expression })
+  return app.evaluate((_, { id, expression }) => globalThis.__cateBrowserEngineTest.call('evaluate', { id, script: expression }), { id, expression })
 }
 
 export async function inspectFixture(app: ElectronApplication, page: Page, browser: BrowserFixture, expression: string, property = 'value') {
@@ -131,3 +131,5 @@ export async function popupBinding(page: Page, browser: BrowserFixture, url: str
   }, { timeout: 20_000 }).toBeTruthy()
   return { ...browser, tabId: tabId! }
 }
+
+export { engineEvaluate } from './browser-engine'

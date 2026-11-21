@@ -7,7 +7,7 @@
 
 import { ipcMain, type IpcMainEvent, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { BROWSER_GUEST_CHANNELS, BROWSER_PAGE_CHANNELS, type BrowserDialog, type BrowserDialogEvent } from '../contract'
+import { BROWSER_GUEST_CHANNELS, type BrowserDialog, type BrowserDialogEvent } from '../contract'
 
 const MAX_TEXT = 10_000
 
@@ -24,6 +24,7 @@ interface Pending {
 }
 
 export class GuestDialogs {
+  constructor(private readonly emit?: (event: BrowserDialogEvent) => void) {}
   private readonly pending = new Map<number, Pending>()
   private readonly listeners = new Set<(webContentsId: number, dialog: BrowserDialog | null) => void>()
 
@@ -58,7 +59,6 @@ export class GuestDialogs {
       ...(type === 'prompt' ? { defaultPrompt: String(request.defaultPrompt ?? '').slice(0, MAX_TEXT) } : {}),
     }
     const id = randomUUID()
-    const host = guest.hostWebContents
     const cleanup = (): void => {
       guest.removeListener('did-start-navigation', onNavigation)
       guest.removeListener('destroyed', cancel)
@@ -67,31 +67,31 @@ export class GuestDialogs {
       if (this.pending.get(guest.id)?.id !== id) return
       this.pending.delete(guest.id)
       cleanup()
-      reply(type === 'alert' ? null : type === 'confirm' ? answer.accept : answer.accept ? String(answer.text ?? dialog.defaultPrompt ?? '').slice(0, MAX_TEXT) : null)
-      this.notify(guest.id, host, null)
+      try { reply(type === 'alert' ? null : type === 'confirm' ? answer.accept : answer.accept ? String(answer.text ?? dialog.defaultPrompt ?? '').slice(0, MAX_TEXT) : null) } catch { /* its frame may already have closed */ }
+      this.notify(guest.id, null)
     }
     const cancel = (): void => settle({ accept: false })
     const onNavigation = (_event: unknown, _url: string, inPlace: boolean, mainFrame: boolean): void => { if (mainFrame && !inPlace) cancel() }
     guest.on('did-start-navigation', onNavigation)
     guest.once('destroyed', cancel)
     this.pending.set(guest.id, { id, dialog, reply: settle })
-    this.notify(guest.id, host, dialog, id)
+    this.notify(guest.id, dialog, id)
   }
 
-  private notify(webContentsId: number, host: WebContents | null, dialog: BrowserDialog | null, id?: string): void {
+  private notify(webContentsId: number, dialog: BrowserDialog | null, id?: string): void {
     for (const listener of this.listeners) listener(webContentsId, dialog)
     const event: BrowserDialogEvent = { webContentsId, dialog: dialog && id ? { ...dialog, id } : null }
-    try { if (host && !host.isDestroyed()) host.send(BROWSER_PAGE_CHANNELS.dialog, event) } catch { /* host gone */ }
+    try { this.emit?.(event) } catch { /* host gone */ }
   }
 }
 
 /** Takes the guest preload's dialog calls. Returns an unregister function. */
-export function registerGuestDialogs(dialogs: GuestDialogs): () => void {
+export function registerGuestDialogs(dialogs: GuestDialogs, registered: (id: number) => boolean): () => void {
   const onDialog = (event: IpcMainEvent, request: unknown): void => {
     const guest = event.sender
     const reply = (value: unknown): void => { event.returnValue = value }
-    // Only a browser panel's page gets dialogs: a webview a window hosts.
-    if (guest.getType() !== 'webview' || event.senderFrame !== guest.mainFrame || !guest.hostWebContents) {
+    // Only a registered browser page's main frame gets dialogs.
+    if (!registered(guest.id) || event.senderFrame !== guest.mainFrame) {
       reply(request && typeof request === 'object' && (request as { type?: unknown }).type === 'confirm' ? false : null)
       return
     }

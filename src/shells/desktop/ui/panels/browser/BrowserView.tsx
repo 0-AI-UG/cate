@@ -1,4 +1,4 @@
-// The browser panel view: chrome around one <webview> per tab. It renders the
+// The browser panel view: chrome around one isolated page surface per tab. It renders the
 // session snapshot, sends ops, loads pages itself (every client follows the
 // session URL, see `pageHost.ts`), and when this client drives the panel,
 // answers the runtime's page operations through its `BrowserPageHost`.
@@ -22,9 +22,9 @@ import { useRuntime } from '../../kernel/rpc'
 import { clientIdentity } from '@client/connections'
 import { usePanelView } from '../../client/document'
 import type { PanelViewProps } from '../../client/host/views'
-import { stageSurface } from '../../client/host/surfaceRegistry'
+import { subscribeSurfaceVisibility, surfaceDisplayScale } from '../../client/host/surfaceRegistry'
 import { BROWSER_NEW_TAB_URL, queryBrowserHistoryEntries, type BrowserShortcutAction } from '@services/browser/contract'
-import { browserLocalDownloads, browserPageBridge, browserPartition, createPageOps, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
+import { openEngineSurface, browserLocalDownloads, browserPageBridge, browserPartition, createPageOps, subscribeBrowserPartitions } from '@services/browser/desktop/renderer'
 import { fsClient } from '@workspace/files/client'
 import { base64ToBytes, writeFileRefDrag, type FileRef } from '@workspace/files/contract'
 import { BrowserPasswordManagerPage, useBrowserData } from '../../services/browser'
@@ -36,6 +36,7 @@ import { runPageOp } from './surfaces'
 import { AgentCursorOverlay } from './parts/AgentCursorOverlay'
 import { BrowserDownloadsPopover, type BrowserPanelDownload } from './parts/BrowserDownloadsPopover'
 import { BrowserHistoryPage } from './parts/BrowserHistoryPage'
+import { BrowserIconPartition } from './parts/BrowserFavicon'
 import { BrowserMenu } from './parts/BrowserMenu'
 import { BrowserTabStrip } from './parts/BrowserTabStrip'
 import { PageDialog } from './parts/PageDialog'
@@ -73,7 +74,59 @@ function shortcutFor(event: React.KeyboardEvent): BrowserShortcutAction | null {
   }
 }
 
-function WebviewSlot({ tabId, src, partition, active, hidden, viewport, displayScale, onElement }: {
+function EngineSurface({ src, partition, panelId, tabId, displayScale, style, onElement }: {
+  src: string; partition: string; panelId: string; tabId: string; displayScale: number; style: React.CSSProperties; onElement(element: BrowserGuest | null): void
+}) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
+  const secureInput = useRef<HTMLInputElement>(null)
+  const [failed, setFailed] = useState(false)
+  const [attempt, retry] = useReducer((value: number) => value + 1, 0)
+  const currentDisplayScale = useRef(displayScale)
+  currentDisplayScale.current = displayScale
+  useLayoutEffect(() => {
+    let stopped = false
+    let close: (() => void) | undefined
+    let started = false
+    const start = (slotScale?: number) => {
+      if (started) return
+      started = true
+      const canvas = ref.current!
+      // Offscreen density is fixed for the life of this page. Canvas zoom
+      // and resize keep the existing page and its live state.
+      const dpr = window.devicePixelRatio
+      const projectedDensity = slotScale === undefined ? 1 : dpr * slotScale * currentDisplayScale.current
+      const scaleFactor = Math.max(1, Math.min(4, dpr, Math.round(projectedDensity * 2) / 2))
+      void openEngineSurface(canvas, input.current!, secureInput.current!, {
+        partition, panelId, tabId, url: src, scaleFactor,
+        width: canvas.clientWidth || 900, height: canvas.clientHeight || 650,
+      }).then(page => {
+        if (stopped) return page.dispose()
+        close = page.dispose
+        onElement(page.surface)
+      }).catch(() => { if (!stopped) setFailed(true) })
+    }
+    // The portal can mount before the layout slot. Wait briefly for it,
+    // including when an agent opens a page without a visible slot.
+    const startIfPlaced = () => {
+      const slotScale = surfaceDisplayScale(panelId)
+      if (slotScale !== undefined) start(slotScale)
+    }
+    const unsubscribe = subscribeSurfaceVisibility(panelId, startIfPlaced)
+    const fallback = window.setTimeout(() => start(surfaceDisplayScale(panelId)), 150)
+    startIfPlaced()
+    return () => { stopped = true; clearTimeout(fallback); unsubscribe(); onElement(null); close?.() }
+  }, [onElement, partition, panelId, tabId, src, attempt])
+  if (failed) return <ErrorOverlay title="Could not open this page" description="The browser engine could not start the page." buttonLabel="Retry" onRetry={() => { setFailed(false); retry() }} />
+  return <div style={{ ...style, position: 'relative' }}>
+    <canvas ref={ref} style={{ width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', objectFit: 'fill', display: 'block', backgroundColor: '#fff' }} />
+    <input ref={secureInput} type="password" data-browser-secure-input aria-label="Secure web page input" autoComplete="off" tabIndex={-1} className="absolute opacity-0 pointer-events-none" style={{ left: 0, top: 0, width: 1, height: 20, padding: 0, border: 0 }} />
+    <textarea ref={input} data-browser-input aria-label="Web page input" autoComplete="off" autoCapitalize="off" spellCheck={false} tabIndex={-1} className="absolute opacity-0 pointer-events-none resize-none" style={{ left: 0, top: 0, width: 1, height: 20, padding: 0, border: 0 }} />
+  </div>
+}
+
+function BrowserSurfaceSlot({ panelId, tabId, src, partition, active, hidden, viewport, displayScale, onElement }: {
+  panelId: string
   tabId: string
   src: string
   partition: string
@@ -88,31 +141,18 @@ function WebviewSlot({ tabId, src, partition, active, hidden, viewport, displayS
   const frameStyle = fixed
     ? { width: viewport.width * displayScale, height: viewport.height * displayScale }
     : { width: '100%', height: '100%' }
-  const webviewStyle = fixed
+  const surfaceStyle = fixed
     ? { width: viewport.width, height: viewport.height }
     : { width: `${100 / displayScale}%`, height: `${100 / displayScale}%` }
   return (
     <div
-      data-browser-webview-slot
+      data-browser-page-slot
       data-browser-src={src}
       data-browser-partition={partition}
       className={`${active ? 'relative' : 'absolute inset-0 invisible pointer-events-none'} overflow-hidden bg-surface-0`}
       style={frameStyle}
     >
-      <webview
-        ref={attach as never}
-        src={src}
-        className={hidden ? 'invisible' : ''}
-        style={{
-          ...webviewStyle,
-          // Transparent pages need a browser canvas, not Cate's themed surface.
-          backgroundColor: '#fff',
-          transform: `scale(${displayScale})`,
-          transformOrigin: 'top left',
-        }}
-        partition={partition}
-        {...({ allowpopups: 'true', webpreferences: 'backgroundThrottling=no' } as object)}
-      />
+      <EngineSurface src={src} partition={partition} panelId={panelId} tabId={tabId} displayScale={displayScale} onElement={attach} style={{ ...surfaceStyle, visibility: hidden ? 'hidden' : undefined, transform: `scale(${displayScale})`, transformOrigin: 'top left' }} />
     </div>
   )
 }
@@ -181,7 +221,6 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     clientId: clientIdentity().clientId,
     send: (op) => live.current.send(op),
     reveal: (tabId) => live.current.setShown(tabId),
-    stage: () => stageSurface(panelId),
     bridge,
     guestCss: guestScrollbarCss,
     confirmSave: (message) => clientUi().confirm(message),
@@ -241,7 +280,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   // attached while hidden can stay blank, and other clients' tabs need no page.
   const shownTabs = useRef(new Set<string>())
   shownTabs.current.add(shownTabId)
-  // Seeds stay fixed per mounted webview, so a re-render never reloads a page.
+  // Seeds stay fixed per mounted surface, so a re-render never reloads a page.
   const seeds = useRef(new Map<string, string>())
   const srcFor = (tabId: string): string => {
     const tab = tabs.find((candidate) => candidate.id === tabId)!
@@ -283,7 +322,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     [showSuggestions, inputUrl, history],
   )
   const navigate = useCallback((input: string) => {
-    if (input.trim()) quietly({ kind: 'navigate', input, tabId: shownTabId })
+    if (input.trim()) { urlInputRef.current?.blur(); quietly({ kind: 'navigate', input, tabId: shownTabId }) }
   }, [quietly, shownTabId])
 
   const onUrlKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -317,27 +356,22 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   // Keys pressed inside a guest, or the Browser menu, go to the focused browser.
   useEffect(() => bridge?.onShortcut((action) => { if (focused) shortcut(action) }), [bridge, focused, shortcut])
 
+  const hadFocus = useRef(focused)
   useEffect(() => {
-    if (!focused || !isStartPage(currentUrl)) return
+    const gainedFocus = focused && !hadFocus.current
+    hadFocus.current = focused
+    if (!focused || !visible) return
+    const before = document.activeElement
+    const belongsHere = before instanceof HTMLElement && before.closest<HTMLElement>('[data-browser-surface]')?.dataset.browserSurface === panelId
+    // Session navigation and agent tab changes never borrow external focus.
+    if (!gainedFocus && before !== document.body && (!belongsHere || before === urlInputRef.current)) return
     const frame = requestAnimationFrame(() => {
-      if (!document.body.classList.contains('canvas-dragging')) urlInputRef.current?.focus()
+      if (document.activeElement !== before || document.body.classList.contains('canvas-dragging')) return
+      if (isStartPage(currentUrl)) urlInputRef.current?.focus()
+      else host.webview()?.focus()
     })
     return () => cancelAnimationFrame(frame)
-  }, [currentUrl, focused])
-
-  useEffect(() => {
-    if (!focused) return
-    const webview = host.webview()
-    if (!webview) return
-    const frame = requestAnimationFrame(() => {
-      // On start pages, user focus belongs to the address bar.
-      if (isStartPage(activeTab.url)) return
-      // Focusing a webview blurs the host window and cancels a pending canvas drag.
-      if (document.body.classList.contains('canvas-dragging')) return
-      webview.focus()
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [focused, host, shownTabId, activeTab.url])
+  }, [currentUrl, focused, visible, host, shownTabId, panelId])
 
   // ---- Menus, downloads, screenshot ---------------------------------------------
 
@@ -418,6 +452,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   const iconButton = 'w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-secondary hover:text-primary transition-colors'
 
   return (
+    <BrowserIconPartition.Provider value={partition}>
     <div
       className="flex w-full h-full relative"
       onKeyDown={(event) => {
@@ -608,9 +643,10 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
           {/* Guests share the view's transform, so the page and the agent
               overlay always use the same coordinates. */}
           {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) || host.isDiscarded(tab.id) || !host.needsGuest(tab) ? null : (
-            <WebviewSlot
+            <BrowserSurfaceSlot
               key={`${panelId}:${partition}:${tab.id}`}
               tabId={tab.id}
+              panelId={panelId}
               src={srcFor(tab.id)}
               partition={partition}
               active={tab.id === shownTabId}
@@ -703,5 +739,6 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
         </div>
       </div>
     </div>
+    </BrowserIconPartition.Provider>
   )
 }

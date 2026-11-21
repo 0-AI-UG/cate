@@ -7,6 +7,7 @@
 // pure contract files and this module's own code.
 
 import { contextBridge, ipcRenderer, webFrame, type IpcRendererEvent } from 'electron'
+import { BROWSER_ENGINE_CHANNELS } from '@services/browser/contract/engine'
 import { createBrowserPageBridge } from '@services/browser/desktop/preload'
 import type { DesktopApi, LoopbackRequest } from '../contract/api'
 import { DESKTOP_CHANNELS as C } from '../contract/channels'
@@ -263,3 +264,10 @@ const api: DesktopApi = {
 
 contextBridge.exposeInMainWorld('cateDesktop', api)
 contextBridge.exposeInMainWorld('cateBrowserPage', createBrowserPageBridge())
+
+contextBridge.exposeInMainWorld('cateBrowserEngine', {
+  create: (options: unknown) => ipcRenderer.invoke(BROWSER_ENGINE_CHANNELS.create, options),
+  icon: (partition: string, url: string) => ipcRenderer.invoke(BROWSER_ENGINE_CHANNELS.icon, partition, url),
+  close: (id: number) => ipcRenderer.invoke(BROWSER_ENGINE_CHANNELS.close, id),
+  focus: (id: number, focused: boolean) => ipcRenderer.send(BROWSER_ENGINE_CHANNELS.focus, id, focused),
+})

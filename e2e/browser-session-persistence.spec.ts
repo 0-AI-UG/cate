@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import { browserInvoke, browserWebContentsId, createBrowser, act, inspectFixture } from './fixtures/browser-control'
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
@@ -114,13 +115,13 @@ test('lists a saved password and autofills username and password without exposin
       await page.evaluate((zoom) => window.__cateE2E!.setZoom(zoom), zoom)
       // Page zoom is client state (the view positions the popup from it).
       await page.evaluate((panelId) => window.__cateE2E!.setPanelView(panelId, 'zoom', 1.2), browser.panelId)
-      await expect.poll(() => app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.getZoomFactor(), webContentsId)).toBeCloseTo(1.2)
+      await expect.poll(() => engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id!)!.getZoomFactor(), webContentsId)).toBeCloseTo(1.2)
       await expect(act(page, browser, 'click', 'Email', {}, 'textbox')).resolves.toMatchObject({ ok: true })
       await expect(act(page, browser, 'click', 'Password', {}, 'textbox')).resolves.toMatchObject({ ok: true })
       await expect(popup).toBeVisible()
       const field = await inspectFixture(app, page, browser, 'JSON.parse(JSON.stringify(document.querySelector("#password").getBoundingClientRect()))')
       const rect = field.result.value as { left: number; bottom: number }
-      const guest = surface.locator('webview').first()
+      const guest = surface.locator('[data-browser-engine]').first()
       const guestBox = (await guest.boundingBox())!
       const guestWidth = await guest.evaluate((element) => (element as HTMLElement).offsetWidth)
       const scale = guestBox.width / guestWidth
@@ -172,7 +173,7 @@ test('saves a manual cross-origin iframe login and offers autofill in that frame
     const id = (await browserWebContentsId(page, browser.panelId))!
     // Populate and submit as a manual page interaction, outside the agent
     // driver: an automated submission intentionally skips confirmation.
-    const inFrame = (expression: string) => app.evaluate(async ({ webContents }, { id, frameOrigin, expression }) => {
+    const inFrame = (expression: string) => engineEvaluate(app, async ({ webContents }, { id, frameOrigin, expression }) => {
       const frame = webContents.fromId(id)!.mainFrame.framesInSubtree.find(frame => frame.url.startsWith(frameOrigin))
       if (!frame) throw new Error('login frame not ready')
       return frame.executeJavaScript(expression)
@@ -185,17 +186,18 @@ test('saves a manual cross-origin iframe login and offers autofill in that frame
 
     // Reload creates a new frame document. Its isolated listener must be
     // installed again, and the popup must fill that frame rather than the host.
-    await app.evaluate(({ webContents }, id) => webContents.fromId(id)!.reload(), id)
+    await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id)!.reload(), id)
     await expect.poll(() => inFrame('!!document.querySelector("input[type=password]")')).toBe(true)
     await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
     await inFrame('document.querySelector("input[type=password]").focus()')
     const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
     const popup = surface.locator('[data-browser-autofill]')
     await expect(popup).toBeVisible()
+    await expect(surface.locator('[data-browser-secure-input]')).toBeFocused()
     const field = await inFrame('JSON.parse(JSON.stringify(document.querySelector("input[type=password]").getBoundingClientRect()))') as { bottom: number }
-    const parent = await app.evaluate(({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('JSON.parse(JSON.stringify(document.querySelector("iframe").getBoundingClientRect()))'), id) as { top: number }
-    const guestBox = (await surface.locator('webview').boundingBox())!
-    const guestWidth = await surface.locator('webview').evaluate(element => (element as HTMLElement).offsetWidth)
+    const parent = await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('JSON.parse(JSON.stringify(document.querySelector("iframe").getBoundingClientRect()))'), id) as { top: number }
+    const guestBox = (await surface.locator('[data-browser-engine]').boundingBox())!
+    const guestWidth = await surface.locator('[data-browser-engine]').evaluate(element => (element as HTMLElement).offsetWidth)
     const scale = guestBox.width / guestWidth
     await expect.poll(async () => Math.abs((await popup.boundingBox())!.y - (guestBox.y + (parent.top + 2 + field.bottom) * scale + 6 * scale))).toBeLessThan(3)
     await popup.getByRole('button', { name: /iframe@example.test/ }).click()

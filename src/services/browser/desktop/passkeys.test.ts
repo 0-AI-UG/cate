@@ -11,12 +11,11 @@ vi.mock('electron', () => ({
   ipcMain: { on: mocks.on, handle: mocks.handle },
 }))
 vi.mock('node:module', () => ({ createRequire: () => () => ({ isAvailable: mocks.available, request: mocks.request, cancel: mocks.cancel }) }))
-import { registerBrowserPasskeys } from './passkeys'
+import { createEnginePasskeys } from './passkeys'
 
 let frame: any
 let contents: any
 const input = { id: '11111111-1111-4111-8111-111111111111', operation: 'get', options: { challenge: 'AQ' } }
-const invoke = (event = { sender: contents, senderFrame: frame }, value = input) => mocks.handle.mock.calls[0][1](event, value)
 beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('process', { ...process, platform: 'darwin', getSystemVersion: () => '15.0' })
@@ -26,42 +25,39 @@ beforeEach(() => {
   mocks.request.mockResolvedValue(JSON.stringify({ error: 'NotAllowedError' }))
   mocks.available.mockReturnValue(true)
   mocks.registered.mockReturnValue(true)
-  registerBrowserPasskeys({ isRegistered: mocks.registered })
 })
 afterEach(() => vi.unstubAllGlobals())
 
-it('derives origin from the calling frame and validates RP before native dispatch', async () => {
-  await invoke()
+// The isolated engine retains frame/origin checks in its own process; the
+// native side must still require a live, focused shell window.
+it('relays validated engine requests to the actual shell window only', async () => {
+  mocks.owner.isFocused = () => true
+  const passkeys = createEnginePasskeys({ owner: () => mocks.owner })
+  await passkeys.request(9, 'https://example.com', input)
   expect(JSON.parse(mocks.request.mock.calls[0][0])).toMatchObject({ origin: 'https://example.com', options: { rpId: 'example.com' } })
   mocks.request.mockClear()
-  expect(await invoke(undefined, { ...input, options: { challenge: 'AQ', rpId: 'evil.com' } } as any)).toEqual({ error: 'SecurityError' })
+  mocks.owner.isFocused = () => false
+  expect(await passkeys.request(9, 'https://example.com', input)).toEqual({ error: 'NotAllowedError' })
   expect(mocks.request).not.toHaveBeenCalled()
 })
-it('rejects unregistered guests and subframes', async () => {
-  expect(await invoke({ sender: contents, senderFrame: { ...frame } })).toEqual({ error: 'NotAllowedError' })
-  mocks.registered.mockReturnValue(false)
-  expect(await invoke()).toEqual({ error: 'NotAllowedError' })
-  expect(mocks.request).not.toHaveBeenCalled()
-})
-it('cancels on navigation and suppresses stale authenticator results', async () => {
-  let resolve!: (result: string) => void
-  mocks.request.mockImplementation(() => new Promise<string>((done) => { resolve = done }))
-  const pending = invoke()
-  contents.emit('did-start-navigation', {}, 'https://other.example', false, true)
-  expect(mocks.cancel).toHaveBeenCalledWith(input.id)
-  resolve(JSON.stringify({ id: 'AQ' }))
-  expect(await pending).toEqual({ error: 'AbortError' })
-  expect(contents.listenerCount('did-start-navigation')).toBe(0)
-})
-it('only accepts cancellation for the calling guest’s pending request', async () => {
-  let resolve!: (result: string) => void
-  mocks.request.mockImplementation(() => new Promise<string>((done) => { resolve = done }))
-  const pending = invoke()
-  const cancel = mocks.on.mock.calls.find(([name]) => name === 'cate-passkeys-cancel')![1]
-  cancel({ sender: contents, senderFrame: frame }, 'other-request')
+it('cancels outstanding native operations when the browser engine exits', async () => {
+  mocks.owner.isFocused = () => true
+  let finish!: (value: string) => void
+  mocks.request.mockImplementation(() => new Promise<string>(resolve => { finish = resolve }))
+  const passkeys = createEnginePasskeys({ owner: () => mocks.owner })
+  const request = passkeys.request(9, 'https://example.com', input)
+  passkeys.cancel(10, input.id)
   expect(mocks.cancel).not.toHaveBeenCalled()
-  cancel({ sender: contents, senderFrame: frame }, input.id)
+  passkeys.cancelAll()
   expect(mocks.cancel).toHaveBeenCalledWith(input.id)
-  resolve('{}')
-  await pending
+  finish('{}')
+  expect(await request).toEqual({ error: 'AbortError' })
+  expect(mocks.owner.listenerCount('closed')).toBe(0)
+})
+
+it('rejects a relying party outside the engine-pinned origin', async () => {
+  mocks.owner.isFocused = () => true
+  const passkeys = createEnginePasskeys({ owner: () => mocks.owner })
+  expect(await passkeys.request(9, 'https://example.com', { ...input, options: { challenge: 'AQ', rpId: 'evil.com' } })).toEqual({ error: 'SecurityError' })
+  expect(mocks.request).not.toHaveBeenCalled()
 })

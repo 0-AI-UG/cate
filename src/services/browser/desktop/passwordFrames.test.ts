@@ -6,14 +6,15 @@ function setup() {
     ? { result: { objectId: 'field' } }
     : method === 'DOM.describeNode' ? { node: { backendNodeId: 12 } } : {})
   const emit = vi.fn()
-  const frames = new PasswordFrames({ send, emit, offset: async () => ({ x: 40, y: 80 }), automated: () => false })
+  const inputContext = vi.fn()
+  const frames = new PasswordFrames({ send, emit, inputContext, offset: async () => ({ x: 40, y: 80 }), automated: () => false })
   const context = (id = 7, name = 'cate-passwords') => frames.handle('Runtime.executionContextCreated', {
     context: { id, name, auxData: { frameId: 'apple-login' } },
   }, 'apple-session')
   const message = (channel: string, payload: unknown, id = 7) => frames.handle('Runtime.bindingCalled', {
     name: '__catePasswordEvent', executionContextId: id, payload: JSON.stringify({ channel, payload }),
   }, 'apple-session')
-  return { send, emit, frames, context, message }
+  return { send, emit, inputContext, frames, context, message }
 }
 
 it('installs isolated-world detection in existing and future cross-origin frames', async () => {
@@ -44,4 +45,16 @@ it('captures a manual iframe submission and ignores events from page-authored wo
   context()
   message('cate-browser-password-submit', payload)
   expect(emit).toHaveBeenCalledWith('submit', { ...payload, automated: false })
+})
+
+it('relays secure input state immediately and translates frame geometry without stale updates', async () => {
+  const { inputContext, context, message } = setup()
+  context(8, '')
+  message('input-context', { secure: true }, 8)
+  expect(inputContext).not.toHaveBeenCalled()
+  context()
+  message('input-context', { secure: true, caret: { x: 2, y: 3, height: 20 } })
+  expect(inputContext).toHaveBeenLastCalledWith({ secure: true, caret: null })
+  message('input-context', { secure: false, caret: { x: 5, y: 6, height: 20 } })
+  await vi.waitFor(() => expect(inputContext).toHaveBeenLastCalledWith({ secure: false, caret: { x: 45, y: 86, height: 20 } }))
 })

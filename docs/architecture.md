@@ -1555,8 +1555,8 @@ Service logic runs in the runtime; the client side is a typed client and UI.
 
 ### 10.2 Browser
 
-A page lives in a webview on a client. Everything else about the browser lives
-in the runtime.
+A page lives in a native browser engine on a client. Everything else about the
+browser lives in the runtime.
 
 One module holds agent control of pages; the browser panel
 (`panels/browser`) holds only tabs, URLs, navigation, viewport, the
@@ -1578,9 +1578,31 @@ downloads list and its views, and hands page work to it.
   of one panel, built by its session over a port (its tabs, `withSurface`,
   the agent cursor); it binds each call to the active tab and picks the
   saved login for `login`.
-- **desktop**: the webview, one partition per workspace
+- **desktop**: an isolated Electron browser-engine process (`desktop/engine`),
+  with its own main process, sandboxed page renderers, network service and GPU
+  process. Cate UI windows cannot attach webviews. One partition per workspace
   (`persist:ws-<runtimeId>`, cookies are per device) routed through loopback
-  routing (section 12.3), the **page ops** (`desktop/renderer`: a `page.*`
+  routing (section 12.3). The engine exclusively opens the existing partition
+  stores and Chromium encryption state in the device session directory; Cate
+  uses a separate `ui/` Chromium profile. Device JSON remains in `userData`.
+  Page handles are opaque, window-owned, and never reused across engine restarts.
+  The helper starts lazily and configures each workspace partition on demand.
+  A partition failure stays scoped to that workspace and can be retried.
+  The helper exits with its parent; failures are logged and
+  shown inside the panel, without native error dialogs.
+  Each page chooses an offscreen pixel density from its visual size when its
+  surface opens. Small canvas panels use fewer pixels. That density stays
+  fixed for the life of the page so zooming preserves live state. Each page
+  sends lossless PNG frames over a
+  token-authenticated loopback WebSocket. Cate decodes the frame as a Blob
+  and presents it in a canvas. On macOS the canvas reuses a CPU-backed
+  2D buffer to reduce graphics memory. One frame may be in flight and only the
+  newest pending frame is retained. Hidden surfaces stop receiving frames.
+  Favicons are decoded and rasterized inside the engine before reaching the UI.
+  Mouse, keyboard, editing commands and IME input are forwarded to the page;
+  native file dialogs and passkeys use the owning Cate window. UI rasterization
+  uses CPU, with GPU compositing retained; macOS uses Skia Ganesh to
+  avoid cold Graphite presentation-pipeline stalls. The **page ops** (`desktop/renderer`: a `page.*`
   request run on the guest the panel's page host has ready, staging a
   file input's uploads on this client, rendering a parked page unseen for
   the operation, and keeping the person's focus),
@@ -1590,16 +1612,15 @@ downloads list and its views, and hands page work to it.
   autofill bridge, JavaScript dialogs, and **passkeys**.
   **Agents never take the person's input.** The page keeps its own focus
   (the driver emulates it, and sends keys to the guest's own widget), so the
-  window's focus stays where the person put it: an agent's click focuses its
-  guest in the window, and the page ops hand that focus straight back to the
-  element that lost it while the action runs. Only the person's own click or
+  window's focus stays where the person put it. Agent actions never focus the
+  UI input proxy or activate an engine window. Only the person's own click or
   key in the page an agent drives takes it over (the guest preload's signal
   cancels the agent's pending work); scrolling to watch does not.
-  **Parked pages render for agents.** Chromium paints no frames for a guest
-  that is hidden or off screen, so a page op on a parked surface (another
-  workspace, off the canvas, behind a tab) stages it: the surface registry
-  puts it in the window, transparent and without pointer input, until the op
-  ends, and screenshots work wherever the panel is.
+  **Parked pages render for agents.** A page operation starts offscreen painting
+  inside the engine for its duration, including on another workspace, off the
+  canvas or behind a tab. Painting stays active until the last overlapping
+  operation finishes. It never stages a DOM surface in Cate; screenshots
+  work wherever the panel is.
   **Idle page lifetime (desktop).** An unused start page creates no guest
   until navigation or page control needs it. Once created, a guest remains
   subject to the same lifetime policy even on returning to the start page.
@@ -1611,14 +1632,15 @@ downloads list and its views, and hands page work to it.
   automation stays alive and unthrottled until its tab closes, including
   between calls and while the person is away. The page host owns this client
   view lifetime; tabs and URLs remain the runtime session's state.
-  **Native dropdowns** open an OS menu page control cannot drive: snapshots
+  **Native dropdowns** use Blink's in-page `base-select` picker so their
+  pixels and trusted input stay inside the offscreen page. Snapshots
   list a `<select>`'s options under it (with a `value` that differs from the
   label), `select` takes a label or a value, a click on an option chooses
   it, and a click on the dropdown itself fails with `browser-native-select`.
   A page whose script never yields answers no CDP command: after 10 s its
   calls fail with `browser-page-unresponsive`, and reloading or navigating
   the tab restarts its renderer.
-  A guest's `alert`, `confirm` and `prompt` wait on desktop main through the
+  A guest's `alert`, `confirm` and `prompt` wait on the engine through the
   guest preload (Electron shows none itself); the panel shows the dialog and
   an agent may answer it (`cate browser dialog`). An agent's `login` needs a
   CLI opt-in (`cliBrowserPasswordsEnabled`, off by default) on top of browser

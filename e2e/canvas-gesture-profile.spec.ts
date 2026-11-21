@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 // Opt-in measurement, not a machine-dependent CI timing gate.
 import { test, expect } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
@@ -99,7 +100,7 @@ test('canvas gesture resource profile', async () => {
           await page.waitForTimeout(200)
           const trace = process.env.CATE_GESTURE_TRACE && scenario === (process.env.CATE_GESTURE_TRACE_SCENARIO ?? 'mixed-24') && action === (process.env.CATE_GESTURE_TRACE_ACTION ?? 'pan') && repeat === 0
           if (trace) await app.evaluate(async ({ contentTracing }) => contentTracing.startRecording({ included_categories: ['devtools.timeline', 'cc', 'gpu', 'viz', 'blink.user_timing', 'v8', 'disabled-by-default-v8.gc'] }))
-          const guestFrames = () => app.evaluate(async ({ webContents }) => Promise.all(webContents.getAllWebContents().filter(w => w.getType() === 'webview').map(async w => ({ id: w.id, frames: await w.executeJavaScript('window.drawnFrames ?? null') }))))
+          const guestFrames = () => engineEvaluate(app, async ({ webContents }) => Promise.all(webContents.getAllWebContents().map(async w => ({ id: w.id, frames: await w.executeJavaScript('window.drawnFrames ?? null') }))))
           const guestFramesBefore = scenario === 'browsers-heavy' ? await guestFrames() : undefined
           const before = await cdp.send('Performance.getMetrics')
           await sample() // prime interval CPU measurement
@@ -140,7 +141,7 @@ test('canvas gesture resource profile', async () => {
               }
               if (inputTimer !== null) clearInterval(inputTimer)
               gaps.sort((a, b) => a - b)
-              const mountedAtGestureEnd = { nodes: document.querySelectorAll('[data-node-id]').length, editors: document.querySelectorAll('.monaco-editor').length, terminals: document.querySelectorAll('.xterm').length, terminalCanvases: document.querySelectorAll('.xterm canvas').length, terminalWebglCanvases: [...document.querySelectorAll<HTMLCanvasElement>('.xterm canvas')].filter(c => c.getContext('webgl2')?.isContextLost() === false).length, browsers: document.querySelectorAll('webview').length }
+              const mountedAtGestureEnd = { nodes: document.querySelectorAll('[data-node-id]').length, editors: document.querySelectorAll('.monaco-editor').length, terminals: document.querySelectorAll('.xterm').length, terminalCanvases: document.querySelectorAll('.xterm canvas').length, terminalWebglCanvases: [...document.querySelectorAll<HTMLCanvasElement>('.xterm canvas')].filter(c => c.getContext('webgl2')?.isContextLost() === false).length, browsers: document.querySelectorAll('[data-browser-engine]').length }
               const activeElapsedMs = performance.now() - start
               const after = window.__catePerf!.renderCounts()
               const activeLongTasks = window.__catePerf!.longTasks()

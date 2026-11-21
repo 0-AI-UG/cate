@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 // Controlled first-pan experiment: retained/released layers crossed with
 // settled/resuming browser rendering. No continuous rAF or renderer polling
 // during idle. Synthetic input isolates rendering from physical input delivery.
@@ -50,16 +51,16 @@ test('isolate first-pan layer promotion from browser rendering', async () => {
     </script>`
     const { panelId } = await create(page, 'browser', { x: 400, y: 120 }, { url: 'data:text/html,' + encodeURIComponent(html) })
     const guestId = await waitForBrowserGuest(page, panelId)
-    await expect.poll(() => app.evaluate(({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('typeof window.resumeWork'), guestId)).toBe('function')
-    const engine = await app.evaluate(({ app, BrowserWindow, webContents }, id) => ({
+    await expect.poll(() => engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('typeof window.resumeWork'), guestId)).toBe('function')
+    const engine = await app.evaluate(({ app, BrowserWindow }) => ({
       versions: process.versions, gpu: app.getGPUFeatureStatus(),
       disabledFeatures: app.commandLine.getSwitchValue('disable-features'),
       enabledFeatures: app.commandLine.getSwitchValue('enable-features'),
       hostThrottling: BrowserWindow.getAllWindows()[0].webContents.getBackgroundThrottling(),
-      guestThrottling: webContents.fromId(id)!.getBackgroundThrottling(),
-    }), guestId)
+    }))
+    const guestThrottling = await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id)!.getBackgroundThrottling(), guestId)
     expect(engine.hostThrottling).toBe(false)
-    expect(engine.guestThrottling).toBe(false)
+    expect(guestThrottling).toBe(false)
     for (const arg of chromiumArgs) {
       if (arg.startsWith('--enable-features=')) expect(engine.enabledFeatures).toBe(arg.slice('--enable-features='.length))
       if (arg.startsWith('--disable-features=')) expect(engine.disabledFeatures).toBe(arg.slice('--disable-features='.length))
@@ -83,7 +84,7 @@ test('isolate first-pan layer promotion from browser rendering', async () => {
       for (const condition of cases) {
         // Visibility suppresses rasterization, but preserves the same DOM,
         // script, forced layout and browser animation callbacks.
-        await app.evaluate(({ webContents }, { id, paint }) => webContents.fromId(id)!.executeJavaScript(`window.workFrames=0; window.layoutMs=0; document.querySelector('#tiles').style.visibility = ${JSON.stringify(paint ? 'visible' : 'hidden')}`), { id: guestId, paint: condition.browserPaint })
+        await engineEvaluate(app, ({ webContents }, { id, paint }) => webContents.fromId(id)!.executeJavaScript(`window.workFrames=0; window.layoutMs=0; document.querySelector('#tiles').style.visibility = ${JSON.stringify(paint ? 'visible' : 'hidden')}`), { id: guestId, paint: condition.browserPaint })
         await layerStyle.evaluate((style, retain) => {
           style.textContent = retain ? '[data-canvas-world],[data-canvas-top-overlay-world],[data-canvas-relation-overlay-world],[data-node-id]{will-change:transform!important}' : ''
         }, condition.retainLayers)
@@ -129,15 +130,15 @@ test('isolate first-pan layer promotion from browser rendering', async () => {
           return { willChange: getComputedStyle(world).willChange, movingClass: world.classList.contains('canvas-world-moving'), nodes: document.querySelectorAll('[data-node-id]').length }
         })
         // No page.evaluate, animation loop or profiling HUD runs while idle.
-        const native = await app.evaluate(({ BrowserWindow, webContents }, { idleMs, guestId, browserWork }) => new Promise<{ sentWall: number; result: any }>((resolve, reject) => {
+        const native = await app.evaluate(({ BrowserWindow }, { idleMs, guestId, browserWork }) => new Promise<{ sentWall: number; result: any }>((resolve, reject) => {
           setTimeout(() => {
             const host = BrowserWindow.getAllWindows()[0].webContents
-            if (browserWork) void webContents.fromId(guestId)!.executeJavaScript('window.resumeWork()').catch(reject)
+            if (browserWork) void globalThis.__cateBrowserEngineTest.call('evaluate', { id: guestId, script: 'window.resumeWork()' }).catch(reject)
             const sentWall = Date.now()
             host.executeJavaScript('window.__startIdleIsolation()').then(result => resolve({ sentWall, result }), reject)
           }, idleMs)
         }), { idleMs, guestId, browserWork: condition.browserWork })
-        const guest = await app.evaluate(({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('({ frames: window.workFrames, layoutMs: window.layoutMs ?? 0 })'), guestId)
+        const guest = await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('({ frames: window.workFrames, layoutMs: window.layoutMs ?? 0 })'), guestId)
         const frames = native.result.gaps as { atMs: number; ms: number }[]
         const gaps = frames.map(frame => frame.ms)
         const activeGaps = frames.filter(frame => frame.atMs <= 700).map(frame => frame.ms)

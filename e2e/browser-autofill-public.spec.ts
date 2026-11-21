@@ -23,7 +23,7 @@ test('positions and selects autofill on Open CLI Deployment', async () => {
     const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
     const popup = surface.locator('[data-browser-autofill]')
     await expect(popup).toBeVisible()
-    const guest = surface.locator('webview').first()
+    const guest = surface.locator('[data-browser-engine]').first()
     const field = await inspectFixture(app, page, browser, 'JSON.parse(JSON.stringify(document.querySelector("input[type=password]").getBoundingClientRect()))')
     const box = (await guest.boundingBox())!
     const width = await guest.evaluate((element) => (element as HTMLElement).offsetWidth)

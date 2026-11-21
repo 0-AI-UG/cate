@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { browserInvoke, browserWebContentsId, createBrowser, observe, act, activeAction, fixtureEvaluate, inspectFixture, target } from './fixtures/browser-control'
@@ -111,7 +112,7 @@ test('browser is always a normal canvas card across zoom and pan', async () => {
   const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
   await expect(node.locator(`[data-browser-surface-slot="${browser.panelId}"]`)).toBeVisible()
   await expect(surface).toHaveAttribute('data-browser-surface-visible', 'true')
-  await expect(surface.locator('webview')).toHaveCount(1)
+  await expect(surface.locator('[data-browser-engine]')).toHaveCount(1)
   const guestId = await expect.poll(
     () => browserWebContentsId(page, browser.panelId),
     { timeout: 20_000 },
@@ -125,38 +126,29 @@ test('browser is always a normal canvas card across zoom and pan', async () => {
   expect(await browserWebContentsId(page, browser.panelId)).toBe(guestId)
 })
 
-test('user clicks and types directly in the live webview at non-default zoom', async () => {
+test('user clicks and types directly in the live page surface at non-default zoom', async () => {
   const url = `data:text/html,${encodeURIComponent(`
     <title>Interactive preview</title>
     <style>html,body{margin:0}#name{position:absolute;left:16px;top:16px;width:240px;height:40px}#save{position:absolute;left:16px;top:80px;width:160px;height:40px}</style>
     <input id="name" aria-label="Name"><button id="save" onclick="document.body.dataset.saved=document.querySelector('#name').value">Save</button>
   `)}`
   const browser = await createBrowser(page, url, { x: 120, y: 120 })
-  const webview = page.locator(`[data-browser-surface="${browser.panelId}"] webview`).first()
+  const webview = page.locator(`[data-browser-surface="${browser.panelId}"] [data-browser-engine]`).first()
   await expect(webview).toBeVisible({ timeout: 20_000 })
-  const guestId = await expect.poll(
-    () => browserWebContentsId(page, browser.panelId),
-    { timeout: 20_000 },
-  ).not.toBeNull().then(() => browserWebContentsId(page, browser.panelId))
   await page.evaluate(() => window.__cateE2E!.setZoom(0.65))
 
-  const guestClick = (x: number, y: number) => app.evaluate(({ webContents }, input) => {
-    const guest = webContents.fromId(input.id!)!
-    guest.focus()
-    guest.sendInputEvent({ type: 'mouseDown', x: input.x, y: input.y, button: 'left', clickCount: 1 })
-    guest.sendInputEvent({ type: 'mouseUp', x: input.x, y: input.y, button: 'left', clickCount: 1 })
-  }, { id: guestId, x, y })
+  const guestClick = async (x: number, y: number) => {
+    const overlay = page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`)
+    if (await page.locator(`[data-browser-surface="${browser.panelId}"]`).evaluate(el => getComputedStyle(el).pointerEvents === 'none')) await overlay.click()
+    await expect(page.locator(`[data-browser-surface="${browser.panelId}"]`)).toHaveCSS('pointer-events', 'auto')
+    const box = (await webview.boundingBox())!
+    const size = await webview.evaluate(el => ({ width: el.clientWidth, height: el.clientHeight }))
+    await page.mouse.click(box.x + x * box.width / size.width, box.y + y * box.height / size.height)
+  }
 
   await guestClick(120, 36)
   await expect.poll(() => inspectFixture(app!, page, browser, 'document.activeElement?.id ?? ""'), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'name' } })
-  await app.evaluate(({ webContents }, input) => {
-    const guest = webContents.fromId(input.id!)!
-    for (const char of input.text) {
-      guest.sendInputEvent({ type: 'keyDown', keyCode: char })
-      guest.sendInputEvent({ type: 'char', keyCode: char })
-      guest.sendInputEvent({ type: 'keyUp', keyCode: char })
-    }
-  }, { id: guestId, text: 'Typed inside Cate' })
+  await page.keyboard.type('Typed inside Cate')
   await expect.poll(() => inspectFixture(app!, page, browser, "document.querySelector(\"#name\")?.value"), { timeout: 20_000 }).toMatchObject({ ok: true, result: { value: 'Typed inside Cate' } })
 
   await guestClick(80, 100)

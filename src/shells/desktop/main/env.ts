@@ -13,7 +13,6 @@ function devFlag(name: string): boolean {
 }
 
 export const featureFlags = {
-  disableWebviewHardening: () => devFlag('CATE_DISABLE_WEBVIEW_HARDENING'),
   disableRendererSandbox: () => devFlag('CATE_DISABLE_RENDERER_SANDBOX'),
   perf: () => process.env.CATE_PERF === '1',
 }
@@ -55,5 +54,8 @@ export function configureUserData(): string {
     process.env.CATE_E2E_USER_DATA = dir
     app.dock?.hide()
   }
+  // Device JSON stays in userData. The UI has its own Chromium profile;
+  // the browser engine exclusively owns the existing cookie/encryption store.
+  app.setPath('sessionData', path.join(app.getPath('userData'), 'ui'))
   return app.getPath('userData')
 }

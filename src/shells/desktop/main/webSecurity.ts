@@ -1,38 +1,15 @@
-// Web security hardening for every webContents: app windows may only show the
-// app, guests (browser panels) get the restricted guest preload, a
-// sandbox, a workspace partition with its network policy prepared, and no
-// popups (a popup becomes a tab of the owning browser panel).
+// Security for Cate UI windows. Untrusted browser pages are owned and
+// secured by services/browser/desktop/engine in a separate process.
 
-import { app, session as electronSession, type Session, type WebContents } from 'electron'
+import { app, session as electronSession } from 'electron'
 import { createLogger } from '@kernel/log/contract'
 import { shortcutMatches, type ActionId } from '@kernel/interaction/contract'
 import type { BrowserShortcutAction } from '@services/browser/contract'
-import { isAgentKeyInput, sendBrowserShortcut, sendOpenTabRequest } from '@services/browser/desktop'
-import { DESKTOP_CHANNELS as C, type MenuModel } from '../contract'
+import { type MenuModel } from '../contract'
 
 const log = createLogger('security')
 
-interface WebSecurityOptions {
-  guestPreload: string
-  /** The dev server origin, when running under electron-vite dev. */
-  rendererUrl?: string
-  hardeningDisabled(): boolean
-  /** The keys a web page never gets, from the menu model. */
-  guestKeys(): MenuModel['guestKeys']
-  /** True once the workspace partition's network policy is in place. */
-  isPreparedPartition(partition: string): boolean
-  platform?: NodeJS.Platform
-}
-
-export function isAllowedGuestUrl(url: string): boolean {
-  if (url === 'about:blank') return true
-  try {
-    const protocol = new URL(url).protocol
-    return protocol === 'http:' || protocol === 'https:' || protocol === 'data:'
-  } catch {
-    return false
-  }
-}
+interface WebSecurityOptions { rendererUrl?: string }
 
 export function isTrustedAppUrl(url: string, rendererUrl?: string): boolean {
   if (url.startsWith('file://')) return true
@@ -68,117 +45,16 @@ export function forwardedActionForInput(input: Pick<Electron.Input, 'type' | 'ke
   return guestKeys.find(({ shortcut }) => shortcutMatches(event, shortcut))?.action ?? null
 }
 
-const guestSessions = new WeakSet<Session>()
-
-function browserUserAgent(target: Session): string {
-  const product = app.getName().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return target.getUserAgent().replace(/\sElectron\/\S+/g, '').replace(new RegExp(`\\s${product}/\\S+`, 'g'), '')
-}
-
-function configureGuestSession(target: Session, platform: NodeJS.Platform): void {
-  if (guestSessions.has(target)) return
-  guestSessions.add(target)
-  const userAgent = browserUserAgent(target)
-  target.setUserAgent(userAgent, app.getLocale())
-  const chromeMajor = /\b(?:Chrome|Chromium)\/(\d+)\./.exec(userAgent)?.[1]
-  target.webRequest.onBeforeSendHeaders((details, callback) => {
-    const headers = { ...details.requestHeaders }
-    const name = (wanted: string) => Object.keys(headers).find((key) => key.toLowerCase() === wanted) ?? wanted
-    headers[name('user-agent')] = userAgent
-    if (chromeMajor) {
-      headers[name('sec-ch-ua')] = `"Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}", "Not=A?Brand";v="24"`
-      headers[name('sec-ch-ua-mobile')] = '?0'
-      headers[name('sec-ch-ua-platform')] = platform === 'darwin' ? '"macOS"' : platform === 'win32' ? '"Windows"' : '"Linux"'
-    }
-    callback({ requestHeaders: headers })
-  })
-  const allowed = new Set(['cookies', 'storage-access'])
-  target.setPermissionRequestHandler((_contents, permission, callback) => {
-    if (!allowed.has(permission)) log.warn('denied guest permission %s', permission)
-    callback(allowed.has(permission))
-  })
-  target.setPermissionCheckHandler((_contents, permission) => allowed.has(permission))
-  target.webRequest.onBeforeRequest((details, callback) => {
-    if (details.resourceType === 'mainFrame' && !isAllowedGuestUrl(details.url)) {
-      log.warn('blocked guest navigation to %s', details.url)
-      callback({ cancel: true })
-      return
-    }
-    callback({})
-  })
-}
-
-function hardenGuest(contents: WebContents, options: WebSecurityOptions, platform: NodeJS.Platform): void {
-  contents.on('will-navigate', (event, url) => {
-    if (!isAllowedGuestUrl(url)) {
-      log.warn('blocked guest navigation to %s', url)
-      event.preventDefault()
-    }
-  })
-  contents.setWindowOpenHandler(({ url }) => {
-    if (guestSessions.has(contents.session) && isAllowedGuestUrl(url)) sendOpenTabRequest(contents, url)
-    else log.warn('blocked popup to %s', url)
-    return { action: 'deny' }
-  })
-  contents.on('before-input-event', (event, input) => {
-    const host = contents.hostWebContents
-    if (!host || isAgentKeyInput(contents)) return
-    const forwarded = forwardedActionForInput(input, options.guestKeys(), platform)
-    if (forwarded) {
-      event.preventDefault()
-      host.send(C.menuAction, forwarded)
-      return
-    }
-    const action = browserActionForInput(input, platform)
-    if (!action) return
-    event.preventDefault()
-    sendBrowserShortcut(host, action)
-  })
-}
-
+/** App windows never host page content. Browser pages live in the engine. */
 export function installWebSecurity(options: WebSecurityOptions): void {
-  const platform = options.platform ?? process.platform
   app.on('web-contents-created', (_event, contents) => {
-    const type = contents.getType()
-    if (type === 'webview') hardenGuest(contents, options, platform)
-    else contents.setWindowOpenHandler(() => ({ action: 'deny' }))
-
-    if (type === 'window') {
-      contents.on('will-navigate', (event, url) => {
-        if (!isTrustedAppUrl(url, options.rendererUrl)) {
-          log.warn('blocked app window navigation to %s', url)
-          event.preventDefault()
-        }
-      })
-    }
-
-    contents.on('will-attach-webview', (event, webPreferences, params) => {
-      if (options.hardeningDisabled()) return
-      const src = typeof params.src === 'string' ? params.src : 'about:blank'
-      if (!isAllowedGuestUrl(src)) {
-        log.warn('blocked guest attach for %s', src)
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    contents.on('will-attach-webview', event => event.preventDefault())
+    contents.on('will-navigate', (event, url) => {
+      if (!isTrustedAppUrl(url, options.rendererUrl)) {
+        log.warn('blocked app window navigation to %s', url)
         event.preventDefault()
-        return
       }
-      // Loopback must mean the runtime's machine: only a workspace partition
-      // with native networking or its protected proxy prepared may host a guest.
-      const partition = typeof webPreferences.partition === 'string' ? webPreferences.partition : ''
-      if (!options.isPreparedPartition(partition)) {
-        log.warn('blocked guest attach: partition %s is not a prepared workspace partition', partition || '(default)')
-        event.preventDefault()
-        return
-      }
-      // Pin the guest preload; never trust one the renderer supplied.
-      ;(webPreferences as { preload?: string }).preload = options.guestPreload
-      delete (webPreferences as { preloadURL?: string }).preloadURL
-      webPreferences.nodeIntegration = false
-      webPreferences.contextIsolation = true
-      webPreferences.sandbox = true
-      webPreferences.webSecurity = true
-      ;(webPreferences as { allowRunningInsecureContent?: boolean }).allowRunningInsecureContent = false
-      // Popups reach the window-open handler, which turns them into tabs.
-      params.allowpopups = 'true'
-      configureGuestSession(electronSession.fromPartition(partition), platform)
     })
   })
 }

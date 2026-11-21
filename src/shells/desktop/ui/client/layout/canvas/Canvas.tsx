@@ -34,15 +34,13 @@ function injectInteractionStyle(): void {
   const style = document.createElement('style')
   style.textContent = `
     .canvas-interacting iframe,
-    .canvas-interacting webview,
     .canvas-interacting .monaco-editor,
     .canvas-interacting .xterm,
     .canvas-interacting .xterm-screen,
     .canvas-interacting .xterm-helper-textarea {
       pointer-events: none !important;
     }
-    .canvas-dragging [data-browser-surface],
-    .canvas-interacting [data-browser-surface] {
+    .canvas-dragging [data-scroll-surface] {
       pointer-events: none !important;
     }
     .canvas-interacting .xterm,
@@ -57,7 +55,7 @@ function injectInteractionStyle(): void {
     }
     /* Hand tool: presses on panel content fall through to the pan handler. */
     .canvas-tool-hand iframe,
-    .canvas-tool-hand webview,
+    .canvas-tool-hand [data-scroll-surface],
     .canvas-tool-hand .monaco-editor,
     .canvas-tool-hand .xterm,
     .canvas-tool-hand .xterm-screen,

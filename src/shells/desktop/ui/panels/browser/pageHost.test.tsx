@@ -192,9 +192,9 @@ describe('BrowserPageHost', () => {
     const webview = guest(42)
     host.attachGuest('t1', webview)
     webview.fire('dom-ready')
-    // A parked (off-screen) guest is flagged, so a screenshot fails at once.
+    // Parked pages use the same engine operation; no UI staging is needed.
     await execute({ tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } })
-    expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'getScreenshot', { tabId: 't1', _hidden: true })
+    expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'getScreenshot', { tabId: 't1' })
     host.visible = true
     await expect(execute({ tabId: 't1', method: 'getAXState', args: { tabId: 't1' } })).resolves.toEqual({ result: 'ok' })
     expect(bridge.execute).toHaveBeenCalledWith({ webContentsId: 42, panelId: 'p1', tabId: 't1' }, 'getAXState', { tabId: 't1' })
@@ -204,25 +204,6 @@ describe('BrowserPageHost', () => {
     await expect(execute({ tabId: 'other', method: 'click', args: {} })).rejects.toThrow('browser-tab-changed')
   })
 
-  it('renders a parked page while an operation runs on it, instead of flagging it hidden', async () => {
-    const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, onPassword: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }
-    const staged: string[] = []
-    const host = new BrowserPageHost({
-      panelId: 'p1', clientId: 'me', send: async () => {}, bridge: bridge as never, nextFrame: async () => {},
-      stage: () => { staged.push('stage'); return () => staged.push('release') },
-    })
-    host.update(snapshot([tab()]))
-    const webview = guest(42)
-    host.attachGuest('t1', webview)
-    webview.fire('dom-ready')
-    bridge.execute.mockImplementationOnce(async () => { staged.push('execute'); return { result: 'ok' } })
-    await pageOp(host, 'page.execute', { tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } }, { bridge: bridge as never })
-    expect(bridge.execute).toHaveBeenLastCalledWith(expect.anything(), 'getScreenshot', { tabId: 't1' })
-    expect(staged).toEqual(['stage', 'execute', 'release'])
-    host.visible = true
-    await pageOp(host, 'page.execute', { tabId: 't1', method: 'getScreenshot', args: { tabId: 't1' } }, { bridge: bridge as never })
-    expect(staged).toEqual(['stage', 'execute', 'release'])
-  })
 
   it('shows the session\'s active tab before a page operation runs on it', async () => {
     const bridge = { protectPage: vi.fn(async () => {}), attach: vi.fn(async () => {}), onDialog: () => () => {}, onPassword: () => () => {}, execute: vi.fn(async () => ({ result: 'ok' })) }

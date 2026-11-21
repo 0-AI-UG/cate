@@ -42,7 +42,7 @@ test('a scroll over an unfocused browser pans the canvas like any panel', async 
 
   // Focused: the page is live again.
   await page.mouse.click(centre.x, centre.y)
-  await expect.poll(topTag).toBe('WEBVIEW')
+  await expect.poll(topTag).toBe('CANVAS')
 })
 
 test('moves a browser panel by its canvas title bar', async () => {
@@ -119,4 +119,25 @@ test('closes active and inactive new tabs with a single click on their close but
   await closeTabs.first().click()
   await expect(closeTabs).toHaveCount(1)
   await expect(surface.locator('input').first()).toHaveValue('')
+})
+
+test('a focused streamed page owns both scroll axes and forwards canvas pinch gestures', async () => {
+  const browser = await createBrowser(page, 'data:text/html,<style>body{margin:0}div{width:3000px;height:3000px}</style><div>Scrollable page</div>', { x: 100, y: 100 })
+  await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
+  const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)
+  await expect(surface).toHaveCSS('pointer-events', 'auto')
+  const box = (await surface.locator('[data-browser-engine]').boundingBox())!
+  const world = () => page.evaluate(() => document.querySelector<HTMLElement>('[data-canvas-world]')!.style.transform)
+  const before = await world()
+  await page.mouse.move(box.x + 100, box.y + 100)
+  await page.mouse.wheel(0, 180)
+  await expect.poll(() => inspectFixture(app, page, browser, 'window.scrollY')).toMatchObject({ result: { value: expect.any(Number) } })
+  await expect.poll(async () => (await inspectFixture(app, page, browser, 'window.scrollY')).result.value).toBeGreaterThan(0)
+  await page.mouse.wheel(180, 0)
+  await expect.poll(async () => (await inspectFixture(app, page, browser, 'window.scrollX')).result.value).toBeGreaterThan(0)
+  expect(await world()).toBe(before)
+  await page.keyboard.down('Control')
+  await page.mouse.wheel(0, -70)
+  await page.keyboard.up('Control')
+  await expect.poll(world).not.toBe(before)
 })

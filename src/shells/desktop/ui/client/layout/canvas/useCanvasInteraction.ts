@@ -309,10 +309,8 @@ export function useCanvasInteraction(
       // pan (trackpad) / zoom (mouse). Zooming the focused panel's surroundings
       // still needs the explicit Cmd/Ctrl modifier / pinch handled above.
 
-      // Browser panels (webview) route their own wheel via Electron's
-      // cross-process input; the passive:false capture listener interferes with
-      // that routing, so bail out for any plain wheel over a focused webview.
-      if (target.tagName === 'WEBVIEW') {
+      // A native scroll surface owns both axes inside its focused panel.
+      if (target.closest('[data-scroll-surface]')) {
         const nodeEl = target.closest('[data-node-id]')
         const nodeId = nodeEl?.getAttribute('data-node-id')
         const focusedNodeId = focusedNodeIdOf(canvasStoreApi.getState())

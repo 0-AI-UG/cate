@@ -1,57 +1,28 @@
 // The desktop-main side of the page bridge (`BrowserPageBridge`). The
 // renderer's browser view routes the runtime's surface requests here; every
-// request names a guest by webContents id, and only the window hosting that
-// guest may use it.
+// request names an opaque engine page handle, bound to its owning window.
 
-import { BrowserWindow, dialog, ipcMain, webContents, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { createLogger } from '@kernel/log/contract'
 import {
-  BROWSER_GUEST_CHANNELS,
   BROWSER_PAGE_CHANNELS,
   type BrowserChromeImport,
   type BrowserDownloadAction,
-  type BrowserGuestRef,
   type BrowserShortcutAction,
 } from '../contract'
 import { listChromePasswordProfiles, readChromePasswordCsv, readChromePasswords } from './chromeImport'
-import { registerGuestDialogs, type GuestDialogs } from './dialogs'
 import type { GuestDownloads } from './downloads'
-import type { PageDriverRegistry } from './pageDriver'
-import { flattenScreenshotPng } from './screenshotPng'
-import { createPageLifecycle } from './pageLifecycle'
+import type { createBrowserEngineHost } from './engine/host'
 
-const log = createLogger('browser')
 const MAX_UPLOAD_BYTES = 512 * 1024 * 1024
 
 export interface BrowserIpcDeps {
-  drivers: PageDriverRegistry
+  engine: Pick<ReturnType<typeof createBrowserEngineHost>, 'call' | 'owns'>
   downloads: GuestDownloads
-  dialogs: GuestDialogs
   /** A private directory for staged uploads. */
   tempDir(): string
-}
-
-/** The guest `webContentsId`, when it is a webview hosted by the caller. */
-export function hostedGuest(event: IpcMainInvokeEvent, webContentsId: unknown): WebContents | null {
-  if (typeof webContentsId !== 'number') return null
-  const contents = webContents.fromId(webContentsId)
-  if (!contents || contents.isDestroyed() || contents.getType() !== 'webview') return null
-  if (contents.hostWebContents?.id !== event.sender.id) {
-    log.warn('denied: webContents %d is not hosted by the calling window', webContentsId)
-    return null
-  }
-  return contents
-}
-
-const identity = (guest: BrowserGuestRef) => ({ panelId: guest.panelId, tabId: guest.tabId })
-
-/** Tells the window hosting `guest` that the page asked for a new tab. The
- *  shell's webview hardening calls it from the guest's window-open handler. */
-export function sendOpenTabRequest(guest: WebContents, url: string): void {
-  try { guest.hostWebContents?.send(BROWSER_PAGE_CHANNELS.openTab, { openerWebContentsId: guest.id, url }) } catch { /* host gone */ }
 }
 
 /** Forwards a browser key (pressed in a guest, or from the Browser menu) to a window. */
@@ -61,88 +32,34 @@ export function sendBrowserShortcut(host: WebContents, action: BrowserShortcutAc
 
 /** Registers the page bridge IPC. Returns an unregister function. */
 export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
-  const { drivers, downloads, dialogs } = deps
-  const lifecycle = createPageLifecycle({ busy: id => !!dialogs.current(id) || downloads.list(id).some(d => d.state === 'progressing' || d.state === 'paused') })
+  const { downloads, engine } = deps
   const handled: string[] = []
   const handle = (channel: string, handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown) => {
     ipcMain.handle(channel, handler)
     handled.push(channel)
   }
-
-  // Native user input wins over an in-flight agent action for this guest. The
-  // guest preload sends no page data, only this signal.
-  const onUserInput = (event: Electron.IpcMainEvent) => {
-    if (event.sender.getType() === 'webview') drivers.noteUserInput(event.sender.id)
-  }
-  ipcMain.on(BROWSER_GUEST_CHANNELS.userInput, onUserInput)
-  const onDirty = (event: Electron.IpcMainEvent) => {
-    if (event.sender.getType() === 'webview') lifecycle.noteInput(event.sender)
-  }
-  ipcMain.on(BROWSER_GUEST_CHANNELS.dirty, onDirty)
-  handle(BROWSER_PAGE_CHANNELS.protectPage, (event, id: number) => {
-    const page = hostedGuest(event, id)
-    if (page) lifecycle.protect(page)
+  const methods = new Map<string, string>([
+    [BROWSER_PAGE_CHANNELS.attach, 'attach'], [BROWSER_PAGE_CHANNELS.execute, 'execute'],
+    [BROWSER_PAGE_CHANNELS.protectPage, 'protectPage'], [BROWSER_PAGE_CHANNELS.preparePageDiscard, 'preparePageDiscard'],
+    [BROWSER_PAGE_CHANNELS.restartIfHung, 'restartIfHung'], [BROWSER_PAGE_CHANNELS.fillCredential, 'fillCredential'],
+    [BROWSER_PAGE_CHANNELS.answerDialog, 'answerDialog'], [BROWSER_PAGE_CHANNELS.screenshot, 'screenshot'],
+    [BROWSER_PAGE_CHANNELS.download, 'download'],
+  ])
+  for (const [channel, method] of methods) handle(channel, (event, ...args) => {
+    const id = typeof args[0] === 'number' ? args[0] : args[0]?.webContentsId
+    if (!engine.owns(id, event.sender.id)) throw new Error('browser-surface-owner-mismatch')
+    return engine.call('page', { method, args, ownerId: event.sender.id })
   })
-  handle(BROWSER_PAGE_CHANNELS.preparePageDiscard, (event, id: number) => {
-    const page = hostedGuest(event, id)
-    return page ? lifecycle.prepareDiscard(page) : false
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.attach, async (event, guest: BrowserGuestRef) => {
-    const contents = hostedGuest(event, guest?.webContentsId)
-    if (!contents) throw new Error('no-guest')
-    lifecycle.watch(contents)
-    downloads.watch(contents.session)
-    await drivers.attach(contents, identity(guest))
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.execute, async (event, guest: BrowserGuestRef, method: string, args: Record<string, unknown>) => {
-    const contents = hostedGuest(event, guest?.webContentsId)
-    if (!contents) return { error: 'no-guest' }
-    if (typeof method !== 'string' || !method) return { error: 'browser-method-required' }
-    lifecycle.protect(contents)
-    return drivers.execute(contents.id, identity(guest), method, args && typeof args === 'object' ? args : {})
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.restartIfHung, (event, guest: BrowserGuestRef) => {
-    const contents = hostedGuest(event, guest?.webContentsId)
-    return contents ? drivers.restartIfHung(contents.id) : false
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.download, async (event, guest: BrowserGuestRef, url: string) => {
-    const contents = hostedGuest(event, guest?.webContentsId)
-    if (!contents) throw new Error('no-guest')
-    if (!drivers.isRegistered(contents.id)) throw new Error('browser-target-not-registered')
-    if (typeof url !== 'string' || !url) throw new Error('url-required')
-    let protocol = ''
-    try { protocol = new URL(url).protocol } catch { /* not a URL */ }
-    if (!['http:', 'https:', 'data:', 'blob:'].includes(protocol)) throw new Error('unsupported-download-url')
-    contents.downloadURL(url)
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.downloadAction, (event, webContentsId: number, downloadId: string, action: BrowserDownloadAction) => {
+  handle(BROWSER_PAGE_CHANNELS.downloadAction, async (event, id: number, downloadId: string, action: BrowserDownloadAction) => {
     if (typeof downloadId !== 'string' || !['cancel', 'open', 'show'].includes(action)) return { error: 'invalid-download-action' }
-    return downloads.act(event.sender.id, webContentsId, downloadId, action)
+    const result = await downloads.act(event.sender.id, id, downloadId, action)
+    if (result.error || action !== 'cancel') return result
+    return engine.call('page', { method: 'downloadAction', args: [id, downloadId, action], ownerId: event.sender.id })
   })
-
-  handle(BROWSER_PAGE_CHANNELS.readDownload, (event, webContentsId: number, downloadId: string) => {
+  handle(BROWSER_PAGE_CHANNELS.readDownload, (event, id: number, downloadId: string) => {
     if (typeof downloadId !== 'string') return null
-    return downloads.read(event.sender.id, webContentsId, downloadId)
+    return downloads.read(event.sender.id, id, downloadId)
   })
-
-  handle(BROWSER_PAGE_CHANNELS.fillCredential, (event, webContentsId: number, targetId: string, origin: string, credential: { username: string; password: string }) => {
-    const contents = hostedGuest(event, webContentsId)
-    if (!contents) return { error: 'no-guest' }
-    if (typeof targetId !== 'string' || typeof origin !== 'string' || typeof credential?.password !== 'string') return { error: 'invalid-credential' }
-    return drivers.fillCredential(contents.id, targetId, origin, { username: String(credential.username ?? ''), password: credential.password })
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.answerDialog, (event, webContentsId: number, dialogId: string, answer: { accept?: unknown; text?: unknown }) => {
-    const contents = hostedGuest(event, webContentsId)
-    if (!contents || typeof dialogId !== 'string') return
-    dialogs.answer(contents.id, { accept: answer?.accept === true, ...(typeof answer?.text === 'string' ? { text: answer.text } : {}) }, dialogId)
-  })
-  const unregisterDialogs = registerGuestDialogs(dialogs)
 
   handle(BROWSER_PAGE_CHANNELS.stageUpload, async (_event, name: string, bytes: Uint8Array) => {
     if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES) throw new Error('browser-upload-too-large')
@@ -151,15 +68,6 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
     const file = path.join(dir, path.basename(String(name || 'upload')))
     await fs.promises.writeFile(file, bytes, { mode: 0o600 })
     return file
-  })
-
-  handle(BROWSER_PAGE_CHANNELS.screenshot, async (event, webContentsId: number) => {
-    const contents = hostedGuest(event, webContentsId)
-    if (!contents) return null
-    const image = await contents.capturePage()
-    if (image.isEmpty()) return null
-    const png = flattenScreenshotPng(image.toPNG())
-    return { dataUrl: `data:image/png;base64,${png.toString('base64')}` }
   })
 
   handle(BROWSER_PAGE_CHANNELS.chromeProfiles, async () => ({
@@ -183,8 +91,5 @@ export function registerBrowserIpc(deps: BrowserIpcDeps): () => void {
 
   return () => {
     for (const channel of handled) ipcMain.removeHandler(channel)
-    ipcMain.removeListener(BROWSER_GUEST_CHANNELS.userInput, onUserInput)
-    ipcMain.removeListener(BROWSER_GUEST_CHANNELS.dirty, onDirty)
-    unregisterDialogs()
   }
 }

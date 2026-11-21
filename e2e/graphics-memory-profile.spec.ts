@@ -32,7 +32,7 @@ for (const mode of ['default', 'webgl2-disabled', 'territory-cpu']) {
             return { pid: p.pid, type: p.type, footprint: raw.match(/^Physical footprint:\s+(.+)$/m)?.[1], regions: raw.split('\n').filter(l => /^(IOSurface|IOAccelerator|Memory Tag|TOTAL\s)/.test(l)) }
           } catch (e) { return { pid: p.pid, type: p.type, error: String(e) } }
         })
-        const dom = await page.evaluate(() => ({ dpr: devicePixelRatio, terminals: document.querySelectorAll('.xterm').length, terminalCanvases: document.querySelectorAll('.xterm canvas').length, canvases: [...document.querySelectorAll('canvas')].map(c => ({ width: c.width, height: c.height })), guests: document.querySelectorAll('webview').length }))
+        const dom = await page.evaluate(() => ({ dpr: devicePixelRatio, terminals: document.querySelectorAll('.xterm').length, terminalCanvases: document.querySelectorAll('.xterm canvas').length, canvases: [...document.querySelectorAll('canvas')].map(c => ({ width: c.width, height: c.height })), guests: document.querySelectorAll('[data-browser-engine]').length }))
         rows.push({ scenario, at: new Date().toISOString(), electron, maps, dom })
         writeFileSync(test.info().outputPath('graphics-memory.json'), JSON.stringify({ mode, domTerminals, rows }, null, 2))
         console.log('GRAPHICS', scenario, JSON.stringify({ maps, dom }))

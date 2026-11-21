@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import { browserInvoke, browserWebContentsId, createBrowser as createBrowserPanel, popupBinding, target, act, activeAction, waitForText, fixtureEvaluate, inspectFixture } from './fixtures/browser-control'
 // Deterministic browser-control conformance for the workflows most likely to
 // expose a difference between a toy DOM driver and a production browser agent.
@@ -310,7 +311,7 @@ test('shows recovery UI and reloads after the browser guest renderer crashes', a
   await expect.poll(() => target(page, browser, "Browser is alive").then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
   const webContentsId = await browserWebContentsId(page, browser.panelId)
   expect(webContentsId).toBeTruthy()
-  const crashed = await app.evaluate(({ webContents }, id) => {
+  const crashed = await engineEvaluate(app, ({ webContents }, id) => {
     const guest = webContents.fromId(id)
     if (!guest) return false
     guest.forcefullyCrashRenderer()
@@ -458,7 +459,7 @@ test.fixme('recovers an individual out-of-process iframe after its renderer cras
   const browser = await createBrowser('/frames')
   await expect.poll(() => waitForText(page, browser, 'Nested action 1'), { timeout: 20_000 }).toMatchObject({ ok: true })
   const webContentsId = await browserWebContentsId(page, browser.panelId)
-  const crashed = await app.evaluate(async ({ webContents }, { id, targetUrl }) => {
+  const crashed = await engineEvaluate(app, async ({ webContents }, { id, targetUrl }) => {
     const guest = webContents.fromId(id)
     if (!guest?.debugger.isAttached()) return false
     const targets = await guest.debugger.sendCommand('Target.getTargets') as {
@@ -482,7 +483,7 @@ test('recovers requests after Chromium restarts its network service', async () =
   const browser = await createBrowser('/crash')
   await expect.poll(() => browserInvoke(page, browser, 'selectTab'), { timeout: 20_000 })
     .toMatchObject({ ok: true, result: { url: `${appOrigin}/crash` } })
-  const killed = await app.evaluate(({ app: electronApp }) => {
+  const killed = await engineEvaluate(app, ({ app: electronApp }) => {
     const network = electronApp.getAppMetrics().find((metric) => (
       metric.type === 'Utility'
       && (metric.name === 'Network Service' || metric.serviceName?.includes('NetworkService'))
@@ -542,5 +543,5 @@ test('keeps browser control bound after the panel moves into a detached window',
   // The tool call is the same; the runtime drives the page in the window that shows it.
   await expect.poll(() => act(page, { ...browser, tabId: undefined }, 'setValue', 'Next step', { value: 'detached control' }), { timeout: 20_000 }).toMatchObject({ ok: true })
   const guest = await browserWebContentsId(detached, browser.panelId)
-  expect(await app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.executeJavaScript("document.querySelector(\"#next-step\").value"), guest)).toBe('detached control')
+  expect(await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id!)!.executeJavaScript("document.querySelector(\"#next-step\").value"), guest)).toBe('detached control')
 })

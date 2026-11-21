@@ -14,7 +14,7 @@ if (process.isMainFrame && ipcRenderer.sendSync('cate-passkeys-available')) {
 }
 
 // JavaScript dialogs: Electron answers a guest's `confirm` with false and has
-// no `prompt`. These wait on desktop main (`dialogs.ts`) instead, which shows
+// no `prompt`. These wait on the engine (`dialogs.ts`) instead, which shows
 // the dialog in the panel and lets an agent answer it. The bridged function
 // is called synchronously, so the page blocks as on a native dialog.
 if (process.isMainFrame) {
@@ -42,6 +42,10 @@ if (process.isMainFrame) {
 // guest cannot inherit renderer theme variables, so these colors mirror the
 // dark theme's --scrollbar-thumb tokens from globals.css.
 webFrame.insertCSS(`
+  /* Native OS select menus cannot be composited into an offscreen surface.
+     Blink's built-in picker retains trusted input, keyboard and form behavior. */
+  select:not([multiple]):not([size]), select:not([multiple])[size="1"],
+  select::picker(select) { appearance: base-select !important; }
   ::-webkit-scrollbar {
     width: 8px !important;
     height: 8px !important;
@@ -72,7 +76,7 @@ ipcRenderer.on(AUTOMATION_INPUT_CHANNEL, (_event, active: unknown) => {
 })
 
 // This is a cancellation signal, not an input transport. Pointer and keyboard
-// events continue through Chromium's native webview path; main uses the signal
+// events are delivered to Chromium by the surface transport; the engine uses the signal
 // only to preempt automation that was already in flight for this guest.
 // Scrolling to watch an agent is not taking over.
 for (const eventName of ['pointerdown', 'keydown'] as const) {

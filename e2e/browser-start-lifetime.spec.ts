@@ -18,7 +18,8 @@ test('lazy start guests support first demand, tab switching, reload, history, fo
     const { panelId } = await seedOnCanvas(page, 'browser', { x: 120, y: 120 }, { url: 'cate://newtab' })
     const browser: BrowserFixture = { panelId, workspaceId: (await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId()))! }
     const surface = page.locator(`[data-browser-surface="${panelId}"]`)
-    await expect(surface.locator('webview')).toHaveCount(process.env.CATE_BROWSER_START_BASELINE ? 1 : 0)
+    await expect(surface.locator('[data-browser-engine]')).toHaveCount(process.env.CATE_BROWSER_START_BASELINE ? 1 : 0)
+    expect(await app.evaluate(() => globalThis.__cateBrowserEngineTest.isRunning())).toBe(false)
     const focusTarget = page.getByRole('button', { name: /Select tool/ })
     await focusTarget.focus()
     expect(await browserInvoke(page, browser, 'getAXState', { disableDiffing: true })).toMatchObject({ ok: true })
@@ -38,7 +39,7 @@ test('lazy start guests support first demand, tab switching, reload, history, fo
     await fixtureEvaluate(app, page, browser, `window.kept = 42; const input = document.querySelector('input'); input.value = 'Draft'; input.dispatchEvent(new Event('input', {bubbles:true}));`)
     await page.evaluate(id => window.__cateE2E!.sessionOp(id, { kind: 'newTab' }), panelId)
     await expect(surface.locator('input[placeholder="Enter a URL"]')).toHaveValue('')
-    await expect(surface.locator('webview')).toHaveCount(process.env.CATE_BROWSER_START_BASELINE ? 2 : 1)
+    await expect(surface.locator('[data-browser-engine]')).toHaveCount(process.env.CATE_BROWSER_START_BASELINE ? 2 : 1)
     await page.evaluate(({ panelId, tabId }) => window.__cateE2E!.sessionOp(panelId, { kind: 'selectTab', tabId }), { panelId, tabId: browser.tabId! })
     await expect.poll(() => fixtureEvaluate(app, page, browser, `[window.kept, document.querySelector('input').value]`)).toEqual([42, 'Draft'])
     expect(await browserWebContentsId(page, panelId)).toBe(id)
@@ -62,20 +63,14 @@ test('lazy start guests support first demand, tab switching, reload, history, fo
       activeElement: await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute('aria-label') })),
     }
     writeFileSync(test.info().outputPath('start-lifetime-focus.json'), JSON.stringify(popupFocus, null, 2))
-    // Existing HEAD behavior: switching a focused browser panel to its popup
-    // focuses the guest. Page operations on that tab must still give host focus back.
-    expect(popupFocus.activeElement.tag).toBe('WEBVIEW')
+    // Engine page operations preserve the person's existing UI focus.
+    expect(popupFocus.popupFocusPreserved).toBe(true)
     await focusTarget.focus()
     expect(await browserInvoke(page, popup, 'getAXState')).toMatchObject({ ok: true })
     await expect(focusTarget).toBeFocused()
     expect(await browserInvoke(page, browser, 'selectTab', { tabId: browser.tabId })).toMatchObject({ ok: true })
     expect(await browserWebContentsId(page, panelId)).toBe(id)
-    // Tab selection schedules guest focus on the next animation frame. Wait
-    // for that transition before testing a separate host-focus interaction.
-    await expect.poll(() => page.evaluate(id => {
-      const active = document.activeElement as (HTMLElement & { getWebContentsId?(): number }) | null
-      return active?.tagName === 'WEBVIEW' && active.getWebContentsId?.() === id
-    }, id)).toBe(true)
+    await expect(focusTarget).toBeFocused()
     await focusTarget.focus()
     expect(await browserInvoke(page, browser, 'getAXState')).toMatchObject({ ok: true })
     await expect(focusTarget).toBeFocused()

@@ -439,3 +439,17 @@ it('parks a mounted guest without changing its logical viewport size', async () 
   expect(surface.style.width).toBe(width)
   expect(surface.style.height).toBe(height)
 })
+
+it('routes a portaled surface wheel through its layout slot without swallowing page scroll', () => {
+  const slot = host.querySelector<HTMLElement>('[data-browser-surface-slot]')!
+  const received = vi.fn((event: Event) => { if ((event as WheelEvent).ctrlKey) event.preventDefault() })
+  slot.addEventListener('wheel', received)
+  const scroll = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 40 })
+  surface.dispatchEvent(scroll)
+  expect(received).toHaveBeenCalledOnce()
+  expect(scroll.defaultPrevented).toBe(false)
+  const pinch = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -20, ctrlKey: true })
+  surface.dispatchEvent(pinch)
+  expect(pinch.defaultPrevented).toBe(true)
+  expect(received.mock.calls[1][0]).toMatchObject({ ctrlKey: true, deltaY: -20 })
+})

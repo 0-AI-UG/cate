@@ -1,13 +1,13 @@
 // Desktop shell main process entry (architecture 15): windows, menus, native
 // dialogs, the updater, analytics and crash reporting, the device files, the
 // raw sockets for the client's transports, the loopback web proxies, the
-// webview host and the client feature declaration. No workspace work runs
+// browser-engine host and the client feature declaration. No workspace work runs
 // here; that is the runtime's, reached by the renderer's connections.
 
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, nativeTheme, net, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, nativeTheme, net, shell } from 'electron'
 import { autoUpdater as electronUpdater } from 'electron-updater'
 import { localRootOf } from '@client/workspaces'
 import { createLogger, installLogSink } from '@kernel/log/contract'
@@ -18,7 +18,7 @@ import { machineKey, RUNTIME_BUILD, RUNTIME_VERSION } from '@runtime/daemon/cont
 import { createMachineProvisioner, dialMachine, listSshHosts, listWslDistros, NotInstalledError, startAskpass, startLocalRuntime, type SshPrompting } from '@runtime/daemon/desktop'
 import { isRuntimeInstalled } from '@runtime/daemon/node'
 import { KnownRuntimes } from '@runtime/pairing/client'
-import { createBrowserDesktop, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
+import { createBrowserDesktop, createBrowserEngineHost, registerBrowserEngineIpc, sendBrowserShortcut, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
 import { CANVAS_BACKGROUNDS_DIR, DESKTOP_CHANNELS as C, desktopClientFeatures, PRIVATE_DEVICE_FILES, type UpdateStatus } from '../contract'
 import { ANALYTICS_ENDPOINT, createAnalytics, type CommonContext } from './analytics/analytics'
 import { registerAppIpc } from './appIpc'
@@ -42,7 +42,7 @@ import { createMachinePrompts, registerMachineIpc } from './machineIpc'
 import { createInstallProgress } from './installProgress'
 import { DEFAULT_UPDATE_RECORD, normalizeUpdateRecord } from './updater/updateState'
 import { createWebPartitions } from './webPartitions'
-import { installAppCsp, installWebSecurity } from './webSecurity'
+import { browserActionForInput, forwardedActionForInput, installAppCsp, installWebSecurity } from './webSecurity'
 import { createWindowFactory, shellPaths } from './windowFactory'
 import { WindowRegistry } from './windowRegistry'
 
@@ -61,15 +61,19 @@ const device = createDeviceFiles(userData)
 const settings = (): ClientSettings => clientSettingsTable.normalize(device.get('settings'))
 
 // Command-line switches must be set before ready; applies after a restart.
-if (settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
+// Raster UI content on CPU; keep GPU compositing and terminal WebGL. Browser
+// pages use their engine's independent GPU. This is an architectural boundary.
+app.commandLine.appendSwitch('disable-gpu-rasterization')
 // Composite into one output surface on macOS. Passing each canvas layer to
 // CoreAnimation separately can block the first pan on Metal scheduling waits.
 if (process.platform === 'darwin') {
   const disabled = app.commandLine.getSwitchValue('disable-features')
   app.commandLine.appendSwitch('disable-features', [disabled, 'CoreAnimationRenderer'].filter(Boolean).join(','))
+  // Keep presentation shaders on the stable backend; cold Graphite pipelines
+  // otherwise stall Cate's GPU even though page rendering is isolated.
+  app.commandLine.appendSwitch('disable-skia-graphite')
 }
-// Keep canvas frames moving while a webview is busy. Chromium otherwise waits
-// up to four frames for a child surface; reuse its last frame immediately.
+// Present available compositor frames immediately, without waiting for other surfaces.
 if (!app.commandLine.hasSwitch('deadline-to-synchronize-surfaces')) {
   app.commandLine.appendSwitch('deadline-to-synchronize-surfaces', '0')
 }
@@ -136,8 +140,9 @@ process.on('unhandledRejection', (reason) => {
 })
 
 const rendererUrl = process.env.ELECTRON_RENDERER_URL
-const paths = shellPaths(__dirname)
-const guestPreload = path.join(__dirname, '../preload/shellGuest.js')
+const mainDir = path.join(app.getAppPath(), 'dist/main')
+const paths = shellPaths(mainDir)
+const guestPreload = path.join(mainDir, '../preload/shellGuest.js')
 
 let started = false
 const focusWindow = (win: BrowserWindow) => {
@@ -212,10 +217,19 @@ void ensureRuntime().catch(() => {})
 const settingsFile = path.join(userData, 'settings.json')
 try { fs.writeFileSync(settingsFile, '{}\n', { flag: 'wx' }) } catch { /* exists */ }
 const backgrounds = createCanvasBackgrounds(path.join(userData, CANVAS_BACKGROUNDS_DIR))
+const browserEngine = createBrowserEngineHost({ userData, preload: guestPreload })
+if (IS_E2E) (globalThis as unknown as { __cateBrowserEngineTest: typeof browserEngine }).__cateBrowserEngineTest = browserEngine
 const partitions = createWebPartitions({
-  session: (partition) => session.fromPartition(partition),
+  session: (partition) => ({
+    async setProxy(proxy) {
+      await browserEngine.call('prepare', { partition, proxy })
+    },
+    closeAllConnections: () => browserEngine.call('closeConnections', { partition }),
+  }),
   upstream: () => settings().browserProxyUrl || undefined,
 })
+
+browserEngine.handle('proxyCredentials', (args: { host: string; port: number }) => partitions.credentialsFor(args.host, args.port))
 
 const quit = createQuitController({
   warnBeforeQuit: () => settings().warnBeforeQuit,
@@ -223,7 +237,7 @@ const quit = createQuitController({
   parentWindow: () => registry.focused()?.win ?? registry.activeMain()?.win,
   beforeExit: async () => {
     device.flushSync()
-    await Promise.allSettled([flushPersistentSessions(), partitions.close(), flushSentry()])
+    await Promise.allSettled([flushPersistentSessions(), partitions.close(), browserEngine.close(), flushSentry()])
   },
 })
 quit.install()
@@ -240,7 +254,9 @@ app.whenReady().then(() => {
   // This device's key exists from the first launch on (device-key.json, 0600).
   device.deviceKeys()
 
+  registerBrowserEngineIpc(browserEngine, partition => partitions.isPrepared(partition))
   const browser = createBrowserDesktop({
+    engine: browserEngine,
     downloadDir: () => app.getPath('downloads'),
     tempDir: () => path.join(app.getPath('temp'), 'cate-browser'),
     passkeys: process.platform === 'darwin',
@@ -255,11 +271,7 @@ app.whenReady().then(() => {
     callback(credentials.username, credentials.password)
   })
   installWebSecurity({
-    guestPreload,
     rendererUrl,
-    hardeningDisabled: featureFlags.disableWebviewHardening,
-    guestKeys: () => menu.guestKeys(),
-    isPreparedPartition: (partition) => partitions.isPrepared(partition),
   })
 
   const factory = createWindowFactory({
@@ -292,14 +304,23 @@ app.whenReady().then(() => {
     restartForUpdate: (install) => quit.restartForUpdate(install),
     cancelUpdateRestart: () => {
       quit.cancelUpdateRestart()
+      browserEngine.resume()
       void partitions.refresh().catch((error) => log.warn('restoring browser networking after update failure: %O', error))
     },
     devUpdate: process.env.CATE_DEV_UPDATE === '1',
   })
 
   const menu = createAppMenu({
+    editTarget: (win, action) => browserEngine.edit(win.webContents.id, action),
     registry,
     newMainWindow: () => { revealWindow(factory.createMainWindow()) },
+  })
+  browserEngine.setInputHandler((owner, input) => {
+    const forwarded = forwardedActionForInput(input, menu.guestKeys(), process.platform)
+    if (forwarded) { owner.send(C.menuAction, forwarded); return true }
+    const action = browserActionForInput(input, process.platform)
+    if (action) { sendBrowserShortcut(owner, action); return true }
+    return false
   })
 
   const pins = new KnownRuntimes(deviceStoreOf(device))

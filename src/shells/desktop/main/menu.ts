@@ -3,7 +3,7 @@
 // renders it. A picked item sends its action to the focused window, which
 // runs it like the key.
 
-import { app, Menu, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
+import { app, Menu, MenuItem, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
 import { MENU_BAR, type ContextMenuItem } from '@kernel/interaction/contract'
 import { DESKTOP_CHANNELS as C, MENU_SKELETON, shortcutAccelerator, type MenuModel, type MenuModelItem, type NativeAction } from '../contract'
 import type { WindowRegistry } from './windowRegistry'
@@ -28,6 +28,7 @@ const BARE_MODEL: MenuModel = {
 export interface AppMenuDeps {
   registry: WindowRegistry<BrowserWindow>
   newMainWindow(): void
+  editTarget?(window: BrowserWindow, action: string): boolean
 }
 
 export interface AppMenu {
@@ -69,7 +70,16 @@ export function createAppMenu(deps: AppMenuDeps): AppMenu {
   const item = (entry: MenuModelItem): MenuItemConstructorOptions => {
     switch (entry.type) {
       case 'separator': return { type: 'separator' }
-      case 'role': return { role: entry.role }
+      case 'role': {
+        const role = entry.role
+        if (!deps.editTarget || !['cut', 'copy', 'paste', 'pasteAndMatchStyle', 'delete', 'selectAll'].includes(role)) return { role }
+        const native = new MenuItem({ role })
+        const accelerators: Record<string, string> = { copy: 'CommandOrControl+C', cut: 'CommandOrControl+X', paste: 'CommandOrControl+V', pasteAndMatchStyle: process.platform === 'darwin' ? 'Cmd+Option+Shift+V' : 'Shift+CommandOrControl+V', selectAll: 'CommandOrControl+A' }
+        return { label: native.label, accelerator: native.accelerator ?? accelerators[role], registerAccelerator: false, click: () => {
+          const win = deps.registry.focused()?.win
+          if (win && !deps.editTarget?.(win, role)) (win.webContents[role as 'copy'] as () => void).call(win.webContents)
+        } }
+      }
       case 'submenu': return { label: entry.label, submenu: entry.items.map(item) }
       case 'action': {
         const accelerator = shortcutAccelerator(entry.shortcut)

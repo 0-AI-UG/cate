@@ -1,4 +1,4 @@
-// did-fail-load classification for the view's <webview>.
+// did-fail-load classification for the view's browser surface.
 
 /** Electron's errorCode for an aborted load (ERR_ABORTED), fired when the
  *  user navigates away mid-load, a redirect supersedes the request, etc. */

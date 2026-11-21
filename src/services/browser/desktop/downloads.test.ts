@@ -18,6 +18,7 @@ import { GuestDownloads } from './downloads'
 const HOST_ID = 5
 const downloads = new GuestDownloads({
   downloadDir: () => '/tmp/downloads',
+  owner: page => (page as unknown as { owner: { id: number; send: typeof h.send } }).owner,
   notify: (host, event) => (host as unknown as { send: typeof h.send }).send('downloads', event),
 })
 const downloadsForWebContents = (id: number) => downloads.list(id)
@@ -47,7 +48,7 @@ function setupDownload(webContentsId: number) {
     isPaused: () => false,
     cancel: vi.fn(),
   })
-  const guest = { id: webContentsId, hostWebContents: { id: HOST_ID, send: h.send } }
+  const guest = { id: webContentsId, owner: { id: HOST_ID, send: h.send } }
   downloads.watch(session as unknown as Electron.Session)
   session.emit('will-download', {}, item, guest)
   return { item, guest, setReceivedBytes: (value: number) => { receivedBytes = value } }
@@ -109,7 +110,7 @@ it('refuses actions from a window that does not host the guest', async () => {
 it('delivers completion through the captured owner after the guest loses its host', () => {
   const { item, guest } = setupDownload(91)
   h.send.mockClear()
-  Object.assign(guest, { hostWebContents: undefined })
+  Object.assign(guest, { owner: undefined })
   item.emit('done', {}, 'completed')
   expect(h.send).toHaveBeenCalledWith('downloads', expect.objectContaining({
     webContentsId: 91, downloads: [expect.objectContaining({ state: 'completed' })],

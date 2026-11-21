@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
@@ -16,14 +17,14 @@ test('discards idle manual pages while protecting automation and edited forms', 
     const manualId = await browserWebContentsId(page, manual.panelId)
     await page.evaluate(id => window.__cateE2E!.sessionOp(id, { kind: 'navigate', input: 'data:text/html,<title>Manual second</title><p>Second</p>' }), visited.panelId)
     await expect.poll(() => fixtureEvaluate(app, page, visited, 'document.title')).toBe('Manual second')
-    const manualHistory = await app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.navigationHistory.getAllEntries().map(e => e.url), visitedId)
+    const manualHistory = await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id!)!.navigationHistory.getAllEntries().map(e => e.url), visitedId)
     const automatedId = await browserWebContentsId(page, automated.panelId)
     const editedId = await browserWebContentsId(page, edited.panelId)
     expect(await browserInvoke(page, automated, 'getAXState', { disableDiffing: true })).toMatchObject({ ok: true })
     await fixtureEvaluate(app, page, automated, 'window.__survives = 42')
     await fixtureEvaluate(app, page, edited, `const input = document.querySelector('input'); input.value = 'Unsaved'; input.dispatchEvent(new Event('input', {bubbles:true}));`)
     const footprint = async () => {
-      const ids = await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter(w => w.getType() === 'webview').map(w => ({ id: w.id, pid: w.getOSProcessId() })))
+      const ids = await engineEvaluate(app, ({ webContents }) => webContents.getAllWebContents().map(w => ({ id: w.id, pid: w.getOSProcessId() })))
       if (process.platform !== 'darwin') return ids
       return ids.map(({ id, pid }) => {
         const raw = execFileSync('vmmap', ['-summary', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -46,7 +47,7 @@ test('discards idle manual pages while protecting automation and edited forms', 
     await expect.poll(() => browserWebContentsId(page, manual.panelId)).not.toBeNull()
     expect(await browserWebContentsId(page, manual.panelId)).not.toBe(manualId)
     expect(await browserWebContentsId(page, visited.panelId)).toBe(visitedId)
-    expect(await app.evaluate(({ webContents }, id) => webContents.fromId(id!)!.navigationHistory.getAllEntries().map(e => e.url), visitedId)).toEqual(manualHistory)
+    expect(await engineEvaluate(app, ({ webContents }, id) => webContents.fromId(id!)!.navigationHistory.getAllEntries().map(e => e.url), visitedId)).toEqual(manualHistory)
     expect(await fixtureEvaluate(app, page, edited, `document.querySelector('input').value`)).toBe('Unsaved')
   } finally { await closeApp(app) }
 })

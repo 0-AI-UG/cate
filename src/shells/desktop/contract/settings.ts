@@ -7,8 +7,6 @@ export const desktopSettings = defineSettings({
     warnBeforeQuit: setting(false),
     /** Offer GitHub pre-releases to the auto-updater. */
     betaUpdatesEnabled: setting(false),
-    /** Works around GPU glyph-atlas corruption; applies after restart. */
-    disableGpuRasterization: setting(false),
   },
 })
 

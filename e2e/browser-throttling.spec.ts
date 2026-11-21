@@ -1,3 +1,4 @@
+import { engineEvaluate } from './fixtures/browser-control'
 import { test, expect } from '@playwright/test'
 import { launchApp, closeApp } from './fixtures/electron-app'
 import { createBrowser, browserInvoke, fixtureEvaluate } from './fixtures/browser-control'
@@ -8,7 +9,7 @@ test('profiles manual background timers and unattended automation', async () => 
   try {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show())
     const browser = await createBrowser(page, 'data:text/html,<title>Timer test</title><p>Alive</p>')
-    await app.evaluate(({ webContents }) => { for (const w of webContents.getAllWebContents()) w.setBackgroundThrottling(true) })
+    await engineEvaluate(app, ({ webContents }) => { for (const w of webContents.getAllWebContents()) w.setBackgroundThrottling(true) })
     await fixtureEvaluate(app, page, browser, 'window.__ticks = 0; setInterval(() => window.__ticks++, 50)')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide())
     // Use main-process waits so observing does not foreground the window.
