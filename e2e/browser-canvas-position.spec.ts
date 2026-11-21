@@ -7,7 +7,9 @@ import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf
 test('browser pixels and native hit testing follow pan and zoom', async () => {
   const smoke = process.env.E2E_SKIP_PERF === '1'
   const checkPixels = !smoke || process.platform === 'darwin'
-  const chromiumArgs = smoke && process.platform === 'linux' ? ['--use-gl=angle', '--use-angle=swiftshader'] : []
+  const chromiumArgs = smoke && process.platform === 'linux'
+    ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-logging=stderr']
+    : []
   const { electronApp: app, mainWindow: page, home } = await test.step('Launch Cate', () => launchApp({ workspace: false, chromiumArgs }))
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })

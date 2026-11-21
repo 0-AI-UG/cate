@@ -72,6 +72,7 @@ jobs:
         timeout-minutes: 4
         env:
           E2E_SKIP_PERF: 1
+          DEBUG: pw:browser
         run: |
           test_command=(npx --no-install playwright test e2e/browser-canvas-position.spec.ts --workers=1 --retries=1 --timeout=60000)
           if [[ "$RUNNER_OS" == Linux ]]; then

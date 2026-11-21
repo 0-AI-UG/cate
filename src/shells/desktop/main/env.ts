@@ -32,13 +32,6 @@ export function revealWindow(win: BrowserWindow, options: { focus?: boolean } = 
  *  unpackaged builds, a wiped `FirstStart/` for `CATE_FRESH_USERDATA=1`, and a
  *  fresh temp dir per e2e launch. Must run before app ready. */
 export function configureUserData(): string {
-  if (!app.isPackaged) app.setPath('userData', path.join(app.getPath('userData'), 'Dev'))
-  if (!app.isPackaged && process.env.CATE_FRESH_USERDATA === '1') {
-    const dir = path.join(app.getPath('userData'), 'FirstStart')
-    fs.rmSync(dir, { recursive: true, force: true })
-    fs.mkdirSync(dir, { recursive: true })
-    app.setPath('userData', dir)
-  }
   if (IS_E2E) {
     // A never-shown window counts as occluded on Windows, which freezes its
     // compositor; keep it and its timers running.
@@ -54,6 +47,14 @@ export function configureUserData(): string {
     app.setPath('userData', dir)
     process.env.CATE_E2E_USER_DATA = dir
     app.dock?.hide()
+  } else if (!app.isPackaged) {
+    let dir = path.join(app.getPath('userData'), 'Dev')
+    if (process.env.CATE_FRESH_USERDATA === '1') {
+      dir = path.join(dir, 'FirstStart')
+      fs.rmSync(dir, { recursive: true, force: true })
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    app.setPath('userData', dir)
   }
   return app.getPath('userData')
 }
