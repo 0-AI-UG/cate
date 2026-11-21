@@ -20,7 +20,10 @@ interface NativeTraceEvent {
 function presentationFromTrace(traceOutput: string) {
   // rAF runs before paint. EventLatency ends at presentation for events
   // carrying a display trace id, so measure the frame the person sees.
-  const events = JSON.parse(readFileSync(traceOutput, 'utf8')).traceEvents as NativeTraceEvent[]
+  // Electron 45 writes Perfetto protobuf. Convert it for the Chrome event parser.
+  const jsonTraceOutput = traceOutput + '.json'
+  execFileSync('trace_processor', ['convert', 'json', traceOutput, jsonTraceOutput], { stdio: 'inherit' })
+  const events = JSON.parse(readFileSync(jsonTraceOutput, 'utf8')).traceEvents as NativeTraceEvent[]
   const pending = new Map<string, NativeTraceEvent>()
   const presentations: { inputAt: number; ms: number }[] = []
   for (const event of events.filter(e => e.name === 'EventLatency').sort((a, b) => a.ts - b.ts)) {
@@ -74,7 +77,7 @@ test('first native pan after idle without a renderer debugger', async () => {
   if (process.env.CATE_UNINSTRUMENTED_WALLPAPER === '1') writeFileSync(path.join(userData, 'settings.json'), JSON.stringify({ terminalCursorBlink: true, canvasGridStyle: 'dots', canvasBackgroundImagePath: 'builtin:snowy-pass', canvasBackgroundImageOpacity: 1 }))
   writeFileSync(path.join(entryDir, 'package.json'), JSON.stringify({ name: 'cate-idle-probe', version, main: 'main.cjs' }))
   const output = process.env.CATE_UNINSTRUMENTED_IDLE_OUTPUT ?? test.info().outputPath('native-idle.json')
-  const traceOutput = process.env.CATE_UNINSTRUMENTED_TRACE_OUTPUT ?? test.info().outputPath('native-idle.trace.json')
+  const traceOutput = process.env.CATE_UNINSTRUMENTED_TRACE_OUTPUT ?? test.info().outputPath('native-idle.pftrace')
   const setupScript = String.raw`(async()=>{
         for(let i=0;i<3;i++){
           const p=window.__cateE2E.createOnCanvas('terminal',{x:30+i*400,y:40});
@@ -160,7 +163,7 @@ test('first native pan after idle without a renderer debugger', async () => {
           const controlSent=Date.now();send();const controlTimer=setInterval(send,16);
           await delay(1300);clearInterval(controlTimer);
           const controlProbe=await wc.executeJavaScript('window.__idleProbe');
-          await contentTracing.stopRecording(${JSON.stringify(traceOutput + '.focused.json')});
+          await contentTracing.stopRecording(${JSON.stringify(traceOutput + '.focused.pftrace')});
           fs.writeFileSync(${JSON.stringify(output + '.focused.json')},JSON.stringify({sent:controlSent,focused:win.isFocused(),probe:controlProbe},null,2));
           console.log('NATIVE_FOCUSED_CONTROL_DONE');app.exit(probe.moveWall===null?1:0);
         },1300);
@@ -196,7 +199,7 @@ test('first native pan after idle without a renderer debugger', async () => {
     const focused = JSON.parse(readFileSync(output + '.focused.json', 'utf8'))
     expect(focused.focused).toBe(true)
     expect(focused.probe.movingFrameWall).not.toBeNull()
-    Object.assign(focused, presentationFromTrace(traceOutput + '.focused.json'))
+    Object.assign(focused, presentationFromTrace(traceOutput + '.focused.pftrace'))
     report.focusedControl = focused
     console.log('FOCUSED_CONTROL_PRESENTED_FRAME_MS', focused.firstPresentedFrameMs)
     writeFileSync(output, JSON.stringify(report, null, 2))

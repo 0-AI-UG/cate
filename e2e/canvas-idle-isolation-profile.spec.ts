@@ -159,7 +159,7 @@ test('isolate first-pan layer promotion from browser rendering', async () => {
       }
     }
   } finally {
-    if (tracing) await app.evaluate(({ contentTracing }, path) => contentTracing.stopRecording(path), process.env.CATE_IDLE_ISOLATION_TRACE_OUTPUT ?? test.info().outputPath('idle-isolation-trace.json'))
+    if (tracing) await app.evaluate(({ contentTracing }, path) => contentTracing.stopRecording(path), process.env.CATE_IDLE_ISOLATION_TRACE_OUTPUT ?? test.info().outputPath('idle-isolation.pftrace'))
     await closeApp(app)
   }
 })
