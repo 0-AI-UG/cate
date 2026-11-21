@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import sharp from 'sharp'
 import { addCanvas, closeApp, launchApp, makeProject, openWorkspace } from './fixtures/electron-app'
 import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf-helpers'
+import { browserInvoke, browserWebContentsId } from './fixtures/browser-control'
 
 test('browser pixels and native hit testing follow pan and zoom', async () => {
   const smoke = process.env.E2E_SKIP_PERF === '1'
@@ -107,5 +108,49 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
   } finally {
     server.close()
     await closeApp(app)
+  }
+})
+
+test('a parked browser defers its first load until it is shown or requested', async () => {
+  const requests: string[] = []
+  const server = createServer((request, response) => {
+    requests.push(request.url!)
+    response.writeHead(200, { 'Content-Type': 'text/html' })
+    response.end('<title>Deferred page</title><button>Ready</button>')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const { electronApp: app, mainWindow: page } = await launchApp()
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Test web server has no port')
+    const origin = `http://127.0.0.1:${address.port}`
+    const workspaceId = (await page.evaluate(() => window.__cateE2E!.selectedWorkspaceId()))!
+    const manualUrl = origin + '/manual'
+    const automatedUrl = origin + '/automated'
+    const manual = await create(page, 'browser', { x: 6_000, y: 120 }, { url: manualUrl })
+    const automated = await create(page, 'browser', { x: 8_000, y: 120 }, { url: automatedUrl })
+    for (const [panelId, url] of [[manual.panelId, manualUrl], [automated.panelId, automatedUrl]]) {
+      const surface = page.locator(`[data-browser-surface="${panelId}"]`)
+      await expect(surface.getByPlaceholder('Enter a URL')).toHaveValue(url)
+      await expect(surface).toHaveAttribute('data-browser-surface-visible', 'false')
+      await expect(surface.locator('webview')).toHaveCount(0)
+    }
+    expect(requests).toEqual([])
+
+    const browser = { panelId: automated.panelId, workspaceId }
+    await expect(browserInvoke(page, browser, 'getAXState')).resolves.toMatchObject({
+      ok: true,
+      result: { state: expect.stringContaining('button "Ready"') },
+    })
+    expect(requests.filter(url => url === '/automated')).toHaveLength(1)
+    expect(requests).not.toContain('/manual')
+
+    await page.evaluate(id => window.__cateE2E!.moveNode(id, { x: 120, y: 120 }), manual.nodeId)
+    await expect.poll(() => requests.filter(url => url === '/manual')).toHaveLength(1)
+    await expect.poll(() => browserWebContentsId(page, manual.panelId)).not.toBeNull()
+  } finally {
+    await closeApp(app)
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
   }
 })

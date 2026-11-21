@@ -132,10 +132,10 @@ export class BrowserPageHost {
   }
   isDiscarded(tabId: string): boolean { return this.discarded.has(tabId) }
 
-  /** The React start page needs no guest until navigation or page control.
-   *  Once attached, retain the guest even on a return to the start page. */
-  needsGuest(tab: BrowserTab): boolean {
-    return loadable(tab.url) || this.automated.has(tab.id) || this.pages.has(tab.id)
+  /** Mount a manual page when this client can see it. Page control may mount
+   *  it while parked. Keep an attached guest across visibility changes. */
+  needsGuest(tab: BrowserTab, visible: boolean): boolean {
+    return (visible && loadable(tab.url)) || this.automated.has(tab.id) || this.pages.has(tab.id)
   }
 
   private restore(tabId: string): void {
