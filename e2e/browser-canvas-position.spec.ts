@@ -1,25 +1,31 @@
 import { test, expect } from '@playwright/test'
 import sharp from 'sharp'
-import { launchApp, closeApp } from './fixtures/electron-app'
+import { addCanvas, closeApp, launchApp, makeProject, openWorkspace } from './fixtures/electron-app'
 import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf-helpers'
 
 test('browser pixels and native hit testing follow pan and zoom', async () => {
-  const { electronApp: app, mainWindow: page } = await launchApp()
+  const smoke = process.env.E2E_SKIP_PERF === '1'
+  const chromiumArgs = smoke && process.platform === 'linux' ? ['--use-gl=angle', '--use-angle=swiftshader'] : []
+  const { electronApp: app, mainWindow: page, home } = await launchApp({ workspace: false, chromiumArgs })
   try {
     await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show(); w.focus() })
     const graphics = await app.evaluate(async ({ app }) => ({
       platform: process.platform,
       arch: process.arch,
       features: app.getGPUFeatureStatus(),
-      info: await app.getGPUInfo('complete').catch(() => null),
       rasterizationDisabled: app.commandLine.hasSwitch('disable-gpu-rasterization'),
       graphiteDisabled: app.commandLine.hasSwitch('disable-skia-graphite'),
       angle: app.commandLine.getSwitchValue('use-angle'),
+      gl: app.commandLine.getSwitchValue('use-gl'),
     }))
     console.log('Webview graphics', JSON.stringify(graphics))
     if (graphics.platform === 'darwin' && graphics.arch === 'arm64') {
       expect(graphics).toMatchObject({ rasterizationDisabled: true, graphiteDisabled: true, angle: 'gl' })
     }
+    await test.step('Open a workspace and canvas', async () => {
+      await openWorkspace(page, makeProject(home))
+      await addCanvas(page)
+    })
     await installPerfHelpers(page)
     const url = `data:text/html,${encodeURIComponent('<style>body{margin:0}button{width:240px;height:100px;background:#00cc88}</style><button onclick="window.clicked=(window.clicked||0)+1">Click after moving</button>')}`
     const { panelId } = await create(page, 'browser', { x: 100, y: 100 }, { url })
@@ -50,7 +56,7 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
       await page.mouse.click(x, y)
       await expect.poll(() => app.evaluate(async ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('window.clicked || 0'), guestId)).toBeGreaterThan(index)
     }
-    if (process.env.E2E_SKIP_PERF === '1') return
+    if (smoke) return
 
     // A busy guest must keep its last pixels while the parent moves, rather
     // than holding the whole canvas frame until the guest produces another.
