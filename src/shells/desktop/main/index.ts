@@ -19,7 +19,7 @@ import { createMachineProvisioner, dialMachine, listSshHosts, listWslDistros, No
 import { isRuntimeInstalled } from '@runtime/daemon/node'
 import { KnownRuntimes } from '@runtime/pairing/client'
 import { createBrowserDesktop, flushPersistentSessions, installPersistentSessionTracking } from '@services/browser/desktop'
-import { CANVAS_BACKGROUNDS_DIR, DESKTOP_CHANNELS as C, desktopClientFeatures, PRIVATE_DEVICE_FILES, type UpdateStatus } from '../contract'
+import { CANVAS_BACKGROUNDS_DIR, DESKTOP_CHANNELS as C, desktopClientFeatures, PRIVATE_DEVICE_FILES, usesAppleSiliconWebviewGraphics, type UpdateStatus } from '../contract'
 import { ANALYTICS_ENDPOINT, createAnalytics, type CommonContext } from './analytics/analytics'
 import { registerAppIpc } from './appIpc'
 import { createCanvasBackgrounds } from './canvasBackgrounds'
@@ -61,7 +61,17 @@ const device = createDeviceFiles(userData)
 const settings = (): ClientSettings => clientSettingsTable.normalize(device.get('settings'))
 
 // Command-line switches must be set before ready; applies after a restart.
-if (settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
+const useAppleSiliconGraphics = usesAppleSiliconWebviewGraphics(process)
+if (useAppleSiliconGraphics || settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
+if (useAppleSiliconGraphics) {
+  // Cold page raster and compositor pipeline creation can block each other
+  // on Chromium's shared GPU thread. Keep GPU compositing and native input.
+  app.commandLine.appendSwitch('disable-skia-graphite')
+  if (!app.commandLine.hasSwitch('use-gl') && !app.commandLine.hasSwitch('use-angle')) {
+    app.commandLine.appendSwitch('use-gl', 'angle')
+    app.commandLine.appendSwitch('use-angle', 'gl')
+  }
+}
 // Composite into one output surface on macOS. Passing each canvas layer to
 // CoreAnimation separately can block the first pan on Metal scheduling waits.
 if (process.platform === 'darwin') {

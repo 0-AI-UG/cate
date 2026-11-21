@@ -191,7 +191,7 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   }))
 
   // Panels, their views and settings, and everything registered into slots.
-  stops.push(registerDesktopRenderer(api))
+  stops.push(registerDesktopRenderer(api, info))
   installTerminalViewSettings(settings)
   installEditorSettings(settings)
   stops.push(startFilesTreeOnOpen())

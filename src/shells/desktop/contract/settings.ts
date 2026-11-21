@@ -1,6 +1,11 @@
 import { defineSettings, everyItem, numberIn, oneOf, setting } from '@kernel/settings/contract/define'
 import { isSshMachine, type SshMachine } from '@runtime/daemon/contract/ssh'
 
+/** Apple Silicon uses a fixed raster and compositor configuration for webviews. */
+export function usesAppleSiliconWebviewGraphics({ platform, arch }: { platform: string; arch: string }): boolean {
+  return platform === 'darwin' && arch === 'arm64'
+}
+
 export const desktopSettings = defineSettings({
   scope: 'client',
   keys: {

@@ -7,6 +7,19 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
   const { electronApp: app, mainWindow: page } = await launchApp()
   try {
     await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show(); w.focus() })
+    const graphics = await app.evaluate(async ({ app }) => ({
+      platform: process.platform,
+      arch: process.arch,
+      features: app.getGPUFeatureStatus(),
+      info: await app.getGPUInfo('complete').catch(() => null),
+      rasterizationDisabled: app.commandLine.hasSwitch('disable-gpu-rasterization'),
+      graphiteDisabled: app.commandLine.hasSwitch('disable-skia-graphite'),
+      angle: app.commandLine.getSwitchValue('use-angle'),
+    }))
+    console.log('Webview graphics', JSON.stringify(graphics))
+    if (graphics.platform === 'darwin' && graphics.arch === 'arm64') {
+      expect(graphics).toMatchObject({ rasterizationDisabled: true, graphiteDisabled: true, angle: 'gl' })
+    }
     await installPerfHelpers(page)
     const url = `data:text/html,${encodeURIComponent('<style>body{margin:0}button{width:240px;height:100px;background:#00cc88}</style><button onclick="window.clicked=(window.clicked||0)+1">Click after moving</button>')}`
     const { panelId } = await create(page, 'browser', { x: 100, y: 100 }, { url })
@@ -25,9 +38,20 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
       }).toBeLessThan(1)
       const bounds = (await guest.boundingBox())!
       await expect(page.locator(`[data-browser-surface="${panelId}"]`)).toHaveCSS('pointer-events', 'auto')
-      await page.mouse.click(bounds.x + 70 * zoom, bounds.y + 45 * zoom)
+      const x = bounds.x + 30 * zoom
+      const y = bounds.y + 25 * zoom
+      // Geometry is updated before Chromium presents the new guest surface.
+      // Click the button only once the guest pixels are visible at this point.
+      await expect.poll(async () => {
+        const screenshot = await page.screenshot({ scale: 'css' })
+        const pixel = await sharp(screenshot).extract({ left: Math.floor(x), top: Math.floor(y), width: 1, height: 1 }).removeAlpha().raw().toBuffer()
+        return Math.max(...[0, 204, 136].map((channel, index) => Math.abs(pixel[index] - channel)))
+      }).toBeLessThanOrEqual(2)
+      await page.mouse.click(x, y)
       await expect.poll(() => app.evaluate(async ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('window.clicked || 0'), guestId)).toBeGreaterThan(index)
     }
+    if (process.env.E2E_SKIP_PERF === '1') return
+
     // A busy guest must keep its last pixels while the parent moves, rather
     // than holding the whole canvas frame until the guest produces another.
     await app.evaluate(async ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript(`

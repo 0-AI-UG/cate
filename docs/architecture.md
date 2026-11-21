@@ -1588,6 +1588,9 @@ downloads list and its views, and hands page work to it.
   snapshots, actions, screenshots, waits, file choosers and uploads, the
   page's console and network log, locators), the guest preload, the password
   autofill bridge, JavaScript dialogs, and **passkeys**.
+  On Apple Silicon, desktop main uses CPU rasterization with Ganesh and
+  ANGLE OpenGL. The webview and canvas retain GPU compositing. This reduces
+  cold page-load contention on Chromium's shared GPU thread.
   **Agents never take the person's input.** The page keeps its own focus
   (the driver emulates it, and sends keys to the guest's own widget), so the
   window's focus stays where the person put it: an agent's click focuses its

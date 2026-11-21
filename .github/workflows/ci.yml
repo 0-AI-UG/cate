@@ -74,8 +74,23 @@ jobs:
       - name: Cate Connect integration tests
         run: npm run test -- src/runtime/connect/connect.test.ts --maxWorkers=1 --disableConsoleIntercept
 
-      # E2E and Electron smoke tests run locally only. Keep the npm scripts
-      # available for browser and full-app validation.
+      - name: Build runtime for Electron smoke test
+        run: npm run build:runtime
+
+      # Hosted runners can use software graphics. Check visible pixels and
+      # native input here and leave performance thresholds to GPU benchmarks.
+      - name: Native webview smoke test
+        shell: bash
+        timeout-minutes: 6
+        env:
+          E2E_SKIP_PERF: 1
+        run: |
+          test_command=(npx --no-install playwright test e2e/browser-canvas-position.spec.ts --workers=1 --retries=1)
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a -s '-screen 0 1600x1100x24' "${test_command[@]}"
+          else
+            "${test_command[@]}"
+          fi
 
   # The release builds a runtime tarball per target; build the Linux one here
   # so a broken staging step (CLI, natives, BUILD, checksum) fails the PR
