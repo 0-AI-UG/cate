@@ -141,6 +141,7 @@ test('lists a saved password and autofills username and password without exposin
     const suggestions = await page.evaluate((url) => window.__cateE2E!.call('browserData', 'passwordSuggestions', { url }), `${origin}/login`)
     expect(suggestions).toEqual([expect.objectContaining({ ...(credentialId ? { id: credentialId } : {}), origin, username: 'saved@example.test' })])
     expect(JSON.stringify(suggestions)).not.toContain('autofill secret')
+    await expect(act(page, browser, 'click', 'Email', {}, 'textbox')).resolves.toMatchObject({ ok: true })
     await popup.getByRole('button', { name: /saved@example.test/ }).click()
     await expect(popup).toBeHidden()
     await expect.poll(() => inspectFixture(app, page, browser, "document.querySelector(\"#email\")?.value"))

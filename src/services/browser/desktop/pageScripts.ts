@@ -13,13 +13,27 @@ export const PASSWORD_FIELD = `function () {
   const fields = Array.from(this.querySelectorAll('input[type=password]')).filter(visible);
   return fields.find(field => field.autocomplete.toLowerCase() !== 'new-password') || fields[0] || null;
 }`
-/** The first empty password field of a sign-up form, a new-password one
- *  first: of the field's form (`this`: a field), or inside `this`. */
+/** The unambiguous sign-in password paired with the focused username. */
+export const PASSWORD_FOR_USERNAME = `function () {
+  if (!this.isConnected) return null;
+  const visible = ${VISIBLE_FIELD};
+  const inputs = this.form?.elements ?? this.getRootNode().querySelectorAll('input');
+  const fields = Array.from(inputs).filter(field => field instanceof HTMLInputElement
+    && field.form === this.form && field.type === 'password' && !field.readOnly
+    && !field.autocomplete.toLowerCase().split(/\\s+/).includes('new-password') && visible(field));
+  return fields.length === 1 ? fields[0] : null;
+}`
+/** The first empty password field of a sign-up form, preferring new-password. */
 export const EMPTY_PASSWORD_FIELD = `function () {
   const visible = ${VISIBLE_FIELD};
-  const scope = this instanceof HTMLInputElement ? (this.form || this.ownerDocument.body) : this;
-  const fields = Array.from(scope.querySelectorAll('input[type=password]')).filter(field => visible(field) && !field.value);
-  return fields.find(field => field.autocomplete.toLowerCase() === 'new-password') || fields[0] || null;
+  const fromInput = this instanceof HTMLInputElement;
+  const scope = fromInput ? (this.form || this.getRootNode()) : this;
+  const inputs = scope instanceof HTMLFormElement ? scope.elements : scope.querySelectorAll('input[type=password]');
+  const tokens = field => field.autocomplete.toLowerCase().split(/\\s+/);
+  const fields = Array.from(inputs).filter(field => field instanceof HTMLInputElement
+    && (!fromInput || field.form === this.form) && field.type === 'password'
+    && !field.value && !field.readOnly && !tokens(field).includes('current-password') && visible(field));
+  return fields.find(field => tokens(field).includes('new-password')) || fields[0] || null;
 }`
 /** The username field of a password field's form (`this`: the password field). */
 export const USERNAME_FOR_PASSWORD = `function () {
