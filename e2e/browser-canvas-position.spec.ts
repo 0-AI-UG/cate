@@ -5,11 +5,11 @@ import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf
 
 test('browser pixels and native hit testing follow pan and zoom', async () => {
   const smoke = process.env.E2E_SKIP_PERF === '1'
-  const chromiumArgs = smoke && process.platform === 'linux' ? ['--use-gl=angle', '--use-angle=swiftshader'] : []
-  const { electronApp: app, mainWindow: page, home } = await launchApp({ workspace: false, chromiumArgs })
+  const guestCapture = smoke && process.platform !== 'darwin'
+  const { electronApp: app, mainWindow: page, home } = await launchApp({ workspace: false })
   try {
     await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show(); w.focus() })
-    const graphics = await app.evaluate(async ({ app }) => ({
+    const graphics = await app.evaluate(({ app }) => ({
       platform: process.platform,
       arch: process.arch,
       features: app.getGPUFeatureStatus(),
@@ -46,13 +46,21 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
       await expect(page.locator(`[data-browser-surface="${panelId}"]`)).toHaveCSS('pointer-events', 'auto')
       const x = bounds.x + 30 * zoom
       const y = bounds.y + 25 * zoom
-      // Geometry is updated before Chromium presents the new guest surface.
-      // Click the button only once the guest pixels are visible at this point.
+      // Linux's hosted desktop can return a white guest in the parent CDP
+      // screenshot. Read the guest surface directly on the hosted PC runners.
       await expect.poll(async () => {
-        const screenshot = await page.screenshot({ scale: 'css' })
-        const pixel = await sharp(screenshot).extract({ left: Math.floor(x), top: Math.floor(y), width: 1, height: 1 }).removeAlpha().raw().toBuffer()
+        const screenshot = guestCapture
+          ? Buffer.from(await app.evaluate(async ({ webContents }, id) => {
+            const image = await webContents.fromId(id)!.capturePage(undefined, { stayHidden: true, stayAwake: true })
+            return image.toPNG().toString('base64')
+          }, guestId), 'base64')
+          : await page.screenshot({ scale: 'css' })
+        if (!screenshot.length) return Infinity
+        const left = guestCapture ? 10 : Math.floor(x)
+        const top = guestCapture ? 10 : Math.floor(y)
+        const pixel = await sharp(screenshot).extract({ left, top, width: 1, height: 1 }).removeAlpha().raw().toBuffer()
         return Math.max(...[0, 204, 136].map((channel, index) => Math.abs(pixel[index] - channel)))
-      }).toBeLessThanOrEqual(2)
+      }, { message: `webview renders the page at zoom ${zoom}` }).toBeLessThanOrEqual(2)
       await page.mouse.click(x, y)
       await expect.poll(() => app.evaluate(async ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('window.clicked || 0'), guestId)).toBeGreaterThan(index)
     }
