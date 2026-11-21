@@ -64,8 +64,8 @@ jobs:
         timeout-minutes: 5
         run: node node_modules/electron/install.js
 
-      # Hosted runners can use software graphics. Check native input on all
-      # three platforms and the composited pixels on macOS.
+      # Hosted runners can use software graphics. Keep timing assertions in
+      # the separate local performance test.
       - name: Native webview smoke test
         if: runner.os != 'Windows'
         shell: bash

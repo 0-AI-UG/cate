@@ -6,10 +6,8 @@ import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf
 
 test('browser pixels and native hit testing follow pan and zoom', async () => {
   const smoke = process.env.E2E_SKIP_PERF === '1'
-  const checkPixels = !smoke || process.platform === 'darwin'
-  const chromiumArgs = smoke && process.platform === 'linux'
-    ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-logging=stderr']
-    : []
+  const checkPixels = !smoke || process.platform !== 'win32'
+  const chromiumArgs = smoke && process.platform === 'linux' ? ['--use-gl=angle', '--use-angle=swiftshader'] : []
   const { electronApp: app, mainWindow: page, home } = await test.step('Launch Cate', () => launchApp({ workspace: false, chromiumArgs }))
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -64,7 +62,7 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
       await expect(page.locator(`[data-browser-surface="${panelId}"]`)).toHaveCSS('pointer-events', 'auto')
       const x = bounds.x + 30 * zoom
       const y = bounds.y + 25 * zoom
-      // Parent CDP screenshots can omit the guest surface on a virtual desktop.
+      // Geometry settles before the compositor presents the guest's next frame.
       if (checkPixels) {
         await expect.poll(async () => {
           const screenshot = await page.screenshot({ scale: 'css' })
