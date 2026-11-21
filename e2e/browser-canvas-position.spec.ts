@@ -25,13 +25,14 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
       features: app.getGPUFeatureStatus(),
       rasterizationDisabled: app.commandLine.hasSwitch('disable-gpu-rasterization'),
       graphiteDisabled: app.commandLine.hasSwitch('disable-skia-graphite'),
+      graphitePrecompile: app.commandLine.hasSwitch('enable-skia-graphite-precompilation'),
       angle: app.commandLine.getSwitchValue('use-angle'),
       gl: app.commandLine.getSwitchValue('use-gl'),
     }))
     console.log('Webview graphics', JSON.stringify(graphics))
     const appleSilicon = graphics.platform === 'darwin' && graphics.arch === 'arm64'
-    expect(graphics).toMatchObject({ rasterizationDisabled: false, graphiteDisabled: appleSilicon })
-    expect([graphics.gl, graphics.angle]).toEqual(appleSilicon ? ['angle', 'gl'] : chromiumArgs.length ? ['angle', 'swiftshader'] : ['', ''])
+    expect(graphics).toMatchObject({ rasterizationDisabled: false, graphiteDisabled: false, graphitePrecompile: appleSilicon })
+    expect([graphics.gl, graphics.angle]).toEqual(chromiumArgs.length ? ['angle', 'swiftshader'] : ['', ''])
     await test.step('Open a workspace and canvas', async () => {
       await openWorkspace(page, makeProject(home))
       await addCanvas(page)

@@ -65,13 +65,8 @@ const settings = (): ClientSettings => clientSettingsTable.normalize(device.get(
 const profileStockGraphics = IS_E2E && process.env.CATE_E2E_STOCK_WEBVIEW_GRAPHICS === '1'
 if (settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
 if (process.platform === 'darwin' && process.arch === 'arm64' && !profileStockGraphics) {
-  // Cold page raster and compositor pipeline creation can block each other
-  // on Chromium's shared GPU thread. Keep GPU compositing and native input.
-  app.commandLine.appendSwitch('disable-skia-graphite')
-  if (!app.commandLine.hasSwitch('use-gl') && !app.commandLine.hasSwitch('use-angle')) {
-    app.commandLine.appendSwitch('use-gl', 'angle')
-    app.commandLine.appendSwitch('use-angle', 'gl')
-  }
+  // Start compiling Graphite pipelines before the first cold navigation needs them.
+  app.commandLine.appendSwitch('enable-skia-graphite-precompilation')
 }
 // Composite into one output surface on macOS. Passing each canvas layer to
 // CoreAnimation separately can block the first pan on Metal scheduling waits.

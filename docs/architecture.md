@@ -1588,9 +1588,8 @@ downloads list and its views, and hands page work to it.
   snapshots, actions, screenshots, waits, file choosers and uploads, the
   page's console and network log, locators), the guest preload, the password
   autofill bridge, JavaScript dialogs, and **passkeys**.
-  On Apple Silicon, desktop main uses Skia Ganesh and ANGLE OpenGL to reduce
-  cold page-load contention on Chromium's shared GPU thread. The webview
-  and canvas retain GPU rasterization and compositing by default.
+  On Apple Silicon, desktop main enables Chromium's Skia Graphite pipeline
+  precompilation to reduce stalls during cold navigation.
   **Agents never take the person's input.** The page keeps its own focus
   (the driver emulates it, and sends keys to the guest's own widget), so the
   window's focus stays where the person put it: an agent's click focuses its
