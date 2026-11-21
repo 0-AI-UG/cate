@@ -6,7 +6,7 @@ import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf
 test('browser pixels and native hit testing follow pan and zoom', async () => {
   const smoke = process.env.E2E_SKIP_PERF === '1'
   const checkPixels = !smoke || process.platform === 'darwin'
-  const { electronApp: app, mainWindow: page, home } = await launchApp({ workspace: false })
+  const { electronApp: app, mainWindow: page, home } = await test.step('Launch Cate', () => launchApp({ workspace: false }))
   try {
     await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show(); w.focus() })
     const graphics = await app.evaluate(({ app }) => ({

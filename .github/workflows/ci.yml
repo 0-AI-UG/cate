@@ -67,6 +67,7 @@ jobs:
       # Hosted runners can use software graphics. Check native input on all
       # three platforms and the composited pixels on macOS.
       - name: Native webview smoke test
+        if: runner.os != 'Windows'
         shell: bash
         timeout-minutes: 4
         env:
@@ -78,6 +79,15 @@ jobs:
           else
             "${test_command[@]}"
           fi
+
+      - name: Native webview smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 4
+        env:
+          E2E_SKIP_PERF: 1
+          DEBUG: pw:browser
+        run: node node_modules/@playwright/test/cli.js test e2e/browser-canvas-position.spec.ts --workers=1 --retries=1 --timeout=60000
 
       - name: Typecheck
         run: npm run typecheck
