@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { createServer } from 'node:http'
 import sharp from 'sharp'
 import { addCanvas, closeApp, launchApp, makeProject, openWorkspace } from './fixtures/electron-app'
 import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf-helpers'
@@ -6,8 +7,17 @@ import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf
 test('browser pixels and native hit testing follow pan and zoom', async () => {
   const smoke = process.env.E2E_SKIP_PERF === '1'
   const checkPixels = !smoke || process.platform === 'darwin'
-  const { electronApp: app, mainWindow: page, home } = await test.step('Launch Cate', () => launchApp({ workspace: false }))
+  const chromiumArgs = smoke && process.platform === 'linux' ? ['--use-gl=angle', '--use-angle=swiftshader'] : []
+  const { electronApp: app, mainWindow: page, home } = await test.step('Launch Cate', () => launchApp({ workspace: false, chromiumArgs }))
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    response.end('<style>body{margin:0}button{width:240px;height:100px;background:#00cc88}</style><button onclick="window.clicked=(window.clicked||0)+1">Click after moving</button>')
+  })
   try {
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Test web server has no port')
+    const url = `http://127.0.0.1:${address.port}/`
     await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show(); w.focus() })
     const graphics = await app.evaluate(({ app }) => ({
       platform: process.platform,
@@ -27,13 +37,16 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
       await addCanvas(page)
     })
     await installPerfHelpers(page)
-    const url = `data:text/html,${encodeURIComponent('<style>body{margin:0}button{width:240px;height:100px;background:#00cc88}</style><button onclick="window.clicked=(window.clicked||0)+1">Click after moving</button>')}`
     const { panelId } = await create(page, 'browser', { x: 100, y: 100 }, { url })
     const guestId = await waitForBrowserGuest(page, panelId)
+    await page.locator('[data-unfocused-overlay]').click()
+    await expect.poll(() => app.evaluate(({ webContents }, id) => {
+      const guest = webContents.fromId(id)!
+      return { url: guest.getURL(), loading: guest.isLoadingMainFrame(), crashed: guest.isCrashed() }
+    }, guestId), { timeout: 10_000, message: 'webview navigation commits' }).toEqual({ url, loading: false, crashed: false })
     await expect.poll(() => app.evaluate(({ webContents }, id) =>
       webContents.fromId(id)!.executeJavaScript('document.querySelector("button")?.textContent ?? ""'),
     guestId), { message: 'page loads in the webview' }).toBe('Click after moving')
-    await page.locator('[data-unfocused-overlay]').click()
     for (const [index, zoom] of [0.55, 1, 0.8].entries()) {
       await page.evaluate(({ zoom, index }) => {
         window.__cateE2E!.setZoom(zoom)
@@ -87,5 +100,8 @@ test('browser pixels and native hit testing follow pan and zoom', async () => {
     await page.mouse.click(bounds.x + 70 * .65, bounds.y + 45 * .65)
     await expect.poll(() => app.evaluate(async ({ webContents }, id) => webContents.fromId(id)!.executeJavaScript('window.clicked || 0'), guestId)).toBe(4)
     await page.screenshot({ path: test.info().outputPath('browser-after-gestures.png') })
-  } finally { await closeApp(app) }
+  } finally {
+    server.close()
+    await closeApp(app)
+  }
 })
