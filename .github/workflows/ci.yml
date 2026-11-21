@@ -57,6 +57,13 @@ jobs:
       - name: Build runtime for Electron smoke test
         run: npm run build:runtime
 
+      # The repo's postinstall script prepares Electron on macOS and Linux.
+      # Install it before Playwright starts the test clock on Windows too.
+      - name: Install Electron binary on Windows
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: node node_modules/electron/install.js
+
       # Hosted runners can use software graphics. Check visible pixels and
       # native input here and leave performance thresholds to GPU benchmarks.
       - name: Native webview smoke test
