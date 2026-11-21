@@ -54,9 +54,9 @@ export function installPasswordBridge(
     if (!(event.target instanceof Element)) return
     const button = event.target.closest('button,input[type=submit],input[type=button],[role=button]')
     if (!button || button.hasAttribute('disabled')) return
-    const label = button.textContent || button.getAttribute('value') || button.getAttribute('aria-label') || ''
+    const label = button.getAttribute('aria-label')?.trim() || button.textContent?.trim() || button.getAttribute('value') || ''
     const submits = (button instanceof HTMLButtonElement || button instanceof HTMLInputElement) && button.type === 'submit'
-    if (!submits && !/sign\s*in|log\s*in|sign\s*up|register|continue|next|anmelden|weiter|fortfahren/i.test(label)) return
+    if (!submits && !/sign\s*in|log\s*in|sign\s*up|create\s+(?:(?:an?|your)\s+)?account|register|continue|next|anmelden|weiter|fortfahren/i.test(label)) return
     const form = (button instanceof HTMLButtonElement || button instanceof HTMLInputElement) ? button.form : button.closest('form')
     capture(form ?? document.body)
   }, options)

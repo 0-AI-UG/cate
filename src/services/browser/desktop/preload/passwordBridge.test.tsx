@@ -24,6 +24,20 @@ it('captures a formless SPA login before its click handler removes the fields', 
   expect(send).toHaveBeenCalledWith('cate-browser-password-submit', expect.objectContaining({ username: 'me@example.com', password: 'secret', automated: true }))
 })
 
+it.each([
+  '<button type="button">Create an account</button>',
+  '<button type="button" aria-label="Create account"> <span aria-hidden="true">+</span></button>',
+])('captures a formless signup before the app clears the fields (%s)', (button) => {
+  const send = vi.fn()
+  cleanup = installPasswordBridge(send, () => false)
+  document.body.innerHTML = `<input autocomplete="username" value="new-user"><input type="password" autocomplete="new-password" value="synthetic">${button}`
+  document.querySelector('button')!.addEventListener('click', () => document.body.replaceChildren())
+  document.querySelector('button')!.click()
+  expect(send).toHaveBeenCalledWith('cate-browser-password-submit', expect.objectContaining({
+    username: 'new-user', password: 'synthetic', automated: false,
+  }))
+})
+
 it('remembers a username across SPA steps and captures Enter submission', () => {
   const send = vi.fn()
   cleanup = installPasswordBridge(send, () => false)
