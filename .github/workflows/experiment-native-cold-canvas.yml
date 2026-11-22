@@ -1,0 +1,50 @@
+name: Native input during first Cate browser navigation
+
+on:
+  push:
+    branches: [experiment/browser-window-shape-ci]
+    paths:
+      - '.github/workflows/experiment-native-cold-canvas.yml'
+      - 'experiments/browser-cold-native-canvas/**'
+
+permissions:
+  contents: read
+
+jobs:
+  cold-native-input:
+    runs-on: macos-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+      - name: Build the Cate fixture
+        run: |
+          npm ci
+          npm run build
+          npm run build:runtime
+          node experiments/browser-cold-native-canvas/assemble.cjs
+          node_modules/.bin/esbuild experiments/browser-cold-native-canvas/driver-entry.ts --bundle \
+            --platform=node --format=cjs --external:electron \
+            --outfile=experiments/browser-cold-native-canvas/guest-app/driver.cjs
+          xcrun clang++ -std=c++17 -fobjc-arc -bundle -undefined dynamic_lookup -framework AppKit -framework CoreGraphics \
+            -I node_modules/node-api-headers/include experiments/browser-cold-native-canvas/guest-app/native.mm \
+            -o experiments/browser-cold-native-canvas/guest-app/native.node
+      - name: Exercise native wheel routing during the cold navigation
+        env:
+          PROBE_NATIVE_INPUT: 1
+          PROBE_FORWARD_WHEELS: 1
+          PROBE_CANVAS_CLIP: 1
+          PROBE_WRAPPED_PANES: 1
+          PROBE_HELPER_SOFTWARE_COMPOSITOR: 1
+          PROBE_HOST_STYLE: focus-and-toolbar
+          PROBE_ACTION: zoom
+          PROBE_OVERLAY_LABEL: hosted-native-zoom
+        run: |
+          export REPRO_ELECTRON="$(node -p "require('electron')")"
+          export CATE_E2E_APP_PATH="$PWD/experiments/browser-cold-native-canvas/app"
+          node_modules/.bin/playwright test -c experiments/browser-cold-native-canvas/playwright.config.ts cold-native.spec.ts --workers=1 --timeout=70000
+          cat experiments/browser-cold-native-canvas/result-hosted-native-zoom.json
