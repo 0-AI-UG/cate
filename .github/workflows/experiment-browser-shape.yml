@@ -3,6 +3,9 @@ name: Browser window shape experiment
 on:
   push:
     branches: [experiment/browser-window-shape-ci]
+    paths:
+      - '.github/workflows/experiment-browser-shape.yml'
+      - 'experiments/browser-native-shape/**'
 
 permissions:
   contents: read

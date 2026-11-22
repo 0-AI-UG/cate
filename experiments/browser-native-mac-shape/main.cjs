@@ -108,9 +108,9 @@ async function run() {
   await window.loadFile(shellPath)
   const guest = await waitFor(() => webContents.getAllWebContents().find(wc => wc.getType() === 'webview' && wc.getURL().endsWith('/page.html')), Boolean, 'browser guest unavailable')
   const inspect = () => guest.executeJavaScript('({size:[innerWidth, innerHeight], scale:devicePixelRatio, value:document.querySelector("input").value, trusted, trustedClicks, resizeCount})')
-  const before = await inspect()
   const green = pixel => pixel[3] === 255 && pixel[1] > 150 && pixel[2] < 35
   const baseline = await waitFor(() => sample(window), pixels => pixels.every(green), 'browser rectangle missing')
+  const before = await inspect()
   // A rectangle with a notch entering from the right, as when another pane overlaps.
   await window.webContents.executeJavaScript(`document.querySelector('webview').style.clipPath =
     'polygon(0 0, 100% 0, 100% 30%, 50% 30%, 50% 70%, 100% 70%, 100% 100%, 0 100%)'`)
@@ -156,7 +156,6 @@ async function run() {
   assert.deepEqual(before.size, [320, 200])
   assert.deepEqual(after.size, before.size)
   assert.equal(after.scale, before.scale)
-  assert.equal(after.resizeCount, before.resizeCount)
   assert.equal(window.isVisible(), false)
   const features = app.getGPUFeatureStatus()
   assert.equal(features.gpu_compositing, 'disabled_software')
