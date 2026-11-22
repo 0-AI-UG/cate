@@ -43,3 +43,4 @@ jobs:
           export ROUTING_PROFILE="$(mktemp -d "$RUNNER_TEMP/routing-profile.XXXXXX")"
           engine="$(node -p 'require(process.argv[1])' "$RUNNER_TEMP/shape-electron/node_modules/electron")"
           "$engine" .
+          test -s "$ROUTING_PROFILE/result.json"

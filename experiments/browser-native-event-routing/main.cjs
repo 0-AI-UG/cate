@@ -10,6 +10,7 @@ assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Use only the hosted desktop')
 const root = process.env.ROUTING_PROFILE
 const role = process.env.ROUTING_ROLE ?? 'browser'
 app.setPath('userData', join(root, role))
+app.on('window-all-closed', () => {})
 if (role === 'browser') app.commandLine.appendSwitch('disable-gpu-compositing')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
@@ -129,8 +130,10 @@ async function browser() {
       }})+'\n')
     })
     try {
+      console.error('Checking a wheel over the live guest')
       native.queueWheel(window.getNativeWindowHandle(),20,20,0,-12,false)
       await until(()=>readInputs(guest),inputs=>inputs.filter(e=>e.kind==='wheel').length===1,'visible wheel did not reach guest')
+      console.error('Checking wheels in the occluded region')
       for(const control of [false,true]) {
         const expected = intercepted.length + wheels.length
         native.queueWheel(window.getNativeWindowHandle(),200,150,3,-12,control)
@@ -142,8 +145,10 @@ async function browser() {
       assert(delivered.every(e=>Math.abs(e.dy)===12 && Math.abs(e.dx)===3))
       const guestWheel = (await readInputs(guest)).filter(e=>e.kind==='wheel')
       assert.deepEqual(guestWheel.map(e=>[e.x,e.y,e.trusted]),[[20,20,true]])
-      console.log(JSON.stringify({fixture:'per-event window routing',platform:process.platform,
-        electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel},null,2))
+      const result = {fixture:'per-event window routing',platform:process.platform,
+        electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel}
+      fs.writeFileSync(join(root,'result.json'), JSON.stringify(result,null,2))
+      console.log(JSON.stringify(result,null,2))
     } finally {
       native.endWheelRoute()
     }
