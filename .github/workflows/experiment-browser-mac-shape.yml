@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/experiment-browser-mac-shape.yml'
       - 'experiments/browser-native-mac-shape/**'
+      - 'experiments/browser-native-event-routing/**'
 
 permissions:
   contents: read
@@ -31,5 +32,14 @@ jobs:
           xcrun clang++ -std=c++17 -fobjc-arc -bundle -undefined dynamic_lookup -framework AppKit -framework CoreGraphics \
             -I "$RUNNER_TEMP/shape-electron/node_modules/node-api-headers/include" hit-query.mm -o hit-query.node
           export MASK_PROFILE="$(mktemp -d "$RUNNER_TEMP/shape-profile.XXXXXX")"
+          engine="$(node -p 'require(process.argv[1])' "$RUNNER_TEMP/shape-electron/node_modules/electron")"
+          "$engine" .
+
+      - name: Verify per-event routing into a second Electron process
+        working-directory: experiments/browser-native-event-routing
+        run: |
+          xcrun clang++ -std=c++17 -fobjc-arc -bundle -undefined dynamic_lookup -framework AppKit -framework CoreGraphics \
+            -I "$RUNNER_TEMP/shape-electron/node_modules/node-api-headers/include" native.mm -o native.node
+          export ROUTING_PROFILE="$(mktemp -d "$RUNNER_TEMP/routing-profile.XXXXXX")"
           engine="$(node -p 'require(process.argv[1])' "$RUNNER_TEMP/shape-electron/node_modules/electron")"
           "$engine" .
