@@ -6,7 +6,6 @@ import { RpcError } from '@kernel/rpc/contract'
 import {
   filterAgentChanges,
   type AgentChangeRecord,
-  type AgentChangesFilter,
   type AgentChangesSnapshot,
   type AgentId,
 } from '@services/agents/contract'
@@ -22,13 +21,14 @@ import { PanelSession, type OpHandlers, type SessionKit } from '@panels/framewor
 import {
   defaultReviewState,
   reviewRepoPath,
-  type AgentChangesFilterPatch,
+  reviewScope,
   type RecordedFileSummary,
   type ReviewAgentChoice,
   type ReviewCheckoutState,
   type ReviewOp,
   type ReviewOpenRequest,
   type ReviewRevealRequest,
+  type ReviewScopePatch,
   type ReviewSnapshot,
   type ReviewSourcePanel,
   type ReviewState,
@@ -74,7 +74,7 @@ function errorText(cause: unknown, fallback: string): string {
 function checkoutView(state: ReviewState): ReviewCheckoutState {
   return {
     repoPath: state.repoPath,
-    agentChanges: state.agentChanges ?? {},
+    agentChanges: reviewScope(state.agentChanges),
   }
 }
 
@@ -87,7 +87,7 @@ function freshReview(record: PanelRecord, root: string): ReviewState {
 function initialSnapshot(review: ReviewState, reveal: ReviewRevealRequest | null): ReviewSnapshot {
   return {
     review: checkoutView(review),
-    recorded: { loading: true, error: null, files: [], panels: [], agents: [] },
+    recorded: { loading: true, error: null, files: [], panels: [] },
     loading: false,
     agentBusy: false,
     error: null,
@@ -111,7 +111,6 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   private recordsFor: string | undefined
   private recordsLoading = true
   private recordsError: string | null = null
-  private defaultAgentFor: string | undefined
   private revealSeq = 1
 
   constructor(kit: SessionKit, record: PanelRecord, private readonly deps: ReviewSessionDeps) {
@@ -240,7 +239,7 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     if (request.focusedFile) this.set({ reveal: { seq: ++this.revealSeq, path: request.focusedFile } })
     this.write({
       ...current,
-      agentChanges: request.agentChanges ?? {},
+      agentChanges: reviewScope(request.agentChanges),
     })
   }
 
@@ -278,27 +277,10 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
   }
 
   private publishRecorded(): void {
-    const counts = new Map<AgentId, { agentId: AgentId; edits: number; uncommittedEdits: number }>()
-    for (const record of this.records) {
-      const count = counts.get(record.agentId) ?? { agentId: record.agentId, edits: 0, uncommittedEdits: 0 }
-      count.edits += record.files.length
-      counts.set(record.agentId, count)
-    }
-    for (const record of this.records) counts.get(record.agentId)!.uncommittedEdits += record.files.filter((file) => file.uncommitted).length
-    // Choose a useful single agent once the checkout has loaded. Prefer the
-    // requested source, then active contributors, then recorded usage here.
-    const filter = this.review.agentChanges ?? {}
-    if (!this.recordsLoading && counts.size && (!filter.agentId || (this.defaultAgentFor !== this.cwd && !counts.has(filter.agentId)))) {
-      const sourceAgents = filter.panelId ? new Set(this.records.filter((record) => record.panelIds.includes(filter.panelId!)).map((record) => record.agentId)) : null
-      const preferred = [...counts.values()].sort((a, b) => Number(sourceAgents?.has(b.agentId) ?? false) - Number(sourceAgents?.has(a.agentId) ?? false) || b.uncommittedEdits - a.uncommittedEdits || b.edits - a.edits)[0]
-      this.defaultAgentFor = this.cwd
-      this.update({ agentChanges: { ...filter, agentId: preferred.agentId } })
-      return
-    }
-    if (!this.recordsLoading && counts.size) this.defaultAgentFor = this.cwd
     const files: RecordedFileSummary[] = this.recordedSelection().flatMap((record) => {
       return record.files.map((file) => ({
         recordId: record.id,
+        createdAt: record.createdAt,
         sessionId: record.sessionId,
         ...(record.prNumber ? { prNumber: record.prNumber } : {}),
         agentId: record.agentId,
@@ -319,14 +301,12 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
       return rank(a) - rank(b) || (b.commit?.date ?? '').localeCompare(a.commit?.date ?? '') || (a.commit?.hash ?? '').localeCompare(b.commit?.hash ?? '')
     })
     const panels = new Map<string, ReviewSourcePanel>()
+    const openPanels = this.kit.document.get().panels
     for (const record of this.records) for (const id of record.panelIds) {
-      const title = this.kit.document.get().panels[id]?.title ?? record.panelTitles?.[id] ?? `${record.agentId} · ${id.slice(0, 8)}`
-      const source = panels.get(id) ?? { id, title, agentIds: [] }
-      source.title = title
-      if (!source.agentIds.includes(record.agentId)) source.agentIds.push(record.agentId)
-      panels.set(id, source)
+      const title = openPanels[id]?.title ?? record.panelTitles?.[id] ?? panels.get(id)?.title ?? `Terminal ${id.slice(0, 8)}`
+      panels.set(id, { id, title })
     }
-    this.set({ recorded: { loading: this.recordsLoading, error: this.recordsError, files, panels: [...panels.values()], agents: [...counts.values()] } })
+    this.set({ recorded: { loading: this.recordsLoading, error: this.recordsError, files, panels: [...panels.values()] } })
   }
 
   private recordedDiff(recordId: string, filePath: string, page = 0) {
@@ -336,13 +316,13 @@ export class ReviewSession extends PanelSession<JsonObject, ReviewOp> {
     return { ...summary, ...diffPage(hunks, page) }
   }
 
-  private updateFilter(patch: AgentChangesFilterPatch): void {
-    const next: Record<string, unknown> = { ...this.review.agentChanges }
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === null || value === undefined || value === '') delete next[key]
-      else next[key] = value
-    }
-    this.update({ agentChanges: next as AgentChangesFilter })
+  private updateFilter(patch: ReviewScopePatch): void {
+    const scope = this.review.agentChanges
+    this.update({ agentChanges: reviewScope({
+      panelId: patch.panelId === null ? undefined : patch.panelId ?? scope?.panelId,
+      sessionId: patch.sessionId === null ? undefined : patch.sessionId ?? scope?.sessionId,
+      turnId: patch.turnId === null ? undefined : patch.turnId ?? scope?.turnId,
+    }) })
   }
 
   // ---- Agent review flows ----------------------------------------------------

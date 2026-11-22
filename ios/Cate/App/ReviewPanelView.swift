@@ -10,7 +10,6 @@ struct ReviewSnapshot: Decodable, Equatable {
     }
     /// Present for recorded agent edits: whose edits show.
     struct AgentFilter: Decodable, Equatable {
-        let agentId: String?
         let panelId: String?
         let sessionId: String?
         let turnId: String?
@@ -140,21 +139,16 @@ struct ReviewPanelView: View {
 
     private func agentFiles(_ snapshot: ReviewSnapshot) -> some View {
         List {
-            if let filter = snapshot.review.agentChanges {
-                let chips = filterChips(filter)
-                if !chips.isEmpty {
-                    Section {
-                        ForEach(chips, id: \.label) { chip in
-                            LabeledContent {
-                                Button("Remove", systemImage: "xmark.circle.fill") { run(["kind": "updateFilter", "patch": chip.patch]) }
-                                    .labelStyle(.iconOnly)
-                                    .foregroundStyle(.secondary)
-                            } label: {
-                                Label(chip.label, systemImage: "line.3.horizontal.decrease.circle.fill")
-                            }
+            if let filter = snapshot.review.agentChanges, let label = scopeLabel(filter) {
+                Section {
+                    LabeledContent {
+                        Button("Clear Review Scope", systemImage: "xmark.circle.fill") {
+                            run(["kind": "updateFilter", "patch": ["panelId": NSNull(), "sessionId": NSNull(), "turnId": NSNull()]])
                         }
-                    } footer: {
-                        Text("Only the edits these filters match show here.")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                    } label: {
+                        Label(label, systemImage: "line.3.horizontal.decrease.circle.fill")
                     }
                 }
             }
@@ -198,19 +192,11 @@ struct ReviewPanelView: View {
         DiffView(session: session, path: path, oldPath: oldPath, source: source, openFile: { openFile(path) })
     }
 
-    /// The filters on recorded edits, each with the patch that removes it.
-    private func filterChips(_ filter: ReviewSnapshot.AgentFilter) -> [(label: String, patch: [String: Any])] {
-        var chips: [(label: String, patch: [String: Any])] = []
-        if let agentId = filter.agentId {
-            chips.append((agents.first { $0.agentId == agentId }?.name ?? agentId, ["agentId": NSNull()]))
-        }
-        if let panelId = filter.panelId {
-            let title = core.workspace(workspaceId)?.panels?.first { $0.id == panelId }?.title ?? "One panel"
-            chips.append((title, ["panelId": NSNull(), "sessionId": NSNull(), "turnId": NSNull()]))
-        }
-        if filter.sessionId != nil { chips.append(("This conversation", ["sessionId": NSNull(), "turnId": NSNull()])) }
-        if filter.turnId != nil { chips.append(("This turn", ["turnId": NSNull()])) }
-        return chips
+    private func scopeLabel(_ filter: ReviewSnapshot.AgentFilter) -> String? {
+        if filter.turnId != nil { return "This turn" }
+        if filter.sessionId != nil { return "This conversation" }
+        guard let panelId = filter.panelId else { return nil }
+        return core.workspace(workspaceId)?.panels?.first { $0.id == panelId }?.title ?? "This terminal"
     }
 
     // MARK: Actions

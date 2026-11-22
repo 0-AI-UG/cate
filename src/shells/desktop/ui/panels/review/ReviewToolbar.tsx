@@ -5,20 +5,22 @@ import { WorktreeSelector, useRepositoryUi, useWorktrees } from '../../workspace
 import type { ReviewCheckoutState } from '@panels/review/contract'
 import type { ReviewSend } from './useReview'
 
-export function ReviewToolbar({ review, busy, send, children }: {
+export function ReviewToolbar({ review, busy, send, scope, center, actions }: {
   review: ReviewCheckoutState
   busy: boolean
   send: ReviewSend
-  children?: React.ReactNode
+  scope: React.ReactNode
+  center: React.ReactNode
+  actions: React.ReactNode
 }) {
   const worktrees = useWorktrees()
   const { root } = useRepositoryUi()
   const current = worktrees.find((tree) => !tree.isOrphan && samePath(tree.path, review.repoPath))
   return (
-    <div className="review-toolbar-container w-full min-w-0 shrink-0" data-worktree-room style={{ containerType: 'inline-size', containerName: 'review-toolbar' }}>
-      <div role="toolbar" aria-label="Review actions" className="review-toolbar min-w-0 flex flex-wrap items-center gap-1.5 px-2 py-1.5 border-b border-subtle bg-surface-1">
-        {current && (
-          <div className="shrink-0 flex">
+    <div className="w-full min-w-0 shrink-0" data-worktree-room style={{ containerType: 'inline-size', containerName: 'review-toolbar' }}>
+      <div role="toolbar" aria-label="Review actions" className="review-toolbar grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(5.75rem,1fr)] items-center gap-1.5 border-b border-subtle bg-surface-1 px-2 py-1.5">
+        <div className="flex min-w-0 items-center gap-1">
+          {current && (
             <WorktreeSelector
               worktrees={worktrees}
               value={current.id}
@@ -26,10 +28,13 @@ export function ReviewToolbar({ review, busy, send, children }: {
               onChange={(id) => void send({ kind: 'switchWorktree', worktreeId: boundWorktreeId(id, root) })}
               title="Review worktree"
             />
-          </div>
-        )}
-        {busy && <Spinner size={14} label="Loading changes" />}
-        {children}
+          )}
+          {scope}
+        </div>
+        <div className="flex min-w-0 items-center justify-center">
+          {busy && !center ? <Spinner size={14} label="Loading changes" /> : center}
+        </div>
+        <div className="review-toolbar-actions flex items-center justify-end gap-1">{actions}</div>
       </div>
     </div>
   )

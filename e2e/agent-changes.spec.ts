@@ -25,10 +25,6 @@ test.beforeEach(async () => {
 })
 test.afterEach(async () => closeApp(app, { home }))
 
-type Record = { agentId: string; sessionId: string; panelId?: string; files: { path: string; additions: number; deletions: number }[] }
-const records = () => page.evaluate((cwd) => window.__cateE2E!.call('agents', 'readChanges', { cwd }), directory)
-  .then((snapshot) => ((snapshot as { records?: Record[] }).records ?? []))
-
 async function runFixture(panelId: string, agentId: string, session: string, file: string) {
   const fixture = path.resolve(__dirname, 'fixtures/emit-agent-change.cjs')
   // Quoted absolute paths; the fixture process inherits the PTY's hook credentials.
@@ -43,20 +39,18 @@ for (const agentId of ['claude-code', 'codex', 'cursor', 'grok', 'kiro', 'openco
     writeFileSync(path.join(directory, 'unrelated.ts'), 'unreported workspace edit\n')
     const source = await seedOnCanvas(page, 'terminal', { x: 100, y: 100 })
     await runFixture(source.panelId, agentId, 'session-one', 'own.ts')
-    await expect.poll(records, { timeout: 20_000 }).toMatchObject([
-      { agentId, sessionId: 'session-one', panelId: source.panelId, files: [{ path: 'own.ts', additions: 1, deletions: 1 }] },
-    ])
-
     const other = await seedOnCanvas(page, 'terminal', { x: 900, y: 100 })
     await runFixture(other.panelId, agentId, 'session-two', 'other.ts')
-    await expect.poll(async () => (await records()).length, { timeout: 20_000 }).toBe(2)
 
     const node = page.locator(`[data-node-id="${source.nodeId}"]`)
     const overlay = node.locator('[data-unfocused-overlay]')
     if (await overlay.count()) await overlay.click()
     await node.getByRole('button', { name: 'Open agent changes' }).click()
+    await page.getByRole('button', { name: /Create new review at position/ }).first().click()
     const review = page.locator('[data-review-file="own.ts"]')
     await expect(review).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('button', { name: /^Clear review scope:/ })).toBeVisible()
+    await expect(page.locator('[data-review-group]')).toHaveCount(0)
     await expect(page.locator('[data-review-file="unrelated.ts"]')).toHaveCount(0)
     await expect(page.locator('[data-review-file="other.ts"]')).toHaveCount(0)
 
@@ -68,12 +62,16 @@ for (const agentId of ['claude-code', 'codex', 'cursor', 'grok', 'kiro', 'openco
       await stopRuntimeGracefully(page, home)
       await closeApp(app)
       ;({ electronApp: app, mainWindow: page } = await launchApp({ home, userDataDir, workspace: directory, canvas: false }))
-      await expect.poll(async () => (await records()).length, { timeout: 20_000 }).toBe(2)
-      expect(await page.evaluate(() => window.__cateE2E!.panels().map((p) => p.id))).toContain(reviewId)
+      await expect.poll(() => page.evaluate(() => window.__cateE2E!.panels().map((p) => p.id)), { timeout: 20_000 }).toContain(reviewId)
       // The active tab is client state: pick the review's tab again.
       await page.locator(`[data-tab-panel-id="${reviewId}"]`).click()
       await expect(page.locator('[data-review-file="own.ts"]')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole('button', { name: /^Clear review scope:/ })).toBeVisible()
       await expect(page.locator('[data-review-file="other.ts"]')).toHaveCount(0)
     }
+    await page.getByRole('button', { name: /^Clear review scope:/ }).click()
+    await expect(page.locator('[data-review-file="own.ts"]')).toHaveCount(1)
+    await expect(page.locator('[data-review-file="other.ts"]')).toHaveCount(1)
+    await expect(page.locator('[data-review-file="unrelated.ts"]')).toHaveCount(0)
   })
 }

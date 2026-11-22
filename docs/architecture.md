@@ -1759,8 +1759,9 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     removes fully reverted file contributions (and empty records). Cold disk
     records are shown before Git attribution finishes; cached results stay
     visible during revalidation. The
-    repository owns Git evidence: exact reported-change matching against commit
-    diffs, with captured HEAD baselines for new edits. Revert pruning requires
+    repository owns Git evidence: batched working-tree and staged diffs,
+    path-scoped commit candidates, and exact reported-change matching against
+    commit diffs, with captured HEAD baselines for new edits. Revert pruning requires
     a verified return to the baseline, considers staged changes and retains
     commits on other branches. Git evidence is cached by HEAD, index and file
     stamps; missing or ambiguous evidence never deletes records. Older records
@@ -2028,7 +2029,7 @@ Every panel type meets the same contract.
 | terminal | services/terminal, services/agents | pty status, title, cwd, activity, exit; screen as serialized stream | xterm | shows agent sessions (their state comes from the agents service's panel states, not the snapshot) |
 | browser | services/browser | tabs, URLs, titles, viewport preset, navigation state, loading, downloads | webview | each client loads the page itself; page zoom is per client |
 | editor | workspace/files, workspace/relations | file, dirty, conflict and whether its diff is shown, connected draft, reveal; buffer as Yjs stream | Monaco (y-monaco) | one buffer per file; three-way merge; source or markdown preview is per client; the open file is session state (the record's `filePath` mirrors it, and a record change never switches it) |
-| review | workspace/repository, services/agents | retained recorded agent edits grouped by commit, plus uncommitted edits, source filters, file list, status, reveal | on-demand diff views | commit grouping by default, optional conversation grouping or PR-checkout grouping (captured PR association, not current membership); source agent picker; direct spatial selection of any open terminal panel, including those with no matching edits; separate history of closed source panels; all file summaries show immediately and expanded files load bounded diff pages; expansions, group collapse, pagination and focused file are per client; reviewers report in their terminal conversation, with no comments, completion protocol or Review CLI; desktop Git comparisons and mutations live in the repository overlay |
+| review | workspace/repository, services/agents | retained recorded agent edits, source scope, file list, status, reveal | on-demand diff views | The desktop uses a virtualized terminal outline across all agents, with one row per path and individual edits beneath it. Commit and captured PR associations appear on the edit. The terminal picker and open requests can scope Review to a terminal and show its files directly. Open requests can also scope edits to a conversation or turn. File summaries are available immediately and expanded edits load bounded diff pages. Expansions, group collapse, pagination and focused file are per client. Reviewers report in their terminal conversation. Desktop Git comparisons and mutations live in the repository overlay. |
 | canvas | workspace/canvas | none; renders its canvas from the document | the canvas view (`shells/desktop/ui/client/layout/canvas`) | cannot sit on a canvas |
 | surface | framework | none | picker | becomes the picked type through `replacePanel` |
 
@@ -2038,8 +2039,8 @@ Desktop panel labels use `PanelTitle` (`ui/client/host`): the type icon or
 agent logo, derived title, working shimmer, worktree tint and status. Services
 contribute through `registerPanelDecorations`; generic title views never branch
 on panel or agent types. Lists read `usePanelTitles` once and pass its props to
-each label, sharing the existing agent stream. Review omits per-file source
-labels while a source panel filter already identifies that panel.
+each label, sharing the existing agent stream. The terminal outline in Review
+labels each source once in its group header.
 
 The client core: everything a desktop app or the iOS app needs that is not
 drawing, with no Electron, no Node, no React and no DOM. It holds the

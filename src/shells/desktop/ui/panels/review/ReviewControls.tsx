@@ -1,6 +1,6 @@
 import React, { useRef } from 'react'
-import { FileSearch as FileMagnifyingGlass, Terminal } from 'lucide-react'
-import { Spinner, Tooltip, useDismissableLayer, useHoverIntent } from '../../kernel/interaction'
+import { Search, Terminal, X } from 'lucide-react'
+import { Spinner, Tooltip, useDismissableLayer } from '../../kernel/interaction'
 import type { AgentId } from '@services/agents/contract'
 import type { ReviewAgentChoice } from '@panels/review/contract'
 import { AgentFlyout } from '../../services/agents'
@@ -25,38 +25,23 @@ export const ToolbarButton: React.FC<{
   </Tooltip>
 )
 
-const ReviewActionButton: React.FC<{
-  label: string
-  title?: string
-  disabled?: boolean
-  onClick: () => void
-  children?: React.ReactNode
-}> = ({ label, title, disabled, onClick, children }) => (
-  <button
-    type="button"
-    aria-label={label}
-    title={title ?? label}
-    disabled={disabled}
-    onClick={onClick}
-    className="review-action h-7 shrink-0 px-2.5 rounded-lg flex items-center justify-center gap-1.5 border border-subtle bg-surface-2 text-[11px] text-secondary hover:text-primary hover:bg-hover disabled:opacity-30 disabled:pointer-events-none transition-colors"
-  >
-    {children ?? <Terminal size={14} />}
-    <span className="review-action-label whitespace-nowrap">{label}</span>
-  </button>
-)
-
-export function ReviewStats({ files, additions, deletions }: { files: number; additions: number; deletions: number }) {
-  return <span className="review-stats whitespace-nowrap text-[11px] text-muted tabular-nums mr-1" title={`${files} files, +${additions} −${deletions}`}>{files} files <span className="review-line-stats"><span className="text-diff-add">+{additions}</span>{' '}<span className="text-diff-del">-{deletions}</span></span></span>
-}
-
-export function ReviewFileFilter({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return <div className="flex items-center gap-2 px-2 py-1.5 border-b border-subtle flex-shrink-0">
-    <FileMagnifyingGlass size={14} className="text-muted" />
-    <input aria-label="Filter changed files" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Filter changed files" className="bg-transparent flex-1 min-w-0 text-[12px] focus:outline-none" />
+export function ReviewSearch({ value, autoFocus, onChange, onClose }: {
+  value: string
+  autoFocus: boolean
+  onChange(value: string): void
+  onClose(): void
+}) {
+  return <div className="flex h-7 min-w-0 max-w-64 flex-1 items-center gap-1 rounded-md border border-subtle bg-surface-0 px-1.5 focus-within:border-strong">
+    <Search size={14} aria-hidden="true" className="shrink-0 text-muted" />
+    <input autoFocus={autoFocus} aria-label="Search files and terminals" value={value} onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); onClose() } }}
+      placeholder="Search files and terminals" className="min-w-0 flex-1 bg-transparent text-xs focus:outline-none" />
+    <button type="button" aria-label="Close review search" title="Close review search" onClick={onClose}
+      className="flex size-5 shrink-0 items-center justify-center rounded text-muted hover:bg-hover hover:text-primary"><X size={12} aria-hidden="true" /></button>
   </div>
 }
 
-/** Available reviewers open on hover; a pick starts a terminal review. */
+/** A pick starts a review in a terminal. */
 export function ReviewAgentButton({ label, disabled = false, busy, open, choices, onOpenChange, onPick }: {
   label: string
   disabled?: boolean
@@ -67,25 +52,18 @@ export function ReviewAgentButton({ label, disabled = false, busy, open, choices
   onPick: (agentId: AgentId) => void
 }) {
   const box = useRef<HTMLDivElement>(null)
-  const hover = useHoverIntent({
-    enabled: !disabled,
-    open: () => !open && onOpenChange(true),
-    close: () => open && !busy && onOpenChange(false),
-  })
   useDismissableLayer({ open: open && !busy, contentRef: box, onDismiss: () => onOpenChange(false) })
   const ready = choices?.filter((choice) => choice.ready).map((choice) => choice.agentId) ?? []
   return (
-    <div ref={box} className="relative" onMouseEnter={hover.enter} onMouseLeave={hover.leave}>
-      <ReviewActionButton
+    <div ref={box} className="relative">
+      <ToolbarButton
         label={label}
+        active={open}
         disabled={disabled}
-        onClick={() => {
-          hover.cancel()
-          onOpenChange(!open)
-        }}
+        onClick={() => onOpenChange(!open)}
       >
         {busy ? <Spinner size={14} label="Starting agent" /> : <Terminal size={14} />}
-      </ReviewActionButton>
+      </ToolbarButton>
       {open && (
         <div className="absolute left-1/2 top-full z-50 pt-1.5 -translate-x-1/2">
           <AgentFlyout
