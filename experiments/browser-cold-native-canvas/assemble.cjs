@@ -4,7 +4,11 @@ const path = require('node:path')
 const root = path.resolve(__dirname, '../..')
 const destination = path.join(__dirname, 'app')
 fs.mkdirSync(destination, {recursive:true})
-fs.cpSync(path.join(root,'dist'), path.join(destination,'dist'), {recursive:true})
+const built = path.join(destination,'dist')
+if (fs.lstatSync(built,{throwIfNoEntry:false})?.isSymbolicLink()) {
+  throw new Error('Expected a real scratch dist directory')
+}
+fs.cpSync(fs.realpathSync(path.join(root,'dist')), built, {recursive:true,dereference:true})
 fs.copyFileSync(path.join(__dirname,'shell.cjs'), path.join(destination,'shell.cjs'))
 const originalManifest = JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'))
 fs.writeFileSync(path.join(destination,'package.json'), JSON.stringify({...originalManifest,main:'shell.cjs'}))
