@@ -25,6 +25,14 @@ const options = () => ({ ...bounds(), useContentSize:true, frame:false, show:fal
   webPreferences:{sandbox:true,contextIsolation:true,backgroundThrottling:false} })
 const hit = (win, x, y, below = 0) => native.getHit(win.getNativeWindowHandle(), x, y, below)
 const readInputs = target => target.executeJavaScript('window.inputs')
+const insertField = (target,left,top) => target.executeJavaScript(`(() => {
+  const input = document.createElement('input')
+  input.id = 'fixture-field'
+  Object.assign(input.style,{position:'absolute',left:'${left}px',top:'${top}px',width:'100px',height:'28px'})
+  document.body.append(input)
+})()`)
+const fieldState = target => target.executeJavaScript(
+  '({value:document.querySelector("#fixture-field").value, active:document.activeElement.id==="fixture-field"})')
 
 async function until(read, matches, label, timeoutMs = 2000) {
   let value
@@ -49,6 +57,13 @@ async function host() {
   for await (const line of pending) {
     const message = JSON.parse(line)
     if (message.stop) break
+    if (message.command) {
+      if (message.command === 'prepare-field') await insertField(window.webContents, 178, 136)
+      process.stdout.write(JSON.stringify({command:message.id,state:{
+        ...(await fieldState(window.webContents)), keyWindow:window.isFocused(),
+      }})+'\n')
+      continue
+    }
     const mouse = message.mouse
     const sent = performance.now()
     const wheelWithDelta = mouse.type === 'mouseWheel' && (mouse.deltaX !== 0 || mouse.deltaY !== 0)
@@ -69,6 +84,11 @@ async function host() {
         'host did not receive ' + JSON.stringify(mouse))
       : await readInputs(window.webContents)
     observed = inputs.length
+    if (message.focusHost) {
+      app.focus({steal:true})
+      window.focus()
+      await until(()=>window.isFocused(),Boolean,'Cate window did not become key')
+    }
     process.stdout.write(JSON.stringify({ack:message.id,mode:message.mode,forwardMs:performance.now()-sent,inputs})+'\n')
   }
   app.exit(0)
@@ -93,7 +113,7 @@ async function browser() {
     const wrapper = join(root,'wrapper.html')
     fs.writeFileSync(wrapper,'<!doctype html><style>html,body{margin:0;background:transparent}'+effects+
       '</style><webview id="pane" src="./page.html" partition="persist:fixture"></webview>')
-    window = new BrowserWindow({ ...options(), transparent:true, backgroundColor:'#00000000',
+    window = new BrowserWindow({ ...options(), acceptFirstMouse:true, transparent:true, backgroundColor:'#00000000',
       webPreferences:{...options().webPreferences,webviewTag:true} })
     await window.loadFile(wrapper)
     const guest = await until(() => webContents.getAllWebContents().find(x=>x.getType()==='webview' && x.getURL().endsWith('/page.html')),Boolean,'no guest')
@@ -107,6 +127,7 @@ async function browser() {
     const intercepted = []
     let mode = 'electron'
     let completedWheels = 0
+    let focusHostOnRelease = false
     let dragOwner = null
     const routeMouse = (event, mouse) => {
       if (!['mouseDown','mouseMove','mouseUp'].includes(mouse.type)) return
@@ -117,7 +138,8 @@ async function browser() {
       event.preventDefault()
       const id = intercepted.length + completedWheels
       intercepted.push({id,mode,type:mouse.type,x:mouse.x,y:mouse.y})
-      child.stdin.write(JSON.stringify({id,mode,mouse:{type:mouse.type,x:Math.round(mouse.x),y:Math.round(mouse.y),
+      child.stdin.write(JSON.stringify({id,mode,focusHost:focusHostOnRelease && mouse.type==='mouseUp',
+        mouse:{type:mouse.type,x:Math.round(mouse.x),y:Math.round(mouse.y),
         button:'left',clickCount:1,modifiers:mouse.type==='mouseUp'?[]:['leftbuttondown']}})+'\n')
     }
     window.webContents.on('before-mouse-event',routeMouse)
@@ -241,9 +263,44 @@ async function browser() {
         ['mousedown',46,40,1,true],['mousemove',128,110,1,true],
         ['mousemove',210,155,1,true],['mouseup',210,155,0,true],
       ])
+      let commandId = -1
+      const inspectHost = async command => {
+        const id = commandId--
+        child.stdin.write(JSON.stringify({id,command})+'\n')
+        return (await until(()=>response.find(message=>message.command===id),Boolean,'host keyboard state missing')).state
+      }
+      await inspectHost('prepare-field')
+      await insertField(guest,10,10)
+      focusHostOnRelease = true
+      const focusEnd = intercepted.length + completedWheels + 1
+      native.postFixturePointer(nativeHandle,200,150,0)
+      await until(()=>intercepted.some(event=>event.id===focusEnd-1),Boolean,'focus click did not route down')
+      native.postFixturePointer(nativeHandle,200,150,2)
+      await until(()=>response.find(message=>message.ack===focusEnd),Boolean,'focus click release was not acknowledged')
+      focusHostOnRelease = false
+      window.moveAbove('window:'+ready.ready+':0')
+      await until(()=>hit(window,20,20),state=>state.hit===solid.self,'browser order was lost after Cate acquired focus')
+      const focusedHost = await inspectHost('field-state')
+      assert(focusedHost.keyWindow && focusedHost.active, JSON.stringify(focusedHost))
+      native.postFixtureKey(0,97)
+      const hostWithText = await until(()=>inspectHost('field-state'),state=>state.value==='a',
+        'host did not receive keyboard text')
+      assert.equal((await fieldState(guest)).value,'')
+      native.postFixturePointer(nativeHandle,20,20,0)
+      await delay(50)
+      native.postFixturePointer(nativeHandle,20,20,2)
+      await until(async()=>({...(await fieldState(guest)),keyWindow:window.isFocused()}),
+        state=>state.active && state.keyWindow,'browser did not regain keyboard focus')
+      native.postFixtureKey(11,98)
+      const browserWithText = await until(()=>fieldState(guest),state=>state.value==='b',
+        'browser did not receive keyboard text')
+      const restingHost = await inspectHost('field-state')
+      assert.equal(restingHost.value,'a')
+      assert.equal(restingHost.keyWindow,false)
+      const keyboard = {hostWithText,browserWithText,restingHost,frontWindowAfterHostFocus:solid.self}
       const result = {fixture:'per-event window routing',platform:process.platform,
         electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel,gestureWheels,
-        releasedGuestWheel:release.filter(event=>event.kind==='wheel').at(-1),drag,browserDrag,releasedGuestClick:newGesture.at(-1)}
+        releasedGuestWheel:release.filter(event=>event.kind==='wheel').at(-1),drag,browserDrag,releasedGuestClick:newGesture.at(-1),keyboard}
       fs.writeFileSync(join(root,'result.json'), JSON.stringify(result,null,2))
       console.log(JSON.stringify(result,null,2))
     } finally {

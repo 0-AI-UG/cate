@@ -143,6 +143,28 @@ static napi_value postFixturePointer(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static napi_value postFixtureKey(napi_env env, napi_callback_info info) {
+  napi_value args[2], result;
+  size_t count = 2;
+  uint32_t keyCode, character;
+  if (napi_get_cb_info(env, info, &count, args, nullptr, nullptr) != napi_ok || count != 2 ||
+      napi_get_value_uint32(env, args[0], &keyCode) != napi_ok || keyCode > 127 ||
+      napi_get_value_uint32(env, args[1], &character) != napi_ok || character > 127 ||
+      !CGPreflightPostEventAccess()) {
+    napi_throw_error(env, nullptr, "Hosted keyboard input requires a test key and session access");
+    return nullptr;
+  }
+  const UniChar letter = static_cast<UniChar>(character);
+  for (bool down : {true, false}) {
+    CGEventRef event = CGEventCreateKeyboardEvent(nullptr, static_cast<CGKeyCode>(keyCode), down);
+    CGEventKeyboardSetUnicodeString(event, 1, &letter);
+    CGEventPost(kCGSessionEventTap, event);
+    CFRelease(event);
+  }
+  napi_get_undefined(env, &result);
+  return result;
+}
+
 static napi_value beginWheelRoute(napi_env env, napi_callback_info info) {
   napi_value args[2], name, value;
   size_t count = 2;
@@ -259,6 +281,7 @@ NAPI_MODULE_INIT() {
     {"getHit", nullptr, getHit, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"queueClick", nullptr, queueClick, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"postFixturePointer", nullptr, postFixturePointer, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"postFixtureKey", nullptr, postFixtureKey, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"queueWheel", nullptr, queueWheel, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"beginWheelRoute", nullptr, beginWheelRoute, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"endWheelRoute", nullptr, endWheelRoute, nullptr, nullptr, nullptr, napi_default, nullptr},
