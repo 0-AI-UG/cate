@@ -128,12 +128,22 @@ async function browser() {
     let mode = 'electron'
     let completedWheels = 0
     let focusHostOnRelease = false
+    let focusBrowserOnRelease = false
     let dragOwner = null
     const routeMouse = (event, mouse) => {
       if (!['mouseDown','mouseMove','mouseUp'].includes(mouse.type)) return
       if (mouse.type === 'mouseDown') dragOwner = mouse.x >= 160 && mouse.y >= 80 ? 'host' : 'browser'
       const forward = dragOwner === 'host'
-      if (mouse.type === 'mouseUp') dragOwner = null
+      if (mouse.type === 'mouseUp') {
+        if (dragOwner === 'browser' && focusBrowserOnRelease) {
+          setImmediate(() => {
+            if (window.isDestroyed()) return
+            app.focus({steal:true})
+            window.focus()
+          })
+        }
+        dragOwner = null
+      }
       if (!forward) return
       event.preventDefault()
       const id = intercepted.length + completedWheels
@@ -286,6 +296,7 @@ async function browser() {
       const hostWithText = await until(()=>inspectHost('field-state'),state=>state.value==='a',
         'host did not receive keyboard text')
       assert.equal((await fieldState(guest)).value,'')
+      focusBrowserOnRelease = true
       native.postFixturePointer(nativeHandle,20,20,0)
       await delay(50)
       native.postFixturePointer(nativeHandle,20,20,2)
