@@ -29,7 +29,9 @@ jobs:
           sudo apt-get install -y xdotool xvfb
       - name: Install stock Electron
         shell: bash
-        run: npm install --no-audit --no-fund --no-package-lock --prefix "$RUNNER_TEMP/shape-electron" electron@45.4.1
+        run: |
+          npm install --no-audit --no-fund --no-package-lock --prefix "$RUNNER_TEMP/shape-electron" electron@45.4.1
+          node "$RUNNER_TEMP/shape-electron/node_modules/electron/install.js"
       - name: Region geometry tests
         run: node --test experiments/browser-native-shape/region.test.cjs
       - name: Verify native X11 click targets
