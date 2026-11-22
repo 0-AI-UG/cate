@@ -236,9 +236,8 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
   const autofill = host.autofill
   const pageDialog = host.dialog
 
-  // A tab's page mounts the first time this client shows it, then stays
-  // mounted (hidden by its slot) so switching back keeps its state. A guest
-  // attached while hidden can stay blank, and other clients' tabs need no page.
+  // Only this client's selected tabs and tabs requested by page control
+  // need a guest. Keep attached guests across tab switches.
   const shownTabs = useRef(new Set<string>())
   shownTabs.current.add(shownTabId)
   // Seeds stay fixed per mounted webview, so a re-render never reloads a page.
@@ -616,7 +615,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
 
           {/* Guests share the view's transform, so the page and the agent
               overlay always use the same coordinates. */}
-          {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) || host.isDiscarded(tab.id) || !host.needsGuest(tab) ? null : (
+          {tabs.map((tab) => (isBrowserInternalPage(tab.url) || !shownTabs.current.has(tab.id) || host.isDiscarded(tab.id) || !host.needsGuest(tab, visible && tab.id === shownTabId) ? null : (
             <WebviewSlot
               key={`${panelId}:${partition}:${tab.id}`}
               tabId={tab.id}

@@ -17,12 +17,13 @@ vi.mock('../../client/document', async () => {
 vi.mock('@client/document', () => ({ documentStoreFor: () => null, clientStateFor: () => null }))
 vi.mock('../../workspace/repository', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../workspace/repository')>()),
-  useRepositoryUi: () => ({ root: '/repo' }),
+  useRepositoryUi: () => ({ root: '/repo', previewPanelWorktree: vi.fn() }),
   useWorktrees: () => [],
 }))
 vi.mock('../../services/agents', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../services/agents')>()), useAgentAvailability: () => h.availability }))
 const pickPanelPlace = vi.hoisted(() => vi.fn(async () => ({ kind: 'existing', panelId: 't1' })))
-vi.mock('@client/host', async (importOriginal) => ({ ...(await importOriginal<typeof import('@client/host')>()), pickPanelPlace }))
+const revealPanel = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@client/host', async (importOriginal) => ({ ...(await importOriginal<typeof import('@client/host')>()), pickPanelPlace, revealPanel }))
 
 import { registerPanelDefinitions } from '@client/host'
 import { PANEL_DEFINITIONS } from '@panels/definitions'
@@ -38,8 +39,8 @@ const diff = {
 
 function agentSnapshot(patch: Partial<ReviewSnapshot> = {}): ReviewSnapshot {
   return {
-    review: { repoPath: '/repo', agentChanges: { agentId: 'codex' } },
-    recorded: { loading: false, error: null, panels: [{ id: 't1', title: 'Implement auth', agentIds: ['codex'] }], agents: [{ agentId: 'codex', edits: 1, uncommittedEdits: 1 }], files: [{ recordId: 'rec', agentId: 'codex', panelIds: ['t1'], path: 'src/a.ts', additions: 1, deletions: 0, coverage: 'patch', lineCount: 1 }] },
+    review: { repoPath: '/repo', agentChanges: {} },
+    recorded: { loading: false, error: null, panels: [{ id: 't1', title: 'Implement auth' }], files: [{ recordId: 'rec', agentId: 'codex', panelIds: ['t1'], path: 'src/a.ts', additions: 1, deletions: 0, coverage: 'patch', lineCount: 1 }] },
     loading: false, agentBusy: false, error: null, reveal: null,
     ...patch,
   }
@@ -54,9 +55,9 @@ function render(snapshot: ReviewSnapshot) {
 }
 const flush = () => act(async () => { await Promise.resolve() })
 const button = (label: string) => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
-
 beforeEach(() => {
   pickPanelPlace.mockClear()
+  revealPanel.mockClear()
   h.availability = { snapshot: {}, types: [{ agentId: 'codex', ready: true }], error: null }
   h.doc = createDocument()
   send = vi.fn(async (op: ReviewOp) => {
@@ -81,7 +82,8 @@ it('opens in recorded agent changes without Git comparison or filter dropdowns',
   expect(host.querySelector('select[aria-label="Comparison"]')).toBeNull()
   expect(button('Filters')).toBeNull()
   expect(button('Refresh')).toBeNull()
-  expect(button('Filter by agent')).not.toBeNull()
+  expect(button('Filter by agent')).toBeNull()
+  expect(host.querySelector('[aria-label="Group recorded edits"]')).toBeNull()
   expect(send).not.toHaveBeenCalled()
   expect(button('Expand src/a.ts')).not.toBeNull()
   expect(host.textContent).not.toContain('return safe()')
@@ -93,7 +95,7 @@ it('opens in recorded agent changes without Git comparison or filter dropdowns',
 
 it('shows initial loading without an empty state, and no animation for each pending file', async () => {
   installMockClientUi()
-  render(agentSnapshot({ recorded: { loading: true, error: null, files: [], panels: [], agents: [] } }))
+  render(agentSnapshot({ recorded: { loading: true, error: null, files: [], panels: [] } }))
   expect(host.textContent).toContain('Loading recorded changes')
   expect(host.textContent).not.toContain('No active agent edits')
   send.mockImplementation(() => new Promise(() => {}))
@@ -116,42 +118,91 @@ it('shows diff loading only after a file is clicked', async () => {
   expect(host.textContent).toContain('Loading recorded diff')
 })
 
-it('uses the agent logo flyout and immediately shows loading while a selection is pending', async () => {
+it('shows one chip for the narrowest context and clears the whole scope', async () => {
   installMockClientUi()
-  render(agentSnapshot({ recorded: { ...agentSnapshot().recorded, agents: [{ agentId: 'codex', edits: 1, uncommittedEdits: 1 }, { agentId: 'claude-code', edits: 2, uncommittedEdits: 2 }] } }))
-  await flush()
-  send.mockImplementation((op) => op.kind === 'updateFilter' ? new Promise(() => {}) : Promise.resolve(undefined))
-  act(() => button('Filter by agent').click())
-  expect(document.querySelector('[role="menu"][aria-label="Filter agent changes"]')).not.toBeNull()
-  act(() => button('Filter by Claude Code').click())
-  expect(send).toHaveBeenCalledWith({ kind: 'updateFilter', patch: { agentId: 'claude-code', panelId: null, sessionId: null, turnId: null } })
-  expect(host.textContent).toContain('Loading agent changes')
-  expect(button('Filter by agent').disabled).toBe(true)
-  expect(host.querySelector('[data-review-file]')).toBeNull()
+  const snapshot = agentSnapshot()
+  const scoped = { ...snapshot, review: { ...snapshot.review, agentChanges: { panelId: 't1', sessionId: 'session', turnId: 'turn' } } }
+  render(scoped)
+  expect(button('Clear review scope: This turn')).not.toBeNull()
+  expect(button('Clear review scope: This conversation')).toBeNull()
+  expect(button('Clear review scope: Implement auth')).toBeNull()
+  await act(async () => button('Clear review scope: This turn').click())
+  expect(send).toHaveBeenCalledWith({ kind: 'updateFilter', patch: { panelId: null, sessionId: null, turnId: null } })
+  render(snapshot)
+  expect(host.querySelector('[aria-label^="Clear review scope"]')).toBeNull()
+  expect(host.querySelector('[data-review-scope-label]')?.textContent).toBe('All terminals')
 })
 
-it('selects open panels only through the spatial picker', async () => {
+it('searches both terminal titles and file paths without changing the scope', async () => {
   installMockClientUi()
-  h.doc = { ...createDocument(), panels: { t1: { id: 't1', type: 'terminal', title: 'Implement auth', fields: {} } } }
-  render(agentSnapshot())
-  await flush()
+  const snapshot = agentSnapshot()
+  render({ ...snapshot, recorded: { ...snapshot.recorded, files: [snapshot.recorded.files[0],
+    { ...snapshot.recorded.files[0], recordId: 'other', path: 'src/b.ts', panelIds: ['other'], panelTitles: { other: 'Update tests' }, agentId: 'claude-code' },
+  ] } })
+  const find = () => host.querySelector<HTMLInputElement>('input[aria-label="Search files and terminals"]')
+  expect(find()).toBeNull()
+  act(() => button('Search files and terminals').click())
+  const input = find()!
+  expect(document.activeElement).toBe(input)
+  const search = (value: string) => act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  search('UPDATE TESTS')
+  expect(button('Expand src/b.ts')).not.toBeNull()
+  expect(button('Expand src/a.ts')).toBeNull()
+  search('src/a')
+  expect(button('Expand src/a.ts')).not.toBeNull()
+  expect(button('Expand src/b.ts')).toBeNull()
+  expect(input.closest('[role="toolbar"]')).not.toBeNull()
+  act(() => button('Close review search').click())
+  expect(find()).toBeNull()
+  expect(button('Expand src/b.ts')).not.toBeNull()
+  expect(send).not.toHaveBeenCalled()
+})
+
+it('scopes Review to the selected terminal and shows its panel title in the toolbar', async () => {
+  installMockClientUi()
+  h.doc = { ...createDocument(), panels: { t1: { id: 't1', type: 'terminal', title: 'Live terminal', fields: {} } } }
+  const snapshot = agentSnapshot()
+  render(snapshot)
   await act(async () => button('Select source panel on canvas').click())
   expect(pickPanelPlace).toHaveBeenCalledWith({ workspaceId: 'ws', panelType: 'terminal', availability: 'existing', sourcePanelId: 'review' })
   expect(send).toHaveBeenCalledWith({ kind: 'updateFilter', patch: { panelId: 't1', sessionId: null, turnId: null } })
+  act(() => button('Collapse Live terminal').click())
+  expect(button('Expand src/a.ts')).toBeNull()
+  render({ ...snapshot, review: { ...snapshot.review, agentChanges: { panelId: 't1' } } })
+  const chip = button('Clear review scope: Live terminal')
+  expect(chip.closest('[role="toolbar"]')).not.toBeNull()
+  const label = host.querySelector<HTMLElement>('[data-review-scope-label]')!
+  expect(label.textContent).toBe('Live terminal')
+  expect(label).toBe(button('Go to Live terminal'))
+  await act(async () => label.click())
+  expect(revealPanel).toHaveBeenCalledWith('ws', 't1')
+  expect(pickPanelPlace).toHaveBeenCalledTimes(1)
+  expect(host.querySelector('[data-review-summary]')?.textContent).toBe('1 file · 1 edit')
+  expect(host.querySelector('[data-review-group]')).toBeNull()
+  expect(button('Expand src/a.ts')).not.toBeNull()
+  h.doc = createDocument()
+  render({ ...snapshot, review: { ...snapshot.review, agentChanges: { panelId: 't1' } } })
+  expect(host.querySelector('[data-review-scope-label]')?.textContent).toBe('Implement auth')
+  expect(button('Go to Implement auth')).toBeNull()
+  expect(button('Expand src/a.ts')).not.toBeNull()
 })
 
-it('lists closed sources by their recorded titles even when a different source is filtered', async () => {
+it('summarizes distinct terminals and paths alongside the total recorded edits', () => {
   installMockClientUi()
-  render(agentSnapshot({
-    review: { ...agentSnapshot().review, agentChanges: { panelId: 'other', agentId: 'codex' } },
-    recorded: { loading: false, error: null, files: [], agents: [{ agentId: 'codex', edits: 1, uncommittedEdits: 0 }], panels: [{ id: 'closed', title: 'Fix checkout races', agentIds: ['codex'] }] },
-  }))
-  act(() => button('Source panel history').click())
-  expect(document.querySelector('[role="menu"][aria-label="Closed source panels"]')?.textContent).toContain('Closed')
-  expect(document.querySelectorAll('[role="menu"][aria-label="Closed source panels"] [role="menuitem"]')).toHaveLength(2)
-  await act(async () => button('Fix checkout races').click())
-  expect(send).toHaveBeenCalledWith({ kind: 'updateFilter', patch: { panelId: 'closed', sessionId: null, turnId: null } })
-  expect(host.textContent).not.toContain('Closed panel 1')
+  const snapshot = agentSnapshot()
+  const file = snapshot.recorded.files[0]
+  render({ ...snapshot, recorded: { ...snapshot.recorded, files: [
+    file, { ...file, recordId: 'same-path', panelIds: ['t2'] },
+    { ...file, recordId: 'another-path', path: 'src/b.ts' },
+  ] } })
+  expect(host.querySelector('[data-review-summary]')?.textContent).toBe('2 terminals · 2 files · 3 edits')
+  act(() => button('Search files and terminals').click())
+  expect(host.querySelector('[data-review-summary]')).toBeNull()
+  act(() => button('Close review search').click())
+  expect(host.querySelector('[data-review-summary]')).not.toBeNull()
 })
 
 it('lists every file without fetching diffs until a row is opened', async () => {
@@ -187,13 +238,13 @@ it('fetches bounded pages of long diffs and unmounts the previous lines', async 
   expect(host.textContent).not.toContain('page one')
 })
 
-it('opens a revealed file and its commit without reopening it on refresh', async () => {
+it('opens a revealed file and its terminal without reopening it on refresh', async () => {
   installMockClientUi()
   Element.prototype.scrollIntoView = vi.fn()
   const file = { ...agentSnapshot().recorded.files[0], commit: { hash: 'abc', message: 'Feature', date: '2026-11-14' } }
   const snapshot = agentSnapshot({ recorded: { ...agentSnapshot().recorded, files: [file] } })
   render(snapshot)
-  await act(async () => button('Collapse commit Feature').click())
+  await act(async () => button('Collapse Implement auth').click())
   expect(host.querySelector('[data-review-file]')).toBeNull()
   render({ ...snapshot, reveal: { seq: 1, path: 'src/a.ts' } })
   await flush()
@@ -207,20 +258,20 @@ it('opens a revealed file and its commit without reopening it on refresh', async
   expect(send).not.toHaveBeenCalled()
 })
 
-it('collapses commit groups independently without fetching their file diffs', async () => {
+it('collapses terminal groups independently without fetching their file diffs', async () => {
   installMockClientUi()
   const snapshot = agentSnapshot()
   const file = snapshot.recorded.files[0]
   render({ ...snapshot, recorded: { ...snapshot.recorded, files: [
     { ...file, commit: { hash: 'abc', message: 'Feature', date: '2026-11-14' } },
-    { ...file, recordId: 'other', path: 'other.ts', commit: { hash: 'def', message: 'Other commit', date: '2026-11-13' } },
+    { ...file, recordId: 'other', path: 'other.ts', panelIds: ['other'], panelTitles: { other: 'Other terminal' }, commit: { hash: 'def', message: 'Other commit', date: '2026-11-13' } },
   ] } })
   await flush()
   expect(send).not.toHaveBeenCalled()
-  await act(async () => button('Collapse commit Feature').click())
+  await act(async () => button('Collapse Implement auth').click())
   expect(button('Expand src/a.ts')).toBeNull()
   expect(button('Expand other.ts')).not.toBeNull()
-  await act(async () => button('Expand commit Feature').click())
+  await act(async () => button('Expand Implement auth').click())
   expect(button('Expand src/a.ts')).not.toBeNull()
   expect(send).not.toHaveBeenCalled()
 })
@@ -228,44 +279,14 @@ it('collapses commit groups independently without fetching their file diffs', as
 it('starts a review in the selected terminal and shows progress before the response', async () => {
   installMockClientUi()
   render(agentSnapshot())
-  await act(async () => button('Review in terminal').click())
+  await act(async () => button('Review with…').click())
   expect(send).not.toHaveBeenCalledWith({ kind: 'reviewAgents' })
   send.mockImplementation((op) => op.kind === 'reviewWithAgent' ? new Promise(() => {}) : Promise.resolve(undefined))
   await act(async () => button('Review with Codex').click())
   expect(pickPanelPlace).toHaveBeenCalledWith({ workspaceId: 'ws', panelType: 'terminal', availability: 'both', sourcePanelId: 'review' })
   expect(send).toHaveBeenCalledWith({ kind: 'reviewWithAgent', agentId: 'codex', terminalPanelId: 't1' })
-  expect(button('Review in terminal').disabled).toBe(true)
+  expect(button('Review with…').disabled).toBe(true)
   expect(host.querySelector('[aria-label="Starting agent"]')).not.toBeNull()
-})
-
-it('keeps agent and panel selection in the action bar and search collapsed by default', async () => {
-  installMockClientUi()
-  render(agentSnapshot())
-  await flush()
-  expect(button('Filter by agent').closest('[role="toolbar"]')).toBe(button('Source panel history').closest('[role="toolbar"]'))
-  expect(button('Filter by agent').title).toContain('Codex')
-  expect(host.querySelector('input[aria-label="Filter changed files"]')).toBeNull()
-  act(() => button('Filter changed files').click())
-  expect(host.querySelector('input[aria-label="Filter changed files"]')).not.toBeNull()
-})
-
-it('omits agents without recorded contributions from the filter menu', async () => {
-  installMockClientUi()
-  render(agentSnapshot())
-  await flush()
-  send.mockClear()
-  act(() => button('Filter by agent').click())
-  expect(button('Filter by Grok')).toBeNull()
-  expect(button('Filter by Codex').disabled).toBe(false)
-  expect(send).not.toHaveBeenCalled()
-})
-
-it('disables source selection when open panels have not contributed any recorded changes', () => {
-  installMockClientUi()
-  h.doc = { ...createDocument(), panels: { t1: { id: 't1', type: 'terminal', title: 'Shell', fields: {} } } }
-  render(agentSnapshot({ recorded: { loading: false, error: null, files: [], panels: [], agents: [] } }))
-  expect(button('Source panel history').disabled).toBe(true)
-  expect(button('Filter by agent').disabled).toBe(true)
 })
 
 it('reopens the review launch menu from shared availability without per-hover inspection', async () => {
@@ -273,10 +294,10 @@ it('reopens the review launch menu from shared availability without per-hover in
   render(agentSnapshot())
   await flush()
   send.mockClear()
-  act(() => button('Review in terminal').click())
+  act(() => button('Review with…').click())
   expect(button('Review with Codex')).not.toBeNull()
-  act(() => button('Review in terminal').click())
-  act(() => button('Review in terminal').click())
+  act(() => button('Review with…').click())
+  act(() => button('Review with…').click())
   expect(button('Review with Codex')).not.toBeNull()
   expect(send).not.toHaveBeenCalled()
   h.availability = { ...h.availability, types: [{ agentId: 'claude-code', ready: true }] }
@@ -287,72 +308,12 @@ it('reopens the review launch menu from shared availability without per-hover in
 
 it('renders the empty diff as a centered title and explanation', () => {
   installMockClientUi()
-  render(agentSnapshot({ review: { ...agentSnapshot().review,  }, recorded: { loading: false, error: null, files: [], panels: [], agents: [{ agentId: 'codex', edits: 2, uncommittedEdits: 0 }] } }))
+  const snapshot = agentSnapshot()
+  render({ ...snapshot, review: { ...snapshot.review, agentChanges: { panelId: 't1' } }, recorded: { ...snapshot.recorded, files: [] } })
   const empty = host.querySelector('[data-review-empty]')!
   expect(empty.querySelector('[data-review-empty-content]')).not.toBeNull()
   expect(empty.textContent).toContain('No matching changes')
-  expect(empty.textContent).toContain('Try another source panel')
-})
-
-it('keeps spatial selection directly available beside closed source history', async () => {
-  installMockClientUi()
-  h.doc = { ...createDocument(), panels: { t1: { id: 't1', type: 'terminal', title: 'Implement auth', fields: {} } } }
-  const snapshot = agentSnapshot()
-  render({ ...snapshot, recorded: { ...snapshot.recorded, panels: [...snapshot.recorded.panels, { id: 'closed', title: 'Fix checkout races', agentIds: ['codex'] }] } })
-  await flush()
-  act(() => button('Source panel history').click())
-  const spatial = button('Select source panel on canvas')
-  expect(document.querySelector('[role="menuitem"][aria-label="Implement auth"]')).toBeNull()
-  expect(button('Fix checkout races')).not.toBeNull()
-  expect(document.querySelectorAll('[role="menu"][aria-label="Closed source panels"] [role="menuitem"]')).toHaveLength(2)
-  await act(async () => spatial.click())
-  expect(document.querySelector('[role="menu"][aria-label="Closed source panels"]')).toBeNull()
-  expect(pickPanelPlace).toHaveBeenCalledWith({ workspaceId: 'ws', panelType: 'terminal', availability: 'existing', sourcePanelId: 'review' })
-  expect(send).toHaveBeenCalledWith({ kind: 'updateFilter', patch: { panelId: 't1', sessionId: null, turnId: null } })
-})
-
-it('groups edits by commit with no active or history toggle', async () => {
-  installMockClientUi()
-  const snapshot = agentSnapshot()
-  const file = snapshot.recorded.files[0]
-  render({ ...snapshot, recorded: { ...snapshot.recorded, files: [
-    { ...file, uncommitted: true },
-    { ...file, recordId: 'committed', commit: { hash: 'abc123456', message: 'Implement login', date: '2026-11-13' } },
-    { ...file, recordId: 'same-commit', commit: { hash: 'abc123456', message: 'Implement login', date: '2026-11-13' } },
-  ] } })
-  await flush()
-  expect([...host.querySelectorAll('[data-review-group-title]')].map((group) => group.textContent)).toEqual(['Uncommitted changes', 'Implement login'])
-  expect(document.querySelector('button[aria-label="Show active changes"]')).toBeNull()
-  expect(document.querySelector('button[aria-label="Show recorded history"]')).toBeNull()
-})
-
-it('groups captured PR context with commits underneath and keeps unknown associations explicit', async () => {
-  installMockClientUi()
-  const snapshot = agentSnapshot()
-  const file = snapshot.recorded.files[0]
-  render({ ...snapshot, recorded: { ...snapshot.recorded, files: [
-    { ...file, recordId: 'known', prNumber: 42, commit: { hash: 'abc', message: 'Implement login', date: '2026-11-14' } },
-    { ...file, recordId: 'unknown', path: 'other.ts' },
-  ] } })
-  await act(async () => button('Group recorded edits').click())
-  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((o) => o.textContent === 'Pull requests')!.click())
-  expect(host.textContent).toContain('Recorded for PR #42')
-  expect(host.textContent).toContain('Implement login')
-  expect(host.textContent).toContain('No recorded pull request')
-  expect(send).not.toHaveBeenCalled()
-})
-
-it('centers the agent flyout beneath its trigger', async () => {
-  installMockClientUi()
-  const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    return this.querySelector('button[aria-label="Filter by agent"]') ? new DOMRect(100, 100, 30, 28) : new DOMRect(0, 0, 46, 46)
-  })
-  try {
-    render(agentSnapshot())
-    await act(async () => button('Filter by agent').click())
-    const flyout = document.querySelector<HTMLElement>('[role="menu"][aria-label="Filter agent changes"]')!
-    expect(flyout.parentElement!.style.left).toBe('92px')
-  } finally { measure.mockRestore() }
+  expect(empty.textContent).toContain('Clear the review scope to see all recorded edits.')
 })
 
 it('shows the display options in an in-app menu and collapses expanded files on selection', async () => {
@@ -368,34 +329,48 @@ it('shows the display options in an in-app menu and collapses expanded files on 
   expect(document.querySelector('[role="menu"]')).toBeNull()
 })
 
-it('omits repeated file source labels while a source panel is selected', async () => {
+it('groups by terminal and opens the chosen file edit on demand', async () => {
   installMockClientUi()
   h.doc = { ...createDocument(), panels: { t1: { id: 't1', type: 'terminal', title: 'Implement auth', fields: {} } } }
   const snapshot = agentSnapshot()
-  render({ ...snapshot, recorded: { ...snapshot.recorded, files: [{ ...snapshot.recorded.files[0], panelIds: ['t1', 'closed'], panelTitles: { closed: 'Earlier session' } }] } })
-  expect(button('Go to Implement auth')).not.toBeNull()
-  render({ ...snapshot, review: { ...snapshot.review, agentChanges: { agentId: 'codex', panelId: 't1' } } })
+  const file = snapshot.recorded.files[0]
+  render({ ...snapshot, recorded: { ...snapshot.recorded, files: [file,
+    { ...file, recordId: 'newest', createdAt: '2026-11-22T16:00:00Z', commit: { hash: 'abcdef1234', message: 'Implement login', date: '2026-11-22' }, prNumber: 42 },
+    { ...file, recordId: 'closed', panelIds: ['closed'], panelTitles: { closed: 'Earlier session' } },
+  ] } })
+  const title = button('Go to Implement auth')
+  expect(title.textContent).toBe('Implement auth')
+  act(() => title.click())
+  expect(revealPanel).toHaveBeenCalledWith('ws', 't1')
+  expect([...host.querySelectorAll('[data-review-group-title]')].map((group) => group.textContent)).toEqual(['Implement auth', 'Earlier session'])
+  expect(host.querySelectorAll('[data-review-file]')).toHaveLength(2)
   expect(host.querySelector('[data-review-file] [aria-label^="Go to"]')).toBeNull()
-  expect(host.querySelector('[data-review-file] [title="Source panel closed"]')).toBeNull()
-  expect(button('Clear source panel filter')).not.toBeNull()
+  await act(async () => button('Expand src/a.ts').click())
+  expect(host.querySelectorAll('[data-review-edit]')).toHaveLength(2)
+  expect(button('Expand edit 1 for src/a.ts').textContent).toContain('abcdef1 · Implement login')
+  expect(button('Expand edit 1 for src/a.ts').textContent).toContain('PR #42')
+  expect(send).not.toHaveBeenCalled()
+  await act(async () => button('Expand edit 1 for src/a.ts').click())
+  expect(send).toHaveBeenCalledWith({ kind: 'recordedDiff', recordId: 'newest', path: 'src/a.ts', page: 0 })
 })
 
-it('allows selecting a terminal that has no matching recorded edits', async () => {
+it('windows a large terminal and navigates or reveals an offscreen file', async () => {
   installMockClientUi()
-  h.doc = { ...createDocument(), panels: { other: { id: 'other', type: 'terminal', title: 'Update README', fields: {} } } }
-  pickPanelPlace.mockResolvedValueOnce({ kind: 'existing', panelId: 'other' })
-  const snapshot = agentSnapshot({ recorded: { loading: false, error: null, files: [], panels: [], agents: [] } })
-  render(snapshot)
-  expect(button('Select source panel on canvas').disabled).toBe(false)
-  await act(async () => button('Select source panel on canvas').click())
-  expect(pickPanelPlace).toHaveBeenCalledWith({ workspaceId: 'ws', panelType: 'terminal', availability: 'existing', sourcePanelId: 'review' })
-  expect(send).toHaveBeenCalledWith({ kind: 'updateFilter', patch: { panelId: 'other', sessionId: null, turnId: null } })
-  render({ ...snapshot, review: { ...snapshot.review, agentChanges: { panelId: 'other' } } })
-  expect(button('Clear source panel filter').textContent).toContain('Update README')
-  expect(host.querySelectorAll('[data-review-file]')).toHaveLength(0)
+  const snapshot = agentSnapshot()
+  const files = Array.from({ length: 1000 }, (_, i) => ({ ...snapshot.recorded.files[0], recordId: `rec${i}`, path: `file${i}.ts` }))
+  const large = { ...snapshot, recorded: { ...snapshot.recorded, files } }
+  render(large)
+  expect(host.querySelectorAll('[data-review-file]').length).toBeLessThan(40)
+  expect(button('Expand file999.ts')).toBeNull()
+  act(() => button('Collapse Implement auth').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })))
+  expect(document.activeElement).toBe(button('Expand file999.ts'))
+  render({ ...large, reveal: { seq: 1, path: 'file500.ts' } })
+  await flush()
+  expect(button('Collapse file500.ts')).not.toBeNull()
+  expect(send).toHaveBeenCalledWith({ kind: 'recordedDiff', recordId: 'rec500', path: 'file500.ts', page: 0 })
 })
 
-it('retains the selected diff page when background attribution moves a file into a commit group', async () => {
+it('retains the selected diff page when Git attribution arrives', async () => {
   installMockClientUi()
   send.mockImplementation(async (op) => op.kind === 'recordedDiff' ? { path: op.path, hunks: diff.hunks, coverage: 'patch', page: op.page ?? 0, pageCount: 3, totalLines: 600 } : undefined)
   const snapshot = agentSnapshot()

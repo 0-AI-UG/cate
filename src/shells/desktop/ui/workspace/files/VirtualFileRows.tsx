@@ -1,19 +1,34 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 
-export interface VirtualFileRowsHandle { reveal(path: string): void }
+export interface VirtualFileRowsHandle { reveal(path: string, align?: 'start'): void }
 interface Props {
   paths: string[]
   scrollRef: React.RefObject<HTMLDivElement>
   pinned: ReadonlySet<string>
   renderRow: (index: number) => React.ReactNode
+  /** When supplied, every other row uses the default height. */
+  variableHeight?: ReadonlySet<string>
 }
 const ROW_HEIGHT = 32
 const OVERSCAN = 6
 
+const VirtualRow = React.memo(function VirtualRow({ path, top, index, register, renderRow }: {
+  path: string
+  top: number
+  index: number
+  register(path: string, node: HTMLDivElement | null): void
+  renderRow: Props['renderRow']
+}) {
+  const ref = useCallback((node: HTMLDivElement | null) => register(path, node), [path, register])
+  return <div ref={ref} data-virtual-path={path} style={{ position: 'absolute', display: 'flow-root', top, left: 0, right: 0 }}>
+    {renderRow(index)}
+  </div>
+})
+
 /** Variable row heights retain inline create/rename flows. Only the viewport,
  * overscan, and actively edited rows remain mounted. Keyboard ordering remains
  * owned by the explorer's full flat model. */
-export const VirtualFileRows = forwardRef<VirtualFileRowsHandle, Props>(function VirtualFileRows({ paths, scrollRef, pinned, renderRow }, ref) {
+export const VirtualFileRows = forwardRef<VirtualFileRowsHandle, Props>(function VirtualFileRows({ paths, scrollRef, pinned, renderRow, variableHeight }, ref) {
   const [viewport, setViewport] = useState({ top: 0, height: 600 })
   const [heights, setHeights] = useState<Map<string, number>>(new Map())
   const elements = useRef(new Map<string, HTMLDivElement>())
@@ -21,15 +36,22 @@ export const VirtualFileRows = forwardRef<VirtualFileRowsHandle, Props>(function
   const list = useRef<HTMLDivElement>(null)
   const offsets = useMemo(() => {
     const result = [0]
-    for (const path of paths) result.push(result[result.length - 1] + (heights.get(path) ?? ROW_HEIGHT))
+    for (const path of paths) {
+      const height = !variableHeight || variableHeight.has(path) ? heights.get(path) : undefined
+      result.push(result[result.length - 1] + (height ?? ROW_HEIGHT))
+    }
     return result
-  }, [paths, heights])
+  }, [paths, heights, variableHeight])
 
   // The parent scroll container's ref attaches after this child's layout effects.
   useEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
-    const update = () => setViewport({ top: Math.max(0, scroll.scrollTop - (list.current?.offsetTop ?? 0)), height: scroll.clientHeight || 600 })
+    const update = () => {
+      const top = Math.max(0, scroll.scrollTop - (list.current?.offsetTop ?? 0))
+      const height = scroll.clientHeight || 600
+      setViewport((previous) => previous.top === top && previous.height === height ? previous : { top, height })
+    }
     update()
     scroll.addEventListener('scroll', update, { passive: true })
     const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
@@ -67,14 +89,14 @@ export const VirtualFileRows = forwardRef<VirtualFileRowsHandle, Props>(function
   }, [paths])
 
   useImperativeHandle(ref, () => ({
-    reveal(path) {
+    reveal(path, align) {
       const index = paths.indexOf(path)
       const scroll = scrollRef.current
       if (index < 0 || !scroll) return
       const base = list.current?.offsetTop ?? 0
       const top = offsets[index] + base
       const bottom = offsets[index + 1] + base
-      if (top < scroll.scrollTop) scroll.scrollTop = top
+      if (align === 'start' || top < scroll.scrollTop) scroll.scrollTop = top
       else if (bottom > scroll.scrollTop + scroll.clientHeight) scroll.scrollTop = Math.max(0, bottom - (scroll.clientHeight || 600))
       setViewport({ top: Math.max(0, scroll.scrollTop - base), height: scroll.clientHeight || 600 })
     },
@@ -102,11 +124,7 @@ export const VirtualFileRows = forwardRef<VirtualFileRowsHandle, Props>(function
   for (const path of pinned) { const index = paths.indexOf(path); if (index >= 0) indices.add(index) }
 
   return <div ref={list} className="relative" style={{ height: offsets[offsets.length - 1] }} data-virtual-file-rows>
-    {[...indices].sort((a, b) => a - b).map((index) => (
-      <div key={paths[index]} ref={(element) => register(paths[index], element)} data-virtual-path={paths[index]}
-        style={{ position: 'absolute', display: 'flow-root', top: offsets[index], left: 0, right: 0 }}>
-        {renderRow(index)}
-      </div>
-    ))}
+    {[...indices].sort((a, b) => a - b).map((index) =>
+      <VirtualRow key={paths[index]} path={paths[index]} top={offsets[index]} index={index} register={register} renderRow={renderRow} />)}
   </div>
 })

@@ -18,6 +18,7 @@ import { _electron as electron, type ElectronApplication, type Page } from 'play
 import { expect } from '@playwright/test'
 // Types `window.__cateE2E` (the harness declares it globally).
 import type {} from '../../src/shells/desktop/ui/app/e2e/e2eHarness'
+import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
@@ -38,7 +39,7 @@ export const RUNTIME_BUNDLE = path.join(REPO_ROOT, 'dist-runtime', 'runtime.cjs'
 
 /** A fresh, short HOME for one test (see the note on socket paths). */
 export function makeHome(): string {
-  return mkdtempSync('/tmp/ce-')
+  return mkdtempSync(process.platform === 'win32' ? path.join(os.tmpdir(), 'ce-') : '/tmp/ce-')
 }
 
 /** A project folder under `home`, optionally a git repo with one commit.
@@ -98,6 +99,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
+    ...(process.platform === 'win32' ? { USERPROFILE: home } : {}),
     CATE_E2E: '1',
     NODE_ENV: 'production',
     CATE_E2E_USER_DATA: userDataDir,

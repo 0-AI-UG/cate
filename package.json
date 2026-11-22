@@ -1,6 +1,6 @@
 {
   "name": "cate",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "productName": "Cate",
   "description": "An infinite zoomable canvas IDE",
   "license": "MIT",
@@ -133,7 +133,7 @@
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
     "dependency-cruiser": "^18.4.0",
-    "electron": "^42.11.16",
+    "electron": "^45.4.1",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.0",

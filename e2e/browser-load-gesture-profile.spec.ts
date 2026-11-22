@@ -10,50 +10,78 @@ import { copyElectronForColdGpuCache } from './fixtures/cold-electron'
 import { create, installPerfHelpers, waitForBrowserGuest } from './fixtures/perf-helpers'
 import type { Page } from 'playwright'
 
-export async function measureBrowserGesture(page: Page, action: string, durationMs = 5000) {
-  return page.evaluate(async ({ action, durationMs }) => {
-    const w = window as unknown as { __loadGestureRunning: boolean }
-    const root = document.querySelector<HTMLElement>('[data-canvas-container]')!
-    const world = document.querySelector<HTMLElement>('[data-canvas-world]')!
-    const rect = root.getBoundingClientRect()
-    const initial = world.style.transform
-    const gaps: number[] = [], slowFrames: Array<{ at: number; ms: number }> = []
-    let firstInputAt: number | null = null, firstMoveAt: number | null = null
-    const observer = new MutationObserver(() => { if (firstInputAt !== null && firstMoveAt === null && world.style.transform !== initial) firstMoveAt = performance.now() })
-    observer.observe(world, { attributes: true, attributeFilter: ['style'] })
-    window.__catePerf!.resetWindow()
-    const counts = window.__catePerf!.renderCounts()
-    const started = performance.now()
-    let last = started, raf = 0
-    const frame = (now: number) => {
-      const ms = now - last
-      gaps.push(ms)
-      if (ms > 25) { slowFrames.push({ at: now, ms }); performance.mark('browser-load-slow-frame') }
-      last = now
+async function measureBrowserGesture(page: Page, action: 'pan' | 'zoom', durationMs = 5000) {
+  const canvas = await page.locator('[data-canvas-container]').boundingBox()
+  if (!canvas) throw new Error('Canvas is unavailable')
+  const input = await page.context().newCDPSession(page)
+  let pending = false
+  let inputError: unknown
+  let wheelEventsSent = 0
+  const interval = setInterval(() => {
+    if (pending || inputError) return
+    pending = true
+    const phase = wheelEventsSent++ * .023
+    void input.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: canvas.x + 8,
+      y: canvas.y + 80,
+      modifiers: action === 'zoom' ? 2 : 0, // CDP's Control modifier
+      deltaX: action === 'pan' ? 3.1 * Math.cos(phase) : 0,
+      deltaY: action === 'pan' ? 2.1 * Math.sin(phase) : .3 * Math.cos(phase),
+    }).catch(error => { inputError = error }).finally(() => { pending = false })
+  }, 16)
+  try {
+    const result = await page.evaluate(async (durationMs) => {
+      const w = window as unknown as { __loadGestureRunning: boolean }
+      const root = document.querySelector<HTMLElement>('[data-canvas-container]')!
+      const world = document.querySelector<HTMLElement>('[data-canvas-world]')!
+      const initial = world.style.transform
+      const gaps: number[] = [], slowFrames: Array<{ at: number; ms: number }> = []
+      let firstInputAt: number | null = null, firstMoveAt: number | null = null
+      const observer = new MutationObserver(() => { if (firstInputAt !== null && firstMoveAt === null && world.style.transform !== initial) firstMoveAt = performance.now() })
+      observer.observe(world, { attributes: true, attributeFilter: ['style'] })
+      window.__catePerf!.resetWindow()
+      const counts = window.__catePerf!.renderCounts()
+      let trustedWheelEvents = 0
+      const onWheel = (event: WheelEvent) => {
+        if (!event.isTrusted) return
+        trustedWheelEvents++
+        firstInputAt ??= performance.now()
+      }
+      root.addEventListener('wheel', onWheel, { capture: true, passive: true })
+      const started = performance.now()
+      performance.mark('browser-load-gesture-start')
+      let last = started, raf = 0
+      const frame = (now: number) => {
+        const ms = now - last
+        gaps.push(ms)
+        if (ms > 25) { slowFrames.push({ at: now, ms }); performance.mark('browser-load-slow-frame') }
+        last = now
+        raf = requestAnimationFrame(frame)
+      }
       raf = requestAnimationFrame(frame)
-    }
-    raf = requestAnimationFrame(frame)
-    const input = setInterval(() => {
-      if (action === 'idle') return
-      firstInputAt ??= performance.now()
-      const t = performance.now() - started
-      root.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: rect.left + 8, clientY: rect.top + 80, ctrlKey: action === 'zoom', deltaMode: 0,
-        deltaX: action === 'pan' ? 3.1 * Math.cos(t / 700) : 0,
-        deltaY: action === 'pan' ? 2.1 * Math.sin(t / 700) : 0.3 * Math.cos(t / 700) }))
-    }, 16)
-    w.__loadGestureRunning = true
-    await new Promise(resolve => setTimeout(resolve, durationMs))
-    clearInterval(input); cancelAnimationFrame(raf); observer.disconnect(); w.__loadGestureRunning = false
-    const elapsedMs = performance.now() - started
-    const after = window.__catePerf!.renderCounts()
-    gaps.sort((a, b) => a - b)
-    return { elapsedMs, fps: gaps.length * 1000 / elapsedMs, frames: gaps.length, p50Ms: gaps[Math.floor(gaps.length * .5)], p95Ms: gaps[Math.floor(gaps.length * .95)], p99Ms: gaps[Math.floor(gaps.length * .99)], maxMs: gaps.at(-1), slowFrames, firstInputDelayMs: firstInputAt === null || firstMoveAt === null ? null : firstMoveAt - firstInputAt,
-      longTasks: window.__catePerf!.longTasks(), counters: Object.fromEntries(Object.entries(after).map(([k, v]) => [k, v - (counts[k] ?? 0)])), transformChanged: world.style.transform !== initial, dpr: devicePixelRatio }
-  }, { action, durationMs })
+      w.__loadGestureRunning = true
+      await new Promise(resolve => setTimeout(resolve, durationMs))
+      root.removeEventListener('wheel', onWheel, true)
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+      w.__loadGestureRunning = false
+      const elapsedMs = performance.now() - started
+      const after = window.__catePerf!.renderCounts()
+      gaps.sort((a, b) => a - b)
+      return { elapsedMs, trustedWheelEvents, fps: gaps.length * 1000 / elapsedMs, frames: gaps.length, p50Ms: gaps[Math.floor(gaps.length * .5)], p95Ms: gaps[Math.floor(gaps.length * .95)], p99Ms: gaps[Math.floor(gaps.length * .99)], maxMs: gaps.at(-1), slowFrames, firstInputDelayMs: firstInputAt === null || firstMoveAt === null ? null : firstMoveAt - firstInputAt,
+        longTasks: window.__catePerf!.longTasks(), counters: Object.fromEntries(Object.entries(after).map(([k, v]) => [k, v - (counts[k] ?? 0)])), transformChanged: world.style.transform !== initial, dpr: devicePixelRatio }
+    }, durationMs)
+    if (inputError) throw inputError
+    return { ...result, wheelEventsSent }
+  } finally {
+    clearInterval(interval)
+    await input.detach()
+  }
 }
 
 test('browser navigation and loading overlap canvas gestures', async () => {
-  test.skip(process.env.CATE_BROWSER_LOAD_PROFILE !== '1', 'Opt-in visible-window load profile')
+  test.skip(process.env.CATE_BROWSER_LOAD_PROFILE !== '1', 'Opt-in browser load profile')
   test.setTimeout(360_000)
   const pixels = Buffer.alloc(1600 * 1000 * 3)
   let seed = 12345
@@ -92,9 +120,17 @@ test('browser navigation and loading overlap canvas gestures', async () => {
   if (process.env.CATE_BROWSER_LOAD_PRECOMPILE === '1') chromiumArgs.push('--enable-skia-graphite-precompilation')
   if (process.env.CATE_BROWSER_LOAD_DRDC === '1') chromiumArgs.push('--enable-features=EnableDrDc')
   if (process.env.CATE_BROWSER_LOAD_DRDC === 'separate') chromiumArgs.push('--enable-features=EnableDrDc', '--disable-features=GraphiteContextIsThreadSafe')
-  if (process.env.CATE_BROWSER_LOAD_ANGLE === 'gl') chromiumArgs.push('--use-angle=gl')
+  if (process.env.CATE_BROWSER_LOAD_ANGLE === 'gl') chromiumArgs.push('--use-gl=angle', '--use-angle=gl')
   let coldBundle: string | undefined
   const env: Record<string, string> = process.env.CATE_BROWSER_LOAD_DRDC === 'separate' ? { CATE_E2E_BACKGROUND_THROTTLING: '1' } : {}
+  // Apply explicit graphics experiments to the same baseline as before.
+  if (process.env.CATE_BROWSER_LOAD_BASELINE === '1' || [
+    process.env.CATE_BROWSER_LOAD_CPU_RASTER,
+    process.env.CATE_BROWSER_LOAD_GRAPHITE,
+    process.env.CATE_BROWSER_LOAD_PRECOMPILE,
+    process.env.CATE_BROWSER_LOAD_DRDC,
+    process.env.CATE_BROWSER_LOAD_ANGLE,
+  ].some(value => value !== undefined)) env.CATE_E2E_STOCK_WEBVIEW_GRAPHICS = '1'
   if (process.env.CATE_BROWSER_LOAD_COLD_BUNDLE === '1') {
     const source = process.env.CATE_E2E_EXECUTABLE ?? require('electron') as string
     const copy = copyElectronForColdGpuCache(source)
@@ -106,14 +142,33 @@ test('browser navigation and loading overlap canvas gestures', async () => {
   const budgetFailures: string[] = []
   try {
     const engine = await app.evaluate(async ({ app }) => ({ versions: process.versions, surfaceDeadline: app.commandLine.getSwitchValue('deadline-to-synchronize-surfaces'), gpu: app.getGPUFeatureStatus(), gpuInfo: await app.getGPUInfo('complete') }))
-    await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show(); w.focus() })
+    await app.evaluate(({ BrowserWindow }, showWindow) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      win.setSize(1400, 950)
+      if (showWindow) { win.show(); win.focus() }
+    }, process.env.CATE_BROWSER_LOAD_HIDDEN !== '1')
     await installPerfHelpers(page)
     if (process.env.CATE_BROWSER_LOAD_NO_GRID === '1') await page.addStyleTag({ content: '[data-canvas-grid]{display:none!important}' })
     await page.waitForFunction(() => !!window.__catePerf)
+    const browserCount = Number(process.env.CATE_BROWSER_LOAD_COUNT ?? 1)
+    const startZoom = 0.8
+    const firstRowY = 60
+    const canvas = await page.locator('[data-canvas-container]').boundingBox()
+    if (!canvas) throw new Error('Canvas is unavailable')
+    // Leave room for the browser chrome at the bottom so every guest can mount.
+    const rowsBelowFirst = Math.max(1, Math.ceil(browserCount / 2) - 1)
+    const rowGap = Math.min(340, (canvas.height / startZoom - firstRowY - 100) / rowsBelowFirst)
+    await page.evaluate(zoom => { window.__cateE2E!.setZoom(zoom); window.__cateE2E!.resetViewport() }, startZoom)
     const ids: number[] = []
-    for (let i = 0; i < Number(process.env.CATE_BROWSER_LOAD_COUNT ?? 1); i++) {
-      const { panelId } = await create(page, 'browser', { x: 300 + i % 2 * 400, y: 60 + Math.floor(i / 2) * 340 }, { url: origin + '/settled' })
-      ids.push(await waitForBrowserGuest(page, panelId))
+    for (let i = 0; i < browserCount; i++) {
+      const url = origin + '/settled'
+      const { panelId } = await create(page, 'browser', { x: 300 + i % 2 * 400, y: firstRowY + Math.floor(i / 2) * rowGap }, { url })
+      const id = await waitForBrowserGuest(page, panelId)
+      await expect.poll(() => app.evaluate(({ webContents }, { id, url }) => {
+        const guest = webContents.fromId(id)!
+        return guest.getURL() === url && !guest.isLoadingMainFrame()
+      }, { id, url }), { message: 'initial webview navigation completes before profiling' }).toBe(true)
+      ids.push(id)
     }
     await app.evaluate(({ webContents }, ids) => {
       for (const id of ids) {
@@ -126,18 +181,18 @@ test('browser navigation and loading overlap canvas gestures', async () => {
     }, ids)
     const sample = () => app.evaluate(({ app, webContents, BrowserWindow }, ids) => ({ at: Date.now(), focused: BrowserWindow.getAllWindows()[0].isFocused(), metrics: app.getAppMetrics(), guests: ids.map(id => { const w = webContents.fromId(id)!; return { id, pid: w.getOSProcessId(), loading: w.isLoading(), url: w.getURL() } }) }), ids)
     for (const kind of (process.env.CATE_BROWSER_LOAD_CASES ?? 'settled,network,script,images,combined').split(',')) {
-      for (const action of ['pan', 'zoom']) {
+      for (const action of ['pan', 'zoom'] as const) {
         for (let repeat = 0; repeat < Number(process.env.CATE_BROWSER_LOAD_REPEATS ?? 2); repeat++) {
           await page.waitForFunction(() => !document.body.classList.contains('canvas-zooming') && !document.body.classList.contains('canvas-interacting'))
           await app.evaluate(async ({ webContents }, { ids, origin }) => { await Promise.all(ids.map(id => webContents.fromId(id)!.loadURL(origin + '/settled'))) }, { ids, origin })
-          await page.evaluate(() => { window.__cateE2E!.setZoom(.8); window.__cateE2E!.resetViewport() })
+          await page.evaluate(zoom => { window.__cateE2E!.setZoom(zoom); window.__cateE2E!.resetViewport() }, startZoom)
           await page.waitForTimeout(800)
           await app.evaluate(({ webContents }, ids) => { for (const id of ids) (webContents.fromId(id)! as any).__gestureAudit = { events: [], cdp: {} } }, ids)
           const remote = kind === 'github-home' || kind === 'github-repository'
           if (remote && repeat === 0) await app.evaluate(async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.session.clearCache())) }, ids)
           if (remote && process.env.CATE_BROWSER_LOAD_SHADER_COLD === '1') await app.evaluate(async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.session.clearStorageData({ storages: ['shadercache'] }))) }, ids)
           const trace = process.env.CATE_BROWSER_LOAD_TRACE && kind === (process.env.CATE_BROWSER_LOAD_TRACE_CASE ?? 'combined') && action === (process.env.CATE_BROWSER_LOAD_TRACE_ACTION ?? 'zoom') && repeat === 0
-          if (trace) await app.evaluate(async ({ contentTracing }) => contentTracing.startRecording({ included_categories: ['devtools.timeline', 'cc', 'gpu', 'viz', 'blink.user_timing', 'toplevel', 'skia', 'disabled-by-default-skia.gpu', 'disabled-by-default-gpu.service', 'disabled-by-default-gpu.dawn'] }))
+          if (trace) await app.evaluate(async ({ contentTracing }) => contentTracing.startRecording({ included_categories: ['devtools.timeline', 'cc', 'gpu', 'viz', 'input', 'latencyInfo', 'blink.user_timing', 'toplevel', 'skia', 'disabled-by-default-skia.gpu', 'disabled-by-default-gpu.service', 'disabled-by-default-gpu.dawn'] }))
           const samples = [await sample()]
           if (process.env.CATE_BROWSER_LOAD_FREEZE === '1') await app.evaluate(async ({ webContents }, ids) => { await Promise.all(ids.map(id => webContents.fromId(id)!.debugger.sendCommand('Page.setWebLifecycleState', { state: 'frozen' }))) }, ids)
           const timer = setInterval(() => { void sample().then(s => samples.push(s)).catch(() => {}) }, 1000)
@@ -154,6 +209,7 @@ test('browser navigation and loading overlap canvas gestures', async () => {
           if (gesture.p95Ms >= 16.7 || gesture.p99Ms >= 25 || gesture.maxMs! >= 25) budgetFailures.push(`${kind}/${action}/${repeat}: p95=${gesture.p95Ms.toFixed(1)} p99=${gesture.p99Ms.toFixed(1)} max=${gesture.maxMs!.toFixed(1)} ms`)
           writeFileSync(process.env.CATE_BROWSER_LOAD_OUTPUT ?? test.info().outputPath('browser-load-gestures.json'), JSON.stringify({ at: new Date().toISOString(), engine, browserCount: ids.length, surfaceDeadline: engine.surfaceDeadline || 'default', imageBytes: image.length, budgetFailures, rows, requests }, null, 2))
           console.log('BROWSER_LOAD', kind, action, repeat, JSON.stringify({ ...gesture, slowFrames: gesture.slowFrames.length }))
+          expect(gesture.trustedWheelEvents, 'Chromium delivers wheel input to the canvas').toBeGreaterThan(0)
           expect(gesture.transformChanged).toBe(true)
         }
       }

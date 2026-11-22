@@ -101,19 +101,23 @@ export function createAgentChangesStore(directory: string, panelTitle?: (panelId
     const cached = loaded.get(cwd)
     const records = new Map<string, StoredAgentChange>()
     if (cached?.revision === directoryRevision) for (const record of cached.records) records.set(record.id, record)
-    else for (const name of names) {
-      const file = path.join(folder, name)
-      let entry = entries.get(file)
-      if (!entry) {
+    else for (let start = 0; start < names.length; start += 32) {
+      const batch = await Promise.all(names.slice(start, start + 32).map(async (name) => {
+        const file = path.join(folder, name)
+        const cached = entries.get(file)
+        if (cached) return cached
         const raw = await readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
           if (error.code === 'ENOENT') return null
           throw error
         })
-        if (raw === null) continue
-        entry = JSON.parse(raw) as Entry
+        if (raw === null) return null
+        const entry = JSON.parse(raw) as Entry
         entries.set(file, entry)
+        return entry
+      }))
+      for (const entry of batch) {
+        if (entry?.record && !records.has(entry.record.id)) records.set(entry.record.id, entry.decoded ??= decode(entry.record))
       }
-      if (entry.record && !records.has(entry.record.id)) records.set(entry.record.id, entry.decoded ??= decode(entry.record))
     }
     const all = [...records.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
     loaded.set(cwd, { revision: directoryRevision, records: all })
