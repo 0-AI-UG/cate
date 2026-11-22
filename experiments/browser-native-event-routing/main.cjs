@@ -50,15 +50,17 @@ async function host() {
     if (message.stop) break
     const mouse = message.mouse
     const sent = performance.now()
+    const wheelWithDelta = mouse.type === 'mouseWheel' && (mouse.deltaX !== 0 || mouse.deltaY !== 0)
     if (message.mode === 'electron') {
-      window.webContents.sendInputEvent(mouse)
+      // Stock sendInputEvent omits AppKit phases. A phase-only packet is
+      // acknowledged without manufacturing a zero-delta DOM wheel.
+      if (mouse.type !== 'mouseWheel' || wheelWithDelta) window.webContents.sendInputEvent(mouse)
     } else {
       await cdp.sendCommand('Input.dispatchMouseEvent', {
         type:mouse.type === 'mouseDown' ? 'mousePressed' : 'mouseReleased',
         x:mouse.x,y:mouse.y,button:'left',clickCount:1,
       })
     }
-    const wheelWithDelta = mouse.type === 'mouseWheel' && (mouse.deltaX !== 0 || mouse.deltaY !== 0)
     const inputs = wheelWithDelta
       ? await until(() => readInputs(window.webContents),
         inputs => inputs.filter(event => event.kind === 'wheel').length > wheelsDelivered,
