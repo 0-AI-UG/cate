@@ -54,6 +54,42 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Build runtime for Electron smoke test
+        run: npm run build:runtime
+
+      # The repo's postinstall script prepares Electron on macOS and Linux.
+      # Install it before Playwright starts the test clock on Windows too.
+      - name: Install Electron binary on Windows
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        run: node node_modules/electron/install.js
+
+      # Hosted runners can use software graphics. Keep timing assertions in
+      # the separate local performance test.
+      - name: Native webview smoke test
+        if: runner.os != 'Windows'
+        shell: bash
+        timeout-minutes: 4
+        env:
+          E2E_SKIP_PERF: 1
+          DEBUG: pw:browser
+        run: |
+          test_command=(npx --no-install playwright test e2e/browser-canvas-position.spec.ts --workers=1 --retries=1 --timeout=60000)
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a -s '-screen 0 1600x1100x24' "${test_command[@]}"
+          else
+            "${test_command[@]}"
+          fi
+
+      - name: Native webview smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 4
+        env:
+          E2E_SKIP_PERF: 1
+          DEBUG: pw:browser
+        run: node node_modules/@playwright/test/cli.js test e2e/browser-canvas-position.spec.ts --workers=1 --retries=1 --timeout=60000
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -73,9 +109,6 @@ jobs:
       # for CPU, so a busy runner does not turn key checks into timeouts.
       - name: Cate Connect integration tests
         run: npm run test -- src/runtime/connect/connect.test.ts --maxWorkers=1 --disableConsoleIntercept
-
-      # E2E and Electron smoke tests run locally only. Keep the npm scripts
-      # available for browser and full-app validation.
 
   # The release builds a runtime tarball per target; build the Linux one here
   # so a broken staging step (CLI, natives, BUILD, checksum) fails the PR

@@ -1588,6 +1588,8 @@ downloads list and its views, and hands page work to it.
   snapshots, actions, screenshots, waits, file choosers and uploads, the
   page's console and network log, locators), the guest preload, the password
   autofill bridge, JavaScript dialogs, and **passkeys**.
+  On Apple Silicon, desktop main enables Chromium's Skia Graphite pipeline
+  precompilation to reduce stalls during cold navigation.
   **Agents never take the person's input.** The page keeps its own focus
   (the driver emulates it, and sends keys to the guest's own widget), so the
   window's focus stays where the person put it: an agent's click focuses its
@@ -1600,8 +1602,9 @@ downloads list and its views, and hands page work to it.
   workspace, off the canvas, behind a tab) stages it: the surface registry
   puts it in the window, transparent and without pointer input, until the op
   ends, and screenshots work wherever the panel is.
-  **Idle page lifetime (desktop).** An unused start page creates no guest
-  until navigation or page control needs it. Once created, a guest remains
+  **Idle page lifetime (desktop).** A new page mounts its guest when the
+  client shows it or page control requests it. An unused start page creates
+  a guest on demand for page control. Once created, a guest remains
   subject to the same lifetime policy even on returning to the start page.
   A manual page may be discarded after ten
   minutes off screen or in a background tab/workspace and reloads when shown

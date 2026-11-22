@@ -61,7 +61,13 @@ const device = createDeviceFiles(userData)
 const settings = (): ClientSettings => clientSettingsTable.normalize(device.get('settings'))
 
 // Command-line switches must be set before ready; applies after a restart.
+// Profiles can compare the app defaults with Chromium's graphics defaults.
+const profileStockGraphics = IS_E2E && process.env.CATE_E2E_STOCK_WEBVIEW_GRAPHICS === '1'
 if (settings().disableGpuRasterization) app.commandLine.appendSwitch('disable-gpu-rasterization')
+if (process.platform === 'darwin' && process.arch === 'arm64' && !profileStockGraphics) {
+  // Start compiling Graphite pipelines before the first cold navigation needs them.
+  app.commandLine.appendSwitch('enable-skia-graphite-precompilation')
+}
 // Composite into one output surface on macOS. Passing each canvas layer to
 // CoreAnimation separately can block the first pan on Metal scheduling waits.
 if (process.platform === 'darwin') {
