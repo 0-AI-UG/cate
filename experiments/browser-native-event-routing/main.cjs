@@ -131,7 +131,8 @@ async function browser() {
     })
     try {
       console.error('Checking a wheel over the live guest')
-      native.queueWheel(window.getNativeWindowHandle(),20,20,0,-12,false)
+      const usedSessionInput = native.queueWheel(window.getNativeWindowHandle(),20,20,0,-12,false)
+      console.error('Wheel uses hosted session input:', usedSessionInput)
       await until(()=>readInputs(guest),inputs=>inputs.filter(e=>e.kind==='wheel').length===1,'visible wheel did not reach guest')
       console.error('Checking wheels in the occluded region')
       for(const control of [false,true]) {

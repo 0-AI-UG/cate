@@ -179,13 +179,24 @@ static napi_value queueWheel(napi_env env, napi_callback_info info) {
   NSPoint point = [window convertPointToScreen:NSMakePoint(NSMinX(frame)+x, NSMaxY(frame)-y)];
   const CGRect primary = CGDisplayBounds(CGMainDisplayID());
   CGEventRef event = CGEventCreateScrollWheelEvent(nullptr, kCGScrollEventUnitPixel, 2, dy, dx);
-  CGEventSetLocation(event, CGPointMake(point.x, CGRectGetHeight(primary) - point.y));
+  CGPoint location = CGPointMake(point.x, CGRectGetHeight(primary) - point.y);
+  CGEventSetLocation(event, location);
+  if (CGWarpMouseCursorPosition(location) != kCGErrorSuccess) {
+    CFRelease(event);
+    napi_throw_error(env, nullptr, "Failed to position the hosted test cursor");
+    return nullptr;
+  }
   CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointer, window.windowNumber);
   CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent, window.windowNumber);
-  if (control) CGEventSetFlags(event, kCGEventFlagMaskControl);
-  [NSApp postEvent:[NSEvent eventWithCGEvent:event] atStart:NO];
+  CGEventSetFlags(event, control ? kCGEventFlagMaskControl : 0);
+  const bool canPost = CGPreflightPostEventAccess();
+  if (canPost) {
+    CGEventPost(kCGSessionEventTap, event);
+  } else {
+    [NSApp postEvent:[NSEvent eventWithCGEvent:event] atStart:NO];
+  }
   CFRelease(event);
-  napi_get_undefined(env, &value);
+  napi_get_boolean(env, canPost, &value);
   return value;
 }
 
