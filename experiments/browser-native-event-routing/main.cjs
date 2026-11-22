@@ -45,7 +45,7 @@ async function host() {
   cdp.attach('1.3')
   const pending = require('node:readline').createInterface({input:process.stdin})
   process.stdout.write(JSON.stringify({ ready:hit(window,20,20).self })+'\n')
-  let wheelsDelivered = 0
+  let observed = 0
   for await (const line of pending) {
     const message = JSON.parse(line)
     if (message.stop) break
@@ -62,12 +62,13 @@ async function host() {
         x:mouse.x,y:mouse.y,button:'left',clickCount:1,
       })
     }
-    const inputs = wheelWithDelta
+    const dispatch = mouse.type !== 'mouseWheel' || wheelWithDelta
+    const inputs = dispatch
       ? await until(() => readInputs(window.webContents),
-        inputs => inputs.filter(event => event.kind === 'wheel').length > wheelsDelivered,
-        'host did not receive wheel delivery ' + JSON.stringify(mouse))
+        inputs => inputs.length > observed,
+        'host did not receive ' + JSON.stringify(mouse))
       : await readInputs(window.webContents)
-    if (wheelWithDelta) wheelsDelivered++
+    observed = inputs.length
     process.stdout.write(JSON.stringify({ack:message.id,mode:message.mode,forwardMs:performance.now()-sent,inputs})+'\n')
   }
   app.exit(0)
@@ -212,7 +213,7 @@ async function browser() {
           'missing native drag step ' + index + ' ' + JSON.stringify(intercepted.slice(offset)))
       }
       const dragRecords = await until(()=>response.find(message=>message.ack===offset+wheelOffset+3 && message.mode==='electron' &&
-        message.inputs.some(input=>input.kind==='mouseup' && input.x===dragEnd[0])),Boolean,'host did not handle drag release')
+        message.inputs.some(input=>input.kind==='mouseup' && input.x===dragEnd[0])),Boolean,'host did not handle drag release ' + JSON.stringify(intercepted.slice(offset)))
       const drag = dragRecords.inputs.filter(event=>['mousedown','mousemove','mouseup'].includes(event.kind)).slice(-4)
       assert.deepEqual(drag.map(e=>[e.kind,e.x,e.y,e.buttons,e.trusted]),[
         ['mousedown',212,153,1,true],['mousemove',140,110,1,true],
