@@ -29,12 +29,12 @@ html, body { background: transparent; margin: 0 }
 webview { position: absolute; left: 0; top: 0; width: 320px; height: 200px }
 </style><webview partition="persist:browser" src="./page.html"></webview>`)
 
-async function waitFor(read, matches, description, limit = 40) {
+async function waitFor(read, matches, description, limit = 40, intervalMs = 50) {
   let value
   for (let attempt = 0; attempt < limit; attempt++) {
     value = await read()
     if (matches(value)) return value
-    await delay(50)
+    await delay(intervalMs)
   }
   assert.fail(`${description}: ${JSON.stringify(value)}`)
 }
@@ -47,6 +47,61 @@ async function sample(window) {
     assert.equal(b.length, 4)
     return Array.from(b)
   })
+}
+
+async function measureCursorGate(window, hitAt, ids, moveCursor) {
+  const touched = [[20,20], [190,175]]
+  const bounds = window.getContentBounds()
+  const originalCursor = screen.getCursorScreenPoint()
+  const cursor = ([x, y]) => ({ x:bounds.x + x, y:bounds.y + y })
+  const move = ({x, y}) => assert.equal(moveCursor(x, y), 0, 'hosted cursor move rejected')
+  const gateSamples = []
+  try {
+    for (const intervalMs of [4, 8]) {
+      let ticks = 0, flips = 0, ignoring
+      const poll = () => {
+        ticks++
+        const at = screen.getCursorScreenPoint()
+        const x = at.x - bounds.x
+        const y = at.y - bounds.y
+        const accepts = x >= 0 && y >= 0 && x < bounds.width && y < bounds.height &&
+          !(x >= 160 && y >= 146)
+        if (ignoring !== !accepts) {
+          ignoring = !accepts
+          flips++
+          window.setIgnoreMouseEvents(ignoring)
+        }
+      }
+      move(cursor(touched[0]))
+      await delay(35)
+      poll()
+      const timer = setInterval(poll, intervalMs)
+      const delays = []
+      let incorrectAtMove = 0
+      try {
+        for (let sample = 0; sample < 24; sample++) {
+          const target = (sample + 1) % 2
+          const point = touched[target]
+          move(cursor(point))
+          const start = performance.now()
+          if (hitAt(point).hit !== ids[target]) incorrectAtMove++
+          await waitFor(() => hitAt(point), state => state.hit === ids[target], 'cursor gate did not select the expected window', 45, 1)
+          delays.push(performance.now() - start)
+          // Avoid biasing every crossing to immediately follow a timer wakeup.
+          await delay(13 + sample % 7)
+        }
+      } finally {
+        clearInterval(timer)
+      }
+      delays.sort((a, b) => a - b)
+      gateSamples.push({ intervalMs, ticks, flips, timesMs:delays, incorrectAtMove,
+        p95Ms:delays[Math.ceil(delays.length * .95) - 1], maxMs:delays.at(-1) })
+    }
+  } finally {
+    window.setIgnoreMouseEvents(false)
+    move(originalCursor)
+  }
+  return gateSamples
 }
 
 async function checkNativeHit(window) {
@@ -91,9 +146,10 @@ async function checkNativeHit(window) {
     window.setIgnoreMouseEvents(true)
     await waitFor(() => readTarget(solidPoint), state => state.hit === bottom.self,
       'ignoring front window did not expose opaque pixel')
+    const cursorGate = await measureCursorGate(window, readTarget, [solid.self, bottom.self], addon.moveFixtureCursor)
     return { frontWindow:solid.self, backWindow:bottom.self, opaquePixelHit:visible.hit,
       transparentPixelHit:transparent.hit, perPixelClickThrough:transparent.hit === bottom.self,
-      opaqueColor:presented[0], transparentColor:presented[3] }
+      opaqueColor:presented[0], transparentColor:presented[3], cursorGate }
   } finally {
     window.hide()
     background.destroy()

@@ -28,7 +28,7 @@ jobs:
       - name: Verify the native hit target under the browser clip
         working-directory: experiments/browser-native-mac-shape
         run: |
-          xcrun clang++ -std=c++17 -fobjc-arc -bundle -undefined dynamic_lookup -framework AppKit \
+          xcrun clang++ -std=c++17 -fobjc-arc -bundle -undefined dynamic_lookup -framework AppKit -framework CoreGraphics \
             -I "$RUNNER_TEMP/shape-electron/node_modules/node-api-headers/include" hit-query.mm -o hit-query.node
           export MASK_PROFILE="$(mktemp -d "$RUNNER_TEMP/shape-profile.XXXXXX")"
           engine="$(node -p 'require(process.argv[1])' "$RUNNER_TEMP/shape-electron/node_modules/electron")"

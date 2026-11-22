@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <CoreGraphics/CoreGraphics.h>
 #include <node_api.h>
 #include <cstring>
 
@@ -36,8 +37,25 @@ static napi_value getHit(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static napi_value moveFixtureCursor(napi_env env, napi_callback_info info) {
+  napi_value args[2], result;
+  size_t count = 2;
+  double x, y;
+  if (napi_get_cb_info(env, info, &count, args, nullptr, nullptr) != napi_ok ||
+      count != 2 || napi_get_value_double(env, args[0], &x) != napi_ok ||
+      napi_get_value_double(env, args[1], &y) != napi_ok) {
+    napi_throw_type_error(env, nullptr, "Expected global coordinates");
+    return nullptr;
+  }
+  napi_create_int32(env, CGWarpMouseCursorPosition(CGPointMake(x, y)), &result);
+  return result;
+}
+
 NAPI_MODULE_INIT() {
-  napi_property_descriptor item = {"getHit", nullptr, getHit, nullptr, nullptr, nullptr, napi_default, nullptr};
-  napi_define_properties(env, exports, 1, &item);
+  napi_property_descriptor items[] = {
+    {"getHit", nullptr, getHit, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"moveFixtureCursor", nullptr, moveFixtureCursor, nullptr, nullptr, nullptr, napi_default, nullptr},
+  };
+  napi_define_properties(env, exports, sizeof(items)/sizeof(items[0]), items);
   return exports;
 }
