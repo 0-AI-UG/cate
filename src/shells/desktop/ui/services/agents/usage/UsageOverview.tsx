@@ -1,7 +1,7 @@
 // The usage overview: the agent CLIs' tokens, API-equivalent cost and
 // subscription limits of the shown workspace, as its runtime totals them.
 
-import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ChevronDown, CircleAlert, CircleDashed, SlidersHorizontal } from 'lucide-react'
 import {
   enumerateDays,
@@ -48,7 +48,7 @@ const useReportsVersion = () => useSyncExternalStore(reports.subscribe, reports.
 export function UsageOverview({ workspace, header }: {
   /** The shown workspace, null when none is. */
   workspace: { id: string; label: string } | null
-  header: ReactNode
+  header: (toolbar: ReactNode, fade: boolean) => ReactNode
 }) {
   const { usageMetric: metric, usageWindowDays: windowDays } = useUiState()
   // The window is fixed when the period is chosen (or refreshed), not per
@@ -62,6 +62,21 @@ export function UsageOverview({ workspace, header }: {
   const refreshingRef = useRef(false)
   const [breakdown, setBreakdown] = useState<'model' | 'time'>('model')
   const isPast24Hours = windowDays === 1
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [canScroll, setCanScroll] = useState(false)
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    const content = contentRef.current
+    if (!scroll || !content) return
+    const measure = () => setCanScroll(scroll.scrollHeight > scroll.clientHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(scroll)
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
 
   useReportsVersion()
   const workspaceId = workspace?.id ?? null
@@ -104,24 +119,26 @@ export function UsageOverview({ workspace, header }: {
     ? `${formatDateTimeShort(window.sinceTime, window.timeZone)} to ${formatDateTimeShort(window.untilTime, window.timeZone)}`
     : `${formatDayShort(window.sinceDay)} to ${formatDayShort(window.untilDay)}`
 
+  const toolbar = (
+    <div className="flex h-9 items-center gap-3 px-6 text-[13px] leading-5">
+      <nav aria-label="Usage breadcrumb" className="min-w-0">
+        {workspace && <WorkspaceMenu workspace={workspace} usage={usage} showUsageStatus={!showingLimits} />}
+      </nav>
+      {!showingLimits && <span className="hidden min-w-0 truncate text-[12px] text-muted 2xl:block">{windowLabel}</span>}
+      <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
+        <Segmented label="Usage metric" value={metric} options={METRIC_OPTIONS} onChange={selectMetric} />
+        {/* The period does not apply to Limits; it stays in place, disabled. */}
+        <Segmented label="Usage period" value={String(windowDays) as `${UsageWindowDays}`} options={WINDOW_OPTIONS} disabled={showingLimits} onChange={selectWindow} />
+        <RefreshButton label={showingLimits ? 'Refresh limits' : 'Refresh usage'} refreshing={refreshing} onClick={refresh} />
+      </div>
+    </div>
+  )
+
   return (
     <section aria-label="Usage overview" className="flex min-h-0 flex-1 flex-col bg-canvas-bg text-primary">
-      {header}
-      <div className="flex h-9 shrink-0 items-center gap-3 px-6 text-[13px] leading-5">
-        <nav aria-label="Usage breadcrumb" className="min-w-0">
-          {workspace && <WorkspaceMenu workspace={workspace} usage={usage} showUsageStatus={!showingLimits} />}
-        </nav>
-        {!showingLimits && <span className="hidden min-w-0 truncate text-[12px] text-muted 2xl:block">{windowLabel}</span>}
-        <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
-          <Segmented label="Usage metric" value={metric} options={METRIC_OPTIONS} onChange={selectMetric} />
-          {/* The period does not apply to Limits; it stays in place, disabled. */}
-          <Segmented label="Usage period" value={String(windowDays) as `${UsageWindowDays}`} options={WINDOW_OPTIONS} disabled={showingLimits} onChange={selectWindow} />
-          <RefreshButton label={showingLimits ? 'Refresh limits' : 'Refresh usage'} refreshing={refreshing} onClick={refresh} />
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 pb-10 pt-4">
+      {header(toolbar, canScroll)}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={contentRef} className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 pb-10 pt-4">
           {!workspace ? (
             <p className="text-[13px] text-muted">Open a workspace to see {showingLimits ? 'limits' : 'usage'}.</p>
           ) : showingLimits ? (

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, ChevronLeft, Search } from 'lucide-react'
+import { useMenuNumbers } from './menuNumbers'
 import { PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from './Popover'
 import { useDialogLayer } from './dialogLayers'
 
@@ -35,7 +36,7 @@ export function DropdownSelect({ options: allOptions, value, onChange, label, la
   const listId = useId()
   const options = allOptions.filter((option) => option.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
   const current = allOptions.find((option) => option.value === value)?.label ?? value
-  const contentWidth = searchable ? 248 : Math.min(300, Math.max(144, ...allOptions.map((option) => option.label.length * 7 + 48)))
+  const contentWidth = searchable ? 248 : Math.min(300, Math.max(160, ...allOptions.map((option) => option.label.length * 7 + 48)))
   const menuWidth = matchTriggerWidth ? Math.min(trigger.current?.getBoundingClientRect().width || contentWidth, window.innerWidth - 16) : contentWidth
   const { pos, portalTarget } = useViewportPopoverPosition(trigger, open,
     (rect) => {
@@ -48,6 +49,7 @@ export function DropdownSelect({ options: allOptions, value, onChange, label, la
     if (!searchable) popover.current?.querySelector<HTMLElement>('[role="listbox"]')?.focus()
     document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' })
   }, [open, pos, active, searchable, listId])
+  useMenuNumbers(popover, open && !searchable)
   useDismissableLayer({ open, contentRef: popover, triggerRefs: [trigger], onDismiss: () => setOpen(false), closeOnEscape: false })
   useDialogLayer((event) => { event.preventDefault(); event.stopImmediatePropagation(); setOpen(false); trigger.current?.focus() }, open)
   const show = () => { setQuery(''); setActive(Math.max(0, allOptions.findIndex((option) => option.value === value))); setOpen(true) }
@@ -60,7 +62,7 @@ export function DropdownSelect({ options: allOptions, value, onChange, label, la
       onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); show() } }}>
       {icon}<span className="min-w-0 flex-1 truncate">{current}</span>{!chevron ? null : side ? <ChevronLeft size={12} className="shrink-0" /> : <ChevronDown size={12} className="shrink-0" />}
     </button>
-    {open && <PopoverSurface popoverRef={popover} pos={menuPos} portalTarget={portalTarget} ownerId={`${listId}-trigger`} width={menuWidth} className="p-1.5">
+    {open && <PopoverSurface popoverRef={popover} pos={menuPos} portalTarget={portalTarget} ownerId={`${listId}-trigger`} width={menuWidth} className="p-1">
       <div onKeyDown={(event) => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus() }
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -77,12 +79,12 @@ export function DropdownSelect({ options: allOptions, value, onChange, label, la
             value={query} placeholder={searchPlaceholder} onChange={(event) => { setQuery(event.target.value); setActive(0) }}
             className="w-full min-w-0 bg-transparent text-xs text-primary outline-none placeholder:text-muted" />
         </div>}
-        <div tabIndex={searchable ? -1 : 0} id={listId} role="listbox" aria-activedescendant={!searchable && options[active] ? `${listId}-${active}` : undefined} aria-label={label} aria-labelledby={labelledBy} className="max-h-60 overflow-y-auto">
-          {options.map((entry, index) => <button key={entry.value} id={`${listId}-${index}`} type="button" role="option" aria-selected={value === entry.value}
+        <div tabIndex={searchable ? -1 : 0} id={listId} role="listbox" aria-activedescendant={!searchable && options[active] ? `${listId}-${active}` : undefined} aria-label={label} aria-labelledby={labelledBy} className="max-h-60 overflow-y-auto outline-none">
+          {options.map((entry, index) => <button key={entry.value} id={`${listId}-${index}`} type="button" data-menu-item role="option" aria-selected={value === entry.value}
             tabIndex={-1} onMouseEnter={() => setActive(index)} onClick={() => choose(entry.value)}
-            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-left ${index === active ? 'bg-hover text-primary' : 'text-primary'}`}>
+            className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-[13px] font-normal text-left text-primary ${index === active ? 'bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]' : ''}`}>
             {icon}<span className="flex-1 min-w-0 truncate">{entry.label}</span>
-            {value === entry.value && <Check size={13} className="shrink-0" />}
+            {value === entry.value && <Check size={13} className="shrink-0 text-secondary" />}
           </button>)}
           {options.length === 0 && <p className="px-2 py-3 text-xs text-muted">{emptyLabel}</p>}
         </div>

@@ -59,9 +59,7 @@ function ContentOverlay({ children }: { children: ReactNode }) {
 }
 
 function SkillsOverlay({ workspaceId, onClose }: OverlayViewProps) {
-  const slot = useContentSlot()
-  if (!slot) return null
-  return <SkillsDialog workspaceId={workspaceId} onClose={onClose} container={slot} renderHeader={(actions) => <OverlayHeader title="Skills">{actions}</OverlayHeader>} />
+  return <SkillsDialog workspaceId={workspaceId} onClose={onClose} />
 }
 
 function RepositoryOverlay({ workspaceId, section }: OverlayViewProps) {
@@ -107,7 +105,7 @@ function UsageOverlay({ workspaceId }: OverlayViewProps) {
   const workspace = useMemo(() => workspaceId && name !== undefined ? { id: workspaceId, label: name } : null, [workspaceId, name])
   return (
     <ContentOverlay>
-      <UsageOverview workspace={workspace} header={<OverlayHeader title="Usage" />} />
+      <UsageOverview workspace={workspace} header={(toolbar, fade) => <OverlayHeader title="Usage" toolbar={toolbar} fade={fade} />} />
     </ContentOverlay>
   )
 }

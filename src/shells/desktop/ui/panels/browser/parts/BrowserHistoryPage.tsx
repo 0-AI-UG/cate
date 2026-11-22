@@ -31,7 +31,7 @@ export function BrowserHistoryPage({ history, onNavigate, onRemove: removeHistor
   return (
     <div
       data-browser-history
-      className="absolute inset-0 h-full w-full overflow-y-auto bg-surface-0 text-primary"
+      className="absolute inset-0 h-full w-full overflow-y-auto bg-surface-1 text-primary"
     >
       <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-10 py-10">
         <div className="mb-7 flex items-center gap-3">

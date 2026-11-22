@@ -152,7 +152,7 @@ export function DockTabStack({
       ref={stackRef}
       // Lets a canvas node learn which pane of its split mini dock was pressed.
       data-dock-stack-id={stack.id}
-      className="flex flex-col h-full min-h-0 relative"
+      className={`flex flex-col h-full min-h-0 relative ${compact ? 'dock-compact' : ''}`}
       // A press anywhere in the stack focuses its shown tab, so a new panel
       // lands here. Capture, so a canvas inside can refine it on bubble.
       onPointerDownCapture={() => {

@@ -4,6 +4,10 @@
 
 export * from './components/Button'
 export * from './components/DropdownSelect'
+export * from './components/OptionsMenu'
+export * from './components/ContextMenu'
+export * from './components/MessageDialog'
+export * from './components/menuNumbers'
 export * from './components/ErrorBoundary'
 export * from './components/HoverIntent'
 export * from './components/InlineNotice'

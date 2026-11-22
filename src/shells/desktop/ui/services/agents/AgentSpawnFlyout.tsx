@@ -35,8 +35,8 @@ export function AgentSpawnFlyout({ workspaceId, side, onPick, onShown }: {
       label="Start an agent"
       itemLabel={(name) => `New ${name}`}
       onPick={onPick}
-      children={!availability?.snapshot ? <span role="status" aria-label={availability?.error ?? 'Checking agents'} title={availability?.error ?? 'Checking agents'} className={`${box} flex items-center justify-center text-muted`}><LoaderCircle size={glyph} className={availability?.error ? '' : 'animate-spin'} /></span> : undefined}
-      footer={<button type="button" role="menuitem" aria-label="Set up AI agents" title="Install or sign in to agent CLIs" onClick={() => clientUi().openSettings('agents')} className={`${box} shrink-0 flex items-center justify-center ${slim ? 'rounded-md' : 'rounded-full'} text-muted hover:bg-hover-strong hover:text-primary`}><Settings2 size={glyph} /></button>}
+      children={!availability?.snapshot ? <span role="status" aria-label={availability?.error ?? 'Checking agents'} title={availability?.error ?? 'Checking agents'} className={`${slim ? box : 'h-7 w-full'} flex items-center justify-center text-muted`}><LoaderCircle size={glyph} className={availability?.error ? '' : 'animate-spin'} /></span> : undefined}
+      footer={<button type="button" role="menuitem" aria-label="Set up AI agents" title="Install or sign in to agent CLIs" onClick={() => clientUi().openSettings('agents')} className={slim ? `${box} shrink-0 flex items-center justify-center rounded-md text-muted hover:bg-hover-strong hover:text-primary` : 'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-muted hover:bg-hover hover:text-primary'}><Settings2 size={glyph} />{!slim && <span>Set up agents</span>}</button>}
     />
   )
 }

@@ -73,7 +73,7 @@ export function WorkspaceActionsDialog({ name, location, actions, onClose }: {
               data-active={index === active}
               onMouseMove={() => enabled && setActive(index)}
               onClick={() => run(action)}
-              className={`flex min-h-8 w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors disabled:opacity-40 ${
+              className={`flex min-h-7 w-full items-center gap-2.5 rounded-md px-2 py-1 text-left text-[13px] transition-colors disabled:opacity-40 ${
                 action.danger ? 'text-danger' : 'text-primary'
               } ${index === active && enabled ? LIST_ROW_HIGHLIGHT : ''} ${action.danger && index > 0 && !actions[index - 1].danger ? 'mt-1.5' : ''}`}
             >

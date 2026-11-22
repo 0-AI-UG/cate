@@ -8,6 +8,16 @@
   outline-offset: 1px;
 }
 
+/* Inside dialogs a focused button is tinted, not outlined: the outline reads as
+   a stray frame around list rows. List rows tint themselves. */
+[role='dialog'] :where(button, [role='button'], a[href]):not([data-list-row]):focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+[role='dialog'] [data-list-row]:focus-visible {
+  outline: none;
+}
+
 /* Text fields use their rounded border, not an outline around the text inside.
    Compound fields put the focus border on their shared frame. */
 :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select):focus {
@@ -160,8 +170,11 @@
   .border-danger { border-color: color-mix(in srgb, var(--git-deleted) 36%, transparent); }
   .border-warning { border-color: color-mix(in srgb, var(--activity-orange) 30%, transparent); }
 
+  /* Connections are dashed; lengths are screen pixels (the line is
+     non-scaling-stroke). */
   .cate-panel-connection {
-    stroke-dasharray: 10 8;
+    stroke-dasharray: 8 6;
+    stroke-linecap: butt;
   }
 
   /* Inline diff add/remove rows — themed via the git add/delete colors. */
@@ -206,30 +219,10 @@
   }
 }
 
-/* Sidebar scrollbars: a thin, subtle pill, visible only while the pointer is
-   over the sidebar. The scrollers pull themselves 6px into the sidebar's right
-   padding (-mr-1.5), so the bar overlays that padding and reserves no content
-   space. Unlayered so it overrides the @layer base defaults above. */
+/* Sidebar lists scroll without a scrollbar, so the padding is the same on both
+   sides. Unlayered so it overrides the @layer base defaults above. */
 [data-sidebar-scrollarea] ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-[data-sidebar-scrollarea] ::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 9999px;
-  /* Visible pill is 3px wide, hugging the right edge of the 6px track. */
-  border-top: 2px solid transparent;
-  border-bottom: 2px solid transparent;
-  border-left: 1px solid transparent;
-  border-right: 2px solid transparent;
-  background-clip: padding-box;
-  transition: background-color 280ms ease;
-}
-[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--text-primary) 12%, transparent);
-}
-[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb:hover {
-  background-color: color-mix(in srgb, var(--text-primary) 24%, transparent);
+  display: none;
 }
 
 /* Terminal scrollbar: the same thin rounded floating pill as the base, but only
@@ -271,8 +264,8 @@
    transparent until the pointer is over the bar, so at rest only the tabs and
    +/split buttons read against the canvas. Fades its chrome in on hover. */
 .files-content ::-webkit-scrollbar {
-  width: 8.45px;
-  height: 8.45px;
+  width: 12px;
+  height: 12px;
 }
 
 .monaco-editor:not(:hover) .core-guide,
@@ -516,6 +509,11 @@
   inset: 1px;
   border-radius: 9999px;
 }
+/* Second-level bars (panel toolbars) take their size from the bar above them:
+   docked tab bars are 36px, canvas nodes' compact mini docks 26px. */
+:root { --bar-h: 36px; --bar-pad: 6px; --ctl-h: 24px; }
+.dock-compact { --bar-h: 26px; --bar-pad: 2px; --ctl-h: 22px; }
+
 .app-header-bar {
   height: 36px;
   min-height: 36px;
@@ -551,7 +549,7 @@
 /* Review toolbars respond to panel width rather than the application window. */
 @container review-toolbar (max-width: 900px) {
   .review-action-label { display: none; }
-  .review-action { width: 28px; padding-inline: 0; gap: 0; }
+  .review-action { width: var(--ctl-h); padding-inline: 0; gap: 0; }
 }
 @container review-toolbar (max-width: 640px) {
   .review-source-label, .review-line-stats { display: none; }
@@ -615,4 +613,47 @@
     inset 0 0.5px 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent),
     inset 0.5px 0 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent),
     inset -0.5px 0 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent);
+}
+
+/* Workspace opening: the logo's letters bounce in turn, springing up and
+   settling with a small overshoot. */
+@keyframes cate-opening-bounce {
+  0% { transform: translateY(0) scale(1, 1); animation-timing-function: ease-in-out; }
+  10% { transform: translateY(0) scale(1.1, 0.84); animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1); }
+  26% { transform: translateY(-34%) scale(0.92, 1.1); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5); }
+  42% { transform: translateY(0) scale(0.94, 1.08); animation-timing-function: ease-out; }
+  46% { transform: translateY(0) scale(1.2, 0.7); animation-timing-function: ease-out; }
+  55% { transform: translateY(0) scale(0.95, 1.07); animation-timing-function: ease-in-out; }
+  63% { transform: translateY(0) scale(1.05, 0.95); animation-timing-function: ease-in-out; }
+  72% { transform: translateY(0) scale(0.99, 1.02); animation-timing-function: ease-in-out; }
+  80%, 100% { transform: translateY(0) scale(1, 1); }
+}
+.cate-opening-letter {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cate-opening-bounce 2.2s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cate-opening-letter { animation: none; }
+}
+
+
+/* Menu and list-dialog rows that opt in with data-menu-item show their digit
+   (set by useMenuNumbers) as a quiet key chip at the row's end. */
+[data-menu-item][data-key]::after {
+  content: attr(data-key);
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 10px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }

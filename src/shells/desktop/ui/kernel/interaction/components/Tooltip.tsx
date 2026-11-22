@@ -124,7 +124,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, content, action, placem
             ref={tooltipRef}
             id={tooltipId}
             role="tooltip"
-            className={`fixed z-[100] pointer-events-none px-1.5 py-0.5 border border-subtle text-[11px] text-primary whitespace-normal shadow-lg ${content ? 'rounded-lg bg-surface-0' : 'rounded bg-surface-2'}`}
+            className={`fixed z-[100] pointer-events-none px-1.5 py-0.5 border border-subtle text-[11px] text-primary whitespace-normal shadow-lg ${content ? 'rounded-lg bg-surface-1' : 'rounded bg-surface-1'}`}
             style={{
               visibility: 'hidden',
               width: 'max-content',

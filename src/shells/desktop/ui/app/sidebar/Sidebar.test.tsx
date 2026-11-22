@@ -48,7 +48,7 @@ const rowOf = (name: string) =>
   [...host.querySelectorAll('[role="treeitem"]')].find((el) => el.textContent?.includes(name)) as HTMLElement
 
 beforeEach(async () => {
-  const ui = createUiStateStore(createMemoryDeviceStore({ 'ui-state': { sidebarView: 'projects' } }))
+  const ui = createUiStateStore(createMemoryDeviceStore())
   await ui.load()
   installUiState(ui)
   host = document.createElement('div')
@@ -84,7 +84,7 @@ describe('Sidebar', () => {
     act(() => root.render(<Sidebar />))
     expect(host.querySelectorAll('[data-machine], [role="treeitem"]')).toHaveLength(0)
     expect(host.textContent).toContain('No workspaces yet')
-    expect(host.querySelector('[aria-label="Open Workspace…"]')).toBeNull()
+    expect(host.querySelector('[aria-label="Open Workspace…"]')).not.toBeNull()
   })
 
   it('lists local and paired workspaces together with remote location context', () => {
@@ -97,34 +97,16 @@ describe('Sidebar', () => {
   })
 
   it('reconnects remembered local projects for threads without selecting them or dialing remote projects', async () => {
-    act(() => root.render(<Sidebar />))
-    expect(list.open).not.toHaveBeenCalled()
-    await act(async () => { setUiState('sidebarView', 'threads') })
+    await act(async () => { root.render(<Sidebar />) })
     expect(list.open.mock.calls.map(([id]) => id)).toEqual(['local:/p/cate', 'local:/p/site'])
     expect(useUIStore.getState().selectedWorkspaceId).toBeNull()
-    await act(async () => { setUiState('sidebarView', 'projects'); setUiState('sidebarView', 'threads') })
-    expect(list.open).toHaveBeenCalledTimes(2)
   })
 
-  it('switches between attention threads and the existing project tree', () => {
+  it('shows threads above the project tree in one list', () => {
     act(() => root.render(<Sidebar />))
-    expect(host.querySelector('[aria-label="Sidebar view"]')).toBeNull()
-    act(() => setUiState('sidebarView', 'threads'))
     expect(host.querySelector('[aria-label="Search threads"]')).not.toBeNull()
-    expect(host.querySelector('[aria-label="Workspaces"]')?.className).toContain('hidden')
-    act(() => setUiState('sidebarView', 'projects'))
-    expect(host.querySelector('[aria-label="Workspaces"]')?.className).not.toContain('hidden')
-  })
-
-  it('does not delete a hidden project selection while Threads is shown', () => {
-    act(() => root.render(<Sidebar />))
-    act(() => {
-      rowOf('cate').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
-      rowOf('site').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
-    })
-    act(() => setUiState('sidebarView', 'threads'))
-    act(() => { host.querySelector('[data-sidebar-keynav]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })) })
-    expect(list.close).not.toHaveBeenCalled()
+    expect(host.querySelector('[aria-label="Threads"] [aria-label="Workspaces"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="Settled threads"]')).not.toBeNull()
   })
 
   it('reorders a paired workspace across local workspaces', () => {

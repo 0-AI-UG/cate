@@ -3,7 +3,7 @@
 // panels, top-level panels, the panels of its other windows, and its skills.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight as CaretRight, Copy, Ellipsis as DotsThree, Link2, LogOut, PanelsTopLeft, Pencil, Server, Settings2, UserPlus } from 'lucide-react'
+import { ChevronRight as CaretRight, Copy, Folder, Ellipsis as DotsThree, Globe, LogOut, PanelsTopLeft, Pencil, Puzzle, Server, Settings2, UserPlus } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
@@ -22,7 +22,6 @@ import { useTerminalStatuses } from '../state/statusStore'
 import { useUIStore } from '../state/uiStore'
 import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
-import { ProjectBadge } from './ProjectBadge'
 import { ShareSlot } from './ShareSlot'
 import { WorkspaceActionsDialog, type WorkspaceAction } from './WorkspaceActionsDialog'
 import { showMenu, type MenuItem } from './menu'
@@ -46,6 +45,13 @@ interface RenameState {
   panelId: string
   value: string
   seed: string
+}
+
+/** A folder for this computer's projects, a server for another computer's and a link for shared ones. */
+function WorkspaceGlyph({ kind }: { kind: string }): JSX.Element {
+  if (kind === 'paired') return <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] text-primary"><Globe size={13} /></span>
+  if (kind === 'local') return <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center text-muted"><Folder size={15} /></span>
+  return <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center text-muted"><Server size={15} /></span>
 }
 
 export function WorkspaceRow({
@@ -112,6 +118,8 @@ export function WorkspaceRow({
       { id: 'rename', label: 'Rename Workspace', icon: <Pencil size={15} />, run: beginRename },
       { id: 'settings', label: 'Workspace Settings…', icon: <Settings2 size={15} />, enabled: isOpen,
         run: () => { void selectWorkspace(workspaceId).then(() => useUIStore.getState().openSettings('runtime')) } },
+      { id: 'skills', label: 'Skills…', icon: <Puzzle size={15} />, enabled: isOpen,
+        run: () => { void selectWorkspace(workspaceId).then((ok) => { if (ok) useUIStore.getState().openOverlay({ view: 'skills' }) }) } },
       { id: 'copy-cwd', label: 'Copy Working Directory', icon: <Copy size={15} />, enabled: !!cwd, detail: cwd,
         run: () => { if (cwd) void clientUi().writeClipboard?.(cwd) } },
       { id: 'close-panels', label: 'Close All Panels', icon: <PanelsTopLeft size={15} />, enabled: isOpen && tree.count > 0,
@@ -222,14 +230,14 @@ export function WorkspaceRow({
       onContextMenu={(e) => void handleContextMenu(e)}
       data-workspace-id={workspaceId}
       // One card per workspace, like a thread: its header and its panels.
-      className={`mx-2 my-1 rounded-md pb-1 transition-colors ${
+      className={`mx-2 my-1 rounded-md pb-1 transition-colors ${entry.kind !== 'local' ? 'border-l-2 border-[color-mix(in_srgb,var(--text-primary)_30%,transparent)] bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)]' : ''} ${
         isMultiSelected || menuOpen
           ? 'bg-[color-mix(in_srgb,var(--surface-2)_50%,transparent)]'
           : 'hover:bg-[color-mix(in_srgb,var(--surface-2)_50%,transparent)]'
       }`}
     >
       <div
-        className={`group flex items-center gap-1.5 h-9 px-2.5 cursor-pointer outline-none ${
+        className={`group flex items-center gap-1.5 h-9 px-1 cursor-pointer outline-none ${
           isSelected || isMultiSelected ? 'text-primary' : 'text-secondary hover:text-primary'
         }`}
         onClick={(e) => onClick(e)}
@@ -238,19 +246,15 @@ export function WorkspaceRow({
         aria-expanded={canExpand ? isExpanded : undefined}
       >
         <WorkspaceToggle connection={isOpen ? connection : undefined} />
-        {entry.kind === 'paired'
-          ? <Link2 size={14} className="flex-shrink-0 opacity-90" />
-          : entry.kind === 'machine'
-            ? <Server size={14} className="flex-shrink-0 opacity-90" />
-            : canExpand
-              ? (
-                <button type="button" aria-label={isExpanded ? 'Collapse workspace' : 'Expand workspace'}
-                  onClick={(e) => { e.stopPropagation(); onToggleExpand() }}
-                  className="flex-shrink-0 rounded p-0.5 -m-0.5 hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-strong">
-                  <ProjectBadge name={displayTitle} />
-                </button>
-              )
-              : <ProjectBadge name={displayTitle} />}
+        {canExpand
+          ? (
+            <button type="button" aria-label={isExpanded ? 'Collapse workspace' : 'Expand workspace'}
+              onClick={(e) => { e.stopPropagation(); onToggleExpand() }}
+              className="flex-shrink-0 rounded p-0.5 -m-0.5 hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-strong">
+              <WorkspaceGlyph kind={entry.kind} />
+            </button>
+          )
+          : <WorkspaceGlyph kind={entry.kind} />}
         {renamingWorkspace !== null ? (
           <InlineEditInput
             ref={renameInputRef}
@@ -274,7 +278,12 @@ export function WorkspaceRow({
             {displayTitle}
           </span>
         )}
-        {entry.kind !== 'local' && <span className="max-w-24 truncate text-[11px] text-muted" title="Workspace computer">{'label' in location ? location.label ?? 'Remote computer' : ''}</span>}
+        {entry.kind !== 'local' && (
+          <span className="flex max-w-28 shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1.5 py-0.5 text-[10px] text-secondary" title={entry.kind === 'paired' ? 'Shared workspace, running on another computer' : 'Workspace on another computer'}>
+            {entry.kind === 'paired' ? <Globe size={10} className="shrink-0" /> : <Server size={10} className="shrink-0" />}
+            <span className="truncate">{'label' in location ? location.label ?? 'Remote computer' : ''}</span>
+          </span>
+        )}
         <ShareSlot workspaceId={workspaceId} isOpen={isOpen} isSelected={isSelected} onShare={() => void share()} />
         <Tooltip label="Workspace actions">
           <button

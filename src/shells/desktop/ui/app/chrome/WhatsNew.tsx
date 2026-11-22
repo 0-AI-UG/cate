@@ -1,10 +1,9 @@
 // "What's New": the whole changelog as an application overlay, newest
 // release first (this version marked), in one column: each release's
 // summary, then its sections with their groups and items. Like settings, its
-// navigation (the versions) takes the sidebar. It opens
-// by itself once after an update (the main window, after the first-run notice
-// and tour), and from the sidebar, the welcome page, the Help menu and the
-// palette.
+// navigation (the versions) takes the sidebar. After an update the sidebar's
+// update button signals it and opens it; also from the welcome page, the Help
+// menu and the palette.
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -43,18 +42,25 @@ export const WHATS_NEW_VIEW = 'whatsNew'
 
 const appVersion = () => tryClientApp()?.version ?? ''
 
-/** Opens "What's New" once after an update. */
-export function WhatsNewAfterUpdate(): null {
+/** Whether this version's notes are waiting to be read: the update button
+ *  signals it. A first install only records the version (the tour is its welcome). */
+export function useWhatsNewPending(): { pending: boolean; open: () => void } {
   const { loaded, telemetryNoticeAcknowledgedVersion, onboardingCompleted, whatsNewSeenVersion } = useUiState()
+  const version = appVersion()
+  const ready = loaded && telemetryNoticeAcknowledgedVersion >= TELEMETRY_NOTICE_VERSION
+  const next = ready
+    ? whatsNewOnLaunch({ version, seen: whatsNewSeenVersion, onboardingCompleted, hasNotes: !!findChangelogRelease(releases, version) })
+    : 'none'
   useEffect(() => {
-    if (!loaded || telemetryNoticeAcknowledgedVersion < TELEMETRY_NOTICE_VERSION) return
-    const version = appVersion()
-    const hasNotes = !!findChangelogRelease(releases, version)
-    const next = whatsNewOnLaunch({ version, seen: whatsNewSeenVersion, onboardingCompleted, hasNotes })
     if (next === 'record') setUiState('whatsNewSeenVersion', version)
-    if (next === 'show') useUIStore.getState().openOverlay({ view: WHATS_NEW_VIEW })
-  }, [loaded, telemetryNoticeAcknowledgedVersion, onboardingCompleted, whatsNewSeenVersion])
-  return null
+  }, [next, version])
+  return {
+    pending: next === 'show',
+    open: () => {
+      setUiState('whatsNewSeenVersion', version)
+      useUIStore.getState().openOverlay({ view: WHATS_NEW_VIEW })
+    },
+  }
 }
 
 /** Inline Markdown of a changelog line: bold, code, links (as their text). */

@@ -180,6 +180,7 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
       for (const el of layers) {
         if (!el) continue
         el.style.transform = transform
+        el.style.setProperty('--canvas-zoom', String(zoom))
       }
       // Promote only once per gesture, before measuring native surfaces so
       // the initial class/style change is consumed by that same sync pass.

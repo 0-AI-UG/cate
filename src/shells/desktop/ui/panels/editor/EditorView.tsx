@@ -247,12 +247,12 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
   return (
     <div className="w-full h-full flex flex-col" onKeyDownCapture={onKeyDownCapture} data-dirty={dirty || undefined}>
       {conflict && <ConflictBanner kind={conflict} showDiff={mode === 'merge'} onAction={onConflict} />}
-      <div className="relative h-8 shrink-0 border-b border-subtle" style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}>
-        <div className="no-scrollbar h-full overflow-x-auto px-2 flex items-center gap-1 text-xs" data-worktree-room>
+      <div className="relative h-[var(--bar-h)] shrink-0 border-b border-subtle" style={{ backgroundColor: 'var(--node-chrome-bg, var(--surface-1))' }}>
+        <div className="no-scrollbar h-full overflow-x-auto px-[var(--bar-pad)] flex items-center gap-1 text-xs" data-worktree-room>
           <button
             onClick={() => copyPath(editorVisible ? filePath : root)}
             disabled={!(editorVisible ? filePath : root) || !ui.writeClipboard}
-            className="min-w-0 flex-1 flex items-center gap-1 px-2 py-1 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+            className="min-w-0 flex-1 flex items-center gap-1 h-[var(--ctl-h)] px-2 flex items-center rounded-[var(--node-tab-radius,6px)] text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
             title={shownFile ?? root}
             aria-label="Copy path"
           >
@@ -275,25 +275,25 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
           {editorVisible && previewable && !draft && (
             <button
               onClick={() => pickMode(mode === 'preview' ? 'code' : 'preview')}
-              className={`shrink-0 px-2 py-1 rounded-md text-xs font-medium transition-colors ${mode === 'preview' ? 'bg-agent/15 text-agent hover:bg-agent/25' : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'}`}
+              className={`shrink-0 h-[var(--ctl-h)] px-2 flex items-center rounded-[var(--node-tab-radius,6px)] text-xs font-medium transition-colors ${mode === 'preview' ? 'bg-agent/15 text-agent hover:bg-agent/25' : 'bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary'}`}
               title={mode === 'preview' ? 'Show source' : 'Preview markdown'}
             >{mode === 'preview' ? 'Source' : 'Preview'}</button>
           )}
           {editorVisible && filePath && !draft && isHtmlFile(filePath) && panelTypeOpening('url') && (
             <button
               onClick={() => void run(() => openFileInBrowser(workspaceId, filePath, panelId), 'Could not open the file in a browser.')}
-              className="shrink-0 px-2 py-1 rounded-md text-xs font-medium transition-colors bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary"
+              className="shrink-0 h-[var(--ctl-h)] px-2 flex items-center rounded-[var(--node-tab-radius,6px)] text-xs font-medium transition-colors bg-surface-3 text-secondary hover:bg-surface-4 hover:text-primary"
               title="Open in browser"
             >Open in browser</button>
           )}
-          {editorVisible && <button onClick={openOnGitHub} disabled={!filePath || draft} className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40" title="Open on GitHub" aria-label="Open on GitHub"><Github size={14} /></button>}
+          {editorVisible && <button onClick={openOnGitHub} disabled={!filePath || draft} className="shrink-0 w-[var(--ctl-h)] h-[var(--ctl-h)] flex items-center justify-center rounded-[var(--node-tab-radius,6px)] text-secondary hover:bg-hover hover:text-primary disabled:opacity-40" title="Open on GitHub" aria-label="Open on GitHub"><Github size={14} /></button>}
           <button
             onClick={() => {
               if (editorVisible) setSidebar({ ...sidebar, visible: true })
               setTreeOnly(editorVisible)
             }}
             disabled={!root}
-            className="shrink-0 p-1.5 rounded-md text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
+            className="shrink-0 w-[var(--ctl-h)] h-[var(--ctl-h)] flex items-center justify-center rounded-[var(--node-tab-radius,6px)] text-secondary hover:bg-hover hover:text-primary disabled:opacity-40"
             title={editorVisible ? 'Show only the file tree' : 'Show the editor next to the tree'}
             aria-label={editorVisible ? 'Show sidebar only' : 'Show editor'}
             aria-pressed={!editorVisible}
@@ -301,7 +301,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
           <button
             onClick={() => setSidebar({ visible: !(sidebarVisible && sidebar.view === 'explorer'), view: 'explorer' })}
             disabled={!root}
-            className={`shrink-0 p-1.5 rounded-md hover:bg-hover disabled:opacity-40 ${sidebarVisible && sidebar.view === 'explorer' ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+            className={`shrink-0 w-[var(--ctl-h)] h-[var(--ctl-h)] flex items-center justify-center rounded-[var(--node-tab-radius,6px)] hover:bg-hover disabled:opacity-40 ${sidebarVisible && sidebar.view === 'explorer' ? 'text-primary bg-surface-3' : 'text-secondary'}`}
             title={shortcutLabel('toggleFileExplorer', sidebarVisible && sidebar.view === 'explorer' ? 'Hide files' : 'Show files')}
             aria-label="Files sidebar"
             aria-pressed={sidebarVisible && sidebar.view === 'explorer'}
@@ -312,7 +312,7 @@ export default function EditorView({ workspaceId, panelId, record, send: sendOp,
               setFocusSearch((n) => n + 1)
             }}
             disabled={!root}
-            className={`shrink-0 p-1.5 rounded-md hover:bg-hover disabled:opacity-40 ${sidebarVisible && sidebar.view === 'search' ? 'text-primary bg-surface-3' : 'text-secondary'}`}
+            className={`shrink-0 w-[var(--ctl-h)] h-[var(--ctl-h)] flex items-center justify-center rounded-[var(--node-tab-radius,6px)] hover:bg-hover disabled:opacity-40 ${sidebarVisible && sidebar.view === 'search' ? 'text-primary bg-surface-3' : 'text-secondary'}`}
             title={shortcutLabel('toggleSearch', sidebarVisible && sidebar.view === 'search' ? 'Hide search' : 'Search in files')}
             aria-label="Search sidebar"
             aria-pressed={sidebarVisible && sidebar.view === 'search'}

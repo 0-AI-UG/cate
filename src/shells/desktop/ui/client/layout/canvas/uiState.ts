@@ -10,6 +10,8 @@ interface CanvasUiState {
   activeTool: CanvasTool
   /** Worktree under the pointer in a worktree menu or chip. */
   hoveredWorktreeId: string | null
+  /** A worktree previewed on one panel while its picker menu is open. */
+  previewWorktree: { panelId: string; worktreeId: string } | null
   /** The focus lens: nodes of other worktrees recede. */
   focusedWorktreeId: string | null
   /** Panel a sidebar thread row points at: its canvas node lights up. */
@@ -20,6 +22,7 @@ interface CanvasUiState {
   minimapCorner: CanvasCorner
   setActiveTool(tool: CanvasTool): void
   setHoveredWorktree(id: string | null): void
+  setPreviewWorktree(preview: { panelId: string; worktreeId: string } | null): void
   setPeekedPanel(id: string | null, keepView?: boolean): void
   setFocusedWorktree(id: string | null): void
   clearWorktreeLens(): void
@@ -30,6 +33,7 @@ interface CanvasUiState {
 export const useCanvasUi = create<CanvasUiState>((set) => ({
   activeTool: 'select',
   hoveredWorktreeId: null,
+  previewWorktree: null,
   focusedWorktreeId: null,
   peekedPanelId: null,
   peekKeepView: false,
@@ -37,6 +41,7 @@ export const useCanvasUi = create<CanvasUiState>((set) => ({
   minimapCorner: 'bottom-right',
   setActiveTool: (activeTool) => set({ activeTool }),
   setHoveredWorktree: (hoveredWorktreeId) => set({ hoveredWorktreeId }),
+  setPreviewWorktree: (previewWorktree) => set({ previewWorktree }),
   setPeekedPanel: (peekedPanelId, keepView = false) => set({ peekedPanelId, peekKeepView: keepView }),
   setFocusedWorktree: (focusedWorktreeId) => set({ focusedWorktreeId }),
   clearWorktreeLens: () => set({ focusedWorktreeId: null }),

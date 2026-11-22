@@ -127,17 +127,17 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
 
   if (!secret) {
     return (
-      <div role="group" aria-label="Confirm sharing" className="flex flex-col items-center gap-3 rounded-xl border border-warning bg-surface-0 px-4 py-4 text-center">
+      <div role="group" aria-label="Confirm sharing" className="mx-2.5 flex flex-col gap-3 rounded-xl bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] px-4 py-3.5">
         <div className="flex flex-col gap-1">
-          <span className="text-[14px] font-medium text-primary">Anyone who joins can use this computer as you</span>
-          <span className="max-w-[360px] text-xs leading-relaxed text-muted">
+          <span className="text-[13px] font-medium text-primary">Anyone who joins can use this computer as you</span>
+          <span className="text-xs leading-relaxed text-muted">
             Full access to commands, files and local services. Only invite people you trust.
             {network === 'off' && ' Turns on same-network access first.'}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          {onCancel && <Button variant="secondary" className="w-32" onClick={onCancel}>Cancel</Button>}
-          <Button variant="primary" className="w-32" onClick={() => void create()} disabled={!runtime} loading={busy}>
+        <div className="flex items-center justify-end gap-2">
+          {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
+          <Button variant="primary" onClick={() => void create()} disabled={!runtime} loading={busy}>
             Create Invite
           </Button>
         </div>
@@ -147,9 +147,9 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
   }
 
   return (
-    <div className="flex items-center gap-5 rounded-xl border border-subtle bg-surface-0 p-4" aria-label="Pairing code">
+    <div className="mx-2.5 flex items-center gap-4 rounded-xl bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] p-3.5" aria-label="Pairing code">
       <div
-        className={`h-36 w-36 shrink-0 rounded-lg bg-white p-1.5 ${expired ? 'opacity-20' : ''}`}
+        className={`h-28 w-28 shrink-0 rounded-lg bg-white p-1.5 ${expired ? 'opacity-20' : ''}`}
         data-testid="pairing-qr"
         // The SVG is generated locally by qrcode from the runtime's link.
         dangerouslySetInnerHTML={qrSvg ? { __html: qrSvg } : undefined}
@@ -217,8 +217,8 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
 
   return (
     <SearchableBlock keywords="devices paired revoke remove phone">
-      <div className="py-3 flex flex-col gap-2">
-        <span className="text-[13px] font-medium text-primary">
+      <div className="flex flex-col gap-1 px-2.5 pt-1">
+        <span className="text-[12px] font-medium text-muted">
           Devices with access{devices && devices.length > 0 && <span className="ml-1.5 font-normal text-muted">{devices.length}</span>}
         </span>
         {error && <span className="text-xs text-danger">{error}</span>}

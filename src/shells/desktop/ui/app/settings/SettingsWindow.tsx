@@ -10,7 +10,7 @@
 // into the shell's `settings-content-slot` when both exist, else the window
 // takes the whole screen.
 
-import { SearchField, useDialogLayer } from '../../kernel/interaction'
+import { DropdownSelect, SearchField, useDialogLayer } from '../../kernel/interaction'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -27,7 +27,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react'
-import { workspaceLocation, type WorkspaceEntry, type WorkspaceListSnapshot } from '@client/workspaces'
+import { workspaceLocation, type WorkspaceListSnapshot } from '@client/workspaces'
 import { SettingsSearchContext } from '../../kernel/interaction'
 import { clientSettingsTable } from '../../../settings'
 import { clientSettings } from '../../kernel/settings'
@@ -57,11 +57,10 @@ const GROUP_ICONS: Record<SettingsGroup, LucideIcon> = {
 const NO_WORKSPACES: WorkspaceListSnapshot = { entries: [], open: [] }
 const noSubscribe = (): (() => void) => () => {}
 
-/** The workspace list's entry for `workspaceId`, to name it. */
-function useWorkspaceEntry(workspaceId: string | null): WorkspaceEntry | null {
+/** The workspace list: its entries and which of them are open. */
+function useWorkspaceSnapshot(): WorkspaceListSnapshot {
   const list = tryClientApp()?.workspaces
-  const snapshot = useSyncExternalStore(list?.subscribe ?? noSubscribe, list?.getSnapshot ?? (() => NO_WORKSPACES))
-  return snapshot.entries.find((entry) => entry.id === workspaceId) ?? null
+  return useSyncExternalStore(list?.subscribe ?? noSubscribe, list?.getSnapshot ?? (() => NO_WORKSPACES))
 }
 
 const sectionDomId = (id: string): string => `settings-section-${id.replace(/[^a-z0-9-]+/gi, '-')}`
@@ -74,11 +73,17 @@ export interface SettingsWindowProps {
   onClose: () => void
 }
 
-export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindowProps): JSX.Element {
+export function SettingsWindow({ workspaceId: activeId, section, onClose }: SettingsWindowProps): JSX.Element {
+  const snapshot = useWorkspaceSnapshot()
+  // The project whose settings show: the active one unless picked in the nav.
+  const [picked, setPicked] = useState<string | null>(null)
+  useEffect(() => setPicked(null), [activeId])
+  const openEntries = snapshot.entries.filter((entry) => snapshot.open.includes(entry.id))
+  const workspaceId = activeId && picked && openEntries.some((entry) => entry.id === picked) ? picked : activeId
   const allPages = useSettingsPages()
   const pages = useMemo(() => visiblePages(allPages, workspaceId), [allPages, workspaceId])
   const desktop = useDesktopPort()
-  const workspace = useWorkspaceEntry(workspaceId)
+  const workspace = snapshot.entries.find((entry) => entry.id === workspaceId) ?? null
   const scopeTitle = (scope: SettingsScope): string =>
     scope === 'client' ? 'This device' : `Workspace: ${workspace?.name ?? 'this workspace'}`
   const scopeDescription = (scope: SettingsScope): string => {
@@ -204,8 +209,9 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
 
   const navigation = (
     <div className="min-h-0 flex-1 flex flex-col text-primary">
-      <div className="px-3 pb-2">
-        <SearchField aria-label="Search settings" value={rawQuery} onValueChange={setRawQuery} placeholder="Search settings…" />
+      <div className="shrink-0 px-2 pt-1 pb-1">
+        <SearchField aria-label="Search settings" value={rawQuery} onValueChange={setRawQuery} placeholder="Search settings…"
+          containerClassName="!h-7 !px-1 !border-transparent !bg-transparent hover:!bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] focus-within:!bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]" />
       </div>
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {shownScopes.map((shown) => {
@@ -214,12 +220,23 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
           const ScopeIcon = SCOPE_ICONS[shown]
           return (
             <div key={shown} className="[&:not(:first-child)]:mt-5">
-              {workspaceId && (
-                <div title={scopeDescription(shown)} className="flex items-center gap-1.5 px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
-                  <ScopeIcon size={11} className="shrink-0" />
+              {workspaceId && (shown === 'workspace' && openEntries.length > 1 ? (
+                <DropdownSelect
+                  quiet
+                  label="Project"
+                  title={scopeDescription(shown)}
+                  value={workspaceId}
+                  onChange={setPicked}
+                  options={openEntries.map((entry) => ({ value: entry.id, label: entry.name }))}
+                  icon={<ScopeIcon size={13} className="shrink-0" />}
+                  className="mb-1 flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-[13px] text-secondary transition-colors hover:bg-hover hover:text-primary"
+                />
+              ) : (
+                <div title={scopeDescription(shown)} className="flex h-7 items-center gap-2 px-2 mb-1 text-[13px] text-muted">
+                  <ScopeIcon size={13} className="shrink-0" />
                   <span className="truncate">{shown === 'client' ? 'Device' : workspace?.name ?? 'Workspace'}</span>
                 </div>
-              )}
+              ))}
               {SETTINGS_GROUPS.map((group) => {
                 const children = scoped.filter((p) => p.group === group.id)
                 if (children.length === 0) return null

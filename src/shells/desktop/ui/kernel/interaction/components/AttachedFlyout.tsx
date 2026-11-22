@@ -5,6 +5,7 @@
 
 import React, { useEffect, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { anchorScale } from './Popover'
 
 /** Length of the slide (kept in step with `.cate-slide-*` in globals.css). */
 const SLIDE_MS = 200
@@ -12,7 +13,7 @@ const SLIDE_MS = 200
 /** How far the card is inset from each side of its bar, so the bar reads as in front. */
 const INSET = 12
 
-type Box = { left: number; bottom: number; width: number; }
+type Box = { left: number; bottom: number; width: number; scale?: number }
 
 export function AttachedFlyout({ bar, open, children, onMouseEnter, onMouseLeave, className = '' }: {
   /** The bar the card hangs from. */
@@ -37,7 +38,10 @@ export function AttachedFlyout({ bar, open, children, onMouseEnter, onMouseLeave
     if (!open || !bar) return
     const b = bar.getBoundingClientRect()
     const bottom = window.innerHeight - b.top
-    setBox({ left: b.left + INSET, bottom, width: b.width - 2 * INSET })
+    // On a zoomed canvas the bar is drawn smaller than its layout size; the card follows.
+    const scale = anchorScale(bar, b)
+    const s = scale ?? 1
+    setBox({ left: b.left + INSET * s, bottom, width: b.width / s - 2 * INSET, scale })
   }, [open, bar])
 
   if (!mounted || !box) return null
@@ -50,13 +54,15 @@ export function AttachedFlyout({ bar, open, children, onMouseEnter, onMouseLeave
         // stops 1px short of the bar so the bar's own top outline stays visible.
         clipPath: 'inset(-32px -32px 1px -32px)',
         pointerEvents: open ? undefined : 'none',
+        transform: box.scale ? `scale(${box.scale})` : undefined,
+        transformOrigin: 'bottom left',
       }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       onMouseDown={(event) => event.stopPropagation()}
     >
       <div
-        className={`${open ? 'cate-slide-up-in' : 'cate-slide-down-out'} relative rounded-t-lg bg-surface-0 card-outline ${className}`}
+        className={`${open ? 'cate-slide-up-in' : 'cate-slide-down-out'} relative rounded-t-lg bg-surface-1 card-outline ${className}`}
       >
         {children}
         {/* The bar's shade falling on the card where it emerges. */}

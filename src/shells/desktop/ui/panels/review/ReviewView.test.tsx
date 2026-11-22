@@ -334,8 +334,8 @@ it('groups captured PR context with commits underneath and keeps unknown associa
     { ...file, recordId: 'known', prNumber: 42, commit: { hash: 'abc', message: 'Implement login', date: '2026-11-14' } },
     { ...file, recordId: 'unknown', path: 'other.ts' },
   ] } })
-  const select = host.querySelector<HTMLSelectElement>('[aria-label="Group recorded edits"]')!
-  await act(async () => { select.value = 'pullRequest'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  await act(async () => button('Group recorded edits').click())
+  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((o) => o.textContent === 'Pull requests')!.click())
   expect(host.textContent).toContain('Recorded for PR #42')
   expect(host.textContent).toContain('Implement login')
   expect(host.textContent).toContain('No recorded pull request')
@@ -355,19 +355,17 @@ it('centers the agent flyout beneath its trigger', async () => {
   } finally { measure.mockRestore() }
 })
 
-it('uses the native display-options menu and collapses expanded files on selection', async () => {
-  const ui = installMockClientUi({ showContextMenu: vi.fn().mockResolvedValue('collapse') })
+it('shows the display options in an in-app menu and collapses expanded files on selection', async () => {
+  installMockClientUi()
   render(agentSnapshot())
   await act(async () => button('Expand src/a.ts').click())
   await act(async () => button('More review options').click())
-  expect(ui.showContextMenu).toHaveBeenCalledWith(expect.arrayContaining([
-    expect.objectContaining({ id: 'split', type: 'checkbox', checked: expect.any(Boolean) }),
-    expect.objectContaining({ id: 'wordDiff', type: 'checkbox', checked: expect.any(Boolean) }),
-    expect.objectContaining({ id: 'wrap', type: 'checkbox', checked: expect.any(Boolean) }),
-    expect.objectContaining({ id: 'collapse', enabled: true }),
-  ]))
+  const items = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"], [role="menuitem"]')]
+  expect(items.map((i) => i.textContent)).toEqual(['Side-by-side diff', 'Word differences', 'Wrap lines', 'Collapse all files'])
+  expect(items.slice(0, 3).every((i) => i.getAttribute('aria-checked') !== null)).toBe(true)
+  await act(async () => items[3].click())
   expect(button('Expand src/a.ts')).not.toBeNull()
-  expect(document.querySelector('[role="menuitem"]')).toBeNull()
+  expect(document.querySelector('[role="menu"]')).toBeNull()
 })
 
 it('omits repeated file source labels while a source panel is selected', async () => {

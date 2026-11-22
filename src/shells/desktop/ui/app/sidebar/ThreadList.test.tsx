@@ -23,7 +23,7 @@ vi.mock('../navigation', () => ({ revealPanel: vi.fn(async () => true), selectWo
 let host: HTMLDivElement
 let root: Root
 const entries = [{ id: 'ws', kind: 'local' as const, name: 'Cate', root: '/cate', lastOpenedAt: 1 }]
-const render = (hidden = false) => act(() => root.render(<ThreadList entries={entries} open={['ws']} hidden={hidden} />))
+const render = () => act(() => root.render(<ThreadList entries={entries} open={['ws']} />))
 const panel = (id: string) => { data.panels[id] = { id, type: 'terminal', title: id, fields: {} } }
 const agent = (id: string, status: PanelAgentState['status'], canReceivePrompt = false) => {
   panel(id)
@@ -168,7 +168,7 @@ it('settles ready work, retains it in the bottom dropdown, and resurfaces a new 
   expect(host.querySelector('#sidebar-settled-threads')?.hasAttribute('hidden')).toBe(true)
   act(() => button('Settled').click())
   expect(host.querySelector('#sidebar-settled-threads')?.hasAttribute('hidden')).toBe(false)
-  agent('ready', 'running'); render(true)
+  agent('ready', 'running'); render()
   agent('ready', 'waitingForInput', true); render()
   expect(host.querySelector('[aria-label="Ready for review"]')?.textContent).toContain('ready')
 })
@@ -176,7 +176,7 @@ it('settles ready work, retains it in the bottom dropdown, and resurfaces a new 
 it('surfaces shell command completion without treating an initially idle shell as a question', () => {
   terminal('shell', false); render()
   expect(host.querySelector('[aria-label="Needs attention"]')).toBeNull()
-  terminal('shell', true); render(true)
+  terminal('shell', true); render()
   terminal('shell', false); render()
   expect(host.querySelector('[aria-label="Ready for review"]')?.textContent).toContain('Command finished')
 })
@@ -203,10 +203,10 @@ it('clears settled acknowledgement after a disconnect so new results can resurfa
 it('aggregates open workspaces and removes a workspace when it closes', () => {
   agent('question', 'waitingForInput')
   const other = { ...entries[0], id: 'other', name: 'Website' }
-  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws', 'other']} hidden={false} />))
+  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws', 'other']} />))
   expect(host.querySelector('[aria-label="Needs attention"]')?.textContent).toContain('Website')
   expect(host.querySelectorAll('[data-thread-phase="blocked"]')).toHaveLength(2)
-  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws']} hidden={false} />))
+  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws']} />))
   expect(host.querySelectorAll('[data-thread-phase="blocked"]')).toHaveLength(1)
   expect(host.querySelector('[aria-label="Needs attention"]')?.textContent).not.toContain('Website')
 })
@@ -240,17 +240,15 @@ it('shows reported activity separately from the thread name and never substitute
   expect(threadActivityText({ ...chat, steps: [{ tool: 'Read', subject: 'old.ts', at: '2026-11-07T19:00:00Z' }] })).toBeNull()
 })
 
-it('combines search and project filters across active and settled threads', () => {
+it('searches across active and settled threads', () => {
   agent('Fix sidebar', 'waitingForInput', true)
   agent('Finished task', 'finished')
   const other = { ...entries[0], id: 'other', name: 'Website' }
-  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws', 'other']} hidden={false} query="sidebar" projectId="other" />))
-  expect(host.querySelectorAll('[data-thread-phase]')).toHaveLength(1)
-  expect(host.querySelector('[data-thread-phase]')?.textContent).toContain('Website')
-  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws', 'other']} hidden={false} query="finished" projectId="ws" />))
-  expect(button('Settled').textContent).toContain('1')
-  expect(host.querySelector('[data-thread-phase] button')?.getAttribute('aria-label')).toContain('Cate')
-  act(() => root.render(<ThreadList entries={entries} open={['ws']} hidden={false} query="no matches" />))
+  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws', 'other']} query="sidebar" />))
+  expect(host.querySelectorAll('[data-thread-phase]')).toHaveLength(2)
+  act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws', 'other']} query="finished" />))
+  expect(button('Settled').textContent).toContain('2')
+  act(() => root.render(<ThreadList entries={entries} open={['ws']} query="no matches" />))
   expect(host.textContent).toContain('No matching threads')
   expect(button('Settled').textContent).toContain('0')
 })

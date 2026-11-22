@@ -228,7 +228,7 @@ export const CreateWorktreeForm: React.FC<{
               className={
                 flat
                   ? 'flex flex-col border-t border-subtle'
-                  : 'rounded-[10px] border border-subtle shadow-lg flex flex-col overflow-hidden'
+                  : 'rounded-lg border border-white/[0.08] bg-surface-1 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] flex flex-col overflow-hidden'
               }
               style={
                 flat

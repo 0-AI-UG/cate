@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Clock3 } from 'lucide-react'
-import { Button, Modal, PopoverSurface, Tooltip, inputCls, useDismissableLayer, useViewportPopoverPosition } from '../../kernel/interaction'
+import { Button, Modal, PopoverSurface, Tooltip, inputCls, useDismissableLayer, useMenuNumbers, useViewportPopoverPosition } from '../../kernel/interaction'
 import { useDialogLayer } from '../../kernel/interaction/components/dialogLayers'
 
 export function snoozeChoices(now: number): { label: string; until: number }[] {
@@ -35,12 +35,13 @@ export function ThreadSnooze({ title, onSnooze, onOpenChange }: { title: string;
   const popover = useRef<HTMLDivElement>(null)
   const changeOpen = (next: boolean) => { setOpen(next); onOpenChange(next) }
   const close = () => { changeOpen(false); trigger.current?.focus() }
-  const { pos, portalTarget } = useViewportPopoverPosition(trigger, open, (rect) => ({
-    left: Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184)), gap: 4, height: 164,
+  const { pos, portalTarget } = useViewportPopoverPosition(trigger, open, (rect, scale) => ({
+    left: Math.max(8, Math.min(rect.right - 256 * scale, window.innerWidth - 264 * scale)), gap: 4, height: 164,
   }), popover)
   useEffect(() => { if (open && pos) popover.current?.querySelector<HTMLElement>('[role="dialog"]')?.focus() }, [open, pos])
   useDismissableLayer({ open, contentRef: popover, triggerRefs: [trigger], onDismiss: () => changeOpen(false), closeOnEscape: false })
   useDialogLayer((event) => { event.preventDefault(); event.stopImmediatePropagation(); close() }, open)
+  useMenuNumbers(popover, open)
   const choose = (until: number) => { changeOpen(false); setCustom(false); onSnooze(until) }
   return <>
     <Tooltip label="Snooze thread" suppressed={open || custom}>
@@ -48,7 +49,7 @@ export function ThreadSnooze({ title, onSnooze, onOpenChange }: { title: string;
         className="flex h-5 w-5 items-center justify-center rounded text-secondary hover:text-primary focus-visible:outline-offset-2"
         onClick={() => { setOpenedAt(Date.now()); changeOpen(!open) }}><Clock3 size={13} /></button>
     </Tooltip>
-    {open && <PopoverSurface popoverRef={popover} pos={pos} portalTarget={portalTarget} width={176} className="p-1" style={{ borderRadius: 6, backgroundColor: 'var(--surface-1)' }} ownerId={trigger.current?.id}>
+    {open && <PopoverSurface popoverRef={popover} pos={pos} portalTarget={portalTarget} width={256} className="p-1" ownerId={trigger.current?.id}>
       <div id={id} role="dialog" tabIndex={-1} className="outline-none" aria-label="Snooze thread" onKeyDown={(event) => {
         if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
         event.preventDefault()
@@ -58,12 +59,12 @@ export function ThreadSnooze({ title, onSnooze, onOpenChange }: { title: string;
           : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
         buttons[next]?.focus()
       }}>
-        {snoozeChoices(openedAt).map(({ label, until }) => <button key={label} type="button" onClick={() => choose(until)}
-          className="flex h-7 w-full items-center justify-between gap-3 rounded px-2 text-left text-xs text-primary outline-none hover:bg-hover focus:bg-hover focus-visible:outline-none">
-          <span>{label}</span><span className="tabular-nums text-secondary">{new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        {snoozeChoices(openedAt).map(({ label, until }) => <button key={label} type="button" data-menu-item onClick={() => choose(until)}
+          className="flex h-7 w-full items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-[13px] text-primary outline-none hover:bg-hover focus:bg-hover focus-visible:outline-none">
+          <span className="flex-1">{label}</span><span className="tabular-nums text-[12px] text-muted">{new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
         </button>)}
         <div className="mx-2 my-1 border-t border-subtle" />
-        <button type="button" className="h-7 w-full rounded px-2 text-left text-xs text-primary outline-none hover:bg-hover focus:bg-hover focus-visible:outline-none"
+        <button type="button" data-menu-item className="flex h-7 w-full items-center rounded-md px-2 text-left text-[13px] text-primary outline-none hover:bg-hover focus:bg-hover focus-visible:outline-none"
           onClick={() => { setDate(localDateTime(Date.now() + 60 * 60 * 1000)); changeOpen(false); setCustom(true); onOpenChange(true) }}>Custom…</button>
       </div>
     </PopoverSurface>}

@@ -19,7 +19,6 @@ export type UsageWindowDays = 1 | 7 | 30 | 90
 const USAGE_WINDOW_DAYS: readonly UsageWindowDays[] = [1, 7, 30, 90]
 
 export interface UiStateValues {
-  sidebarView: 'threads' | 'projects'
   sidebarSettledOpen: boolean
   sidebarThreadSnoozes: Record<string, number>
   /** Corner the canvas minimap button sits in. */
@@ -38,7 +37,6 @@ export interface UiStateValues {
 }
 
 export const DEFAULT_UI_STATE: UiStateValues = {
-  sidebarView: 'threads',
   sidebarSettledOpen: false,
   sidebarThreadSnoozes: {},
   minimapButtonCorner: 'bottom-right',
@@ -54,7 +52,6 @@ export function normalizeUiState(raw: unknown): UiStateValues {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const version = o.telemetryNoticeAcknowledgedVersion
   return {
-    sidebarView: o.sidebarView === 'projects' ? 'projects' : 'threads',
     sidebarSettledOpen: o.sidebarSettledOpen === true,
     sidebarThreadSnoozes: Object.fromEntries(Object.entries(
       o.sidebarThreadSnoozes && typeof o.sidebarThreadSnoozes === 'object' && !Array.isArray(o.sidebarThreadSnoozes)

@@ -4,7 +4,7 @@
 // picker.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Folders, MessagesSquare, Plus } from 'lucide-react'
+import { Globe, Plus } from 'lucide-react'
 import { SearchField, SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
@@ -13,8 +13,6 @@ import { useUIStore } from '../state/uiStore'
 import { showMenu } from './menu'
 import { WorkspaceRow } from './WorkspaceRow'
 import { ThreadList } from './ThreadList'
-import { ProjectFilter } from './ProjectFilter'
-import { setUiState, useUiState } from '../state/uiState'
 import { openTrusted } from '@client/workspaces'
 
 /** The ids in their new order after moving `from` to insertion slot `to`
@@ -35,7 +33,6 @@ interface WorkspaceListProps {
 }
 
 export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction, headerTrailingAction }: WorkspaceListProps): JSX.Element {
-  const { sidebarView } = useUiState()
   const list = clientApp().workspaces
   const { entries, open } = useWorkspaceList(list)
   const selectedId = useUIStore((s) => s.selectedWorkspaceId)
@@ -48,7 +45,6 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
   const observed = useRef(new Set<string>())
   const mountedAt = useRef(Date.now())
   useEffect(() => {
-    if (sidebarView !== 'threads') return
     for (const entry of entries) {
       // Remembered, non-closed local projects can still have running agents
       // after a restart. Observe them without selecting or granting trust.
@@ -58,10 +54,8 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
       void openTrusted({ workspaces: list, connections: app.connections, prompt: false }, entry.id)
         .then(({ trusted }) => trusted).catch(() => {})
     }
-  }, [entries, open, sidebarView, list])
+  }, [entries, open, list])
   const [query, setQuery] = useState('')
-  const [projectId, setProjectId] = useState('')
-  const selectedProject = entries.some((entry) => entry.id === projectId) ? projectId : ''
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
   // Workspaces show their panels unless collapsed here.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -108,7 +102,6 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
   }, [multiSelected])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (sidebarView !== 'projects') return
     if ((e.key === 'Delete' || e.key === 'Backspace') && multiSelected.size > 0) {
       e.preventDefault()
       closeSelected()
@@ -135,6 +128,11 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
     return next
   })
 
+  const groups = [
+    { title: 'Projects', shared: false, entries: entries.filter((e) => e.kind !== 'paired') },
+    { title: 'Shared with you', shared: true, entries: entries.filter((e) => e.kind === 'paired') },
+  ]
+
   const slotFor = (e: React.DragEvent, index: number): number => {
     const rect = e.currentTarget.getBoundingClientRect()
     return e.clientY > rect.top + rect.height / 2 ? index + 1 : index
@@ -144,36 +142,37 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
     <div className="flex flex-col h-full" tabIndex={-1} data-sidebar-keynav onKeyDown={handleKeyDown}>
       <SidebarSectionHeader
         title={headerTitle}
+        actionsClassName="-mr-1"
         large
         leadingAction={headerLeadingAction}
-        // With none, the welcome page shows the picker itself.
-        actions={(headerTrailingAction || entries.length > 0) && (<>
-          {entries.length > 0 && <SidebarHeaderButton action="openWorkspace" onClick={toggleOpenPicker} title="Open Workspace…" aria-expanded={pickerOpen}>
-            <Plus size={14} />
-          </SidebarHeaderButton>}
-          {entries.length > 0 && (
-            <SidebarHeaderButton onClick={() => setUiState('sidebarView', sidebarView === 'threads' ? 'projects' : 'threads')}
-              title={sidebarView === 'threads' ? 'Show projects' : 'Show threads'}>
-              {sidebarView === 'threads' ? <Folders size={14} /> : <MessagesSquare size={14} />}
-            </SidebarHeaderButton>
-          )}
+        actions={(<>
+          <SidebarHeaderButton action="openWorkspace" onClick={toggleOpenPicker} title="Open Workspace…" aria-expanded={pickerOpen} className="!my-0" style={{ width: 24, height: 24 }}>
+            <Plus size={16} />
+          </SidebarHeaderButton>
           {headerTrailingAction}
         </>)}
       />
-      {entries.length > 0 && sidebarView === 'threads' && (
+      {entries.length > 0 && (
         <div className="shrink-0 px-2 pt-1 pb-1">
-          <SearchField aria-label="Search threads" value={query} onValueChange={setQuery} />
+          <SearchField aria-label="Search threads" value={query} onValueChange={setQuery}
+            containerClassName="!h-7 !px-1 !border-transparent !bg-transparent hover:!bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] focus-within:!bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]" />
         </div>
       )}
-      {sidebarView === 'threads' && entries.length > 0 && <div className="shrink-0 px-2 pb-1">
-        <ProjectFilter entries={entries} value={selectedProject} onChange={setProjectId} />
-      </div>}
-      {entries.length > 0 && <ThreadList entries={entries} open={open} hidden={sidebarView !== 'threads'} query={query} projectId={selectedProject} />}
-      <div className={`flex-1 overflow-y-auto -mr-1.5 pb-1 ${entries.length > 0 && sidebarView !== 'projects' ? 'hidden' : ''}`} role="tree" aria-label="Workspaces">
-        {entries.length === 0 && (
+      {entries.length === 0 ? (
+        <div className="flex-1 overflow-y-auto pb-20" role="tree" aria-label="Workspaces">
           <p className="px-4 py-8 text-center text-xs text-muted">No workspaces yet</p>
-        )}
-        {entries.map((entry, index) => {
+        </div>
+      ) : (
+        <ThreadList entries={entries} open={open} query={query}>
+          <div className="pb-1" role="tree" aria-label="Workspaces">
+            {groups.map((group) => group.entries.length > 0 && (
+              <div key={group.title} className={group.shared ? 'mt-3 mx-2 rounded-lg border border-subtle bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] pb-1' : ''} role="group" aria-label={group.title}>
+                <div className={`flex items-center gap-1.5 pt-4 pb-1 text-xs ${group.shared ? 'px-2.5 pt-2 text-primary' : 'px-3 text-muted'}`}>
+                  {group.shared && <Globe size={12} className="shrink-0" />}
+                  {group.title}
+                </div>
+        {group.entries.map((entry) => {
+          const index = entries.indexOf(entry)
           const isLast = entry === entries[entries.length - 1]
           return (
             <div
@@ -215,7 +214,11 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
             </div>
           )
         })}
-      </div>
+              </div>
+            ))}
+          </div>
+        </ThreadList>
+      )}
     </div>
   )
 }

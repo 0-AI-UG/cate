@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown as CaretDown, ChevronRight as CaretRight, Ellipsis as DotsThree, GitCompareArrows, GitCommitHorizontal, Info, Search, X } from 'lucide-react'
-import { LoadingState, Pagination } from '../../kernel/interaction'
+import { DropdownSelect, LoadingState, OptionsMenu, Pagination } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { useDocument } from '../../client/document'
 import { agentDisplayName, type AgentId } from '@services/agents/contract'
@@ -61,7 +61,6 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
   const loading = recorded.loading || refreshing || pending
   const error = sessionError ?? recorded.error
   const root = useRef<HTMLDivElement>(null)
-  const [moreOpen, setMoreOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const update = async (patch: AgentChangesFilterPatch) => {
     setPending(true)
@@ -70,6 +69,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
     finally { setPending(false) }
   }
   const view = useReviewView(workspaceId, panelId, snapshot)
+  const closeSearch = () => { view.setFileFilter(''); setSearchOpen(false) }
   const { display, expanded, collapsedGroups, updateDisplay, focusedFile, fileFilter } = view
   const query = fileFilter.trim().toLowerCase()
   const files = useMemo(() => query ? recorded.files.filter((file) => file.path.toLowerCase().includes(query)) : recorded.files, [recorded.files, query])
@@ -94,40 +94,37 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
   useEffect(() => {
     if (focusedFile) root.current?.querySelector(`[data-review-file="${encodeURIComponent(focusedFile)}"]`)?.scrollIntoView?.({ block: 'start' })
   }, [focusedFile, view.revealSeq])
-  const showOptions = async () => {
-    if (moreOpen) return
-    setMoreOpen(true)
-    try {
-      const choice = await clientUi().showContextMenu([
-        { id: 'split', label: 'Side-by-side diff', type: 'checkbox', checked: display.split },
-        { id: 'wordDiff', label: 'Word differences', type: 'checkbox', checked: display.wordDiff },
-        { id: 'wrap', label: 'Wrap lines', type: 'checkbox', checked: display.wrap },
-        { type: 'separator' },
-        { id: 'collapse', label: 'Collapse all files', enabled: expanded.size > 0 },
-      ])
-      if (choice === 'collapse') view.collapseAll()
-      else if (choice === 'split' || choice === 'wordDiff' || choice === 'wrap') updateDisplay({ [choice]: !display[choice] })
-    } finally { setMoreOpen(false) }
+  const pickOption = (choice: string) => {
+    if (choice === 'collapse') view.collapseAll()
+    else if (choice === 'split' || choice === 'wordDiff' || choice === 'wrap') updateDisplay({ [choice]: !display[choice] })
   }
   const chips = [
     filter.sessionId && { label: 'This conversation', patch: { sessionId: null, turnId: null } },
     filter.turnId && { label: 'This turn', patch: { turnId: null } },
   ].filter(Boolean) as { label: string; patch: AgentChangesFilterPatch }[]
   return <div className="flex w-full min-w-0 h-full min-h-0 flex-col overflow-hidden bg-surface-0 text-primary">
-    <ReviewToolbar review={review} busy={loading} send={send}>
+    <ReviewToolbar panelId={panelId} review={review} busy={loading} send={send}>
       <ReviewFilters titles={titles} workspaceId={workspaceId} panelId={panelId} filter={filter} panels={panels} sources={sources} agents={agents} disabled={loading} update={(patch) => { void update(patch) }} />
-      <select aria-label="Group recorded edits" value={view.grouping} onChange={(event) => view.setGrouping(event.target.value as typeof view.grouping)} className="min-w-0 rounded border border-subtle bg-surface-1 px-1 py-1 text-xs text-secondary">
-        <option value="commit">Commits</option><option value="pullRequest">Pull requests</option><option value="conversation">Conversations</option>
-      </select>
+      <DropdownSelect label="Group recorded edits" value={view.grouping} onChange={(value) => view.setGrouping(value as typeof view.grouping)}
+        className="inline-flex h-[var(--ctl-h)] min-w-0 items-center gap-1.5 rounded-[var(--node-tab-radius,6px)] bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)] px-2 text-xs text-secondary hover:text-primary"
+        options={[{ value: 'commit', label: 'Commits' }, { value: 'pullRequest', label: 'Pull requests' }, { value: 'conversation', label: 'Conversations' }]} />
       <div className="review-toolbar-actions ml-auto flex shrink-0 items-center gap-1">
-        {!loading && <ReviewStats files={new Set(files.map((file) => file.path)).size} additions={totals.additions} deletions={totals.deletions} />}
+        {(searchOpen || !!fileFilter) && <ReviewFileFilter value={fileFilter} onChange={view.setFileFilter} onClose={closeSearch} />}
+        {!loading && !searchOpen && !fileFilter && <ReviewStats files={new Set(files.map((file) => file.path)).size} additions={totals.additions} deletions={totals.deletions} />}
         <RecordedReviewButton workspaceId={workspaceId} panelId={panelId} send={send} busy={agentBusy} disabled={!recorded.files.length} />
-        <ToolbarButton label="Filter changed files" active={searchOpen || !!fileFilter} onClick={() => { if (searchOpen || fileFilter) { view.setFileFilter(''); setSearchOpen(false) } else setSearchOpen(true) }}><Search size={14} /></ToolbarButton>
-        <ToolbarButton label="More review options" active={moreOpen} onClick={() => void showOptions()}><DotsThree size={16} /></ToolbarButton>
+        <ToolbarButton label="Filter changed files" active={searchOpen || !!fileFilter} onClick={() => { if (searchOpen || fileFilter) closeSearch(); else setSearchOpen(true) }}><Search size={14} /></ToolbarButton>
+        <OptionsMenu label="More review options" onPick={pickOption}
+          className="w-[var(--ctl-h)] h-[var(--ctl-h)] shrink-0 rounded-[var(--node-tab-radius,6px)] flex items-center justify-center transition-colors text-muted hover:text-primary hover:bg-hover" openClassName="bg-hover-strong text-primary"
+          items={[
+            { id: 'split', label: 'Side-by-side diff', checked: display.split },
+            { id: 'wordDiff', label: 'Word differences', checked: display.wordDiff },
+            { id: 'wrap', label: 'Wrap lines', checked: display.wrap },
+            { type: 'separator' },
+            { id: 'collapse', label: 'Collapse all files', enabled: expanded.size > 0 },
+          ]}><DotsThree size={16} /></OptionsMenu>
       </div>
     </ReviewToolbar>
-    {chips.length > 0 && <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-subtle px-2 py-1.5">{chips.map((chip, index) => <button key={index} aria-label={`Remove ${chip.label} filter`} onClick={() => update(chip.patch)} className="flex h-6 max-w-48 items-center gap-1 rounded-md border border-subtle bg-surface-2 px-1.5 text-[11px]"><span className="truncate">{chip.label}</span><X size={10} className="shrink-0" /></button>)}</div>}
-    {(searchOpen || !!fileFilter) && <ReviewFileFilter value={fileFilter} onChange={view.setFileFilter} />}
+    {chips.length > 0 && <div className="flex shrink-0 flex-wrap gap-1.5 border-b border-subtle px-2 py-1.5">{chips.map((chip, index) => <button key={index} aria-label={`Remove ${chip.label} filter`} onClick={() => update(chip.patch)} className="flex h-[var(--ctl-h)] max-w-48 items-center gap-1 rounded-md border border-subtle bg-surface-2 px-1.5 text-[11px]"><span className="truncate">{chip.label}</span><X size={10} className="shrink-0" /></button>)}</div>}
     {loading && files.length > 0 && <div role="status" className="flex shrink-0 items-center gap-2 px-2 py-1 text-xs text-muted">Loading agent changes</div>}
     {pending && !files.length && <LoadingState label="Loading agent changes" className="p-4 text-xs" />}
     {error && <p role="alert" className="px-3 py-2 text-xs text-red-400">{error} <button type="button" disabled={loading} className="underline disabled:opacity-30" onClick={() => void send({ kind: 'refresh' })}>Retry</button></p>}

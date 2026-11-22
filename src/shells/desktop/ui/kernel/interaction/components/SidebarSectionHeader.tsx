@@ -8,6 +8,8 @@ import React from 'react'
 import { IconButton } from './Button'
 
 interface SidebarSectionHeaderProps {
+  /** Margin classes of the actions group (default pulls it 4px into the header padding). */
+  actionsClassName?: string
   title: React.ReactNode
   leadingAction?: React.ReactNode
   actions?: React.ReactNode
@@ -18,7 +20,7 @@ interface SidebarSectionHeaderProps {
   large?: boolean
 }
 
-export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ title, leadingAction, actions, subtitle, large }) => {
+export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ title, leadingAction, actions, subtitle, large, actionsClassName = '-mr-1' }) => {
   return (
     <div className="flex-shrink-0">
       <div
@@ -37,7 +39,7 @@ export const SidebarSectionHeader: React.FC<SidebarSectionHeaderProps> = ({ titl
         </span>
         {actions && (
           <div
-            className="flex items-center gap-1 -mr-1"
+            className={`flex items-center gap-1 ${actionsClassName}`}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             {actions}

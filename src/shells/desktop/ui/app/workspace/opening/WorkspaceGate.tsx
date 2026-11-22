@@ -20,6 +20,7 @@ import { ConnectionBlocker, ConnectionStatusCard, StatusCard, useWorkspaceConnec
 import { RuntimeMismatchCard, useRequiredRuntimeUpdate, useRuntimeUpdate } from '../RuntimeMismatch'
 import { useTrustInPlace, WorkspaceTrustCard } from './TrustQuestion'
 import { CateLogo } from '../../../kernel/interaction'
+import { OpeningLoader } from './OpeningLoader'
 
 /** A card for a wait shorter than this never shows. */
 const GRACE_MS = 400
@@ -88,6 +89,9 @@ export function WorkspaceGate({ workspaceId, children }: { workspaceId: string |
   const mismatch = useRequiredRuntimeUpdate(connection) !== null
   const immediate = mismatch || asking || updating || state.kind === 'incompatible' || state.kind === 'refused' || state.kind === 'stopped'
   const card = useOpeningCard(opening, immediate)
+  // Plain waiting (connected, loading) is the logo and a line of text, never a card.
+  const busy = card && !asking && !mismatch && !updating && !!connection && state.kind === 'connected'
+  const workspaceName = (workspaceId && tryClientApp()?.workspaces.get(workspaceId)?.name) || 'workspace'
   // An overlay hides this place (or covers it in a detached window): the
   // question is the modal then.
   const overlay = useUIStore((s) => s.overlay)
@@ -98,8 +102,9 @@ export function WorkspaceGate({ workspaceId, children }: { workspaceId: string |
     <div className="h-full overflow-y-auto" data-workspace-opening>
       {/* The logo and the card are centered together. */}
       <div className="flex min-h-full flex-col items-center justify-center gap-5 px-4 py-6">
-        {(!card || asking) && <CateLogo size={44} className="shrink-0 text-muted opacity-50" aria-hidden="true" />}
-        {card && workspaceId && (asking
+        {asking && <CateLogo size={44} className="shrink-0 text-muted opacity-50" aria-hidden="true" />}
+        {!asking && (!card || busy) && <OpeningLoader label={busy ? `Opening ${workspaceName}` : undefined} />}
+        {card && !busy && workspaceId && (asking
           ? <WorkspaceTrustCard workspaceId={workspaceId} />
           : (
             <div data-connection-blocker className="flex w-full justify-center">

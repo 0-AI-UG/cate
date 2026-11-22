@@ -4,10 +4,10 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Coffee, Infinity as InfinityIcon, Power } from 'lucide-react'
+import { Coffee } from 'lucide-react'
 import { mirrorChannel } from '@kernel/rpc/client'
 import { useRuntime } from '../../../kernel/rpc'
-import { AttachedFlyout, Tooltip, useDismissableLayer } from '../../../kernel/interaction'
+import { AttachedFlyout, MENU_ROW, useDismissableLayer, useMenuNumbers } from '../../../kernel/interaction'
 import type { KeepAwakeDuration, PowerState } from '@runtime/power/contract/capability'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 
@@ -113,26 +113,27 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
   }
 
   const on = state.requested
+  const menuRef = useRef<HTMLDivElement>(null)
+  useMenuNumbers(menuRef, true)
   const menu = (
-    <div role="menu" aria-label="Keep awake duration" className="flex flex-row items-center gap-px p-1">
+    <div ref={menuRef} role="menu" aria-label="Keep awake duration" className="flex min-w-[148px] flex-col gap-0.5 p-1">
       {[
-        ...durations.map(({ label, minutes }) => ({ key: label, duration: minutes as KeepAwakeDuration, tip: `Keep awake for ${label}`, content: label as React.ReactNode })),
-        { key: 'unlimited', duration: null as KeepAwakeDuration, tip: 'Keep awake unlimited', content: <InfinityIcon size={13} /> as React.ReactNode },
-        ...(on ? [{ key: 'off', duration: false as KeepAwakeDuration, tip: 'Turn off', content: <Power size={12} /> as React.ReactNode }] : []),
-      ].map((item, index) => (
-        <Tooltip key={item.key} label={item.tip} placement={side === 'up' ? 'right' : 'left'}>
-          <button
-            type="button"
-            role="menuitem"
-            aria-label={item.tip}
-            disabled={pending}
-            onClick={() => void select(item.duration)}
-            style={{ '--i': index, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}
-            className="cate-spawn-flyout-item h-6 min-w-[36px] px-2 shrink-0 flex items-center justify-center rounded-md text-[11px] text-secondary hover:bg-hover-strong hover:text-primary active:scale-[0.96] transition-colors duration-100"
-          >
-            {item.content}
-          </button>
-        </Tooltip>
+        ...durations.map(({ label, minutes }) => ({ key: label, duration: minutes as KeepAwakeDuration, tip: `Keep awake for ${label}`, text: label })),
+        { key: 'unlimited', duration: null as KeepAwakeDuration, tip: 'Keep awake unlimited', text: 'Unlimited' },
+        ...(on ? [{ key: 'off', duration: false as KeepAwakeDuration, tip: 'Turn off', text: 'Turn off' }] : []),
+      ].map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          role="menuitem"
+          aria-label={item.tip}
+          data-menu-item
+          disabled={pending}
+          onClick={() => void select(item.duration)}
+          className={`${MENU_ROW} hover:bg-hover active:bg-hover-strong`}
+        >
+          <span className="flex-1">{item.text}</span>
+        </button>
       ))}
     </div>
   )
@@ -175,7 +176,7 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
             onMouseLeave={hoverOut}
             style={{ right: window.innerWidth - anchor.left, bottom: window.innerHeight - anchor.bottom, paddingRight: 10 }}
           >
-            <div className="cate-spawn-flyout rounded-lg border border-subtle bg-[color-mix(in_srgb,var(--surface-1)_96%,transparent)] shadow-lg" style={{ transformOrigin: 'bottom right' }}>{menu}</div>
+            <div className="cate-spawn-flyout rounded-lg border border-white/[0.08] bg-surface-1 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)]" style={{ transformOrigin: 'bottom right' }}>{menu}</div>
           </div>,
           document.body,
         )}

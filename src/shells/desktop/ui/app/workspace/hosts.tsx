@@ -87,6 +87,7 @@ export function RepositoryHost({ workspaceId, children }: { workspaceId: string;
     },
     focusWorktree: (worktreeId) => useCanvasUi.getState().setFocusedWorktree(worktreeId),
     setHoveredWorktree: (worktreeId) => useCanvasUi.getState().setHoveredWorktree(worktreeId),
+    previewPanelWorktree: (panelId, worktreeId) => useCanvasUi.getState().setPreviewWorktree(worktreeId ? { panelId, worktreeId } : null),
   }), [workspaceId, root, worktrees, panels, focusedWorktreeId])
 
   return <RepositoryUiProvider host={host}>{children}</RepositoryUiProvider>

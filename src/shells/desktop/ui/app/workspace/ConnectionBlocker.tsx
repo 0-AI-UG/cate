@@ -126,7 +126,7 @@ export function StatusCard({ title, message, details, busy = false, actions = []
     catch { setCopyFailed(true) }
   }
   return (
-    <section aria-label={title} aria-busy={busy} className={`w-[400px] max-w-full min-w-0 text-left ${compact ? 'rounded-xl border border-subtle bg-surface-0 p-5 shadow-lg' : 'px-2 py-4'}`}>
+    <section aria-label={title} aria-busy={busy} className={`w-[400px] max-w-full min-w-0 text-left ${compact ? 'rounded-[10px] border border-white/[0.08] bg-surface-1 p-4 shadow-[0_16px_48px_-16px_rgb(0_0_0/0.8)]' : 'px-2 py-4'}`}>
       <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg border border-subtle bg-surface-1 text-secondary" aria-hidden="true">
         {busy ? <Spinner size={17} /> : <AlertCircle size={18} />}
       </div>

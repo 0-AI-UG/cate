@@ -68,16 +68,23 @@ export function LeftSidebarReopen(): JSX.Element | null {
   )
 }
 
-/** Title chrome of an application overlay; navigation belongs in its content. */
-export function OverlayHeader({ title, children }: { title: string; children?: ReactNode }): JSX.Element {
+/** Fixed chrome of an application overlay. */
+export function OverlayHeader({ title, children, toolbar, fade = true }: {
+  title: string
+  children?: ReactNode
+  toolbar?: ReactNode
+  fade?: boolean
+}): JSX.Element {
   const inset = useLeftChromeInset()
   return (
     <header
-      className="relative z-10 flex h-9 shrink-0 items-center gap-2 bg-canvas-bg pl-6 pr-2 text-primary after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent"
-      style={{ paddingLeft: Math.max(24, inset) }}
+      className={`relative z-10 shrink-0 bg-canvas-bg text-primary ${fade ? 'after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent' : ''}`}
     >
-      <h1 className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</h1>
-      {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+      <div className="flex h-9 items-center gap-2 pl-6 pr-2" style={{ paddingLeft: Math.max(24, inset) }}>
+        <h1 className="min-w-0 flex-1 truncate text-[13px] font-medium">{title}</h1>
+        {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+      </div>
+      {toolbar}
     </header>
   )
 }

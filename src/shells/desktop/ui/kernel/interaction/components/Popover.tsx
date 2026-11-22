@@ -56,12 +56,23 @@ export function useDismissableLayer({
 }
 
 export const POPOVER_SURFACE =
-  'rounded-md border border-subtle bg-surface-3 shadow-lg'
+  'rounded-lg border border-white/[0.08] bg-surface-1 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)]'
 
 export type ViewportPopoverPosition = {
   top: number
   left: number
   placement: 'above' | 'below'
+  /** The anchor's on-screen scale (a node on a zoomed canvas), when not 1. */
+  scale?: number
+}
+
+/** How much a trigger is scaled on screen: a panel on a zoomed canvas is drawn
+ *  smaller than its layout size, while a portaled popover is not. */
+export function anchorScale(element: Element, rect: DOMRect): number | undefined {
+  const layoutWidth = element instanceof HTMLElement ? element.offsetWidth : 0
+  if (!layoutWidth || !rect.width) return undefined
+  const scale = rect.width / layoutWidth
+  return Math.abs(scale - 1) > 0.02 ? scale : undefined
 }
 
 export function verticalPopoverPosition(
@@ -87,7 +98,7 @@ export function verticalPopoverPosition(
 export function useViewportPopoverPosition(
   triggerRef: RefObject<Element | null>,
   open: boolean,
-  layout: (rect: DOMRect) => { left: number; gap: number; height?: number },
+  layout: (rect: DOMRect, scale: number) => { left: number; gap: number; height?: number },
   popoverRef?: RefObject<HTMLElement | null>,
 ) {
   const [pos, setPos] = useState<ViewportPopoverPosition | null>(null)
@@ -98,13 +109,17 @@ export function useViewportPopoverPosition(
   updateRef.current = () => {
     if (!open || !triggerRef.current) return
     const rect = triggerRef.current.getBoundingClientRect()
-    const result = layoutRef.current(rect)
+    const scale = anchorScale(triggerRef.current, rect)
+    // `scale` is how big the popover is drawn: right-aligned layouts use
+    // `width * scale`, so it still ends under its button on a zoomed canvas.
+    const result = layoutRef.current(rect, scale ?? 1)
     const measuredHeight = popoverRef?.current?.getBoundingClientRect().height
-    const next = {
+    const next: ViewportPopoverPosition = {
       left: result.left,
       ...verticalPopoverPosition(rect, result.gap, measuredHeight || result.height),
+      scale,
     }
-    setPos((current) => current?.top === next.top && current.left === next.left && current.placement === next.placement ? current : next)
+    setPos((current) => current?.top === next.top && current.left === next.left && current.placement === next.placement && current.scale === next.scale ? current : next)
   }
 
   useLayoutEffect(() => {
@@ -157,7 +172,10 @@ export function PopoverSurface({
         top: pos.top,
         left: pos.left,
         width,
-        transform: pos.placement === 'above' ? 'translateY(-100%)' : undefined,
+        transform: pos.scale
+          ? `${pos.placement === 'above' ? `translateY(-${100 * pos.scale}%) ` : ''}scale(${pos.scale})`
+          : pos.placement === 'above' ? 'translateY(-100%)' : undefined,
+        transformOrigin: pos.scale ? 'top left' : undefined,
         ...style,
       }}
     >
@@ -170,7 +188,7 @@ export function PopoverSurface({
 /** Open-state scaffold used by composer controls anchored to a button. */
 export function useNodePopover(
   triggerRef: RefObject<HTMLButtonElement | null>,
-  layout: (rect: DOMRect) => { left: number; gap: number; height?: number },
+  layout: (rect: DOMRect, scale: number) => { left: number; gap: number; height?: number },
 ) {
   const [open, setOpen] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)

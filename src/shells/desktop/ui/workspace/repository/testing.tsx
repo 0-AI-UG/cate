@@ -97,6 +97,7 @@ export function fakeHost(patch: Partial<RepositoryHost> = {}): RepositoryHost {
     focusedWorktreeId: null,
     focusWorktree: vi.fn(),
     setHoveredWorktree: vi.fn(),
+    previewPanelWorktree: vi.fn(),
     ...patch,
   }
 }

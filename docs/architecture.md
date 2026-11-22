@@ -1208,7 +1208,7 @@ or that changes shared state, is a **workspace** setting.
 | Machines (`shells/desktop`) | `sshMachines` | |
 | Shortcuts (`kernel/interaction`) | `customShortcuts` | |
 | Desktop (`shells/desktop`) | `warnBeforeQuit`, `betaUpdatesEnabled`, `disableGpuRasterization` (applies after restart) | |
-| Repository (`workspace/repository`) | | `closeWorktreePanelsOnDelete` |
+| Repository (`workspace/repository`) | `worktreeTint` | `closeWorktreePanelsOnDelete` |
 | Runtime (`runtime/daemon`) | | `keepRunningWhile`, `runtimeNetwork` |
 | `cate` API (`kernel/api`) | | `cliEnabled`, `cliSkillInstallEnabled`, `cliBrowserReadEnabled`, `cliBrowserControlEnabled`, `cliBrowserPasswordsEnabled`, `cliTerminalReadEnabled`, `cliTerminalInputEnabled`, `cliPanelReadEnabled`, `cliPanelControlEnabled`, `cliEditorReadEnabled`, `cliEditorControlEnabled`, `cliAgentReadEnabled`, `cliAgentControlEnabled` |
 | Agents (`services/agents`) | | `agentHookInjection` (a hook mode per agent: `auto`, `on`, `off`), `usagePriceOverrides` (custom model prices for usage, USD per million tokens, by model id) |
@@ -2550,7 +2550,7 @@ shell, with `--json` when it parses results.
 
 - **`shells/desktop`**
   - **main**: app entry, windows and the window registry, rendering the
-    menu bar model the renderer sends (12.4) and context menus, native
+    menu bar model the renderer sends (12.4), native
     dialogs, notification display, the updater (including installing the
     bundled runtime tarball to `~/.cate/runtime/<build>/`), analytics and
     crash reporting, open path and URL handling, screenshot capture, web

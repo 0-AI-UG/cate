@@ -14,7 +14,7 @@ import { Ellipsis as DotsThree, TriangleAlert as Warning } from 'lucide-react'
 import { Split as ArrowsSplit } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import { errorMessage } from '@kernel/interaction'
-import { Icon, Spinner, Tooltip, useDismissableLayer } from '../../kernel/interaction'
+import { Icon, Spinner, Tooltip, anchorScale, useDismissableLayer } from '../../kernel/interaction'
 import type { JoinedWorktree, PrStatusResult } from '@workspace/repository/contract'
 import type { WorktreeLaunchType } from '@workspace/repository/client'
 import { AttachedFlyout, useHoverIntent } from '../../kernel/interaction'
@@ -51,6 +51,7 @@ export interface WorktreeToolbarMenuProps {
 interface PopoverPos {
   left: number
   bottom: number
+  scale?: number
 }
 
 export const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
@@ -84,7 +85,7 @@ export const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
     const cardEl = btnRef.current?.closest('[data-toolbar-card]') as HTMLElement | null
     setBar(cardEl ?? btnRef.current)
     const r = (cardEl ?? btnRef.current)?.getBoundingClientRect()
-    if (r && menuSide === 'right') setPos({ left: r.right + 8, bottom: window.innerHeight - r.bottom })
+    if (r && menuSide === 'right') setPos({ left: r.right + 8, bottom: window.innerHeight - r.bottom, scale: (cardEl ?? btnRef.current) ? anchorScale((cardEl ?? btnRef.current)!, r) : undefined })
     setOpen(true)
   }, [menuSide])
   const toggle = useCallback(() => (open ? setOpen(false) : show()), [open, show])
@@ -239,16 +240,15 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
       ref={rootRef}
       data-worktree-menu=""
       className={pos
-        ? 'fixed z-[1000] w-[256px] overflow-y-auto overscroll-contain rounded-lg border border-subtle shadow-lg py-1 text-xs'
+        ? 'fixed z-[1000] w-[256px] overflow-y-auto overscroll-contain rounded-lg border border-white/[0.08] bg-surface-1 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] py-1 text-xs'
         : 'cate-rise w-full overflow-y-auto overscroll-contain py-2 text-xs'}
       style={pos
         ? {
           left: pos.left,
           bottom: pos.bottom,
+          transform: pos.scale ? `scale(${pos.scale})` : undefined,
+          transformOrigin: 'bottom left',
           maxHeight: `min(480px, calc(100dvh - ${pos.bottom + 12}px))`,
-          background: 'color-mix(in srgb, var(--surface-0) 80%, transparent)',
-          backdropFilter: 'blur(24px) saturate(1.5)',
-          WebkitBackdropFilter: 'blur(24px) saturate(1.5)',
         }
         : { maxHeight: 'min(480px, 60vh)' }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -323,9 +323,10 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
           ))}
           <div className="my-1 h-px bg-surface-5 mx-2.5" />
           <button
+            data-menu-item
             onClick={() => setCreating(true)}
             disabled={deleting}
-            className="mx-1 w-[calc(100%-0.5rem)] flex items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"
+            className="mx-1 w-[calc(100%-0.5rem)] flex items-center gap-2 h-7 px-1.5 rounded-md text-[13px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"
           >
             <Plus size={13} className="flex-shrink-0" />
             <span>Create new worktree…</span>
@@ -496,7 +497,8 @@ const WorktreeRow: React.FC<{
       title={busy ? 'Discarding' : wt.path}
       aria-busy={busy || undefined}
       aria-selected={focused}
-      className={`mx-1 px-1.5 py-1 rounded-lg select-none transition-colors ${
+      data-menu-item
+      className={`mx-1 px-1.5 py-1 rounded-md select-none transition-colors ${
         busy ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-surface-4'
       }`}
       style={focused ? { backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)` } : undefined}
