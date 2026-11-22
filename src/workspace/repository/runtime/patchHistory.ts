@@ -39,11 +39,41 @@ function blocks(hunks: GitDiffHunk[]): string[][] {
 
 /** Match reported changes, independent of context length and line shifts.
  * Never equate patches merely because they touched the same path. */
-function containsPatch(raw: string, hunks: GitDiffHunk[]): boolean {
+function containsBlocks(actual: string[][], hunks: GitDiffHunk[]): boolean {
   const wanted = blocks(hunks)
-  const actual = blocks(parseReviewPatch(raw))
   return wanted.length > 0 && wanted.every((block) => actual.some((candidate) =>
     candidate.some((_, start) => block.every((line, offset) => candidate[start + offset] === line))))
+}
+
+const DIFF_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-renames']
+const DIFF_BATCH_SIZE = 128
+const HISTORY_BATCH_MIN = 8
+
+function filePaths(file: Pick<TrackedPatch, 'path' | 'oldPath'>): string[] {
+  return file.oldPath && file.oldPath !== file.path ? [file.oldPath, file.path].sort() : [file.path]
+}
+
+/** With renames disabled, the NUL-delimited raw paths precede the patches in
+ * the same order. Use the raw names so spaces, quotes and newlines stay literal. */
+function diffByPath(raw: string): Map<string, string> {
+  if (!raw) return new Map()
+  const boundary = raw.indexOf('\0\0')
+  const entries = raw.slice(0, boundary).split('\0')
+  const patches = raw.slice(boundary + 2).split(/\n(?=diff --git )/)
+  // Unmerged paths and type changes can emit a different number of patches
+  // than raw entries, so they use the path-specific fallback.
+  if (boundary < 0 || entries.length !== patches.length * 2 || !patches[0].startsWith('diff --git ') ||
+      entries.some((entry, index) => index % 2 === 0 && !/^:[^\n]+ [ADM]$/.test(entry))) {
+    throw new Error('Unexpected format for batched Git diff')
+  }
+  return new Map(patches.map((patch, index) => [entries[index * 2 + 1], patch + '\n']))
+}
+
+async function untrackedPatch(absolute: string): Promise<string> {
+  try {
+    const content = (await lstat(absolute)).isSymbolicLink() ? await readlink(absolute) : await readFile(absolute, 'utf8')
+    return `@@ -0,0 +1 @@\n${content.split('\n').map((line) => '+' + line).join('\n')}`
+  } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error }
 }
 
 export function createPatchHistory(deps: { read(cwd: string, args: string[]): Promise<string> }): PatchHistory {
@@ -53,15 +83,11 @@ export function createPatchHistory(deps: { read(cwd: string, args: string[]): Pr
   const pending = new Map<string, Promise<Map<string, PatchEvidence>>>()
   const head = (cwd: string) => deps.read(cwd, ['rev-parse', '--verify', 'HEAD']).then((value) => value.trim())
   const workingDiff = async (cwd: string, base: string, file: Pick<TrackedPatch, 'path' | 'oldPath'>, read = (args: string[]) => deps.read(cwd, args)) => {
-    const patch = await read(['diff', '--no-ext-diff', '--no-textconv', '--no-renames', base, '--', file.oldPath ?? file.path, file.path])
+    const patch = await read(['--literal-pathspecs', 'diff', ...DIFF_FLAGS, base, '--', ...filePaths(file)])
     if (patch.trim()) return patch
     const exists = await read(['cat-file', '-e', `${base}:${file.path}`]).then(() => true, () => false)
     if (exists) return patch
-    try {
-      const absolute = path.join(cwd, file.path)
-      const content = (await lstat(absolute)).isSymbolicLink() ? await readlink(absolute) : await readFile(absolute, 'utf8')
-      return `@@ -0,0 +1 @@\n${content.split('\n').map((line) => '+' + line).join('\n')}`
-    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error }
+    return untrackedPatch(path.join(cwd, file.path))
   }
   return {
     async capture(cwd, files) {
@@ -69,7 +95,7 @@ export function createPatchHistory(deps: { read(cwd: string, args: string[]): Pr
         const base = await head(cwd)
         // A baseline is valid only for files whose reported edit is currently
         // represented. Ingestion may race a commit or another agent's write.
-        for (const file of files) if (!containsPatch(await workingDiff(cwd, base, file), file.hunks)) return
+        for (const file of files) if (!containsBlocks(blocks(parseReviewPatch(await workingDiff(cwd, base, file))), file.hunks)) return
         return base
       } catch { return undefined } // Non-Git checkouts still retain agent edits.
     },
@@ -81,7 +107,7 @@ export function createPatchHistory(deps: { read(cwd: string, args: string[]): Pr
         if (!patches.length) return result
         let current: string
         try { current = await head(cwd) } catch { return result }
-        const paths = [...new Set(patches.flatMap((file) => [file.path, ...(file.oldPath ? [file.oldPath] : [])]))].sort()
+        const paths = [...new Set(patches.flatMap(filePaths))].sort()
         const stamps = await Promise.all(paths.map(async (file) => {
           try { const s = await lstat(path.join(cwd, file)); return [file, s.mtimeMs, s.ctimeMs, s.size, s.ino] }
           catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [file, null]; throw error }
@@ -98,23 +124,106 @@ export function createPatchHistory(deps: { read(cwd: string, args: string[]): Pr
           if (!promise) { promise = deps.read(cwd, args); reads.set(key, promise) }
           return promise
         }
-        const oldest = Math.min(...patches.map((file) => Date.parse(file.createdAt)).filter(Number.isFinite))
+        const workingPatches = new Map<string, string>()
+        const stagedPatches = new Map<string, string>()
+        const batched = new Set<string>()
+        const present = new Set(stamps.filter((stamp) => stamp[1] !== null).map(([file]) => file))
+        for (let start = 0; start < paths.length; start += DIFF_BATCH_SIZE) {
+          const batch = paths.slice(start, start + DIFF_BATCH_SIZE)
+          const diff = (mode: string[]) => read(['--literal-pathspecs', 'diff', ...mode, ...DIFF_FLAGS,
+            '--no-color', '--submodule=short', '--raw', '-z', '--patch', current, '--', ...batch]).then(diffByPath)
+          try {
+            const [working, staged] = await Promise.all([diff([]), diff(['--cached'])])
+            const requested = new Set(batch)
+            if ([...working.keys(), ...staged.keys()].some((name) => !requested.has(name))) continue
+            const unchanged = batch.filter((file) => present.has(file) && !working.has(file))
+            if (unchanged.length) {
+              const tracked = new Set((await read(['--literal-pathspecs', 'ls-tree', '-r', '-z', '--name-only', current, '--', ...unchanged])).split('\0'))
+              const untracked = unchanged.filter((file) => !tracked.has(file))
+              // An unavailable working file leaves this batch on the per-file path.
+              const content = await Promise.all(untracked.map((file) => untrackedPatch(path.join(cwd, file))))
+              untracked.forEach((file, index) => { if (content[index]) working.set(file, content[index]) })
+            }
+            for (const [file, patch] of working) workingPatches.set(file, patch)
+            for (const [file, patch] of staged) stagedPatches.set(file, patch)
+            for (const file of batch) batched.add(file)
+          } catch { /* Preserve per-file evidence if this Git output cannot be batched. */ }
+        }
+        const forFile = (diffs: Map<string, string>, paths: string[]) => paths.map((name) => diffs.get(name) ?? '').join('')
+        let oldest = Infinity
+        for (const file of patches) {
+          const date = Date.parse(file.createdAt)
+          if (Number.isFinite(date)) oldest = Math.min(oldest, date)
+        }
+        // --all can include other branches even when the captured baseline is HEAD.
+        const onlyCurrentRef = refs.trim().split('\n').every((ref) => !ref || ref === current)
+        const rangeFor = (base?: string) => base ? [`${base}..${current}`] : [current]
+        const sinceFor = (base?: string, option = '--since') => !base && Number.isFinite(oldest)
+          ? [`${option}=${new Date(oldest - 86_400_000).toISOString()}`] : []
+        const pathsByBase = new Map<string | undefined, Set<string>>()
+        for (const file of patches) {
+          if (file.commit || (file.baseCommit === current && onlyCurrentRef)) continue
+          let names = pathsByBase.get(file.baseCommit)
+          if (!names) { names = new Set(); pathsByBase.set(file.baseCommit, names) }
+          for (const name of filePaths(file)) names.add(name)
+        }
+        const noHistory = new Map<string | undefined, Set<string>>()
+        for (const [base, names] of pathsByBase) {
+          if (names.size < HISTORY_BATCH_MIN) continue
+          const paths = [...names].sort()
+          const absent = new Set<string>()
+          noHistory.set(base, absent)
+          for (let start = 0; start < paths.length; start += DIFF_BATCH_SIZE) {
+            const batch = paths.slice(start, start + DIFF_BATCH_SIZE)
+            try {
+              // Only use this walk to exclude paths. Full history and separate
+              // merge diffs give a superset of the path-specific commit walk.
+              const raw = await read(['--literal-pathspecs', 'log', '--all', '--full-history', '-m', '--format=',
+                '--name-only', '-z', '--no-color', '--no-show-signature', ...DIFF_FLAGS,
+                ...sinceFor(base, '--since-as-filter'), ...rangeFor(base), '--', ...batch])
+              const changed = raw.split('\0').filter(Boolean)
+              const requested = new Set(batch)
+              const touched = new Set<string>()
+              let valid = true
+              for (const name of changed) {
+                let matched = requested.has(name)
+                if (matched) touched.add(name)
+                for (let slash = name.lastIndexOf('/'); slash > 0; slash = name.lastIndexOf('/', slash - 1)) {
+                  const parent = name.slice(0, slash)
+                  if (requested.has(parent)) { matched = true; touched.add(parent) }
+                }
+                if (!matched) { valid = false; break }
+              }
+              if (valid) for (const name of batch) if (!touched.has(name)) absent.add(name)
+            } catch { /* Try the original path-specific history below. */ }
+          }
+        }
+        const parsed = new Map<string, string[][]>()
+        const matches = (raw: string, hunks: GitDiffHunk[]) => {
+          if (!raw) return false
+          let actual = parsed.get(raw)
+          if (!actual) { actual = blocks(parseReviewPatch(raw)); parsed.set(raw, actual) }
+          return containsBlocks(actual, hunks)
+        }
         for (const file of patches) {
           try {
-            const args = ['--', file.oldPath ?? file.path, file.path]
-            const working = await workingDiff(cwd, current, file, read)
-            const staged = await read(['diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-renames', current, ...args])
-            const uncommitted = containsPatch(working, file.hunks) || containsPatch(staged, file.hunks)
+            const names = filePaths(file)
+            const args = ['--', ...names]
+            const inBatch = names.every((name) => batched.has(name))
+            const working = inBatch ? forFile(workingPatches, names) : await workingDiff(cwd, current, file, read)
+            const staged = inBatch ? forFile(stagedPatches, names) : await read(['--literal-pathspecs', 'diff', '--cached', ...DIFF_FLAGS, current, ...args])
+            const uncommitted = matches(working, file.hunks) || matches(staged, file.hunks)
             let commit: GitCommitSummary | undefined = file.commit
             let parent: string | undefined
-            const range = file.baseCommit ? [`${file.baseCommit}..${current}`] : [current]
-            const since = !file.baseCommit && Number.isFinite(oldest) ? [`--since=${new Date(oldest - 86_400_000).toISOString()}`] : []
-            const log = commit ? '' : await read(['log', '--all', '--reverse', '--format=%H%x00%s%x00%cI', ...since, ...range, ...args])
+            const absent = noHistory.get(file.baseCommit)
+            const log = commit || (file.baseCommit === current && onlyCurrentRef) || names.every((name) => absent?.has(name)) ? ''
+              : await read(['--literal-pathspecs', 'log', '--all', '--reverse', '--format=%H%x00%s%x00%cI',
+                ...sinceFor(file.baseCommit), ...rangeFor(file.baseCommit), ...args])
             for (const entry of log.trim().split('\n').filter(Boolean)) {
               const [hash, message, date] = entry.split('\0')
               if (!file.baseCommit && Number.isFinite(Date.parse(file.createdAt)) && Date.parse(date) < Math.floor(Date.parse(file.createdAt) / 1000) * 1000) continue
-              const patch = await read(['show', '--format=', '--no-ext-diff', '--no-textconv', '--no-renames', hash, ...args])
-              if (!containsPatch(patch, file.hunks)) continue
+              const patch = await read(['--literal-pathspecs', 'show', '--format=', ...DIFF_FLAGS, hash, ...args])
+              if (!matches(patch, file.hunks)) continue
               commit = { hash, message, date }
               break
             }
@@ -124,9 +233,11 @@ export function createPatchHistory(deps: { read(cwd: string, args: string[]): Pr
             // baseline proves this file's contribution was fully reverted.
             const reachable = commit ? await read(['merge-base', '--is-ancestor', commit.hash, current]).then(() => true, () => false) : true
             const onOtherBranch = commit && !reachable ? !!(await read(['for-each-ref', `--contains=${commit.hash}`, '--format=%(objectname)'])).trim() : false
-            const ancestor = baseline && !onOtherBranch ? await read(['merge-base', '--is-ancestor', baseline, current]).then(() => true, () => false) : false
+            const ancestor = baseline && !onOtherBranch && (baseline === current ||
+              await read(['merge-base', '--is-ancestor', baseline, current]).then(() => true, () => false))
             const reverted = baseline && ancestor
-              ? !(await workingDiff(cwd, baseline, file, read)).trim() && (!staged.trim() || !(await read(['diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-renames', baseline, ...args])).trim())
+              ? !(baseline === current ? working : await workingDiff(cwd, baseline, file, read)).trim()
+                && (!staged.trim() || (baseline !== current && !(await read(['--literal-pathspecs', 'diff', '--cached', ...DIFF_FLAGS, baseline, ...args])).trim()))
               : false
             result.set(file.key, { ...(commit ? { commit } : {}), uncommitted: !commit && uncommitted, ...(reverted ? { reverted: true } : {}) })
           } catch {

@@ -4,10 +4,9 @@
 import { documentStoreFor } from '@client/document'
 import { createPanel, revealPanel } from '@client/host'
 import { runtimeFor } from '@kernel/rpc/client'
-import type { AgentChangesFilter } from '@services/agents/contract'
 import { peekAgentPanels } from '@services/agents/client'
 import type { PanelId, PlaceTarget } from '@workspace/document/contract'
-import { type ReviewCreateOptions, type ReviewOp, type ReviewOpenRequest } from '../contract'
+import type { ReviewCreateOptions, ReviewOp, ReviewOpenRequest, ReviewScope } from '../contract'
 
 function sendReviewOp(workspaceId: string, panelId: PanelId, op: ReviewOp): Promise<unknown> {
   return runtimeFor(workspaceId).session.op({ panelId, op })
@@ -55,7 +54,7 @@ export async function openAgentChanges(options: OpenAgentChangesOptions): Promis
   const doc = documentStoreFor(workspaceId)?.getSnapshot()
   if (!doc?.panels[panelId]) return null
   const cwd = options.cwd ?? knownAgentCheckout(workspaceId, panelId)
-  const agentChanges: AgentChangesFilter = {
+  const agentChanges: ReviewScope = {
     panelId,
     ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     ...(options.turnId ? { turnId: options.turnId } : {}),

@@ -141,6 +141,7 @@ test('lists a saved password and autofills username and password without exposin
     const suggestions = await page.evaluate((url) => window.__cateE2E!.call('browserData', 'passwordSuggestions', { url }), `${origin}/login`)
     expect(suggestions).toEqual([expect.objectContaining({ ...(credentialId ? { id: credentialId } : {}), origin, username: 'saved@example.test' })])
     expect(JSON.stringify(suggestions)).not.toContain('autofill secret')
+    await expect(act(page, browser, 'click', 'Email', {}, 'textbox')).resolves.toMatchObject({ ok: true })
     await popup.getByRole('button', { name: /saved@example.test/ }).click()
     await expect(popup).toBeHidden()
     await expect.poll(() => inspectFixture(app, page, browser, "document.querySelector(\"#email\")?.value"))
@@ -177,7 +178,8 @@ test('saves a manual cross-origin iframe login and offers autofill in that frame
       if (!frame) throw new Error('login frame not ready')
       return frame.executeJavaScript(expression)
     }, { id, frameOrigin, expression })
-    await expect.poll(() => inFrame('!!document.querySelector("input[type=password]")')).toBe(true)
+    const waitForLoginFrame = () => expect.poll(() => inFrame('!!document.querySelector("input[type=password]")').catch(() => false)).toBe(true)
+    await waitForLoginFrame()
     await inFrame('document.querySelector("input[type=email]").value="iframe@example.test"; document.querySelector("input[type=password]").value="iframe secret"; document.querySelector("form").requestSubmit()')
     await expect.poll(() => app.evaluate(() => (globalThis as any).__passwordPrompts)).toContain(`Save the password for localhost (iframe@example.test)?`)
     await expect.poll(() => page.evaluate((url) => window.__cateE2E!.call('browserData', 'passwordSuggestions', { url }), frameOrigin))
@@ -186,7 +188,7 @@ test('saves a manual cross-origin iframe login and offers autofill in that frame
     // Reload creates a new frame document. Its isolated listener must be
     // installed again, and the popup must fill that frame rather than the host.
     await app.evaluate(({ webContents }, id) => webContents.fromId(id)!.reload(), id)
-    await expect.poll(() => inFrame('!!document.querySelector("input[type=password]")')).toBe(true)
+    await waitForLoginFrame()
     await page.locator(`[data-node-id="${browser.nodeId}"] [data-unfocused-overlay]`).click()
     await inFrame('document.querySelector("input[type=password]").focus()')
     const surface = page.locator(`[data-browser-surface="${browser.panelId}"]`)

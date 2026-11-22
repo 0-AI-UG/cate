@@ -110,12 +110,12 @@ afterEach(() => {
 
 it('merges an open request, keeping local state, and reveals its file once', async () => {
   expect(snap().reveal).toBeNull()
-  await op({ kind: 'retarget', request: { agentChanges: { agentId: 'codex' }, focusedFile: 'src/a.ts' } })
-  expect(saved()).toMatchObject({ agentChanges: { agentId: 'codex' } })
+  await op({ kind: 'retarget', request: { agentChanges: { panelId: 'term' }, focusedFile: 'src/a.ts' } })
+  expect(saved()).toMatchObject({ agentChanges: { panelId: 'term' } })
   expect(saved()).not.toHaveProperty('focusedFile')
   const reveal = snap().reveal
   expect(reveal).toMatchObject({ path: 'src/a.ts' })
-  await op({ kind: 'retarget', request: { agentChanges: { agentId: 'codex' }, focusedFile: 'src/a.ts' } })
+  await op({ kind: 'retarget', request: { agentChanges: { panelId: 'term' }, focusedFile: 'src/a.ts' } })
   expect(snap().reveal!.seq).toBeGreaterThan(reveal!.seq)
 })
 
@@ -152,12 +152,12 @@ it('defaults new Reviews to agent edits and returns bounded diff pages without a
   expect(page.hunks.flatMap((hunk) => hunk.lines)).toHaveLength(200)
   expect(page.hunks[0].lines[0].newLine).toBe(401)
   expect(page.patch).toBeUndefined()
-  await op({ kind: 'updateFilter', patch: { agentId: 'claude-code' } })
+  await op({ kind: 'updateFilter', patch: { panelId: 'different' } })
   expect(snap().recorded.files).toHaveLength(0)
-  expect(snap().recorded.panels).toEqual([{ id: 'closed', title: 'Implement login', agentIds: ['codex'] }])
+  expect(snap().recorded.panels).toEqual([{ id: 'closed', title: 'Implement login' }])
 })
 
-it('chooses the most active recorded agent and retains sources across all filters', async () => {
+it('shows all agents by default and scopes by terminal, conversation, or turn', async () => {
   session.dispose('shutdown')
   stored = undefined
   document.apply({ kind: 'updatePanel', id: 'review', patch: { fields: { request: null } } })
@@ -168,15 +168,15 @@ it('chooses the most active recorded agent and retains sources across all filter
   records = [record('1', 'claude-code', 'shared', ['c.ts']), record('2', 'codex', 'shared', ['a.ts', 'b.ts']), record('3', 'grok', 'old', ['old1', 'old2', 'old3'])]
   await start({ repoPath: '/repo' })
   for (const listener of statusListeners) listener(repoStatus(['a.ts', 'b.ts', 'c.ts']))
-  await vi.waitFor(() => expect(snap().review.agentChanges?.agentId).toBe('codex'))
-  expect(snap().recorded.files.map((file) => file.path)).toEqual(['a.ts', 'b.ts'])
-  expect(snap().recorded.agents).toContainEqual({ agentId: 'grok', edits: 3, uncommittedEdits: 0 })
-  expect(snap().recorded.panels?.find((source) => source.id === 'shared')?.agentIds).toEqual(['claude-code', 'codex'])
-  await op({ kind: 'updateFilter', patch: { agentId: 'grok', panelId: 'old' } })
-  expect(snap().recorded.files.map((file) => file.path)).toEqual(['old1', 'old2', 'old3'])
+  await vi.waitFor(() => expect(snap().recorded.files).toHaveLength(6))
+  expect(snap().review.agentChanges).toEqual({})
+  await op({ kind: 'retarget', request: { agentChanges: { panelId: 'shared' } } })
+  expect(snap().recorded.files.map((file) => file.path)).toEqual(['c.ts', 'a.ts', 'b.ts'])
+  await op({ kind: 'retarget', request: { agentChanges: { panelId: 'shared', sessionId: '1', turnId: 't' } } })
+  expect(snap().recorded.files.map((file) => file.path)).toEqual(['c.ts'])
   expect(snap().recorded.panels).toHaveLength(2)
-  await op({ kind: 'retarget', request: { agentChanges: { panelId: 'old' } } })
-  expect(snap().review.agentChanges?.agentId).toBe('grok')
+  await op({ kind: 'updateFilter', patch: { panelId: null, sessionId: null, turnId: null } })
+  expect(snap().recorded.files).toHaveLength(6)
 })
 
 it('does not accept the old Git panel operations', async () => {
@@ -203,13 +203,15 @@ it('retains saved edits in a clean checkout and groups summaries by commit', asy
   expect(snap().review).not.toHaveProperty('showHistory')
 })
 
-it('restores recorded edits from a clean checkout regardless of a saved Active preference', async () => {
+it('restores all recorded edits despite a previously saved agent preference', async () => {
   session.dispose('shutdown')
   stored = { repoPath: '/repo', spec: { kind: 'uncommitted' }, showHistory: false, agentChanges: { agentId: 'codex' }, notes: [] }
-  records = [{ id: 'saved', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['closed'], cwd: '/repo', createdAt: '1', files: [{ path: 'src/a.ts', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }] }]
+  const savedRecord: AgentChangeRecord = { id: 'saved', agentId: 'codex', sessionId: 's', turnId: 't', panelIds: ['closed'], cwd: '/repo', createdAt: '1', files: [{ path: 'src/a.ts', hunks: diff.hunks, additions: 1, deletions: 0, coverage: 'patch' }] }
+  records = [savedRecord, { ...savedRecord, id: 'other', agentId: 'claude-code' }]
   await start()
   for (const listener of statusListeners) listener(repoStatus([]))
-  await vi.waitFor(() => expect(snap().recorded.files).toHaveLength(1))
+  await vi.waitFor(() => expect(snap().recorded.files).toHaveLength(2))
+  expect(snap().review.agentChanges).toEqual({})
   expect(snap().review).not.toHaveProperty('showHistory')
   expect(snap().review).not.toHaveProperty('spec')
 })

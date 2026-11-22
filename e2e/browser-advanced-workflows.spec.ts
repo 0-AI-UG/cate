@@ -151,8 +151,25 @@ test.beforeAll(async () => {
       html(response, `<title>Sign in</title><main><h1>Sign in</h1><form id="login" onsubmit="event.preventDefault();signedIn.textContent=user.value+':'+pass.value"><label>Email <input id="user" type="email" autocomplete="username"></label><label>Password <input id="pass" type="password" autocomplete="current-password"></label><button>Sign in</button></form><output id="signed-in">signed out</output></main><script>const user=document.querySelector('#user'),pass=document.querySelector('#pass'),signedIn=document.querySelector('#signed-in')</script>`)
       return
     }
+    if (url.pathname === '/login/steps') {
+      html(response, `<title>Sign in</title><form id="login">
+        <label>Email <input id="user" type="email" autocomplete="username"></label>
+        <button type="button" onclick="this.hidden=true;document.querySelector('#password-step').hidden=false">Continue</button>
+        <div id="password-step" hidden><label>Password <input id="pass" type="password" autocomplete="current-password"></label></div>
+      </form>`)
+      return
+    }
     if (url.pathname === '/signup') {
       html(response, `<title>Join</title><main><h1>Join</h1><form id="join" onsubmit="event.preventDefault();created.textContent=pass.value.length===20&&pass.value===again.value?'created':'mismatch'"><label>Password <input id="pass" type="password" autocomplete="new-password"></label><label>Repeat password <input id="again" type="password" autocomplete="new-password"></label><button>Create account</button></form><output id="created">none</output></main><script>const pass=document.querySelector('#pass'),again=document.querySelector('#again'),created=document.querySelector('#created')</script>`)
+      return
+    }
+    if (url.pathname === '/signup/confirmation') {
+      html(response, `<title>Join</title><form id="join">
+        <label>Current password <input id="current" type="password" autocomplete="current-password"></label>
+        <label>New password <input id="pass" type="password" autocomplete="new-password"></label>
+      </form>
+      <label>Confirm password <input id="again" form="join" type="password"></label>
+      <form><label>Sign-in password <input id="other" type="password"></label></form>`)
       return
     }
     if (url.pathname === '/diagnostics') {
@@ -421,17 +438,36 @@ test('hovers to open a menu and reads the page console and network', async () =>
 
 // The harness calls as a client, which the CLI permissions never gate (the
 // router tests cover `cliBrowserPasswordsEnabled`).
-test('signs in with a saved password the agent never sees', async () => {
-  const browser = await createBrowser('/login')
-  await expect.poll(() => target(page, browser, 'Sign in', 'button').then(() => ({ ok: true })), { timeout: 20_000 }).toMatchObject({ ok: true })
-  await page.evaluate(({ origin, workspaceId }) => window.__cateE2E!.call('browserData', 'savePassword', { input: { origin, username: 'ada@example.test', password: 's3cret-pass' } }, workspaceId), { origin: appOrigin, workspaceId: browser.workspaceId })
+for (const scope of ['page', 'username']) {
+  test(`signs in with a saved password the agent never sees (${scope} target)`, async () => {
+    const browser = await createBrowser('/login')
+    await target(page, browser, 'Sign in', 'button')
+    await page.evaluate(({ origin, workspaceId }) => window.__cateE2E!.call('browserData', 'savePassword', { input: { origin, username: 'ada@example.test', password: 's3cret-pass' } }, workspaceId), { origin: appOrigin, workspaceId: browser.workspaceId })
 
-  const filled = await browserInvoke(page, browser, 'login')
-  expect(filled, JSON.stringify(filled)).toMatchObject({ ok: true, result: { action: { method: 'login', status: 'verified' } } })
-  expect(JSON.stringify(filled)).not.toContain('s3cret-pass')
-  await expect(act(page, browser, 'click', 'Sign in', {}, 'button')).resolves.toMatchObject({ ok: true })
-  await expect(inspectFixture(app!, page, browser, "document.querySelector('#signed-in').textContent", 'text')).resolves
-    .toMatchObject({ result: { text: 'ada@example.test:s3cret-pass' } })
+    const filled = scope === 'username' ? await act(page, browser, 'login', 'Email', {}, 'textbox') : await browserInvoke(page, browser, 'login')
+    expect(filled, JSON.stringify(filled)).toMatchObject({ ok: true, result: { action: { method: 'login', status: 'verified' } } })
+    expect(JSON.stringify(filled)).not.toContain('s3cret-pass')
+    await expect(act(page, browser, 'click', 'Sign in', {}, 'button')).resolves.toMatchObject({ ok: true })
+    await expect(inspectFixture(app, page, browser, "document.querySelector('#signed-in').textContent", 'text')).resolves
+      .toMatchObject({ result: { text: 'ada@example.test:s3cret-pass' } })
+  })
+}
+
+test('signs in across separate username and password steps', async () => {
+  const browser = await createBrowser('/login/steps')
+  await page.evaluate(({ origin, workspaceId }) => window.__cateE2E!.call('browserData', 'savePassword', { input: {
+    origin, username: 'steps@example.test', password: 'steps-secret',
+  } }, workspaceId), { origin: appOrigin, workspaceId: browser.workspaceId })
+
+  const first = await act(page, browser, 'login', 'Email', {}, 'textbox')
+  expect(first).toMatchObject({ ok: true })
+  expect(JSON.stringify(first)).toContain('this step asks for no password')
+  await expect(inspectFixture(app, page, browser, '[document.querySelector("#user").value, document.querySelector("#pass").value]')).resolves
+    .toMatchObject({ result: { value: ['steps@example.test', ''] } })
+  await expect(act(page, browser, 'click', 'Continue', {}, 'button')).resolves.toMatchObject({ ok: true })
+  await expect(act(page, browser, 'login', 'Password', {}, 'textbox')).resolves.toMatchObject({ ok: true })
+  await expect(inspectFixture(app, page, browser, 'document.querySelector("#pass").value === "steps-secret"')).resolves
+    .toMatchObject({ result: { value: true } })
 })
 
 test('creates an account with a generated password the agent never sees, and saves it', async () => {
@@ -449,6 +485,17 @@ test('creates an account with a generated password the agent never sees, and sav
 
   const again = await browserInvoke(page, browser, 'signup', { username: 'grace@example.test' })
   expect(again.error).toContain('browser-signup-exists')
+})
+
+test('fills a supplied signup password and its external confirmation only', async () => {
+  const browser = await createBrowser('/signup/confirmation')
+  const filled = await act(page, browser, 'signup', 'New password', {
+    username: 'confirm@example.test', password: 'supplied-secret',
+  }, 'textbox')
+  expect(filled).toMatchObject({ ok: true })
+  expect(JSON.stringify(filled)).not.toContain('supplied-secret')
+  await expect(inspectFixture(app, page, browser, `['pass', 'again', 'current', 'other'].map(id => document.getElementById(id).value)`)).resolves
+    .toMatchObject({ result: { value: ['supplied-secret', 'supplied-secret', '', ''] } })
 })
 
 // Not an app bug: the frame server is same-site with the page (both

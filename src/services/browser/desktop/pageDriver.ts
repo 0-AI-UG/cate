@@ -36,7 +36,7 @@ import { PageLog } from './pageLog'
 import { FrameTree } from './frames'
 import { PasswordFrames } from './passwordFrames'
 import { BROWSER_PAGE_CHANNELS } from '../contract/pageBridge'
-import { EMPTY_PASSWORD_FIELD, FILE_INPUT_OF, PASSWORD_FIELD, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
+import { EMPTY_PASSWORD_FIELD, FILE_INPUT_OF, PASSWORD_FIELD, PASSWORD_FOR_USERNAME, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
 import type { GuestDialogs } from './dialogs'
 
 type BrowserArgs = Record<string, unknown>
@@ -352,7 +352,7 @@ export class PageDriver {
       const field = await this.passwords.resolve(targetId, origin)
       const password = await this.locate(field, PASSWORD_FIELD)
       if (password) await this.fillLogin(password, credential)
-      else await this.fillUsername(field, credential.username)
+      else await this.fillUsernameStep(field, credential)
       return { ok: true as const }
     }).catch((error) => ({ error: error instanceof Error ? error.message : 'credential-fill-failed' }))
   }
@@ -376,6 +376,15 @@ export class PageDriver {
     }
   }
 
+  /** Returns whether this username step also had a password field to fill. */
+  private async fillUsernameStep(field: ElementTarget, credential: { username: string; password: string }): Promise<boolean> {
+    await this.fillUsername(field, credential.username)
+    const password = await this.locate(field, PASSWORD_FOR_USERNAME)
+    if (!password) return false
+    await this.fillElement(password, credential.password)
+    return true
+  }
+
   /** Fills the saved login the runtime chose (`credential`, saved for
    *  `origin`) into the sign-in form: the target's, or the page's. A step that
    *  asks for the username alone gets the username. */
@@ -389,16 +398,15 @@ export class PageDriver {
     if (!field) throw new Error('browser-login-field-not-found')
     await this.checkOrigin(field, credential.origin)
     this.check()
-    if (password) {
-      await this.fillLogin(password, credential)
-      return [`Filled the saved login for ${credential.username || 'this site'}; the password is hidden. Submit the form to sign in.`]
+    if (password) await this.fillLogin(password, credential)
+    else if (!(await this.fillUsernameStep(field, credential))) {
+      return [`Filled the username ${credential.username}; this step asks for no password. Continue, then run login again on the password step.`]
     }
-    await this.fillUsername(field, credential.username)
-    return [`Filled the username ${credential.username}; this step asks for no password. Continue, then run login again on the password step.`]
+    return [`Filled the saved login for ${credential.username || 'this site'}; the password is hidden. Submit the form to sign in.`]
   }
 
   /** Fills a new password (`credential`, generated for `origin`) into a
-   *  sign-up form: every empty password field of the form, so the password
+   *  sign-up form: its empty new password fields, so the password
    *  and its confirmation. */
   private async signup(target: ElementTarget | undefined, credential: { password: string; origin: string }): Promise<string[]> {
     if (target?.sessionId) throw new Error('browser-login-origin-mismatch')
