@@ -14,13 +14,14 @@ import { ShareDialog } from './pairing/ShareDialog'
 import { MachineFolderHost } from './remote/MachineFolderHost'
 import { MachinePromptDialog } from './remote/MachinePromptDialog'
 import { OpenWorkspaceDialog } from './remote/OpenWorkspaceDialog'
-import { WHATS_NEW_VIEW, WhatsNewAfterUpdate, WhatsNewOverlay } from './chrome/WhatsNew'
+import { WHATS_NEW_VIEW, WhatsNewOverlay } from './chrome/WhatsNew'
 import { SettingsWindow } from './settings/SettingsWindow'
 import { WelcomeDialog } from './dialogs/WelcomeDialog'
 import { UpdateReadyDialog } from './dialogs/UpdateReadyDialog'
 import { OnboardingTour } from './onboarding/OnboardingTour'
 import { NotificationToasts } from './notifications'
 import { useUIStore } from './state/uiStore'
+import { ContextMenuHost, MessageDialogHost } from '../kernel/interaction'
 import { useShownWorkspaceId } from './state/windowContent'
 
 export interface OverlayViewProps {
@@ -85,6 +86,8 @@ export function ClientOverlays({ firstRun = true }: ClientOverlaysProps): JSX.El
   return (
     <>
       <OverlayHost />
+      <ContextMenuHost />
+      <MessageDialogHost />
       <CommandPalette />
       <OpenWorkspaceDialog />
       <MachineFolderHost />
@@ -95,7 +98,6 @@ export function ClientOverlays({ firstRun = true }: ClientOverlaysProps): JSX.El
         <>
           <WelcomeDialog />
           <OnboardingTour />
-          <WhatsNewAfterUpdate />
         </>
       )}
       <UpdateReadyDialog />

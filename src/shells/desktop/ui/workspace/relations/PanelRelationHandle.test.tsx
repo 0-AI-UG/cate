@@ -117,7 +117,7 @@ describe('PanelRelationHandle', () => {
     expect(useRelationUi.getState().editingRelationId).toBe(relations[0].id)
   })
 
-  it('opens the panel picker in the relation portal and links the created panel', async () => {
+  it('opens the panel picker as a dialog and links the created panel', async () => {
     openDocument(
       [{ id: 'source', type: 'terminal', title: 'Terminal', fields: {} }],
       { sourceNode: { id: 'sourceNode', rect: { origin: { x: 0, y: 0 }, size: { width: 100, height: 100 } }, dock: { kind: 'stack', id: 's', panels: ['source'] } } },
@@ -146,23 +146,13 @@ describe('PanelRelationHandle', () => {
       overlay.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, clientX: 1000, clientY: 350 }))
     })
 
-    expect(container.querySelector('[aria-label="New linked panel"]')).toBeNull()
-    const menu = relationPortal.querySelector<HTMLElement>('[aria-label="New linked panel"]')!
-    expect(menu).not.toBeNull()
-    expect(menu.querySelector('[data-panel-connection-menu-port]')).not.toBeNull()
-    const preview = relationPortal.querySelector<SVGPathElement>('[data-panel-connection-create-preview] path')!
-    expect(preview.getAttribute('d')).toMatch(/^M 34 105 C /)
-    expect(preview.getAttribute('d')).toMatch(/, 440 130$/)
-    expect(preview.getAttribute('stroke-dasharray')).toBe('6 5')
-    expect(menu.style.top).toBe('130px')
-    expect(menu.style.right).toBe('-671px')
-    expect(menu.style.transform).toBe('translateY(-50%)')
-    expect(menu.style.animation).toBe('none')
-    const labels = [...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)
+    const menu = document.body.querySelector<HTMLElement>('[aria-label="New linked panel"]')!
+    expect(menu.closest('[role="dialog"]')).not.toBeNull()
+    const labels = [...menu.querySelectorAll('button')].map((item) => item.textContent)
     expect(labels).toEqual(['Files', 'Terminal', 'Browser'])
 
     await act(async () => {
-      ;[...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      ;[...menu.querySelectorAll<HTMLButtonElement>('button')]
         .find((item) => item.textContent === 'Browser')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -174,7 +164,7 @@ describe('PanelRelationHandle', () => {
     ])
     const browserNodeId = view.getState().nodeForPanel('browser-new')!
     const browserNode = view.getState().nodes[browserNodeId]!
-    expect(browserNode.origin).toEqual({ x: 452, y: -170 })
+    expect(browserNode.origin).toEqual({ x: 440, y: -170 })
     expect(panelConnectionAnchor(browserNode.rect, relations[0].toSide!)).toEqual({ x: 440, y: 130 })
     expect(view.getState().selection).toEqual([browserNodeId])
     for (const nodeId of ['sourceNode', browserNodeId]) {

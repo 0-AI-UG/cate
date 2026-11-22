@@ -19,6 +19,7 @@ export interface AgentHookRow {
   agent: AgentDef
   folderPresent: boolean
   injected: boolean
+  hookTrust?: AgentHookAgentState['hookTrust']
   approvalDetection: AgentApprovalDetection
 }
 export interface AgentHookController {
@@ -33,13 +34,15 @@ export interface AgentHookController {
 }
 function agentHookRows(live: readonly AgentHookAgentState[]): AgentHookRow[] {
   const byId = new Map(live.map((state) => [state.agentId, state]))
-  return AGENTS.map((agent) => ({ agent, folderPresent: byId.get(agent.id)?.folderPresent ?? false, injected: byId.get(agent.id)?.injected ?? false, approvalDetection: byId.get(agent.id)?.approvalDetection ?? AGENT_APPROVAL_DETECTION[agent.id] }))
+  return AGENTS.map((agent) => ({ agent, folderPresent: byId.get(agent.id)?.folderPresent ?? false, injected: byId.get(agent.id)?.injected ?? false, hookTrust: byId.get(agent.id)?.hookTrust, approvalDetection: byId.get(agent.id)?.approvalDetection ?? AGENT_APPROVAL_DETECTION[agent.id] }))
 }
 function agentHookStatus(row: AgentHookRow, config: AgentHookConfig): string {
   const mode = resolveAgentHookMode(config, row.agent.id)
   const inUse = agentHookInUse(row.agent.id, { folderPresent: row.folderPresent })
   if (mode === 'off') return 'Off for new terminals'
   if (!agentHooksEnabled(mode, inUse)) return 'Not configured in this workspace'
+  if (row.injected && row.hookTrust === 'approval-required') return 'Hooks need approval'
+  if (row.injected && row.hookTrust === 'unknown') return 'Hooks installed; trust could not be checked'
   return row.injected ? 'Hooks installed' : 'Will install when a terminal opens'
 }
 function withHookMode(config: AgentHookConfig, agentId: AgentId, mode: AgentHookMode): AgentHookConfig {
@@ -107,19 +110,22 @@ export function AgentHookControl({ agentId, name, controller, onChanged }: { age
   const row = controller.states[agentId] ?? { agent: AGENT_DEFS[agentId], folderPresent: false, injected: false, approvalDetection: AGENT_APPROVAL_DETECTION[agentId] }
   const mode = resolveAgentHookMode(controller.config, agentId)
   const status = controller.loading ? 'Checking agent activity' : agentHookStatus(row, controller.config)
-  const installed = mode !== 'off' && row.injected && !controller.loading
+  const installed = mode !== 'off' && row.injected && !controller.loading && (!row.hookTrust || row.hookTrust === 'trusted')
+  const needsApproval = mode !== 'off' && row.injected && row.hookTrust === 'approval-required' && !controller.loading
   return (
     <div data-agent-hook-id={agentId} className="space-y-3 text-xs text-muted">
       <label className="flex items-center justify-between gap-3">
         <span className="mr-auto text-[13px] font-medium text-primary">Cate integration</span>
         <span aria-label={`${name} integration status`} title={status} className="inline-flex">
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: installed ? 'var(--git-added)' : 'currentColor' }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: needsApproval ? 'var(--activity-orange)' : installed ? 'var(--git-added)' : 'currentColor' }} />
           <span className="sr-only">{status}</span>
         </span>
         <select aria-label={`${name} integration`} title="Cate hooks for new terminals" value={mode} disabled={!controller.available || controller.loading} onChange={(event) => { void controller.setMode(agentId, event.target.value as AgentHookMode).then(onChanged) }} className="rounded border border-subtle bg-surface-2 px-1.5 py-0.5 text-[11px] text-secondary disabled:opacity-40">
           {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value} title={option.description}>{option.label}</option>)}
         </select>
       </label>
+      {needsApproval && <p role="status">Hooks need approval. In the Codex terminal, open <code>/hooks</code> and review and trust Cate’s hooks. Then send a message to enable status tracking.</p>}
+      {row.hookTrust === 'unknown' && mode !== 'off' && <p>Hook trust could not be checked. Open <code>/hooks</code> in Codex to check whether Cate’s hooks need approval.</p>}
       {row.approvalDetection.source === 'config' && !controller.loading && <span className="flex justify-between text-[11px]" title={row.approvalDetection.detail}><span>Approvals: </span><span>{APPROVAL_LABELS[row.approvalDetection.mode]}</span></span>}
     </div>
   )

@@ -78,7 +78,7 @@ test('first native pan after idle without a renderer debugger', async () => {
   mkdirSync(userData); mkdirSync(entryDir)
   const { version } = require('../package.json') as { version: string }
   writeFileSync(path.join(userData, 'ui-state.json'), JSON.stringify({ telemetryNoticeAcknowledgedVersion: 99, onboardingCompleted: true, whatsNewSeenVersion: version }))
-  if (process.env.CATE_UNINSTRUMENTED_WALLPAPER === '1') writeFileSync(path.join(userData, 'settings.json'), JSON.stringify({ terminalCursorBlink: true, canvasGridStyle: 'dots', canvasBackgroundImagePath: 'builtin:snowy-pass', canvasBackgroundImageOpacity: 1 }))
+  if (process.env.CATE_UNINSTRUMENTED_WALLPAPER === '1') writeFileSync(path.join(userData, 'settings.json'), JSON.stringify({ terminalCursorBlink: true, canvasGridStyle: 'dots', canvasBackgroundImagePath: 'builtin:hillside', canvasBackgroundImageOpacity: 1 }))
   writeFileSync(path.join(entryDir, 'package.json'), JSON.stringify({ name: 'cate-idle-probe', version, main: 'main.cjs' }))
   const output = process.env.CATE_UNINSTRUMENTED_IDLE_OUTPUT ?? test.info().outputPath('native-idle.json')
   const traceOutput = process.env.CATE_UNINSTRUMENTED_TRACE_OUTPUT ?? test.info().outputPath('native-idle.pftrace')

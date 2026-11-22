@@ -6,7 +6,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowUp, File as FileIcon, Folder, FolderPlus } from 'lucide-react'
+import { ArrowUp, Folder, FolderPlus } from 'lucide-react'
+import { getFileIcon } from './FileTreeNode'
 import { LoadingState, Modal, btn, inputCls } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
 import { pathDisplayName, pathHasPrefix, pathKey, toAbsolutePath, type FileEntry } from '@workspace/files/contract'
@@ -131,7 +132,7 @@ export function SavePathDialog({ workspaceId, defaultPath, rootPath, title = 'Sa
                 <button
                   type="button"
                   onClick={() => open(crumb.path)}
-                  className={`rounded px-1.5 py-0.5 hover:bg-hover ${index === all.length - 1 ? 'text-primary font-medium' : 'text-secondary'}`}
+                  className={`rounded-md px-1.5 py-0.5 hover:bg-hover ${index === all.length - 1 ? 'text-primary font-medium' : 'text-secondary'}`}
                 >{crumb.name}</button>
               </span>
             ))}
@@ -167,9 +168,9 @@ export function SavePathDialog({ workspaceId, defaultPath, rootPath, title = 'Sa
                 if (entry.isDirectory) open(entry.path)
                 else { setName(entry.name); void save(entry.name) }
               }}
-              className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] ${selected === entry.path ? 'bg-surface-4 text-primary' : 'hover:bg-hover'} ${entry.isDirectory ? 'text-primary' : 'text-muted'}`}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] ${selected === entry.path ? 'bg-surface-4 text-primary' : 'hover:bg-hover'} ${entry.isDirectory ? 'text-primary' : 'text-muted'}`}
             >
-              {entry.isDirectory ? <Folder size={14} className="shrink-0 text-secondary" /> : <FileIcon size={14} className="shrink-0" />}
+              <EntryIcon name={entry.name} isDirectory={entry.isDirectory} />
               <span className="truncate">{entry.name}</span>
             </button>
           ))}
@@ -216,4 +217,11 @@ export function showSavePathDialog(request: SavePathRequest): Promise<string | n
     }
     root.render(<SavePathDialog {...request} onDone={done} />)
   })
+}
+
+/** The Explorer's icon for a file or folder. */
+function EntryIcon({ name, isDirectory }: { name: string; isDirectory: boolean }): JSX.Element {
+  const dot = name.lastIndexOf('.')
+  const def = getFileIcon(dot > 0 ? name.slice(dot + 1) : '', isDirectory, false)
+  return <span className="flex shrink-0 items-center" style={{ color: def.color }}>{def.icon}</span>
 }

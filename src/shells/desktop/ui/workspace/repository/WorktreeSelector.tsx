@@ -25,10 +25,12 @@ interface WorktreeSelectorProps {
   disabled?: boolean
   focused?: boolean
   onHoverChange?: (worktreeId: string | null) => void
+  /** The worktree whose menu row is highlighted; null when none or the menu closes. */
+  onPreview?: (worktreeId: string | null) => void
   focusAction?: { label: string; onSelect: () => void }
 }
 
-export function WorktreeSelector({ worktrees, value, onChange, title, prefix, overlay = false, disabled = false, focused = false, onHoverChange, focusAction }: WorktreeSelectorProps) {
+export function WorktreeSelector({ worktrees, value, onChange, title, prefix, overlay = false, disabled = false, focused = false, onHoverChange, onPreview, focusAction }: WorktreeSelectorProps) {
   const [hovered, setHovered] = useState(false)
   const [keyboardFocused, setKeyboardFocused] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -70,7 +72,7 @@ export function WorktreeSelector({ worktrees, value, onChange, title, prefix, ov
       const choice = await ui.showContextMenu([
         ...(focusAction ? [{ id: '__focus', label: focusAction.label }, { type: 'separator' as const }] : []),
         ...live.map((worktree) => ({ id: worktree.id, label: worktreeLabel(worktree) + (worktree.id === current.id ? '  ✓' : '') })),
-      ])
+      ], onPreview ? { onHighlight: (id) => onPreview(id && live.some((worktree) => worktree.id === id) ? id : null) } : undefined)
       if (choice === '__focus' && focusAction) focusAction.onSelect()
       else if (choice && choice !== current.id && live.some((worktree) => worktree.id === choice)) await onChange(choice)
     } finally {
@@ -95,10 +97,10 @@ export function WorktreeSelector({ worktrees, value, onChange, title, prefix, ov
     onBlur={() => setKeyboardFocused(false)}
     style={{
       display: 'inline-flex', alignItems: 'center', gap: expanded ? 4 : 0,
-      height: 18, padding: expanded ? '0 9px 0 7px' : '0 4px', borderRadius: 999,
+      height: overlay ? 18 : 'var(--ctl-h, 24px)', padding: expanded ? (overlay ? '0 9px 0 7px' : '0 10px 0 8px') : (overlay ? '0 4px' : '0 7px'), borderRadius: 'var(--node-tab-radius, 6px)',
       backgroundColor: `color-mix(in srgb, ${color} 92%, black)`, border: 'none',
       boxShadow: focused ? `0 0 10px -1px ${color}` : 'none',
-      color: '#fff', fontSize: 10, fontWeight: 600, lineHeight: 1, letterSpacing: 0.2,
+      color: '#fff', fontSize: overlay ? 10 : 11, fontWeight: 600, lineHeight: 1, letterSpacing: 0.2,
       textShadow: '0 1px 1px rgba(0,0,0,0.3)', cursor: disabled ? 'default' : 'pointer', userSelect: 'none',
       transition: 'box-shadow 150ms ease, background-color 150ms ease, filter 150ms ease, gap 150ms ease, padding 150ms ease',
       filter: focused ? 'brightness(1.12)' : undefined,

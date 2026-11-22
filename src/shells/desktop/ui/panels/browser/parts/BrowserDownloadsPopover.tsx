@@ -1,6 +1,6 @@
 import { useRef, type RefObject } from 'react'
 import { CircleCheck as CheckCircle, Download as DownloadSimple, FolderOpen, CircleAlert as WarningCircle, X } from 'lucide-react'
-import { POPOVER_SURFACE, useDismissableLayer } from '../../../kernel/interaction'
+import { POPOVER_SURFACE, useDismissableLayer, useMenuNumbers } from '../../../kernel/interaction'
 import type { BrowserDownload } from '@panels/browser/contract'
 
 /** A download as the view shows it; `local` when this client downloaded it
@@ -35,6 +35,7 @@ function downloadStatus(download: BrowserPanelDownload): string {
 export function BrowserDownloadsPopover({ downloads, onAction, onClose, triggerRef }: Props): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
+  useMenuNumbers(ref, true)
   useDismissableLayer({ open: true, contentRef: ref, triggerRefs: [triggerRef], onDismiss: onClose })
 
   return (
@@ -44,8 +45,8 @@ export function BrowserDownloadsPopover({ downloads, onAction, onClose, triggerR
       className={`absolute right-2 top-[5.5rem] z-50 w-80 overflow-hidden ${POPOVER_SURFACE}`}
       onMouseDown={(event) => event.stopPropagation()}
     >
-      <div className="flex h-10 items-center border-b border-subtle px-3">
-        <span className="flex-1 text-sm font-medium text-primary">Downloads</span>
+      <div className="flex h-8 items-center border-b border-subtle px-3">
+        <span className="flex-1 text-[13px] font-medium text-primary">Downloads</span>
         <button
           type="button"
           onClick={onClose}
@@ -55,14 +56,14 @@ export function BrowserDownloadsPopover({ downloads, onAction, onClose, triggerR
           <X size={14} />
         </button>
       </div>
-      <div className="max-h-80 overflow-y-auto py-1">
+      <div className="max-h-80 overflow-y-auto p-1">
         {downloads.map((download) => {
           const active = download.state === 'progressing' || download.state === 'paused'
           const progress = download.totalBytes > 0
             ? Math.min(100, download.receivedBytes / download.totalBytes * 100)
             : 0
           return (
-            <div key={download.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-hover">
+            <div key={download.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-hover">
               {download.state === 'completed' ? (
                 <CheckCircle size={20} className="shrink-0 text-agent" />
               ) : download.state === 'interrupted' ? (
@@ -74,16 +75,17 @@ export function BrowserDownloadsPopover({ downloads, onAction, onClose, triggerR
                 type="button"
                 disabled={download.state !== 'completed' || !download.local}
                 onClick={() => onAction(download, 'open')}
-                className="min-w-0 flex-1 text-left disabled:cursor-default"
-              >
-                <div className="truncate text-sm text-primary">{download.filename}</div>
+                data-menu-item
+                className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
+              ><div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] text-primary">{download.filename}</div>
                 <div className="mt-0.5 text-xs text-muted">{downloadStatus(download)}</div>
                 {active && download.totalBytes > 0 && (
                   <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-5">
                     <div className="h-full rounded-full bg-agent" style={{ width: `${progress}%` }} />
                   </div>
                 )}
-              </button>
+              </div></button>
               {!download.local ? null : active ? (
                 <button
                   type="button"

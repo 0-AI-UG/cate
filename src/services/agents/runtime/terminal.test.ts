@@ -163,6 +163,36 @@ afterEach(() => {
 })
 
 describe('terminal agents', () => {
+  it('reports untrusted hooks and clears the warning when real lifecycle events arrive', async () => {
+    vi.spyOn(agents.hooks, 'hooksInstalled').mockResolvedValue(true)
+    vi.spyOn(agents.hooks, 'hookTrust').mockResolvedValue('approval-required')
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('pty-1', 'term', 'codex')
+    await vi.waitFor(() => expect(agents.panels.state('term')?.hooksNeedApproval).toBe(true))
+    expect(agents.panels.state('term')?.canReceivePrompt).toBe(false)
+    await post(env, 'codex', { hook_event_name: 'UserPromptSubmit', session_id: 'approved', cwd: root })
+    expect(agents.panels.state('term')?.hooksNeedApproval).toBeUndefined()
+    expect(agents.panels.state('term')?.status).toBe('running')
+  })
+
+  it('rechecks silent agents after hook trust changes without inventing lifecycle state', async () => {
+    vi.spyOn(agents.hooks, 'hooksInstalled').mockResolvedValue(true)
+    const trust = vi.spyOn(agents.hooks, 'hookTrust').mockResolvedValue('approval-required')
+    await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('pty-1', 'term', 'codex')
+    await vi.waitFor(() => expect(agents.panels.state('term')?.hooksNeedApproval).toBe(true))
+    trust.mockResolvedValue('trusted')
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 16_000)
+    try {
+      terminal.scan('pty-1', 'term', 'codex')
+      await vi.waitFor(() => expect(agents.panels.state('term')?.hooksNeedApproval).toBeUndefined())
+      expect(agents.panels.state('term')?.canReceivePrompt).toBe(false)
+      expect(agents.panels.state('term')?.status).toBe('notRunning')
+    } finally { clock.mockRestore() }
+  })
+
   it('reads an exactly identified process session before Codex sends its first hook', async () => {
     const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockResolvedValue({ agentId: 'codex', sessionId: 'resumed', cwd: root })
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
@@ -291,6 +321,42 @@ describe('terminal agents', () => {
     expect(await restore()).toEqual({ input: 'codex resume sess-1' })
     await terminal.spawn({ terminalId: 'pty-2', panelId: 'term', cwd: root, continueFrom: 'pty-1' })
     expect(await restore()).toEqual({})
+  })
+
+  it('restores Codex readiness after a runtime restart without requiring another prompt', async () => {
+    const first = await terminal.spawn({ terminalId: 'old-pty', panelId: 'term', cwd: root })
+    await post(first, 'codex', { hook_event_name: 'SessionStart', session_id: 'saved-session', cwd: root })
+    agentTerminals.dispose()
+    agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile })
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockResolvedValue({ agentId: 'codex', sessionId: 'saved-session', cwd: root })
+    const env = await terminal.spawn({ terminalId: 'restored-pty', panelId: 'term', cwd: root, launch: TERMINAL_RESTORE_LAUNCH })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('restored-pty', 'term', 'codex')
+    await vi.waitFor(() => expect(agentTerminals.state('term')).toMatchObject({
+      status: 'waitingForInput', canReceivePrompt: true, session: { sessionId: 'saved-session' },
+    }))
+    expect(notifications).toEqual([])
+    // The next turn is hook-driven; rediscovery cannot turn it idle again.
+    await post(env, 'codex', { hook_event_name: 'UserPromptSubmit', session_id: 'saved-session', cwd: root })
+    terminal.scan('restored-pty', 'term', 'codex')
+    expect(agentTerminals.state('term')).toMatchObject({ status: 'running', canReceivePrompt: false })
+    identify.mockRestore()
+  })
+
+  it.each(['different-session', 'changed-checkout'])('does not seed readiness when resume identity does not match: %s', async (mismatch) => {
+    const first = await terminal.spawn({ terminalId: 'old-pty', panelId: 'term', cwd: root })
+    await post(first, 'codex', { hook_event_name: 'SessionStart', session_id: 'saved-session', cwd: root })
+    agentTerminals.dispose()
+    agentTerminals = createTerminalAgents(agents, terminal.service, { stampsFile })
+    if (mismatch === 'changed-checkout') doc.set('term', { worktreeId: 'other' })
+    const id = mismatch === 'different-session' ? 'different-session' : 'saved-session'
+    const identify = vi.spyOn(agents.hooks, 'identifyProcessSession').mockResolvedValue({ agentId: 'codex', sessionId: id, cwd: root })
+    await terminal.spawn({ terminalId: 'restored-pty', panelId: 'term', cwd: root, launch: TERMINAL_RESTORE_LAUNCH })
+    procTree.nameByPid.set(1, 'codex')
+    terminal.scan('restored-pty', 'term', 'codex')
+    await vi.waitFor(() => expect(agentTerminals.state('term')?.session?.sessionId).toBe(id))
+    expect(agentTerminals.state('term')).toMatchObject({ status: 'notRunning', canReceivePrompt: false })
+    identify.mockRestore()
   })
 
   it('resolves a start launch to the canonical argv', async () => {

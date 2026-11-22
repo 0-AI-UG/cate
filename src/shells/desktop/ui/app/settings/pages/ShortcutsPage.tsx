@@ -3,7 +3,7 @@
 // stores only the overrides in `customShortcuts`.
 
 import { useCallback, useEffect, useState } from 'react'
-import { RotateCcw as ArrowCounterClockwise, X } from 'lucide-react'
+import { ChevronDown, RotateCcw as ArrowCounterClockwise, X } from 'lucide-react'
 import { Tooltip, matchesQuery, useSettingsSearch, useDeclaredActions, useResolvedShortcuts } from '../../../kernel/interaction'
 import { shortcutRegistry } from '@kernel/interaction'
 import { displayString, normaliseShortcutKey, storedShortcut, type StoredShortcut } from '@kernel/interaction/contract'
@@ -14,9 +14,23 @@ export function ShortcutsPage(): JSX.Element {
   const visibleActions = useDeclaredActions().filter(
     ({ spec }) => !spec.keyHint && (sectionMatched || matchesQuery(spec.title, query)),
   )
+  const [expanded, setExpanded] = useState(false)
+  const open = expanded || query !== ''
+  const shown = open ? visibleActions : []
   return (
     <div className="flex flex-col gap-0">
-      {visibleActions.map(({ id: action, spec }) => (
+      {query === '' && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          className="flex items-center justify-between py-2 text-left text-[13px] text-secondary hover:text-primary"
+        >
+          <span>{expanded ? 'Hide shortcuts' : `Show all ${visibleActions.length} shortcuts`}</span>
+          <ChevronDown size={14} className={expanded ? 'rotate-180' : ''} />
+        </button>
+      )}
+      {shown.map(({ id: action, spec }) => (
         <div key={action} data-srow className="flex items-center justify-between py-2 border-b border-subtle">
           <span className="text-sm text-primary">{spec.title}</span>
           <div className="flex items-center gap-2">

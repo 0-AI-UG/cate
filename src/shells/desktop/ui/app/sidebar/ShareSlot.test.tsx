@@ -16,7 +16,7 @@ const render = (isOpen = true, onShare = vi.fn(), onRow = vi.fn()) => {
       <ShareSlot workspaceId="ws-1" isOpen={isOpen} isSelected={false} onShare={onShare} />
     </div>,
   ))
-  return host.querySelector('button') as HTMLButtonElement
+  return host.querySelector('button')
 }
 
 const client = (name: string) => ({ clientId: name, device: { name }, attentive: true })
@@ -35,33 +35,34 @@ afterEach(() => {
 })
 
 describe('ShareSlot', () => {
-  it('offers to share a workspace nobody else can join', () => {
-    expect(render().getAttribute('aria-label')).toBe('Invite to workspace…')
+  it('shows nothing for a workspace nobody else can join (inviting is in its menu)', () => {
+    expect(render()).toBeNull()
   })
 
   it('shows who can join a shared workspace', () => {
     state.network = 'cateConnect'
-    expect(render().getAttribute('aria-label')).toBe('Shared: paired devices can join from anywhere')
+    expect(render()!.getAttribute('aria-label')).toBe('Shared: paired devices can join from anywhere')
   })
 
   it('shows the other clients, which win over who can join', () => {
     state.network = 'sameNetwork'
     state.others = [client('Anna Phone')]
-    const button = render()
+    const button = render()!
     expect(button.getAttribute('aria-label')).toBe('Also here: Anna Phone')
     expect(button.textContent).toBe('AP')
   })
 
   it('shows no clients of a closed workspace', () => {
     state.others = [client('Anna Phone')]
-    expect(render(false).getAttribute('aria-label')).toBe('Invite to workspace…')
+    expect(render(false)).toBeNull()
   })
 
-  it('opens Share without selecting the row', () => {
+  it('opens Invite without selecting the row', () => {
     const onShare = vi.fn()
     const onRow = vi.fn()
+    state.network = 'cateConnect'
     const button = render(true, onShare, onRow)
-    act(() => button.click())
+    act(() => button!.click())
     expect(onShare).toHaveBeenCalledOnce()
     expect(onRow).not.toHaveBeenCalled()
   })

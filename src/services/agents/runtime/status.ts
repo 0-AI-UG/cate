@@ -56,9 +56,9 @@ export interface AgentStatusChange {
 interface Tracker {
   present: boolean
   wasPresent: boolean
-  /** A hook (an event, or the pid a hook registered) proved this launch.
-   *  Without it presence is process-name only: status unknown, never idle. */
-  hookProven: boolean
+  /** A hook or an exactly confirmed, deliberate resume proved lifecycle
+   *  state for this launch. Process-name presence alone stays unknown. */
+  lifecycleKnown: boolean
   /** Current CLI session; a replayed session-start of the same session must
    *  not overwrite a turn event that already arrived. */
   sessionId: string | null
@@ -77,6 +77,9 @@ interface Tracker {
 
 export interface AgentStatusMachine {
   noteHookEvent(event: AgentHookEvent): void
+  /** A deliberate resume opened its exact saved session at the input prompt.
+   *  Seeds only an unknown launch; never overwrites a received hook. */
+  noteResumedSession(terminalId: string, agentId: AgentId, sessionId: string): void
   /** Presence from an activity scan. `processOnly`: seen only as the
    *  foreground process, no hook-registered pid. */
   notePresence(terminalId: string, present: boolean, processOnly: boolean, agentId: AgentId | null): void
@@ -106,7 +109,7 @@ export function createAgentStatusMachine(onChange: (change: AgentStatusChange) =
       t = {
         present: false,
         wasPresent: false,
-        hookProven: false,
+        lifecycleKnown: false,
         sessionId: null,
         agentId: null,
         activeTurnId: null,
@@ -133,7 +136,7 @@ export function createAgentStatusMachine(onChange: (change: AgentStatusChange) =
       permission: t.permission === 'checking' && t.approvalMode === 'manual'
         && !!t.agentId && AGENT_APPROVAL_DETECTION[t.agentId].source === 'config'
         ? 'waiting' : t.permission,
-      processOnly: !t.hookProven,
+      processOnly: !t.lifecycleKnown,
     })
     if (t.status === status) return
     const previous = t.status
@@ -161,6 +164,13 @@ export function createAgentStatusMachine(onChange: (change: AgentStatusChange) =
   }
 
   return {
+    noteResumedSession(terminalId, agentId, sessionId) {
+      const t = trackers.get(terminalId)
+      if (!t?.present || t.lifecycleKnown || t.agentId !== agentId) return
+      t.lifecycleKnown = true
+      t.sessionId = sessionId
+      recompute(terminalId)
+    },
     noteHookEvent(event) {
       const t = trackerFor(event.terminalId)
       // Metadata and delayed child or previous-session hooks cannot end or
@@ -173,7 +183,7 @@ export function createAgentStatusMachine(onChange: (change: AgentStatusChange) =
         if (event.turnId && event.turnId === t.endedTurnId) return
       }
       t.agentId = event.agentId
-      t.hookProven = true
+      t.lifecycleKnown = true
       if (event.kind === 'session-title') return
       t.sessionId ??= event.sessionId
       switch (event.kind) {
@@ -247,9 +257,9 @@ export function createAgentStatusMachine(onChange: (change: AgentStatusChange) =
       t.wasPresent = t.present
       t.present = present
       if (present && agentId) t.agentId = agentId
-      if (present && !processOnly) t.hookProven = true
+      if (present && !processOnly) t.lifecycleKnown = true
       if (!present) {
-        t.hookProven = false
+        t.lifecycleKnown = false
         // The process is gone and any in-flight turn died with it. The next
         // launch starts idle and proves itself through fresh hook events.
         t.activeTurnId = null
@@ -269,7 +279,7 @@ export function createAgentStatusMachine(onChange: (change: AgentStatusChange) =
 
     canReceivePrompt(terminalId) {
       const t = trackers.get(terminalId)
-      return Boolean(t?.present && t.hookProven && !t.turnActive && !t.permission)
+      return Boolean(t?.present && t.lifecycleKnown && !t.turnActive && !t.permission)
     },
 
     forget(terminalId) {

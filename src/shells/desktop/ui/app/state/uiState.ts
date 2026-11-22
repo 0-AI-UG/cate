@@ -19,6 +19,8 @@ export type UsageWindowDays = 1 | 7 | 30 | 90
 const USAGE_WINDOW_DAYS: readonly UsageWindowDays[] = [1, 7, 30, 90]
 
 export interface UiStateValues {
+  sidebarSettledOpen: boolean
+  sidebarThreadSnoozes: Record<string, number>
   /** Corner the canvas minimap button sits in. */
   minimapButtonCorner: ScreenCorner
   /** Highest welcome/privacy notice version the person dismissed. */
@@ -35,6 +37,8 @@ export interface UiStateValues {
 }
 
 export const DEFAULT_UI_STATE: UiStateValues = {
+  sidebarSettledOpen: false,
+  sidebarThreadSnoozes: {},
   minimapButtonCorner: 'bottom-right',
   telemetryNoticeAcknowledgedVersion: 0,
   onboardingCompleted: false,
@@ -48,6 +52,11 @@ export function normalizeUiState(raw: unknown): UiStateValues {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const version = o.telemetryNoticeAcknowledgedVersion
   return {
+    sidebarSettledOpen: o.sidebarSettledOpen === true,
+    sidebarThreadSnoozes: Object.fromEntries(Object.entries(
+      o.sidebarThreadSnoozes && typeof o.sidebarThreadSnoozes === 'object' && !Array.isArray(o.sidebarThreadSnoozes)
+        ? o.sidebarThreadSnoozes : {},
+    ).filter(([, until]) => typeof until === 'number' && Number.isFinite(until) && until > 0)) as Record<string, number>,
     minimapButtonCorner: CORNERS.includes(o.minimapButtonCorner as ScreenCorner)
       ? (o.minimapButtonCorner as ScreenCorner)
       : DEFAULT_UI_STATE.minimapButtonCorner,
