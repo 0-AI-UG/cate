@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-11-22
+
+This patch speeds up Agent Review, improves saved login and signup handling, and upgrades the desktop app to Electron 45.4.1. Connection compatibility version remains 2.
+
+### Changed
+
+- **Agent Review** groups edits by terminal and file, loads large diffs in pages, and preserves the terminal filter when opened from a terminal's Changes overlay. Recorded-change loading and Git attribution are faster.
+- **Browser panels** defer the first load of off-screen pages until you show them or an agent requests them.
+- **Cate CLI** scopes `cate browser tab list` to the targeted browser panel and accepts `--panel` for `agent read`, `panel close`, and `panel set`. The Cate API version is now 12.
+
+### Fixed
+
+- **Browser credentials** fill paired passwords when selecting a saved username, fill signup confirmation fields associated with the form, and detect signups submitted through buttons outside a form.
+- **Browser navigation on Windows and Linux** skips the macOS passkey availability check that could block webviews from loading.
+- **Terminal appearance** uses the active terminal theme behind the grid, avoiding a two-color flash while a new terminal sizes itself.
+
 ## [2.1.1] - 2026-11-20
 
 This patch improves workspace stability, preserves canvas views between visits, and simplifies context sharing between related agents. Connection compatibility version remains 2.
