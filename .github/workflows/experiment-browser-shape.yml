@@ -1,0 +1,51 @@
+name: Browser window shape experiment
+
+on:
+  push:
+    branches: [experiment/browser-window-shape-ci]
+
+permissions:
+  contents: read
+
+jobs:
+  hit-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+      - name: Install X11 test tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xdotool xvfb
+      - name: Install stock Electron
+        shell: bash
+        run: npm install --no-audit --no-fund --no-package-lock --prefix "$RUNNER_TEMP/shape-electron" electron@45.4.1
+      - name: Region geometry tests
+        run: node --test experiments/browser-native-shape/region.test.cjs
+      - name: Verify native X11 click targets
+        if: runner.os == 'Linux'
+        env:
+          CATE_FIXTURE_XVFB: 1
+        shell: bash
+        run: |
+          export SHAPE_PROFILE="$(mktemp -d "$RUNNER_TEMP/shape-profile.XXXXXX")"
+          unset WAYLAND_DISPLAY
+          engine="$(node -p 'require(process.argv[1])' "$RUNNER_TEMP/shape-electron/node_modules/electron")"
+          xvfb-run -a -s '-screen 0 1024x768x24' "$engine" experiments/browser-native-shape
+      - name: Verify native Win32 hit targets
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:SHAPE_PROFILE = Join-Path $env:RUNNER_TEMP 'shape-profile'
+          New-Item -ItemType Directory -Path $env:SHAPE_PROFILE | Out-Null
+          node -e "const { spawnSync } = require('node:child_process'); const path = require('node:path'); const engine = require(path.join(process.env.RUNNER_TEMP, 'shape-electron/node_modules/electron')); const result = spawnSync(engine, ['experiments/browser-native-shape'], { stdio: 'inherit', timeout: 20000 }); if (result.error) throw result.error; process.exitCode = result.status ?? 1;"
