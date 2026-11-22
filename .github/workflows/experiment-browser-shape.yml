@@ -43,7 +43,8 @@ jobs:
           export SHAPE_PROFILE="$(mktemp -d "$RUNNER_TEMP/shape-profile.XXXXXX")"
           unset WAYLAND_DISPLAY
           engine="$(node -p 'require(process.argv[1])' "$RUNNER_TEMP/shape-electron/node_modules/electron")"
-          xvfb-run -a -s '-screen 0 1024x768x24' "$engine" experiments/browser-native-shape
+          # This isolated runner opens only the fixture's own data URLs.
+          xvfb-run -a -s '-screen 0 1024x768x24' "$engine" --no-sandbox experiments/browser-native-shape
       - name: Verify native Win32 hit targets
         if: runner.os == 'Windows'
         shell: pwsh
