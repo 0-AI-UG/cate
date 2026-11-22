@@ -32,6 +32,14 @@ const handle = window => {
   return bytes.length === 8 ? bytes.readBigUInt64LE().toString() : String(bytes.readUInt32LE())
 }
 
+async function raise(window) {
+  if (platform === 'linux') {
+    await execute('xdotool', ['windowraise', handle(window)], {timeout:3000})
+  } else {
+    window.moveTop()
+  }
+}
+
 async function hitTargets(top, bottom, expected) {
   if (platform === 'win32') {
     const bounds = top.getContentBounds()
@@ -52,7 +60,7 @@ async function hitTargets(top, bottom, expected) {
   await click(opaque)
   await delay(50)
   const middle = await counts()
-  top.moveTop()
+  await raise(top)
   await click(hole)
   await delay(50)
   const after = await counts()
@@ -81,7 +89,7 @@ async function run() {
     top.setShape(region.rectangles)
     bottom.showInactive()
     top.showInactive()
-    top.moveTop()
+    await raise(top)
     await delay(150)
     assert.deepEqual(await viewport(), original, 'native shape changed the browser viewport')
     const hit = await hitTargets(top, bottom, [top, bottom])
@@ -89,7 +97,7 @@ async function run() {
     const moved = shapeForBounds(true, outer, [{left:40,top:40,right:110,bottom:120}])
     assert(moved.visible)
     top.setShape(moved.rectangles)
-    top.moveTop()
+    await raise(top)
     await delay(150)
     const movedHit = await hitTargets(top, bottom, [bottom, top])
     assert(movedHit.opaque && movedHit.hole, JSON.stringify(movedHit))
