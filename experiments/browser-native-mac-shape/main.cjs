@@ -57,7 +57,7 @@ async function measureCursorGate(window, hitAt, ids, moveCursor) {
   const move = ({x, y}) => assert.equal(moveCursor(x, y), 0, 'hosted cursor move rejected')
   const gateSamples = []
   try {
-    for (const intervalMs of [4, 8]) {
+    for (const intervalMs of [0, 4, 8]) {
       let ticks = 0, flips = 0, ignoring
       const poll = () => {
         ticks++
@@ -75,7 +75,7 @@ async function measureCursorGate(window, hitAt, ids, moveCursor) {
       move(cursor(touched[0]))
       await delay(35)
       poll()
-      const timer = setInterval(poll, intervalMs)
+      const timer = intervalMs ? setInterval(poll, intervalMs) : null
       const delays = []
       let incorrectAtMove = 0
       try {
@@ -84,6 +84,12 @@ async function measureCursorGate(window, hitAt, ids, moveCursor) {
           const point = touched[target]
           move(cursor(point))
           const start = performance.now()
+          if (!intervalMs) {
+            // A synchronous change supplies the destination directly so the
+            // result measures the native switch, not cursor sampling.
+            window.setIgnoreMouseEvents(target === 1)
+            flips++
+          }
           if (hitAt(point).hit !== ids[target]) incorrectAtMove++
           await waitFor(() => hitAt(point), state => state.hit === ids[target], 'cursor gate did not select the expected window', 45, 1)
           delays.push(performance.now() - start)
@@ -91,7 +97,7 @@ async function measureCursorGate(window, hitAt, ids, moveCursor) {
           await delay(13 + sample % 7)
         }
       } finally {
-        clearInterval(timer)
+        if (timer) clearInterval(timer)
       }
       delays.sort((a, b) => a - b)
       gateSamples.push({ intervalMs, ticks, flips, timesMs:delays, incorrectAtMove,
