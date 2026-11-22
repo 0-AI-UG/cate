@@ -783,12 +783,12 @@ const TOKEN = process.env.${CATE_HOOK_TOKEN_ENV}
 const TRACKED = new Set(["session.created", "session.status", "permission.asked", "permission.replied", "message.part.updated"])
 const SUBAGENT_SESSIONS = new Set()
 const PARENT_SESSIONS = new Map()
-async function promptContext() {
+async function promptContext(sessionId) {
   try {
     const response = await fetch(ENDPOINT + "/prompt-context", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: "Bearer " + TOKEN },
-      body: JSON.stringify({ agentId: "opencode", terminalId: process.env.${CATE_TERMINAL_ID_ENV} ?? null }),
+      body: JSON.stringify({ agentId: "opencode", terminalId: process.env.${CATE_TERMINAL_ID_ENV} ?? null, sessionId }),
     })
     return response.ok ? await response.text() : ""
   } catch { return "" }
@@ -796,8 +796,9 @@ async function promptContext() {
 export const CateHookBridge = async () => {
   if (!ENDPOINT || !TOKEN) return {}
   return {
-    "experimental.chat.system.transform": async (_input, output) => {
-      const context = await promptContext()
+    "experimental.chat.system.transform": async (input, output) => {
+      if (SUBAGENT_SESSIONS.has(input.sessionID)) return
+      const context = await promptContext(input.sessionID)
       if (context) output.system.push(context)
     },
     event: async ({ event }) => {
@@ -976,7 +977,7 @@ export default function (pi) {
     await post({ type: "before_agent_start" }, ctx)
     try {
       const response = await fetch(endpoint + "/prompt-context", { method: "POST", headers,
-        signal: AbortSignal.timeout(3000), body: JSON.stringify({ agentId: "pi", terminalId }) })
+        signal: AbortSignal.timeout(3000), body: JSON.stringify({ agentId: "pi", terminalId, sessionId: ctx.sessionManager.getSessionId() }) })
       const context = response.ok ? await response.text() : ""
       if (context) return { message: { customType: "cate-context", content: context, display: false } }
     } catch {}

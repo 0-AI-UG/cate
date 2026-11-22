@@ -372,7 +372,7 @@ describe('terminal agents', () => {
     await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
     await expect(agentTerminals.send('term', 'hello')).resolves.toEqual({ ok: false, error: 'agent-busy' })
     await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root })
-    // The first turn took the one-shot context; arm it again for the send.
+    // Explicitly request a one-shot send after the initial automatic delivery.
     doc.document.setRelationContextMode('term', 'once')
     doc.modes.delete('term')
 
@@ -382,7 +382,7 @@ describe('terminal agents', () => {
       { id: 'pty-1', data: '\r' },
     ]))
     // The agent's submit hook takes the one-shot relation context, and its
-    // turn-start disarms it and confirms the send.
+    // response disarms it and turn-start confirms the send.
     expect(doc.modes.get('term')).toBeUndefined()
     const output = await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
     expect(JSON.parse(output).hookSpecificOutput.additionalContext).toContain('Browser')
@@ -406,31 +406,32 @@ describe('terminal agents', () => {
     await expect(sent).resolves.toEqual({ ok: true })
   })
 
-  it('gives attachments to an agent\'s submit hook, never typing their paths', async () => {
+  it.each(['claude-code', 'cursor'] as const)('%s gives attachments to the submit hook, never typing their paths', async (agentId) => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
-    terminal.scan('pty-1', 'term', 'claude')
-    await post(env, 'claude-code', { hook_event_name: 'SessionStart', session_id: 'sess-1', cwd: root })
+    terminal.scan('pty-1', 'term', AGENT_DEFS[agentId].command)
+    await post(env, agentId, { hook_event_name: agentId === 'cursor' ? 'sessionStart' : 'SessionStart', session_id: 'sess-1', cwd: root })
     const sent = agentTerminals.send('term', '', ['/data/photo.jpg'])
     await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
     expect(terminal.writes[0].data).toBe(`\x1b[200~${ATTACHMENTS_ONLY_PROMPT}\x1b[201~`)
-    const output = JSON.parse(await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root }))
-    expect(output.hookSpecificOutput.additionalContext).toContain('Browser')
-    expect(output.hookSpecificOutput.additionalContext).toContain('- /data/photo.jpg')
+    const output = JSON.parse(await post(env, agentId, { hook_event_name: agentId === 'cursor' ? 'beforeSubmitPrompt' : 'UserPromptSubmit', session_id: 'sess-1', cwd: root }))
+    const context = agentId === 'cursor' ? output.additional_context : output.hookSpecificOutput.additionalContext
+    expect(context).toContain('Browser')
+    expect(context).toContain('- /data/photo.jpg')
     await expect(sent).resolves.toEqual({ ok: true })
     // The turn took them: the next prompt goes without.
-    await post(env, 'claude-code', { hook_event_name: 'Stop', session_id: 'sess-1', cwd: root })
-    const next = await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
+    await post(env, agentId, { hook_event_name: agentId === 'cursor' ? 'stop' : 'Stop', session_id: 'sess-1', cwd: root })
+    const next = await post(env, agentId, { hook_event_name: agentId === 'cursor' ? 'beforeSubmitPrompt' : 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
     expect(next).not.toContain('photo.jpg')
   })
 
   it('types attachment paths after the prompt for an agent without a submit hook', async () => {
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
-    terminal.scan('pty-1', 'term', 'cursor-agent')
-    await post(env, 'cursor', { hook_event_name: 'sessionStart', session_id: 'sess-1', cwd: root })
+    terminal.scan('pty-1', 'term', 'grok')
+    await post(env, 'grok', { hookEventName: 'session_start', sessionId: 'sess-1', cwd: root })
     const sent = agentTerminals.send('term', 'what is this', ['/data/photo.jpg'])
     await vi.waitFor(() => expect(terminal.writes).toHaveLength(2))
     expect(terminal.writes[0].data).toBe('\x1b[200~what is this\r\r/data/photo.jpg\x1b[201~')
-    await post(env, 'cursor', { hook_event_name: 'beforeSubmitPrompt', session_id: 'sess-1', cwd: root })
+    await post(env, 'grok', { hookEventName: 'user_prompt_submit', sessionId: 'sess-1', cwd: root })
     await expect(sent).resolves.toEqual({ ok: true })
   })
 
@@ -460,9 +461,9 @@ describe('terminal agents', () => {
     const output = JSON.parse(await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root }))
     expect(output.hookSpecificOutput.additionalContext).toContain('- /data/photo.jpg')
     // Without a submit hook the paths are in the launch prompt.
-    expect(await terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'cursor', prompt: 'what is this', attachments: ['/data/photo.jpg'] }, { cwd: root, panelId: 'w' }))
-      .toEqual({ command: agentLaunchCommand({ agentId: 'cursor', prompt: 'what is this\n\n/data/photo.jpg' }) })
-    expect(() => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'cursor', prompt: 'x', attachments: ['relative.jpg'] }, { cwd: root, panelId: 'w' })).toThrow()
+    expect(await terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'grok', prompt: 'what is this', attachments: ['/data/photo.jpg'] }, { cwd: root, panelId: 'w' }))
+      .toEqual({ command: agentLaunchCommand({ agentId: 'grok', prompt: 'what is this\n\n/data/photo.jpg' }) })
+    expect(() => terminal.intents.get(AGENT_LAUNCH.start)!({ agentId: 'grok', prompt: 'x', attachments: ['relative.jpg'] }, { cwd: root, panelId: 'w' })).toThrow()
   })
 
   it('fails a send whose prompt starts no turn (a dialog took the Enter)', async () => {
@@ -554,10 +555,73 @@ describe('terminal agents', () => {
   })
 
   it('answers a native submit hook with the relation context and disarms a one-shot context', async () => {
+    doc.document.setRelationContextMode('term', 'once')
     const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
     const output = await post(env, 'claude-code', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1', cwd: root })
     expect(JSON.parse(output).hookSpecificOutput.additionalContext).toContain('Browser')
     expect(doc.modes.get('term')).toBe('off')
+  })
+
+  it.each(Object.values(AGENT_DEFS).filter((agent) => agent.promptContextHook).map((agent) => agent.id))(
+    '%s injects Auto once, re-arms on a deferred session switch, and respects Off', async (agentId) => {
+      const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+      const submit = async (sessionId: string) => {
+        if (AGENT_DEFS[agentId].promptContextHook === 'endpoint') {
+          const payload = agentId === 'pi'
+            ? { type: 'before_agent_start', sessionId }
+            : { type: 'session.status', sessionID: sessionId, status: { type: 'busy' } }
+          await post(env, agentId, payload)
+          return (await fetch(`${env.CATE_HOOK_ENDPOINT}/prompt-context`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CATE_HOOK_TOKEN}` },
+            body: JSON.stringify({ agentId, terminalId: env.CATE_TERMINAL_ID, sessionId }),
+          })).text()
+        }
+        return post(env, agentId, { hook_event_name: agentId === 'cursor' ? 'beforeSubmitPrompt' : 'UserPromptSubmit', session_id: sessionId, cwd: root })
+      }
+      expect(await submit('a')).toContain('Browser')
+      expect(doc.modes.size).toBe(0)
+      expect(agents.promptContext.peek('term', agentId)).toBeNull()
+      expect(await submit('a')).toBe('')
+      // The very first submit carrying the new identity must get the context.
+      expect(await submit('b')).toContain('Browser')
+      expect(await submit('b')).toBe('')
+      doc.document.setRelationContextMode('term', 'off')
+      expect(await submit('c')).toBe('')
+      doc.document.setRelationContextMode('term', 'once')
+      expect(await submit('c')).toContain('Browser')
+      expect(doc.modes.get('term')).toBe('off')
+      expect(await submit('c')).toBe('')
+      doc.document.setRelationContextMode('term', 'always')
+      expect(await submit('c')).toContain('Browser')
+      expect(await submit('c')).toContain('Browser')
+    },
+  )
+
+  it('publishes re-armed context on a same-session conversation-tree reset', async () => {
+    const env = await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    terminal.scan('pty-1', 'term', 'pi')
+    await post(env, 'pi', { type: 'session_start', sessionId: 'a' })
+    await post(env, 'pi', { type: 'before_agent_start', sessionId: 'a' })
+    await fetch(`${env.CATE_HOOK_ENDPOINT}/prompt-context`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${env.CATE_HOOK_TOKEN}` },
+      body: JSON.stringify({ agentId: 'pi', terminalId: env.CATE_TERMINAL_ID, sessionId: 'a' }),
+    })
+    await post(env, 'pi', { type: 'agent_settled', sessionId: 'a' })
+    expect(agents.panels.state('term')?.contextPending).toBe(false)
+    const changes = vi.fn()
+    const stop = agents.panels.subscribe(changes)
+    await post(env, 'pi', { type: 'session_tree', sessionId: 'a', leafId: 'branch' })
+    expect(changes).toHaveBeenCalledWith(expect.objectContaining({ term: expect.objectContaining({ contextPending: true }) }))
+    stop()
+  })
+
+  it('keeps context pending when a send is refused before a submit hook', async () => {
+    await terminal.spawn({ terminalId: 'pty-1', panelId: 'term', cwd: root })
+    await expect(agentTerminals.send('term', 'hello')).resolves.toMatchObject({ ok: false })
+    expect(agents.promptContext.peek('term', 'claude-code')).toContain('Browser')
+    expect(agents.promptContext.sentAt('term')).toBeUndefined()
   })
 
   it('applies the agent session title to the panel and reads its conversation', async () => {

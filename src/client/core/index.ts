@@ -9,7 +9,7 @@ import type { AnyCapability, ClientFeature, DeviceInfo } from '@kernel/rpc/contr
 import type { DeviceStore } from '@kernel/state/contract'
 import { setRuntimeResolver } from '@kernel/rpc/client'
 import { createClientIdentity, createRuntimeUpdates, installClientIdentity, WorkspaceConnections, type ClientIdentity, type RuntimeUpdates, type ShellTransports } from '@client/connections'
-import { attachDocuments } from '@client/document'
+import { attachDocuments, loadWorkspaceViews } from '@client/document'
 import { attachSessions, registerPanelDefinitions, serveSurfaces } from '@client/host'
 import { nameJoinedWorkspaces, WorkspaceList } from '@client/workspaces'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
@@ -39,6 +39,7 @@ export interface ClientCore {
 }
 
 export async function startClientCore(options: ClientCoreOptions): Promise<ClientCore> {
+  const views = await loadWorkspaceViews(options.deviceStore)
   registerPanelDefinitions(options.panels)
   const identity = createClientIdentity({ device: options.device, features: options.features })
   installClientIdentity(identity)
@@ -51,7 +52,8 @@ export async function startClientCore(options: ClientCoreOptions): Promise<Clien
   // `runtimeFor` answers from these connections, installed once here.
   const stops: (() => void)[] = [
     setRuntimeResolver((workspaceId) => connections.get(workspaceId)?.runtime ?? null),
-    attachDocuments(connections),
+    () => views.dispose(),
+    attachDocuments(connections, views),
   ]
   stops.push(attachSessions(connections))
   stops.push(serveSurfaces(connections))

@@ -259,6 +259,7 @@ private struct MapCard: View {
             WorktreePicker(panel: panel, worktrees: worktrees).pickerStyle(.menu)
             if relationsEnabled, panel.execution {
                 Picker(selection: Binding(get: { panel.contextMode }, set: { mode in actions.contextMode(panel.id, mode) })) {
+                    Text("Automatic").tag("auto")
                     Text("Next Message").tag("once")
                     Text("Every Message").tag("always")
                     Text("Never").tag("off")

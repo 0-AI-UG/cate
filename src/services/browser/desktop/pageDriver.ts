@@ -34,7 +34,9 @@ import { readBrowserAX } from './ax'
 import { parseKey } from './keys'
 import { PageLog } from './pageLog'
 import { FrameTree } from './frames'
-import { EMPTY_PASSWORD_FIELD, FILE_INPUT_OF, PASSWORD_FIELD, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
+import { PasswordFrames } from './passwordFrames'
+import { BROWSER_PAGE_CHANNELS } from '../contract/pageBridge'
+import { EMPTY_PASSWORD_FIELD, FILE_INPUT_OF, PASSWORD_FIELD, PASSWORD_FOR_USERNAME, USERNAME_FIELD, USERNAME_FOR_PASSWORD } from './pageScripts'
 import type { GuestDialogs } from './dialogs'
 
 type BrowserArgs = Record<string, unknown>
@@ -158,6 +160,7 @@ export class PageDriver {
   /** In-flight document and data requests, by request id, with their start time. */
   private requests = new Map<string, number>()
   private readonly frames = new FrameTree()
+  private readonly passwords: PasswordFrames
   private attached = false
   /** A CDP command timed out: the page's main thread does not yield. */
   private hung = false
@@ -177,6 +180,7 @@ export class PageDriver {
     this.hung = false
     this.intercepting = false
     this.frames.clear()
+    this.passwords.clear()
   }
   private readonly onDebuggerMessage = (_event: Electron.Event, method: string, params: unknown, sessionId?: string): void => {
     // The top frame's events come with an empty session id.
@@ -187,6 +191,19 @@ export class PageDriver {
     this.contents = contents
     this.identity = identity
     this.dialogs = options.dialogs
+    this.passwords = new PasswordFrames({
+      send: (method, params, sessionId) => this.send(method, params, sessionId),
+      offset: async frameId => {
+        await this.currentFrameIds()
+        // Chromium omits out-of-process children from the root frame tree.
+        for (const sessionId of this.frames.sessionIds()) this.frames.record((await this.send('Page.getFrameTree', {}, sessionId)).frameTree)
+        return this.frameOffset(frameId, false)
+      },
+      automated: () => this.agentInputDepth > 0,
+      emit: (channel, payload) => {
+        try { contents.hostWebContents?.send(BROWSER_PAGE_CHANNELS.password, { webContentsId: contents.id, channel, payload }) } catch { /* host closed */ }
+      },
+    })
     contents.once('destroyed', () => this.dispose())
   }
 
@@ -228,6 +245,7 @@ export class PageDriver {
         // the default action of trusted keys (Enter submitting a form).
         this.send('Emulation.setFocusEmulationEnabled', { enabled: true }),
       ])
+      await this.passwords.install()
     } catch (error) {
       this.onDebuggerDetach()
       throw error
@@ -241,6 +259,7 @@ export class PageDriver {
     this.stableIds.clear()
     this.observations.clear()
     this.frames.clear()
+    this.passwords.clear()
     if (!this.contents.isDestroyed()) {
       this.contents.debugger.removeListener('message', this.onDebuggerMessage)
       this.contents.debugger.removeListener('detach', this.onDebuggerDetach)
@@ -328,13 +347,12 @@ export class PageDriver {
     this.activeGuard?.()
   }
 
-  async fillCredential(targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
+  async fillCredential(targetId: string, origin: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
     return this.enqueue(async () => {
-      const selector = `[data-cate-autofill-target=${JSON.stringify(targetId)}]`
-      const field = await this.resolveSelector(selector)
+      const field = await this.passwords.resolve(targetId, origin)
       const password = await this.locate(field, PASSWORD_FIELD)
       if (password) await this.fillLogin(password, credential)
-      else await this.fillUsername(field, credential.username)
+      else await this.fillUsernameStep(field, credential)
       return { ok: true as const }
     }).catch((error) => ({ error: error instanceof Error ? error.message : 'credential-fill-failed' }))
   }
@@ -358,6 +376,15 @@ export class PageDriver {
     }
   }
 
+  /** Returns whether this username step also had a password field to fill. */
+  private async fillUsernameStep(field: ElementTarget, credential: { username: string; password: string }): Promise<boolean> {
+    await this.fillUsername(field, credential.username)
+    const password = await this.locate(field, PASSWORD_FOR_USERNAME)
+    if (!password) return false
+    await this.fillElement(password, credential.password)
+    return true
+  }
+
   /** Fills the saved login the runtime chose (`credential`, saved for
    *  `origin`) into the sign-in form: the target's, or the page's. A step that
    *  asks for the username alone gets the username. */
@@ -371,16 +398,15 @@ export class PageDriver {
     if (!field) throw new Error('browser-login-field-not-found')
     await this.checkOrigin(field, credential.origin)
     this.check()
-    if (password) {
-      await this.fillLogin(password, credential)
-      return [`Filled the saved login for ${credential.username || 'this site'}; the password is hidden. Submit the form to sign in.`]
+    if (password) await this.fillLogin(password, credential)
+    else if (!(await this.fillUsernameStep(field, credential))) {
+      return [`Filled the username ${credential.username}; this step asks for no password. Continue, then run login again on the password step.`]
     }
-    await this.fillUsername(field, credential.username)
-    return [`Filled the username ${credential.username}; this step asks for no password. Continue, then run login again on the password step.`]
+    return [`Filled the saved login for ${credential.username || 'this site'}; the password is hidden. Submit the form to sign in.`]
   }
 
   /** Fills a new password (`credential`, generated for `origin`) into a
-   *  sign-up form: every empty password field of the form, so the password
+   *  sign-up form: its empty new password fields, so the password
    *  and its confirmation. */
   private async signup(target: ElementTarget | undefined, credential: { password: string; origin: string }): Promise<string[]> {
     if (target?.sessionId) throw new Error('browser-login-origin-mismatch')
@@ -433,6 +459,7 @@ export class PageDriver {
   }
 
   private handleEvent(event: CdpEvent): void {
+    this.passwords.handle(event.method, event.params, event.sessionId)
     this.log.record(event)
     if (event.method === 'Page.fileChooserOpened') {
       if (this.intercepting && typeof event.params.backendNodeId === 'number') {
@@ -445,6 +472,7 @@ export class PageDriver {
       const sessionId = typeof event.params.sessionId === 'string' ? event.params.sessionId : undefined
       const frameId = typeof targetInfo.targetId === 'string' ? targetInfo.targetId : undefined
       if (targetInfo.type === 'iframe' && sessionId && frameId) {
+        if (typeof targetInfo.parentFrameId === 'string') this.frames.setParent(frameId, targetInfo.parentFrameId)
         this.frames.attachSession(frameId, sessionId)
         void this.enableSession(sessionId)
       }
@@ -475,7 +503,7 @@ export class PageDriver {
     }
     if (event.method === 'Page.frameDetached') {
       const frameId = typeof event.params.frameId === 'string' ? event.params.frameId : undefined
-      if (frameId) this.dropFrame(frameId)
+      if (frameId && event.params.reason !== 'swap') this.dropFrame(frameId)
       return
     }
     if (event.method === 'Page.frameNavigated') {
@@ -500,6 +528,7 @@ export class PageDriver {
   private async enableSession(sessionId: string): Promise<void> {
     try {
       await Promise.all([
+        this.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId),
         this.send('Page.enable', {}, sessionId),
         this.send('DOM.enable', {}, sessionId),
         this.send('Runtime.enable', {}, sessionId),
@@ -507,6 +536,7 @@ export class PageDriver {
         this.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId),
         ...(this.intercepting ? [this.send('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId)] : []),
       ])
+      await this.passwords.install(sessionId)
     } catch {
       this.dropFrameSession(sessionId)
     }
@@ -527,6 +557,7 @@ export class PageDriver {
   }
 
   private dropFrameSession(sessionId: string): void {
+    this.passwords.clear(sessionId)
     const frameId = this.frames.frameOfSession(sessionId)
     if (frameId) this.dropFrame(frameId)
     else this.dropRefsForFrame('', sessionId)
@@ -724,21 +755,6 @@ export class PageDriver {
       }
     })()`)
     if (typeof copied === 'string' && copied) clipboard.writeText(copied)
-  }
-
-  private async resolveSelector(selector: string): Promise<ElementTarget> {
-    const response = await this.send('Runtime.evaluate', {
-      expression: `document.querySelector(${JSON.stringify(selector)})`,
-      objectGroup: 'cate-browser',
-      returnByValue: false,
-    })
-    const result = objectValue(response.result)
-    const objectId = typeof result.objectId === 'string' ? result.objectId : undefined
-    if (!objectId || result.subtype === 'null') throw new Error('element-not-found')
-    const described = await this.send('DOM.describeNode', { objectId })
-    const node = objectValue(described.node)
-    if (typeof node.backendNodeId !== 'number') throw new Error('element-not-found')
-    return { objectId, backendNodeId: node.backendNodeId }
   }
 
   private async callOn(target: ElementTarget, functionDeclaration: string, returnByValue = true, executionContextId?: number): Promise<Record<string, unknown>> {
@@ -1667,8 +1683,8 @@ export class PageDriverRegistry {
     return driver.execute(method, args)
   }
 
-  async fillCredential(webContentsId: number, targetId: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
+  async fillCredential(webContentsId: number, targetId: string, origin: string, credential: { username: string; password: string }): Promise<{ ok?: true; error?: string }> {
     const driver = this.drivers.get(webContentsId)
-    return driver ? driver.fillCredential(targetId, credential) : { error: 'browser-target-not-registered' }
+    return driver ? driver.fillCredential(targetId, origin, credential) : { error: 'browser-target-not-registered' }
   }
 }

@@ -84,6 +84,7 @@ vi.mock('@xterm/addon-webgl', () => { throw new Error('no WebGL in jsdom') })
 
 import TerminalView from './TerminalView'
 import { createTerminalXterm } from './parts/xterm'
+import { applyTheme, getActiveTheme } from '../../kernel/interaction'
 
 function fakeProcess() {
   const attaches: Array<{ id: string; written: Uint8Array[]; cancelled: boolean; events: Set<(e: unknown) => void> }> = []
@@ -175,6 +176,27 @@ describe('TerminalView', () => {
     render(<TerminalView {...props(snapshotOf({ ptyId: null, status: 'starting' }))} />)
     expect(host.textContent).toContain('Starting terminal…')
     expect(process_.attaches).toHaveLength(0)
+  })
+
+  it('fills the area outside the initial terminal grid with its theme background', () => {
+    const initialTheme = getActiveTheme().id
+    const expected = document.createElement('div')
+    const expectBackground = () => {
+      expected.style.backgroundColor = getActiveTheme().terminal.background
+      expect((q('[data-filedrop="terminal"]') as HTMLElement).style.backgroundColor).toBe(expected.style.backgroundColor)
+      expect(xterms[0].options.theme).toEqual(getActiveTheme().terminal)
+    }
+    try {
+      render(<TerminalView {...props(snapshotOf({ ptyId: null, status: 'starting' }))} />)
+      expectBackground()
+      act(() => applyTheme('dracula'))
+      expectBackground()
+      render(<TerminalView {...props(snapshotOf())} />)
+      act(() => { for (const l of process_.attaches[0].events) l({ kind: 'screen', viewer: 'v1', data: '', cols: 140, rows: 40 }) })
+      expectBackground()
+    } finally {
+      act(() => applyTheme(initialTheme))
+    }
   })
   it('reserves scrollbar space only while the active buffer has history', () => {
     const xterm = createTerminalXterm({

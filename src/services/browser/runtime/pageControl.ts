@@ -53,7 +53,7 @@ export interface PageControlDeps {
 }
 
 /** The session methods of `cate.browser.*` that page control answers. */
-export type PageControlHandlers = Omit<CateSessionHandlers<typeof browserApi>, 'selectTab' | 'createTab' | 'closeTab' | 'downloads' | 'setViewport' | 'resize'>
+export type PageControlHandlers = Omit<CateSessionHandlers<typeof browserApi>, 'listTabs' | 'selectTab' | 'createTab' | 'closeTab' | 'downloads' | 'setViewport' | 'resize'>
 
 export interface PageControl {
   handlers: PageControlHandlers

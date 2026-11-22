@@ -283,32 +283,16 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
     }
   }, [store])
 
-  // Track the container size, and keep content anchored to the edge that
-  // stayed put when the other one moves: a right sidebar or split divider
-  // pushing in should push content by its width, not slide it under. A window
-  // resize also moves the right edge but must not chase content, and a large
-  // one-shot jump (a split appearing) is structural, not a push.
+  // A layout resize changes the visible area, not the camera. In particular,
+  // startup/sidebar transitions must not offset a restored viewport.
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return
-    let prevRect = el.getBoundingClientRect()
-    let prevWindowWidth = window.innerWidth
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const size = { width: entry.contentRect.width, height: entry.contentRect.height }
         setContainerSize(size)
         store.getState().setContainerSize(size)
-      }
-      const rect = el.getBoundingClientRect()
-      const windowResized = window.innerWidth !== prevWindowWidth
-      const dLeft = rect.left - prevRect.left
-      const dRight = rect.right - prevRect.right
-      prevRect = rect
-      prevWindowWidth = window.innerWidth
-      const structuralJump = Math.abs(dRight) > rect.width * 0.25
-      if (!windowResized && !structuralJump && Math.abs(dLeft) < 0.5 && Math.abs(dRight) > 0.5) {
-        const { viewportOffset } = store.getState()
-        store.setState({ viewportOffset: { x: viewportOffset.x + dRight, y: viewportOffset.y } })
       }
     })
     observer.observe(el)

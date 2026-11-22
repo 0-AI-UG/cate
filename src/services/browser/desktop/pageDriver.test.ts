@@ -11,16 +11,27 @@ it('binds every operation to the full guest identity', async () => {
 
 it('autofills only the username on a username-first step', async () => {
   const filled: string[] = []
-  const { runtime, contents } = await setupGuest(async (method, params) => {
-    if (method === 'Runtime.evaluate' && String(params.expression).startsWith('document.querySelector')) return { result: { objectId: '20' } }
+  const { runtime, contents, events } = await setupGuest(async (method, params) => {
+    if (method === 'Runtime.evaluate' && String(params.expression).startsWith('location.origin')) return { result: { objectId: '20' } }
     if (method !== 'Runtime.callFunctionOn') return
     const fn = String(params.functionDeclaration)
     if (fn.includes("this.type.toLowerCase() === 'password'")) return { result: { subtype: 'null' } }
     const text = fn.match(/const text=(".*?");/)
     if (fn.includes('setter.call(this,text)') && text) { filled.push(JSON.parse(text[1])); return { result: { value: false } } }
   })
-  expect(await runtime.fillCredential(contents.id, 'username-target', { username: 'me', password: 'secret' })).toEqual({ ok: true })
+  events.emit('message', {}, 'Runtime.executionContextCreated', { context: { id: 42, name: 'cate-passwords', auxData: { frameId: 'main' } } })
+  events.emit('message', {}, 'Runtime.bindingCalled', { name: '__catePasswordEvent', executionContextId: 42, payload: JSON.stringify({
+    channel: 'cate-browser-password-focus', payload: { targetId: 'username-target', origin: 'https://example.test', rect: { left: 0, bottom: 20, width: 100, height: 20 } },
+  }) })
+  await vi.waitFor(async () => {
+    expect(await runtime.fillCredential(contents.id, 'username-target', 'https://example.test', { username: 'me', password: 'secret' })).toEqual({ ok: true })
+  })
   expect(filled).toEqual(['me'])
+})
+
+it('rejects an autofill target that was never focused', async () => {
+  const { runtime, contents } = await setupGuest()
+  expect(await runtime.fillCredential(contents.id, 'username-target', 'https://example.test', { username: 'me', password: 'secret' })).toEqual({ error: 'credential-target-expired' })
 })
 
 it('invalidates numeric IDs and observations on navigation', async () => {

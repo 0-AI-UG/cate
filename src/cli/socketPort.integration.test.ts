@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { framePortOver, type ByteDuplex } from '@kernel/rpc/contract'
 import { RpcServer } from '@kernel/rpc/runtime'
-import { apiCapability } from '@kernel/api/contract'
+import { apiCapability, CATE_API_VERSION } from '@kernel/api/contract'
 import { ApiRouter, ApiTokenRegistry, acceptCallerHello, apiCapabilityImpl, registerKernelApi } from '@kernel/api/runtime'
 import { runCli, type CliDeps } from './engine'
 import { connectSocket } from './socketPort'
@@ -72,7 +72,7 @@ describe('cate CLI over the local socket', () => {
     const { token } = tokens.issue({ kind: 'cli', panelId: 'term-123456789' })
     const env = { CATE_SOCKET: socketPath, CATE_TOKEN: token }
 
-    expect(await cli(['version'], env)).toMatchObject({ code: 0, out: ['11'] })
+    expect(await cli(['version'], env)).toMatchObject({ code: 0, out: [String(CATE_API_VERSION)] })
     expect(await cli(['terminal', 'read', '--panel', 'term-1', '--lines', '3'], env)).toMatchObject({
       code: 0,
       out: ['term-123456789 read {"lines":3}'],

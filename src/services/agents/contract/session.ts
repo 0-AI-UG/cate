@@ -42,6 +42,8 @@ export interface PanelAgentState {
   session: AgentSession | null
   /** When relation context last went with one of its prompts (epoch ms). */
   contextSentAt?: number
+  /** Current relation context will go with the next supported submit. */
+  contextPending?: boolean
   /** The agent runs without Cate's hooks: no hook came from it and its hook
    *  files are not installed where it runs, so its status and connected
    *  panel context do not reach it. */

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLifecycleBus } from '@kernel/lifecycle/contract'
 import { channel } from '@kernel/rpc/contract'
 import type { ApiSessionContext } from '@kernel/api/contract'
+import { ApiRouter, ApiTokenRegistry } from '@kernel/api/runtime'
 import { definePanel, definitionProblems } from '@panels/framework/contract'
 import browserDefinition from './definition'
 import {
@@ -17,9 +18,9 @@ import {
   type SurfaceCallOptions,
 } from '@panels/framework/runtime'
 import { createDocumentService, createPresence, type DocumentService } from '@workspace/document/runtime'
-import type { BrowserCredentialSaveInput, BrowserCredentialSuggestion, BrowserDownloadEntry } from '@services/browser/contract'
+import { browserApi, type BrowserCredentialSaveInput, type BrowserCredentialSuggestion, type BrowserDownloadEntry } from '@services/browser/contract'
 import { BROWSER_PASSWORD_MANAGER_URL, type BrowserSnapshot } from './contract'
-import { browserPanel, browserServiceHandlers } from './runtime'
+import { browserPanel } from './runtime'
 import { AGENT_CURSOR_IDLE_MS, type BrowserSessionDeps } from './session'
 
 const canvasDef = definePanel({
@@ -440,6 +441,35 @@ describe('browser tabs for agents', () => {
     return undefined
   })
 
+  it('lists only the target panel through the same routing as other tab commands', async () => {
+    const w = driving()
+    const first = w.create({ url: 'https://first.test/' })
+    await w.host.restore()
+    let active: string | undefined
+    const router = new ApiRouter({
+      namespaces: [browserApi],
+      document: {
+        panel: (id) => w.document.get().panels[id],
+        panels: () => Object.values(w.document.get().panels),
+      },
+      presence: { activePanelId: () => active },
+      sessions: w.host,
+      settings: { get: () => true },
+      tokens: new ApiTokenRegistry(),
+    })
+    const caller = router.clientCaller('client-a')
+    const list = (panelId?: string) => router.call(caller, 'cate.browser.listTabs', panelId ? { panelId } : {})
+    const firstTab = expect.objectContaining({ panelId: first, tabId: 't1', url: 'https://first.test/', active: true, opener: 'person' })
+    await expect(list()).resolves.toEqual({ tabs: [firstTab] })
+
+    const second = w.create({ url: 'https://second.test/' })
+    await expect(list()).rejects.toThrow('browser-target-required')
+    active = second
+    await expect(list()).resolves.toEqual({ tabs: [expect.objectContaining({ panelId: second, tabId: 't1', url: 'https://second.test/' })] })
+    await expect(list(first)).resolves.toEqual({ tabs: [firstTab] })
+    w.dispose()
+  })
+
   it('names tabs with short handles that survive a restart', async () => {
     const w = driving()
     const id = w.create({ url: 'https://a.test/' })
@@ -487,7 +517,7 @@ describe('browser tabs for agents', () => {
     await w.api(id, 'createTab', {}, 'agent-2')
     expect(w.snapshot(id).tabs.map((tab) => tab.openedBy)).toEqual([null, { caller: 'agent-1' }, { caller: 'agent-2' }])
     expect((await w.api(id, 'getAXState') as { notices: string[] }).notices).toEqual(['Another agent opened tab t3 (new tab); the panel shows it now, so commands act on it.'])
-    const listed = browserServiceHandlers({ sessions: w.host, document: w.document }).listTabs({ panelId: id }, { caller: { kind: 'cli', id: 'agent-1' } } as never) as { tabs: Array<Record<string, unknown>> }
+    const listed = await w.api(id, 'listTabs') as { tabs: Array<Record<string, unknown>> }
     expect(listed.tabs.map(({ tabId, opener, active }) => ({ tabId, opener, active }))).toEqual([
       { tabId: 't1', opener: 'person', active: false },
       { tabId: 't2', opener: 'you', active: false },
@@ -518,19 +548,5 @@ describe('browser tabs for agents', () => {
     expect(w.snapshot(id).viewport).toEqual({ preset: 'mobile', width: 390, height: 844 })
     await expect(w.api(id, 'setViewport', { preset: 'custom' })).rejects.toThrow('invalid-browser-viewport')
     w.dispose()
-  })
-})
-
-describe('browser service handlers', () => {
-  it('lists tabs of browser sessions', () => {
-    const snapshot = { tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, nav: 2, navSource: null, openedBy: { page: 't0' } }], activeTabId: 't1' }
-    const handlers = browserServiceHandlers({
-      sessions: { session: (id) => (id === 'p1' ? { snapshot: () => snapshot } as never : undefined) },
-      document: { get: () => ({ panels: { p1: { id: 'p1', type: 'browser' }, t: { id: 't', type: 'terminal' } } }) as never },
-    })
-    const ctx = { caller: { kind: 'cli', id: 'c' }, signal: new AbortController().signal } as never
-    expect(handlers.listTabs({ panelId: undefined }, ctx)).toEqual({
-      tabs: [{ id: 't1', url: 'https://a.test/', title: 'A', favicon: null, pinned: false, panelId: 'p1', tabId: 't1', active: true, opener: 'page in t0' }],
-    })
   })
 })

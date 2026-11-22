@@ -20,3 +20,14 @@ it('reports whether git ignores every changed path', async () => {
     await fs.rm(repo, { recursive: true, force: true })
   }
 })
+
+it('handles git exiting before reading a batch of changed paths outside a repository', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cate-ignored-nonrepo-'))
+  try {
+    const paths = Array.from({ length: 2_000 }, (_, index) =>
+      path.join(root, 'generated', 'nested/'.repeat(16), `file-${index}.txt`))
+    expect(await testGitHost().allIgnored({ cwd: root, paths })).toBe(false)
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})

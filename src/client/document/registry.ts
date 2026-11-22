@@ -1,6 +1,7 @@
 // The document store and client state of each open workspace, looked up by
 // workspaceId. `attachDocuments` keeps them in step with the open connections.
 
+import type { WorkspaceViewsStore } from './workspaceViews'
 import type { WorkspaceConnection, WorkspaceConnections } from '@client/connections'
 import { createClientStateStore, type ClientStateStore } from './clientState'
 import type { PresenceClient } from '@workspace/document/contract'
@@ -59,7 +60,7 @@ export function documentStoresVersion(): number {
 
 /** Builds the document mirror, client state and presence reporting of a
  *  connection. Returns a function that tears them down. */
-export function attachDocument(connection: WorkspaceConnection): () => void {
+export function attachDocument(connection: WorkspaceConnection, views?: WorkspaceViewsStore): () => void {
   const onReady = (listener: (info: { reconnect: boolean }) => void) => connection.rpc.onReady(listener)
   const document = createDocumentStore({
     clientId: connection.clientId,
@@ -67,7 +68,8 @@ export function attachDocument(connection: WorkspaceConnection): () => void {
     remote: connection.runtime.document,
     onReady,
   })
-  const state = createClientStateStore()
+  const state = createClientStateStore(views?.viewports(connection.workspaceId))
+  const stopRemember = views?.remember(connection.workspaceId, state)
   let previousPanels = document.getSnapshot().panels
   const stopViewCleanup = document.subscribe(() => {
     const panels = document.getSnapshot().panels
@@ -82,6 +84,7 @@ export function attachDocument(connection: WorkspaceConnection): () => void {
     state,
     others: NO_CLIENTS,
     stop: () => {
+      stopRemember?.()
       stopViewCleanup()
       stopPresence()
       stopOthers()
@@ -104,7 +107,7 @@ export function attachDocument(connection: WorkspaceConnection): () => void {
 }
 
 /** Keeps one document mirror per open connection. */
-export function attachDocuments(connections: WorkspaceConnections): () => void {
+export function attachDocuments(connections: WorkspaceConnections, views?: WorkspaceViewsStore): () => void {
   const attached = new Map<WorkspaceConnection, () => void>()
   const sync = () => {
     const current = new Set(connections.getSnapshot())
@@ -114,7 +117,7 @@ export function attachDocuments(connections: WorkspaceConnections): () => void {
       detach()
     }
     for (const connection of current) {
-      if (!attached.has(connection)) attached.set(connection, attachDocument(connection))
+      if (!attached.has(connection)) attached.set(connection, attachDocument(connection, views))
     }
   }
   const stop = connections.subscribe(sync)

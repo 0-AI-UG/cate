@@ -14,7 +14,7 @@ export function useAgentContextTransport(workspaceId: string, panel: PanelRecord
   const state = useAgentPanelState(workspaceId, panel.id)
   if (!state?.contextPolicy) return null
   const sentAt = state.contextSentAt
-  if (state.contextPolicy === 'supported') return { sentAt }
+  if (state.contextPolicy === 'supported') return { sentAt, pending: state.contextPending }
   const name = state.agentId ? AGENT_DEFS[state.agentId].displayName : 'This agent'
   return { sentAt, blocked: { label: 'Not supported', reason: `${name} can't receive context` } }
 }

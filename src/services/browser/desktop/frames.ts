@@ -62,7 +62,8 @@ export class FrameTree {
     const tree = objectValue(raw)
     const frameId = objectValue(tree.frame).id
     if (typeof frameId !== 'string') return frameIds
-    this.parents.set(frameId, parentId)
+    const parent = typeof objectValue(tree.frame).parentId === 'string' ? String(objectValue(tree.frame).parentId) : parentId ?? this.parents.get(frameId)
+    this.parents.set(frameId, parent)
     frameIds.push(frameId)
     if (Array.isArray(tree.childFrames)) for (const child of tree.childFrames) this.record(child, frameId, frameIds)
     return frameIds

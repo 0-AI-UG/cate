@@ -361,6 +361,11 @@ Rules:
 - Panel view state belongs to the workspace's client-state store, not global
   panel maps. It survives view unmounts; up to 200 removed panels retain view
   state for undo. Disconnecting the workspace releases the store.
+- Canvas viewports are remembered per workspace and canvas on this device
+  through `DeviceStore` (`workspace-views.json`), loaded before document views
+  attach. Only pan and zoom are persisted; other client state stays in memory.
+  Viewport updates reach the device store immediately; its file layer debounces
+  disk writes and flushes on quit. Layout resizing does not change the camera.
 - Undo is per client, over that client's own document ops (section 13.6).
 - A developer adding a feature declares which class its state is in and never
   writes sync code.
@@ -1469,8 +1474,8 @@ and jobs alive, and views reattach to their existing state when remounted.
   definition; a type without one, a canvas or a surface, is never a
   relation's end), `relationReach` (the flow from an execution surface up to the
   next ones), `compileRelationContext` over it, which the agents service
-  uses for prompt context, and the relation context mode (`once`, `always`,
-  `off`: a record field with its one parser). It imports only contracts.
+  uses for prompt context, and the relation context mode (`auto` (default), `once`,
+  `always`, `off`: a record field with its one parser). It imports only contracts.
   What a prompt would take is the runtime's own preview
   (`agents.previewContext`); clients never compile it themselves, and count
   connected panels with `relationReach`. The relation rule
@@ -1489,7 +1494,10 @@ and jobs alive, and views reattach to their existing state when remounted.
   the personal label library (`savedPanelRelationLabels`: remember, rename,
   forget) over a client's settings.
 - **Desktop UI** (`shells/desktop/ui/workspace/relations`): the relation handle, selector and context toggle. Relation drawing
-  is in the desktop UI (`shells/desktop/ui/client/layout/canvas`).
+  is in the desktop UI (`shells/desktop/ui/client/layout/canvas`): a flow is
+  bright only when its source's runtime `contextPending` says it will inject
+  context next turn, otherwise dim. Command activity and outcomes do not
+  affect relation rendering; no transient command connections are tracked.
 
 ## 10. Services
 
@@ -1627,9 +1635,13 @@ downloads list and its views, and hands page work to it.
   fills it only while the page still shows the origin chosen for that operation.
   Saved passwords match exact origins first, then sibling HTTPS hosts within
   the same registrable domain and port (including private public suffixes).
-  The guest offers autofill on username and password fields and captures
-  native submissions, login-button clicks and Enter before page handlers
-  clear the form. Agent submissions save without a confirmation; manual
+  The page driver installs password detection in a named isolated world in
+  every frame, including cross-origin login frames. A world-scoped CDP
+  binding reports focus and submissions without exposing a bridge to page
+  scripts. Autofill targets stay bound to their frame document and origin,
+  expire on navigation, and position suggestions in the top-level viewport.
+  Native submissions, login-button clicks and Enter are captured before page
+  handlers clear the form. Agent submissions save without a confirmation; manual
   submissions ask before saving or updating. Passkeys are
   never stored by Cate: the native addon calls the OS, which keeps them in
   the user's keychain. It needs the signed app's entitlement, a window and
@@ -1808,7 +1820,17 @@ Owns the agent vocabulary of section 2. All of it runs in the runtime.
     with its prompts gone out, or one failed;
   - the panel states (`panels.ts`): what each terminal panel hosts, with
     when relation context last went with its prompt, published as changes;
-  - prompt context from relations, and agent notification events;
+  - prompt context from relations: one shared delivery policy for all native
+    context transports. Auto sends on first injection, conversation reset or
+    changed compiled routing instructions (stable relation order, geometry
+    ignored). Delivery state stays in memory, separate from the document's
+    user-selected mode; explicit Off stays off. The native response or endpoint
+    resolves and consumes the payload after session boundaries are observed,
+    never merely because a turn started. CLI adapters without an injection
+    surface report unsupported. Cursor's `beforeSubmitPrompt` uses top-level
+    `additional_context` with the same policy; Grok remains unsupported.
+    Compaction alone does not yet invalidate it;
+  - agent notification events;
   - **usage** (`usage/`, the `usage`, `refreshUsageRates` and `usageLimits`
     methods): what the agent CLIs used in this workspace. Each session store
     declares where its CLI records usage (`AgentSessionStore.usage`):
@@ -2509,7 +2531,7 @@ Everything outside the UI that drives Cate goes through one router.
 | `cate.canvas.*` | `createPanel` | workspace/document | service |
 | `cate.ui.*` | `notify` | kernel/api (publishes a notification event) | service |
 | `cate.terminal.*` | `read`, `type`, `press` | terminal panel | session |
-| `cate.browser.*` | `listTabs`; tabs (`selectTab`, `createTab`, `closeTab`); page operations (`getAXState`, `getScreenshot`, `find`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, `setViewport`, `download`, ...) | services/browser (`listTabs`, and the session methods about tabs and size: the browser panel) | service (`listTabs`) / session (the browser panel's, page methods through page control) |
+| `cate.browser.*` | `listTabs`; tabs (`selectTab`, `createTab`, `closeTab`); page operations (`getAXState`, `getScreenshot`, `find`, `click`, `hover`, `setValue`, `typeText`, `pressKey`, `drag`, `upload`, `login`, `dialog`, `console`, `network`, `goto`, `waitFor`, `setViewport`, `download`, ...) | services/browser (tab and size methods: the browser panel) | session (the browser panel's, page methods through page control) |
 | `cate.editor.*` | `openFile`, `active` | editor panel | session / service |
 | `cate.agent.*` | `start`, `types`, `list`, `read`, `wait`, `send`, `interrupt` | services/agents (starts panels; resolves panel to agent session) | service |
 
@@ -2640,7 +2662,7 @@ client-local work (a file drop still importing).
 | Workspace data, `~/.cate/workspaces/<runtimeId>/` | see section 7.2 |
 | Project `<root>/.cate/` | `skills.json`, `tmp/`, `worktrees/`, `.gitignore` (ignores everything but `skills.json`); `skills-mirror.json` inside each worktree checkout's `.cate/` |
 | Machine, `~/.cate/` | `runtime/<build>/` (an installed daemon, the program, not state, with its `.ok` marker and `in-use/<pid>` markers), `runtime/current`, `pipe-key` (Windows, 7.5), `ssh/` (on a client device: the askpass helper and ssh's shared connections, 7.1); the `cate` launcher of a scripted install in `~/.local/bin` |
-| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
+| Client device (Electron `userData`, through `DeviceStore`) | `settings.json` (client settings, custom themes), `ui-state.json` (desktop UI state: minimap corner, onboarding progress, the privacy notice seen, the usage overview's metric and period), `boot.json` (main and detached window bounds, theme boot cache, last workspace), `workspaces.json` (the open workspaces, paired ones included, sidebar order), `known-runtimes.json` (pinned runtime keys), `workspace-views.json` (per-workspace canvas pan and zoom), `device-key.json` (`0600`), `canvas-backgrounds/`, `update-state.json`, `install-id`, `analytics-state.json`, `pending-events.jsonl`, Chromium partitions (one per workspace), logs |
 
 Every JSON state file above is written through `kernel/state` (a temporary
 file renamed over the old one, fsynced first for the `0600` files: secrets,

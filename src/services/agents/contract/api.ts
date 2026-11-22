@@ -63,7 +63,7 @@ export const agentApi = defineCateApi(
       args: {
         prompt: str.nonEmpty().maxLength(50_000).rest('prompt').help('The first prompt'),
         agentId: opt(str).flag('agent', 'id')
-          .help('Agent CLI: claude-code, codex, cursor, grok, kiro or opencode (default: one set up in this workspace)'),
+          .help('Agent CLI: claude-code, codex, cursor, grok, kiro, opencode or pi (default: one set up in this workspace)'),
         title: opt(str.maxLength(80)).help('Panel title, at most 80 characters'),
         worktreeId: opt(str).flag('worktree', 'id').help('Run in this existing worktree (default: the calling panel\'s checkout)'),
         newWorktree: opt(str).flag('new-worktree', 'name').help('Create a worktree with this name and run in it'),
@@ -93,7 +93,7 @@ export const agentApi = defineCateApi(
       access: 'read',
       handler: 'service',
       summary: 'Print an agent panel\'s conversation',
-      args: { panelId: panel().pos().help('Agent panel id or unique prefix, from cate agent list') },
+      args: { panelId: panel().pos().flag('panel').help('Agent panel id or unique prefix, from cate agent list') },
       format: 'conversation',
     },
     wait: {

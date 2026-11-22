@@ -282,9 +282,13 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
 
   // CONNECT and upgrade sockets leave the http server's bookkeeping.
   const tunnels = new Set<Duplex>()
-  const splice = (client: Duplex, target: Duplex) => {
+  const trackClient = (client: Duplex) => {
     tunnels.add(client)
     client.once('close', () => tunnels.delete(client))
+    // Handle disconnects during dialing and failed response writes too.
+    client.on('error', () => client.destroy())
+  }
+  const splice = (client: Duplex, target: Duplex) => {
     const teardown = () => { client.destroy(); target.destroy() }
     client.on('error', teardown)
     target.on('error', teardown)
@@ -351,6 +355,7 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
   })
 
   server.on('connect', async (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
+    trackClient(socket)
     if (!authorized(req)) return deny(socket)
     const target = parseAuthority(req.url ?? '')
     if (!target) return deny(socket, '400 Bad Request')
@@ -359,16 +364,18 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
       stream = await openRaw(target.host, target.port)
     } catch (error) {
       log.debug('CONNECT %s failed: %s', req.url, (error as Error).message)
-      socket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+      if (!socket.destroyed) socket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
       return
     }
+    if (socket.destroyed) { stream?.destroy(); return }
     if (!stream) return refuse(socket)
+    splice(socket, stream)
     socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
     if (head.length > 0) stream.write(head)
-    splice(socket, stream)
   })
 
   server.on('upgrade', async (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
+    trackClient(socket)
     if (!authorized(req)) return deny(socket)
     let url: URL
     try { url = new URL(req.url ?? '') } catch { return deny(socket, '400 Bad Request') }
@@ -377,13 +384,14 @@ export function startLoopbackProxy(options: LoopbackProxyOptions): Promise<Loopb
     try {
       stream = await openRaw(url.hostname, port)
     } catch {
-      socket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+      if (!socket.destroyed) socket.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
       return
     }
+    if (socket.destroyed) { stream?.destroy(); return }
     if (!stream) return refuse(socket)
+    splice(socket, stream)
     stream.write(upgradeHead(req, url.pathname + url.search))
     if (head.length > 0) stream.write(head)
-    splice(socket, stream)
   })
 
   server.on('clientError', (_error, socket) => { socket.destroy() })

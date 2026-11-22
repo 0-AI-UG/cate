@@ -1,11 +1,9 @@
 // Browser-guest preload. The optional passkey bridge is restricted to WebAuthn;
-// no general Electron API is exposed to remote pages. Password focus and
-// submitted credentials go to the host view, which asks the runtime's saved
-// passwords (`browserData`) and the user.
+// no general Electron API is exposed to remote pages. Password detection is
+// installed separately by the page driver in each frame's isolated world.
 
 import { contextBridge, ipcRenderer, webFrame } from 'electron'
 import { installPasskeyPageBridge } from './passkeyPageBridge'
-import { installPasswordBridge } from './passwordBridge'
 
 if (process.isMainFrame && ipcRenderer.sendSync('cate-passkeys-available')) {
   contextBridge.exposeInMainWorld('__catePasskeys', {
@@ -82,12 +80,6 @@ for (const eventName of ['pointerdown', 'keydown'] as const) {
     if (event.isTrusted && !automationInput) ipcRenderer.send(USER_INPUT_CHANNEL)
   }, true)
 }
-
-// Keep frame credentials scoped to the top-level page the host validates.
-if (process.isMainFrame) installPasswordBridge(
-  (channel, payload) => ipcRenderer.sendToHost(channel, payload),
-  () => automationInput,
-)
 
 // A conservative lifetime signal: even input in a subframe protects the page.
 let dirtySent = false

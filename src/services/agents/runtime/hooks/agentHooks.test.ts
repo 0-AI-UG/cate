@@ -233,8 +233,10 @@ describe('agentHooks capability', () => {
     expect(await kiro.text()).toBe('Use Browser panel "Docs".')
 
     const cursor = await send('cursor', { hook_event_name: 'beforeSubmitPrompt' })
-    expect(cursor.status).toBe(204)
-    expect(await cursor.text()).toBe('')
+    expect(cursor.status).toBe(200)
+    expect(await cursor.json()).toEqual({ additional_context: 'Use Browser panel "Docs".' })
+    const cursorStart = await send('cursor', { hook_event_name: 'sessionStart' })
+    expect(cursorStart.status).toBe(204)
 
     const grok = await send('grok', { hookEventName: 'user_prompt_submit' })
     expect(grok.status).toBe(204)
@@ -250,6 +252,9 @@ describe('agentHooks capability', () => {
     const codexOff = await send('codex', { hook_event_name: 'UserPromptSubmit' })
     expect(codexOff.status).toBe(204)
     expect(await codexOff.text()).toBe('')
+    const cursorOff = await send('cursor', { hook_event_name: 'beforeSubmitPrompt' })
+    expect(cursorOff.status).toBe(204)
+    expect(await cursorOff.text()).toBe('')
     const opencodeOff = await send('opencode', {}, '/prompt-context')
     expect(await opencodeOff.text()).toBe('')
   })

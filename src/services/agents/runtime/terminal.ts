@@ -126,14 +126,15 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   const resetListeners = new Set<(panelId: string) => void>()
   const resets = createConversationResets((terminalId) => {
     const panelId = panelOf(terminalId)
-    if (panelId) for (const listener of resetListeners) listener(panelId)
+    if (panelId) {
+      promptContext.reset(panelId)
+      for (const listener of changeListeners) listener(panelId)
+      for (const listener of resetListeners) listener(panelId)
+    }
   })
-  /** Contexts last published per terminal, to skip identical updates. */
-  const sentContext = new Map<string, string | null>()
   /** The agent a hook came from in each terminal since its agent started. */
   const hookAgent = new Map<string, AgentId>()
-  /** The attachments of the prompt each terminal's agent takes next, for its
-   *  submit hook (taken by the turn that starts). */
+  /** Attachments consumed with the next native context injection. */
   const attachmentContext = new Map<string, string>()
   /** Hook installation and CLI-owned trust for silent agents, rechecked
    *  every 15 seconds until a lifecycle hook proves the integration works. */
@@ -171,17 +172,18 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     },
   })
 
-  /** Relation context reaches a CLI through its native submit hook. Before
-   *  any hook identified the agent, context is registered anyway. */
-  const syncPromptContext = (terminalId: string): void => {
-    const panelId = panelOf(terminalId)
-    if (!panelId) return
-    const agentId = status.agentId(terminalId)
-    const relations = agentId && !AGENT_DEFS[agentId].promptContextHook ? null : promptContext.peek(panelId, agentId)
-    const context = [relations, attachmentContext.get(terminalId)].filter(Boolean).join('\n\n') || null
-    if (sentContext.has(terminalId) && sentContext.get(terminalId) === context) return
-    sentContext.set(terminalId, context)
-    hooks.setPromptContext(terminalId, context)
+  /** Every supported transport consumes through the same callback, only
+   *  when the hook actually asks for its payload (not on turn-start). */
+  const registerPromptContext = (terminalId: string): void => {
+    hooks.setPromptContext(terminalId, (agentId, sessionId) => {
+      const panelId = panelOf(terminalId)
+      if (!panelId) return null
+      if (sessionId) resets.observe(terminalId, { agentId, sessionId })
+      const relations = promptContext.consume(panelId, agentId)
+      const attachments = attachmentContext.get(terminalId)
+      attachmentContext.delete(terminalId)
+      return [relations, attachments].filter(Boolean).join('\n\n') || null
+    })
   }
 
   const forget = (terminalId: string): void => {
@@ -193,7 +195,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     status.forget(terminalId)
     stamps.drop(terminalId)
     processSessions.delete(terminalId)
-    sentContext.delete(terminalId)
     attachmentContext.delete(terminalId)
     hookAgent.delete(terminalId)
     hookFiles.delete(terminalId)
@@ -237,7 +238,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const baseCwd = cwd === agents.root ? undefined : agents.root
     const env = await hooks.envForPty(spawn.terminalId, { ...spawn.env }, config, cwd, baseCwd, launched?.id)
     await hooks.prepareWorkspace(cwd, config, baseCwd, launched?.id)
-    syncPromptContext(spawn.terminalId)
+    registerPromptContext(spawn.terminalId)
     return env
   }))
 
@@ -353,18 +354,13 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       hookAgent.set(event.terminalId, event.agentId)
       changed(event.terminalId)
     }
-    if (event.kind === 'turn-start' && AGENT_DEFS[event.agentId].promptContextHook != null) {
-      promptContext.consume(panelId, event.agentId)
-      attachmentContext.delete(event.terminalId)
-    }
     if (event.sessionId && event.kind !== 'input-submit') processSessions.delete(event.terminalId)
     stamps.ingest(event)
     status.noteHookEvent(event)
-    syncPromptContext(event.terminalId)
   }))
 
   offs.push(document.onChange(() => {
-    for (const terminalId of terminals.keys()) syncPromptContext(terminalId)
+    for (const terminalId of terminals.keys()) changed(terminalId)
   }))
 
   const liveTerminal = (panelId: string): string | null => {
@@ -435,6 +431,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       // the panel shows the terminal again, the status stays.
       label: agentName,
       contextPolicy: !def ? null : def.promptContextHook ? 'supported' : 'unsupported',
+      contextPending: present && !!def?.promptContextHook && !hooksMissing(terminalId, agentId!) && promptContext.peek(panelId, agentId) !== null,
       status: current,
       present,
       canReceivePrompt: status.canReceivePrompt(terminalId),
@@ -448,8 +445,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const terminalId = liveTerminal(panelId)
     if (!terminalId) return false
     try {
-      // A native submit hook reads the context: publish it before Enter.
-      syncPromptContext(terminalId)
       await typePrompt({
         write: (data) => terminal.write(terminalId, data),
         onOutput: (listener) => terminal.onOutput((id) => { if (id === terminalId) listener() }),
@@ -482,8 +477,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       if (!terminalId || !status.present(terminalId)) return { ok: false, error: 'agent-not-running' }
       if (!status.canReceivePrompt(terminalId)) return { ok: false, error: 'agent-busy' }
       const input = agentPromptInput(status.agentId(terminalId), prompt, attachments)
-      // The agent's submit hook takes the context and its turn-start
-      // consumes it; consuming here would clear it before the hook reads it.
+      // The native hook selects and consumes context when it injects it.
       await agents.promptContext.flush(panelId).catch(() => {})
       // Delivered means a turn started: a prompt typed into a dialog the CLI
       // opened after its last turn is lost without one. A slash command is
@@ -497,7 +491,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       // Not taken: the attachments do not go with a later prompt.
       if (!result.ok && input.context && attachmentContext.get(terminalId) === input.context) {
         attachmentContext.delete(terminalId)
-        syncPromptContext(terminalId)
       }
       return result
     },

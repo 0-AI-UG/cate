@@ -6,8 +6,6 @@ import { compileRelationContext, relationContextMode, relationPanels, type Relat
 import type { PanelRecord, PanelRelation } from '@workspace/document/contract'
 import { AGENT_DEFS, type AgentId } from '../contract'
 
-/** `once`: sent with the next prompt, then off. `always`: every prompt. */
-
 /** The document as the agents service reads and writes it. */
 export interface AgentsDocument {
   panel(panelId: string): PanelRecord | undefined
@@ -38,6 +36,8 @@ export interface PromptContext {
   /** The armed context, disarming a `once` context. Called at a real prompt
    *  submit boundary so short follow-ups do not pay for it again. */
   consume(panelId: string, agentId: AgentId | null): string | null
+  /** A conversation boundary invalidates automatic delivery, not the user policy. */
+  reset(panelId: string): void
   /** Flush connected editors so the agent reads what is on screen. */
   flush(panelId: string): Promise<void>
   /** When context last went with the panel's prompt (epoch ms). */
@@ -51,19 +51,28 @@ export function addAgentPromptGuidance(context: string, agentId: AgentId | null)
 }
 
 export function createPromptContext(deps: PromptContextDeps): PromptContext {
+  const delivered = new Map<string, string>()
   const peek = (panelId: string, agentId: AgentId | null): string | null => {
     if (!deps.relationsEnabled()) return null
     const record = deps.document.panel(panelId)
     if (!record || relationContextMode(record.fields) === 'off') return null
     const panels = relationPanels(deps.document.panels(), deps.relationRole)
-    const context = compileRelationContext(panelId, panels, [...deps.document.relations()])?.text
-    return context ? addAgentPromptGuidance(context, agentId) : null
+    const relations = [...deps.document.relations()].sort((a, b) => a.id.localeCompare(b.id))
+    const compiled = compileRelationContext(panelId, panels, relations)?.text
+    // Removing the last connection also invalidates previously sent routing.
+    const context = compiled ?? (delivered.has(panelId)
+      ? '<cate-connected-panels>\nNo connected panels remain. Previous routing instructions no longer apply.\n</cate-connected-panels>'
+      : null)
+    if (!context) return null
+    const text = addAgentPromptGuidance(context, agentId)
+    return relationContextMode(record.fields) === 'auto' && delivered.get(panelId) === text ? null : text
   }
   const sent = new Map<string, number>()
   const sentListeners = new Set<(panelId: string) => void>()
   const consume = (panelId: string, agentId: AgentId | null): string | null => {
     const context = peek(panelId, agentId)
     if (!context) return null
+    delivered.set(panelId, context)
     const record = deps.document.panel(panelId)
     if (record && relationContextMode(record.fields) === 'once') {
       deps.document.setRelationContextMode(panelId, 'off')
@@ -75,6 +84,7 @@ export function createPromptContext(deps: PromptContextDeps): PromptContext {
   return {
     peek,
     consume,
+    reset: (panelId) => { delivered.delete(panelId); sent.delete(panelId) },
     sentAt: (panelId) => sent.get(panelId),
     onSent(listener) {
       sentListeners.add(listener)

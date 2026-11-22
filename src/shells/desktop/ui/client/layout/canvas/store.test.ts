@@ -204,12 +204,10 @@ describe('canvas view store', () => {
     expect(store.getState().viewportOffset).toEqual({ x: 33, y: 44 })
   })
 
-  it('mirrors the settled viewport into client state', () => {
+  it('mirrors the latest viewport immediately so closing cannot lose the last pan', () => {
     vi.useFakeTimers()
     const { store, clientState } = setup()
     store.getState().setZoomAndOffset(2, { x: 5, y: 6 })
-    expect(clientState.getSnapshot().viewports.c1).toBeUndefined()
-    vi.advanceTimersByTime(300)
     expect(clientState.getSnapshot().viewports.c1).toEqual({ x: 5, y: 6, zoom: 2 })
   })
 
