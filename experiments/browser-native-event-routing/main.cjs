@@ -15,7 +15,7 @@ if (role === 'browser') app.commandLine.appendSwitch('disable-gpu-compositing')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
 const content = '<!doctype html><style>body{margin:0;min-height:100vh;background:#73bd53}</style>'
-  + '<script>window.inputs=[]; for(const kind of ["mousedown","mouseup","wheel"]) addEventListener(kind,e=>{if(kind==="wheel")e.preventDefault();inputs.push({kind,x:e.clientX,y:e.clientY,trusted:e.isTrusted,dx:e.deltaX,dy:e.deltaY,control:e.ctrlKey})},{passive:false});</script>'
+  + '<script>window.inputs=[]; for(const kind of ["mousedown","mousemove","mouseup","wheel"]) addEventListener(kind,e=>{if(kind==="wheel")e.preventDefault();if(kind==="mousemove"&&!e.buttons)return;inputs.push({kind,buttons:e.buttons,x:e.clientX,y:e.clientY,trusted:e.isTrusted,dx:e.deltaX,dy:e.deltaY,control:e.ctrlKey})},{passive:false});</script>'
 const effects = '#pane{position:absolute;inset:0;width:100%;height:100%;clip-path:polygon(0 0, 100% 0, 100% 40%, 50% 40%, 50% 100%, 0 100%)}'
 const bounds = () => {
   const { x,y,width,height } = screen.getPrimaryDisplay().workArea
@@ -103,14 +103,22 @@ async function browser() {
     assert.equal(hit(window,200,150,solid.self).hit,ready.ready,'host not immediately below browser')
     const intercepted = []
     let mode = 'electron'
-    window.webContents.on('before-mouse-event',(event, mouse)=>{
-      if (!['mouseDown','mouseUp'].includes(mouse.type) || mouse.x < 160 || mouse.y < 80) return
+    let completedWheels = 0
+    let dragOwner = null
+    const routeMouse = (event, mouse) => {
+      if (!['mouseDown','mouseMove','mouseUp'].includes(mouse.type)) return
+      if (mouse.type === 'mouseDown') dragOwner = mouse.x >= 160 && mouse.y >= 80 ? 'host' : 'browser'
+      const forward = dragOwner === 'host'
+      if (mouse.type === 'mouseUp') dragOwner = null
+      if (!forward) return
       event.preventDefault()
-      const id = intercepted.length
+      const id = intercepted.length + completedWheels
       intercepted.push({id,mode,type:mouse.type,x:mouse.x,y:mouse.y})
       child.stdin.write(JSON.stringify({id,mode,mouse:{type:mouse.type,x:Math.round(mouse.x),y:Math.round(mouse.y),
-        button:'left',clickCount:1}})+'\n')
-    })
+        button:'left',clickCount:1,modifiers:mouse.type==='mouseUp'?[]:['leftbuttondown']}})+'\n')
+    }
+    window.webContents.on('before-mouse-event',routeMouse)
+    guest.on('before-mouse-event',routeMouse)
     const press = (x,y) => native.queueClick(window.getNativeWindowHandle(),x,y)
     press(20,20)
     await until(()=>readInputs(guest),inputs=>inputs.length===2,'visible native browser click not delivered')
@@ -185,9 +193,38 @@ async function browser() {
       native.queueWheel(window.getNativeWindowHandle(),20,20,0,-6,false)
       const release = await until(()=>readInputs(guest), inputs=>inputs.filter(event=>event.kind==='wheel').length===2,
         'guest did not regain wheel routing after momentum')
+      // Wheel notifications use the same pipe. Wait for their acknowledgments
+      // before choosing the sequence base for the drag.
+      const offset = intercepted.length
+      const wheelOffset = wheels.length
+      completedWheels = wheelOffset
+      mode = 'electron'
+      const nativeHandle = window.getNativeWindowHandle()
+      const dragStart = [212,153], dragMid = [140,110], dragEnd = [45,38]
+      const points = [dragStart,dragMid,dragEnd,dragEnd]
+      for (let index=0;index<points.length;index++) {
+        const [x,y] = points[index]
+        const step = index===0 ? 0 : index===points.length-1 ? 2 : 1
+        native.postFixturePointer(nativeHandle,x,y,step)
+        await until(()=>intercepted.length, count=>count>=offset+index+1,
+          'missing native drag step ' + index + ' ' + JSON.stringify(intercepted.slice(offset)))
+      }
+      const dragRecords = await until(()=>response.find(message=>message.ack===offset+wheelOffset+3 && message.mode==='electron' &&
+        message.inputs.some(input=>input.kind==='mouseup' && input.x===dragEnd[0])),Boolean,'host did not handle drag release')
+      const drag = dragRecords.inputs.filter(event=>['mousedown','mousemove','mouseup'].includes(event.kind)).slice(-4)
+      assert.deepEqual(drag.map(e=>[e.kind,e.x,e.y,e.buttons,e.trusted]),[
+        ['mousedown',212,153,1,true],['mousemove',140,110,1,true],
+        ['mousemove',45,38,1,true],['mouseup',45,38,0,true],
+      ])
+      assert.equal(wheels.length,wheelOffset)
+      const guestAfterDrag = (await readInputs(guest)).filter(event=>['mousedown','mousemove','mouseup'].includes(event.kind))
+      assert.deepEqual(guestAfterDrag,still)
+      native.queueClick(nativeHandle,20,20)
+      const newGesture = await until(()=>readInputs(guest), events=>events.filter(e=>e.kind==='mouseup').length===2,
+        'guest did not regain pointer routing after drag release')
       const result = {fixture:'per-event window routing',platform:process.platform,
         electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel,gestureWheels,
-        releasedGuestWheel:release.filter(event=>event.kind==='wheel').at(-1)}
+        releasedGuestWheel:release.filter(event=>event.kind==='wheel').at(-1),drag,releasedGuestClick:newGesture.at(-1)}
       fs.writeFileSync(join(root,'result.json'), JSON.stringify(result,null,2))
       console.log(JSON.stringify(result,null,2))
     } finally {

@@ -113,6 +113,36 @@ static NSWindow *fixtureWindow(napi_env env, napi_value handle) {
   return ((__bridge NSView *)address).window;
 }
 
+static napi_value postFixturePointer(napi_env env, napi_callback_info info) {
+  napi_value args[4], result;
+  size_t count = 4;
+  double x, y;
+  uint32_t step;
+  napi_get_cb_info(env, info, &count, args, nullptr, nullptr);
+  NSWindow *window = count == 4 ? fixtureWindow(env, args[0]) : nil;
+  if (!window || !window.isVisible || !CGPreflightPostEventAccess() ||
+      napi_get_value_double(env, args[1], &x) != napi_ok ||
+      napi_get_value_double(env, args[2], &y) != napi_ok ||
+      napi_get_value_uint32(env, args[3], &step) != napi_ok || step > 2) {
+    napi_throw_error(env, nullptr, "Hosted drag requires a visible test window and session input access");
+    return nullptr;
+  }
+  const NSRect frame = window.contentView.frame;
+  const NSPoint point = [window convertPointToScreen:NSMakePoint(NSMinX(frame)+x, NSMaxY(frame)-y)];
+  const CGPoint global = CGPointMake(point.x, CGRectGetHeight(CGDisplayBounds(CGMainDisplayID()))-point.y);
+  if (CGWarpMouseCursorPosition(global) != kCGErrorSuccess) {
+    napi_throw_error(env, nullptr, "Hosted cursor move failed");
+    return nullptr;
+  }
+  const CGEventType types[] = {kCGEventLeftMouseDown, kCGEventLeftMouseDragged, kCGEventLeftMouseUp};
+  CGEventRef event = CGEventCreateMouseEvent(nullptr, types[step], global, kCGMouseButtonLeft);
+  CGEventSetIntegerValueField(event, kCGMouseEventClickState, 1);
+  CGEventPost(kCGSessionEventTap, event);
+  CFRelease(event);
+  napi_get_undefined(env, &result);
+  return result;
+}
+
 static napi_value beginWheelRoute(napi_env env, napi_callback_info info) {
   napi_value args[2], name, value;
   size_t count = 2;
@@ -228,6 +258,7 @@ NAPI_MODULE_INIT() {
   napi_property_descriptor items[] = {
     {"getHit", nullptr, getHit, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"queueClick", nullptr, queueClick, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"postFixturePointer", nullptr, postFixturePointer, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"queueWheel", nullptr, queueWheel, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"beginWheelRoute", nullptr, beginWheelRoute, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"endWheelRoute", nullptr, endWheelRoute, nullptr, nullptr, nullptr, napi_default, nullptr},
