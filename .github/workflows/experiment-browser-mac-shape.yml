@@ -1,0 +1,35 @@
+name: macOS browser window shape experiment
+
+on:
+  push:
+    branches: [experiment/browser-window-shape-ci]
+    paths:
+      - '.github/workflows/experiment-browser-mac-shape.yml'
+      - 'experiments/browser-native-mac-shape/**'
+
+permissions:
+  contents: read
+
+jobs:
+  hit-test:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
+      - name: Install stock Electron and Node-API headers
+        run: |
+          npm install --no-audit --no-fund --no-package-lock --prefix "$RUNNER_TEMP/shape-electron" electron@45.4.1 node-api-headers@1.9.0
+          node "$RUNNER_TEMP/shape-electron/node_modules/electron/install.js"
+      - name: Verify the native hit target under the browser clip
+        working-directory: experiments/browser-native-mac-shape
+        run: |
+          xcrun clang++ -std=c++17 -fobjc-arc -bundle -undefined dynamic_lookup -framework AppKit \
+            -I "$RUNNER_TEMP/shape-electron/node_modules/node-api-headers/include" hit-query.mm -o hit-query.node
+          export MASK_PROFILE="$(mktemp -d "$RUNNER_TEMP/shape-profile.XXXXXX")"
+          engine="$(node -p 'require(process.argv[1])' "$RUNNER_TEMP/shape-electron/node_modules/electron")"
+          "$engine" .
