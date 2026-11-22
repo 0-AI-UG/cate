@@ -15,7 +15,7 @@ if (role === 'browser') app.commandLine.appendSwitch('disable-gpu-compositing')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
 const content = '<!doctype html><style>body{margin:0;min-height:100vh;background:#73bd53}</style>'
-  + '<script>window.inputs=[]; for(const kind of ["mousedown","mousemove","mouseup","wheel"]) addEventListener(kind,e=>{if(kind==="wheel")e.preventDefault();if(kind==="mousemove"&&!e.buttons)return;inputs.push({kind,buttons:e.buttons,x:e.clientX,y:e.clientY,trusted:e.isTrusted,dx:e.deltaX,dy:e.deltaY,control:e.ctrlKey})},{passive:false});</script>'
+  + '<script>window.inputs=[]; addEventListener("pointerdown",e=>e.target.setPointerCapture(e.pointerId)); for(const kind of ["mousedown","mousemove","mouseup","wheel"]) addEventListener(kind,e=>{if(kind==="wheel")e.preventDefault();if(kind==="mousemove"&&!e.buttons)return;inputs.push({kind,buttons:e.buttons,x:e.clientX,y:e.clientY,trusted:e.isTrusted,dx:e.deltaX,dy:e.deltaY,control:e.ctrlKey})},{passive:false});</script>'
 const effects = '#pane{position:absolute;inset:0;width:100%;height:100%;clip-path:polygon(0 0, 100% 0, 100% 40%, 50% 40%, 50% 100%, 0 100%)}'
 const bounds = () => {
   const { x,y,width,height } = screen.getPrimaryDisplay().workArea
@@ -224,9 +224,25 @@ async function browser() {
       native.queueClick(nativeHandle,20,20)
       const newGesture = await until(()=>readInputs(guest), events=>events.filter(e=>e.kind==='mouseup').length===2,
         'guest did not regain pointer routing after drag release')
+      const reverseStart = [46,40], reverseMid = [128,110], reverseEnd = [210,155]
+      const reversePoints = [reverseStart,reverseMid,reverseEnd,reverseEnd]
+      const beforeReverse = intercepted.length
+      for(let index=0;index<reversePoints.length;index++) {
+        const [x,y] = reversePoints[index]
+        const step = index===0 ? 0 : index===reversePoints.length-1 ? 2 : 1
+        native.postFixturePointer(nativeHandle,x,y,step)
+        await until(()=>readInputs(guest), events=>events.length>=newGesture.length+index+1,
+          'browser did not keep reverse drag step ' + index)
+      }
+      assert.equal(intercepted.length,beforeReverse)
+      const browserDrag = (await readInputs(guest)).slice(-4)
+      assert.deepEqual(browserDrag.map(e=>[e.kind,e.x,e.y,e.buttons,e.trusted]),[
+        ['mousedown',46,40,1,true],['mousemove',128,110,1,true],
+        ['mousemove',210,155,1,true],['mouseup',210,155,0,true],
+      ])
       const result = {fixture:'per-event window routing',platform:process.platform,
         electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel,gestureWheels,
-        releasedGuestWheel:release.filter(event=>event.kind==='wheel').at(-1),drag,releasedGuestClick:newGesture.at(-1)}
+        releasedGuestWheel:release.filter(event=>event.kind==='wheel').at(-1),drag,browserDrag,releasedGuestClick:newGesture.at(-1)}
       fs.writeFileSync(join(root,'result.json'), JSON.stringify(result,null,2))
       console.log(JSON.stringify(result,null,2))
     } finally {
