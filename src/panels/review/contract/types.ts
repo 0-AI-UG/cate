@@ -21,7 +21,7 @@ export interface ReviewDisplay {
  *  state, not here. */
 export interface ReviewCheckoutState {
   /** Recorded agent source filters. */
-  agentChanges?: AgentChangesFilter
+  agentChanges?: ReviewScope
   repoPath: string
 }
 
@@ -34,7 +34,7 @@ export interface ReviewState extends ReviewCheckoutState {
 /** What an open request (a menu, a deep link, an agent's changes pill) asks
  *  of a review panel. */
 export interface ReviewOpenRequest {
-  agentChanges?: AgentChangesFilter
+  agentChanges?: ReviewScope
   /** Reveals this file once in every view (`ReviewSnapshot.reveal`). */
   focusedFile?: string
 }
@@ -54,6 +54,7 @@ export interface ReviewFields {
  *  with `recordedDiff`). */
 export interface RecordedFileSummary {
   recordId: string
+  createdAt?: string
   sessionId?: string
   prNumber?: number
   agentId: AgentId
@@ -76,7 +77,6 @@ export type RecordedDiffPage = Omit<AgentChangedFile, 'patch' | 'hunks'> & DiffP
 export interface ReviewSourcePanel {
   id: string
   title: string
-  agentIds: AgentId[]
 }
 
 export interface ReviewRecordedState {
@@ -85,8 +85,6 @@ export interface ReviewRecordedState {
   files: RecordedFileSummary[]
   /** Sources across all filters, including panels that have since closed. */
   panels: ReviewSourcePanel[]
-  /** Recorded contributions across all source filters. */
-  agents: Array<{ agentId: AgentId; edits: number; uncommittedEdits: number }>
 }
 
 export interface ReviewSnapshot {
@@ -101,12 +99,14 @@ export interface ReviewSnapshot {
 
 export interface ReviewAgentChoice { agentId: AgentId; ready: boolean }
 
-/** A filter patch; null clears a key (JSON has no undefined). */
-export type AgentChangesFilterPatch = { [K in keyof AgentChangesFilter]?: AgentChangesFilter[K] | null }
+export type ReviewScope = Pick<AgentChangesFilter, 'panelId' | 'sessionId' | 'turnId'>
+
+/** Null clears a scope field over JSON. */
+export type ReviewScopePatch = { [K in keyof ReviewScope]?: ReviewScope[K] | null }
 
 export type ReviewOp =
   | { kind: 'refresh' }
-  | { kind: 'updateFilter'; patch: AgentChangesFilterPatch }
+  | { kind: 'updateFilter'; patch: ReviewScopePatch }
   /** Returns one bounded `RecordedDiffPage`, without the full patch. */
   | { kind: 'recordedDiff'; recordId: string; path: string; page?: number }
   /** Returns false while a file operation runs. */
@@ -124,8 +124,14 @@ export type ReviewOp =
 export function defaultReviewState(repoPath: string, request?: Partial<ReviewOpenRequest>): ReviewState {
   return {
     repoPath,
-    agentChanges: request?.agentChanges ?? {},
+    agentChanges: reviewScope(request?.agentChanges),
   }
+}
+
+/** Read only the scope fields understood by Review, including from saved sessions. */
+export function reviewScope(scope?: ReviewScope): ReviewScope {
+  const { panelId, sessionId, turnId } = scope ?? {}
+  return { ...(panelId ? { panelId } : {}), ...(sessionId ? { sessionId } : {}), ...(turnId ? { turnId } : {}) }
 }
 
 /** The record's `repoPath`; empty means the workspace root. */

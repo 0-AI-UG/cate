@@ -108,6 +108,48 @@ it('does not prune staged edits when the working file was restored', async () =>
   expect((await history.reconcile(cwd, [file])).get(file.key)?.reverted).toBe(true)
 })
 
+it('batches distinct paths and keeps staged, unstaged and untracked evidence separate', async () => {
+  const unusual = process.platform === 'win32' ? 'two words.txt' : 'line\nbreak.txt'
+  const paths = ['file.txt', 'literal[match].txt', unusual, 'pending.txt', 'unchanged.txt']
+  for (const name of paths.filter((name) => name !== 'pending.txt')) await writeFile(path.join(cwd, name), 'before\n')
+  const baseCommit = await commit('Add batch fixture')
+  const hunks = (text: string) => parseReviewPatch(`@@ -1 +1 @@\n-before\n+${text}\n`)
+  await writeFile(path.join(cwd, paths[0]), 'working\n')
+  await writeFile(path.join(cwd, paths[1]), 'stage\n')
+  await git('--literal-pathspecs', 'add', '--', paths[1])
+  await writeFile(path.join(cwd, paths[1]), 'before\n')
+  await writeFile(path.join(cwd, paths[2]), 'different\n')
+  await writeFile(path.join(cwd, paths[3]), 'added\n')
+  const read = vi.fn((_cwd: string, args: string[]) => git(...args))
+  const history = createPatchHistory({ read })
+  const edits = paths.map((path, index) => ({ key: path, path, baseCommit, createdAt: new Date().toISOString(),
+    hunks: index === 3 ? parseReviewPatch('@@ -0,0 +1 @@\n+added\n') : hunks(index === 1 ? 'stage' : 'working') }))
+  const evidence = await history.reconcile(cwd, edits)
+  expect(paths.map((file) => evidence.get(file))).toEqual([
+    { uncommitted: true }, { uncommitted: true }, { uncommitted: false }, { uncommitted: true }, { uncommitted: false, reverted: true },
+  ])
+  expect(read.mock.calls.filter(([, args]) => args[1] === 'diff')).toHaveLength(2)
+  expect(read.mock.calls.filter(([, args]) => args[1] === 'log')).toHaveLength(0)
+})
+
+it('skips absent histories in bulk while still matching commits on another branch', async () => {
+  const name = process.platform === 'win32' ? 'side branch.txt' : '\nbranch.txt'
+  const original = (await git('branch', '--show-current')).trim()
+  const baseCommit = (await git('rev-parse', 'HEAD')).trim()
+  await git('switch', '-c', 'batch-feature')
+  await writeFile(path.join(cwd, name), 'other branch\n')
+  const hash = await commit('Patch on branch')
+  await git('switch', original)
+  const read = vi.fn((_cwd: string, args: string[]) => git(...args))
+  const history = createPatchHistory({ read })
+  const hunks = parseReviewPatch('@@ -0,0 +1 @@\n+other branch\n')
+  const paths = [name, ...Array.from({ length: 10 }, (_, i) => `unused-${i}.txt`)]
+  const result = await history.reconcile(cwd, paths.map((path) => ({ key: path, path, hunks, baseCommit, createdAt: new Date().toISOString() })))
+  expect(result.get(name)).toMatchObject({ commit: { hash }, uncommitted: false })
+  expect(result.get(paths[1])).toEqual({ uncommitted: false, reverted: true })
+  expect(read.mock.calls.filter(([, args]) => args[1] === 'log')).toHaveLength(2)
+})
+
 it('prunes edits rolled back with reset, but preserves commits still referenced on another branch', async () => {
   const { history, file } = await prepare()
   const hash = await commit('Feature')

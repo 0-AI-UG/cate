@@ -542,16 +542,9 @@
 }
 
 /* Review toolbars respond to panel width rather than the application window. */
-@container review-toolbar (max-width: 900px) {
-  .review-action-label { display: none; }
-  .review-action { width: 28px; padding-inline: 0; gap: 0; }
-}
-@container review-toolbar (max-width: 640px) {
-  .review-source-label, .review-line-stats { display: none; }
-}
 @container review-toolbar (max-width: 480px) {
-  .review-stats { display: none; }
   .review-toolbar, .review-toolbar-actions { gap: 2px; }
+  .review-summary-detail { display: none; }
 }
 
 @keyframes screenshot-slide-from-right {
