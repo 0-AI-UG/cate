@@ -24,7 +24,7 @@ jobs:
       - name: Build the Cate fixture
         run: |
           npm ci
-          npm run build
+          NODE_OPTIONS=--max-old-space-size=4096 npm run build
           npm run build:runtime
           node experiments/browser-cold-native-canvas/assemble.cjs
           node_modules/.bin/esbuild experiments/browser-cold-native-canvas/driver-entry.ts --bundle \
