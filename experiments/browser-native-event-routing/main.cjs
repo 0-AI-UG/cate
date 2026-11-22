@@ -15,7 +15,7 @@ if (role === 'browser') app.commandLine.appendSwitch('disable-gpu-compositing')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
 const content = '<!doctype html><style>body{margin:0;min-height:100vh;background:#73bd53}</style>'
-  + '<script>window.inputs=[]; for(const kind of ["mousedown","mouseup","wheel"]) addEventListener(kind,e=>inputs.push({kind,x:e.clientX,y:e.clientY,trusted:e.isTrusted,dx:e.deltaX,dy:e.deltaY,control:e.ctrlKey}));</script>'
+  + '<script>window.inputs=[]; for(const kind of ["mousedown","mouseup","wheel"]) addEventListener(kind,e=>{if(kind==="wheel")e.preventDefault();inputs.push({kind,x:e.clientX,y:e.clientY,trusted:e.isTrusted,dx:e.deltaX,dy:e.deltaY,control:e.ctrlKey})},{passive:false});</script>'
 const effects = '#pane{position:absolute;inset:0;width:100%;height:100%;clip-path:polygon(0 0, 100% 0, 100% 40%, 50% 40%, 50% 100%, 0 100%)}'
 const bounds = () => {
   const { x,y,width,height } = screen.getPrimaryDisplay().workArea
@@ -44,6 +44,7 @@ async function host() {
   cdp.attach('1.3')
   const pending = require('node:readline').createInterface({input:process.stdin})
   process.stdout.write(JSON.stringify({ ready:hit(window,20,20).self })+'\n')
+  let wheelsDelivered = 0
   for await (const line of pending) {
     const message = JSON.parse(line)
     if (message.stop) break
@@ -57,7 +58,12 @@ async function host() {
         x:mouse.x,y:mouse.y,button:'left',clickCount:1,
       })
     }
-    const inputs = await readInputs(window.webContents)
+    const inputs = mouse.type === 'mouseWheel'
+      ? await until(() => readInputs(window.webContents),
+        inputs => inputs.filter(event => event.kind === 'wheel').length > wheelsDelivered,
+        'host did not receive wheel delivery ' + JSON.stringify(mouse))
+      : await readInputs(window.webContents)
+    if (mouse.type === 'mouseWheel') wheelsDelivered++
     process.stdout.write(JSON.stringify({ack:message.id,mode:message.mode,forwardMs:performance.now()-sent,inputs})+'\n')
   }
   app.exit(0)
@@ -125,7 +131,7 @@ async function browser() {
       child.stdin.write(JSON.stringify({id,mode:'electron',mouse:{
         type:'mouseWheel',x:Math.round(wheel.x),y:Math.round(wheel.y),
         deltaX:Math.round(wheel.deltaX),deltaY:Math.round(wheel.deltaY),
-        hasPreciseScrollingDeltas:wheel.precise,canScroll:!wheel.control,
+        hasPreciseScrollingDeltas:wheel.precise,
         modifiers:wheel.control?['control']:[],
       }})+'\n')
     })
@@ -140,6 +146,7 @@ async function browser() {
         native.queueWheel(window.getNativeWindowHandle(),200,150,3,-12,control)
         await until(()=>response.find(message=>message.ack===expected),Boolean,'clipped wheel did not reach the host')
       }
+      console.error('Input and acknowledged result:',JSON.stringify({wheels,last:response.at(-1)}))
       const delivered = response.at(-1).inputs.filter(e=>e.kind==='wheel')
       assert.equal(delivered.length,2)
       assert.deepEqual(delivered.map(e=>[e.x,e.y,e.trusted,e.control]),[[200,150,true,false],[200,150,true,true]])
