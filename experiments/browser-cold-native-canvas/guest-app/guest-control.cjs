@@ -4,7 +4,7 @@ const { scaleClip } = require('./scale-clip.cjs')
 
 const wrapped = process.env.PROBE_WRAPPED_PANES === '1'
 
-exports.serve = ({ BrowserWindow, session, registry, stats }) => {
+exports.serve = ({ BrowserWindow, session, screen, registry, stats }) => {
   const guests = new Map()
   const openings = new Map()
   let peer
@@ -175,7 +175,7 @@ exports.serve = ({ BrowserWindow, session, registry, stats }) => {
       const guest = guests.get(slot)
       if (!guest?.requestedBounds.inert) throw new Error('Expected an unfocused browser pane')
       const native = require('./native.node')
-      let sent = 0, posted = 0, lostInert = 0
+      let sent = 0, posted = 0, lostInert = 0, wrongTarget = 0, outsideDisplay = 0
       native.beginWheelRoute(guest.window.getNativeWindowHandle(), wheel => {
         const bounds = guest.window.getContentBounds()
         if (!guest.requestedBounds.inert) { lostInert++; return }
@@ -184,8 +184,16 @@ exports.serve = ({ BrowserWindow, session, registry, stats }) => {
       }, true)
       const timer = setInterval(() => {
         const bounds = guest.window.getContentBounds()
-        const x = Math.round(bounds.width*.82)
-        const y = Math.round(bounds.height*.62)
+        const display = screen.getDisplayMatching(bounds).bounds
+        const left = Math.max(bounds.x, display.x, hostOrigin.x)
+        const top = Math.max(bounds.y, display.y, hostOrigin.y+100)
+        const right = Math.min(bounds.x+bounds.width,display.x+display.width,hostOrigin.x+hostOrigin.width)
+        const bottom = Math.min(bounds.y+bounds.height,display.y+display.height,hostOrigin.y+hostOrigin.height)
+        if (right-left < 12 || bottom-top < 12) { outsideDisplay++; return }
+        const x = Math.round(left+(right-left)*.75-bounds.x)
+        const y = Math.round(top+(bottom-top)*.65-bounds.y)
+        const hit = native.getHit(guest.window.getNativeWindowHandle(),x,y,0)
+        if (hit.hit !== hit.self) {wrongTarget++; return}
         const delta = posted++ % 120 < 60 ? -1 : 1
         if (!native.queueWheel(guest.window.getNativeWindowHandle(),x,y,0,delta,true)) {
           clearInterval(timer)
@@ -193,17 +201,18 @@ exports.serve = ({ BrowserWindow, session, registry, stats }) => {
       }, 22)
       try {
         await wait(durationMs)
-        if (lostInert) throw new Error('Wheel arrived after the pane stopped being inert')
-        if (posted<100) throw new Error('Hosted native wheel injection stopped')
-        return {sent,posted}
+        return {sent,posted,lostInert,wrongTarget,outsideDisplay}
       } finally {
         clearInterval(timer)
         native.endWheelRoute()
       }
     }
-    globalThis.showNativeGuestWindows = () => {
+    globalThis.showNativeGuestWindows = hostWindowId => {
       if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('Only show the hosted fixture')
-      for (const {window} of guests.values()) window.showInactive()
+      for (const {window} of guests.values()) {
+        window.showInactive()
+        window.moveAbove('window:'+hostWindowId+':0')
+      }
     }
     globalThis.runFixtureWheels = async ({action, x, y, durationMs}) => {
       const {setTimeout: wait} = require('node:timers/promises')

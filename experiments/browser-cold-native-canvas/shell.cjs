@@ -64,7 +64,9 @@ globalThis.connectFixtureBrowser = async () => {
     if (process.env.GITHUB_ACTIONS !== 'true') throw new Error('Only show the hosted fixture')
     host.center()
     host.show()
-    return host.getContentBounds()
+    const native = require('../guest-app/native.node')
+    const windowId = native.getHit(host.getNativeWindowHandle(),20,20,0).self
+    return {...host.getContentBounds(), windowId}
   }
 
   const route = slot => slot === 2 ? second : first

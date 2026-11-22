@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session } = require('electron')
+const { app, BrowserWindow, session, screen } = require('electron')
 const { PageDriverRegistry } = require('./driver.cjs')
 
 app.setPath('userData', process.env.PROBE_PROFILE)
@@ -14,6 +14,6 @@ const stats = { opened:0, closed:0, errors:[] }
 app.whenReady().then(async () => {
   app.dock?.hide()
   const registry = new PageDriverRegistry()
-  await require('./guest-control.cjs').serve({ BrowserWindow, session, registry, stats })
+  await require('./guest-control.cjs').serve({ BrowserWindow, session, screen, registry, stats })
   globalThis.controlReady = true
 }).catch(error => { console.error(error); app.exit(1) })

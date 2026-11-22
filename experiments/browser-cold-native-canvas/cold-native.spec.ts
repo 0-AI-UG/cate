@@ -81,7 +81,7 @@ async function measureBrowserGesture(page: Page, action: 'pan' | 'zoom', helper:
     }, durationMs)
     if (inputError) throw inputError
     const forwarded = routed ? await routed : null
-    return { ...result, posted: forwarded?.posted, wheelEventsSent: forwarded?.sent ?? forwarded ?? wheelEventsSent }
+    return { ...result, native: native ? forwarded : null, posted: forwarded?.posted, wheelEventsSent: forwarded?.sent ?? forwarded ?? wheelEventsSent }
   } finally {
     if (interval) clearInterval(interval)
     await input?.detach()
@@ -281,7 +281,7 @@ test('native Chromium compositing and an animated sibling', async () => {
     const nativeInput = process.env.PROBE_NATIVE_INPUT === '1'
     const hostOrigin = nativeInput ? await app.evaluate(() => (globalThis as any).showNativeCanvasFixture()) : null
     if (nativeInput) {
-      await helper.evaluate(() => (globalThis as any).showNativeGuestWindows())
+      await helper.evaluate((_,id) => (globalThis as any).showNativeGuestWindows(id),hostOrigin.windowId)
       await expect.poll(async () => (await helperState()).activeGuests.find(s=>s.slot===secondSlot)?.requestedBounds?.inert).toBe(true)
     }
     const start = await time()
@@ -295,6 +295,14 @@ test('native Chromium compositing and an animated sibling', async () => {
     const clipAnimation = animate ? helper.evaluate(() => (globalThis as any).animateClips(5000)) : Promise.resolve(null)
     await address.press('Enter')
     const cold = await movement
+    if (nativeInput) {
+      console.log('NATIVE_CATE_INPUT',JSON.stringify({native:cold.native, trusted:cold.trustedWheelEvents,
+        modified:cold.modifiedWheelEvents, transformChanged:cold.transformChanged}))
+      expect(cold.native.posted).toBeGreaterThan(100)
+      expect(cold.native.lostInert).toBe(0)
+      expect(cold.trustedWheelEvents).toBeGreaterThan(60)
+      expect(cold.transformChanged).toBe(true)
+    }
     const end = await time()
     const clips = await clipAnimation
     if (clips) {
