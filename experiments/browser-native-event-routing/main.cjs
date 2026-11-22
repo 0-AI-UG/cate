@@ -14,7 +14,7 @@ if (role === 'browser') app.commandLine.appendSwitch('disable-gpu-compositing')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 
 const content = '<!doctype html><style>body{margin:0;min-height:100vh;background:#73bd53}</style>'
-  + '<script>window.inputs=[]; for(const kind of ["mousedown","mouseup"]) addEventListener(kind,e=>inputs.push({kind,x:e.clientX,y:e.clientY,trusted:e.isTrusted}));</script>'
+  + '<script>window.inputs=[]; for(const kind of ["mousedown","mouseup","wheel"]) addEventListener(kind,e=>inputs.push({kind,x:e.clientX,y:e.clientY,trusted:e.isTrusted,dx:e.deltaX,dy:e.deltaY,control:e.ctrlKey}));</script>'
 const effects = '#pane{position:absolute;inset:0;width:100%;height:100%;clip-path:polygon(0 0, 100% 0, 100% 40%, 50% 40%, 50% 100%, 0 100%)}'
 const bounds = () => {
   const { x,y,width,height } = screen.getPrimaryDisplay().workArea
@@ -117,8 +117,36 @@ async function browser() {
     assert.deepEqual(hostInputs.slice(-2).map(e=>[e.kind,e.x,e.y,e.trusted]),
       [['mousedown',200,150,true],['mouseup',200,150,true]])
     assert.equal(intercepted.length,4)
-    console.log(JSON.stringify({fixture:'per-event window routing',platform:process.platform,
-      electron:process.versions.electron,intercepted,guest:still,results},null,2))
+    const wheels = []
+    native.beginWheelRoute(window.getNativeWindowHandle(), wheel => {
+      const id = intercepted.length + wheels.length
+      wheels.push({...wheel,id})
+      child.stdin.write(JSON.stringify({id,mode:'electron',mouse:{
+        type:'mouseWheel',x:Math.round(wheel.x),y:Math.round(wheel.y),
+        deltaX:Math.round(wheel.deltaX),deltaY:Math.round(wheel.deltaY),
+        hasPreciseScrollingDeltas:wheel.precise,canScroll:!wheel.control,
+        modifiers:wheel.control?['control']:[],
+      }})+'\n')
+    })
+    try {
+      native.queueWheel(window.getNativeWindowHandle(),20,20,0,-12,false)
+      await until(()=>readInputs(guest),inputs=>inputs.filter(e=>e.kind==='wheel').length===1,'visible wheel did not reach guest')
+      for(const control of [false,true]) {
+        const expected = intercepted.length + wheels.length
+        native.queueWheel(window.getNativeWindowHandle(),200,150,3,-12,control)
+        await until(()=>response.find(message=>message.ack===expected),Boolean,'clipped wheel did not reach the host')
+      }
+      const delivered = response.at(-1).inputs.filter(e=>e.kind==='wheel')
+      assert.equal(delivered.length,2)
+      assert.deepEqual(delivered.map(e=>[e.x,e.y,e.trusted,e.control]),[[200,150,true,false],[200,150,true,true]])
+      assert(delivered.every(e=>Math.abs(e.dy)===12 && Math.abs(e.dx)===3))
+      const guestWheel = (await readInputs(guest)).filter(e=>e.kind==='wheel')
+      assert.deepEqual(guestWheel.map(e=>[e.x,e.y,e.trusted]),[[20,20,true]])
+      console.log(JSON.stringify({fixture:'per-event window routing',platform:process.platform,
+        electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel},null,2))
+    } finally {
+      native.endWheelRoute()
+    }
   } finally {
     window?.destroy()
     child.stdin.end(JSON.stringify({stop:true})+'\n')
