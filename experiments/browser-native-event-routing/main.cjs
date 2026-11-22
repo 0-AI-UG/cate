@@ -58,12 +58,13 @@ async function host() {
         x:mouse.x,y:mouse.y,button:'left',clickCount:1,
       })
     }
-    const inputs = mouse.type === 'mouseWheel'
+    const wheelWithDelta = mouse.type === 'mouseWheel' && (mouse.deltaX !== 0 || mouse.deltaY !== 0)
+    const inputs = wheelWithDelta
       ? await until(() => readInputs(window.webContents),
         inputs => inputs.filter(event => event.kind === 'wheel').length > wheelsDelivered,
         'host did not receive wheel delivery ' + JSON.stringify(mouse))
       : await readInputs(window.webContents)
-    if (mouse.type === 'mouseWheel') wheelsDelivered++
+    if (wheelWithDelta) wheelsDelivered++
     process.stdout.write(JSON.stringify({ack:message.id,mode:message.mode,forwardMs:performance.now()-sent,inputs})+'\n')
   }
   app.exit(0)
@@ -153,8 +154,38 @@ async function browser() {
       assert(delivered.every(e=>Math.abs(e.dy)===12 && Math.abs(e.dx)===3))
       const guestWheel = (await readInputs(guest)).filter(e=>e.kind==='wheel')
       assert.deepEqual(guestWheel.map(e=>[e.x,e.y,e.trusted]),[[20,20,true]])
+      const startOfGesture = wheels.length
+      // CoreGraphics uses separate scroll-phase and momentum-phase constants.
+      const sequence = [
+        {x:200,y:150,dy:-18,phase:1,momentum:0},
+        {x:200,y:150,dy:-10,phase:2,momentum:0},
+        {x:200,y:150,dy:0,phase:4,momentum:0},
+        {x:20,y:20,dy:-8,phase:0,momentum:1},
+        {x:20,y:20,dy:-5,phase:0,momentum:2},
+        {x:20,y:20,dy:0,phase:0,momentum:3},
+      ]
+      for (const step of sequence) {
+        const expected = intercepted.length + wheels.length
+        native.queueWheel(window.getNativeWindowHandle(),step.x,step.y,0,step.dy,false,step.phase,step.momentum)
+        await until(()=>response.some(message=>message.ack===expected),Boolean,
+          'momentum step did not stay with the host ' + JSON.stringify({step,wheels}))
+      }
+      const phased = wheels.slice(startOfGesture)
+      assert.equal(phased.length,sequence.length)
+      assert.deepEqual(phased.map(event=>[event.x,event.y]),sequence.map(step=>[step.x,step.y]))
+      assert(phased.slice(0,3).every(event=>event.phase!==0 && event.momentum===0))
+      assert(phased.slice(3).every(event=>event.phase===0 && event.momentum!==0))
+      const gestureWheels = response.at(-1).inputs.filter(event=>event.kind==='wheel').slice(2)
+      assert.equal(gestureWheels.length,4)
+      assert.deepEqual(gestureWheels.map(event=>event.dy),[18,10,8,5])
+      assert(gestureWheels.every(event=>event.trusted))
+      assert.equal((await readInputs(guest)).filter(event=>event.kind==='wheel').length,1)
+      native.queueWheel(window.getNativeWindowHandle(),20,20,0,-6,false)
+      const release = await until(()=>readInputs(guest), inputs=>inputs.filter(event=>event.kind==='wheel').length===2,
+        'guest did not regain wheel routing after momentum')
       const result = {fixture:'per-event window routing',platform:process.platform,
-        electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel}
+        electron:process.versions.electron,intercepted,guest:still,results,wheels,delivered,guestWheel,gestureWheels,
+        releasedGuestWheel:release.filter(event=>event.kind==='wheel').at(-1)}
       fs.writeFileSync(join(root,'result.json'), JSON.stringify(result,null,2))
       console.log(JSON.stringify(result,null,2))
     } finally {

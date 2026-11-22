@@ -4,6 +4,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <utility>
+#include <optional>
 
 static napi_value getHit(napi_env env, napi_callback_info info) {
   size_t count = 4;
@@ -73,6 +74,7 @@ static napi_value queueClick(napi_env env, napi_callback_info info) {
 struct WheelInput {
   double x, y, deltaX, deltaY;
   bool control, precise;
+  NSEventPhase phase, momentum;
 };
 
 static id wheelMonitor;
@@ -88,6 +90,10 @@ static void dispatchWheel(napi_env env, napi_value callback, void *, void *data)
       napi_create_double(env, field, &value);
       napi_set_named_property(env, record, name, value);
     }
+    napi_create_uint32(env, static_cast<uint32_t>(wheel->phase), &value);
+    napi_set_named_property(env, record, "phase", value);
+    napi_create_uint32(env, static_cast<uint32_t>(wheel->momentum), &value);
+    napi_set_named_property(env, record, "momentum", value);
     napi_get_boolean(env, wheel->control, &value);
     napi_set_named_property(env, record, "control", value);
     napi_get_boolean(env, wheel->precise, &value);
@@ -122,6 +128,7 @@ static napi_value beginWheelRoute(napi_env env, napi_callback_info info) {
     napi_throw_error(env, nullptr, "Could not initialize wheel route");
     return nullptr;
   }
+  __block std::optional<bool> lockedRoute;
   wheelMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel
     handler:^NSEvent *(NSEvent *event) {
       NSPoint location;
@@ -135,9 +142,17 @@ static napi_value beginWheelRoute(napi_env env, napi_callback_info info) {
       const NSRect frame = window.contentView.frame;
       const double x = location.x - NSMinX(frame);
       const double y = NSMaxY(frame) - location.y;
-      if (x < 160 || y < 80 || x >= NSWidth(frame) || y >= NSHeight(frame)) return event;
+      const bool clipped = x >= 160 && y >= 80 && x < NSWidth(frame) && y < NSHeight(frame);
+      const auto phase = event.phase;
+      const auto momentum = event.momentumPhase;
+      const bool phased = phase != NSEventPhaseNone || momentum != NSEventPhaseNone;
+      if (phase == NSEventPhaseBegan || (phased && !lockedRoute)) lockedRoute = clipped;
+      const bool forward = phased ? lockedRoute.value_or(clipped) : clipped;
+      if (phase == NSEventPhaseCancelled || momentum == NSEventPhaseEnded) lockedRoute.reset();
+      if (!forward) return event;
       auto *input = new WheelInput{x,y,event.scrollingDeltaX,event.scrollingDeltaY,
-        (event.modifierFlags & NSEventModifierFlagControl) != 0, event.hasPreciseScrollingDeltas};
+        (event.modifierFlags & NSEventModifierFlagControl) != 0, event.hasPreciseScrollingDeltas,
+        phase, momentum};
       if (napi_call_threadsafe_function(wheelCallback, input, napi_tsfn_nonblocking) == napi_ok)
         return nil;
       delete input;
@@ -159,10 +174,10 @@ static napi_value endWheelRoute(napi_env env, napi_callback_info) {
 }
 
 static napi_value queueWheel(napi_env env, napi_callback_info info) {
-  napi_value args[6], value;
-  size_t count = 6;
+  napi_value args[8], value;
+  size_t count = 8;
   napi_get_cb_info(env, info, &count, args, nullptr, nullptr);
-  NSWindow *window = count == 6 ? fixtureWindow(env, args[0]) : nil;
+  NSWindow *window = count == 6 || count == 8 ? fixtureWindow(env, args[0]) : nil;
   double x, y;
   int32_t dx, dy;
   bool control;
@@ -173,6 +188,12 @@ static napi_value queueWheel(napi_env env, napi_callback_info info) {
       napi_get_value_int32(env, args[4], &dy) != napi_ok ||
       napi_get_value_bool(env, args[5], &control) != napi_ok) {
     napi_throw_error(env, nullptr, "Invalid local wheel input");
+    return nullptr;
+  }
+  int32_t scrollPhase = 0, momentumPhase = 0;
+  if (count == 8 && (napi_get_value_int32(env, args[6], &scrollPhase) != napi_ok ||
+                     napi_get_value_int32(env, args[7], &momentumPhase) != napi_ok)) {
+    napi_throw_error(env, nullptr, "Invalid hosted wheel phases");
     return nullptr;
   }
   NSRect frame = window.contentView.frame;
@@ -189,6 +210,9 @@ static napi_value queueWheel(napi_env env, napi_callback_info info) {
   CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointer, window.windowNumber);
   CGEventSetIntegerValueField(event, kCGMouseEventWindowUnderMousePointerThatCanHandleThisEvent, window.windowNumber);
   CGEventSetFlags(event, control ? kCGEventFlagMaskControl : 0);
+  CGEventSetIntegerValueField(event, kCGScrollWheelEventScrollPhase, scrollPhase);
+  CGEventSetIntegerValueField(event, kCGScrollWheelEventMomentumPhase, momentumPhase);
+  CGEventSetIntegerValueField(event, kCGScrollWheelEventIsContinuous, 1);
   const bool canPost = CGPreflightPostEventAccess();
   if (canPost) {
     CGEventPost(kCGSessionEventTap, event);
