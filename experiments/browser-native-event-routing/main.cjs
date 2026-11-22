@@ -26,9 +26,10 @@ const options = () => ({ ...bounds(), useContentSize:true, frame:false, show:fal
 const hit = (win, x, y, below = 0) => native.getHit(win.getNativeWindowHandle(), x, y, below)
 const readInputs = target => target.executeJavaScript('window.inputs')
 
-async function until(read, matches, label) {
+async function until(read, matches, label, timeoutMs = 2000) {
   let value
-  for (let i=0; i<100; i++) {
+  const deadline = performance.now() + timeoutMs
+  while (performance.now() < deadline) {
     value = await read()
     if (matches(value)) return value
     await delay(20)
@@ -76,6 +77,7 @@ async function browser() {
   const child = spawn(process.execPath,[__dirname],{env:{...process.env,ROUTING_ROLE:'host'},stdio:['pipe','pipe','inherit']})
   let childError
   child.on('error', error => { childError = error })
+  child.on('exit', (code, signal) => { childError = new Error('Fixture host exited ' + JSON.stringify({code,signal})) })
   const response = []
   const output = require('node:readline').createInterface({input:child.stdout})
   output.on('line', line => { response.push(JSON.parse(line)) })
@@ -84,7 +86,7 @@ async function browser() {
     const ready = await until(() => {
       if (childError) throw childError
       return response[0]
-    }, Boolean, 'host did not start')
+    }, Boolean, 'host did not start', 12000)
     const page = join(root,'page.html')
     fs.writeFileSync(page,content)
     const wrapper = join(root,'wrapper.html')
