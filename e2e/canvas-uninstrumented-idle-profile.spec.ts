@@ -1,7 +1,7 @@
 // Launch through spawn, not Playwright Electron/CDP: attaching a renderer
 // debugger can alter Chromium's idle/background behavior.
 import { test, expect } from '@playwright/test'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { writeFileSync, readFileSync, mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { makeHome, makeProject, stopRuntimes, REPO_ROOT, RUNTIME_BUNDLE } from './fixtures/electron-app'
@@ -63,6 +63,10 @@ function presentationFromTrace(traceOutput: string) {
 
 test('first native pan after idle without a renderer debugger', async () => {
   test.skip(process.env.CATE_UNINSTRUMENTED_IDLE !== '1' || process.platform !== 'darwin', 'Opt-in native app without CDP')
+  const converter = spawnSync('trace_processor', ['convert', '--help'], { stdio: 'ignore' })
+  if (converter.status !== 0) {
+    throw new Error('Install Perfetto trace_processor with the convert command and add it to PATH before running this profile.', { cause: converter.error })
+  }
   const consoleState = execFileSync('/usr/sbin/ioreg', ['-n', 'Root', '-d', '1', '-a'], { encoding: 'utf8' })
   const consoleLocked = /<key>IOConsoleLocked<\/key>\s*<true\s*\/>/.test(consoleState)
   expect(consoleLocked, 'Unlock macOS before measuring native application return').toBe(false)

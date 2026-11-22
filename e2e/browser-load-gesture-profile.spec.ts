@@ -150,10 +150,19 @@ test('browser navigation and loading overlap canvas gestures', async () => {
     await installPerfHelpers(page)
     if (process.env.CATE_BROWSER_LOAD_NO_GRID === '1') await page.addStyleTag({ content: '[data-canvas-grid]{display:none!important}' })
     await page.waitForFunction(() => !!window.__catePerf)
+    const browserCount = Number(process.env.CATE_BROWSER_LOAD_COUNT ?? 1)
+    const startZoom = 0.8
+    const firstRowY = 60
+    const canvas = await page.locator('[data-canvas-container]').boundingBox()
+    if (!canvas) throw new Error('Canvas is unavailable')
+    // Leave room for the browser chrome at the bottom so every guest can mount.
+    const rowsBelowFirst = Math.max(1, Math.ceil(browserCount / 2) - 1)
+    const rowGap = Math.min(340, (canvas.height / startZoom - firstRowY - 100) / rowsBelowFirst)
+    await page.evaluate(zoom => { window.__cateE2E!.setZoom(zoom); window.__cateE2E!.resetViewport() }, startZoom)
     const ids: number[] = []
-    for (let i = 0; i < Number(process.env.CATE_BROWSER_LOAD_COUNT ?? 1); i++) {
+    for (let i = 0; i < browserCount; i++) {
       const url = origin + '/settled'
-      const { panelId } = await create(page, 'browser', { x: 300 + i % 2 * 400, y: 60 + Math.floor(i / 2) * 340 }, { url })
+      const { panelId } = await create(page, 'browser', { x: 300 + i % 2 * 400, y: firstRowY + Math.floor(i / 2) * rowGap }, { url })
       const id = await waitForBrowserGuest(page, panelId)
       await expect.poll(() => app.evaluate(({ webContents }, { id, url }) => {
         const guest = webContents.fromId(id)!
@@ -176,7 +185,7 @@ test('browser navigation and loading overlap canvas gestures', async () => {
         for (let repeat = 0; repeat < Number(process.env.CATE_BROWSER_LOAD_REPEATS ?? 2); repeat++) {
           await page.waitForFunction(() => !document.body.classList.contains('canvas-zooming') && !document.body.classList.contains('canvas-interacting'))
           await app.evaluate(async ({ webContents }, { ids, origin }) => { await Promise.all(ids.map(id => webContents.fromId(id)!.loadURL(origin + '/settled'))) }, { ids, origin })
-          await page.evaluate(() => { window.__cateE2E!.setZoom(.8); window.__cateE2E!.resetViewport() })
+          await page.evaluate(zoom => { window.__cateE2E!.setZoom(zoom); window.__cateE2E!.resetViewport() }, startZoom)
           await page.waitForTimeout(800)
           await app.evaluate(({ webContents }, ids) => { for (const id of ids) (webContents.fromId(id)! as any).__gestureAudit = { events: [], cdp: {} } }, ids)
           const remote = kind === 'github-home' || kind === 'github-repository'
