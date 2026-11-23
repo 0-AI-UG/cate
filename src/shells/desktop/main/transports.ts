@@ -18,7 +18,7 @@ const log = createLogger('transports')
 
 export interface ShellTransportDeps {
   /** Connects to a workspace's runtime, starting it when nothing answers. */
-  startLocal(root: string): Promise<LocalRuntime>
+  startLocal(root: string, mode?: 'running-only'): Promise<LocalRuntime>
   /** The same on a machine this device runs commands on, through its bridge. */
   dialMachine(machine: Machine, root: string): Promise<ByteDuplex>
   deviceKeys(): KeyPair
@@ -32,7 +32,7 @@ export interface ShellTransportDeps {
 }
 
 export interface ShellTransportHost {
-  dialLocal(root: string): Promise<ByteDuplex>
+  dialLocal(root: string, mode?: 'running-only'): Promise<ByteDuplex>
   dialMachine(machine: Machine, root: string): Promise<ByteDuplex>
   /** Starts the workspace's runtime ahead of the first dial (app launch). */
   prestartLocal(root: string): void
@@ -79,7 +79,8 @@ export function createShellTransportHost(deps: ShellTransportDeps): ShellTranspo
   }
 
   return {
-    async dialLocal(root) {
+    async dialLocal(root, mode) {
+      if (mode === 'running-only') return (await deps.startLocal(root, mode)).duplex
       return (await startLocal(root)).duplex
     },
     prestartLocal(root) {

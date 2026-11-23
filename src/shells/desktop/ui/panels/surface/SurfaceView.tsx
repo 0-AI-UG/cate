@@ -6,7 +6,7 @@ import { SurfaceChoiceList } from '../../client/layout/dock/SurfaceChoiceList'
 import type { PanelType } from '@workspace/document/contract'
 import { surfaceChoices, surfaceReplacement } from '@panels/definitions'
 
-export default function SurfaceView({ workspaceId, panelId, record }: PanelViewProps) {
+export default function SurfaceView({ workspaceId, panelId, record, visible, focused }: PanelViewProps) {
   const choices = useDocument(workspaceId, (doc) => surfaceChoices(doc, panelId),
     (a, b) => a.length === b.length && a.every((item, index) => item === b[index]))
   const choose = (type: PanelType) => {
@@ -16,7 +16,7 @@ export default function SurfaceView({ workspaceId, panelId, record }: PanelViewP
   }
   return <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface-0 p-4">
     <div className="m-auto w-full max-w-xs py-4">
-      <SurfaceChoiceList choices={choices} onPick={(type) => choose(type as PanelType)} />
+      <SurfaceChoiceList choices={choices} onPick={(type) => choose(type as PanelType)} acceptBodyKeys={visible && focused} />
     </div>
   </div>
 }

@@ -4,7 +4,7 @@
 import { test, expect } from '@playwright/test'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { answerDialogs, closeApp, launchApp, type LaunchResult } from '../fixtures/electron-app'
+import { closeApp, launchApp, showProjectsSidebar, type LaunchResult } from '../fixtures/electron-app'
 import { TRANSPORTS, call, hasLan, launchSharedPair, seedShared, terminalText, writeTerminal, type SharedPair } from '../fixtures/shared-workspace'
 
 type Presence = { clients: { clientId: string; device: { name: string; publicKey: string } }[] }
@@ -30,16 +30,17 @@ test.describe('invite and remove a device [network]', () => {
     const p = pair!
     const { panelId } = await seedShared(p, p.a, 'terminal', { x: 80, y: 80 })
     // Share (from the Devices settings): who can join, a code, the devices.
-    p.a.page.evaluate(() => window.__cateE2E!.openSettings('devices'))
-    await p.a.page.getByRole('button', { name: 'Share…' }).click()
-    await p.a.page.getByRole('dialog', { name: /^Share/ }).getByRole('button', { name: 'Show pairing code' }).click()
-    const code = (await p.a.page.locator('[aria-label="Pairing code"] code').textContent())!.trim()
+    await p.a.page.evaluate(() => window.__cateE2E!.openSettings('devices'))
+    await p.a.page.getByRole('button', { name: 'Share…', exact: true }).click()
+    const share = p.a.page.getByRole('dialog', { name: /^Share/ })
+    await share.getByRole('group', { name: 'Confirm sharing' }).getByRole('button', { name: 'Create Invite' }).click()
+    const code = (await share.locator('[aria-label="Pairing code"] code').textContent())!.trim()
     expect(code).toMatch(/\S{8,}/)
 
     c = await launchApp({ workspace: false, domTerminals: true })
-    await c.mainWindow.locator('[data-onboarding="welcome-actions"]').getByRole('option', { name: 'Join with a code…' }).click()
+    await c.mainWindow.locator('[data-onboarding="welcome-actions"]').getByRole('option', { name: 'Join Workspace…' }).click()
     await c.mainWindow.getByRole('textbox', { name: 'Pairing code' }).fill(code)
-    await c.mainWindow.getByRole('button', { name: 'Join', exact: true }).click()
+    await c.mainWindow.getByRole('button', { name: 'Join workspace', exact: true }).click()
 
     await expect.poll(() => c!.mainWindow.evaluate(() => window.__cateE2E!.workspaceIds()), { timeout: 30_000 }).toHaveLength(1)
     cWorkspace = (await c.mainWindow.evaluate(() => window.__cateE2E!.workspaceIds()))[0]!
@@ -60,8 +61,10 @@ test.describe('invite and remove a device [network]', () => {
     const cKey = (await presence(p.a.page)).clients.find((x) => x.clientId === cId)!.device.publicKey
     const row = p.a.page.getByRole('dialog', { name: /^Share/ }).locator(`[aria-label="Devices"] li[data-device-key="${cKey}"]`)
     await expect(row).toHaveCount(1, { timeout: 15_000 })
-    await answerDialogs(p.a.app.electronApp)
     await row.getByRole('button', { name: /^Remove / }).click()
+    const confirmation = p.a.page.getByRole('dialog', { name: /^Remove ".+"\? It can no longer open this workspace/ })
+    await expect(confirmation).toBeVisible()
+    await confirmation.getByRole('button', { name: /^OK\b/ }).click()
 
     await expect(row).toHaveCount(0, { timeout: 15_000 })
     await expect.poll(() => connectionState(c!.mainWindow, cWorkspace), { timeout: 20_000 }).toBe('refused')
@@ -83,6 +86,7 @@ for (const transport of TRANSPORTS) {
       test.setTimeout(120_000)
       pair = await launchSharedPair(transport)
       const p = pair
+      await Promise.all([showProjectsSidebar(p.a.page), showProjectsSidebar(p.b.page)])
       const { panelId } = await seedShared(p, p.a, 'terminal', { x: 80, y: 80 })
       await expect.poll(() => terminalText(p.a, panelId), { timeout: 20_000 }).toMatch(/\S/)
       await writeTerminal(p.a, panelId, 'sleep 600 & p=$! ; echo PID=$p\r')
@@ -93,8 +97,8 @@ for (const transport of TRANSPORTS) {
       expect(existsSync(runtimeJson)).toBe(true)
 
       await p.b.page.evaluate(() => window.__cateE2E!.openSettings('runtime'))
-      await p.b.page.getByRole('button', { name: 'Stop…' }).click()
-      await p.b.page.getByRole('button', { name: 'Stop workspace' }).click()
+      await p.b.page.getByRole('button', { name: 'Stop Workspace…' }).click()
+      await p.b.page.getByRole('button', { name: 'Stop workspace', exact: true }).click()
 
       const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
       await expect.poll(() => alive(pid), { timeout: 20_000 }).toBe(false)
@@ -105,7 +109,7 @@ for (const transport of TRANSPORTS) {
       await p.a.page.waitForTimeout(3_000)
       for (const c of [p.a, p.b]) {
         expect(await connectionState(c.page, c.workspaceId)).toBe('stopped')
-        await expect(c.page.locator('[data-connection-blocker]')).toContainText('Runtime stopped')
+        await expect(c.page.locator('[data-connection-blocker]')).toContainText('Workspace stopped')
         await expect(c.page.locator(`[data-workspace-id="${c.workspaceId}"] [data-connection-status]`)).toHaveAttribute('aria-label', /stopped/)
       }
       // The daemon itself is gone (runtime.json stays; readers check liveness).
@@ -113,13 +117,13 @@ for (const transport of TRANSPORTS) {
       await expect.poll(() => alive(daemonPid), { timeout: 20_000 }).toBe(false)
 
       // A starts it again; B follows when it asks to.
-      await p.a.page.locator('[data-connection-blocker]').getByRole('button', { name: 'Start again' }).click()
+      await p.a.page.locator('[data-connection-blocker]').getByRole('button', { name: 'Open Workspace' }).click()
       await expect.poll(() => connectionState(p.a.page, p.a.workspaceId), { timeout: 30_000 }).toBe('connected')
       await expect(p.a.page.locator('[data-connection-blocker]')).toHaveCount(0)
       // B is still in the Settings it stopped from. A paired device cannot
       // start the runtime, so it offers trying again once it runs.
       await p.b.page.keyboard.press('Escape')
-      const bStart = transport === 'network' ? 'Try again' : 'Start again'
+      const bStart = transport === 'network' ? 'Try again' : 'Open Workspace'
       await p.b.page.locator('[data-connection-blocker]').getByRole('button', { name: bStart }).click()
       await expect.poll(() => connectionState(p.b.page, p.b.workspaceId), { timeout: 30_000 }).toBe('connected')
       // The terminal comes back with a new shell for both.

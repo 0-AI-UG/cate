@@ -4,7 +4,7 @@
 
 import path from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
-import { closeApp, launchApp, makeHome, makeProject, openWorkspace } from './fixtures/electron-app'
+import { closeApp, launchApp, makeHome, makeProject, openWorkspace, showProjectsSidebar } from './fixtures/electron-app'
 
 const row = (page: Page, id: string) => page.locator(`[data-app-sidebar] [data-workspace-id="${id}"] [role="treeitem"]`)
 const selected = (page: Page) => page.evaluate(() => window.__cateE2E!.selectedWorkspaceId())
@@ -22,6 +22,7 @@ test('closing a workspace drops it from the sidebar, and the sidebar survives a 
   let a = '', b = '', c = ''
   try {
     const page = first.mainWindow
+    await showProjectsSidebar(page)
     a = await openWorkspace(page, makeProject(home, { name: 'alpha' }))
     b = await openWorkspace(page, makeProject(home, { name: 'beta' }))
     c = await openWorkspace(page, makeProject(home, { name: 'gamma' }))

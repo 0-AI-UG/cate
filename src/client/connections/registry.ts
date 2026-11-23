@@ -28,7 +28,13 @@ export class WorkspaceConnections {
   /** Opens (and starts) the workspace's connection, or returns the open one. */
   open(workspaceId: string, target: ConnectionTarget): WorkspaceConnection {
     const existing = this.byId.get(workspaceId)
-    if (existing) return existing
+    if (existing) {
+      if (existing.target.kind === 'local' && existing.target.runningOnly && target.kind === 'local' && !target.runningOnly) {
+        existing.retarget(target)
+        if (existing.state.kind === 'offline' || existing.state.kind === 'stopped') existing.retryNow()
+      }
+      return existing
+    }
     const connection = new WorkspaceConnection({ ...this.opts, workspaceId, target })
     this.byId.set(workspaceId, connection)
     this.changed()

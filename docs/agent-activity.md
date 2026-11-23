@@ -29,8 +29,10 @@ The runtime reads Codex's `hooks/list` API to inspect only Cate's project hooks.
 Untrusted or modified hooks show **Hooks need approval** in Settings and Threads,
 with instructions to review them in Codex's `/hooks` menu. Unsupported or failed
 inspection stays unknown. Cate never grants trust or writes Codex's trust state.
-Silent terminal agents are rechecked at most once every 15 seconds; a received
-lifecycle hook supersedes the warning. Trust alone never proves idle or busy.
+Silent terminal agents share one read per checkout and PTY CLI environment,
+with results refreshed at most once every 15 seconds. A received lifecycle
+hook supersedes the warning. A resumed agent can be ready for a prompt and
+still need approval to report its activity.
 
 For Codex, `approvals_reviewer = auto_review` (or `guardian_subagent`) and
 `approval_policy = never` mean automatic. The default `user` reviewer means
@@ -69,11 +71,13 @@ normal input prompt, but Codex defers SessionStart until the next submission.
 Cate seeds Ready only for a deliberately restored panel with a matching saved
 checkout binding, after the exact live CLI process confirms that it opened the
 requested saved session. A process name or an unrelated discovered session does
-not establish readiness. The seed emits no completion notification and never
-overrides a hook event; subsequent turns and permissions remain hook-driven.
+not establish readiness. The seed belongs to that exact process and expires
+when it changes. It emits no completion notification and never overrides a
+hook event, which drives subsequent turns and permissions.
 
-In Threads view, the desktop reconnects remembered local workspaces in the
-background so their threads remain visible after restarting Cate. Background
-observation never selects a workspace or asks for or grants trust. Untrusted
-workspaces disconnect; explicitly selecting one uses the normal trust flow.
-Remote workspaces connect only when opened explicitly.
+The desktop attaches in the background to daemons still running for remembered
+local workspaces so their threads remain visible after restarting Cate. These
+connections leave recent-workspace order intact, start or update no daemon,
+and never select a workspace or grant trust. Untrusted workspaces disconnect.
+Explicitly selecting one uses the normal opening and trust flow. Remote
+workspaces connect only when opened explicitly.

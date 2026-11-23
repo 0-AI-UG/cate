@@ -171,16 +171,16 @@ describe('desktop renderer', () => {
 
   it('connects a client with no features to the runtime and receives the document', async () => {
     expect(client.info.features).toEqual([])
-    expect(host.querySelector('[role="tree"][aria-label="Workspaces"]')).not.toBeNull()
-    await client.workspaces.addLocal(runtime.root, 'test')
-    const workspaceList = host.querySelector('[role="tree"][aria-label="Workspaces"]')
+    const workspaceList = host.querySelector('[data-sidebar-keynav]')
     expect(workspaceList).not.toBeNull()
+    await act(async () => { await client.workspaces.addLocal(runtime.root, 'test') })
+    expect(workspaceList?.querySelector('[aria-label="Threads"]')).not.toBeNull()
     await act(async () => { await selectWorkspace(workspaceId) })
     await until(() => !!documentStoreFor(workspaceId)?.isSynced())
     expect(Object.keys(documentStoreFor(workspaceId)!.getSnapshot().panels).sort()).toEqual(PANEL_TYPES.map((t) => `p-${t}`).sort())
     await until(() => host.textContent!.includes('A terminal'))
     // The sidebar sits outside the shown workspace's scope: a switch keeps it mounted.
-    expect(host.querySelector('[role="tree"][aria-label="Workspaces"]')).toBe(workspaceList)
+    expect(host.querySelector('[data-sidebar-keynav]')).toBe(workspaceList)
   })
 
   it('renders every panel type but the canvas, and nothing throws', async () => {

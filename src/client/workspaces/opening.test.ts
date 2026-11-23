@@ -42,7 +42,8 @@ describe('workspacePhase', () => {
 
 let trusted: Set<string>
 let store: TrustStore
-const connections = { get: () => ({ state: { kind: 'connected' }, subscribe: () => () => {} }) } as never
+const connection = { state: { kind: 'connected' }, subscribe: () => () => {} }
+const connections = { get: () => connection } as never
 
 beforeEach(() => {
   trusted = new Set()
@@ -59,6 +60,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0))
 
 describe('openTrusted', () => {
   const opens = vi.fn()
+  const observes = vi.fn()
   const disconnect = vi.fn()
   const close = vi.fn()
   const deps = (open: string[]) => ({
@@ -66,6 +68,7 @@ describe('openTrusted', () => {
       get: (id: string) => ({ id, kind: 'paired' as const, runtimeId: id, name: id, endpoints: [] }),
       getSnapshot: () => ({ open }),
       open: async (id: string) => { opens(id); open.push(id) },
+      observe: (id: string) => { observes(id); open.push(id) },
       disconnect,
       close,
     },
@@ -90,7 +93,7 @@ describe('openTrusted', () => {
   })
 
   it('lets explicit opening take over a pending background trust check', async () => {
-    disconnect.mockClear(); opens.mockClear()
+    disconnect.mockClear(); opens.mockClear(); observes.mockClear()
     let finishCheck!: (value: boolean) => void
     vi.spyOn(store, 'knownTrusted').mockImplementationOnce(() => new Promise((resolve) => { finishCheck = resolve }))
     const shared = deps([])
@@ -104,6 +107,39 @@ describe('openTrusted', () => {
     await expect(background.trusted).resolves.toBe(true)
     await expect(foreground.trusted).resolves.toBe(true)
     expect(opens).toHaveBeenCalledTimes(1)
+    expect(observes).toHaveBeenCalledExactlyOnceWith('ws')
+  })
+
+  it('keeps a reopened workspace separate from a stale background trust read', async () => {
+    let current: typeof connection | undefined = connection
+    let finishCheck!: (value: boolean) => void
+    const oldTrust = new Promise<boolean>((resolve) => { finishCheck = resolve })
+    vi.spyOn(store, 'knownTrusted').mockReturnValueOnce(oldTrust)
+    const depsForWorkspace = deps([])
+    const disconnect = vi.fn()
+    const shared = {
+      ...depsForWorkspace,
+      connections: { get: () => current } as never,
+      workspaces: {
+        ...depsForWorkspace.workspaces,
+        getSnapshot: () => ({ open: [] as string[], entries: [] }),
+        open: () => { current = { ...connection }; return Promise.resolve(current as never) },
+        disconnect,
+      },
+    }
+    const background = await openTrusted({ ...shared, prompt: false }, 'ws')
+    current = undefined
+    const foreground = await openTrusted(shared, 'ws')
+    await tick()
+    expect(store.current()).toMatchObject({ workspaceId: 'ws' })
+    finishCheck(false)
+    await expect(background.trusted).resolves.toBe(false)
+
+    const again = await openTrusted(shared, 'ws')
+    expect(again).toBe(foreground)
+    expect(disconnect).not.toHaveBeenCalled()
+    await store.answer(true)
+    await expect(foreground.trusted).resolves.toBe(true)
   })
 
   it('opens, asks once its runtime answers, and only disconnects a declined workspace', async () => {

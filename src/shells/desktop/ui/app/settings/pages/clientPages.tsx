@@ -17,6 +17,7 @@ import {
 } from '../../../kernel/settings'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import type { SettingsPageProps } from '../registry'
+import { setUiState, useUiState } from '../../state/uiState'
 
 function setWs<K extends WorkspaceSettingKey>(workspaceId: string, key: K, value: WorkspaceSettings[K]): void {
   void setWorkspaceSetting(workspaceId, key, value).catch(() => { /* the mirror reverts */ })
@@ -25,8 +26,13 @@ function setWs<K extends WorkspaceSettingKey>(workspaceId: string, key: K, value
 export function SidebarPage(): JSX.Element {
   const skills = useClientSetting('showSkillsInWorkspaceOverview')
   const tint = useClientSetting('sidebarTintOpacity')
+  const { sidebarMode } = useUiState()
   return (
     <div className="flex flex-col gap-1">
+      <SettingRow label="Sidebar view">
+        <Select value={sidebarMode} onChange={(value) => setUiState('sidebarMode', value === 'projects' ? 'projects' : 'threads')}
+          options={[{ value: 'threads', label: 'Threads' }, { value: 'projects', label: 'Projects' }]} />
+      </SettingRow>
       <SettingRow label="Show skills in workspace overview" description="List installed agent skills beneath expanded workspaces.">
         <Toggle checked={skills} onChange={(v) => setClientSetting('showSkillsInWorkspaceOverview', v)} />
       </SettingRow>

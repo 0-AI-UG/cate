@@ -9,7 +9,7 @@ import type { NetworkEndpoint, NetworkTarget } from '@runtime/transports/contrac
 /** How a client reaches a runtime. The transport decides who is admitted,
  *  never how the runtime serves the client (7.5). */
 export type ConnectionTarget =
-  | { kind: 'local'; root: string }
+  | { kind: 'local'; root: string; runningOnly?: boolean }
   /** A machine this client runs commands on (SSH, WSL): its bridge carries
    *  the runtime's local socket. */
   | { kind: 'machine'; machine: Machine; root: string }
@@ -19,8 +19,9 @@ export type ConnectionKind = ConnectionTarget['kind']
 
 export interface ShellTransports {
   /** Computes the runtimeId of `root`, connects to its local socket and
-   *  starts the runtime when nothing answers (7.3). A stream pipe. */
-  dialLocal(root: string): Promise<ByteDuplex>
+   *  starts the runtime when nothing answers (7.3), unless this is an
+   *  observation of an already running workspace. A stream pipe. */
+  dialLocal(root: string, mode?: 'running-only'): Promise<ByteDuplex>
   /** Runs the bridge to the runtime of `root` on `machine`, installing this
    *  app's runtime there first when it is missing, and starting the runtime
    *  when nothing answers. A stream pipe. A shell that cannot run commands

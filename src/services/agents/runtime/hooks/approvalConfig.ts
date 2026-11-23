@@ -3,7 +3,7 @@
 // resolved config through Codex's own app-server `config/read`. Runs on the
 // runtime's machine, where the CLI and its config live.
 
-import { readCodexInspection } from './codexInspection'
+import { CODEX_INSPECTION_ENV_KEYS, readCodexInspection } from './codexInspection'
 import path from 'node:path'
 import type { AgentApprovalDetection, AgentId } from '../../contract'
 
@@ -51,5 +51,5 @@ export interface ApprovalConfigReader {
 }
 
 export const APPROVAL_CONFIG_READERS: Partial<Record<AgentId, ApprovalConfigReader>> = {
-  codex: { envKeys: ['CODEX_HOME', 'HOME', 'PATH'], read: (cwd, options) => readCodexApprovalConfig(cwd, options) },
+  codex: { envKeys: CODEX_INSPECTION_ENV_KEYS, read: (cwd, options) => readCodexApprovalConfig(cwd, options) },
 }

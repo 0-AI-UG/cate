@@ -22,7 +22,8 @@ describe('Codex hook trust', () => {
   })
   it('only lists hooks without trusting them or creating a session', async () => {
     vi.mocked(readCodexInspection).mockResolvedValue(result({ ...hook, trustStatus: 'untrusted' }))
-    expect(await readCodexHookTrust(cwd)).toBe('approval-required')
-    expect(readCodexInspection).toHaveBeenCalledWith(cwd, 'hooks/list', { cwds: [cwd] })
+    const env = { CODEX_HOME: path.join(cwd, 'my-codex') }
+    expect(await readCodexHookTrust(cwd, { env })).toBe('approval-required')
+    expect(readCodexInspection).toHaveBeenCalledWith(cwd, 'hooks/list', { cwds: [cwd] }, { env })
   })
 })

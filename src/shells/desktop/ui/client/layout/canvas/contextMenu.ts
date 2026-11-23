@@ -1,6 +1,5 @@
-// Native context menus are a ClientUi port: a desktop shell shows an OS
-// menu; a client without one gets no menu (the same actions stay in the
-// toolbar).
+// Context menus go through the ClientUi port. The shell draws the menu and
+// the toolbar exposes the same actions.
 
 import { clientUi } from '@kernel/interaction'
 import type { ContextMenuItem } from '@kernel/interaction/contract'

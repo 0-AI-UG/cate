@@ -3,6 +3,13 @@ import type { PanelAgentState } from '@services/agents/contract'
 import type { TerminalStatus } from '@services/terminal/contract'
 
 export type ThreadPhase = 'blocked' | 'ready' | 'running' | 'unknown' | 'settled'
+type HookIssue = 'Hooks off' | 'Hooks need approval'
+
+interface ThreadActivity {
+  phase: ThreadPhase
+  label: string
+  hookIssue?: HookIssue
+}
 
 export function threadKey(workspaceId: string, panelId: string): string {
   return JSON.stringify([workspaceId, panelId])
@@ -10,13 +17,16 @@ export function threadKey(workspaceId: string, panelId: string): string {
 
 /** Only agent hooks prove a blocking human prompt. Shell activity can prove
  *  that a command stopped, but cannot identify arbitrary TUI questions. */
-export function threadActivity(agent: PanelAgentState | undefined, terminal: TerminalStatus | undefined, ran: boolean): { phase: ThreadPhase; label: string } | null {
+export function threadActivity(agent: PanelAgentState | undefined, terminal: TerminalStatus | undefined, ran: boolean): ThreadActivity | null {
+  const hookIssue = agent?.present
+    ? agent.hooksMissing ? 'Hooks off' : agent.hooksNeedApproval ? 'Hooks need approval' : undefined
+    : undefined
   if (agent?.status === 'running') return { phase: 'running', label: 'Working' }
   if (agent?.status === 'waitingForInput') return agent.canReceivePrompt
-    ? { phase: 'ready', label: 'Ready for your next prompt' }
+    ? { phase: 'ready', label: 'Ready for your next prompt', hookIssue }
     : { phase: 'blocked', label: 'Needs your response' }
   if (agent?.status === 'finished') return { phase: 'settled', label: 'Agent exited' }
-  if (agent?.present) return { phase: 'unknown', label: agent.hooksMissing ? 'Hooks off' : agent.hooksNeedApproval ? 'Hooks need approval' : 'Status unavailable' }
+  if (agent?.present) return { phase: 'unknown', label: hookIssue ?? 'Status unavailable', hookIssue }
   if (!terminal) return null
   if (!terminal.alive) return { phase: 'settled', label: terminal.exitCode ? `Exited with code ${terminal.exitCode}` : 'Finished' }
   if (terminal.suspended) return { phase: 'settled', label: 'Suspended' }
@@ -24,7 +34,7 @@ export function threadActivity(agent: PanelAgentState | undefined, terminal: Ter
   return ran ? { phase: 'ready', label: 'Command finished' } : { phase: 'settled', label: 'Terminal idle' }
 }
 
-export interface SidebarThread {
+export interface SidebarThread extends ThreadActivity {
   key: string
   workspaceId: string
   workspaceName: string
@@ -34,8 +44,6 @@ export interface SidebarThread {
   agentName?: string | null
   machineName?: string
   completedAt?: number
-  phase: ThreadPhase
-  label: string
   focused?: boolean
 }
 

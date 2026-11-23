@@ -290,11 +290,11 @@ shell's native side.
 | Rendering the document: docks, canvas view, nodes, minimap, relation drawing | shell UI |
 | Panel views: xterm, Monaco, diff views (desktop); native views (iOS) | shell UI |
 | Input, drag and drop | shell UI |
-| Dialogs, confirmations, notification display, clipboard (`ClientUi`, including the in-app save-path dialog over the workspace's files) | shell UI |
+| Context menus, dialogs, confirmations, notification display, clipboard (`ClientUi`, including the in-app save-path dialog over the workspace's files) | shell UI |
 | Webviews, browser partitions, the page driver (CDP), guest preloads | shell native |
 | Passkeys (macOS `ASAuthorizationController`, needs the signed app and a window) | shell native |
 | The upstream browser proxy (`browserProxyUrl`) and the loopback web proxy (section 12.3) | shell native |
-| Windows, menus, the drag ghost, updater, crash reporting, analytics | shell native |
+| Windows, menu bar, the drag ghost, updater, crash reporting, analytics | shell native |
 | Client features (section 12.2) | declared by the shell |
 | Client state: viewport, zoom, active tabs, maximize, focus, selection, per-panel view state, undo history, one-shot intents | core |
 | Document mirror with optimistic ops | core |
@@ -639,6 +639,9 @@ persisted session and document file. It is created with mode `0700`.
   detached process, stdio to `logs/daemon.out.log`, and retries
   until connected (10 s budget). It also starts the runtime of the last
   selected workspace when the app launches, before the window asks for it.
+  A background Threads observation uses an attach-only dial to that same
+  socket. Only an explicit workspace open enables startup and runtime updates
+  on the observed connection.
 - **A client that runs commands on the runtime's machine** (SSH, WSL; 7.1)
   runs `runtime.cjs bridge <root>` there. The bridge does what a client on
   the machine does (connect, or start the runtime and retry), then prints
@@ -1348,6 +1351,11 @@ and keep-mounted native-surface nodes
 remain exempt. Culling disposes client views only: the runtime keeps sessions
 and jobs alive, and views reattach to their existing state when remounted.
 
+Worktree membership is shared document state. The desktop uses it for
+minimap colors, the worktree lens, and optional panel tint. A tint preview
+belongs to the panel's client view state. The iOS canvas map renders its own
+worktree territories.
+
 ### 9.4 Files
 
 **`workspace/files`**:
@@ -1437,7 +1445,7 @@ and jobs alive, and views reattach to their existing state when remounted.
   `vcs`; they do not create Review panels. Working changes expand directly in
   the initial source control view alongside the commit composer; partially staged
   files show staged and working patches together. Commit and branch
-  comparisons use the same layout. Diff options use a native checkbox menu; repository/worktree selection
+  comparisons use the same layout. Diff options use a checkbox context menu; repository/worktree selection
   uses in-app controls. Collapse all occupies a fixed place in the changes header. The overlay lists all file summaries,
   loads diffs only for expanded files, virtualizes the full row list, and dismisses
   when opening a working file. Split, word, wrap, whitespace and full-context
@@ -2360,6 +2368,9 @@ a code).
   device UI state. Snooze is a separate timed action: deadlines persist on
   the device, hide the thread until due, and can be cancelled in Snoozed.
   Settled rows have an un-settle action that returns them to Ready for review.
+  Background observation can attach to an already-running local workspace
+  without changing its recency or asking for trust. Hover highlights a thread's
+  node on the current canvas. Activating the row reveals its panel.
   Rows reorder across computers;
   next/previous workspace follows that same order. The opening picker sorts
   all remembered workspaces by last use, including closed ones. Closing
