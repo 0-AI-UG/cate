@@ -49,7 +49,7 @@ export function AgentHooksOffOverlay({ workspaceId, record }: { workspaceId: str
   if (!state?.hooksMissing) return null
   return (
     <button type="button" title={`${state.agentName ?? 'This agent'} runs without Cate hooks, so its status and connected panels do not reach Cate`}
-      className="inline-flex h-[18px] items-center gap-1 rounded-md bg-surface-3 px-1.5 text-[10px] text-secondary hover:text-primary"
+      className="inline-flex h-[18px] items-center gap-1 rounded-full bg-surface-3 px-1.5 text-[10px] text-secondary hover:text-primary"
       onMouseDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation()

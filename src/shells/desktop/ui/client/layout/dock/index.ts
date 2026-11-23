@@ -9,7 +9,7 @@ export { DockTabBar, TabPill, type DockTabBarProps } from './DockTabBar'
 export { DockLayout } from './DockLayout'
 export { DockSplitContainer } from './DockSplitContainer'
 export { DockResizeHandle } from './DockResizeHandle'
-export { NewTabButton } from './NewTabMenu'
+export { NewTabButton, DockTabContextMenu, DockMenuPortalContext, newTabItems, type NewTabItem } from './NewTabMenu'
 export { useDockTabActions, type DockTabActionsParams } from './useDockTabActions'
 export {
   layoutMinimum,

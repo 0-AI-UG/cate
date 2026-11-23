@@ -12,17 +12,11 @@ export function isTopDialogLayer(order: number): boolean {
 }
 
 /** Settings and its child dialogs share one Escape owner. */
-/** Popovers must clear both full-page content overlays and their owning dialog. */
-export function popoverLayer(): number {
-  return Math.max(100001, layers.at(-1)?.order ?? 0) + 1
-}
-
-export function useDialogLayer(onEscape?: (event: KeyboardEvent) => void, enabled = true): number {
+export function useDialogLayer(onEscape?: (event: KeyboardEvent) => void): number {
   const callback = useRef(onEscape)
   callback.current = onEscape
   const [order] = useState(() => nextOrder++)
   useLayoutEffect(() => {
-    if (!enabled) return
     const layer = { order, key: (event: KeyboardEvent) => callback.current?.(event) }
     if (!layers.length) document.addEventListener('keydown', dispatch, { capture: true })
     layers.push(layer)
@@ -31,6 +25,6 @@ export function useDialogLayer(onEscape?: (event: KeyboardEvent) => void, enable
       layers.splice(layers.indexOf(layer), 1)
       if (!layers.length) document.removeEventListener('keydown', dispatch, { capture: true })
     }
-  }, [order, enabled])
+  }, [order])
   return order
 }

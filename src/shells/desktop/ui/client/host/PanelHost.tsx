@@ -11,7 +11,6 @@ import { panelDefinition } from '@client/host'
 import { PANEL_LOADING_DELAY_MS, PanelSessionBoundary } from './PanelSessionBoundary'
 import { PanelSurfaceSlot } from './surfaceRegistry'
 import { panelView } from './views'
-import { WorktreeTint } from './WorktreeTint'
 
 /** Structural limits of where a view sits, for pickers inside it (a surface
  *  on a canvas node offers only types that can live on a canvas). */
@@ -79,14 +78,11 @@ const PanelContent = memo(function PanelContent({ workspaceId, record, onCanvas 
 export function PanelView({ workspaceId, record }: { workspaceId: string; record: PanelRecord }): React.ReactElement {
   const View = panelView(record.type)
   if (!View) return <PanelUnavailable />
-  const view = (
+  return (
     <PanelErrorBoundary panelType={record.type} panelId={record.id}>
       <PanelSessionBoundary workspaceId={workspaceId} record={record}>
         {(props) => <PanelSuspense key={record.id}><View {...props} /></PanelSuspense>}
       </PanelSessionBoundary>
     </PanelErrorBoundary>
   )
-  const definition = panelDefinition(record.type)
-  if (!definition?.switchesWorktree && !definition?.checkoutPath) return view
-  return <div className="relative h-full w-full min-h-0 min-w-0">{view}<WorktreeTint workspaceId={workspaceId} record={record} /></div>
 }

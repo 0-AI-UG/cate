@@ -1,10 +1,10 @@
 // Which nodes of this canvas belong to which worktree, and in what color: the
-// one source the minimap and the focus lens read.
+// one source the territory layer and the focus lens read.
 //
 // Membership is a tag, never geometry: a node's worktree is whatever its active
 // tab is tagged with (published into the view's `nodeActiveWorktreeId` by the
-// node). Positions are not read here; dragging a panel never
-// re-renders this hook.
+// node). Positions are not read here; the territory reads live geometry in its
+// rAF loop, so dragging a panel never re-renders this hook.
 
 import { useEffect, useMemo, useState } from 'react'
 import { useDocument } from '../../../document'

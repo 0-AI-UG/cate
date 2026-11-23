@@ -3,29 +3,18 @@
 @tailwind utilities;
 
 :where(button, [role='button'], a[href], input[type='checkbox'], input[type='radio'], input[type='range'], input[type='color'], input[type='file']):focus-visible {
-  /* Keyboard focus: a neutral ring, not the theme accent. */
-  outline: 1.5px solid color-mix(in srgb, var(--text-primary) 40%, transparent);
-  outline-offset: 1px;
-}
-
-/* Inside dialogs a focused button is tinted, not outlined: the outline reads as
-   a stray frame around list rows. List rows tint themselves. */
-[role='dialog'] :where(button, [role='button'], a[href]):not([data-list-row]):focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--text-primary) 8%, transparent);
-}
-[role='dialog'] [data-list-row]:focus-visible {
-  outline: none;
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 /* Text fields use their rounded border, not an outline around the text inside.
    Compound fields put the focus border on their shared frame. */
 :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']), textarea, select):focus {
   outline: none;
-  border-color: var(--border-strong);
+  border-color: var(--border-focus);
 }
 [data-input-frame]:has(input:focus, textarea:focus, select:focus) {
-  border-color: var(--border-strong);
+  border-color: var(--border-focus);
 }
 [data-input-frame] :where(input, textarea, select):focus {
   outline: none;
@@ -36,63 +25,64 @@
    Theme tokens.
    The active theme is applied at runtime by applyTheme() (kernel/interaction), which
    writes every --var as an inline style on <html>.
-   This :root block is only the cold-launch / un-themed fallback — it follows
-   the standard Graphite theme in src/kernel/interaction/contract/themes/graphite.ts.
+   This :root block is only the cold-launch / un-themed fallback — it mirrors
+   the dark-warm palette and MUST stay in sync with BASE_DARK in
+   src/kernel/interaction/contract/themes/base.ts.
    ============================================================================= */
 
 :root {
-  /* UI chrome font — bundled Inter Variable, system stack as fallback. */
-  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  /* UI chrome font — native system stack. */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
 
-  --surface-0: #141414;
-  --surface-1: #101010;
-  --surface-2: #1b1b1b;
-  --surface-3: #222222;
-  --surface-4: #292929;
-  --surface-5: #303030;
-  --surface-6: #373737;
-  --titlebar-bg: #101010;
-  --canvas-bg: #0b0b0b;
-  --canvas-bg-alt: #0c0c0c;
+  --surface-0: #1d1c1a;
+  --surface-1: #232220;
+  --surface-2: #282724;
+  --surface-3: #2c2b28;
+  --surface-4: #322f2c;
+  --surface-5: #3a3733;
+  --surface-6: #423f3a;
+  --titlebar-bg: #232220;
+  --canvas-bg: #161513;
+  --canvas-bg-alt: #1c1b19;
   --canvas-backdrop-scrim: rgba(0, 0, 0, 0.35);
-  --grid-dot: rgba(255, 255, 255, 0.07);
+  --grid-dot: rgba(255, 255, 255, 0.077);
   --grid-line: rgba(255, 255, 255, 0.03);
-  --border-subtle: rgba(255, 255, 255, 0.09);
-  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-subtle: rgba(255, 255, 255, 0.035);
+  --border-strong: rgba(255, 255, 255, 0.14);
   /* Hairline width for inline-styled borders (canvas nodes, overlays). 1px on
      standard displays; overridden to 0.5px on hi-DPI (see the @media rule below)
      so panels get the same true 1-device-pixel line as the utility borders. */
   --hairline: 1px;
-  --border-focus: #a9b8cf;
-  --text-primary: #ececec;
-  --text-secondary: #b0b0b0;
-  --text-muted: #858585;
-  --text-inverse: #101010;
-  --focus-blue: #a9b8cf;
-  --activity-green: #5cae72;
-  --activity-orange: #cc8a4a;
-  --shadow-node: rgba(0, 0, 0, 0.55);
-  --shadow-node-focused: rgba(169, 184, 207, 0.30);
-  --node-bg-active: #141414;
-  --node-dim-overlay: rgba(0, 0, 0, 0.22);
-  --scrollbar-thumb: rgba(255, 255, 255, 0.14);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+  --border-focus: #4a9eff;
+  --text-primary: #e8e6e3;
+  --text-secondary: #a8a49e;
+  --text-muted: #78746e;
+  --text-inverse: #141311;
+  --focus-blue: #4a9eff;
+  --activity-green: #4dd964;
+  --activity-orange: #ff9f0a;
+  --shadow-node: rgba(0, 0, 0, 0.45);
+  --shadow-node-focused: rgba(74, 158, 255, 0.35);
+  --node-bg-active: #1a1917;
+  --node-dim-overlay: rgba(0, 0, 0, 0.18);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
   --surface-hover: rgba(255, 255, 255, 0.06);
-  --surface-hover-strong: rgba(255, 255, 255, 0.11);
-  --git-added: #5cae72;
-  --git-modified: #c9a24b;
-  --git-deleted: #d16a6a;
-  --git-untracked: #a9b8cf;
-  --git-renamed: #a884c0;
+  --surface-hover-strong: rgba(255, 255, 255, 0.12);
+  --git-added: #4dd964;
+  --git-modified: #ff9f0a;
+  --git-deleted: #ff453a;
+  --git-untracked: #4a9eff;
+  --git-renamed: #bf5af2;
   /* Minimap panel rects — muted variants tinted toward the active theme.
-     :root follows Graphite for any un-themed render. */
-  --panel-terminal: #5c9e7e;
-  --panel-browser: #8a9bb8;
-  --panel-editor: #b0834a;
-  --panel-canvas: #a9b8cf;
+     :root mirrors dark-warm for any un-themed render. */
+  --panel-terminal: #4a9960;
+  --panel-browser: #4a7ab0;
+  --panel-editor: #b07440;
+  --panel-canvas: #8857b0;
   /* Agent accent — RGB channels for Tailwind alpha modifier support. */
-  --agent-rgb: 169 184 207;
-  --agent-light-rgb: 205 214 228;
+  --agent-rgb: 74 158 255;
+  --agent-light-rgb: 147 197 255;
 }
 
 /* Semantic utility classes. Declared directly (not via Tailwind colors) so
@@ -170,11 +160,8 @@
   .border-danger { border-color: color-mix(in srgb, var(--git-deleted) 36%, transparent); }
   .border-warning { border-color: color-mix(in srgb, var(--activity-orange) 30%, transparent); }
 
-  /* Connections are dashed; lengths are screen pixels (the line is
-     non-scaling-stroke). */
   .cate-panel-connection {
-    stroke-dasharray: 8 6;
-    stroke-linecap: butt;
+    stroke-dasharray: 10 8;
   }
 
   /* Inline diff add/remove rows — themed via the git add/delete colors. */
@@ -219,10 +206,31 @@
   }
 }
 
-/* Sidebar lists scroll without a scrollbar, so the padding is the same on both
-   sides. Unlayered so it overrides the @layer base defaults above. */
+/* Sidebar scrollbars: the same thin rounded floating pill as the base, but only
+   visible while the pointer is over the sidebar. The thumb is transparent until
+   then (its track space stays reserved, so revealing it doesn't shift the
+   content). Unlayered so it overrides the @layer base defaults above. */
 [data-sidebar-scrollarea] ::-webkit-scrollbar {
-  display: none;
+  width: 13.52px;
+  height: 13.52px;
+}
+[data-sidebar-scrollarea] ::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+  /* Same right-hugging asymmetric inset as the base scrollbar. */
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-left: 3px solid transparent;
+  border-right: 1px solid transparent;
+  background-clip: padding-box;
+  /* Fade the thumb in/out as the pointer enters/leaves the sidebar. */
+  transition: background-color 280ms ease;
+}
+[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+}
+[data-sidebar-scrollarea]:hover ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
 }
 
 /* Terminal scrollbar: the same thin rounded floating pill as the base, but only
@@ -264,8 +272,8 @@
    transparent until the pointer is over the bar, so at rest only the tabs and
    +/split buttons read against the canvas. Fades its chrome in on hover. */
 .files-content ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 8.45px;
+  height: 8.45px;
 }
 
 .monaco-editor:not(:hover) .core-guide,
@@ -288,14 +296,29 @@
 
 .dock-tab-bar-floating {
   background-color: transparent;
-  border-bottom: 0;
-  transition: background-color 160ms ease;
+  border-bottom: 1px solid transparent;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+/* Inactive tabs float over the canvas with no chrome behind them, so give them a
+   translucent glass fill + backdrop blur — enough to read against the canvas grid
+   and separate from the content behind, while staying recessed vs the opaque
+   active tab. Scoped to the floating canvas bar; docked/mini-dock tab bars have a
+   solid chrome background already and keep their transparent-at-rest inactive
+   tabs. */
+.dock-tab-bar-floating .dock-tab-inactive {
+  background-color: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.dock-tab-bar-floating .dock-tab-inactive:hover {
+  background-color: color-mix(in srgb, var(--surface-3) 72%, transparent);
 }
 
-/* Canvas headers stay transparent while sharing the height of
-   other dock headers. The canvas owns its full viewport beneath the overlay. */
+/* Stays transparent at rest and on hover. Only lights up as a drop target while
+   something is being dragged onto it. */
 .dock-tab-bar-floating.drop-active {
   background-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 14%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--focus-blue, #4a9eff) 45%, transparent);
 }
 
 /* Hairline borders on hi-DPI: render the 1px border utilities as a true
@@ -313,6 +336,7 @@
   .border-l { border-left-width: 0.5px; }
   .border-x { border-left-width: 0.5px; border-right-width: 0.5px; }
   .border-y { border-top-width: 0.5px; border-bottom-width: 0.5px; }
+  .dock-tab-bar-floating { border-bottom-width: 0.5px; }
 }
 
 /* Hide the scrollbar entirely while keeping the element scrollable (wheel/drag).
@@ -368,31 +392,7 @@
   animation: cate-spawn-flyout-item-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
   animation-delay: calc(40ms + var(--i, 0) * 35ms);
 }
-/* Content of a card that slides out of a toolbar rises a few pixels and fades
-   in, child by child. `cate-rise` starts with the bottom child (nearest the
-   toolbar) and works up; `cate-stagger` goes in reading order. No scaling, so
-   nothing shifts the layout. */
-@keyframes cate-rise-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.cate-stagger > *, .cate-rise > * {
-  animation: cate-rise-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
-}
-.cate-stagger > :nth-child(1) { animation-delay: 70ms; }
-.cate-stagger > :nth-child(2) { animation-delay: 100ms; }
-.cate-stagger > :nth-child(3) { animation-delay: 130ms; }
-.cate-stagger > :nth-child(4) { animation-delay: 160ms; }
-.cate-stagger > :nth-child(n+5) { animation-delay: 190ms; }
-.cate-rise > :nth-last-child(1) { animation-delay: 60ms; }
-.cate-rise > :nth-last-child(2) { animation-delay: 90ms; }
-.cate-rise > :nth-last-child(3) { animation-delay: 120ms; }
-.cate-rise > :nth-last-child(4) { animation-delay: 150ms; }
-.cate-rise > :nth-last-child(5) { animation-delay: 180ms; }
-.cate-rise > :nth-last-child(n+6) { animation-delay: 210ms; }
 @media (prefers-reduced-motion: reduce) {
-  .cate-stagger > *,
-  .cate-rise > *,
   .cate-spawn-flyout,
   .cate-spawn-flyout-item {
     animation-duration: 1ms;
@@ -509,14 +509,9 @@
   inset: 1px;
   border-radius: 9999px;
 }
-/* Second-level bars (panel toolbars) take their size from the bar above them:
-   docked tab bars are 36px, canvas nodes' compact mini docks 26px. */
-:root { --bar-h: 36px; --bar-pad: 6px; --ctl-h: 24px; }
-.dock-compact { --bar-h: 26px; --bar-pad: 2px; --ctl-h: 22px; }
-
 .app-header-bar {
-  height: 36px;
-  min-height: 36px;
+  height: 44px;
+  min-height: 44px;
   padding-inline: 12px;
   display: flex;
   align-items: center;
@@ -569,84 +564,4 @@
 
 @media (prefers-reduced-motion: reduce) {
   .screenshot-viewer-image-in { animation: none !important; }
-}
-
-
-/* The map in the zoom card opens by growing its row. */
-.canvas-map { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-.canvas-map[data-open] { grid-template-rows: 1fr; }
-.canvas-map-inner { overflow: hidden; min-height: 0; }
-@media (prefers-reduced-motion: reduce) {
-  .canvas-map { transition: none; }
-}
-
-
-/* A menu that slides up out from behind the bar it belongs to, and back in. */
-@keyframes cate-slide-up-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
-@keyframes cate-slide-down-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
-.cate-slide-up-in { animation: cate-slide-up-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.cate-slide-down-out { animation: cate-slide-down-out 200ms cubic-bezier(0.4, 0, 1, 1) both; }
-@media (prefers-reduced-motion: reduce) {
-  .cate-slide-up-in, .cate-slide-down-out { animation: none; }
-}
-
-
-/* Bars and the cards that slide out of them: a very faint outline drawn inside
-   the box (so the global hairline border rules never touch it). A bar gains a
-   soft shadow on hover; a card has no bottom edge, where it meets its bar. */
-.bar-outline {
-  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--border-subtle) 60%, transparent);
-  transition: box-shadow 150ms ease;
-}
-.bar-outline:hover {
-  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--border-subtle) 60%, transparent), 0 2px 8px -3px var(--shadow-node);
-}
-.card-outline {
-  box-shadow:
-    inset 0 0.5px 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent),
-    inset 0.5px 0 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent),
-    inset -0.5px 0 0 0 color-mix(in srgb, var(--border-subtle) 60%, transparent);
-}
-
-/* Workspace opening: the logo's letters bounce in turn, springing up and
-   settling with a small overshoot. */
-@keyframes cate-opening-bounce {
-  0% { transform: translateY(0) scale(1, 1); animation-timing-function: ease-in-out; }
-  10% { transform: translateY(0) scale(1.1, 0.84); animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1); }
-  26% { transform: translateY(-34%) scale(0.92, 1.1); animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5); }
-  42% { transform: translateY(0) scale(0.94, 1.08); animation-timing-function: ease-out; }
-  46% { transform: translateY(0) scale(1.2, 0.7); animation-timing-function: ease-out; }
-  55% { transform: translateY(0) scale(0.95, 1.07); animation-timing-function: ease-in-out; }
-  63% { transform: translateY(0) scale(1.05, 0.95); animation-timing-function: ease-in-out; }
-  72% { transform: translateY(0) scale(0.99, 1.02); animation-timing-function: ease-in-out; }
-  80%, 100% { transform: translateY(0) scale(1, 1); }
-}
-.cate-opening-letter {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-  animation: cate-opening-bounce 2.2s infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .cate-opening-letter { animation: none; }
-}
-
-
-/* Menu and list-dialog rows that opt in with data-menu-item show their digit
-   (set by useMenuNumbers) as a quiet key chip at the row's end. */
-[data-menu-item][data-key]::after {
-  content: attr(data-key);
-  margin-left: auto;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 10px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 4px;
-  font-size: 10.5px;
-  font-weight: 500;
-  line-height: 1;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }

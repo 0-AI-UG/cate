@@ -17,7 +17,7 @@ vi.mock('../../client/document', async () => {
 vi.mock('@client/document', () => ({ documentStoreFor: () => null, clientStateFor: () => null }))
 vi.mock('../../workspace/repository', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../workspace/repository')>()),
-  useRepositoryUi: () => ({ root: '/repo', previewPanelWorktree: vi.fn() }),
+  useRepositoryUi: () => ({ root: '/repo' }),
   useWorktrees: () => [],
 }))
 vi.mock('../../services/agents', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../services/agents')>()), useAgentAvailability: () => h.availability }))
@@ -316,17 +316,19 @@ it('renders the empty diff as a centered title and explanation', () => {
   expect(empty.textContent).toContain('Clear the review scope to see all recorded edits.')
 })
 
-it('shows the display options in an in-app menu and collapses expanded files on selection', async () => {
-  installMockClientUi()
+it('uses the native display-options menu and collapses expanded files on selection', async () => {
+  const ui = installMockClientUi({ showContextMenu: vi.fn().mockResolvedValue('collapse') })
   render(agentSnapshot())
   await act(async () => button('Expand src/a.ts').click())
   await act(async () => button('More review options').click())
-  const items = [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"], [role="menuitem"]')]
-  expect(items.map((i) => i.textContent)).toEqual(['Side-by-side diff', 'Word differences', 'Wrap lines', 'Collapse all files'])
-  expect(items.slice(0, 3).every((i) => i.getAttribute('aria-checked') !== null)).toBe(true)
-  await act(async () => items[3].click())
+  expect(ui.showContextMenu).toHaveBeenCalledWith(expect.arrayContaining([
+    expect.objectContaining({ id: 'split', type: 'checkbox', checked: expect.any(Boolean) }),
+    expect.objectContaining({ id: 'wordDiff', type: 'checkbox', checked: expect.any(Boolean) }),
+    expect.objectContaining({ id: 'wrap', type: 'checkbox', checked: expect.any(Boolean) }),
+    expect.objectContaining({ id: 'collapse', enabled: true }),
+  ]))
   expect(button('Expand src/a.ts')).not.toBeNull()
-  expect(document.querySelector('[role="menu"]')).toBeNull()
+  expect(document.querySelector('[role="menuitem"]')).toBeNull()
 })
 
 it('groups by terminal and opens the chosen file edit on demand', async () => {

@@ -72,7 +72,7 @@ it('shows cached repositories and remotes while a reopen revalidates them', asyn
 })
 
 
-it('selects repositories and remotes with dropdown controls', async () => {
+it('selects repositories and remotes with inline controls', async () => {
   rt.vcs.findRepos.mockResolvedValue(['/repo', '/repo/tools'])
   rt.vcs.remotes.mockResolvedValue([
     { name: 'origin', fetchUrl: 'git@github.com:org/project.git', pushUrl: '' },
@@ -80,12 +80,10 @@ it('selects repositories and remotes with dropdown controls', async () => {
   ])
   await m.render(<RepositoryOverview tab="changes" onTabChange={vi.fn()} header={header} onOpenPullRequest={vi.fn()} />, fakeHost())
   expect(m.host.querySelector('select')).toBeNull()
-  await act(async () => m.host.querySelector<HTMLButtonElement>('[aria-label="Git remote"]')!.click())
-  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(option => option.textContent === 'upstream')!.click())
+  await act(async () => m.button('upstream').click())
   expect(m.host.textContent).toContain('upstream/project')
   expect(ui.showContextMenu).not.toHaveBeenCalled()
-  await act(async () => m.host.querySelector<HTMLButtonElement>('[aria-label="Local repository"]')!.click())
-  await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(option => option.textContent === 'tools')!.click())
+  await act(async () => m.button('tools').click())
   expect(m.host.textContent).toContain('Changes for /repo/tools')
-  expect(m.host.querySelector('[aria-label="Local repository"]')?.textContent).toContain('tools')
+  expect(m.button('tools').getAttribute('aria-pressed')).toBe('true')
 })

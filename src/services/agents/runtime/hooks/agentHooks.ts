@@ -35,7 +35,6 @@ import { createAgentChangesStore, type AgentChangeTerminal, type StoredAgentChan
 import { AGENT_SESSION_STORES, createAgentTitleTracker } from '../sessions'
 import type { AgentSessionStores } from '../sessions/types'
 import { APPROVAL_CONFIG_READERS, type ApprovalConfigReader } from './approvalConfig'
-import { readCodexHookTrust } from './hookTrust'
 import {
   AGENTS,
   AGENT_APPROVAL_DETECTION,
@@ -52,7 +51,6 @@ import {
   resolveAgentHookMode,
   type AgentApprovalDetection,
   type AgentHookAgentState,
-  type AgentHookTrust,
   type AgentHookConfig,
   type AgentHookEvent,
   type AgentConversationMessage,
@@ -113,7 +111,6 @@ export interface AgentHooks {
   /** Whether Cate's hooks for one agent are installed for a checkout (its
    *  `injected` in inspectWorkspace), without inspecting the others. */
   hooksInstalled(cwd: string, agentId: AgentId): Promise<boolean>
-  hookTrust(cwd: string, agentId: AgentId): Promise<AgentHookTrust>
   /** Best-effort identity from one exact process's open transcript files.
    *  Supplies no lifecycle state and never scans for a recent session. */
   identifyProcessSession(agentId: AgentId, pid: number): Promise<AgentSessionLocator | null>
@@ -881,7 +878,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         const approval = AGENT_APPROVAL_DETECTION[agent.id]
         states.push({
           agentId: agent.id, displayName: agent.displayName, folderPresent, injected,
-          ...(agent.id === 'codex' && injected ? { hookTrust: await readCodexHookTrust(cwd) } : {}),
           approvalDetection: approval.source === 'config' && repoLocal && options.approvals ? await approvalConfig(agent.id, cwd, undefined, true) : approval,
         })
       }
@@ -898,10 +894,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
 
     async hooksInstalled(cwd, agentId) {
       return isRepoLocalCwd(cwd, homeDir) && await injectedIn(agentId, cwd)
-    },
-
-    async hookTrust(cwd, agentId) {
-      return agentId === 'codex' && isRepoLocalCwd(cwd, homeDir) ? readCodexHookTrust(cwd) : 'unknown'
     },
 
     subscribe(onEvent) {

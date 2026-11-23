@@ -52,6 +52,7 @@ export interface DesktopPort {
   quitAndInstallUpdate(): Promise<boolean>
   // Native chrome.
   /** Resolves the chosen item id, or null. */
+  showContextMenu(items: MenuItem[]): Promise<string | null>
   /** Native application menu picks, as shortcut action ids. */
   onMenuAction(listener: (action: string) => void): () => void
   /** Space the window controls take at the top left, in px (0 when none). */

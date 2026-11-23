@@ -3,6 +3,7 @@
 // incompatible. Whatever the trouble, it is resolved in that workspace (its
 // ConnectionBlocker), never in a dialog over the app (7.10).
 
+import { ChevronRight as CaretRight } from 'lucide-react'
 import { useConnectionState } from '../../client/connections'
 import { connectionStatus, type ConnectionRemedy, type ConnectionState, type ConnectionStatus, type WorkspaceConnection } from '@client/connections'
 import { tryClientApp } from '../app'
@@ -70,23 +71,33 @@ export function connectionActions(connection: WorkspaceConnection | undefined, s
 /** A workspace row's expand toggle. While the connection is not connected it
  *  is a status dot instead, and clicking it opens the workspace, whose
  *  ConnectionBlocker says what is wrong and how to fix it. */
-export function WorkspaceToggle({ connection }: {
+export function WorkspaceToggle({ connection, canExpand, expanded, onToggle }: {
   connection: WorkspaceConnection | undefined
-}): JSX.Element | null {
+  canExpand: boolean
+  expanded: boolean
+  onToggle: () => void
+}): JSX.Element {
   const state = useConnectionState(connection)
   useRequiredRuntimeUpdate(connection)
   const status = statusOf(connection, state)
-  if (!status || !connection) return null
-  const label = `${status.title}: ${status.message}`
+  const label = status ? `${status.title}: ${status.message}` : null
+
   return (
     <button
       className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-muted hover:text-primary focus:outline-none"
-      title={label}
-      aria-label={label}
-      onClick={(e) => { e.stopPropagation(); void selectWorkspace(connection.workspaceId) }}
-      data-connection-status={state.kind}
+      title={label ?? undefined}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (label && connection) void selectWorkspace(connection.workspaceId)
+        else if (canExpand) onToggle()
+      }}
+      aria-label={label ?? (canExpand ? (expanded ? 'Collapse workspace' : 'Expand workspace') : undefined)}
+      data-connection-status={label ? state.kind : undefined}
+      disabled={!canExpand && !label}
     >
-      <span className={`w-2 h-2 rounded-full ${connectionDotClass(state)}`} />
+      {label
+        ? <span className={`w-2 h-2 rounded-full ${connectionDotClass(state)}`} />
+        : canExpand && <CaretRight size={10} className={`transition-transform ${expanded ? 'rotate-90' : ''}`} />}
     </button>
   )
 }

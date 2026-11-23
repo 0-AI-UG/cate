@@ -3,7 +3,7 @@
 // resolved config through Codex's own app-server `config/read`. Runs on the
 // runtime's machine, where the CLI and its config live.
 
-import { readCodexInspection } from './codexInspection'
+import { spawn } from 'node:child_process'
 import path from 'node:path'
 import type { AgentApprovalDetection, AgentId } from '../../contract'
 
@@ -39,7 +39,53 @@ export function readCodexApprovalConfig(
   cwd: string,
   options: { env?: NodeJS.ProcessEnv; command?: string; timeoutMs?: number } = {},
 ): Promise<AgentApprovalDetection> {
-  return readCodexInspection(cwd, 'config/read', { cwd, includeLayers: false }, options).then(codexApprovalFromConfig)
+  return new Promise((resolve) => {
+    const child = spawn(options.command ?? 'codex', ['app-server'], {
+      cwd, env: { ...process.env, ...options.env }, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true,
+      // npm installs `codex.cmd` on Windows, which only a shell runs.
+      shell: process.platform === 'win32',
+    })
+    let done = false
+    let buffer = ''
+    let bytes = 0
+    const finish = (value: AgentApprovalDetection) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      child.stdin.destroy()
+      child.kill()
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(unknown('Reading Codex configuration timed out.')), options.timeoutMs ?? 3000)
+    const send = (message: unknown) => { if (!done) child.stdin.write(JSON.stringify(message) + '\n') }
+    child.on('error', () => finish(unknown('Codex configuration could not be read on this host.')))
+    child.on('exit', () => finish(unknown('Codex closed before reporting its configuration.')))
+    child.stdin.on('error', () => finish(unknown('Codex configuration could not be read.')))
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      bytes += Buffer.byteLength(chunk)
+      if (bytes > 4 * 1024 * 1024) { finish(unknown('Codex configuration response was too large.')); return }
+      buffer += chunk
+      let newline: number
+      while (!done && (newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline)
+        buffer = buffer.slice(newline + 1)
+        let message: Record<string, unknown>
+        try { message = record(JSON.parse(line)) } catch { continue }
+        if (message.id === 1) {
+          if (message.error) { finish(unknown('Codex rejected configuration inspection.')); return }
+          send({ method: 'initialized', params: {} })
+          send({ id: 2, method: 'config/read', params: { cwd, includeLayers: false } })
+        } else if (message.id === 2) {
+          finish(message.error ? unknown('Codex could not resolve this workspace’s configuration.') : codexApprovalFromConfig(message.result))
+        }
+      }
+    })
+    send({ id: 1, method: 'initialize', params: {
+      clientInfo: { name: 'cate_config_inspection', version: '1.0.0' },
+      capabilities: { experimentalApi: true },
+    } })
+  })
 }
 
 /** How a CLI whose approvals are told apart by config (`source: 'config'` in

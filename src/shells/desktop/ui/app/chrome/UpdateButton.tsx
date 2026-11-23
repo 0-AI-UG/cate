@@ -6,7 +6,6 @@ import { createPortal } from 'react-dom'
 import { Check, CircleAlert, Download, RefreshCw, RotateCw, X } from 'lucide-react'
 import { Spinner, Tooltip } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
-import { useWhatsNewPending } from './WhatsNew'
 import { useDesktopPort, type DesktopPort, type UpdateStatus } from '../desktop'
 
 export function UpdateButton({ className = '' }: { className?: string }): JSX.Element | null {
@@ -16,7 +15,6 @@ export function UpdateButton({ className = '' }: { className?: string }): JSX.El
 }
 
 function UpdateButtonWith({ port, className }: { port: DesktopPort; className: string }): JSX.Element {
-  const whatsNew = useWhatsNewPending()
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle', version: null })
   const [pending, setPending] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -31,7 +29,7 @@ function UpdateButtonWith({ port, className }: { port: DesktopPort; className: s
       receivedEvent = true
       setStatus(next)
       if (next.manual && next.state === 'up-to-date') setFeedback('You’re up to date')
-      else if (next.manual && next.state === 'error') {
+      else if (next.manual && (next.state === 'error' || next.state === 'disabled')) {
         setFeedback(errorMessage(next.message, 'Could not check for updates. Try again.'))
       } else setFeedback(null)
     })
@@ -78,19 +76,16 @@ function UpdateButtonWith({ port, className }: { port: DesktopPort; className: s
   const statusMessage = status.state === 'error' || status.state === 'disabled'
     ? errorMessage(status.message, status.state === 'error' ? 'Update failed' : 'Updates unavailable in this build')
     : ''
-  const updated = whatsNew.pending && !busy && !ready
-  const label = updated ? 'Updated: see what’s new'
-    : checking ? 'Checking for updates'
+  const label = checking ? 'Checking for updates'
     : downloading ? `Downloading update (${status.percent ?? 0}%)`
       : ready ? `Restart to update${status.version ? ` to v${status.version}` : ''}`
         : failed ? `${statusMessage}. Click to retry.`
           : status.state === 'disabled' ? statusMessage
             : 'Check for updates'
-  const Icon = updated ? Check : checking ? RefreshCw : downloading ? Download : ready ? RotateCw : failed ? CircleAlert
+  const Icon = checking ? RefreshCw : downloading ? Download : ready ? RotateCw : failed ? CircleAlert
     : status.state === 'up-to-date' ? Check : RefreshCw
 
   const check = async () => {
-    if (updated) { whatsNew.open(); return }
     if (busy || pendingRef.current) return
     pendingRef.current = true
     setPending(true)
@@ -116,14 +111,14 @@ function UpdateButtonWith({ port, className }: { port: DesktopPort; className: s
         aria-disabled={busy || undefined}
         aria-busy={busy || undefined}
         onClick={() => void check()}
-        className={`relative shrink-0 flex items-center justify-center w-6 h-6 rounded-md hover:bg-hover transition-colors ${ready || updated ? 'text-focus-blue' : failed ? 'text-danger' : 'text-muted hover:text-secondary'} ${busy ? 'cursor-wait' : ''} ${className}`}
+        className={`relative shrink-0 flex items-center justify-center w-8 h-8 rounded-lg hover:bg-hover transition-colors ${ready ? 'text-focus-blue' : failed ? 'text-danger' : 'text-muted hover:text-secondary'} ${busy ? 'cursor-wait' : ''} ${className}`}
       >
         {checking ? <Spinner size={16} className="pointer-events-none" /> : <Icon size={16} className="pointer-events-none" />}
         {downloading && <span className="absolute bottom-0 left-0 h-0.5 rounded-full bg-focus-blue" style={{ width: `${status.percent ?? 0}%` }} />}
       </button>
     </Tooltip>
     {feedback && createPortal(
-      <div ref={feedbackRef} role={failed ? 'alert' : 'status'} className="fixed z-[100004] flex w-max items-start gap-2 max-w-[min(320px,calc(100vw-16px))] rounded-lg border border-white/[0.08] bg-surface-1 p-3 text-xs text-primary shadow-lg"
+      <div ref={feedbackRef} role={failed ? 'alert' : 'status'} className="fixed z-[100004] flex w-max items-start gap-2 max-w-[min(320px,calc(100vw-16px))] rounded-lg border border-subtle bg-surface-2 p-3 text-xs text-primary shadow-lg"
         style={{ visibility: 'hidden' }}>
         <span className="min-w-0 break-words">{feedback}</span>
         <button type="button" aria-label="Dismiss update message" onClick={() => setFeedback(null)} className="shrink-0 text-muted hover:text-primary"><X size={14} /></button>

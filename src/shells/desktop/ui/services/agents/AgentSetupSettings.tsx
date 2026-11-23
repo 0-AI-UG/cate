@@ -78,10 +78,8 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
         const installed = agent.installation.status === 'installed'
         const open = expanded === agent.agentId
         const ready = availability?.types.find((type) => type.agentId === agent.agentId)?.ready ?? false
-        const hookTrust = agent.hooksReady === false ? undefined : hooks.states[agent.agentId]?.hookTrust
-        const needsApproval = hookTrust === 'approval-required'
         const status = !installed ? agent.installation.status === 'missing' ? 'Not installed' : 'Unavailable'
-          : agent.hooksReady === false ? 'Integration off' : needsApproval ? 'Hooks need approval' : hookTrust === 'unknown' ? 'Hook trust unknown' : ready ? 'Ready' : agent.authentication.status === 'signed-out' ? 'Sign in' : 'Installed'
+          : agent.hooksReady === false ? 'Integration off' : ready ? 'Ready' : agent.authentication.status === 'signed-out' ? 'Sign in' : 'Installed'
         const identity = installed ? authenticationLabel(agent.authentication) : null
         return (
           <div key={agent.agentId} data-agent-setup-id={agent.agentId} className="-mx-3 border-b border-subtle px-3 last:border-b-0">
@@ -92,7 +90,7 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-[13px] font-medium text-primary">{agent.displayName}</span>
                     <span className="inline-flex items-center gap-1 text-[10px] text-muted" title={agent.installation.detail}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${needsApproval ? 'bg-[var(--activity-orange)]' : ready && hookTrust !== 'unknown' ? 'bg-[var(--git-added)]' : 'bg-current opacity-40'}`} />{status}
+                      <span className={`h-1.5 w-1.5 rounded-full ${ready ? 'bg-[var(--git-added)]' : 'bg-current opacity-40'}`} />{status}
                     </span>
                   </span>
                   {identity && <span className="mt-0.5 block truncate text-[11px] font-normal text-muted" title={[identity, agent.authentication.detail].filter(Boolean).join(' · ')}>{identity}{agent.authentication.plan ? ` · ${agent.authentication.plan}` : ''}</span>}

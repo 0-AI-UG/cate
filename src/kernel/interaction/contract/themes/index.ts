@@ -4,7 +4,6 @@
 // =============================================================================
 
 import type { Theme } from '../theme'
-import { graphite } from './graphite'
 import { darkWarm } from './darkWarm'
 import { darkCold } from './darkCold'
 import { darkNeutral } from './darkNeutral'
@@ -26,9 +25,8 @@ import { intellijLight } from './intellijLight'
 
 export { BASE_DARK, BASE_LIGHT } from './base'
 
-/** Shipped themes, in catalog order. Graphite is the standard appearance. */
+/** Shipped themes, in catalog order. Dark Cold leads as the standard theme. */
 export const BUILT_IN_THEMES: Theme[] = [
-  graphite,
   darkNeutral,
   darkCold,
   darkWarm,
@@ -54,5 +52,5 @@ export const BUILT_IN_BY_ID: Record<string, Theme> = Object.fromEntries(
 )
 
 /** Default dark / light themes used for `system` mode and as fallbacks. */
-export const DEFAULT_DARK_THEME_ID = 'graphite'
+export const DEFAULT_DARK_THEME_ID = 'dark-cold'
 export const DEFAULT_LIGHT_THEME_ID = 'light-subtle'

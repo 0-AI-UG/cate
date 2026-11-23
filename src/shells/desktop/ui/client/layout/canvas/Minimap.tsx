@@ -12,11 +12,8 @@ import { usePanelDecorations } from '../../host'
 const selectPanels = (doc: WorkspaceDocument) => doc.panels
 
 const MINIMAP_PADDING = 10
-// The area the map lays its content out in: the zoom card's full width and the
-// part of the map above the controls row that overlaps its end (CanvasToolbar's
-// MAP_HEIGHT less MAP_OVERLAP), so the viewport outline never sits under a button.
-const MINIMAP_WIDTH = 172
-const MINIMAP_HEIGHT = 84
+const MINIMAP_WIDTH = 218
+const MINIMAP_HEIGHT = 158
 
 // The theme colors each panel type through `--panel-<type>`; a node without
 // a shown panel is neutral.
@@ -24,9 +21,7 @@ function themedPanelColor(panelType: string | undefined): string {
   return panelType ? `var(--panel-${panelType}, var(--surface-4))` : 'var(--surface-4)'
 }
 
-/** `fade` dissolves the nodes toward that side and blurs them there, so
- *  controls can sit over the map; the viewport outline stays sharp on top. */
-function Minimap({ workspaceId, fade }: { workspaceId: string; fade?: 'to top' | 'to bottom' }) {
+function Minimap({ workspaceId }: { workspaceId: string }) {
   const nodeList = useCanvasView((s) => Object.values(s.nodes), shallowArrayEqual)
   const zoomLevel = useCanvasView((s) => s.zoomLevel)
   const containerSize = useCanvasView(
@@ -36,7 +31,7 @@ function Minimap({ workspaceId, fade }: { workspaceId: string; fade?: 'to top' |
   const panels = useDocument(workspaceId, selectPanels)
   const activeTabs = useClientState(workspaceId, (s) => s.activeTabs)
   const decorations = usePanelDecorations(workspaceId)
-  // The same membership the tab and node tints use, so they never disagree.
+  // The same membership the territory draws, so the two never disagree.
   const { groups } = useWorktreeMembership(workspaceId)
   // nodeId → worktree color, so each node rect can carry its branch color.
   const nodeColorById = useMemo(() => {
@@ -164,12 +159,6 @@ function Minimap({ workspaceId, fade }: { workspaceId: string; fade?: 'to top' |
       onMouseDown={handleMouseDown}
     >
       {/* Node rectangles */}
-      <div
-        style={{
-          position: 'absolute', inset: 0,
-          ...(fade ? { maskImage: `linear-gradient(${fade}, #000 30%, rgba(0,0,0,0.6) 100%)`, WebkitMaskImage: `linear-gradient(${fade}, #000 30%, rgba(0,0,0,0.6) 100%)` } : {}),
-        }}
-      >
       {nodeList.map((node) => {
         const panelId = activeNodePanelId(node.dock, activeTabs)
         const panel = panelId ? panels[panelId] : undefined
@@ -196,13 +185,12 @@ function Minimap({ workspaceId, fade }: { workspaceId: string; fade?: 'to top' |
               top: toMiniY(node.origin.y),
               width: rectW,
               height: rectH,
-              backgroundColor: `color-mix(in srgb, ${themedPanelColor(type)} 42%, transparent)`,
-              border: `1px solid color-mix(in srgb, ${themedPanelColor(type)} 75%, transparent)`,
-              // Worktree color as a thin ring drawn outside the rect, so it stays
+              backgroundColor: themedPanelColor(type),
+              // Worktree color as a 2px ring drawn outside the rect, so it stays
               // visible without eating into the small panel fill.
-              boxShadow: worktreeColor ? `0 0 0 1px ${worktreeColor}` : undefined,
+              boxShadow: worktreeColor ? `0 0 0 2px ${worktreeColor}` : undefined,
               boxSizing: 'border-box',
-              borderRadius: 2,
+              borderRadius: 1,
               opacity: 1,
               cursor: 'pointer',
               display: 'flex',
@@ -228,19 +216,6 @@ function Minimap({ workspaceId, fade }: { workspaceId: string; fade?: 'to top' |
         )
       })}
 
-      </div>
-      {fade && (
-        <div
-          className="backdrop-blur-[7px]"
-          style={{
-            position: 'absolute', left: 0, right: 0, height: 48, pointerEvents: 'none',
-            ...(fade === 'to bottom' ? { bottom: 0 } : { top: 0 }),
-            maskImage: `linear-gradient(${fade}, transparent, #000)`,
-            WebkitMaskImage: `linear-gradient(${fade}, transparent, #000)`,
-          }}
-        />
-      )}
-
       {/* Moved imperatively on pan by the subscription above. */}
       <div
         ref={viewportRectRef}
@@ -250,9 +225,8 @@ function Minimap({ workspaceId, fade }: { workspaceId: string; fade?: 'to top' |
           top: vpRectTop,
           width: vpRectWidth,
           height: vpRectHeight,
-          border: `1px solid var(--border-strong)`,
-          backgroundColor: 'rgba(255, 255, 255, 0.035)',
-          borderRadius: 3,
+          border: `1.5px solid var(--border-strong)`,
+          borderRadius: 2,
           pointerEvents: 'none',
         }}
       />

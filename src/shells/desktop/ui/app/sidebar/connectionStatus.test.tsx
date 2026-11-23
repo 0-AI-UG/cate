@@ -21,11 +21,11 @@ function fakeConnection(state: ConnectionState) {
   }
 }
 
-const render = (connection: ReturnType<typeof fakeConnection> | undefined) => {
+const render = (connection: ReturnType<typeof fakeConnection> | undefined, onToggle = vi.fn()) => {
   act(() => root.render(
-    <WorkspaceToggle connection={connection as unknown as WorkspaceConnection} />,
+    <WorkspaceToggle connection={connection as unknown as WorkspaceConnection} canExpand expanded={false} onToggle={onToggle} />,
   ))
-  return host.querySelector('button')
+  return host.querySelector('button') as HTMLButtonElement
 }
 
 beforeEach(() => {
@@ -40,17 +40,23 @@ afterEach(() => {
 })
 
 describe('WorkspaceToggle', () => {
-  it('shows nothing while connected (the folder icon expands the card)', () => {
-    expect(render(fakeConnection({ kind: 'connected' }))).toBeNull()
+  it('is a plain expand toggle while connected', () => {
+    const onToggle = vi.fn()
+    const toggle = render(fakeConnection({ kind: 'connected' }), onToggle)
+    expect(toggle.getAttribute('aria-label')).toBe('Expand workspace')
+    act(() => toggle.click())
+    expect(onToggle).toHaveBeenCalled()
   })
 
   it('while not connected, is a status dot that opens the workspace', () => {
-    const toggle = render(fakeConnection({ kind: 'offline', lastSeen: null, retrying: false, error: 'ECONNREFUSED' }))!
+    const onToggle = vi.fn()
+    const toggle = render(fakeConnection({ kind: 'offline', lastSeen: null, retrying: false, error: 'ECONNREFUSED' }), onToggle)
     expect(toggle.getAttribute('aria-label')).toBe('Not reachable: Its machine may be off or offline.')
     expect(toggle.title).toBe(toggle.getAttribute('aria-label'))
     expect(toggle.dataset.connectionStatus).toBe('offline')
     act(() => toggle.click())
     expect(selectWorkspace).toHaveBeenCalledWith('ws-1')
+    expect(onToggle).not.toHaveBeenCalled()
   })
 })
 

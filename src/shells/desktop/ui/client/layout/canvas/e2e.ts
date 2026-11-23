@@ -24,7 +24,7 @@ export interface CanvasE2E {
   seedWorktrees(specs: { color: string; label?: string }[], rootPath?: string): { id: string; path: string; color: string }[]
   /** Binds a node's visible panel to a worktree. */
   tagNodeWorktree(nodeId: NodeId, worktreeId: string): boolean
-  worktreeDebug(): { liveWorktrees: number; metaWorktrees: number; taggedNodes: number; distinctGroups: number }
+  worktreeDebug(): { liveWorktrees: number; metaWorktrees: number; taggedNodes: number; distinctGroups: number; glActive: boolean }
 }
 
 export function createCanvasE2E(): CanvasE2E {
@@ -93,11 +93,13 @@ export function createCanvasE2E(): CanvasE2E {
       const doc = active ? documentStoreFor(active.workspaceId)?.getSnapshot() : undefined
       const tags = store()?.getState().nodeActiveWorktreeId ?? {}
       const values = Object.values(tags).filter((v): v is string => !!v)
+      const gl = document.querySelector<HTMLElement>('[data-worktree-territory]')
       return {
         liveWorktrees: doc ? Object.values(doc.worktrees).filter((w) => w.status === 'ready').length : 0,
         metaWorktrees: doc ? Object.keys(doc.worktrees).length : 0,
         taggedNodes: values.length,
         distinctGroups: new Set(values).size,
+        glActive: !!gl && getComputedStyle(gl).display !== 'none',
       }
     },
   }

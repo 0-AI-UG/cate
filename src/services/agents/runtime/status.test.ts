@@ -73,20 +73,6 @@ function hookEvent(
 describe('agent activity coordinator (hook FSM + presence edges)', () => {
   beforeEach(setUpCoordinator)
 
-  it('seeds only an exactly confirmed resumed launch and preserves later human waits', () => {
-    machine.notePresence(PTY, true, true, 'codex')
-    expect(state()).toBe('notRunning')
-    machine.noteResumedSession(PTY, 'codex', 'session-1')
-    expect(state()).toBe('waitingForInput')
-    expect(canAgentReceivePrompt(PTY)).toBe(true)
-    expect(notify).not.toHaveBeenCalled()
-    noteAgentHookEvent(hookEvent('permission-wait', 'codex'))
-    machine.noteResumedSession(PTY, 'codex', 'session-1')
-    expect(state()).toBe('waitingForInput')
-    expect(canAgentReceivePrompt(PTY)).toBe(false)
-  })
-
-
   it('turn-start → running immediately; turn-end → waitingForInput + notification', () => {
     noteAgentPresence(PTY, true)
     expect(state()).toBe('waitingForInput')

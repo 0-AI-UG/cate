@@ -1,4 +1,4 @@
-// The canvas surface: background, grid, the transformed
+// The canvas surface: background, grid, worktree territory, the transformed
 // world that holds the nodes, and the screen-level overlay layers. Pan and
 // zoom move the world with an imperative CSS transform, so the surface never
 // re-renders during a gesture.
@@ -22,6 +22,7 @@ import { useCanvasUi } from './uiState'
 import { showContextMenu, type ContextMenuItem } from './contextMenu'
 import CanvasGrid from './background/CanvasGrid'
 import CanvasBackgroundImage from './background/CanvasBackgroundImage'
+import { WorktreeTerritoryLayer } from './worktree'
 import SnapGuides from './SnapGuides'
 import PanelTargetLayer, { PlacementHint } from './PanelTargetLayer'
 
@@ -150,6 +151,7 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
 
   const handToolActive = useCanvasUi((s) => s.activeTool === 'hand')
+  const showWorktreeTerritory = useCanvasSetting('showWorktreeTerritory')
   const worktrees = useDocument(workspaceId, (d) => d.worktrees)
   const worktreeList = useMemo(() => worktreeChoices(worktrees), [worktrees])
 
@@ -180,7 +182,6 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
       for (const el of layers) {
         if (!el) continue
         el.style.transform = transform
-        el.style.setProperty('--canvas-zoom', String(zoom))
       }
       // Promote only once per gesture, before measuring native surfaces so
       // the initial class/style change is consumed by that same sync pass.
@@ -425,6 +426,9 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
           <CanvasBackgroundImage />
           {/* Screen space, so grid lines land on whole device pixels. */}
           <CanvasGrid containerWidth={containerSize.width} containerHeight={containerSize.height} />
+          {showWorktreeTerritory && (
+            <WorktreeTerritoryLayer workspaceId={workspaceId} containerWidth={containerSize.width} containerHeight={containerSize.height} />
+          )}
           <div ref={worldRef} data-canvas-world style={WORLD_STYLE} onClick={handleWorldClick}>
             <SnapGuides />
             <RelationCanvasProvider canvas={store} overlayTarget={relationOverlayWorld}>

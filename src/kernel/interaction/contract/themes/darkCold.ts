@@ -54,7 +54,7 @@ export const darkCold: Theme = {
     'agent-light-rgb': '120 180 255',
   },
   terminal: {
-    background: '#18181a',
+    background: '#1c1c1e',
     foreground: '#f2f2f7',
     cursor: '#0a84ff',
     selectionBackground: 'rgba(10, 132, 255, 0.28)',
@@ -67,9 +67,9 @@ export const darkCold: Theme = {
   editor: {
     base: 'vs-dark',
     colors: {
-      'editor.background': '#18181a',
-      'editorGutter.background': '#18181a',
-      'minimap.background': '#18181a',
+      'editor.background': '#1e1e1e',
+      'editorGutter.background': '#1e1e1e',
+      'minimap.background': '#1e1e1e',
       'editor.lineHighlightBorder': '#00000000',
       'contrastBorder': '#00000000',
     },

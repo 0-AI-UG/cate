@@ -66,21 +66,6 @@ describe('agent activity controls', () => {
     expect(host.textContent).toContain('Open a workspace')
   })
 
-  it('shows hook approval separately from integration On and automatic tool approvals', async () => {
-    inspectHooks.mockResolvedValue([{ agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true, hookTrust: 'approval-required', approvalDetection: { source: 'config', mode: 'automatic', detail: 'test' } }])
-    await render(<HookHarness workspaceId="ws" />, install({ codex: 'on' }))
-    const row = host.querySelector('[data-agent-hook-id="codex"]')!
-    expect(row.textContent).toContain('Hooks need approval')
-    expect(row.textContent).toContain('/hooks')
-    expect(row.textContent).toContain('Automatic')
-    expect(row.querySelector('[aria-label="Codex integration status"] span')?.getAttribute('style')).toContain('--activity-orange')
-    expect(row.querySelector('select')?.value).toBe('on')
-    inspectHooks.mockResolvedValue([{ agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true, hookTrust: 'trusted' }])
-    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
-    expect(row.textContent).not.toContain('Hooks need approval')
-    expect(row.querySelector('[aria-label="Codex integration status"] span')?.getAttribute('style')).toContain('--git-added')
-  })
-
   it('shows a neutral status when Auto has no agent config folder', async () => {
     inspectHooks.mockResolvedValue([])
     await render(<HookHarness workspaceId="ws" />, install())

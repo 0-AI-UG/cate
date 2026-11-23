@@ -62,11 +62,10 @@ function standardDocument(): WorkspaceDocument {
 
 let settings: ReturnType<typeof testRelationHost>
 
-function open(doc: WorkspaceDocument, browserActive = true, selected: string[] = ['source']): CanvasViewStore {
+function open(doc: WorkspaceDocument, browserActive = true): CanvasViewStore {
   detach = openTestDocument(WS, doc)
   if (browserActive) clientStateFor(WS)!.setActiveTab('target-tabs', 'browser')
   store = createCanvasView({ workspaceId: WS, canvasId: 'c', document: documentStoreFor(WS)!, clientState: clientStateFor(WS), animate: false })
-  store.setState({ selection: selected })
   return store
 }
 
@@ -76,8 +75,6 @@ function render(view: CanvasViewStore, overlay?: HTMLElement) {
     ? <CanvasRelationOverlayContext.Provider value={overlay}>{layer}</CanvasRelationOverlayContext.Provider>
     : layer))
 }
-
-const dialog = () => document.body.querySelector<HTMLElement>('[role="dialog"]')!
 
 const relations = () => Object.values(documentStoreFor(WS)!.getSnapshot().relations)
 
@@ -117,8 +114,8 @@ describe('PanelConnectionLayer', () => {
     expect(selector?.classList.contains('z-[500]')).toBe(true)
     expect(container.textContent).toContain('Work in')
     act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.click())
-    expect(dialog().querySelectorAll('[role="radio"]')).toHaveLength(3)
-    expect([...dialog().querySelectorAll('[role="radio"]')]
+    expect(container.querySelectorAll('[role="menuitemradio"]')).toHaveLength(3)
+    expect([...container.querySelectorAll('[role="menuitemradio"]')]
       .filter((item) => item.textContent?.includes('Recommended'))).toHaveLength(1)
   })
 
@@ -130,16 +127,14 @@ describe('PanelConnectionLayer', () => {
     render(view)
     const path = () => container.querySelector('[data-panel-connection="relation"]')
     expect(path()?.getAttribute('data-panel-relation-context-pending')).toBe('false')
-    expect(path()?.parentElement?.getAttribute('opacity')).toBe('0.85')
-    expect(path()?.classList.contains('cate-panel-connection-pending')).toBe(false)
-    expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-70')).toBe(true)
+    expect(path()?.getAttribute('opacity')).toBe('0.3')
+    expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-50')).toBe(true)
 
     setPending(true)
     render(view)
     expect(path()?.getAttribute('data-panel-relation-context-pending')).toBe('true')
-    expect(path()?.parentElement?.getAttribute('opacity')).toBe('1')
-    expect(path()?.classList.contains('cate-panel-connection-pending')).toBe(true)
-    expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-70')).toBe(false)
+    expect(path()?.hasAttribute('opacity')).toBe(false)
+    expect(container.querySelector('[data-panel-relation-chip]')?.classList.contains('opacity-50')).toBe(false)
   })
 
   it('labels a browser-to-execution relation as sending findings', () => {
@@ -203,69 +198,31 @@ describe('PanelConnectionLayer', () => {
         'flow-three': { id: 'flow-three', fromPanelId: 'd', toPanelId: 'b', kind: 'use' },
       },
     )
-    render(open(doc, false, ids))
-    const arrow = (id: string) => container.querySelector(`[data-panel-connection-arrow="${id}"]`)!
+    render(open(doc, false))
     const first = container.querySelector('[data-panel-relation-id="flow-one-a"]')!
     const handoff = container.querySelector('[data-panel-relation-id="flow-one-b"]')!
     const receiverFlow = container.querySelector('[data-panel-relation-id="flow-two-a"]')!
     const otherSenderFlow = container.querySelector('[data-panel-relation-id="flow-three"]')!
     expect(first.getAttribute('stroke')).toBe(handoff.getAttribute('stroke'))
-    expect(arrow('flow-one-a').getAttribute('fill')).toBe(arrow('flow-one-b').getAttribute('fill'))
+    expect(first.getAttribute('marker-end')).toBe(handoff.getAttribute('marker-end'))
     expect(receiverFlow.getAttribute('stroke')).not.toBe(first.getAttribute('stroke'))
-    expect(arrow('flow-two-a').getAttribute('fill')).not.toBe(arrow('flow-one-a').getAttribute('fill'))
+    expect(receiverFlow.getAttribute('marker-end')).not.toBe(first.getAttribute('marker-end'))
     expect(otherSenderFlow.getAttribute('stroke')).not.toBe(first.getAttribute('stroke'))
     expect(otherSenderFlow.getAttribute('stroke')).not.toBe(receiverFlow.getAttribute('stroke'))
   })
 
-  it('names a connection while a panel it joins is selected; otherwise its line is the click target', () => {
-    const view = open(standardDocument(), true, [])
+  it('portals only the relation menu above persistent browser surfaces', () => {
+    const view = open(standardDocument())
     addRelation(WS, 'agent', 'browser', 'use')
-    render(view)
-    const path = container.querySelector('[data-panel-connection="relation"]')!
-    expect(container.querySelector('[data-panel-relation-chip]')).toBeNull()
-    expect(path.parentElement?.getAttribute('opacity')).toBe('0.75')
-    act(() => container.querySelector<HTMLElement>('[data-panel-connection-hit]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(dialog()).not.toBeNull()
-    act(() => dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    act(() => view.setState({ selection: ['target'] }))
+    const overlay = document.createElement('div')
+    document.body.appendChild(overlay)
+    render(view, overlay)
     expect(container.querySelector('[data-panel-relation-chip]')).not.toBeNull()
-    expect(path.parentElement?.getAttribute('opacity')).toBe('1')
-  })
-
-  it('draws idle lines neutral and outlines the panel a lit connection reaches', () => {
-    const view = open(standardDocument(), true, [])
-    addRelation(WS, 'agent', 'browser', 'use')
-    render(view)
-    expect(container.querySelector('[data-panel-connection="relation"]')!.getAttribute('stroke')).toBe('var(--text-muted)')
-    expect(container.querySelector('[data-panel-connection-outline]')).toBeNull()
-    act(() => view.setState({ selection: ['source'] }))
-    expect(container.querySelector('[data-panel-connection="relation"]')!.getAttribute('stroke')).not.toBe('var(--text-muted)')
-    expect(container.querySelector('[data-panel-connection-outline="target"]')).not.toBeNull()
-    expect(container.querySelector('[data-panel-connection-outline="source"]')).toBeNull()
-  })
-
-  it('opens the meaning as a dialog, not a dropdown', () => {
-    const view = open(standardDocument())
-    addRelation(WS, 'agent', 'browser', 'use')
-    render(view)
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.click())
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
-    expect(dialog().getAttribute('aria-label')).toBe('Connection')
-  })
-
-  it('picks a meaning with a number key and moves between rows with arrows', () => {
-    const view = open(standardDocument())
-    addRelation(WS, 'agent', 'browser', 'use')
-    render(view)
-    act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.click())
-    const rows = () => [...dialog().querySelectorAll<HTMLElement>('[data-list-row]')]
-    rows()[0].focus()
-    act(() => { rows()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) })
-    expect(document.activeElement).toBe(rows()[1])
-    act(() => { rows()[1].dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true })) })
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
-    expect(relations()[0].kind).not.toBe('use')
+    expect(container.querySelector('[aria-label="Connection meaning"]')).toBeNull()
+    expect(overlay.querySelector('[aria-label="Connection meaning"]')).not.toBeNull()
+    expect(overlay.querySelector('[data-panel-relation-chip]')).toBeNull()
+    act(() => root.render(<div />))
+    overlay.remove()
   })
 
   it('drags the relationship chip as a zoom-aware point on the curve, sending one op', () => {
@@ -286,12 +243,11 @@ describe('PanelConnectionLayer', () => {
     expect(container.querySelector<HTMLElement>('[data-panel-relation-selector]')!.style.left).toBe('320px')
   })
 
-  it('removes a connection from its dialog', () => {
+  it('removes a connection from the persistent selector', () => {
     const view = open(standardDocument())
     const relationId = addRelation(WS, 'agent', 'browser', 'use')
     render(view)
-    act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.click())
-    const remove = dialog().querySelector(`[data-panel-connection-delete="${relationId}"]`)
+    const remove = container.querySelector(`[data-panel-connection-delete="${relationId}"]`)
     expect(remove).not.toBeNull()
     act(() => remove!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(relations()).toEqual([])
@@ -302,10 +258,10 @@ describe('PanelConnectionLayer', () => {
     addRelation(WS, 'agent', 'browser', 'use')
     render(view)
     act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const add = [...dialog().querySelectorAll<HTMLButtonElement>('button')]
+    const add = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
       .find((button) => button.textContent?.includes('Add custom relationship'))!
     act(() => add.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const input = dialog().querySelector<HTMLInputElement>('[data-panel-relation-custom-input]')!
+    const input = container.querySelector<HTMLInputElement>('[data-panel-relation-custom-input]')!
     act(() => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'summarizes for')
       input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -327,11 +283,11 @@ describe('PanelConnectionLayer', () => {
       </div>,
     ))
     act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    expect(dialog().textContent).toContain('Saved relationships')
-    const edit = dialog().querySelector<HTMLButtonElement>('[aria-label="Edit saved relationship summarizes for"]')!
+    expect(container.textContent).toContain('Saved relationships')
+    const edit = container.querySelector<HTMLButtonElement>('[aria-label="Edit saved relationship summarizes for"]')!
     expect(edit.nextElementSibling?.getAttribute('aria-label')).toBe('Delete saved relationship summarizes for')
     act(() => edit.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const input = dialog().querySelector<HTMLInputElement>('[aria-label="Edit saved relationship summarizes for"]')!
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Edit saved relationship summarizes for"]')!
     act(() => input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 10, clientY: 10 })))
     expect(canvasMouseDown).not.toHaveBeenCalled()
     expect(input.classList.contains('select-text')).toBe(true)
@@ -342,13 +298,13 @@ describe('PanelConnectionLayer', () => {
     act(() => input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
     expect(settings.labels()).toEqual(['reports to', 'checks with'])
 
-    const reuse = [...dialog().querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+    const reuse = [...container.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')]
       .find((button) => button.textContent?.includes('reports to'))!
     act(() => reuse.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(container.textContent).toContain('reports to')
 
     act(() => container.querySelector<HTMLElement>('[data-panel-relation-trigger]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const remove = dialog().querySelector<HTMLButtonElement>('[aria-label="Delete saved relationship reports to"]')!
+    const remove = container.querySelector<HTMLButtonElement>('[aria-label="Delete saved relationship reports to"]')!
     act(() => remove.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(settings.labels()).toEqual(['checks with'])
     expect(relations()[0].label).toBe('reports to')
@@ -372,10 +328,10 @@ describe('PanelConnectionLayer', () => {
     render(view)
     const path = () => container.querySelector('[data-panel-connection="relation"]')!
     const color = path().getAttribute('stroke')
-    expect(path().parentElement?.getAttribute('opacity')).toBe('1')
+    expect(path().hasAttribute('opacity')).toBe(false)
     setPending(false)
     render(view)
-    expect(path().parentElement?.getAttribute('opacity')).toBe('0.85')
+    expect(path().getAttribute('opacity')).toBe('0.3')
     expect(path().getAttribute('stroke')).toBe(color)
     expect(path().getAttribute('class')).toBe('cate-panel-connection')
     expect(container.querySelectorAll('path[data-panel-connection]')).toHaveLength(1)

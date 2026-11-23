@@ -3,7 +3,7 @@ import type { PanelRecord } from '@workspace/document/contract'
 import { panelDefinition, panelRowLabel } from '@client/host'
 import { isIconName } from '@kernel/interaction/contract'
 import { Icon, ShimmerText } from '../../kernel/interaction'
-import { useTheme, useWorktreeColor, worktreeColor } from '../../workspace/repository'
+import { useWorktreeColor } from '../../workspace/repository'
 import { useDocument } from '../document'
 import { usePanelDecorations, type PanelDecoration } from './panelDecorations'
 
@@ -29,9 +29,7 @@ export interface PanelTitleProps {
 
 /** One rendering for panel labels: logo/type icon, title, activity and status. */
 export function PanelTitle({ record, decoration, worktreeKey, iconSize = 12, className = '', textClassName = '', iconClassName = '', onDoubleClick, children }: PanelTitleProps) {
-  const full = useWorktreeColor(worktreeKey)
-  // Softened toward the normal text color so the hue reads without glowing.
-  const color = full ? `color-mix(in srgb, ${full} 60%, var(--text-primary))` : undefined
+  const color = useWorktreeColor(worktreeKey)
   const title = panelTitleLabel(record, decoration)
   return <span className={`flex min-w-0 flex-1 items-center gap-1.5 ${className}`}>
     <span className={`shrink-0 ${iconClassName}`}><PanelIcon type={record.type} size={iconSize} logo={decoration?.logo} logoAlt={decoration?.logoAlt} /></span>
@@ -40,7 +38,7 @@ export function PanelTitle({ record, decoration, worktreeKey, iconSize = 12, cla
   </span>
 }
 
-export function PanelIcon({ type, size, logo, logoAlt }: { type: string; size: number; logo?: string | null; logoAlt?: string | null }) {
+function PanelIcon({ type, size, logo, logoAlt }: { type: string; size: number; logo?: string | null; logoAlt?: string | null }) {
   const [failed, setFailed] = useState(false)
   useEffect(() => { setFailed(false) }, [logo])
   if (logo && !failed) return <img src={logo} alt="" title={logoAlt ?? undefined} width={size} height={size} className="block object-contain" style={{ width: size, height: size }} draggable={false} onError={() => setFailed(true)} />
@@ -53,17 +51,13 @@ export function usePanelTitles(workspaceId: string | null | undefined) {
   const decorations = usePanelDecorations(workspaceId ?? '')
   const worktrees = useDocument(workspaceId, (document) => document.worktrees)
   const tint = Object.keys(worktrees).length >= 2
-  const theme = useTheme()
   return useMemo(() => ({
     decorations,
-    /** The panel's worktree colour as CSS, only with 2+ worktrees. */
-    tint: (record: PanelRecord): string | undefined =>
-      tint && record.worktreeId ? worktreeColor(worktrees[record.worktreeId]?.color, theme) : undefined,
     label: (record: PanelRecord) => panelTitleLabel(record, decorations[record.id]),
     props: (record: PanelRecord): PanelTitleProps => ({
       record,
       decoration: decorations[record.id],
       worktreeKey: tint && record.worktreeId ? worktrees[record.worktreeId]?.color : undefined,
     }),
-  }), [decorations, worktrees, tint, theme])
+  }), [decorations, worktrees, tint])
 }

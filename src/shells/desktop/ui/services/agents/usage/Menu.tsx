@@ -2,7 +2,7 @@
 // overview's workspace menu.
 
 import { useRef, useState, type ReactNode } from 'react'
-import { PopoverSurface, useDismissableLayer, useMenuNumbers, useViewportPopoverPosition } from '../../../kernel/interaction'
+import { PopoverSurface, useDismissableLayer, useViewportPopoverPosition } from '../../../kernel/interaction'
 
 export function Menu({ trigger, triggerClassName, width = 320, children }: {
   trigger: (open: boolean) => ReactNode
@@ -17,7 +17,6 @@ export function Menu({ trigger, triggerClassName, width = 320, children }: {
     left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
     gap: 6,
   }), popoverRef)
-  useMenuNumbers(popoverRef, open)
   useDismissableLayer({ open, contentRef: popoverRef, triggerRefs: [triggerRef], onDismiss: () => setOpen(false) })
   return (
     <>
@@ -32,7 +31,7 @@ export function Menu({ trigger, triggerClassName, width = 320, children }: {
       >
         {trigger(open)}
       </button>
-      <PopoverSurface popoverRef={popoverRef} pos={pos} portalTarget={portalTarget} width={width} className="max-w-[calc(100vw-2rem)] p-1 text-[13px]">
+      <PopoverSurface popoverRef={popoverRef} pos={pos} portalTarget={portalTarget} width={width} className="max-w-[calc(100vw-2rem)] rounded-xl p-1 text-[13px]">
         <div role="menu">{children}</div>
       </PopoverSurface>
     </>
@@ -41,7 +40,7 @@ export function Menu({ trigger, triggerClassName, width = 320, children }: {
 
 export function MenuItem({ icon, onClick, children }: { icon?: ReactNode; onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" role="menuitem" data-menu-item onClick={onClick} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-primary hover:bg-hover">
+    <button type="button" role="menuitem" onClick={onClick} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-primary hover:bg-hover">
       {icon}
       {children}
     </button>

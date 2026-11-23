@@ -23,6 +23,7 @@ export const DESKTOP_CHANNELS = {
   windowCloseRequested: 'cate-desktop:window:close-requested',
   anyFullscreen: 'cate-desktop:window:any-fullscreen',
 
+  menuContext: 'cate-desktop:menu:context',
   menuBarItems: 'cate-desktop:menu:bar-items',
   menuPopupBarItem: 'cate-desktop:menu:popup-bar-item',
   menuNativeAction: 'cate-desktop:menu:native-action',
@@ -30,6 +31,7 @@ export const DESKTOP_CHANNELS = {
   menuSetModel: 'cate-desktop:menu:set-model',
   browserShortcut: 'cate-desktop:menu:browser-shortcut',
 
+  dialogMessageBox: 'cate-desktop:dialog:message-box',
   dialogOpen: 'cate-desktop:dialog:open',
   canvasBackgroundPick: 'cate-desktop:canvas-background:pick',
   canvasBackgroundRead: 'cate-desktop:canvas-background:read',

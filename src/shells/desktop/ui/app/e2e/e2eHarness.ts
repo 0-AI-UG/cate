@@ -28,7 +28,7 @@ export interface CanvasE2EHooks {
   moveNode(nodeId: string, origin: Point): void
   seedWorktrees(specs: { color: string; label?: string }[], rootPath?: string): { id: string; path: string; color: string }[]
   tagNodeWorktree(nodeId: string, worktreeId: string): boolean
-  worktreeDebug(): { liveWorktrees: number; metaWorktrees: number; taggedNodes: number; distinctGroups: number }
+  worktreeDebug(): { liveWorktrees: number; metaWorktrees: number; taggedNodes: number; distinctGroups: number; glActive: boolean }
 }
 
 export interface ClientE2E {

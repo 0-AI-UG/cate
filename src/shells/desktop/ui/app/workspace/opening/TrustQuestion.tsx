@@ -67,7 +67,7 @@ export function WorkspaceTrustDialog({ store = defaultStore }: { store?: TrustSt
       icon={ICON}
       title={TITLE}
       dismissable={!answering.busy}
-      bodyClassName="px-4 py-3"
+      bodyClassName="px-5 py-4"
     >
       <TrustQuestion prompt={prompt} answering={answering} />
     </Modal>
@@ -81,7 +81,7 @@ export function WorkspaceTrustCard({ workspaceId, store = defaultStore }: { work
   const answering = useAnswer(store)
   if (prompt?.workspaceId !== workspaceId) return null
   return (
-    <ModalCard className="w-[420px] max-w-[92%]" icon={ICON} title={TITLE} showClose={false} bodyClassName="px-4 py-3">
+    <ModalCard className="w-[420px] max-w-[92%]" icon={ICON} title={TITLE} showClose={false} bodyClassName="px-5 py-4">
       <div role="group" aria-label={TITLE}>
         <TrustQuestion prompt={prompt} answering={answering} />
       </div>

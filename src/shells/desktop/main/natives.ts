@@ -7,6 +7,7 @@ import { app, BrowserWindow, clipboard, dialog, Notification, shell, type IpcMai
 import {
   CANVAS_WALLPAPER_PICKER_EXTENSIONS,
   DESKTOP_CHANNELS as C,
+  type MessageBoxRequest,
   type NotificationRequest,
   type OpenDialogRequest,
 } from '../contract'
@@ -46,6 +47,25 @@ export function registerNatives(deps: NativesDeps): void {
     const win = BrowserWindow.fromWebContents(event.sender)
     return win && !win.isDestroyed() ? win : undefined
   }
+  const messageBox = (event: IpcMainInvokeEvent, options: Electron.MessageBoxOptions) => {
+    const win = windowOf(event)
+    return win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)
+  }
+
+  handle(C.dialogMessageBox, async (event, request: MessageBoxRequest) => {
+    const buttons = Array.isArray(request?.buttons) && request.buttons.length > 0 ? request.buttons.map(String) : ['OK']
+    const { response } = await messageBox(event, {
+      type: request.type ?? 'none',
+      message: String(request.message ?? ''),
+      detail: request.detail,
+      buttons,
+      defaultId: request.defaultId,
+      cancelId: request.cancelId ?? buttons.length - 1,
+      noLink: true,
+    })
+    return response
+  })
+
   handle(C.dialogOpen, async (event, request: OpenDialogRequest = {}) => {
     const win = windowOf(event)
     const properties: Electron.OpenDialogOptions['properties'] = request.directory

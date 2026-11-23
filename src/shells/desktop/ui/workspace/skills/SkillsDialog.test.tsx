@@ -30,72 +30,83 @@ afterEach(async () => {
 
 const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('button')]
 
-it('renders the catalog in a dialog', async () => {
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} />))
-  const dialog = document.querySelector('[role="dialog"]')!
-  expect(dialog).not.toBeNull()
-  expect(dialog.textContent).toContain('Skills')
-  expect(dialog.textContent).toContain('Example skill')
+it('renders the catalog in the content area without a modal', async () => {
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
+  expect(slot.querySelector('section[aria-label="Skills"]')).not.toBeNull()
+  expect(slot.querySelector('h1')?.textContent).toBe('Skills')
+  expect(slot.textContent).toContain('Example skill')
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
 })
 
 it('disables install without an open workspace', async () => {
-  await act(async () => root.render(<SkillsDialog workspaceId={null} onClose={() => {}} />))
-  expect(document.body.textContent).toContain('Open a workspace to browse skills.')
+  await act(async () => root.render(<SkillsDialog workspaceId={null} onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Open a workspace to browse skills.')
+})
+
+it('uses the host header chrome when given', async () => {
+  await act(async () => root.render(
+    <SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} renderHeader={(actions) => <div data-testid="chrome">{actions}</div>} />,
+  ))
+  expect(slot.querySelector('[data-testid="chrome"]')?.textContent).toContain('Add a skill source')
+  expect(slot.querySelector('h1')).toBeNull()
 })
 
 it('closes and opens skills settings from the gear', async () => {
   const onClose = vi.fn()
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={onClose} />))
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={onClose} container={slot} />))
   const settings = buttons().find((b) => b.getAttribute('aria-label') === 'Skill sources & settings')!
   await act(async () => settings.click())
   expect(onClose).toHaveBeenCalled()
   expect(ui.openSettings).toHaveBeenCalledWith('skills')
 })
 
-it('closes with Escape', async () => {
+it('opens full screen without a container, with a Back button and Escape', async () => {
   const onClose = vi.fn()
   await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={onClose} />))
-  expect(document.querySelector('[role="dialog"][aria-label="Skills"]')).not.toBeNull()
-  await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+  const page = document.querySelector('section[aria-label="Skills"]')!
+  expect(page.classList.contains('fixed')).toBe(true)
+  await act(async () => page.querySelector<HTMLButtonElement>('header button')!.click())
   expect(onClose).toHaveBeenCalledTimes(1)
+  await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+  expect(onClose).toHaveBeenCalledTimes(2)
 })
 
 it('switches layouts with one button and preserves the search', async () => {
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} />))
-  const input = document.querySelector<HTMLInputElement>('input')!
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
+  const input = slot.querySelector<HTMLInputElement>('input')!
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Example')
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
-  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Card view"]')!.click())
-  expect(document.querySelector('article')?.classList.contains('flex-col')).toBe(true)
-  expect(document.querySelectorAll('button[aria-label="Card view"], button[aria-label="List view"]')).toHaveLength(1)
+  await act(async () => slot.querySelector<HTMLButtonElement>('button[aria-label="Card view"]')!.click())
+  expect(slot.querySelector('article')?.classList.contains('flex-col')).toBe(true)
+  expect(slot.querySelectorAll('button[aria-label="Card view"], button[aria-label="List view"]')).toHaveLength(1)
   expect(input.value).toBe('Example')
-  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="List view"]')!.click())
-  expect(document.querySelector('article')?.classList.contains('flex-col')).toBe(false)
+  await act(async () => slot.querySelector<HTMLButtonElement>('button[aria-label="List view"]')!.click())
+  expect(slot.querySelector('article')?.classList.contains('flex-col')).toBe(false)
 })
 
 it('groups repositories and lets users open their skills and return', async () => {
   fake.skills.index.mockResolvedValue([entry('Planning', 'owner/tools'), entry('Review', 'owner/tools'), entry('Design', 'other/design')])
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} />))
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
   const clickText = async (label: string) => {
-    const button = [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)!
+    const button = [...slot.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)!
     await act(async () => button.click())
   }
   await clickText('Repositories')
-  expect(document.querySelectorAll('button[aria-label^="Browse "]')).toHaveLength(2)
-  expect(document.body.textContent).toContain('2 skills')
-  await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Browse owner/tools"]')!.click())
-  expect(document.querySelectorAll('article')).toHaveLength(2)
-  expect(document.body.textContent).not.toContain('Design')
+  expect(slot.querySelectorAll('button[aria-label^="Browse "]')).toHaveLength(2)
+  expect(slot.textContent).toContain('2 skills')
+  await act(async () => slot.querySelector<HTMLButtonElement>('button[aria-label="Browse owner/tools"]')!.click())
+  expect(slot.querySelectorAll('article')).toHaveLength(2)
+  expect(slot.textContent).not.toContain('Design')
   await clickText('All repositories')
-  expect(document.querySelectorAll('button[aria-label^="Browse "]')).toHaveLength(2)
+  expect(slot.querySelectorAll('button[aria-label^="Browse "]')).toHaveLength(2)
 })
 
 it('installs through the agent menu and updates installed copies per target', async () => {
   fake.skills.listInstalled.mockResolvedValue([{ skillId: 'Example skill', name: 'Example skill', targetId: 'codex', path: '/w/.codex/skills/x/SKILL.md', origin: 'local' }])
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} />))
-  expect(document.body.textContent).toContain('Installed · 1')
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Installed · 1')
   const update = buttons().find((b) => b.getAttribute('aria-label') === 'Update installed copies from source')!
   await act(async () => update.click())
   expect(fake.skills.install).toHaveBeenCalledWith({ entry: expect.objectContaining({ id: 'Example skill' }), targetId: 'codex' })
@@ -111,34 +122,34 @@ it('installs through the agent menu and updates installed copies per target', as
 
 it('shows an install failure', async () => {
   fake.skills.install.mockRejectedValue(new Error('disk full'))
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} />))
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
   const install = buttons().find((b) => b.textContent?.startsWith('Install'))!
   vi.spyOn(install, 'getBoundingClientRect').mockReturnValue({ bottom: 10, left: 10 } as DOMRect)
   await act(async () => install.click())
   await act(async () => buttons().find((b) => b.textContent === 'Claude Code')!.click())
-  expect(document.body.textContent).toContain('disk full')
+  expect(slot.textContent).toContain('disk full')
 })
 
 
 it('waits for the selected workspace’s runtime instead of asking to open a workspace', async () => {
-  await act(async () => root.render(<SkillsDialog workspaceId="connecting" onClose={() => {}} />))
-  expect(document.body.textContent).toContain('Loading skills')
-  expect(document.body.textContent).not.toContain('Open a workspace to browse skills.')
-  expect(document.body.textContent).not.toContain('No catalog yet')
+  await act(async () => root.render(<SkillsDialog workspaceId="connecting" onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Loading skills')
+  expect(slot.textContent).not.toContain('Open a workspace to browse skills.')
+  expect(slot.textContent).not.toContain('No catalog yet')
 })
 
 it('shows a catalog error without claiming the catalog is empty', async () => {
   fake.skills.index.mockRejectedValue(new Error('Runtime unavailable'))
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} />))
-  expect(document.body.textContent).toContain('Runtime unavailable')
-  expect(document.body.textContent).not.toContain('No catalog yet')
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Runtime unavailable')
+  expect(slot.textContent).not.toContain('No catalog yet')
 })
 
 it('clears a catalog failure when refreshing succeeds', async () => {
   fake.skills.index.mockRejectedValueOnce(new Error('Runtime unavailable'))
-  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} />))
-  expect(document.body.textContent).toContain('Runtime unavailable')
-  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Refresh catalog"]')!.click())
-  expect(document.body.textContent).toContain('Example skill')
-  expect(document.body.textContent).not.toContain('Runtime unavailable')
+  await act(async () => root.render(<SkillsDialog workspaceId="ws" onClose={() => {}} container={slot} />))
+  expect(slot.textContent).toContain('Runtime unavailable')
+  await act(async () => slot.querySelector<HTMLButtonElement>('[aria-label="Refresh catalog"]')!.click())
+  expect(slot.textContent).toContain('Example skill')
+  expect(slot.textContent).not.toContain('Runtime unavailable')
 })

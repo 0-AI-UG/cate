@@ -13,14 +13,13 @@ import { useResolvedShortcuts } from '../shortcuts/hooks'
 interface TooltipProps {
   action?: ActionId
   label: string
-  content?: React.ReactNode
   placement?: 'top' | 'bottom' | 'right' | 'left'
   /** Hides the label while something else speaks for the element. */
   suppressed?: boolean
   children: React.ReactElement<React.HTMLAttributes<HTMLElement>>
 }
 
-export const Tooltip: React.FC<TooltipProps> = ({ label, content, action, placement = 'bottom', suppressed = false, children }) => {
+export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bottom', suppressed = false, children }) => {
   const shortcuts = useResolvedShortcuts()
   const key = shortcutDisplay(shortcuts, action)
   const text = key ? `${label} (${key})` : label
@@ -124,7 +123,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, content, action, placem
             ref={tooltipRef}
             id={tooltipId}
             role="tooltip"
-            className={`fixed z-[100] pointer-events-none px-1.5 py-0.5 border border-subtle text-[11px] text-primary whitespace-normal shadow-lg ${content ? 'rounded-lg bg-surface-1' : 'rounded bg-surface-1'}`}
+            className="fixed z-[100] pointer-events-none px-1.5 py-0.5 rounded bg-surface-2 border border-subtle text-[11px] text-primary whitespace-normal shadow-lg"
             style={{
               visibility: 'hidden',
               width: 'max-content',
@@ -132,7 +131,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ label, content, action, placem
               overflowWrap: 'anywhere',
             }}
           >
-            {content ?? text}
+            {text}
           </div>,
           document.body,
         )}

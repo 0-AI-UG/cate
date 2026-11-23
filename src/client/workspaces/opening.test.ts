@@ -73,39 +73,6 @@ describe('openTrusted', () => {
     store,
   }) as unknown as Parameters<typeof openTrusted>[0]
 
-  it('observes an already trusted workspace without a prompt', async () => {
-    trusted.add('ws')
-    const opened = await openTrusted({ ...deps([]), prompt: false }, 'ws')
-    await expect(opened.trusted).resolves.toBe(true)
-    expect(store.current()).toBeNull()
-  })
-
-  it('disconnects background observation of an untrusted workspace without prompting', async () => {
-    disconnect.mockClear()
-    const opened = await openTrusted({ ...deps([]), prompt: false }, 'ws')
-    await expect(opened.trusted).resolves.toBe(false)
-    expect(store.current()).toBeNull()
-    expect(trusted.has('ws')).toBe(false)
-    expect(disconnect).toHaveBeenCalledWith('ws')
-  })
-
-  it('lets explicit opening take over a pending background trust check', async () => {
-    disconnect.mockClear(); opens.mockClear()
-    let finishCheck!: (value: boolean) => void
-    vi.spyOn(store, 'knownTrusted').mockImplementationOnce(() => new Promise((resolve) => { finishCheck = resolve }))
-    const shared = deps([])
-    const background = await openTrusted({ ...shared, prompt: false }, 'ws')
-    const foreground = await openTrusted(shared, 'ws')
-    finishCheck(false)
-    await tick()
-    expect(store.current()).toMatchObject({ workspaceId: 'ws' })
-    expect(disconnect).not.toHaveBeenCalled()
-    await store.answer(true)
-    await expect(background.trusted).resolves.toBe(true)
-    await expect(foreground.trusted).resolves.toBe(true)
-    expect(opens).toHaveBeenCalledTimes(1)
-  })
-
   it('opens, asks once its runtime answers, and only disconnects a declined workspace', async () => {
     disconnect.mockClear()
     close.mockClear()

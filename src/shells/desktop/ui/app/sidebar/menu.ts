@@ -1,8 +1,13 @@
-// Context menus of the sidebar, drawn in the app like every other menu.
+// Context menus of the sidebar. The desktop shell shows them natively; a shell
+// without menus gets none (the same actions are in the command palette and
+// the settings window).
 
-import { showContextMenu } from '../../kernel/interaction'
-import type { MenuItem } from '../desktop'
+import { desktopPort, type MenuItem } from '../desktop'
 
 export type { MenuItem }
 
-export const showMenu = (items: MenuItem[]): Promise<string | null> => showContextMenu(items)
+export async function showMenu(items: MenuItem[]): Promise<string | null> {
+  const port = desktopPort()
+  if (!port) return null
+  return port.showContextMenu(items)
+}

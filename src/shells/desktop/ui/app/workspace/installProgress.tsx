@@ -72,13 +72,10 @@ export function describeInstall(progress: RuntimeInstallProgress, where?: string
 export function InstallProgressView({ progress, where }: { progress: RuntimeInstallProgress; where?: string }): JSX.Element {
   const { label, value, detail } = describeInstall(progress, where)
   return (
-    <div role="status" className="flex flex-col gap-2.5 py-2" data-install-progress={progress.phase}>
+    <div role="status" className="flex flex-col gap-1.5" data-install-progress={progress.phase}>
       <span className="text-[12px] text-secondary">{label}</span>
-      <ProgressBar value={value} label={label} className="!h-1 !bg-surface-3" />
-      <div className="flex items-center justify-between gap-3 text-[11px] tabular-nums text-muted">
-        <span>{detail ?? 'Finishing setup…'}</span>
-        {value !== null && <span>{Math.round(Math.max(0, Math.min(1, value)) * 100)}%</span>}
-      </div>
+      <ProgressBar value={value} label={label} />
+      {detail && <span className="text-[11px] text-muted tabular-nums">{detail}</span>}
     </div>
   )
 }
