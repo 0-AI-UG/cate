@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { setRuntimeResolver, tryRuntimeFor } from '@kernel/rpc/client'
 import { KNOWN_RUNTIMES_DOCUMENT } from '@runtime/pairing/client'
 import { WorkspaceConnections, createClientIdentity, type ShellTransports } from '@client/connections'
 import { targetOf, workspaceLocation, WORKSPACES_DOCUMENT, WorkspaceList } from './workspaceList'
+import { openTrusted } from './opening'
 import { RUNTIME_CAPABILITIES } from '@panels/capabilities'
 
 const never = () => new Promise<never>(() => {})
@@ -16,10 +17,10 @@ afterEach(() => {
   for (const fn of cleanup.splice(0)) fn()
 })
 
-async function setup(store = createMemoryDeviceStore()) {
+async function setup(store = createMemoryDeviceStore(), shellTransports = transports) {
   let t = 1000
   const connections = new WorkspaceConnections({
-      capabilities: RUNTIME_CAPABILITIES, identity, transports, version: '1.0.0' })
+      capabilities: RUNTIME_CAPABILITIES, identity, transports: shellTransports, version: '1.0.0' })
   const list = new WorkspaceList({ store, connections, now: () => ++t })
   // As the client core does.
   const stopResolver = setRuntimeResolver((workspaceId) => connections.get(workspaceId)?.runtime ?? null)
@@ -102,6 +103,42 @@ describe('WorkspaceList', () => {
     expect(connections.get(entry.id)).toBe(connection)
     expect(tryRuntimeFor(entry.id)).toBe(connection.runtime)
     expect(list.getSnapshot().open).toEqual([entry.id])
+  })
+
+  it('observes only a running local workspace and leaves Recents alone when it is stopped', async () => {
+    const dialLocal = vi.fn(async (_root: string, _mode?: string) => { throw new Error('No runtime') })
+    const device = createMemoryDeviceStore()
+    const { list, connections } = await setup(device, { ...transports, dialLocal })
+    const older = await list.addLocal('/older')
+    const newer = await list.addLocal('/newer')
+    const before = await device.get(WORKSPACES_DOCUMENT)
+
+    const opened = await openTrusted({ workspaces: list, connections, prompt: false }, older.id)
+    expect(dialLocal).toHaveBeenCalledExactlyOnceWith('/older', 'running-only')
+    expect(list.getRecentSnapshot().map((entry) => entry.id)).toEqual([newer.id, older.id])
+    await expect(opened.trusted).resolves.toBe(false)
+    expect(connections.get(older.id)).toBeUndefined()
+    expect(await device.get(WORKSPACES_DOCUMENT)).toEqual(before)
+  })
+
+  it('allows an explicit open to start a runtime while a background dial is failing', async () => {
+    let failDial!: (cause: Error) => void
+    const dialLocal = vi.fn((_root: string, mode?: string) => (mode === 'running-only'
+      ? new Promise<never>((_resolve, reject) => { failDial = reject }) : never()))
+    const { list, connections } = await setup(createMemoryDeviceStore(), { ...transports, dialLocal })
+    const workspace = await list.addLocal('/w')
+    const background = await openTrusted({ workspaces: list, connections, prompt: false }, workspace.id)
+    const connection = connections.get(workspace.id)
+
+    const foreground = await openTrusted({ workspaces: list, connections }, workspace.id)
+    failDial(new Error('No runtime'))
+    await vi.waitFor(() => expect(dialLocal).toHaveBeenLastCalledWith('/w'))
+    expect(connections.get(workspace.id)).toBe(connection)
+    expect(list.get(workspace.id)?.lastOpenedAt).toBeGreaterThan(workspace.lastOpenedAt)
+
+    list.disconnect(workspace.id)
+    await expect(background.trusted).resolves.toBe(false)
+    await expect(foreground.trusted).resolves.toBe(false)
   })
 
   const kinds = {

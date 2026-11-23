@@ -1,11 +1,11 @@
 // A workspace row's one sharing spot, opening Share on click. It shows one
 // thing at a time: who else is in the workspace (architecture 7.6), one small
 // avatar per other client with its device's initials; else, while the
-// workspace is open beyond its machine, who can join; else, on hover or when
-// selected, a button to invite a device.
+// workspace is open beyond its machine, who can join. The workspace actions
+// provide the invitation command.
 
 import type { MouseEvent } from 'react'
-import { Globe, UserPlus, Wifi } from 'lucide-react'
+import { Globe, Wifi } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
 import { useWorkspaceSetting } from '../../kernel/settings'
 import { useOtherClients } from '../../client/document'
@@ -17,10 +17,9 @@ const MAX_SHOWN = 3
 
 const SLOT = 'flex-shrink-0 flex items-center justify-center focus:outline-none'
 
-export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
+export function ShareSlot({ workspaceId, isOpen, onShare }: {
   workspaceId: string
   isOpen: boolean
-  isSelected: boolean
   onShare: () => void
 }): JSX.Element {
   const others = useOtherClients(workspaceId)

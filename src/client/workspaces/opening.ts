@@ -84,15 +84,16 @@ export function subscribeWorkspacePhase(
   }
 }
 
-/** Resolves true once the connection is connected, false when it closes.
+/** Resolves true once the connection is connected, false when it closes or
+ *  a background observation cannot connect on its first try.
  *  Trust is asked only of a runtime that answers: an incompatible one
  *  answers nothing but its update, so the mismatch is resolved first. */
-function whenConnected(connection: WorkspaceConnection | undefined): Promise<boolean> {
+function whenConnected(connection: WorkspaceConnection | undefined, keepWaiting = () => true): Promise<boolean> {
   if (!connection) return Promise.resolve(false)
   return new Promise((resolve) => {
     const check = () => {
       const { kind } = connection.state
-      if (kind !== 'connected' && kind !== 'closed') return
+      if (kind !== 'connected' && kind !== 'closed' && (kind === 'connecting' || keepWaiting())) return
       off()
       resolve(kind === 'connected')
     }
@@ -101,22 +102,12 @@ function whenConnected(connection: WorkspaceConnection | undefined): Promise<boo
   })
 }
 
-/** After a workspace was opened: waits for its runtime and makes sure the
- *  workspace is trusted, asking through `store` when it is not. `declined`:
- *  the person said no; `closed`: the connection closed first. */
-async function ensureOpenedTrusted(
-  deps: { workspaces: Pick<WorkspaceList, 'get'>; connections: Pick<WorkspaceConnections, 'get'>; store?: TrustStore; prompt?: boolean },
-  workspaceId: string,
-): Promise<'trusted' | 'declined' | 'closed'> {
-  const entry = deps.workspaces.get(workspaceId)
-  if (!entry || !(await whenConnected(deps.connections.get(workspaceId)))) return 'closed'
-  const label = workspaceLocation(entry) ?? entry.name
-  const store = deps.store ?? trustStore
-  const trusted = deps.prompt === false ? await store.knownTrusted(workspaceId) : await store.ensureTrusted(workspaceId, label)
-  return trusted ? 'trusted' : 'declined'
+interface PendingOpen {
+  prompt: boolean
+  connection?: WorkspaceConnection
+  result: Promise<{ trusted: Promise<boolean> }>
+  finish(): void
 }
-
-interface PendingOpen { prompt: boolean; result: Promise<{ trusted: Promise<boolean> }> }
 const pendingOpens = new WeakMap<object, Map<string, PendingOpen>>()
 
 /** Opens a workspace (when it is not open) the way every client does: the
@@ -127,7 +118,7 @@ const pendingOpens = new WeakMap<object, Map<string, PendingOpen>>()
  *  `trusted` settles once the question is answered. */
 export async function openTrusted(
   deps: {
-    workspaces: Pick<WorkspaceList, 'get' | 'getSnapshot' | 'open' | 'disconnect'>
+    workspaces: Pick<WorkspaceList, 'get' | 'getSnapshot' | 'open' | 'observe' | 'disconnect'>
     connections: Pick<WorkspaceConnections, 'get'>
     store?: TrustStore
     /** Background observation must not ask for or grant trust. */
@@ -135,32 +126,60 @@ export async function openTrusted(
   },
   workspaceId: string,
 ): Promise<{ trusted: Promise<boolean> }> {
-  let pending = pendingOpens.get(deps.connections)
-  if (!pending) { pending = new Map(); pendingOpens.set(deps.connections, pending) }
+  const pending = pendingOpens.get(deps.connections) ?? new Map<string, PendingOpen>()
+  pendingOpens.set(deps.connections, pending)
   const existing = pending.get(workspaceId)
+  const current = deps.connections.get(workspaceId)
   if (existing) {
-    // Selecting a project takes over a background trust check. It must not
-    // bypass the question or lose its connection while the person answers.
-    if (deps.prompt !== false) existing.prompt = true
-    return existing.result
-  }
-  if (deps.workspaces.getSnapshot().open.includes(workspaceId)) return { trusted: Promise.resolve(true) }
-  const release = holdTrusting(workspaceId)
-  const job: PendingOpen = { prompt: deps.prompt !== false, result: Promise.resolve({ trusted: Promise.resolve(false) }) }
-  const finish = () => { pending!.delete(workspaceId); release() }
-  job.result = (async () => {
-    try { await Promise.resolve().then(() => deps.workspaces.open(workspaceId)) }
-    catch (err) { finish(); throw err }
-    const trusted = (async () => {
-      let answer = await ensureOpenedTrusted({ ...deps, prompt: job.prompt }, workspaceId)
-      if (answer === 'declined' && deps.prompt === false && job.prompt) {
-        answer = await ensureOpenedTrusted({ ...deps, prompt: true }, workspaceId)
+    if (existing.connection && existing.connection !== current) {
+      existing.finish()
+    } else {
+      // A selection records use and allows startup on this same connection.
+      if (deps.prompt !== false && !existing.prompt) {
+        existing.prompt = true
+        await deps.workspaces.open(workspaceId)
       }
-      if (answer === 'declined') deps.workspaces.disconnect(workspaceId)
-      return answer === 'trusted'
-    })().finally(finish)
-    return { trusted }
-  })()
+      return existing.result
+    }
+  }
+  if (deps.workspaces.getSnapshot().open.includes(workspaceId)) {
+    if (deps.prompt !== false && current?.observing) await deps.workspaces.open(workspaceId)
+    return { trusted: Promise.resolve(true) }
+  }
+  const release = holdTrusting(workspaceId)
+  const job: PendingOpen = {
+    prompt: deps.prompt !== false,
+    finish() {
+      if (pending.get(workspaceId) === job) pending.delete(workspaceId)
+      release()
+    },
+    result: Promise.resolve().then(async () => {
+      const opening = deps.prompt === false ? deps.workspaces.observe(workspaceId) : deps.workspaces.open(workspaceId)
+      job.connection = deps.connections.get(workspaceId)
+      const opened = await opening
+      const connection = job.connection ??= opened
+      const trusted = (async () => {
+        const entry = deps.workspaces.get(workspaceId)
+        if (!entry || !connection) return false
+        const connected = await whenConnected(connection, () => job.prompt)
+        if (!connected && !(job.prompt && await whenConnected(connection))) {
+          if (deps.connections.get(workspaceId) === connection) deps.workspaces.disconnect(workspaceId)
+          return false
+        }
+        if (deps.connections.get(workspaceId) !== connection) return false
+        const store = deps.store ?? trustStore
+        let accepted = !job.prompt && await store.knownTrusted(workspaceId)
+        // A selection may promote observation while the trust read is pending.
+        if (!accepted && job.prompt && deps.connections.get(workspaceId) === connection) {
+          accepted = await store.ensureTrusted(workspaceId, workspaceLocation(entry) ?? entry.name)
+        }
+        if (deps.connections.get(workspaceId) !== connection) return false
+        if (!accepted) deps.workspaces.disconnect(workspaceId)
+        return accepted
+      })().finally(job.finish)
+      return { trusted }
+    }).catch((err: unknown) => { job.finish(); throw err }),
+  }
   pending.set(workspaceId, job)
   return job.result
 }

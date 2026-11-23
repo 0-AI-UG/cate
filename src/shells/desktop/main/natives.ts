@@ -1,7 +1,5 @@
-// The desktop `ClientUi` natives (kernel/interaction): message boxes, file pickers,
-// opening links and the device settings file, the clipboard and OS
-// notifications. Feature dialogs (confirm close terminal, ...) are message
-// boxes the renderer words.
+// Desktop OS integration: file pickers, opening links and the device settings
+// file, the clipboard, and notifications. Feature confirmations live in the renderer.
 
 import { app, BrowserWindow, clipboard, dialog, Notification, shell, type IpcMainInvokeEvent } from 'electron'
 import {

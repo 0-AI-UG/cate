@@ -36,6 +36,7 @@ import { createResumeStamps, type ResumeStamps } from './stamps'
 import { agentStepOf } from './steps'
 import { typePrompt } from './promptInput'
 import { createConversationResets } from './conversationResets'
+import { HOOK_STATUS_REFRESH_MS } from './hooks/agentHooks'
 
 /** The part of the terminal service the terminal agents use. */
 export type AgentTerminalService = Pick<TerminalService,
@@ -280,6 +281,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     // A CLI may defer its first lifecycle hook until input. Ask its session
     // store about the exact process, without guessing from nearby sessions.
     const info = terminals.get(scan.terminalId)
+    let processSessionCleared = false
     if (info && !stamps.latest(scan.terminalId)) {
       const candidates: Array<{ pid: number; agentId: AgentId }> = []
       const visited = new Set<number>()
@@ -294,7 +296,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       const candidate = candidates.length === 1 ? candidates[0] : null
       if (info.processPid !== candidate?.pid) {
         info.processPid = candidate?.pid
-        if (processSessions.delete(scan.terminalId)) changed(scan.terminalId)
+        processSessionCleared = processSessions.delete(scan.terminalId)
       }
       if (candidate && !info.probing && Date.now() >= (info.probeAfter ?? 0)) {
         info.probing = true
@@ -309,7 +311,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
             const resumed = info.resumedSession
             info.resumedSession = undefined
             if (resumed?.agentId === next.agentId && resumed.sessionId === next.sessionId && resumed.cwd === next.cwd) {
-              status.noteResumedSession(scan.terminalId, next.agentId!, next.sessionId)
+              status.noteResumedSession(scan.terminalId, next.agentId!, next.sessionId, candidate.pid)
             }
             const previous = processSessions.get(scan.terminalId)
             if (previous?.sessionId !== next.sessionId || previous.agentId !== next.agentId || previous.cwd !== next.cwd) {
@@ -333,9 +335,9 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const opened = openTerminalAgent(scan.activity, hook.agentId, hook.agentPresent)
     const agentId = opened?.id ?? hook.agentId
     const wasPresent = status.present(scan.terminalId)
-    status.notePresence(scan.terminalId, hook.agentPresent || opened !== null, !hook.agentPresent, agentId)
-    if (status.present(scan.terminalId) && agentId && hookAgent.get(scan.terminalId) !== agentId) hooksMissing(scan.terminalId, agentId)
-    if (wasPresent !== status.present(scan.terminalId)) changed(scan.terminalId)
+    status.notePresence(scan.terminalId, hook.agentPresent || opened !== null, !hook.agentPresent, agentId, info?.processPid)
+    if (status.present(scan.terminalId) && agentId) checkHookFiles(scan.terminalId, agentId)
+    if (processSessionCleared || wasPresent !== status.present(scan.terminalId)) changed(scan.terminalId)
   }))
 
   offs.push(hooks.subscribe((event) => {
@@ -393,25 +395,26 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       : null
   }
 
-  /** An agent no hook came from, whose hook files are not installed in the
-   *  terminal's checkout. Unknown until inspected (not missing). */
-  const hooksMissing = (terminalId: string, agentId: AgentId): boolean => {
-    if (hookAgent.get(terminalId) === agentId) return false
+  /** Check silent agents from activity scans and keep the last result visible
+   *  until the next check finishes. A live lifecycle hook supersedes it. */
+  const checkHookFiles = (terminalId: string, agentId: AgentId): void => {
+    if (hookAgent.get(terminalId) === agentId) return
     const cached = hookFiles.get(terminalId)
     const files = cached?.agentId === agentId ? cached : undefined
-    if (files && Date.now() - files.checkedAt < 15_000) return files.installed === false
+    if (files && Date.now() - files.checkedAt < HOOK_STATUS_REFRESH_MS) return
     const cwd = terminals.get(terminalId)?.cwd
-    if (!cwd) return false
+    if (!cwd) return
     const entry = { agentId, installed: files?.installed ?? null, needsApproval: files?.needsApproval, checkedAt: Date.now() }
     hookFiles.set(terminalId, entry)
     void hooks.hooksInstalled(cwd, agentId).then(async (installed) => {
-      const trust = installed ? await hooks.hookTrust(cwd, agentId) : 'unknown'
-      if (hookFiles.get(terminalId) !== entry) return
+      const current = () => hookFiles.get(terminalId) === entry && hookAgent.get(terminalId) !== agentId
+      if (!current()) return
+      const trust = installed ? await hooks.hookTrust(cwd, agentId, terminalId) : 'unknown'
+      if (!current()) return
       entry.installed = installed
       entry.needsApproval = trust === 'approval-required'
       if (files?.installed !== installed || files?.needsApproval !== entry.needsApproval) changed(terminalId)
-    }, () => {})
-    return false
+    }).catch(() => {})
   }
 
   const state = (panelId: string): PanelAgentState | null => {
@@ -423,6 +426,8 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const agentId = status.agentId(terminalId)
     const def = agentId ? AGENT_DEFS[agentId] : null
     const agentName = present && def ? def.displayName : null
+    const cachedHooks = hookFiles.get(terminalId)
+    const inspected = present && agentId && cachedHooks?.agentId === agentId && hookAgent.get(terminalId) !== agentId ? cachedHooks : undefined
     return {
       panelId,
       agentId,
@@ -431,13 +436,13 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       // the panel shows the terminal again, the status stays.
       label: agentName,
       contextPolicy: !def ? null : def.promptContextHook ? 'supported' : 'unsupported',
-      contextPending: present && !!def?.promptContextHook && !hooksMissing(terminalId, agentId!) && promptContext.peek(panelId, agentId) !== null,
+      contextPending: present && !!def?.promptContextHook && inspected?.installed !== false && promptContext.peek(panelId, agentId) !== null,
       status: current,
       present,
       canReceivePrompt: status.canReceivePrompt(terminalId),
       session: sessionOf(panelId, terminalId),
-      ...(present && agentId && hooksMissing(terminalId, agentId) ? { hooksMissing: true as const } : {}),
-      ...(present && agentId && hookAgent.get(terminalId) !== agentId && hookFiles.get(terminalId)?.needsApproval ? { hooksNeedApproval: true as const } : {}),
+      ...(inspected?.installed === false ? { hooksMissing: true as const } : {}),
+      ...(inspected?.needsApproval ? { hooksNeedApproval: true as const } : {}),
     }
   }
 

@@ -259,7 +259,7 @@ export interface DesktopApi {
   }
   transports: {
     /** Pipe ids; bytes flow through `pipes`. */
-    dialLocal(root: string): Promise<string>
+    dialLocal(root: string, mode?: 'running-only'): Promise<string>
     dialMachine(machine: Machine, root: string): Promise<string>
     dialNetwork(target: DesktopNetworkTarget): Promise<string>
     dialLoopbackTcp(port: number): Promise<string>

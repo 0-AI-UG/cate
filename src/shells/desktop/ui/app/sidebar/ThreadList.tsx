@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, CircleHelp, Laptop, Terminal, Undo2 } from 'lucide-react'
 import { machineOf, type WorkspaceEntry } from '@client/workspaces'
 import { agentPanelTitle, watchAgentChat } from '@services/agents/client'
@@ -10,7 +10,6 @@ import { AgentMark, useAgentPanels } from '../../services/agents'
 import { useCanvasUi } from '../../client/layout/canvas'
 import { clientApp } from '../app'
 import { revealPanel, selectWorkspace } from '../navigation'
-import { peekPanel } from '@client/host'
 import { useTerminalStatuses } from '../state/statusStore'
 import { setUiState, useUiState } from '../state/uiState'
 import { useUIStore } from '../state/uiStore'
@@ -98,11 +97,12 @@ function WorkspaceThreads({ entry, report }: { entry: WorkspaceEntry; report: (i
   const connected = useConnectionState(clientApp().connections.get(entry.id)).kind === 'connected'
   const ran = useRef(new Set<string>())
   const completion = useRef(new Map<string, { phase: SidebarThread['phase']; at?: number }>())
+  const { id: workspaceId, name: workspaceName } = entry
+  const machine = machineOf(entry)
+  const machineName = machine.kind === 'this' ? 'This device' : machine.label ?? 'Remote device'
   const threads = useMemo(() => {
     if (!connected) { ran.current.clear(); completion.current.clear(); return [] }
     const byPanel = new Map(Object.values(terminals).map((t) => [t.panelId, t]))
-    const machine = machineOf(entry)
-    const machineName = machine.kind === 'this' ? 'This device' : machine.label ?? 'Remote device'
     return Object.values(panels).flatMap((panel): SidebarThread[] => {
       const terminal = byPanel.get(panel.id)
       const agent = agents[panel.id]
@@ -116,19 +116,24 @@ function WorkspaceThreads({ entry, report }: { entry: WorkspaceEntry; report: (i
       const completedAt = !finished ? undefined : previous?.phase === activity.phase ? previous.at
         : observedCompletion ? Date.now() : undefined
       completion.current.set(panel.id, { phase: activity.phase, at: completedAt })
-      return [{ ...activity, key: threadKey(entry.id, panel.id), workspaceId: entry.id, workspaceName: entry.name,
+      return [{ ...activity, key: threadKey(workspaceId, panel.id), workspaceId, workspaceName,
         panel, focused: focusedId === panel.id, title: agentPanelTitle(panel.title, agent), agentId: agent?.agentId ?? null,
         agentName: agent?.agentName, machineName, completedAt }]
     })
-  }, [connected, panels, agents, terminals, entry.id, entry.name, focusedId])
+  }, [connected, panels, agents, terminals, workspaceId, workspaceName, machineName, focusedId])
   useEffect(() => { report(entry.id, threads) }, [entry.id, threads, report])
   useEffect(() => () => report(entry.id, []), [entry.id, report])
   return null
 }
 
-/** The attention-ordered threads on top, then `children` (the project tree),
- *  then the snoozed and settled threads pinned at the bottom. */
-export function ThreadList({ entries, open, query = '', children }: { entries: readonly WorkspaceEntry[]; open: readonly string[]; query?: string; children?: ReactNode }) {
+/** Observes all open workspaces, including while Projects is shown. */
+export function ThreadList({ entries, open, query = '', projectId, visible = true }: {
+  entries: readonly WorkspaceEntry[]
+  open: readonly string[]
+  query?: string
+  projectId?: string | null
+  visible?: boolean
+}) {
   const selectedWorkspaceId = useUIStore((state) => state.selectedWorkspaceId)
   const [byWorkspace, setByWorkspace] = useState<Record<string, SidebarThread[]>>({})
   const { sidebarSettledOpen, sidebarThreadSnoozes } = useUiState()
@@ -163,7 +168,8 @@ export function ThreadList({ entries, open, query = '', children }: { entries: r
   const threads = observedThreads.map((thread): SidebarThread => thread.phase === 'settled' && reopenedThreads.includes(thread.key)
     ? { ...thread, phase: 'ready', label: 'Ready for review' } : thread)
   const search = query.trim().toLocaleLowerCase()
-  const filtered = threads.filter((thread) => (!search || `${thread.title} ${thread.workspaceName} ${thread.label}`.toLocaleLowerCase().includes(search)))
+  const filtered = threads.filter((thread) => (!projectId || thread.workspaceId === projectId)
+    && (!search || `${thread.title} ${thread.workspaceName} ${thread.label} ${thread.hookIssue ?? ''}`.toLocaleLowerCase().includes(search)))
   const snoozed = filtered.filter((thread) => sidebarThreadSnoozes[thread.key] > Date.now())
   const { attention, working, unknown, done } = groupThreads(filtered.filter((thread) => !snoozed.includes(thread)), settledThreads)
   const blocked = attention.filter((thread) => thread.phase === 'blocked')
@@ -199,46 +205,27 @@ export function ThreadList({ entries, open, query = '', children }: { entries: r
     const next = { ...sidebarThreadSnoozes }; delete next[thread.key]
     setUiState('sidebarThreadSnoozes', next)
   }
-  // Hovering a thread lights its panel up on the canvas. A thread of another
-  // workspace shows that workspace meanwhile. A hidden tab is switched to and a
-  // separate window raised; the tabs, the view and the workspace all go back on
-  // leave (a click commits instead).
-  const undoPeek = useRef<(() => void) | null>(null)
-  const peekToken = useRef(0)
-  const peek = (thread: SidebarThread | null) => {
-    const token = ++peekToken.current
-    undoPeek.current?.()
-    undoPeek.current = null
-    useCanvasUi.getState().setPeekedPanel(null)
-    if (!thread) return
-    const show = (): (() => void) | null => {
-      useCanvasUi.getState().setPeekedPanel(thread.panel.id)
-      return peekPanel(thread.workspaceId, thread.panel.id)
-    }
-    const shown = useUIStore.getState().selectedWorkspaceId
-    if (thread.workspaceId === shown) {
-      const undoTabs = show()
-      undoPeek.current = () => { undoTabs?.() }
-      return
-    }
-    let undoTabs: (() => void) | null = null
-    undoPeek.current = () => {
-      undoTabs?.()
-      if (shown) void selectWorkspace(shown)
-    }
-    void selectWorkspace(thread.workspaceId).then((ok) => {
-      if (ok && peekToken.current === token) undoTabs = show()
-    })
+  // A hover can highlight an already displayed node. Only activation reveals
+  // a panel, which can change tabs, move the camera or focus another window.
+  const clearPeek = () => useCanvasUi.getState().setPeekedPanel(null)
+  const peek = (thread: SidebarThread) => {
+    if (thread.workspaceId !== selectedWorkspaceId) return
+    useCanvasUi.getState().setPeekedPanel({ workspaceId: thread.workspaceId, panelId: thread.panel.id })
   }
-  useEffect(() => () => { undoPeek.current?.(); useCanvasUi.getState().setPeekedPanel(null) }, [])
+  useEffect(() => {
+    const preview = useCanvasUi.getState().peekedPanel
+    if (preview && (!visible || preview.workspaceId !== selectedWorkspaceId || ![...attention, ...working, ...unknown]
+      .some((thread) => thread.workspaceId === preview.workspaceId && thread.panel.id === preview.panelId))) clearPeek()
+  })
+  useEffect(() => clearPeek, [])
   const row = (thread: SidebarThread) => (
     <Tooltip key={thread.key} placement="right" suppressed={actionThread === thread.key || snoozeMenuThread === thread.key} label={`${thread.title}, ${thread.workspaceName}, ${thread.label}`} content={
       <ThreadDetails thread={thread} />
     }>
-      <div onMouseEnter={() => peek(thread)} onMouseLeave={() => peek(null)} className={`group relative mx-2 my-1.5 rounded-lg transition-colors ${thread.focused && thread.workspaceId === selectedWorkspaceId ? 'bg-surface-3' : 'bg-surface-2 hover:bg-surface-3 focus-within:bg-surface-3'}`} data-thread-phase={thread.phase}>
+      <div onMouseEnter={() => peek(thread)} onMouseLeave={clearPeek} className={`group relative mx-2 my-1.5 rounded-lg transition-colors ${thread.focused && thread.workspaceId === selectedWorkspaceId ? 'bg-surface-3' : 'bg-surface-2 hover:bg-surface-3 focus-within:bg-surface-3'}`} data-thread-phase={thread.phase}>
         <button type="button" className="block w-full min-w-0 rounded-md px-2.5 py-2.5 text-left focus-visible:outline-offset-[-2px]"
           aria-label={`${thread.title}, ${thread.workspaceName}: ${thread.label}`}
-          onClick={() => { peekToken.current++; undoPeek.current = null; useCanvasUi.getState().setPeekedPanel(null, true); useUIStore.getState().closeOverlay(); void revealPanel(thread.workspaceId, thread.panel.id) }}>
+          onClick={() => { clearPeek(); useUIStore.getState().closeOverlay(); void revealPanel(thread.workspaceId, thread.panel.id) }}>
           <span className="flex items-center gap-2">
             <span className={`min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-primary ${thread.phase === 'ready' && !settledThreads.includes(thread.key) ? 'group-hover:pr-[78px] group-focus-within:pr-[78px]' : 'group-hover:pr-6 group-focus-within:pr-6'}`}>{thread.title}</span>
             <span className="shrink-0 text-secondary opacity-70 group-hover:invisible group-focus-within:invisible">{thread.agentId ? <AgentMark agent={thread.agentId} size={14} /> : <Terminal size={14} />}</span>
@@ -248,19 +235,19 @@ export function ThreadList({ entries, open, query = '', children }: { entries: r
             <span className={`flex shrink-0 items-center gap-1 text-[11px] ${thread.phase === 'running' ? 'text-blue-400' : thread.phase === 'blocked' ? 'text-amber-400' : 'text-secondary'}`}>
               {thread.phase === 'running' && <><Spinner size={11} /><span>Working</span></>}
               {thread.phase === 'blocked' && <><CircleHelp size={12} /><span>Needs you</span></>}
-              {thread.phase === 'unknown' && <span>{thread.label}</span>}
+              {thread.phase === 'unknown' ? <span>{thread.label}</span> : thread.hookIssue && <span>{thread.hookIssue}</span>}
             </span>
           </span>
           <ThreadActivity thread={thread} visible />
         </button>
-        {thread.phase === 'unknown' && thread.label === 'Hooks off' && (
+        {thread.hookIssue === 'Hooks off' && (
           <button type="button" aria-label={`Enable status for ${thread.title}`} title="Enable agent hooks in workspace settings; relaunch the agent to apply"
             className="block px-2.5 pb-2 text-[11px] text-secondary hover:text-primary underline underline-offset-2"
             onClick={async () => { if (await selectWorkspace(thread.workspaceId)) useUIStore.getState().openSettings('agents') }}>
             Enable status tracking
           </button>
         )}
-        {thread.phase === 'unknown' && thread.label === 'Hooks need approval' && (
+        {thread.hookIssue === 'Hooks need approval' && (
           <p className="px-2.5 pb-2 text-[11px] text-secondary">Open /hooks in Codex to review and trust Cate’s hooks.</p>
         )}
         {thread.phase !== 'settled' && !settledThreads.includes(thread.key) && (
@@ -275,8 +262,9 @@ export function ThreadList({ entries, open, query = '', children }: { entries: r
     </Tooltip>
   )
   return (
-    <div className="flex flex-col flex-1 min-h-0" aria-label="Threads">
+    <>
       {entries.filter((e) => open.includes(e.id)).map((entry) => <WorkspaceThreads key={entry.id} entry={entry} report={report} />)}
+      {visible && <div className="flex flex-col flex-1 min-h-0" aria-label="Threads">
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pb-20">
         {/* Content scrolling up fades out under the search field. */}
         <div aria-hidden className="sticky top-0 z-10 -mb-3 h-3 pointer-events-none" style={{ background: 'linear-gradient(to bottom, var(--surface-1), transparent)' }} />
@@ -294,7 +282,7 @@ export function ThreadList({ entries, open, query = '', children }: { entries: r
           {unknown.map(row)}
         </section>}
         {search && filtered.length === 0 && <p className="px-3 pt-4 text-xs text-secondary">No matching threads</p>}
-        {children}
+        {!search && filtered.length === 0 && <p className="px-3 pt-4 text-xs text-secondary">No threads yet</p>}
         {working.length > 0 && <section aria-label="In progress">
           <div className="px-3 pt-4 pb-1.5 flex justify-between text-xs text-muted"><span>Working</span><span>{working.length}</span></div>
           {working.map(row)}
@@ -329,6 +317,7 @@ export function ThreadList({ entries, open, query = '', children }: { entries: r
       </section>
         </div>
       </div>
-    </div>
+      </div>}
+    </>
   )
 }

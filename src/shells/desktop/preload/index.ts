@@ -198,7 +198,7 @@ const api: DesktopApi = {
     onEnded: (listener) => listen(C.dragEnded, listener),
   },
   transports: {
-    dialLocal: (root) => dial(C.dialLocal, root),
+    dialLocal: (root, mode) => dial(C.dialLocal, root, mode),
     dialMachine: (machine, root) => dial(C.dialMachine, machine, root),
     dialNetwork: (target) => dial(C.dialNetwork, target),
     dialLoopbackTcp: (port) => dial(C.dialLoopbackTcp, port),

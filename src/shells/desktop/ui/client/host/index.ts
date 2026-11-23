@@ -1,2 +1,3 @@
 export { PanelIcon, PanelTitle, panelTitleLabel, usePanelTitles, type PanelTitleProps } from './PanelTitle'
 export { registerPanelDecorations, usePanelDecorations, type PanelDecoration, type PanelDecorationHook } from './panelDecorations'
+export { setPanelWorktreePreview } from './WorktreeTint'

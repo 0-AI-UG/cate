@@ -136,6 +136,7 @@ export function createRuntimeUpdates(deps: RuntimeUpdatesDeps): RuntimeUpdates {
   const tried = new Set<WorkspaceConnection>()
   const watched = new Map<WorkspaceConnection, () => void>()
   const check = (connection: WorkspaceConnection): void => {
+    if (connection.observing) return
     const mismatch = updateCandidate(connection.state, deps.version)
     if (!mismatch) {
       setRequired(connection, null)

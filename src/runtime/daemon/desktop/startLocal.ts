@@ -21,6 +21,7 @@ export interface StartLocalOptions {
   launch?: { node: string; bundle: string }
   env?: NodeJS.ProcessEnv
   budgetMs?: number
+  runningOnly?: boolean
 }
 
 export interface LocalRuntime {
@@ -46,7 +47,9 @@ export async function startLocalRuntime(options: StartLocalOptions): Promise<Loc
   const endpoint = await ensureLocalEndpointFor(runtimeId, options.home)
   try {
     return { runtimeId, root, endpoint, duplex: await dialLocal(endpoint), started: false }
-  } catch { /* not running */ }
+  } catch (err) {
+    if (options.runningOnly) throw err
+  }
 
   const { node, bundle } = runtimeProgram(options)
   if (!fs.existsSync(node)) throw new Error(`the Cate runtime is not installed (${node} is missing)`)

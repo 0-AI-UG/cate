@@ -8,6 +8,26 @@ import { installClientSettings } from '../../../kernel/settings'
 import { BUILTIN_WALLPAPERS } from '../../../client/layout/canvas'
 import { CanvasPage, installBuiltinWallpapers } from './CanvasPage'
 
+it('shows None for an unavailable bundled wallpaper without rewriting its setting', async () => {
+  const canvasBackgroundImagePath = 'builtin:unavailable'
+  const device = createMemoryDeviceStore({ settings: { canvasBackgroundImagePath } })
+  const store = createClientSettingsStore(device, clientSettingsTable)
+  await store.load()
+  installClientSettings(store)
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  try {
+    act(() => root.render(<CanvasPage />))
+    expect(host.querySelector('[aria-label="None"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(host.textContent).not.toContain('Background image opacity')
+    expect(await device.get('settings')).toEqual({ canvasBackgroundImagePath })
+  } finally {
+    act(() => root.unmount())
+    installClientSettings(null)
+    store.dispose()
+  }
+})
+
 it('selects bundled wallpapers, persists the choice and restores the selected swatch', async () => {
   const device = createMemoryDeviceStore()
   const store = createClientSettingsStore(device, clientSettingsTable)

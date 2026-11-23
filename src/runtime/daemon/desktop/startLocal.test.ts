@@ -34,13 +34,18 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
   fs.mkdirSync(root)
   const options = { root, home, launch: { node: process.execPath, bundle }, env: { ...process.env, HOME: home } }
 
+  // A background dial can only attach, even if given a runnable bundle.
+  await expect(startLocalRuntime({ ...options, runningOnly: true })).rejects.toThrow()
+
   const first = await startLocalRuntime(options)
   expect(first.started).toBe(true)
   const client = new RpcClient({ version: RUNTIME_VERSION, identity: { client: { clientId: 'c', device: { name: 'd', publicKey: 'f' }, features: [] } } })
   await client.attach(framePortOver(first.duplex, 'stream'))
   const runtime = createCapabilityProxy(client, runtimeCapability)
+  let daemonPid: number | undefined
   try {
     const info = await runtime.info()
+    daemonPid = info.pid
     expect(info.runtimeId).toBe(first.runtimeId)
     expect(info.pid).not.toBe(process.pid)
 
@@ -54,13 +59,21 @@ it.skipIf(process.platform === 'win32')('starts the runtime when nothing answers
     await waitFor(async () => !(await terminal.list()).find((entry) => entry.id === missing.id)?.alive)
     expect((await runtime.info()).pid).toBe(info.pid)
 
-    const second = await startLocalRuntime(options)
+    const second = await startLocalRuntime({ ...options, runningOnly: true })
     expect(second.started).toBe(false)
     second.duplex.close()
 
   } finally {
     await runtime.stop().catch(() => {})
     client.close()
+    if (daemonPid !== undefined) {
+      const pid = daemonPid
+      // The socket is removed before the detached process finishes flushing.
+      await waitFor(() => {
+        try { process.kill(pid, 0); return false }
+        catch (err) { return (err as NodeJS.ErrnoException).code === 'ESRCH' }
+      })
+    }
   }
   await waitFor(() => !fs.existsSync(first.endpoint))
   expect(fs.readFileSync(path.join(home, '.cate', 'workspaces', first.runtimeId, 'logs', 'daemon.log'), 'utf-8'))

@@ -18,18 +18,22 @@ export function choiceKeys(labels: readonly string[]): (string | undefined)[] {
   })
 }
 
-export function SurfaceChoiceList({ choices, onPick }: { choices: readonly SurfaceChoice[]; onPick: (type: string) => void }): JSX.Element {
+export function SurfaceChoiceList({ choices, onPick, acceptBodyKeys = false }: {
+  choices: readonly SurfaceChoice[]
+  onPick: (type: string) => void
+  /** The active pane (or empty window) owns keys when the body holds focus. */
+  acceptBodyKeys?: boolean
+}): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const keys = choiceKeys(choices.map((c) => c.label))
   const handler = useRef<(event: KeyboardEvent) => void>(() => {})
   handler.current = (event) => {
     const el = ref.current
     if (!el || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || el.getClientRects().length === 0) return
-    // Only while focus is nowhere in particular or inside this chooser's own pane.
     const active = document.activeElement
     if (active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))) return
     const scope = el.closest('[data-dock-stack-id]') ?? el.parentElement
-    if (active && active !== document.body && !scope?.contains(active)) return
+    if (active === document.body ? !acceptBodyKeys : !scope?.contains(active)) return
     const index = keys.indexOf(event.key.toLowerCase())
     if (index < 0) return
     event.preventDefault()
