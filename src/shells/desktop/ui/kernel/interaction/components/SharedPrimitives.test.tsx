@@ -2,7 +2,7 @@ import { act, useRef, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Button } from './Button'
-import { CARD_SURFACE, DIALOG_TOP, Modal } from './Modal'
+import { Modal } from './Modal'
 import { POPOVER_SURFACE, useDismissableLayer } from './Popover'
 import { Tooltip } from './Tooltip'
 import { storedShortcut } from '@kernel/interaction/contract'
@@ -33,29 +33,10 @@ function render(node: ReactNode): void {
 
 describe('shared UI primitives', () => {
   it('keeps popup surfaces aligned with the Cate menu treatment', () => {
-    expect(POPOVER_SURFACE).toContain('rounded-lg')
-    expect(POPOVER_SURFACE).toContain('border-white/[0.08]')
-    // The sidebar's colour, solid.
-    expect(POPOVER_SURFACE).toContain('bg-surface-1')
-    expect(CARD_SURFACE).toContain('bg-surface-1')
-    expect(CARD_SURFACE).toContain('rounded-[10px]')
-  })
-
-  it('seats every modal at the same height and numbers its rows', () => {
-    const picked: string[] = []
-    render(<Modal title="Pick" numbered onClose={() => {}}>
-      <button type="button" data-menu-item onClick={() => picked.push('a')}>A</button>
-      <button type="button" data-menu-item disabled>B</button>
-      <button type="button" data-menu-item onClick={() => picked.push('c')}>C</button>
-    </Modal>)
-    const backdrop = document.querySelector('[role="dialog"]')!.parentElement!
-    expect(backdrop.className).toContain('items-start')
-    expect(backdrop.className).toContain(DIALOG_TOP)
-    const keys = [...document.querySelectorAll<HTMLElement>('[data-menu-item]')].map((row) => row.dataset.key)
-    expect(keys).toEqual(['1', undefined, '2'])
-    act(() => { document.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true })) })
-    expect(picked).toEqual(['c'])
-    expect(document.body.textContent).toContain('Esc')
+    expect(POPOVER_SURFACE).toContain('rounded-2xl')
+    expect(POPOVER_SURFACE).toContain('border-subtle')
+    expect(POPOVER_SURFACE).toContain('bg-surface-3')
+    expect(POPOVER_SURFACE).toContain('shadow-lg')
   })
 
   it('shows an associated tooltip from keyboard focus and dismisses it with Escape', () => {

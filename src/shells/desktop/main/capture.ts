@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { app, BrowserWindow, nativeImage, type NativeImage } from 'electron'
+import { app, BrowserWindow, nativeImage } from 'electron'
 import { watch, type FSWatcher } from 'chokidar'
 import { createLogger } from '@kernel/log/contract'
 import type { FileRef } from '@workspace/files/contract'
@@ -20,16 +20,7 @@ import type { WindowRegistry } from './windowRegistry'
 const log = createLogger('capture')
 const run = promisify(execFile)
 const MAX_RECENT = 5
-const THUMBNAIL = 256
-
-function thumbnailDataUrl(image: NativeImage): string {
-  const { width, height } = image.getSize()
-  if (Math.max(width, height) <= THUMBNAIL) return image.toDataURL()
-  return image.resize({
-    ...(width >= height ? { width: THUMBNAIL } : { height: THUMBNAIL }),
-    quality: 'best',
-  }).toDataURL()
-}
+const THUMBNAIL = 128
 
 const isFileRef = (value: unknown): value is FileRef =>
   !!value && typeof (value as FileRef).workspaceId === 'string' && typeof (value as FileRef).path === 'string'
@@ -70,7 +61,8 @@ export function registerCapture(registry: Pick<WindowRegistry, 'broadcast'>): ()
     if (!isFileRef(ref) || !(png instanceof Uint8Array)) throw new Error('Expected a file ref and PNG bytes.')
     const image = nativeImage.createFromBuffer(Buffer.from(png))
     if (image.isEmpty()) throw new Error('Could not read the annotated image.')
-    const thumbnail = thumbnailDataUrl(image)
+    const { width, height } = image.getSize()
+    const thumbnail = image.resize(width >= height ? { width: THUMBNAIL } : { height: THUMBNAIL }).toDataURL()
     const shot: Shot = { id: `annotated:${randomUUID()}`, thumbnail, ref: { workspaceId: ref.workspaceId, path: ref.path }, filePath: '', mtime: Date.now() }
     shots = [shot, ...shots].slice(0, MAX_RECENT)
     publish()
@@ -92,11 +84,9 @@ export function registerCapture(registry: Pick<WindowRegistry, 'broadcast'>): ()
       if (!info.isFile() || info.mtimeMs < startedAt || info.mtimeMs <= newest) return
       // macOS marks screenshots whatever their (localized or custom) name.
       await run('/usr/bin/xattr', ['-p', 'com.apple.metadata:kMDItemIsScreenCapture', filePath], { timeout: 2000 })
-      // Decode the image itself instead of the OS preview, which can add a
-      // frame or change the proportions of the screenshot.
-      const image = nativeImage.createFromPath(filePath)
-      if (stopped || image.isEmpty()) return
-      shots = [{ id: `${filePath}:${info.mtimeMs}`, filePath, mtime: info.mtimeMs, thumbnail: thumbnailDataUrl(image) },
+      const thumbnail = await nativeImage.createThumbnailFromPath(filePath, { width: THUMBNAIL, height: THUMBNAIL })
+      if (stopped || thumbnail.isEmpty()) return
+      shots = [{ id: `${filePath}:${info.mtimeMs}`, filePath, mtime: info.mtimeMs, thumbnail: thumbnail.toDataURL() },
         ...shots.filter((s) => s.ref || s.filePath !== filePath)].slice(0, MAX_RECENT)
       publish()
     } catch { /* not a screenshot, or gone already */ }

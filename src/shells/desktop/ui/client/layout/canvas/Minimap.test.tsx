@@ -44,9 +44,9 @@ it('colours each node by its active panel type', () => {
   const root = createRoot(host)
   try {
     act(() => root.render(<CanvasViewProvider store={store}><Minimap workspaceId="ws" /></CanvasViewProvider>))
-    const colors = [...host.querySelectorAll<HTMLElement>('[style]')].map(element => element.getAttribute('style') ?? '')
+    const colors = [...host.querySelectorAll<HTMLElement>('[style]')].map(element => element.style.backgroundColor)
     for (const type of ['editor', 'review']) {
-      expect(colors.some((style) => style.includes(`var(--panel-${type}, var(--surface-4))`))).toBe(true)
+      expect(colors).toContain(`var(--panel-${type}, var(--surface-4))`)
     }
   } finally {
     act(() => root.unmount())

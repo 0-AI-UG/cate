@@ -4,7 +4,7 @@
 // "Open…" focuses this picker instead of opening a second one.
 
 import { useEffect, useRef } from 'react'
-import { FileText } from 'lucide-react'
+import { ScrollText } from 'lucide-react'
 import { CateLogo, CARD_SURFACE } from '../../kernel/interaction'
 import { CANVAS_GRID_SIZE } from '@workspace/canvas/contract'
 import { useCanvasSetting } from '../../client/layout/canvas'
@@ -55,7 +55,7 @@ export function WelcomePage(): JSX.Element {
             onClick={() => useUIStore.getState().openOverlay({ view: WHATS_NEW_VIEW })}
             className="mt-5 flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-secondary hover:bg-hover hover:text-primary"
           >
-            <FileText size={14} />
+            <ScrollText size={14} />
             What's new in Cate {tryClientApp()?.version}
           </button>
         </div>

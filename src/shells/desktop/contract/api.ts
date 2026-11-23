@@ -46,6 +46,15 @@ export type NativeAction =
   | 'documentation'
   | 'reportIssue'
 
+export interface MessageBoxRequest {
+  type?: 'none' | 'info' | 'error' | 'question' | 'warning'
+  message: string
+  detail?: string
+  buttons: string[]
+  defaultId?: number
+  cancelId?: number
+}
+
 export interface OpenDialogRequest {
   title?: string
   directory?: boolean
@@ -200,6 +209,7 @@ export interface DesktopApi {
     setZoomFactor(factor: number): void
   }
   menu: {
+    showContextMenu(items: ContextMenuItem[]): Promise<string | null>
     barItems(): Promise<string[]>
     popupBarItem(index: number, x: number, y: number): Promise<void>
     runNativeAction(action: NativeAction): Promise<void>
@@ -209,6 +219,7 @@ export interface DesktopApi {
     onAction(listener: (action: ActionId) => void): () => void
   }
   dialogs: {
+    messageBox(request: MessageBoxRequest): Promise<number>
     open(request: OpenDialogRequest): Promise<string[] | null>
     /** Picks an image and copies it into `canvas-backgrounds/`; the managed path. */
     pickCanvasBackground(): Promise<string | null>

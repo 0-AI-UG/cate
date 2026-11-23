@@ -1,4 +1,4 @@
-// The desktop ClientUi: in-app message boxes and OS actions over the desktop
+// The desktop ClientUi: native message boxes and OS actions over the desktop
 // IPC, settings through this window's overlay, and the portable in-app save
 // dialog. Methods tied to a feature are installed only when the
 // window declares it (12.2 rule 5).
@@ -6,15 +6,14 @@
 import type { ClientFeature } from '@kernel/rpc/contract'
 import type { ClientUi } from '@kernel/interaction/contract'
 import { useUIStore } from '../ui/app'
-import { showContextMenu, showMessage, type MessageRequest } from '../ui/kernel/interaction'
 import { showSavePathDialog } from '../ui/workspace/files'
-import type { DesktopApi } from '../contract'
+import type { DesktopApi, MessageBoxRequest } from '../contract'
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 
 export function createDesktopClientUi(api: DesktopApi, features: readonly ClientFeature[]): ClientUi {
   const has = (feature: ClientFeature) => features.includes(feature)
-  const ask = (request: MessageRequest) => showMessage(request)
+  const ask = (request: MessageBoxRequest) => api.dialogs.messageBox(request)
 
   const ui: ClientUi = {
     openExternal: (url) => { void api.os.openExternal(url).catch(() => { /* refused: not a web link */ }) },
@@ -25,7 +24,7 @@ export function createDesktopClientUi(api: DesktopApi, features: readonly Client
     showError(message) {
       void ask({ type: 'error', message, buttons: ['OK'] })
     },
-    showContextMenu,
+    showContextMenu: (items) => api.menu.showContextMenu(items),
     async confirmUnsavedChanges({ fileName, multiple, filePath }) {
       const lost = "Your changes will be lost if you don't save them."
       const detail = multiple

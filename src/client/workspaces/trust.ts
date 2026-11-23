@@ -24,8 +24,6 @@ export interface TrustPrompt {
 }
 
 export interface TrustStore {
-  /** Reads existing trust only; never prompts or changes it. */
-  knownTrusted(workspaceId: string): Promise<boolean>
   /** Resolves true when the workspace may stay open: already trusted, or the
    *  person just trusted it. Resolves false when they declined. */
   ensureTrusted(workspaceId: string, label: string): Promise<boolean>
@@ -54,10 +52,6 @@ export function createTrustStore(api: (workspaceId: string) => TrustApi | null):
   })
 
   return {
-    async knownTrusted(workspaceId) {
-      try { return !!(await api(workspaceId)?.getTrust())?.trusted }
-      catch { return false }
-    },
     async ensureTrusted(workspaceId, label) {
       if (!workspaceId) return false
       const trust = api(workspaceId)

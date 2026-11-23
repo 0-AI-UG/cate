@@ -54,9 +54,8 @@ export function subscribeCanvasToolbarItems(listener: () => void): () => void {
 export interface SpawnFlyoutProps {
   workspaceId: string
   canvasId: string
-  /** The side of the button the flyout opens on; 'right' is an inline row
-   *  that expands inside the toolbar. */
-  side: 'up' | 'left' | 'right'
+  /** The side of the button the flyout opens on. */
+  side: 'up' | 'left'
   /** Closes the flyout (after a pick). */
   onClose(): void
   /** Whether it shows anything; the button's tooltip steps aside while it does. */

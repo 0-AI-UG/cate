@@ -11,7 +11,7 @@ export { useCanvasToolbarAction, requestCanvasToolbarAction, type CanvasToolbarA
 export { CanvasToolbarButton } from './CanvasToolbarButton'
 export { useCanvasUi, type CanvasTool } from './uiState'
 export { showContextMenu, type ContextMenuItem } from './contextMenu'
-export { worktreeColor, useWorktreeMembership } from './worktree'
+export { worktreeColor, useWorktreeMembership, setTerritoryPerfCounter } from './worktree'
 export { setCanvasPerfCounter } from './perf'
 
 export {

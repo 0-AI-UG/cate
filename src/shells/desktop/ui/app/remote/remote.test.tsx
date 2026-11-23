@@ -10,7 +10,7 @@ import { installClientApp, type ClientApp } from '../app'
 import { useUIStore } from '../state/uiStore'
 import { MachineFolderHost } from './MachineFolderHost'
 import { WorkspacePicker } from './WorkspacePicker'
-import { OpenWorkspaceDialog } from './OpenWorkspaceDialog'
+import { OPEN_WORKSPACE_ANCHOR, OpenWorkspaceDialog } from './OpenWorkspaceDialog'
 import { installDesktopPort, type DesktopPort } from '../desktop'
 import { clientSettingsTable, type ClientSettings } from '../../../settings'
 import { installMockClientUi } from '../../../../../test/clientUi'
@@ -204,13 +204,22 @@ it('Open Workspace… shows the picker over the workspace the window shows', () 
   useUIStore.setState({ openDialogOpen: false })
 })
 
-it('Open shows as a dialog, and Escape closes it', async () => {
+it('Open hangs from the sidebar\'s "+" while it shows, and an outside click closes it', async () => {
   installClientApp({ runtimeUpdates: noRuntimeUpdates, workspaces: fakeWorkspaces(), connections: {} as ClientApp['connections'], version: '2.0.5' })
+  const plus = document.createElement('button')
+  plus.setAttribute(OPEN_WORKSPACE_ANCHOR, '')
+  plus.getBoundingClientRect = () => ({ left: 10, right: 32, top: 10, bottom: 32, width: 22, height: 22, x: 10, y: 10, toJSON: () => ({}) })
+  document.body.appendChild(plus)
   useUIStore.setState({ openDialogOpen: true })
   await act(async () => root.render(<OpenWorkspaceDialog />))
-  expect(document.body.querySelector('[role="dialog"]')).toBeTruthy()
-  await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  const popover = document.body.querySelector('[role="dialog"][aria-label="Open a workspace"]')
+  expect(popover?.closest('[data-placement]')).toBeTruthy()
+  // Pressing the "+" itself is left to its toggle.
+  await act(async () => plus.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+  expect(useUIStore.getState().openDialogOpen).toBe(true)
+  await act(async () => document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
   expect(useUIStore.getState().openDialogOpen).toBe(false)
+  plus.remove()
 })
 
 it('Open shows nothing of its own while the page shows the picker', async () => {

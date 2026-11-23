@@ -8,7 +8,7 @@ import { appearanceSettings, shortcutSettings } from '@kernel/interaction/contra
 import { cateApiSettings } from '@kernel/api/contract/settings'
 import { runtimeSettings } from '@runtime/daemon/contract/settings'
 import { relationLabelSettings, relationSettings } from '@workspace/relations/contract/settings'
-import { repositoryClientSettings, repositorySettings } from '@workspace/repository/contract/settings'
+import { repositorySettings } from '@workspace/repository/contract/settings'
 import { notificationSettings } from '@workspace/notifications/contract/settings'
 import { terminalClientSettings, terminalSettings } from '@services/terminal/contract/settings'
 import { browserClientSettings, browserSettings } from '@services/browser/contract/settings'
@@ -23,7 +23,6 @@ export const SHARED_SETTINGS_SLICES = [
   runtimeSettings,
   relationLabelSettings,
   relationSettings,
-  repositoryClientSettings,
   repositorySettings,
   notificationSettings,
   terminalClientSettings,

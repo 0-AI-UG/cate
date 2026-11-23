@@ -65,9 +65,8 @@ export interface ClientUi extends Partial<ClientUiClipboard>, Partial<ClientUiOs
   confirm(message: string): Promise<boolean>
   /** A failed user action the person should see. */
   showError(message: string): void
-  /** A context menu at the pointer, drawn by the shell's own UI. Resolves with
-   *  the picked id, or null when dismissed (a shell that draws no menus always
-   *  resolves null). */
-  showContextMenu(items: ContextMenuItem[], options?: { onHighlight?(id: string | null): void }): Promise<string | null>
+  /** A context menu at the pointer. Resolves with the picked id, or null when
+   *  dismissed (a shell that draws no menus always resolves null). */
+  showContextMenu(items: ContextMenuItem[]): Promise<string | null>
   confirmUnsavedChanges(request: { fileName?: string; multiple?: boolean; filePath?: string }): Promise<'save' | 'discard' | 'cancel'>
 }

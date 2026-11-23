@@ -100,7 +100,6 @@ interface TerminalInfo {
   probing?: boolean
   probeAfter?: number
   processPid?: number
-  resumedSession?: TerminalResumeStamp
 }
 
 /** How long a sent prompt has to start a turn before the send reports it was
@@ -136,9 +135,9 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
   const hookAgent = new Map<string, AgentId>()
   /** Attachments consumed with the next native context injection. */
   const attachmentContext = new Map<string, string>()
-  /** Hook installation and CLI-owned trust for silent agents, rechecked
-   *  every 15 seconds until a lifecycle hook proves the integration works. */
-  const hookFiles = new Map<string, { agentId: AgentId; installed: boolean | null; needsApproval?: boolean; checkedAt: number }>()
+  /** Whether each terminal's agent has Cate's hook files where it runs,
+   *  inspected once per agent run (absent while unknown). */
+  const hookFiles = new Map<string, { agentId: AgentId; installed: boolean | null }>()
 
   const panelOf = (terminalId: string): string | null => terminals.get(terminalId)?.panelId ?? null
   const changed = (terminalId: string): void => {
@@ -220,11 +219,7 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const launched = spawn.launch?.kind === AGENT_LAUNCH.start && isAgentId((spawn.launch.params as { agentId?: unknown })?.agentId)
       ? AGENT_DEFS[(spawn.launch.params as { agentId: AgentId }).agentId]
       : agentForLaunchCommand(spawn.executable)
-    const saved = spawn.panelId ? stampsFile.get()[spawn.panelId] : undefined
-    const resumedSession = spawn.launch?.kind === TERMINAL_RESTORE_LAUNCH.kind && saved
-      && saved.binding === bindingOf(document.panel(spawn.panelId!)) && AGENT_DEFS[saved.agentId].resume.opensAtPrompt
-      ? saved : undefined
-    terminals.set(spawn.terminalId, { panelId: spawn.panelId, cwd, resumedSession })
+    terminals.set(spawn.terminalId, { panelId: spawn.panelId, cwd })
     if (spawn.panelId) panelTerminal.set(spawn.panelId, spawn.terminalId)
     // A started agent's first prompt takes its attachments through the hook.
     const startParams = spawn.launch?.kind === AGENT_LAUNCH.start ? spawn.launch.params as { prompt?: unknown; attachments?: unknown } : null
@@ -303,14 +298,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
           if (disposed || terminals.get(scan.terminalId) !== info || info.processPid !== candidate.pid || stamps.latest(scan.terminalId)) return
           if (session) {
             const next = { agentId: session.agentId, sessionId: session.sessionId, cwd: session.cwd ?? info.cwd }
-            // Codex defers SessionStart until input even when Cate deliberately
-            // resumed it. Confirm the requested session through this exact pid
-            // before seeding its prompt state. Hook events always win the race.
-            const resumed = info.resumedSession
-            info.resumedSession = undefined
-            if (resumed?.agentId === next.agentId && resumed.sessionId === next.sessionId && resumed.cwd === next.cwd) {
-              status.noteResumedSession(scan.terminalId, next.agentId!, next.sessionId)
-            }
             const previous = processSessions.get(scan.terminalId)
             if (previous?.sessionId !== next.sessionId || previous.agentId !== next.agentId || previous.cwd !== next.cwd) {
               processSessions.set(scan.terminalId, next)
@@ -334,7 +321,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
     const agentId = opened?.id ?? hook.agentId
     const wasPresent = status.present(scan.terminalId)
     status.notePresence(scan.terminalId, hook.agentPresent || opened !== null, !hook.agentPresent, agentId)
-    if (status.present(scan.terminalId) && agentId && hookAgent.get(scan.terminalId) !== agentId) hooksMissing(scan.terminalId, agentId)
     if (wasPresent !== status.present(scan.terminalId)) changed(scan.terminalId)
   }))
 
@@ -397,19 +383,16 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
    *  terminal's checkout. Unknown until inspected (not missing). */
   const hooksMissing = (terminalId: string, agentId: AgentId): boolean => {
     if (hookAgent.get(terminalId) === agentId) return false
-    const cached = hookFiles.get(terminalId)
-    const files = cached?.agentId === agentId ? cached : undefined
-    if (files && Date.now() - files.checkedAt < 15_000) return files.installed === false
+    const files = hookFiles.get(terminalId)
+    if (files?.agentId === agentId) return files.installed === false
     const cwd = terminals.get(terminalId)?.cwd
     if (!cwd) return false
-    const entry = { agentId, installed: files?.installed ?? null, needsApproval: files?.needsApproval, checkedAt: Date.now() }
+    const entry = { agentId, installed: null as boolean | null }
     hookFiles.set(terminalId, entry)
-    void hooks.hooksInstalled(cwd, agentId).then(async (installed) => {
-      const trust = installed ? await hooks.hookTrust(cwd, agentId) : 'unknown'
+    void hooks.hooksInstalled(cwd, agentId).then((installed) => {
       if (hookFiles.get(terminalId) !== entry) return
       entry.installed = installed
-      entry.needsApproval = trust === 'approval-required'
-      if (files?.installed !== installed || files?.needsApproval !== entry.needsApproval) changed(terminalId)
+      if (!installed) changed(terminalId)
     }, () => {})
     return false
   }
@@ -437,7 +420,6 @@ export function createTerminalAgents(agents: AgentsBase, terminal: AgentTerminal
       canReceivePrompt: status.canReceivePrompt(terminalId),
       session: sessionOf(panelId, terminalId),
       ...(present && agentId && hooksMissing(terminalId, agentId) ? { hooksMissing: true as const } : {}),
-      ...(present && agentId && hookAgent.get(terminalId) !== agentId && hookFiles.get(terminalId)?.needsApproval ? { hooksNeedApproval: true as const } : {}),
     }
   }
 

@@ -71,13 +71,13 @@ function UpdateReadyDialogWith({ port }: { port: DesktopPort }): JSX.Element | n
       onClose={later}
       bodyClassName="min-h-0 overflow-auto"
     >
-      <div className="px-4 py-3">
+      <div className="px-5 py-4">
         <p className="text-[13px] leading-relaxed text-secondary">
           Cate <span className="font-mono text-primary">{version}</span> is ready to install.
         </p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-muted">Restart now, or install when you quit.</p>
       </div>
-      <div className="flex flex-wrap justify-end gap-2 border-t border-white/[0.07] bg-white/[0.025] px-4 py-2">
+      <div className="flex flex-wrap justify-end gap-2 border-t border-subtle bg-surface-0/40 px-5 py-3">
         <Button onClick={later} disabled={restarting}>Install on next quit</Button>
         <Button variant="primary" onClick={restart} loading={restarting} loadingLabel="Restarting…">
           <ArrowClockwise size={14} aria-hidden="true" />

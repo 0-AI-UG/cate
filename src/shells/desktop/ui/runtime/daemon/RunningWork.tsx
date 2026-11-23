@@ -81,7 +81,7 @@ export function RunningWorkConfirm({ runtime, actionLabel, consequence, title, r
   const items = work ? [...work.terminals.map((t) => ({ ...t, kind: 'Terminal' })), ...work.agents.map((a) => ({ ...a, kind: 'Agent' }))] : []
 
   return (
-    <div role="alertdialog" aria-label={actionLabel} className="flex flex-col gap-2 rounded-lg border border-white/[0.08] bg-surface-1 p-3">
+    <div role="alertdialog" aria-label={actionLabel} className="flex flex-col gap-2 rounded-lg border border-subtle bg-surface-2 p-3">
       <div className="flex items-start gap-2 text-[12px] text-secondary">
         <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
         <span>{consequence}</span>

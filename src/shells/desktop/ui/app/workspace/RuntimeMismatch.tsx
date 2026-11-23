@@ -55,7 +55,7 @@ function UpdateProgressCard({ run }: { run: RuntimeUpdateRun }): JSX.Element {
     ? (progress.total ? `${mb(progress.received)} of ${mb(progress.total)} MB` : `${mb(progress.received)} MB`)
     : run.phase === 'restarting' ? 'The workspace reconnects when it is back.' : null
   return (
-    <ModalCard className="w-[360px] max-w-[92%]" bodyClassName="px-4 py-3">
+    <ModalCard className="w-[360px] max-w-[92%]" bodyClassName="px-5 py-4">
       <div role="status" className="flex flex-col gap-2.5">
         <p className="flex items-center gap-2 text-[13px] text-primary">
           <Spinner size={13} />
@@ -101,7 +101,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
       showClose={false}
       bodyClassName="min-h-0 overflow-auto"
     >
-      <div className="space-y-3 px-4 py-3">
+      <div className="space-y-3 px-5 py-4">
         <div className="flex items-center gap-3 rounded-lg border border-subtle bg-surface-0/40 px-3 py-2.5">
           <Folder size={18} className="shrink-0 text-secondary" aria-hidden="true" />
           <div className="min-w-0 flex-1">
@@ -122,7 +122,7 @@ export function RuntimeMismatchCard({ connection }: { connection: WorkspaceConne
         {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
       </div>
 
-      <div className="flex justify-end border-t border-subtle bg-surface-0/40 px-4 py-2">
+      <div className="flex justify-end border-t border-subtle bg-surface-0/40 px-5 py-3">
         <button type="button" className={btn.primary} onClick={() => updateApp ? runWindowAction('checkForUpdates') : void confirm()}>
           {updateApp ? 'Check for Updates…' : 'Update and Stop Work…'}
         </button>

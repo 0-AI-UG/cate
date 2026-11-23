@@ -84,21 +84,29 @@ describe('SettingsWindow', () => {
     expect(document.body.querySelector('[data-scope="workspace"]')).toBeNull()
   })
 
-  it('lists the device and workspace pages together, each under its own heading', () => {
+  it("shows the active workspace's pages under their own tab", () => {
     act(() => root.render(<SettingsWindow workspaceId="local:/p" onClose={() => {}} />))
-    expect(document.body.querySelector('[role="tab"]')).toBeNull()
+    const tabs = [...document.body.querySelectorAll('[role="tab"]')] as HTMLButtonElement[]
+    expect(tabs.map((t) => t.textContent)).toEqual(['Device', 'Workspace'])
     expect(document.body.querySelector('[data-scope="client"] h1')!.textContent).toBe('This device')
+    expect(document.body.textContent).not.toContain('Runtime row')
+    act(() => { tabs[1].click() })
+    expect(document.body.querySelector('[data-scope="client"]')).toBeNull()
     expect(document.body.querySelector('[data-scope="workspace"] h1')!.textContent).toMatch(/^Workspace: /)
     expect(document.body.textContent).toContain('Runtime row')
   })
 
-  it('has no scope headings without a workspace', () => {
-    act(() => root.render(<SettingsWindow workspaceId={null} onClose={() => {}} />))
-    expect(document.body.querySelector('[role="tab"]')).toBeNull()
-    expect(document.body.querySelector('[data-scope="workspace"]')).toBeNull()
+  it('opens on the tab of the requested page', () => {
+    act(() => root.render(<SettingsWindow workspaceId="local:/p" section="runtime" onClose={() => {}} />))
+    expect(document.body.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toBe('Workspace')
   })
 
-  it('searches both scopes, hiding a scope whose pages all miss', () => {
+  it('has no tabs without a workspace', () => {
+    act(() => root.render(<SettingsWindow workspaceId={null} onClose={() => {}} />))
+    expect(document.body.querySelector('[role="tab"]')).toBeNull()
+  })
+
+  it('searches both tabs, hiding a scope whose pages all miss', () => {
     act(() => root.render(<SettingsWindow workspaceId="local:/p" onClose={() => {}} />))
     type(document.body.querySelector('input[type="search"]') as HTMLInputElement, 'runtime')
     expect((document.body.querySelector('[data-scope="client"]') as HTMLElement).hidden).toBe(true)

@@ -5,9 +5,9 @@
 // machine, importing asks first: the passwords leave this computer.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Globe, Key, Plus, Trash } from 'lucide-react'
+import { Globe, Key, Search as MagnifyingGlass, Plus, Trash } from 'lucide-react'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { InlineNotice, LoadingState, SearchField, Spinner, SecondaryButton, Select } from '../../kernel/interaction'
+import { InlineNotice, LoadingState, Spinner, SecondaryButton, Select } from '../../kernel/interaction'
 import { useRuntime } from '../../kernel/rpc'
 import type { BrowserChromeImport, BrowserChromeProfiles, BrowserCredentialSuggestion } from '@services/browser/contract'
 import { browserPageBridge } from '@services/browser/desktop/renderer'
@@ -186,7 +186,18 @@ export function BrowserPasswordManagerPage({ workspaceId }: { workspaceId: strin
         {tab === 'passwords' ? (
           <>
             <div className="mb-6 flex gap-2">
-              <SearchField value={query} onValueChange={setQuery} placeholder="Search passwords" containerClassName="min-w-0 flex-1" />
+              <label className="relative block flex-1">
+                <MagnifyingGlass
+                  size={15}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search passwords"
+                  className="w-full rounded-lg border border-subtle bg-surface-2 py-2 pl-9 pr-3 text-sm outline-none focus:border-focus-blue"
+                />
+              </label>
               <SecondaryButton
                 onClick={() => setAdding(true)}
                 disabled={!runtime || adding}

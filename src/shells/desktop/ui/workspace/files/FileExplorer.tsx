@@ -4,9 +4,9 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass } from 'lucide-react'
+import { RotateCw as ArrowClockwise, FilePlus, FolderPlus, Search as MagnifyingGlass, X } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
-import { LoadingState, SearchField, SidebarSectionHeader, SidebarHeaderButton } from '../../kernel/interaction'
+import { LoadingState, SidebarSectionHeader, SidebarHeaderButton } from '../../kernel/interaction'
 import { hasFileRefDrag, joinPath, parentDir, pathDisplayName, readFileRefDrag, type FileEntry as FileTreeNodeType } from '@workspace/files/contract'
 import { VirtualFileRows, type VirtualFileRowsHandle } from './VirtualFileRows'
 import type { FileTreeModel } from '@workspace/files/client'
@@ -518,8 +518,17 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
 
       {compact && (
         <div className="h-10 shrink-0 px-2 flex items-center gap-1">
-          <SearchField ref={searchInputRef} value={searchQuery} onValueChange={setSearchQuery}
-            onKeyDown={(e) => e.stopPropagation()} placeholder="Filter files" containerClassName="flex-1 min-w-0" />
+          <div className="flex-1 min-w-0 relative">
+            <MagnifyingGlass size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              placeholder="Filter files"
+              className="w-full bg-surface-2 text-primary text-xs pl-7 pr-2 py-1.5 rounded-lg border border-subtle focus:border-focus outline-none"
+            />
+          </div>
           <div className="shrink-0 flex items-center gap-1">
             <SidebarHeaderButton onClick={handleReload} title="Reload"><ArrowClockwise size={14} /></SidebarHeaderButton>
           </div>
@@ -528,15 +537,34 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({ resource, rootPath, 
 
       {!compact && searchVisible && (
         <div className="px-2 py-1.5 border-b border-subtle flex items-center gap-1">
-          <SearchField ref={searchInputRef} value={searchQuery} onValueChange={setSearchQuery} clearOnEscape={false}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setSearchQuery('')
-                setSearchVisible(false)
-              }
-              e.stopPropagation()
-            }}
-            placeholder="Filter by name" containerClassName="flex-1 min-w-0" />
+          <div className="flex-1 relative">
+            <MagnifyingGlass
+              size={11}
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-muted"
+            />
+            <input
+              ref={searchInputRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setSearchQuery('')
+                  setSearchVisible(false)
+                }
+                e.stopPropagation()
+              }}
+              placeholder="Filter by name"
+              className="w-full bg-surface-2 text-primary text-xs pl-7 pr-2 py-1 rounded-lg border border-subtle focus:border-focus outline-none"
+            />
+          </div>
+          {searchQuery && (
+            <SidebarHeaderButton
+              onClick={() => setSearchQuery('')}
+              title="Clear"
+            >
+              <X size={12} />
+            </SidebarHeaderButton>
+          )}
         </div>
       )}
 

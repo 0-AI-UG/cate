@@ -5,8 +5,6 @@ import type { WorkspaceEntry, WorkspaceList, WorkspaceListSnapshot } from '@clie
 import { installClientApp, type ClientApp } from '../app'
 import { INITIAL_UI_STATE, useUIStore } from '../state/uiStore'
 import { Sidebar } from './Sidebar'
-import { createMemoryDeviceStore } from '@kernel/state/contract'
-import { createUiStateStore, installUiState, setUiState } from '../state/uiState'
 import { noRuntimeUpdates } from '@client/connections/testing'
 
 let host: HTMLDivElement
@@ -47,10 +45,7 @@ let list: ReturnType<typeof fakeList>
 const rowOf = (name: string) =>
   [...host.querySelectorAll('[role="treeitem"]')].find((el) => el.textContent?.includes(name)) as HTMLElement
 
-beforeEach(async () => {
-  const ui = createUiStateStore(createMemoryDeviceStore())
-  await ui.load()
-  installUiState(ui)
+beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -68,7 +63,6 @@ afterEach(() => {
   act(() => root.unmount())
   host.remove()
   installClientApp(null)
-  installUiState(null)
 })
 
 describe('Sidebar', () => {
@@ -84,7 +78,7 @@ describe('Sidebar', () => {
     act(() => root.render(<Sidebar />))
     expect(host.querySelectorAll('[data-machine], [role="treeitem"]')).toHaveLength(0)
     expect(host.textContent).toContain('No workspaces yet')
-    expect(host.querySelector('[aria-label="Open Workspace…"]')).not.toBeNull()
+    expect(host.querySelector('[aria-label="Open Workspace…"]')).toBeNull()
   })
 
   it('lists local and paired workspaces together with remote location context', () => {
@@ -94,19 +88,6 @@ describe('Sidebar', () => {
     expect(host.querySelectorAll('[data-machine]')).toHaveLength(0)
     expect(rowOf('Shared').textContent).toContain('Remote computer')
     expect(host.querySelector('[aria-label="Open Workspace…"]')).not.toBeNull()
-  })
-
-  it('reconnects remembered local projects for threads without selecting them or dialing remote projects', async () => {
-    await act(async () => { root.render(<Sidebar />) })
-    expect(list.open.mock.calls.map(([id]) => id)).toEqual(['local:/p/cate', 'local:/p/site'])
-    expect(useUIStore.getState().selectedWorkspaceId).toBeNull()
-  })
-
-  it('shows threads above the project tree in one list', () => {
-    act(() => root.render(<Sidebar />))
-    expect(host.querySelector('[aria-label="Search threads"]')).not.toBeNull()
-    expect(host.querySelector('[aria-label="Threads"] [aria-label="Workspaces"]')).not.toBeNull()
-    expect(host.querySelector('[aria-label="Settled threads"]')).not.toBeNull()
   })
 
   it('reorders a paired workspace across local workspaces', () => {
@@ -141,7 +122,7 @@ describe('Sidebar', () => {
       rowOf('cate').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
       rowOf('site').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))
     })
-    expect(rowOf('cate').closest('[data-workspace-id]')!.className).toContain('--surface-2')
+    expect(rowOf('cate').className).toContain('ring-1')
     const container = host.querySelector('[data-sidebar-keynav]') as HTMLElement
     await act(async () => { container.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })) })
     expect(list.close).toHaveBeenCalledWith('local:/p/cate')

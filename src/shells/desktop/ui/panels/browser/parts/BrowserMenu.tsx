@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Bookmark as BookmarkSimple, ChevronLeft as CaretLeft, History as ClockCounterClockwise, Minus, Plus, Settings as Gear, Key } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
-import { POPOVER_SURFACE, useDismissableLayer, useMenuNumbers } from '../../../kernel/interaction'
+import { POPOVER_SURFACE, useDismissableLayer } from '../../../kernel/interaction'
 import type { BrowserBookmark } from '@services/browser/contract'
 import type { BrowserViewport } from '@panels/browser/contract'
 import { BrowserFavicon } from './BrowserFavicon'
@@ -50,19 +50,18 @@ export function BrowserMenu({
   const validSize = Number.isSafeInteger(Number(width)) && Number(width) > 0
     && Number.isSafeInteger(Number(height)) && Number(height) > 0
 
-  useMenuNumbers(ref, true)
   useDismissableLayer({ open: true, contentRef: ref, triggerRefs: [triggerRef], onDismiss: onClose })
 
-  const item = 'w-full flex items-center gap-2 rounded-md px-2 h-7 text-[13px] text-primary hover:bg-hover focus-visible:bg-hover transition-colors duration-100 motion-reduce:transition-none text-left'
+  const item = 'w-full flex items-center gap-2.5 rounded-lg px-2.5 h-8 text-[13px] text-primary hover:bg-hover focus-visible:bg-hover transition-colors duration-100 motion-reduce:transition-none text-left'
 
   return (
     <div
       ref={ref}
-      className={`absolute right-2 top-[5.5rem] z-40 w-56 max-w-[calc(100%-16px)] ${POPOVER_SURFACE} p-1`}
+      className={`absolute right-2 top-[5.5rem] z-40 w-60 max-w-[calc(100%-16px)] ${POPOVER_SURFACE} p-1.5`}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <button data-menu-item className={item} onClick={() => { onClose(); onNewTab() }}>
-        <Plus size={15} className="shrink-0 text-secondary" /> New tab
+      <button className={item} onClick={() => { onClose(); onNewTab() }}>
+        <Plus size={16} className="shrink-0 text-secondary" /> New tab
       </button>
       <div
         className="relative"
@@ -76,12 +75,11 @@ export function BrowserMenu({
         }}
       >
         <button
-          data-menu-item
           className={item}
           aria-haspopup="menu"
           aria-expanded={bookmarksOpen}
         >
-          <BookmarkSimple size={15} className="shrink-0 text-secondary" />
+          <BookmarkSimple size={16} className="shrink-0 text-secondary" />
           <span className="flex-1">Bookmarks</span>
           <CaretLeft size={12} className="text-muted" />
         </button>
@@ -89,7 +87,7 @@ export function BrowserMenu({
           <div
             role="menu"
             aria-label="Bookmarks"
-            className={`absolute right-[calc(100%-4px)] top-0 z-50 max-h-80 w-64 overflow-y-auto ${POPOVER_SURFACE} p-1`}
+            className={`absolute right-[calc(100%-4px)] top-0 z-50 max-h-80 w-64 overflow-y-auto ${POPOVER_SURFACE} p-1.5`}
           >
             {bookmarks.length === 0 ? (
               <div className="px-3 py-2 text-xs text-muted">No bookmarks yet</div>
@@ -98,7 +96,6 @@ export function BrowserMenu({
                 key={bookmark.url}
                 role="menuitem"
                 title={bookmark.url}
-                data-menu-item
                 className={item}
                 onClick={() => {
                   onClose()
@@ -112,16 +109,16 @@ export function BrowserMenu({
           </div>
         )}
       </div>
-      <button data-menu-item className={item} onClick={() => { onClose(); onOpenHistory() }}>
-        <ClockCounterClockwise size={15} className="shrink-0 text-secondary" /> History
+      <button className={item} onClick={() => { onClose(); onOpenHistory() }}>
+        <ClockCounterClockwise size={16} className="shrink-0 text-secondary" /> History
       </button>
-      <button data-menu-item className={item} onClick={() => { onClose(); onOpenPasswordManager() }}>
-        <Key size={15} className="shrink-0 text-secondary" /> Passwords and autofill
+      <button className={item} onClick={() => { onClose(); onOpenPasswordManager() }}>
+        <Key size={16} className="shrink-0 text-secondary" /> Passwords and autofill
       </button>
-      <div className="mx-2 my-1 border-t border-subtle" />
-      <div className="flex h-8 items-center gap-3 px-2 text-[13px] text-primary">
+      <div className="mx-2.5 my-1.5 border-t border-subtle" />
+      <div className="flex h-9 items-center gap-3 px-2.5 text-[13px] text-primary">
         <span className="flex-1">Zoom</span>
-        <div className="flex h-7 items-center overflow-hidden rounded-md border border-subtle bg-surface-2">
+        <div className="flex h-7 items-center overflow-hidden rounded-lg border border-subtle bg-surface-4">
           <button
             type="button"
             onClick={onZoomOut}
@@ -150,11 +147,11 @@ export function BrowserMenu({
           </button>
         </div>
       </div>
-      <label className="flex h-8 items-center gap-3 px-2 text-[13px] text-primary">
+      <label className="flex h-9 items-center gap-3 px-2.5 text-[13px] text-primary">
         <span className="flex-1">Viewport</span>
         <select
           aria-label="Viewport"
-          className="h-7 min-w-0 rounded-md border border-subtle bg-surface-2 px-1.5 text-xs text-primary"
+          className="h-7 min-w-0 rounded-lg border border-subtle bg-surface-4 px-1.5 text-xs text-primary"
           value={viewport.preset}
           onChange={(event) => {
             const preset = event.target.value
@@ -186,7 +183,7 @@ export function BrowserMenu({
             <input
               type="number" min="1" step="1" required value={width}
               onChange={(event) => setWidth(event.target.value)}
-              className="mt-1 h-7 w-full rounded-md border border-subtle bg-surface-2 px-1.5 text-xs text-primary"
+              className="mt-1 h-7 w-full rounded-lg border border-subtle bg-surface-4 px-1.5 text-xs text-primary"
             />
           </label>
           <label className="min-w-0 flex-1 text-xs text-secondary">
@@ -194,27 +191,26 @@ export function BrowserMenu({
             <input
               type="number" min="1" step="1" required value={height}
               onChange={(event) => setHeight(event.target.value)}
-              className="mt-1 h-7 w-full rounded-md border border-subtle bg-surface-2 px-1.5 text-xs text-primary"
+              className="mt-1 h-7 w-full rounded-lg border border-subtle bg-surface-4 px-1.5 text-xs text-primary"
             />
           </label>
           <button
             type="submit" disabled={!validSize}
-            className="h-7 rounded-md border border-subtle px-2 text-xs text-primary hover:bg-hover focus-visible:bg-hover disabled:opacity-30"
+            className="h-7 rounded-lg border border-subtle px-2 text-xs text-primary hover:bg-hover focus-visible:bg-hover disabled:opacity-30"
           >
             Apply
           </button>
         </form>
       )}
-      <div className="mx-2 my-1 border-t border-subtle" />
+      <div className="mx-2.5 my-1.5 border-t border-subtle" />
       <button
-        data-menu-item
         className={item}
         onClick={() => {
           onClose()
           clientUi().openSettings('workspace-browser')
         }}
       >
-        <Gear size={15} className="shrink-0 text-secondary" /> Browser settings…
+        <Gear size={16} className="shrink-0 text-secondary" /> Browser settings…
       </button>
     </div>
   )

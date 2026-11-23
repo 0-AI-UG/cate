@@ -151,6 +151,7 @@ const api: DesktopApi = {
     },
   },
   menu: {
+    showContextMenu: (items) => invoke(C.menuContext, items),
     barItems: () => invoke(C.menuBarItems),
     popupBarItem: (index, x, y) => invoke(C.menuPopupBarItem, index, x, y),
     runNativeAction: (action) => invoke(C.menuNativeAction, action),
@@ -158,6 +159,7 @@ const api: DesktopApi = {
     onAction: (listener) => listen(C.menuAction, listener),
   },
   dialogs: {
+    messageBox: (request) => invoke(C.dialogMessageBox, request),
     open: (request) => invoke(C.dialogOpen, request),
     pickCanvasBackground: () => invoke(C.canvasBackgroundPick),
     readCanvasBackground: (path) => invoke(C.canvasBackgroundRead, path),

@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useRuntime } from '../../kernel/rpc'
 import { useWorkspaceSetting } from '../../kernel/settings'
-import { SearchField, Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
+import { Spinner, getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { bindTerminal, type TerminalBinding } from '@services/terminal/client'
 import { clientStateFor } from '@client/document'
@@ -323,20 +323,20 @@ export default function TerminalView({
     <div className="relative w-full h-full flex flex-col" onKeyDown={onKeyDown}>
       {showSearch && (
         <div className="flex items-center gap-1 px-2 py-1 bg-surface-3 border-b border-subtle shrink-0">
-          <SearchField
+          <input
             autoFocus
-            clearOnEscape={false}
+            type="text"
             value={query}
-            onValueChange={(value) => {
-              setQuery(value)
-              find(value)
+            onChange={(event) => {
+              setQuery(event.target.value)
+              find(event.target.value)
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') find(query, event.shiftKey ? 'previous' : 'next')
               if (event.key === 'Escape') closeSearch()
             }}
+            className="flex-1 bg-surface-4 text-primary text-xs px-2 py-1 rounded-lg border border-subtle outline-none focus:border-focus"
             placeholder="Search terminal..."
-            containerClassName="flex-1 min-w-0"
           />
           <button type="button" onClick={() => find(query, 'previous')} className="text-secondary hover:text-primary text-xs px-1" title="Previous match (Shift+Enter)">↑</button>
           <button type="button" onClick={() => find(query, 'next')} className="text-secondary hover:text-primary text-xs px-1" title="Next match (Enter)">↓</button>

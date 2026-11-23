@@ -9,9 +9,9 @@ import { useShortcutLabel } from '../ui/kernel/interaction'
 import type { DesktopApi, WindowState } from '../contract'
 import { TRAFFIC_LIGHTS_WIDTH } from './desktopPort'
 
-/** Matches the top chrome of dock tabs and the sidebar; the traffic lights (y 11) centre on it. */
-const MAC_CHROME_HEIGHT = 36
-const TITLE_BAR_HEIGHT = 32
+/** Matches the top chrome of dock tabs and the sidebar. */
+const MAC_CHROME_HEIGHT = 44
+const TITLE_BAR_HEIGHT = 28
 
 const DRAG = { WebkitAppRegion: 'drag' } as CSSProperties
 const NO_DRAG = { WebkitAppRegion: 'no-drag' } as CSSProperties

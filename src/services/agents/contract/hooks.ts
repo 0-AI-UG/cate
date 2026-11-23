@@ -137,8 +137,6 @@ export type AgentHookStrip = null | { delete: true } | { content: string }
 
 /** Live per-agent injection state for one workspace, for the Settings UI.
  *  Produced by the workspace's runtime; clients import only the type. */
-export type AgentHookTrust = 'trusted' | 'approval-required' | 'unknown'
-
 export interface AgentHookAgentState {
   agentId: AgentId
   displayName: string
@@ -147,8 +145,6 @@ export interface AgentHookAgentState {
   folderPresent: boolean
   /** A repo hook file carrying Cate's marker is present (we've injected here). */
   injected: boolean
-  /** CLI-owned hook trust, separate from installation and tool approvals. */
-  hookTrust?: AgentHookTrust
   /** How this CLI's permission requests are told apart (docs/agent-activity.md). */
   approvalDetection?: AgentApprovalDetection
 }

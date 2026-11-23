@@ -672,7 +672,7 @@ function unzipInto(zipPath, destDir) {
 }
 /** Only release runtimes prune installs, so each source change would leave a
  *  dev install behind: remove the other installs of this version that no live
- *  daemon or desktop shell uses. */
+ *  daemon runs. */
 function pruneDevInstalls() {
   const live = new Set()
   const workspaces = path.join(os.homedir(), '.cate', 'workspaces')
@@ -686,13 +686,6 @@ function pruneDevInstalls() {
   const version = buildId.split('+')[0]
   for (const name of readdirSync(runtimeDir)) {
     if (name === buildId || live.has(name) || !name.startsWith(`${version}+`)) continue
-    // Both daemons and desktop shells pin installs they may still need.
-    const markers = path.join(runtimeDir, name, 'in-use')
-    const pinned = (existsSync(markers) ? readdirSync(markers) : []).some((pid) => {
-      if (!/^\d+$/.test(pid)) return false
-      try { process.kill(Number(pid), 0); return true } catch { return false }
-    })
-    if (pinned) continue
     rmSync(path.join(runtimeDir, name), { recursive: true, force: true })
     console.log(`[runtime] removed unused dev install ${name}`)
   }

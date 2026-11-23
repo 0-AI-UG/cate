@@ -79,7 +79,7 @@ export interface CanvasDragState {
   /** The node whose whole-node drag is showing a ghost in its place. */
   sourceNodeId: NodeId | null
   /** The ghost's canvas-space origin on the source canvas, null while the
-   *  cursor is outside the window. */
+   *  cursor is outside the window. The territory follows it. */
   ghostOrigin?: Point | null
 }
 

@@ -3,7 +3,7 @@
 // panels, top-level panels, the panels of its other windows, and its skills.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight as CaretRight, Copy, Folder, Ellipsis as DotsThree, Globe, LogOut, PanelsTopLeft, Pencil, Puzzle, Server, Settings2, UserPlus } from 'lucide-react'
+import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, Server } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
@@ -14,7 +14,7 @@ import { machineOf, type WorkspaceEntry } from '@client/workspaces'
 import type { PanelRecord } from '@workspace/document/contract'
 import { InlineEditInput, canvasKey, toggleCollapsed, useTreeCollapseStore } from '../../workspace/files'
 import { WorkspaceSkillsTree } from '../../workspace/skills'
-import { PanelIcon, PanelTitle, panelTitleLabel, usePanelTitles, type PanelDecoration } from '../../client/host'
+import { PanelTitle, panelTitleLabel, usePanelTitles, type PanelDecoration } from '../../client/host'
 import { clientApp } from '../app'
 import { closePanels, closeWorkspace, detachPanel, renamePanel, revealPanel, selectWorkspace } from '../navigation'
 import { panelsWithPorts, terminalCwd } from '@services/terminal/client'
@@ -23,7 +23,6 @@ import { useUIStore } from '../state/uiStore'
 import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
 import { ShareSlot } from './ShareSlot'
-import { WorkspaceActionsDialog, type WorkspaceAction } from './WorkspaceActionsDialog'
 import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type WindowTree } from './panelTree'
 
@@ -45,13 +44,6 @@ interface RenameState {
   panelId: string
   value: string
   seed: string
-}
-
-/** A folder for this computer's projects, a server for another computer's and a link for shared ones. */
-function WorkspaceGlyph({ kind }: { kind: string }): JSX.Element {
-  if (kind === 'paired') return <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] text-primary"><Globe size={13} /></span>
-  if (kind === 'local') return <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center text-muted"><Folder size={15} /></span>
-  return <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center text-muted"><Server size={15} /></span>
 }
 
 export function WorkspaceRow({
@@ -81,7 +73,6 @@ export function WorkspaceRow({
   const [renamingWorkspace, setRenamingWorkspace] = useState<string | null>(null)
   const [rename, setRename] = useState<RenameState | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [actionsOpen, setActionsOpen] = useState(false)
   const renameInputRef = useRef<HTMLInputElement>(null)
 
   // Focus and select once when renaming starts, not on every keystroke.
@@ -107,47 +98,37 @@ export function WorkspaceRow({
     if (await selectWorkspace(workspaceId)) useUIStore.getState().openShare(workspaceId)
   }
 
-  const workspaceCwd = (): string | undefined =>
-    terminalCwd(statuses, isOpen ? focusedLeafPanelId(workspaceId) : null) ?? rootPath
-
-  /** What the workspace can do; the native menu and the actions dialog list the same. */
-  const workspaceActions = (): WorkspaceAction[] => {
-    const cwd = workspaceCwd()
-    return [
-      { id: 'share', label: 'Invite to Workspace…', icon: <UserPlus size={15} />, run: () => void share() },
-      { id: 'rename', label: 'Rename Workspace', icon: <Pencil size={15} />, run: beginRename },
-      { id: 'settings', label: 'Workspace Settings…', icon: <Settings2 size={15} />, enabled: isOpen,
-        run: () => { void selectWorkspace(workspaceId).then(() => useUIStore.getState().openSettings('runtime')) } },
-      { id: 'skills', label: 'Skills…', icon: <Puzzle size={15} />, enabled: isOpen,
-        run: () => { void selectWorkspace(workspaceId).then((ok) => { if (ok) useUIStore.getState().openOverlay({ view: 'skills' }) }) } },
-      { id: 'copy-cwd', label: 'Copy Working Directory', icon: <Copy size={15} />, enabled: !!cwd, detail: cwd,
-        run: () => { if (cwd) void clientUi().writeClipboard?.(cwd) } },
-      { id: 'close-panels', label: 'Close All Panels', icon: <PanelsTopLeft size={15} />, enabled: isOpen && tree.count > 0,
-        run: () => void closePanels(workspaceId, allPanelIds()) },
-      { id: 'close', label: 'Close Workspace', icon: <LogOut size={15} />, danger: true, run: () => void closeWorkspace(workspaceId) },
-    ]
-  }
-
   const handleContextMenu = async (e: React.MouseEvent) => {
     if (onBulkContextMenu && (await onBulkContextMenu(e))) return
     e.preventDefault()
     e.stopPropagation()
-    const actions = workspaceActions()
-    const byId = new Map(actions.map((action) => [action.id, action]))
-    const item = (id: string): MenuItem => ({ id, label: byId.get(id)!.label, enabled: byId.get(id)!.enabled })
+    const cwd = terminalCwd(statuses, isOpen ? focusedLeafPanelId(workspaceId) : null) ?? rootPath
     const items: MenuItem[] = [
       { id: 'select', label: 'Select Workspace', enabled: !isSelected },
-      item('share'), item('rename'), item('settings'),
+      { id: 'share', label: 'Share Workspace…' },
+      { id: 'rename', label: 'Rename Workspace' },
+      { id: 'settings', label: 'Workspace Settings…', enabled: isOpen },
       { type: 'separator' },
-      item('copy-cwd'), item('close-panels'),
+      { id: 'copy-cwd', label: 'Copy Working Directory', enabled: !!cwd },
+      { id: 'close-panels', label: 'Close All Panels', enabled: isOpen && tree.count > 0 },
       { type: 'separator' },
-      item('close'),
+      { id: 'close', label: 'Close Workspace' },
     ]
     setMenuOpen(true)
     const id = await showMenu(items)
     setMenuOpen(false)
-    if (id === 'select') void selectWorkspace(workspaceId)
-    else if (id) byId.get(id)?.run()
+    switch (id) {
+      case 'select': void selectWorkspace(workspaceId); break
+      case 'rename': beginRename(); break
+      case 'share': void share(); break
+      case 'settings':
+        await selectWorkspace(workspaceId)
+        useUIStore.getState().openSettings('runtime')
+        break
+      case 'copy-cwd': if (cwd) void clientUi().writeClipboard?.(cwd); break
+      case 'close-panels': void closePanels(workspaceId, allPanelIds()); break
+      case 'close': void closeWorkspace(workspaceId); break
+    }
   }
 
   const handlePanelMenu = async (e: React.MouseEvent, record: PanelRecord) => {
@@ -218,43 +199,33 @@ export function WorkspaceRow({
 
   const location = machineOf(entry)
   const displayTitle = entry.name
+  const FolderIcon = isExpanded ? FolderOpen : Folder
   // Only a connected workspace shows its tree: the document mirror outlives a
   // dropped connection (it resumes from it), the sidebar does not show it.
   const connected = useConnectionState(isOpen ? connection : undefined).kind === 'connected'
   const canExpand = connected && tree.count > 0
-  // The panels, as small icons, while collapsed.
-  const collapsedRecords = tree.primary.canvases.flatMap(({ record, children }) => [record, ...children]).concat(tree.primary.topLevel)
 
   return (
-    <div
-      onContextMenu={(e) => void handleContextMenu(e)}
-      data-workspace-id={workspaceId}
-      // One card per workspace, like a thread: its header and its panels.
-      className={`mx-2 my-1 rounded-md pb-1 transition-colors ${entry.kind !== 'local' ? 'border-l-2 border-[color-mix(in_srgb,var(--text-primary)_30%,transparent)] bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)]' : ''} ${
-        isMultiSelected || menuOpen
-          ? 'bg-[color-mix(in_srgb,var(--surface-2)_50%,transparent)]'
-          : 'hover:bg-[color-mix(in_srgb,var(--surface-2)_50%,transparent)]'
-      }`}
-    >
+    <div onContextMenu={(e) => void handleContextMenu(e)} data-workspace-id={workspaceId}>
       <div
-        className={`group flex items-center gap-1.5 h-9 px-1 cursor-pointer outline-none ${
-          isSelected || isMultiSelected ? 'text-primary' : 'text-secondary hover:text-primary'
+        className={`group mx-1.5 my-0.5 rounded-lg flex items-center gap-1 h-7 px-1.5 cursor-pointer transition-colors outline-none ${
+          menuOpen ? 'ring-1 ring-strong' : ''
+        } ${
+          isMultiSelected
+            ? 'bg-surface-6 text-primary ring-1 ring-strong'
+            : isSelected ? 'bg-surface-6 text-primary' : 'text-secondary hover:text-primary hover:bg-hover'
         }`}
         onClick={(e) => onClick(e)}
         aria-selected={isSelected}
         role="treeitem"
         aria-expanded={canExpand ? isExpanded : undefined}
       >
-        <WorkspaceToggle connection={isOpen ? connection : undefined} />
-        {canExpand
-          ? (
-            <button type="button" aria-label={isExpanded ? 'Collapse workspace' : 'Expand workspace'}
-              onClick={(e) => { e.stopPropagation(); onToggleExpand() }}
-              className="flex-shrink-0 rounded p-0.5 -m-0.5 hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-strong">
-              <WorkspaceGlyph kind={entry.kind} />
-            </button>
-          )
-          : <WorkspaceGlyph kind={entry.kind} />}
+        <WorkspaceToggle connection={isOpen ? connection : undefined} canExpand={canExpand} expanded={isExpanded} onToggle={onToggleExpand} />
+        {entry.kind === 'paired'
+          ? <Link2 size={14} className="flex-shrink-0 opacity-90" />
+          : entry.kind === 'machine'
+            ? <Server size={14} className="flex-shrink-0 opacity-90" />
+            : <FolderIcon size={14} className="flex-shrink-0 opacity-90" />}
         {renamingWorkspace !== null ? (
           <InlineEditInput
             ref={renameInputRef}
@@ -266,7 +237,7 @@ export function WorkspaceRow({
           />
         ) : (
           <span
-            className={`flex-1 min-w-0 text-[13px] text-secondary truncate ${isOpen ? '' : 'opacity-70'} ${isSelected ? 'cursor-text' : ''}`}
+            className={`flex-1 min-w-0 text-[14px] truncate ${isOpen ? '' : 'opacity-70'} ${isSelected ? 'cursor-text' : ''}`}
             title={isSelected ? 'Rename workspace' : rootPath ?? displayTitle}
             onClick={(e) => {
               if (e.shiftKey || e.metaKey || e.ctrlKey || !isSelected) return
@@ -278,51 +249,23 @@ export function WorkspaceRow({
             {displayTitle}
           </span>
         )}
-        {entry.kind !== 'local' && (
-          <span className="flex max-w-28 shrink-0 items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--text-primary)_8%,transparent)] px-1.5 py-0.5 text-[10px] text-secondary" title={entry.kind === 'paired' ? 'Shared workspace, running on another computer' : 'Workspace on another computer'}>
-            {entry.kind === 'paired' ? <Globe size={10} className="shrink-0" /> : <Server size={10} className="shrink-0" />}
-            <span className="truncate">{'label' in location ? location.label ?? 'Remote computer' : ''}</span>
+        {entry.kind !== 'local' && <span className="max-w-24 truncate text-[11px] text-muted" title="Workspace computer">{'label' in location ? location.label ?? 'Remote computer' : ''}</span>}
+        <ShareSlot workspaceId={workspaceId} isOpen={isOpen} isSelected={isSelected} onShare={() => void share()} />
+        {canExpand && !isExpanded && (
+          <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">
+            {tree.count}
           </span>
         )}
-        <ShareSlot workspaceId={workspaceId} isOpen={isOpen} isSelected={isSelected} onShare={() => void share()} />
-        <Tooltip label="Workspace actions">
+        <Tooltip label="More actions">
           <button
-            className="flex-shrink-0 w-0 -ml-1.5 overflow-hidden opacity-0 group-hover:w-5 group-hover:ml-0 group-hover:opacity-80 focus-visible:w-5 focus-visible:ml-0 focus-visible:opacity-100 hover:!opacity-100 h-5 flex items-center justify-center text-secondary hover:text-primary transition-opacity focus:outline-none"
-            onClick={(e) => { e.stopPropagation(); setActionsOpen(true) }}
-            aria-label="Workspace actions"
+            className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-80 hover:!opacity-100 text-secondary hover:text-primary transition-opacity focus:outline-none"
+            onClick={(e) => { e.stopPropagation(); void handleContextMenu(e) }}
+            aria-label="More actions"
           >
             <DotsThree size={14} />
           </button>
         </Tooltip>
       </div>
-      {!isExpanded && canExpand && (
-        <div className="flex items-center justify-start gap-0.5 pl-[7px] pr-2.5 pb-1.5 text-muted" aria-label={`${tree.count} panels`}>
-          {collapsedRecords.slice(0, 8).map((record) => (
-            <button
-              key={record.id}
-              type="button"
-              title={panelTitleLabel(record, titles.decorations[record.id])}
-              aria-label={panelTitleLabel(record, titles.decorations[record.id])}
-              data-panel-id={record.id}
-              onClick={(e) => { e.stopPropagation(); void revealPanel(workspaceId, record.id) }}
-              className={`flex h-5 w-5 items-center justify-center rounded-md transition-colors hover:bg-hover hover:text-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-strong ${
-                titles.decorations[record.id]?.logo ? '' : 'opacity-80 hover:opacity-100'
-              } ${titles.decorations[record.id]?.busy ? 'animate-pulse' : ''}`}
-            >
-              <PanelIcon type={record.type} size={11} logo={titles.decorations[record.id]?.logo} logoAlt={titles.decorations[record.id]?.logoAlt} />
-            </button>
-          ))}
-          {collapsedRecords.length > 8 && <span className="text-[11px]">+{collapsedRecords.length - 8}</span>}
-        </div>
-      )}
-      {actionsOpen && (
-        <WorkspaceActionsDialog
-          name={displayTitle}
-          location={rootPath}
-          actions={workspaceActions()}
-          onClose={() => setActionsOpen(false)}
-        />
-      )}
       {isExpanded && canExpand && (
         <div className="flex flex-col" role="group">
           {renderWindow(tree.primary)}

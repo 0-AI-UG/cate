@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { BrowserDialog } from '@services/browser/contract'
-import { Button, CARD_SURFACE } from '../../../kernel/interaction'
+import { Button, POPOVER_SURFACE } from '../../../kernel/interaction'
 
 interface PageDialogProps {
   dialog: BrowserDialog & { id: string }
@@ -23,11 +23,11 @@ export function PageDialog({ dialog, origin, onAnswer }: PageDialogProps): JSX.E
   const accept = () => onAnswer(true, dialog.type === 'prompt' ? text : undefined)
 
   return (
-    <div className="absolute inset-0 z-40 flex items-start justify-center bg-black/60 pt-[12vh]" data-browser-dialog>
+    <div className="absolute inset-0 z-40 flex items-start justify-center bg-black/30 pt-16" data-browser-dialog>
       <div
         role="alertdialog"
         aria-label={`${origin} says`}
-        className={`flex w-96 max-w-[calc(100%-2rem)] flex-col gap-2.5 p-3 ${CARD_SURFACE}`}
+        className={`flex w-96 max-w-[calc(100%-2rem)] flex-col gap-3 p-4 ${POPOVER_SURFACE}`}
         onKeyDown={(event) => {
           if (event.key === 'Escape') { event.preventDefault(); onAnswer(false) }
           else if (event.key === 'Enter') { event.preventDefault(); accept() }

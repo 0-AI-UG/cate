@@ -7,7 +7,7 @@ const isMac = platform ? platform === 'darwin' : navigator.userAgent.includes('M
 if (isMac && (params.get('window') || 'main') === 'main') {
   document.body.style.background = 'transparent'
   const splash = document.querySelector<HTMLElement>('#root > div')
-  if (splash) splash.style.background = `color-mix(in srgb, ${params.get('bg') || '#141414'} 55%, transparent)`
+  if (splash) splash.style.background = `color-mix(in srgb, ${params.get('bg') || '#232220'} 30%, transparent)`
 }
 
 export {}

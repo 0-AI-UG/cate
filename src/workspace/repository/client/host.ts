@@ -57,6 +57,4 @@ export interface RepositoryHost {
   focusedWorktreeId: string | null
   focusWorktree(worktreeId: string | null): void
   setHoveredWorktree(worktreeId: string | null): void
-  /** Previews `worktreeId` on a panel (a tint) while its picker menu is open; null clears. */
-  previewPanelWorktree(panelId: string, worktreeId: string | null): void
 }

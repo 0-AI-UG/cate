@@ -122,7 +122,7 @@ export function PullRequestsOverview({ workspaceId, initialRepository = '', onOp
             const rows = filtered.filter((pr) => pr.involvement === group)
             if (!rows.length) return null
             return <section key={group} className="mb-5"><h2 className="mb-1 px-3 text-xs font-medium text-muted">{group === 'authored' ? 'Authored' : 'Review requested'}</h2>
-              {rows.map((pr) => <div key={pr.id} className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-hover">
+              {rows.map((pr) => <div key={pr.id} className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-hover">
                 <GitPullRequest size={16} className="shrink-0 text-muted" />
                 <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-primary">{pr.title}</span><span className="mt-1 block truncate text-[11px] text-muted">#{pr.number} · {pr.repository} · {pr.author}{pr.draft ? ' · Draft' : ''}</span></span>
                 <span className="flex shrink-0 items-center gap-2 text-[11px] tabular-nums">
@@ -150,7 +150,7 @@ function relativeDate(value: string): string {
 
 function ToolbarPopover({ label, icon, active, children }: { label: string; icon: ReactNode; active?: boolean; children: ReactNode }) {
   const trigger = useRef<HTMLButtonElement>(null)
-  const popover = useNodePopover(trigger, (rect, scale) => ({ left: Math.max(8, Math.min(rect.right - 240 * scale, window.innerWidth - 248 * scale)), gap: 6 }))
+  const popover = useNodePopover(trigger, (rect) => ({ left: Math.max(8, Math.min(rect.right - 240, window.innerWidth - 248)), gap: 6 }))
   return <>
     <Button ref={trigger} aria-expanded={popover.open} aria-haspopup="dialog" onClick={() => popover.setOpen(!popover.open)} className={active ? 'bg-hover' : ''}>
       {icon}{label}{active && <span aria-label="Filters active" className="h-1.5 w-1.5 rounded-full bg-focus-blue" />}

@@ -5,13 +5,18 @@ import { writeFileSync } from 'node:fs'
 import { launchApp, closeApp, makeHome, makeProject, openWorkspace, expectTerminalText } from './fixtures/electron-app'
 import { create, installPerfHelpers, waitForPty, waitForBrowserGuest } from './fixtures/perf-helpers'
 
-for (const mode of ['default', 'webgl2-disabled']) {
+for (const mode of ['default', 'webgl2-disabled', 'territory-cpu']) {
   const domTerminals = mode === 'webgl2-disabled'
   test(`graphics memory lifecycle ${mode}`, async () => {
     test.skip(process.env.CATE_GRAPHICS_PROFILE !== '1' || process.platform !== 'darwin', 'Opt-in macOS memory profile')
     test.setTimeout(300_000)
     const home = makeHome()
-    const { electronApp: app, mainWindow: page } = await launchApp({ home, domTerminals, perf: true })
+    const { electronApp: app, mainWindow: page } = await launchApp({ home, domTerminals, perf: true, onWindow: async page => {
+      if (mode === 'territory-cpu') {
+        await page.waitForLoadState('domcontentloaded')
+        await page.evaluate(() => localStorage.setItem('cate.territory.backend', 'cpu'))
+      }
+    } })
     const rows: unknown[] = []
     try {
       await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setSize(1400, 950); w.show() })

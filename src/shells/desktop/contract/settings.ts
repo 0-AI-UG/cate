@@ -24,6 +24,7 @@ export const canvasSettings = defineSettings({
     /** Absolute path of the wallpaper image; empty for none. */
     canvasBackgroundImagePath: setting(''),
     canvasBackgroundImageOpacity: setting(0.4, numberIn(0, 1)),
+    showWorktreeTerritory: setting(true),
     /** Hold Alt during a drag or resize to bypass. */
     snapToGrid: setting(false),
     /** Offer numbered spots for a new panel instead of placing it at once. */

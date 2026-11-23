@@ -34,7 +34,7 @@ it('replaces the surface with the picked type under the same id', () => {
   act(() => root.render(<SurfaceView workspaceId="ws" panelId="p1" record={surface} session={null as never} send={async () => undefined} snapshot={null} visible focused={false} />))
   const buttons = [...host.querySelectorAll('button')]
   expect(buttons.map((b) => b.textContent)).not.toContain('Open a surface')
-  act(() => buttons.find((b) => b.textContent?.startsWith('Agent Review'))!.click())
+  act(() => buttons.find((b) => b.textContent === 'Agent Review')!.click())
   expect(h.propose).toHaveBeenCalledTimes(1)
   const change = h.propose.mock.calls[0][0] as { kind: string; record: PanelRecord }
   expect(change).toEqual({ kind: 'replacePanel', record: { id: 'p1', type: 'review', title: 'Agent Review', worktreeId: 'wt', fields: { repoPath: '' } } })

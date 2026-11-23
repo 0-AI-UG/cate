@@ -57,7 +57,7 @@ export function WelcomeDialog(): JSX.Element | null {
       className={`fixed inset-0 z-[60] flex items-center justify-center bg-canvas-bg transition-opacity duration-300 ease-out ${exiting ? 'opacity-0' : 'opacity-100'}`}
     >
       <AnimatedDotGrid className="absolute inset-0 w-full h-full pointer-events-none" />
-      <div className={`relative z-10 w-[440px] max-w-[92vw] rounded-[10px] overflow-hidden border border-white/[0.08] bg-surface-1 shadow-[0_16px_48px_-16px_rgb(0_0_0/0.8)] transition-all duration-300 ease-out ${exiting ? 'opacity-0 scale-[0.98] translate-y-1' : 'opacity-100 scale-100'}`}>
+      <div className={`relative z-10 w-[440px] max-w-[92vw] rounded-xl overflow-hidden border border-strong bg-surface-2/95 backdrop-blur-xl shadow-[0_24px_64px_rgba(0,0,0,0.55)] transition-all duration-300 ease-out ${exiting ? 'opacity-0 scale-[0.98] translate-y-1' : 'opacity-100 scale-100'}`}>
         {/* Moebius landscape header, slightly blurred and fading out, so it's
             only visible at the very top of the card. */}
         <img

@@ -236,7 +236,7 @@ export function OnboardingTour(): JSX.Element | null {
 
       {/* Card */}
       <div
-        className="absolute rounded-[10px] bg-surface-1 border border-white/[0.08] shadow-[0_16px_48px_-16px_rgb(0_0_0/0.8)] overflow-hidden flex flex-col"
+        className="absolute rounded-2xl bg-[#1a1a1e] border border-white/[0.08] shadow-[0_24px_64px_rgba(0,0,0,0.6)] overflow-hidden flex flex-col"
         style={{ left, top, bottom, width: cardWidth, animation: 'onboarding-card-in 0.18s ease-out' }}
       >
         <button

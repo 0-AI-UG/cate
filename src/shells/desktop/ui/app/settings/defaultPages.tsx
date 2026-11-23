@@ -76,7 +76,7 @@ export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   { id: 'terminal', title: 'Terminal', scope: 'client', group: 'tools', order: 10, component: TerminalPage },
   { id: 'editor', title: 'Editor', scope: 'client', group: 'tools', order: 20, component: EditorPage },
   { id: 'browser', title: 'Browser', scope: 'client', group: 'tools', order: 30, component: BrowserPage },
-  { id: 'shortcuts', title: 'Shortcuts', scope: 'client', group: 'tools', order: 90, component: ShortcutsPage },
+  { id: 'shortcuts', title: 'Shortcuts', scope: 'client', group: 'tools', order: 40, component: ShortcutsPage },
   // The active workspace.
   { id: 'runtime', title: 'Availability', scope: 'workspace', group: 'runtime', order: 10, component: RuntimePage },
   { id: 'devices', title: 'Devices', scope: 'workspace', group: 'runtime', order: 20, component: DevicesPage },

@@ -15,16 +15,11 @@ function seedTranscripts(home: string, project: string): void {
   const at = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const claude = path.join(home, '.claude', 'projects', '-proj')
   mkdirSync(claude, { recursive: true })
-  const turn = (id: string, cwd: string, timestamp = at) => JSON.stringify({
-    type: 'assistant', timestamp, sessionId: id, requestId: `r-${id}`, cwd,
+  const turn = (id: string, cwd: string) => JSON.stringify({
+    type: 'assistant', timestamp: at, sessionId: id, requestId: `r-${id}`, cwd,
     message: { id, model: 'claude-e2e-model', usage: { input_tokens: 1_200_000, output_tokens: 300_000, cache_read_input_tokens: 500_000 } },
   })
-  // Fill the 90-day breakdown with enough rows to scroll at the default window size.
-  const olderTurns = Array.from({ length: 20 }, (_, index) => {
-    const timestamp = new Date(Date.now() - (40 + index) * 86_400_000).toISOString()
-    return turn(`old-${index}`, project, timestamp)
-  })
-  writeFileSync(path.join(claude, 's1.jsonl'), [turn('m1', project), turn('m2', path.join(home, 'elsewhere')), ...olderTurns].join('\n') + '\n')
+  writeFileSync(path.join(claude, 's1.jsonl'), `${turn('m1', project)}\n${turn('m2', path.join(home, 'elsewhere'))}\n`)
   const codex = path.join(home, '.codex', 'sessions', 'today')
   mkdirSync(codex, { recursive: true })
   writeFileSync(path.join(codex, 'rollout.jsonl'), [
@@ -63,13 +58,8 @@ test('the usage overview shows the workspace\'s agent tokens, the breakdown and 
 
   await page.getByRole('button', { name: 'Usage' }).first().click()
   const overview = page.locator('section[aria-label="Usage overview"]')
-  const header = overview.locator('header')
-  const metrics = header.getByRole('group', { name: 'Usage metric' })
-  const periods = header.getByRole('group', { name: 'Usage period' })
-  const fade = () => header.evaluate((element) => getComputedStyle(element, '::after').backgroundImage)
   await expect(overview).toBeVisible()
-  await metrics.getByRole('button', { name: 'Tokens' }).click()
-  await expect(header.getByRole('button', { name: 'Refresh usage' })).toBeVisible()
+  await overview.getByRole('group', { name: 'Usage metric' }).getByRole('button', { name: 'Tokens' }).click()
   // 1.2M + 0.3M + 0.5M Claude, 1M Codex; the session elsewhere is not counted.
   await expect(overview.getByText('3M', { exact: true }).first()).toBeVisible({ timeout: 30_000 })
   await expect(overview.getByText('Claude Code').first()).toBeVisible()
@@ -77,15 +67,8 @@ test('the usage overview shows the workspace\'s agent tokens, the breakdown and 
   await expect(overview.getByRole('cell', { name: /claude-e2e-model/ })).toBeVisible()
   await page.screenshot({ path: test.info().outputPath('usage-tokens.png') })
 
-  await periods.getByRole('button', { name: '90 days' }).click()
-  await overview.getByRole('group', { name: 'Usage breakdown' }).getByRole('button', { name: 'Day' }).click()
-  await expect.poll(fade).toContain('linear-gradient')
-  await overview.getByRole('row').last().scrollIntoViewIfNeeded()
-  await expect(periods).toBeInViewport()
-
-  await metrics.getByRole('button', { name: 'Limits' }).click()
+  await overview.getByRole('group', { name: 'Usage metric' }).getByRole('button', { name: 'Limits' }).click()
   await expect(overview.getByText('75%', { exact: true }).first()).toBeVisible({ timeout: 30_000 })
   await expect(overview.getByText('60%', { exact: true }).first()).toBeVisible()
-  await expect.poll(fade).toBe('none')
   await page.screenshot({ path: test.info().outputPath('usage-limits.png') })
 })

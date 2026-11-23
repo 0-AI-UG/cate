@@ -4,13 +4,12 @@
 // bottom. Window controls (macOS traffic lights) inset its header.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ChartNoAxesCombined, GitPullRequest, Settings as Gear, FileText, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ChartNoAxesCombined, GitPullRequest, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, ScrollText, type LucideIcon } from 'lucide-react'
 import { CateLogo, Tooltip, useShortcutLabel } from '../../kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import type { ActionId } from '@kernel/interaction/contract'
 import { UpdateButton } from '../chrome/UpdateButton'
-import { useWhatsNewPending } from '../chrome/WhatsNew'
-import { SidebarToggleIcon, useWindowControlsInset } from '../chrome/chrome'
+import { useWindowControlsInset } from '../chrome/chrome'
 import { hasOverlay, overlayOwnsSidebar, useOverlaysVersion } from '../overlays'
 import { useUIStore } from '../state/uiStore'
 import { WorkspaceList } from './WorkspaceList'
@@ -32,11 +31,13 @@ export interface SidebarOverlayButton {
 }
 
 const DEFAULT_OVERLAY_BUTTONS: readonly SidebarOverlayButton[] = [
+  { view: 'skills', label: 'Skills', action: 'skills', icon: PuzzlePiece },
   { view: 'pullRequests', label: 'Repository', action: 'openRepository', icon: GitPullRequest },
   { view: 'usage', label: 'Usage', action: 'openUsage', icon: ChartNoAxesCombined },
+  { view: 'whatsNew', label: "What's New", action: 'whatsNew', icon: ScrollText },
 ]
 
-export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, overlayButtons = DEFAULT_OVERLAY_BUTTONS }: SidebarProps): JSX.Element {
+export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, overlayButtons = DEFAULT_OVERLAY_BUTTONS }: SidebarProps): JSX.Element {
   const tintOpacity = useClientSetting('sidebarTintOpacity')
   const hidden = useUIStore((s) => s.sidebarHidden)
   const overlay = useUIStore((s) => s.overlay)
@@ -44,7 +45,6 @@ export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, ov
   const navOpen = overlayOwnsSidebar(overlay?.view)
   const controlsInset = useWindowControlsInset()
   const shortcutLabel = useShortcutLabel()
-  const whatsNew = useWhatsNewPending()
   useOverlaysVersion()
   const [width, setWidth] = useState(defaultWidth)
   const [resizing, setResizing] = useState(false)
@@ -83,35 +83,25 @@ export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, ov
   const hideButton = (
     <button
       type="button"
-      className="flex items-center justify-center w-6 h-6 rounded-md text-muted hover:text-secondary hover:bg-hover transition-colors"
+      className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       onClick={() => useUIStore.getState().setSidebarHidden(true)}
       aria-label="Hide sidebar"
       title={shortcutLabel('toggleSidebar', 'Hide sidebar')}
     >
-      <SidebarToggleIcon filled={hidden} />
+      <SidebarSimple size={16} />
     </button>
   )
 
   const ui = useUIStore.getState
   const utilities = !navOpen && (
-    <div className="absolute bottom-0 inset-x-0 z-10 flex items-center gap-1 px-2 pb-2 pt-16">
-      {/* The list scrolls behind and fades out toward the top, no hard edge. */}
-      <div
-        aria-hidden
-        className="absolute inset-0 -z-10 pointer-events-none"
-        style={{
-          background: 'linear-gradient(to top, var(--surface-1) 0%, color-mix(in srgb, var(--surface-1) 90%, transparent) 30%, color-mix(in srgb, var(--surface-1) 55%, transparent) 55%, color-mix(in srgb, var(--surface-1) 20%, transparent) 80%, transparent 100%)',
-          maskImage: 'linear-gradient(to top, black 0%, black 35%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0.2) 85%, transparent 100%)',
-          WebkitMaskImage: 'linear-gradient(to top, black 0%, black 35%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0.2) 85%, transparent 100%)',
-        }}
-      />
+    <div className="flex-shrink-0 flex items-center gap-1 px-2 py-2">
       {overlay ? (
         <button
           type="button"
           aria-label="Back to workspace"
           onClick={() => ui().closeOverlay()}
-          className="flex-1 h-6 px-2 flex items-center gap-2 rounded-md text-[13px] text-secondary hover:bg-hover hover:text-primary transition-colors"
+          className="flex-1 h-8 px-2 flex items-center gap-2 rounded-md text-[13px] text-secondary hover:bg-hover hover:text-primary transition-colors"
         >
           <ArrowLeft size={16} />
           Back
@@ -124,7 +114,7 @@ export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, ov
                 type="button"
                 aria-label={label}
                 onClick={() => ui().openOverlay({ view })}
-                className="flex items-center justify-center w-6 h-6 rounded-md text-muted hover:text-secondary hover:bg-hover transition-colors"
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
               >
                 <ButtonIcon size={16} className="pointer-events-none" />
               </button>
@@ -136,26 +126,14 @@ export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, ov
               aria-label="Settings"
               aria-pressed={settingsOpen}
               onClick={() => ui().toggleSettings()}
-              className="flex items-center justify-center w-6 h-6 rounded-md text-muted hover:text-secondary hover:bg-hover transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
             >
               <Gear size={16} className="pointer-events-none" />
             </button>
           </Tooltip>
         </>
       )}
-      <div className="ml-auto flex items-center gap-1">
-        <Tooltip action="whatsNew" label="What's New" placement="top">
-          <button
-            type="button"
-            aria-label="What's New"
-            onClick={whatsNew.open}
-            className={`flex items-center justify-center w-6 h-6 rounded-md hover:bg-hover transition-colors ${whatsNew.pending ? 'text-focus-blue' : 'text-muted hover:text-secondary'}`}
-          >
-            <FileText size={16} className="pointer-events-none" />
-          </button>
-        </Tooltip>
-        <UpdateButton />
-      </div>
+      <UpdateButton className="ml-auto" />
     </div>
   )
 
@@ -172,14 +150,14 @@ export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, ov
     >
       {/* Drag strip beside the window controls. */}
       <div
-        className={`absolute top-0 left-0 right-0 h-[36px] ${controlsInset > 0 ? '' : 'pointer-events-none'}`}
+        className={`absolute top-0 left-0 right-0 h-[44px] ${controlsInset > 0 ? '' : 'pointer-events-none'}`}
         style={(controlsInset > 0 ? { WebkitAppRegion: 'drag' } : {}) as React.CSSProperties}
       />
-      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative">
+      <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden relative pr-1">
         {navOpen && (
           <div
-            className="app-header-bar flex-shrink-0 gap-2.5 pr-3"
-            style={{ paddingLeft: controlsInset || 8, WebkitAppRegion: 'drag' } as React.CSSProperties}
+            className="app-header-bar flex-shrink-0 gap-2 pr-3"
+            style={{ paddingLeft: controlsInset || 12, WebkitAppRegion: 'drag' } as React.CSSProperties}
           >
             {hideButton}
             <CateLogo size={88} className="h-7 w-auto text-primary" aria-label="Cate" />
@@ -190,8 +168,7 @@ export function Sidebar({ defaultWidth = 280, minWidth = 220, maxWidth = 400, ov
           <div className="absolute inset-0 animate-sidebar-view-in">
             <WorkspaceList
               headerTitle={<CateLogo size={88} className="h-7 w-auto text-primary" aria-label="Cate" />}
-              // The toggle sits where the collapsed sidebar's reopen button does.
-              headerLeadingAction={<div style={{ marginLeft: (controlsInset || 8) - 12 }}>{hideButton}</div>}
+              headerLeadingAction={<div className="flex items-center" style={{ marginLeft: controlsInset ? controlsInset - 12 : 0 }}>{hideButton}</div>}
             />
           </div>
         </div>

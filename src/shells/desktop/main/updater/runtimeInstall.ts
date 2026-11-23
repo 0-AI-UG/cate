@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createLogger } from '@kernel/log/contract'
 import { RUNTIME_BUILD, RUNTIME_VERSION, runtimeTarget, tarballName, type RuntimeTarget, type RuntimeUpdateProgress } from '@runtime/daemon/contract'
-import { ensureRuntimeInstalled, markRuntimeInUse } from '@runtime/daemon/node'
+import { ensureRuntimeInstalled } from '@runtime/daemon/node'
 import { cateHome } from '@runtime/data/node'
 
 const log = createLogger('runtime-install')
@@ -84,8 +84,5 @@ export async function installBundledRuntime(options: BundledTarballOptions & { h
     throw new Error(`${(err as Error).message}. Rebuild it with \`npm run runtime:tarball\`, or run with CATE_RUNTIME_BUNDLE`)
   }
   log.info('runtime %s ready at %s (%d ms, from %s)', build ?? version, dir, Date.now() - started, tarball ?? 'release download')
-  // The shell may need to start another workspace later, even when none of
-  // its daemons are running. Keep its exact build while this app is alive.
-  markRuntimeInUse(dir, process.pid)
   return dir
 }

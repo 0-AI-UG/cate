@@ -125,15 +125,6 @@ describe('AI & Agents settings', () => {
     expect(row('codex').querySelector('[aria-label="Codex integration"]')).not.toBeNull()
   })
 
-  it('does not call an installed signed-in Codex ready while its hooks need approval', async () => {
-    inspectHooks.mockResolvedValue([{ agentId: 'codex', displayName: 'Codex', folderPresent: true, injected: true, hookTrust: 'approval-required' }])
-    await render()
-    expect(row('codex').querySelector('h3')?.textContent).toContain('Hooks need approval')
-    expect(row('codex').querySelector('h3')?.textContent).not.toContain('Ready')
-    await expand('codex')
-    expect(row('codex').textContent).toContain('/hooks')
-  })
-
   it('distinguishes an unreadable identity from signed out and keeps downloads available', async () => {
     const state = snapshot()
     state.agents[0].authentication = { status: 'unknown', detail: 'The CLI does not expose account identity.' }

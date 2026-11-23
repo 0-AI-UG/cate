@@ -20,7 +20,7 @@ it('selects bundled wallpapers, persists the choice and restores the selected sw
 
   try {
     act(() => root.render(<CanvasPage />))
-    for (const name of ['Hillside']) {
+    for (const name of ['Lighthouse', 'Snowy Pass']) {
       const wallpaper = BUILTIN_WALLPAPERS.find((w) => w.name === name)!
       const button = host.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!
       expect(button).not.toBeNull()
@@ -34,7 +34,7 @@ it('selects bundled wallpapers, persists the choice and restores the selected sw
     const reloaded = createClientSettingsStore(device, clientSettingsTable)
     await reloaded.load()
     act(() => installClientSettings(reloaded))
-    expect(host.querySelector('button[aria-label="Hillside"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(host.querySelector('button[aria-label="Snowy Pass"]')?.getAttribute('aria-pressed')).toBe('true')
     act(() => host.querySelector<HTMLButtonElement>('button[aria-label="None"]')!.click())
     expect(reloaded.get('canvasBackgroundImagePath')).toBe('')
     reloaded.dispose()

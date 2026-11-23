@@ -1,6 +1,7 @@
-// UrlSuggestions: the list that expands the browser URL bar's card. Pure
+// UrlSuggestions: autocomplete dropdown beneath the browser URL bar. Pure
 // presentational: the parent (BrowserPanel) owns the query + active selection.
 import type { BrowserHistoryEntry } from '@services/browser/contract'
+import { POPOVER_SURFACE } from '../../../kernel/interaction'
 import { BrowserFavicon } from './BrowserFavicon'
 import { faviconForUrl } from '@panels/browser/contract'
 
@@ -14,27 +15,26 @@ interface Props {
 export function UrlSuggestions({ items, activeIndex, onPick, onHover }: Props): JSX.Element | null {
   if (items.length === 0) return null
   return (
-    <div className="px-1 pb-1">
-      {items.map((item, i) => {
-        const shown = item.url.replace(/^https?:\/\/(?:www\.)?/, '').replace(/\/$/, '')
-        const title = item.title && item.title !== item.url && item.title !== shown ? item.title : ''
-        return (
-          <button
-            key={item.url}
-            // onMouseDown (not onClick) so the pick fires before the input's onBlur
-            // hides the list; preventDefault keeps focus where it is.
-            onMouseDown={(e) => { e.preventDefault(); onPick(item.url) }}
-            onMouseEnter={() => onHover(i)}
-            className={`w-full flex items-center gap-2.5 rounded-lg px-2 h-8 text-left text-[13px] transition-colors duration-100 motion-reduce:transition-none ${
-              i === activeIndex ? 'bg-hover' : ''
-            }`}
-          >
-            <span className="opacity-60"><BrowserFavicon src={faviconForUrl(item.url)} size={14} /></span>
-            {title && <span className="min-w-0 max-w-[50%] shrink-0 truncate text-primary">{title}</span>}
-            <span className={`min-w-0 truncate ${title ? 'text-muted' : 'text-primary'}`}>{shown}</span>
-          </button>
-        )
-      })}
+    <div className={`absolute left-0 right-0 top-full mt-1 z-30 ${POPOVER_SURFACE} overflow-hidden p-1.5`}>
+      {items.map((item, i) => (
+        <button
+          key={item.url}
+          // onMouseDown (not onClick) so the pick fires before the input's onBlur
+          // hides the list; preventDefault keeps focus where it is.
+          onMouseDown={(e) => { e.preventDefault(); onPick(item.url) }}
+          onMouseEnter={() => onHover(i)}
+          className={`w-full flex items-center gap-2.5 rounded-lg px-2.5 h-9 text-left text-[13px] hover:bg-hover focus-visible:bg-hover transition-colors duration-100 motion-reduce:transition-none ${
+            i === activeIndex ? 'bg-hover' : ''
+          }`}
+        >
+          <BrowserFavicon src={faviconForUrl(item.url)} size={16} />
+          <span className="min-w-0 max-w-[60%] shrink-0 truncate text-primary">{item.title || item.url}</span>
+          <span className="min-w-0 truncate text-secondary">
+            <span aria-hidden="true">· </span>
+            {item.url.replace(/^https?:\/\/(?:www\.)?/, '').replace(/\/$/, '')}
+          </span>
+        </button>
+      ))}
     </div>
   )
 }

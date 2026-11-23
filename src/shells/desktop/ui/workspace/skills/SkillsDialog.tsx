@@ -9,14 +9,14 @@
 // Installing only writes to this workspace. Catalog sources live in
 // Settings > Skills (gear).
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, ChevronRight, Folder, SlidersHorizontal, LayoutGrid, List, X, Check, ChevronDown as CaretDown, SquareArrowOutUpRight as ArrowSquareOut } from 'lucide-react'
-import { RefreshCw as ArrowsClockwise, Puzzle as PuzzlePiece } from 'lucide-react'
+import { Search as MagnifyingGlass, RefreshCw as ArrowsClockwise } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import type { RuntimeProxy } from '@kernel/rpc/contract'
 import { createLogger } from '@kernel/log/contract'
-import { IconButton, InlineNotice, ListDialog, LoadingState, Spinner, POPOVER_SURFACE, SearchField, Tooltip } from '../../kernel/interaction'
+import { IconButton, InlineNotice, LoadingState, Spinner, POPOVER_SURFACE, PaletteTextInput, Tooltip } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { groupSkillsByRepository, skillRows, skillSearchTerms, type InstalledSkill, type SkillEntry, type SkillTarget, type SkillTargetId } from '@workspace/skills/contract'
 
@@ -42,9 +42,23 @@ export interface SkillsDialogProps {
   /** The workspace to install into; null when no folder is open. */
   workspaceId: string | null
   onClose: () => void
+  /** Where the host shows the view (its main content area). Without one the
+   *  view covers the window and shows a Back button. */
+  container?: HTMLElement | null
+  /** The host's overlay header chrome; gets the header actions. */
+  renderHeader?: (actions: ReactNode) => ReactNode
 }
 
-export function SkillsDialog({ workspaceId, onClose }: SkillsDialogProps) {
+function DefaultHeader({ children }: { children: ReactNode }) {
+  return (
+    <header className="relative z-10 flex h-11 shrink-0 items-center gap-2 bg-canvas-bg px-6 text-primary after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-6 after:bg-gradient-to-b after:from-canvas-bg after:to-transparent">
+      <h1 className="min-w-0 flex-1 truncate text-[13px] font-medium">Skills</h1>
+      <div className="flex shrink-0 items-center gap-2">{children}</div>
+    </header>
+  )
+}
+
+export function SkillsDialog({ workspaceId, onClose, container, renderHeader }: SkillsDialogProps) {
   const runtime = useRuntime(workspaceId)
   const skills = runtime?.skills ?? null
   const [index, setIndex] = useState<SkillEntry[]>([])
@@ -139,10 +153,11 @@ export function SkillsDialog({ workspaceId, onClose }: SkillsDialogProps) {
 
   const headerActions = (
     <>
+      {!container && <button type="button" onClick={onClose} className="text-sm text-muted hover:text-primary">Back</button>}
       <button
         type="button"
         onClick={() => clientUi().openExternal(SKILL_SOURCES_URL)}
-        className="inline-flex items-center gap-1.5 text-[12px] font-medium text-muted hover:text-primary"
+        className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-secondary hover:bg-hover hover:text-primary"
         title="Suggest a missing skill for the catalog"
       >
         Add a skill source
@@ -151,12 +166,21 @@ export function SkillsDialog({ workspaceId, onClose }: SkillsDialogProps) {
     </>
   )
 
-  return (
-    <ListDialog onClose={onClose} ariaLabel="Skills" title="Skills" icon={<PuzzlePiece size={15} />} width={620} height="min(600px, 76vh)"
-      hints={[{ keys: ['Esc'], label: 'Close' }]} footer={headerActions}>
-      <div className="flex w-full min-h-0 flex-1 flex-col">
-        <div className="shrink-0 flex items-center gap-1 px-1 pb-1 pt-0.5">
-          <SearchField autoFocus value={query} onValueChange={setQuery} placeholder="Search skills…" containerClassName="flex-1 !border-transparent !bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)]" />
+  return createPortal(
+    <section aria-label="Skills" className={`${container ? 'h-full w-full' : 'fixed inset-0 z-[100001]'} pointer-events-auto flex min-h-0 flex-col bg-canvas-bg text-primary`}>
+      {renderHeader ? renderHeader(headerActions) : <DefaultHeader>{headerActions}</DefaultHeader>}
+      <div className="mx-auto flex w-full max-w-[1040px] min-h-0 flex-1 flex-col px-6">
+        <div className="py-4 shrink-0 flex items-center gap-2">
+          <PaletteTextInput
+              icon={<MagnifyingGlass size={14} />}
+              containerClassName="flex-1"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape' && query) { e.stopPropagation(); setQuery('') } }}
+              placeholder="Search skills…"
+              spellCheck={false}
+          />
           <IconBtn
             title={viewMode === 'list' ? 'Card view' : 'List view'}
             onClick={() => setViewMode((mode) => mode === 'list' ? 'card' : 'list')}
@@ -179,8 +203,8 @@ export function SkillsDialog({ workspaceId, onClose }: SkillsDialogProps) {
         )}
 
         <div
-          className="-mb-2 flex-1 min-h-0 overflow-y-auto pt-1 pb-3"
-          style={{ maskImage: 'linear-gradient(to bottom, transparent, black 8px)' }}
+          className="flex-1 min-h-0 overflow-y-auto pt-4 pb-6"
+          style={{ maskImage: 'linear-gradient(to bottom, transparent, black 16px)' }}
         >
           {cateRows.length > 0 && (
             <>
@@ -196,16 +220,16 @@ export function SkillsDialog({ workspaceId, onClose }: SkillsDialogProps) {
             </>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-3 pb-1.5 px-2.5">
-            <h2 className="text-[12px] font-medium text-muted">Browse · {browseMode === 'repositories' && selectedRepo === null ? repositories.length : visibleBrowseRows.length}</h2>
-            <div role="group" aria-label="Browse by" className="flex rounded-md bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] p-0.5 text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-5 pb-3 px-3">
+            <h2 className="text-sm font-medium text-secondary">Browse · {browseMode === 'repositories' && selectedRepo === null ? repositories.length : visibleBrowseRows.length}</h2>
+            <div role="group" aria-label="Browse by" className="flex rounded-lg bg-surface-1 p-0.5 text-xs">
               {(['skills', 'repositories'] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
                   aria-pressed={browseMode === mode}
                   onClick={() => { setBrowseMode(mode); setSelectedRepo(null) }}
-                  className={`rounded px-2.5 py-1 ${browseMode === mode ? 'bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)] text-primary' : 'text-muted hover:text-primary'}`}
+                  className={`rounded-md px-3 py-1.5 ${browseMode === mode ? 'bg-surface-3 text-primary' : 'text-muted hover:text-primary'}`}
                 >
                   {mode === 'skills' ? 'All skills' : 'Repositories'}
                 </button>
@@ -244,12 +268,12 @@ export function SkillsDialog({ workspaceId, onClose }: SkillsDialogProps) {
                   type="button"
                   aria-label={`Browse ${repo || 'Unknown repository'}`}
                   onClick={() => setSelectedRepo(repo)}
-                  className={`flex min-w-0 items-center gap-3 rounded-lg text-left transition-colors ${viewMode === 'card' ? 'bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] p-3 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]' : 'px-2.5 py-1.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)]'}`}
+                  className={`flex min-w-0 items-center gap-3 rounded-xl text-left transition-colors ${viewMode === 'card' ? 'border border-subtle bg-surface-1 p-4 hover:bg-surface-2' : 'px-3 py-3 hover:bg-surface-1'}`}
                 >
-                  <Folder size={15} className="shrink-0 text-muted" />
+                  <Folder size={18} className="shrink-0 text-muted" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-primary">{repo || 'Unknown repository'}</span>
-                    <span className="block text-[11px] text-muted">{entries.length} {terms.length ? 'matching ' : ''}{entries.length === 1 ? 'skill' : 'skills'}</span>
+                    <span className="mt-1 block text-xs text-muted">{entries.length} {terms.length ? 'matching ' : ''}{entries.length === 1 ? 'skill' : 'skills'}</span>
                   </span>
                   <ChevronRight size={15} className="shrink-0 text-muted" />
                 </button>
@@ -260,7 +284,8 @@ export function SkillsDialog({ workspaceId, onClose }: SkillsDialogProps) {
           )}
         </div>
       </div>
-    </ListDialog>
+    </section>,
+    container ?? document.body,
   )
 }
 
@@ -318,32 +343,32 @@ function SkillRow({
   }
 
   return (
-    <article className={`group min-w-0 rounded-lg transition-colors ${viewMode === 'card'
-      ? 'flex flex-col gap-2 bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] p-3 hover:bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]'
-      : 'flex items-center gap-3 px-2.5 py-1.5 hover:bg-[color-mix(in_srgb,var(--text-primary)_6%,transparent)]'}`}>
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+    <article className={`group min-w-0 rounded-xl transition-colors ${viewMode === 'card'
+      ? 'flex flex-col gap-3 border border-subtle bg-surface-1 p-4 hover:bg-surface-2'
+      : 'flex items-start gap-3 px-3 py-3 hover:bg-surface-1'}`}>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[13px] text-primary truncate">{entry.name}</span>
-          {entry.source.repo && <span className="min-w-0 truncate text-[12px] text-muted opacity-70" title={entry.source.repo}>{entry.source.repo}</span>}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[13px] font-medium text-primary truncate">{entry.name}</span>
           {typeof entry.stars === 'number' && entry.stars > 0 && (
             <span className="shrink-0 text-[10px] text-muted tabular-nums">
               {entry.stars > 999 ? `${Math.round(entry.stars / 1000)}k` : entry.stars}★
             </span>
           )}
         </div>
-        {entry.description && <p className={`mt-0.5 text-[12px] leading-snug text-muted ${viewMode === 'card' ? 'line-clamp-3' : 'line-clamp-1'}`}>{entry.description}</p>}
+        {entry.description && <p className={`mt-1 text-xs leading-relaxed text-muted ${viewMode === 'card' ? 'line-clamp-3' : 'line-clamp-2'}`}>{entry.description}</p>}
+        {entry.source.repo && <div className="mt-2 truncate text-[11px] text-muted" title={entry.source.repo}>{entry.source.repo}</div>}
       </div>
       </div>
 
-      <div className={`flex shrink-0 items-center gap-1.5 ${viewMode === 'card' ? 'justify-end pt-1' : ''}`}>
+      <div className={`flex shrink-0 items-center gap-1.5 ${viewMode === 'card' ? 'justify-end border-t border-subtle pt-3' : 'pt-0.5'}`}>
       {installed && link && (
         <Tooltip label="Update installed copies from source">
           <button
             onClick={() => void updateInstalled()}
             disabled={updateBusy}
             aria-label="Update installed copies from source"
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-muted opacity-0 transition-opacity hover:text-secondary focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 disabled:opacity-50"
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-secondary disabled:opacity-50"
           >
             {updateBusy ? <Spinner size={14} /> : <ArrowsClockwise size={14} />}
           </button>
@@ -355,7 +380,7 @@ function SkillRow({
           <button
             onClick={() => clientUi().openExternal(link)}
             aria-label="Open skill on GitHub"
-            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-muted opacity-0 transition-opacity hover:text-secondary focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            className="shrink-0 w-6 h-6 flex items-center justify-center rounded-lg text-muted hover:text-secondary"
           >
             <ArrowSquareOut size={14} />
           </button>
@@ -366,7 +391,7 @@ function SkillRow({
         ref={installRef}
         onClick={openMenu}
         disabled={!skills}
-        className={`shrink-0 flex min-w-[72px] items-center justify-center gap-1 text-[12px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-40 ${
+        className={`shrink-0 flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 disabled:opacity-40 ${
           installed ? 'text-secondary hover:text-primary' : 'text-primary'
         }`}
         title={skills ? 'Install for an agent in this workspace' : 'Open a workspace first'}
@@ -450,7 +475,7 @@ function AgentMenu({
   return createPortal(
     <div
       ref={rootRef}
-      className={`fixed z-[100003] w-[200px] ${POPOVER_SURFACE} p-1 text-xs`}
+      className={`fixed z-[100003] w-[200px] ${POPOVER_SURFACE} p-1.5 text-xs`}
       style={{ top: anchor.top, left: anchor.left }}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -463,7 +488,7 @@ function AgentMenu({
             key={t.id}
             onClick={() => void toggle(t.id)}
             disabled={working}
-            className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-left text-primary hover:bg-hover focus-visible:bg-hover disabled:opacity-50"
+            className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-primary hover:bg-hover focus-visible:bg-hover disabled:opacity-50"
             title={on ? 'Uninstall skill' : 'Install skill'}
           >
             <span className="w-3.5 shrink-0 flex items-center justify-center text-accent">
@@ -491,9 +516,9 @@ function IconBtn({
   return (
       <IconButton
         label={title}
-        size={24}
+        size={28}
         onClick={onClick}
-        className="rounded-md text-muted hover:bg-white/5"
+        className="rounded-[10px] text-muted hover:bg-white/5"
       >
         {children}
       </IconButton>
@@ -501,5 +526,5 @@ function IconBtn({
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
-  return <h2 className="px-2.5 pt-3 pb-1.5 text-[12px] font-medium text-muted">{children}</h2>
+  return <h2 className="px-3 pt-5 pb-3 text-sm font-medium text-secondary">{children}</h2>
 }

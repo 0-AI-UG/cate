@@ -64,7 +64,7 @@ for (const style of ['lines', 'dots'] as const) {
 test('panning reuses grid and wallpaper pixels instead of painting the viewport again', async () => {
   const home = makeHome(), userDataDir = path.join(home, 'ud')
   mkdirSync(userDataDir)
-  writeFileSync(path.join(userDataDir, 'settings.json'), JSON.stringify({ canvasGridStyle: 'dots', canvasBackgroundImagePath: 'builtin:hillside', canvasBackgroundImageOpacity: 1 }))
+  writeFileSync(path.join(userDataDir, 'settings.json'), JSON.stringify({ canvasGridStyle: 'dots', canvasBackgroundImagePath: 'builtin:snowy-pass', canvasBackgroundImageOpacity: 1 }))
   const { electronApp: app, mainWindow: page } = await launchApp({ home, userDataDir })
   try {
     await expect(page.locator('[data-canvas-background-image]')).toBeVisible()

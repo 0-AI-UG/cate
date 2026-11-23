@@ -3,13 +3,13 @@
 
 import React from 'react'
 import { agentDisplayName, type AgentId } from '@services/agents/contract'
-import { MENU_ROW, POPOVER_SURFACE, Tooltip, useMenuNumbers } from '../../kernel/interaction'
+import { Tooltip } from '../../kernel/interaction'
 import { AgentMark } from './AgentMark'
 
 export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, onPick, children, footer }: {
   agents: readonly AgentId[]
   /** The side of the button it opens on; the column grows away from it. */
-  side: 'up' | 'down' | 'left' | 'right'
+  side: 'up' | 'down' | 'left'
   label: string
   itemLabel(name: string, agentId: AgentId): string
   disabled?: boolean
@@ -20,58 +20,32 @@ export function AgentFlyout({ agents, side, label, itemLabel, disabled = false, 
   footer?: React.ReactNode
 }): React.ReactElement {
   const down = side === 'down'
-  const menuRef = React.useRef<HTMLDivElement>(null)
-  useMenuNumbers(menuRef, side !== 'right')
-  if (side === 'right') {
-    // Inline: a row of slim buttons inside the toolbar pill that holds the button.
-    return (
-      <div role="menu" aria-label={label} className="cate-stagger flex items-center gap-px">
-        {children ?? agents.map((agentId) => {
-          const name = itemLabel(agentDisplayName(agentId), agentId)
-          return (
-            <Tooltip key={agentId} label={name} placement="top">
-              <button
-                type="button"
-                role="menuitem"
-                aria-label={name}
-                disabled={disabled}
-                onClick={() => onPick(agentId)}
-                style={{ WebkitTapHighlightColor: 'transparent' }}
-                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md text-secondary hover:bg-hover-strong active:scale-[0.94] transition-colors duration-100 disabled:opacity-30 disabled:grayscale disabled:pointer-events-none"
-              >
-                <AgentMark agent={agentId} size={16} />
-              </button>
-            </Tooltip>
-          )
-        })}
-        {footer}
-      </div>
-    )
-  }
   return (
     <div
-      ref={menuRef}
       role="menu"
       aria-label={label}
-      className={`cate-spawn-flyout flex min-w-[176px] flex-col gap-0.5 p-1 ${POPOVER_SURFACE}`}
-      style={{ transformOrigin: side === 'up' ? 'bottom center' : down ? 'top center' : 'bottom right' } as React.CSSProperties}
+      className={`cate-spawn-flyout flex ${down ? 'flex-col' : 'flex-col-reverse'} items-center gap-1 p-1 rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]`}
+      style={{
+        transformOrigin: side === 'up' ? 'bottom center' : down ? 'top center' : 'bottom right',
+        ...(down ? { '--cate-flyout-dy': '-10px' } : {}),
+      } as React.CSSProperties}
     >
-      {children ?? agents.map((agentId) => {
+      {children ?? agents.map((agentId, index) => {
         const name = itemLabel(agentDisplayName(agentId), agentId)
         return (
-          <button
-            key={agentId}
-            type="button"
-            role="menuitem"
-            aria-label={name}
-            data-menu-item
-            disabled={disabled}
-            onClick={() => onPick(agentId)}
-            className={`${MENU_ROW} hover:bg-hover active:bg-hover-strong`}
-          >
-            <AgentMark agent={agentId} size={16} />
-            <span className="flex-1 truncate">{agentDisplayName(agentId)}</span>
-          </button>
+          <Tooltip key={agentId} label={name} placement={side === 'left' ? 'left' : 'right'}>
+            <button
+              type="button"
+              role="menuitem"
+              aria-label={name}
+              disabled={disabled}
+              onClick={() => onPick(agentId)}
+              style={{ '--i': index, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}
+              className="cate-spawn-flyout-item h-9 w-9 shrink-0 flex items-center justify-center rounded-full text-secondary hover:bg-hover-strong hover:scale-110 active:scale-[0.92] transition-transform duration-100 disabled:opacity-30 disabled:grayscale disabled:pointer-events-none"
+            >
+              <AgentMark agent={agentId} size={18} />
+            </button>
+          </Tooltip>
         )
       })}
       {footer}

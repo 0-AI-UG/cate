@@ -13,23 +13,23 @@ const rect = (x: number, y: number, width = 100, height = 80): Rect => ({
 })
 
 describe('panelConnectionPath', () => {
-  it('connects horizontal rectangles at their facing edges', () => {
+  it('connects horizontal rectangles at their facing edges with a gap', () => {
     const path = panelConnectionPath(rect(0, 0), rect(300, 0))!
-    expect(path).toMatch(/^M 100 40 C /)
-    expect(path).toMatch(/, 300 40$/)
+    expect(path).toMatch(/^M 107 40 C /)
+    expect(path).toMatch(/, 293 40$/)
     expect(path.match(/ C /g)).toHaveLength(4)
   })
 
   it('connects vertical rectangles at their facing edges', () => {
     const path = panelConnectionPath(rect(0, 0), rect(0, 240))
-    expect(path).toMatch(/^M 50 80 C /)
-    expect(path).toMatch(/, 50 240$/)
+    expect(path).toMatch(/^M 50 87 C /)
+    expect(path).toMatch(/, 50 233$/)
   })
 
   it('anchors diagonal connections at the middle of a side', () => {
     const path = panelConnectionPath(rect(0, 0), rect(220, 160))
-    expect(path).toMatch(/^M 100 40 C /)
-    expect(path).toMatch(/, 220 200$/)
+    expect(path).toMatch(/^M 107 40 C /)
+    expect(path).toMatch(/, 213 200$/)
   })
 
   it('does not invent a direction for coincident rectangles', () => {
@@ -38,8 +38,8 @@ describe('panelConnectionPath', () => {
 
   it('keeps a declared connection attached to its selected ports', () => {
     const path = panelConnectionPath(rect(0, 0), rect(300, 0), 'bottom', 'top')
-    expect(path).toMatch(/^M 50 80 C /)
-    expect(path).toMatch(/, 350 0$/)
+    expect(path).toMatch(/^M 50 92 C /)
+    expect(path).toMatch(/, 350 -12$/)
   })
 
   it('positions horizontal UI at the midpoint of the rendered curve', () => {
