@@ -160,12 +160,13 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const focusedWorktreeId = useCanvasUi((s) => s.focusedWorktreeId)
   const worktreeHighlight = !!activeWorktreeId && (hoveredWorktreeId === activeWorktreeId || focusedWorktreeId === activeWorktreeId)
   const worktreeDim = !!focusedWorktreeId && activeWorktreeId !== focusedWorktreeId
+  const peeked = useCanvasUi((s) => !!s.peekedPanelId && !!dock && dockPanels(dock).includes(s.peekedPanelId as PanelId))
 
-  // The territory and lens layers read each node's worktree from the store.
+  // The minimap and lens layers read each node's worktree from the store.
   useEffect(() => {
     store.getState().setNodeActiveWorktree(nodeId, activeWorktreeId)
   }, [store, nodeId, activeWorktreeId])
-  // Cleared only on unmount, so the territory never flickers.
+  // Cleared only on unmount, so the group never flickers.
   useEffect(() => () => store.getState().setNodeActiveWorktree(nodeId, null), [store, nodeId])
 
   // --- Enter animation ------------------------------------------------------------
@@ -372,6 +373,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
     worktreeColor: worktreeTint,
     worktreeHighlight,
     worktreeDim,
+    peeked,
   })
 
   if (!node) return null

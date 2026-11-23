@@ -15,7 +15,7 @@ import type { WindowRegistry } from './windowRegistry'
 
 const log = createLogger('windows')
 
-const DEFAULT_BACKGROUND = '#1f1e1c'
+const DEFAULT_BACKGROUND = '#141414'
 const BOUNDS_DEBOUNCE_MS = 300
 /** Detached window bounds kept in `boot.json`, most recently moved first out. */
 const MAX_DETACHED_GEOMETRY = 50

@@ -8,8 +8,10 @@ import { PLACEMENT_GAP } from './placement'
 /** A side of a rect a connection leaves or enters by. */
 export type PanelConnectionSide = 'top' | 'right' | 'bottom' | 'left'
 
-const ENDPOINT_GAP = 7
-const PORT_ENDPOINT_GAP = 12
+/** Lines, arrowheads, handle dots and a dropped panel's port all sit on the
+ *  panel's edge itself: nothing floats in the gap. */
+const PORT_ENDPOINT_GAP = 0
+const EDGE_GAP = PORT_ENDPOINT_GAP
 
 interface Anchor extends Point {
   normal: Point
@@ -234,12 +236,12 @@ function resolvePanelConnection(
     }
   }
   const start = {
-    x: startBoundary.x + startBoundary.normal.x * (sourceSide ? PORT_ENDPOINT_GAP : ENDPOINT_GAP),
-    y: startBoundary.y + startBoundary.normal.y * (sourceSide ? PORT_ENDPOINT_GAP : ENDPOINT_GAP),
+    x: startBoundary.x + startBoundary.normal.x * EDGE_GAP,
+    y: startBoundary.y + startBoundary.normal.y * EDGE_GAP,
   }
   const end = {
-    x: endBoundary.x + endBoundary.normal.x * (targetSide ? PORT_ENDPOINT_GAP : ENDPOINT_GAP),
-    y: endBoundary.y + endBoundary.normal.y * (targetSide ? PORT_ENDPOINT_GAP : ENDPOINT_GAP),
+    x: endBoundary.x + endBoundary.normal.x * EDGE_GAP,
+    y: endBoundary.y + endBoundary.normal.y * EDGE_GAP,
   }
   const sourceResolvedSide = sourceSide ?? (Object.keys(SIDE_INDEX) as PanelConnectionSide[])
     .find((side) => anchors(source)[SIDE_INDEX[side]].x === startBoundary.x

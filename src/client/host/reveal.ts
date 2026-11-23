@@ -56,3 +56,30 @@ export async function revealPanel(workspaceId: string, panelId: PanelId, options
   }
   return false
 }
+
+/** Shows a panel without focusing it: switches the tabs that hide it and
+ *  brings its window on screen. Returns a function that puts the tabs back, or
+ *  null when the panel is unknown. */
+export function peekPanel(workspaceId: string, panelId: PanelId): (() => void) | null {
+  const doc = documentStoreFor(workspaceId)?.getSnapshot()
+  const state = clientStateFor(workspaceId)
+  if (!doc || !state) return null
+  const placement = placementOf(doc, panelId)
+  if (!placement) return null
+  const tabs = state.getSnapshot().activeTabs
+  const changed: Array<[string, PanelId | undefined]> = []
+  const show = (stackId: string, id: PanelId): void => {
+    if (tabs[stackId] === id) return
+    changed.push([stackId, tabs[stackId]])
+    state.setActiveTab(stackId, id)
+  }
+  show(placement.stackId, panelId)
+  if (isCanvasDock(placement.dock)) {
+    const host = canvasPanelOf(doc, placement.dock.canvasId)
+    const hostPlacement = host ? placementOf(doc, host.id) : null
+    if (host && hostPlacement) show(hostPlacement.stackId, host.id)
+  }
+  const windowId = windowOf(doc, panelId)
+  if (windowId) hooks.showWindow?.(workspaceId, windowId)
+  return () => { for (const [stackId, id] of changed.reverse()) if (id) state.setActiveTab(stackId, id) }
+}

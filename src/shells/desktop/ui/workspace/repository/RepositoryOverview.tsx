@@ -5,7 +5,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ExternalLink, FolderGit2, GitBranch, GitPullRequest, Github, Settings2 } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
-import { Button, IconButton, LoadingState, Spinner } from '../../kernel/interaction'
+import { Button, DropdownSelect, IconButton, LoadingState, Spinner } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { pathDisplayName } from '@workspace/files/contract'
 import { githubRepositoryUrl, type GitRemote, type PullRequestItem } from '@workspace/repository/contract'
@@ -73,17 +73,19 @@ export function RepositoryOverview({ tab, onTabChange, header, onOpenPullRequest
     {header(<IconButton label="GitHub settings" onClick={() => clientUi().openSettings('github')}><Settings2 size={15} /></IconButton>)}
     <div className="mx-auto flex min-h-0 w-full max-w-[1280px] flex-1 flex-col px-6 pt-3">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-medium">{root ? pathDisplayName(root) : 'Your repositories'}</h1>
-          {repositories.length > 1 && <div role="group" aria-label="Local repository" className="mt-2 flex flex-wrap gap-1">{repositories.map(path => <button key={path} aria-pressed={path === root} title={path} onClick={() => setSelected(path)} className={`rounded-md px-2 py-1 text-xs ${path === root ? 'bg-surface-3 text-primary' : 'text-muted hover:bg-hover hover:text-primary'}`}>{pathDisplayName(path)}</button>)}</div>}
-          {root && <p title={root} className="mt-1 truncate text-xs text-muted">{root}</p>}
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-secondary">
+        <div className="min-w-0 flex-[1_1_280px]">
+          {repositories.length > 1 ? <DropdownSelect label="Local repository" value={root} onChange={setSelected} matchTriggerWidth
+            className="inline-flex min-w-0 max-w-full items-center gap-2 rounded-lg border border-subtle bg-surface-2 px-2 py-1 text-xl font-semibold text-left"
+            options={repositories.map(path => ({ value: path, label: pathDisplayName(path) }))} /> : <h1 className="truncate text-xl font-medium">{root ? pathDisplayName(root) : 'Your repositories'}</h1>}
+          {root && <p title={root} className="mt-2 truncate text-xs text-muted">{root}</p>}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-secondary">
             <>{checkingRemote ? <Spinner size={14} label="Loading repository connection" /> : <Github size={14} />}</>
-            {remotes.length > 1 && <div role="group" aria-label="Git remote" className="flex gap-1">{remotes.map(r => <button key={r.name} aria-pressed={r.name === remote?.name} onClick={() => setRemoteName(r.name)} className={`rounded px-2 py-1 ${r.name === remote?.name ? 'bg-surface-3 text-primary' : 'text-muted hover:bg-hover hover:text-primary'}`}>{r.name}</button>)}</div>}
+            {remotes.length > 1 && <DropdownSelect label="Git remote" value={remote?.name ?? ''} onChange={setRemoteName}
+              options={remotes.map(r => ({ value: r.name, label: r.name }))} />}
             {checkingRemote ? <span>Loading remote</span> : url ? <button onClick={() => openLink()} className="inline-flex items-center gap-1 hover:text-primary">{url.replace('https://github.com/', '')}<ExternalLink size={12} /></button> : <span>{remote ? `Remote: ${remote.name} · not hosted on GitHub` : root ? error ? '' : 'No remote connected' : 'Pull requests across your GitHub repositories'}</span>}
           </div>
         </div>
-        {url && <div className="flex flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={() => openLink()}><Github size={14} />GitHub</Button><Button variant="ghost" size="sm" onClick={() => openLink('/issues')}>Issues</Button><Button variant="ghost" size="sm" onClick={() => openLink('/actions')}>Actions</Button><Button variant="ghost" size="sm" onClick={() => openLink('/compare?expand=1')}>New pull request</Button></div>}
+        {url && <div className="flex max-w-full flex-wrap gap-2"><Button variant="ghost" size="sm" onClick={() => openLink()}><Github size={14} />GitHub</Button><Button variant="ghost" size="sm" onClick={() => openLink('/issues')}>Issues</Button><Button variant="ghost" size="sm" onClick={() => openLink('/actions')}>Actions</Button><Button variant="ghost" size="sm" onClick={() => openLink('/compare?expand=1')}>New pull request</Button></div>}
       </div>
       {error && <p role="alert" className="mb-3 text-sm text-danger">{error}</p>}
       <nav aria-label="Repository views" className="flex shrink-0 gap-5 border-b border-subtle">

@@ -4,7 +4,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { Check, Trash, Upload, Download as DownloadSimple, Sparkles as Sparkle } from 'lucide-react'
-import { InlineNotice, SearchableBlock, SecondaryButton, Select, SettingRow, Tooltip } from '../../../kernel/interaction'
+import { InlineNotice, SearchableBlock, SecondaryButton, Select, SettingRow, Toggle, Tooltip } from '../../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import {
   BUILT_IN_THEMES,
@@ -38,6 +38,7 @@ export function AppearancePage(): JSX.Element {
   const systemLightThemeId = useClientSetting('systemLightThemeId')
   const systemDarkThemeId = useClientSetting('systemDarkThemeId')
   const uiScale = useClientSetting('uiScale')
+  const worktreeTint = useClientSetting('worktreeTint')
   const isSystem = activeThemeId === 'system'
   const [importError, setImportError] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -122,7 +123,7 @@ export function AppearancePage(): JSX.Element {
 
       {importError && <InlineNotice tone="error" className="mb-2 border-0 bg-transparent px-0">{importError}</InlineNotice>}
 
-      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 pb-3 lg:grid-cols-3">
+      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-1.5 pb-3 md:grid-cols-3 xl:grid-cols-4">
         <SystemCard
           active={isSystem}
           lightTheme={resolveTheme(themeSettings, 'system', false)}
@@ -170,6 +171,9 @@ export function AppearancePage(): JSX.Element {
       <SettingRow label="UI scale" description="Zooms Cate's interface; doesn't affect browser-panel pages">
         <Select value={String(uiScale)} onChange={(v) => setClientSetting('uiScale', parseFloat(v))} options={UI_SCALE_OPTIONS} />
       </SettingRow>
+      <SettingRow label="Tint panels with worktree color" description="With two or more worktrees, tint each terminal (and any panel that can switch worktrees) with its worktree's color. The worktree menu previews it too.">
+        <Toggle checked={worktreeTint} onChange={(v) => setClientSetting('worktreeTint', v)} />
+      </SettingRow>
     </div>
   )
 }
@@ -193,27 +197,21 @@ function CardShell({
         }
       }}
       aria-checked={active}
-      className={`group relative flex min-h-[124px] flex-col justify-between rounded-xl border p-3 text-left cursor-pointer transition-colors ${
+      className={`group relative flex h-9 items-center gap-2 rounded-lg border px-2 text-left cursor-pointer transition-colors ${
         active ? 'border-focus-blue bg-agent/10' : 'border-subtle hover:bg-hover'
       }`}
     >
       {children}
-      {active && (
-        <span className="absolute top-1.5 right-1.5 text-focus-blue">
-          <Check size={13} />
-        </span>
-      )}
     </div>
   )
 }
 
-function SwatchPreview({ theme }: { theme: Theme }) {
-  const c = mergeThemeApp(theme)
+function OrbPair({ first, second }: { first: ReactNode; second: ReactNode }) {
   return (
-    <div className="flex items-center justify-center gap-5 py-1">
-      <ThemeOrb base={c['surface-1']} shade={c['surface-6']} accent={c['focus-blue']} />
-      <ThemeOrb base={c['canvas-bg-alt']} shade={c['surface-4']} accent={c['focus-blue']} reverse />
-    </div>
+    <span className="flex shrink-0 items-center">
+      {first}
+      <span className="-ml-1.5">{second}</span>
+    </span>
   )
 }
 
@@ -232,7 +230,7 @@ function ThemeOrb({
   const softenedShade = `color-mix(in srgb, ${shade} 72%, ${base})`
   return (
     <span
-      className="h-14 w-14 rounded-full border border-white/10 shadow-[0_5px_16px_rgba(0,0,0,0.28)]"
+      className="block h-4 w-4 rounded-full border border-white/15"
       style={{
         backgroundColor: base,
         backgroundImage: reverse
@@ -253,35 +251,36 @@ function ThemeCard({
   onDelete?: () => void
   confirmingDelete?: boolean
 }) {
+  const c = mergeThemeApp(theme)
   return (
     <CardShell active={active} onClick={onClick}>
-      <SwatchPreview theme={theme} />
-      <div className="flex items-center justify-between min-w-0">
-        <span className="text-[12px] text-primary truncate">{theme.name}</span>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <Tooltip label="Export theme">
+      <OrbPair
+        first={<ThemeOrb base={c['surface-1']} shade={c['surface-6']} accent={c['focus-blue']} />}
+        second={<ThemeOrb base={c['canvas-bg-alt']} shade={c['surface-4']} accent={c['focus-blue']} reverse />}
+      />
+      <span className="min-w-0 flex-1 truncate text-[12px] text-primary">{theme.name}</span>
+      {active && <Check size={12} className="shrink-0 text-focus-blue group-hover:hidden" />}
+      <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+        <Tooltip label="Export theme">
+          <button
+            onClick={(e) => { e.stopPropagation(); onExport() }}
+            className="p-0.5 rounded-lg text-muted hover:text-primary"
+            aria-label="Export theme"
+          >
+            <DownloadSimple size={12} />
+          </button>
+        </Tooltip>
+        {onDelete && (
+          <Tooltip label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}>
             <button
-              onClick={(e) => { e.stopPropagation(); onExport() }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 rounded-lg text-muted hover:text-primary transition-opacity"
-              aria-label="Export theme"
+              onClick={(e) => { e.stopPropagation(); onDelete() }}
+              className="p-0.5 rounded-lg text-muted hover:text-red-400"
+              aria-label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}
             >
-              <DownloadSimple size={12} />
+              <Trash size={12} />
             </button>
           </Tooltip>
-          {onDelete ? (
-            <Tooltip label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDelete() }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded-lg text-muted hover:text-red-400 transition-opacity"
-                aria-label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}
-              >
-                <Trash size={12} />
-              </button>
-            </Tooltip>
-          ) : (
-            <span className="text-[10px] text-muted">built-in</span>
-          )}
-        </div>
+        )}
       </div>
     </CardShell>
   )
@@ -294,11 +293,12 @@ function SystemCard({
   const dark = mergeThemeApp(darkTheme)
   return (
     <CardShell active={active} onClick={onClick}>
-      <div className="flex items-center justify-center gap-5 py-1">
-        <ThemeOrb base={light['surface-1']} shade={light['surface-6']} accent={light['focus-blue']} />
-        <ThemeOrb base={dark['surface-1']} shade={dark['surface-6']} accent={dark['focus-blue']} reverse />
-      </div>
-      <span className="text-[12px] text-primary truncate">System</span>
+      <OrbPair
+        first={<ThemeOrb base={light['surface-1']} shade={light['surface-6']} accent={light['focus-blue']} />}
+        second={<ThemeOrb base={dark['surface-1']} shade={dark['surface-6']} accent={dark['focus-blue']} reverse />}
+      />
+      <span className="min-w-0 flex-1 truncate text-[12px] text-primary">System</span>
+      {active && <Check size={12} className="shrink-0 text-focus-blue" />}
     </CardShell>
   )
 }

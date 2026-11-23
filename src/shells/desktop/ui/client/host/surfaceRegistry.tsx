@@ -375,10 +375,14 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
   // would: not while the slot is inert (hand tool) or an unfocused node's
   // overlay covers it. There the press, wheel or drag reaches the canvas, as
   // it does over every other panel.
+  // The surface lives outside the dock, so it takes the slot's compact sizing (panel toolbars read --bar-h).
+  const compact = !!slot.closest('.dock-compact')
   const cover = node?.querySelector<HTMLElement>('[data-unfocused-overlay]')
   const inert = geometry.style(slot).pointerEvents === 'none'
     || (!!cover && geometry.style(cover).pointerEvents !== 'none')
-  return () => writeSurface(surface, true, {
+  return () => {
+    surface.container.classList.toggle('dock-compact', compact)
+    writeSurface(surface, true, {
     visibility: 'visible',
     // Keep layout geometry fixed during canvas gestures. Positioning via the
     // compositor avoids relaying out the guest host for every pan frame.
@@ -388,7 +392,8 @@ function measureSurface(panelId: string, geometry: FrameGeometry): () => void {
     borderRadius, overflow: 'hidden',
     clipPath, zIndex: nodeZIndex === 'auto' ? '1' : nodeZIndex,
     opacity: '1', pointerEvents: inert ? 'none' : 'auto',
-  })
+    })
+  }
 }
 
 let cachedGeometry: FrameGeometry | null = null

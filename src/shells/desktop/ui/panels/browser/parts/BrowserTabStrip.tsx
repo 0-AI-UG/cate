@@ -84,7 +84,7 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
 
   return (
     <div
-      className={`flex h-8 shrink-0 touch-pan-y items-center gap-1 overflow-x-auto bg-surface-1 px-3 no-scrollbar ${
+      className={`flex h-[var(--bar-h)] shrink-0 touch-pan-y items-center gap-1 overflow-x-auto bg-surface-1 px-[var(--bar-pad)] no-scrollbar ${
         isDragging ? 'cursor-grabbing select-none' : ''
       }`}
       aria-label="Browser tabs"
@@ -108,12 +108,12 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
               onClick={() => onSelect(tab.id)}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onClose(tab.id) } }}
               onContextMenu={(e) => { e.preventDefault(); onTogglePin(tab.id) }}
-              className={`flex h-7 w-8 shrink-0 items-center justify-center rounded-xl transition-colors ${
-                isActive ? 'bg-surface-4 text-primary' : 'text-muted hover:bg-hover'
+              className={`flex h-[var(--ctl-h)] w-7 shrink-0 items-center justify-center rounded-[var(--node-tab-radius,6px)] transition-colors ${
+                isActive ? 'bg-surface-2 text-primary' : 'text-muted hover:bg-hover'
               }`}
               aria-label={labelFor(tab)}
             >
-              <BrowserFavicon src={tab.favicon ?? faviconForUrl(tab.url)} size={15} />
+              <BrowserFavicon src={tab.favicon ?? faviconForUrl(tab.url)} size={13} />
             </button>
           </Tooltip>
         )
@@ -134,20 +134,20 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
             onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); onClose(tab.id) } }}
             onContextMenu={(e) => { e.preventDefault(); onTogglePin(tab.id) }}
             title={`${labelFor(tab)} · right-click to pin`}
-            className={`group flex h-7 min-w-[112px] max-w-[220px] cursor-pointer select-none items-center gap-2 rounded-xl pl-2.5 pr-1.5 transition-colors ${
-              isActive ? 'bg-surface-4 text-primary' : 'text-muted hover:text-secondary hover:bg-hover'
+            className={`group flex h-[var(--ctl-h)] min-w-[104px] max-w-[200px] cursor-pointer select-none items-center gap-1.5 rounded-[var(--node-tab-radius,6px)] pl-2.5 pr-1 transition-colors ${
+              isActive ? 'bg-surface-2 text-primary' : 'text-muted hover:text-secondary hover:bg-hover'
             }`}
           >
-            <BrowserFavicon src={tab.favicon ?? faviconForUrl(tab.url)} size={15} />
-            <span className="min-w-0 flex-1 truncate text-sm">{labelFor(tab)}</span>
+            <BrowserFavicon src={tab.favicon ?? faviconForUrl(tab.url)} size={13} />
+            <span className="min-w-0 flex-1 truncate text-[12px]">{labelFor(tab)}</span>
             <button
               onClick={(e) => { e.stopPropagation(); onClose(tab.id) }}
-              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-muted transition-opacity hover:bg-hover hover:text-primary ${
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md text-muted transition-opacity hover:bg-hover hover:text-primary ${
                 isActive ? 'opacity-70' : 'opacity-0 group-hover:opacity-100'
               }`}
               aria-label="Close tab"
             >
-              <X size={13} />
+              <X size={11} />
             </button>
           </div>
         )
@@ -157,10 +157,10 @@ export function BrowserTabStrip({ tabs, activeTabId, onSelect, onClose, onNewTab
       <Tooltip label="New tab">
         <button
           onClick={onNewTab}
-          className="flex h-7 w-8 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-hover hover:text-secondary"
+          className="flex h-[var(--ctl-h)] w-7 shrink-0 items-center justify-center rounded-[var(--node-tab-radius,6px)] text-muted transition-colors hover:bg-hover hover:text-secondary"
           aria-label="New tab"
         >
-          <Plus size={16} />
+          <Plus size={14} />
         </button>
       </Tooltip>
     </div>

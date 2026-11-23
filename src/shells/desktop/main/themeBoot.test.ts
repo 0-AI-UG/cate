@@ -12,10 +12,16 @@ afterEach(() => { for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: 
 
 describe('theme boot cache', () => {
   it('follows the OS while the selection is system', () => {
-    const dark = themeBootFields({}, true)
-    const light = themeBootFields({}, false)
+    const dark = themeBootFields({ activeThemeId: 'system' }, true)
+    const light = themeBootFields({ activeThemeId: 'system' }, false)
     expect(dark.appearance).toBe('system')
     expect(dark.theme).not.toBe(light.theme)
+  })
+
+  it('uses Graphite by default regardless of the OS appearance', () => {
+    for (const prefersDark of [true, false]) {
+      expect(themeBootFields({}, prefersDark)).toMatchObject({ theme: 'graphite', appearance: 'dark' })
+    }
   })
 
   it('pins the appearance of an explicit theme', () => {
@@ -27,6 +33,7 @@ describe('theme boot cache', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cate-boot-'))
     dirs.push(dir)
     const device = createDeviceFiles(dir)
+    device.set('settings', { activeThemeId: 'system' }, { kind: 'renderer', id: 1 })
     const nativeTheme = Object.assign(new EventEmitter(), { shouldUseDarkColors: true, themeSource: 'system' as 'system' | 'light' | 'dark' })
     installThemeBootCache(device, nativeTheme)
     expect(device.boot().appearance).toBe('system')

@@ -114,9 +114,8 @@ export function DockResizeHandle({ direction, onResize, onResizeEnd, onDoubleCli
       <div className={`absolute ${isHorizontal ? 'inset-y-0 -left-[6px] -right-[6px]' : 'inset-x-0 -top-[6px] -bottom-[6px]'}`} />
       {/* Fill the layout width so pane content meets the divider. */}
       <div
-        className={`
-          absolute inset-0 bg-surface-6 group-hover:bg-surface-6 transition-colors duration-150
-        `}
+        className="absolute inset-0 bg-[var(--border-subtle)] transition-colors duration-150"
+        style={{ [isHorizontal ? 'width' : 'height']: 'var(--hairline)' } as React.CSSProperties}
       />
     </div>
   )

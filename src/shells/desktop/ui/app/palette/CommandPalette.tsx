@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { FileText, Search as MagnifyingGlass } from 'lucide-react'
-import { Icon, LoadingState, PaletteDialogShell, PaletteTextInput, useResolvedShortcuts } from '../../kernel/interaction'
+import { DialogFooter, Icon, Kbd, LIST_ROW_HIGHLIGHT, LoadingState, PaletteDialogShell, PaletteTextInput, useResolvedShortcuts } from '../../kernel/interaction'
 import { tryRuntimeFor } from '@kernel/rpc/client'
 import { useDocument } from '../../client/document'
 import { PanelTitle, usePanelTitles, type PanelTitleProps } from '../../client/host'
@@ -119,10 +119,10 @@ function OpenPalette(): JSX.Element {
     <PaletteDialogShell
       onClose={close}
       ariaLabel="Command palette"
-      cardClassName="w-[600px] max-w-[600px] max-h-[440px] mt-[120px] overflow-hidden flex flex-col self-start"
+      cardClassName="w-[600px] max-w-[600px] max-h-[76vh] overflow-hidden flex flex-col self-start"
       cardProps={{ 'data-onboarding': 'command-palette' }}
     >
-      <div className="p-2 shrink-0">
+      <div className="p-1.5 shrink-0">
         <PaletteTextInput
           icon={<MagnifyingGlass size={15} />}
           autoFocus
@@ -153,7 +153,7 @@ function OpenPalette(): JSX.Element {
           placeholder="Search commands, workspaces, panels and files"
         />
       </div>
-      <div className="flex-1 overflow-y-auto pb-1.5">
+      <div className="flex-1 overflow-y-auto pb-1">
         {total === 0 ? (
           <div className="text-muted text-[13px] text-center py-5">
             {searching ? <LoadingState label="Searching" size={14} /> : 'No results'}
@@ -163,8 +163,8 @@ function OpenPalette(): JSX.Element {
           const showSeparator = sections.slice(0, sectionIndex).some((s) => s.items.length > 0)
           return (
             <React.Fragment key={section.label}>
-              {showSeparator && <div className="mx-3.5 my-1 border-t border-subtle" />}
-              <div className="px-3.5 pt-2 pb-1 text-[11px] font-semibold text-muted">{section.label}</div>
+              {showSeparator && <div className="mx-3 my-0.5 border-t border-subtle" />}
+              <div className="px-3 pt-1.5 pb-0.5 text-[11px] font-semibold text-muted">{section.label}</div>
               {section.items.map((item) => {
                 const i = index++
                 const selected = i === selectedIndex
@@ -174,8 +174,8 @@ function OpenPalette(): JSX.Element {
                     ref={selected ? selectedRowRef : undefined}
                     role="option"
                     aria-selected={selected}
-                    className={`flex items-center gap-2.5 mx-1.5 px-2.5 py-1.5 cursor-pointer rounded-md ${
-                      selected ? 'bg-[rgb(var(--agent-rgb))]/25 ring-1 ring-inset ring-[rgb(var(--agent-rgb))]/40' : ''
+                    className={`flex items-center gap-2.5 mx-1 px-2 py-1 cursor-pointer rounded-md ${
+                      selected ? LIST_ROW_HIGHLIGHT : ''
                     }`}
                     onClick={() => activate(item)}
                     onMouseEnter={() => setSelectedIndex(i)}
@@ -188,6 +188,11 @@ function OpenPalette(): JSX.Element {
           )
         })}
       </div>
+      <DialogFooter hints={[
+        { keys: ['↑', '↓'], label: 'Navigate' },
+        { keys: ['Enter'], label: 'Run' },
+        { keys: ['Esc'], label: 'Close' },
+      ]} />
     </PaletteDialogShell>
   )
 }
@@ -207,7 +212,7 @@ function ItemRow({ item, panelTitle }: { item: PaletteItem; panelTitle?: PanelTi
       return <>
         <span className="shrink-0 text-secondary">{item.icon ? <Icon name={item.icon} size={ICON_SIZE} /> : <FileText size={ICON_SIZE} />}</span>
         <span className="text-[13px] text-primary flex-1 truncate">{item.title}</span>
-        {item.shortcut && <kbd className="text-[11px] text-muted shrink-0">{item.shortcut}</kbd>}
+        {item.shortcut && <span className="flex shrink-0 items-center gap-1">{(item.shortcut.includes('+') ? item.shortcut.split('+') : [...item.shortcut]).map((key, n) => <Kbd key={n}>{key}</Kbd>)}</span>}
       </>
     case 'workspace':
       return <>

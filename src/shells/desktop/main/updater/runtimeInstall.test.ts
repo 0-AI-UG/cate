@@ -1,9 +1,9 @@
 import { expect, it, vi } from 'vitest'
 import path from 'node:path'
-import { ensureRuntimeInstalled } from '@runtime/daemon/node'
+import { ensureRuntimeInstalled, markRuntimeInUse } from '@runtime/daemon/node'
 import { installBundledRuntime, machineRuntimeTarball } from './runtimeInstall'
 
-vi.mock('@runtime/daemon/node', () => ({ ensureRuntimeInstalled: vi.fn(async () => '/installed-runtime') }))
+vi.mock('@runtime/daemon/node', () => ({ ensureRuntimeInstalled: vi.fn(async () => '/installed-runtime'), markRuntimeInUse: vi.fn() }))
 
 const resources = path.join('/', 'res')
 const appPath = path.join('/', 'app')
@@ -38,6 +38,7 @@ it.each([
     isPackaged: true, resourcesPath: resources, appPath, home: '/test-home',
     platform, arch, version: '2.1.0', build: '2.1.0+aaaaaaaaaaaa', exists: exists(tarball),
   })).resolves.toBe('/installed-runtime')
+  expect(markRuntimeInUse).toHaveBeenLastCalledWith('/installed-runtime', process.pid)
   expect(ensureRuntimeInstalled).toHaveBeenLastCalledWith(expect.objectContaining({
     version: '2.1.0', build: '2.1.0+aaaaaaaaaaaa', platform, arch, tarball,
   }))

@@ -19,7 +19,7 @@ export function NotificationToasts({ store = defaultStore }: { store?: ToastStor
           key={toast.id}
           role="status"
           data-toast-id={toast.id}
-          className="pointer-events-auto flex overflow-hidden rounded-lg border border-subtle bg-surface-2 shadow-lg"
+          className="pointer-events-auto flex overflow-hidden rounded-lg border border-white/[0.08] bg-surface-1 shadow-lg"
         >
           <span className={`w-1 shrink-0 ${LEVEL_BAR[toast.level]}`} />
           <button

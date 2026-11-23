@@ -2,8 +2,9 @@
 // computer and joining a shared workspace. Arrows and Enter pick an item.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Folder, KeyRound, Monitor, Plus, Server, X } from 'lucide-react'
-import { clientUi, errorMessage } from '@kernel/interaction'
+import { Folder, Globe, Plus, Server, X } from 'lucide-react'
+import { clientUi, errorMessage, shortcutDisplay } from '@kernel/interaction'
+import { Kbd, useResolvedShortcuts } from '../../kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
 import { formatSshTarget, parseSshCommand, type Machine, type SshConfigHost } from '@runtime/daemon/contract'
 import { clientApp } from '../app'
@@ -18,13 +19,15 @@ import { forgetMachine } from './machines'
 
 interface PickerItem {
   key: string
-  section: 'Recent workspaces' | 'Open' | 'Other computers' | 'Collaborate'
+  section: 'Recent workspaces' | 'Shared with you' | 'Open' | 'Other computers'
   /** An action rather than a place (adding a machine, joining). */
   always?: boolean
   icon: ReactNode
   label: string
   detail?: string
   hint?: string
+  /** The bound key of the action this row runs. */
+  shortcut?: string
   run(): void
   /** Forgets it (saved machines). */
   remove?: () => void
@@ -61,6 +64,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
     return () => { live = false }
   }, [setup])
 
+  const shortcuts = useResolvedShortcuts()
   const items = useMemo(() => {
     const ui = useUIStore.getState()
     // Machine folders open their own dialog; joining stays inline.
@@ -98,14 +102,16 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
     const out: PickerItem[] = entries.map((entry) => {
       const location = machineOf(entry)
       return {
-        key: entry.id, section: 'Recent workspaces', icon: <Folder size={14} />, label: entry.name,
+        key: entry.id,
+        section: entry.kind === 'paired' ? 'Shared with you' : 'Recent workspaces',
+        icon: entry.kind === 'paired' ? <Globe size={14} /> : <Folder size={14} />, label: entry.name,
         detail: 'label' in location ? location.label ?? 'Remote computer' : undefined,
         run: () => void reopen(entry.id),
         remove: () => void forgetWorkspace(entry),
       }
     })
     if (port) {
-      out.push({ key: 'this', section: 'Open', icon: <Monitor size={14} />, label: 'Open Folder…', detail: 'This device', run: () => void pickFolder() })
+      out.push({ key: 'this', section: 'Open', icon: <Folder size={14} />, label: 'Open Folder…', detail: 'This device', shortcut: shortcutDisplay(shortcuts, 'openFolder') ?? undefined, run: () => void pickFolder() })
     }
     if (setup) {
       const savedKeys = new Set(saved.map((m) => formatSshTarget(m.target)))
@@ -124,10 +130,12 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
       out.push({ key: 'add-ssh', section: 'Other computers', always: true, icon: <Plus size={14} />, label: 'Add an SSH machine…', run: () => { ui.closeJoinInput(); setAdding(''); setAddError(null) } })
     }
     if (app.pair) {
-      out.push({ key: 'join', section: 'Collaborate', always: true, icon: <KeyRound size={14} />, label: 'Join Workspace…', run: () => ui.openJoinInput() })
+      out.push({ key: 'join', section: 'Shared with you', always: true, icon: <Globe size={14} />, label: 'Join Workspace…', shortcut: shortcutDisplay(shortcuts, 'joinWorkspace') ?? undefined, run: () => ui.openJoinInput() })
     }
-    return out
-  }, [entries, hosts, distros, saved, port, setup, onPicked, app])
+    // Sections stay contiguous; shared recents and joining close the list.
+    const order = ['Recent workspaces', 'Open', 'Other computers', 'Shared with you']
+    return out.sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section))
+  }, [entries, hosts, distros, saved, port, setup, onPicked, app, shortcuts])
 
   useEffect(() => { setActive((index) => Math.min(index, Math.max(0, items.length - 1))) }, [items.length])
 
@@ -156,14 +164,20 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
           if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, items.length - 1)) }
           if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)) }
           if (e.key === 'Enter') { e.preventDefault(); items[active]?.run() }
+          // 1-9 pick the row with that number.
+          if (/^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey && items[Number(e.key) - 1]) { e.preventDefault(); items[Number(e.key) - 1].run() }
         }}
         className={`min-h-0 overflow-y-auto outline-none ${listClassName}`}>
         {items.map((item, index) => {
           const header = item.section !== lastSection ? item.section : null
           lastSection = item.section
+          const shared = item.section === 'Shared with you'
+          const last = items[index + 1]?.section !== item.section
           return (
-            <div key={item.key} className="group">
-              {header && <div className="px-2 pt-3 pb-1 text-[11px] font-semibold text-muted">{header}</div>}
+            <div key={item.key} className={`group ${shared ? `mx-1 bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] border-x border-subtle px-1 ${header ? 'mt-3 rounded-t-lg border-t' : ''} ${last ? 'rounded-b-lg border-b pb-1' : ''}` : ''}`}>
+              {header && (shared
+                ? <div className="flex items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[12px] font-medium text-primary"><Globe size={12} />{header}</div>
+                : <div className="px-2.5 pt-3 pb-1 text-[12px] font-medium text-muted">{header}</div>)}
               <div className="relative">
                 {item.key === 'join' && request ? (
                   <InlineJoinForm key={`${request.code ?? ''}|${request.machine ?? ''}`} request={request} />
@@ -187,12 +201,14 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
                     data-active={index === active}
                     onMouseMove={() => setActive(index)}
                     onClick={() => item.run()}
-                    className={`w-full h-8 flex items-center gap-2 rounded-md px-2 py-1.5 text-left ${item.remove ? 'pr-7' : ''} ${index === active ? 'bg-hover' : ''}`}
+                    className={`w-full min-h-8 flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left ${shared ? 'pr-[19px]' : 'pr-7'} ${index === active ? 'bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]' : ''}`}
                   >
                     <span className="shrink-0 text-muted">{item.icon}</span>
                     <span className={`text-[13px] truncate ${item.always ? 'text-secondary' : 'text-primary'}`}>{item.label}</span>
-                    {item.detail && <span className="min-w-0 text-xs text-muted truncate">{item.detail}</span>}
-                    {item.hint && <span className={`ml-auto shrink-0 text-xs text-secondary ${item.remove ? 'mr-6' : ''} ${index === active ? '' : 'opacity-0 group-hover:opacity-100'}`}>{item.hint}</span>}
+                    {item.detail && <span className="min-w-0 text-[12px] text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)] truncate">{item.detail}</span>}
+                    {item.shortcut && <span className={`ml-auto flex shrink-0 items-center gap-1`}>{(item.shortcut.includes('+') ? item.shortcut.split('+') : [...item.shortcut]).map((key, n) => <Kbd key={n}>{key}</Kbd>)}</span>}
+                    {item.hint && <span className={`ml-auto shrink-0 text-xs text-secondary ${index === active ? '' : 'opacity-0 group-hover:opacity-100'}`}>{item.hint}</span>}
+                    {index < 9 && <span className={`flex shrink-0 ${item.shortcut || item.hint ? 'ml-2' : 'ml-auto'}`}><Kbd>{index + 1}</Kbd></span>}
                   </button>
                 )}
                 {item.remove && (

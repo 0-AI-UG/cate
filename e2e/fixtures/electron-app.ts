@@ -139,7 +139,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchResult>
 
 /** Refuses WebGL2 contexts in this window, so xterm stays on its DOM
  *  renderer and terminal text is readable from the DOM. Affects views
- *  created afterwards (and the canvas territory layer). */
+ *  created afterwards. */
 export async function forceDomTerminals(page: Page): Promise<void> {
   await page.evaluate(() => {
     const original = HTMLCanvasElement.prototype.getContext

@@ -1,14 +1,13 @@
 // "What's New": the whole changelog as an application overlay, newest
 // release first (this version marked), in one column: each release's
 // summary, then its sections with their groups and items. Like settings, its
-// navigation (the versions) takes the sidebar. It opens
-// by itself once after an update (the main window, after the first-run notice
-// and tour), and from the sidebar, the welcome page, the Help menu and the
-// palette.
+// navigation (the versions) takes the sidebar. After an update the sidebar's
+// update button signals it and opens it; also from the welcome page, the Help
+// menu and the palette.
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, SquareArrowOutUpRight } from 'lucide-react'
+import { ArrowLeft, ChevronRight, SquareArrowOutUpRight } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
 import changelogMarkdown from '../../../../../../CHANGELOG.md?raw'
 import { CHANGELOG_URL, findChangelogRelease, groupChangelog, parseChangelog, type ChangelogRelease } from '../dialogs/changelog'
@@ -43,18 +42,25 @@ export const WHATS_NEW_VIEW = 'whatsNew'
 
 const appVersion = () => tryClientApp()?.version ?? ''
 
-/** Opens "What's New" once after an update. */
-export function WhatsNewAfterUpdate(): null {
+/** Whether this version's notes are waiting to be read: the update button
+ *  signals it. A first install only records the version (the tour is its welcome). */
+export function useWhatsNewPending(): { pending: boolean; open: () => void } {
   const { loaded, telemetryNoticeAcknowledgedVersion, onboardingCompleted, whatsNewSeenVersion } = useUiState()
+  const version = appVersion()
+  const ready = loaded && telemetryNoticeAcknowledgedVersion >= TELEMETRY_NOTICE_VERSION
+  const next = ready
+    ? whatsNewOnLaunch({ version, seen: whatsNewSeenVersion, onboardingCompleted, hasNotes: !!findChangelogRelease(releases, version) })
+    : 'none'
   useEffect(() => {
-    if (!loaded || telemetryNoticeAcknowledgedVersion < TELEMETRY_NOTICE_VERSION) return
-    const version = appVersion()
-    const hasNotes = !!findChangelogRelease(releases, version)
-    const next = whatsNewOnLaunch({ version, seen: whatsNewSeenVersion, onboardingCompleted, hasNotes })
     if (next === 'record') setUiState('whatsNewSeenVersion', version)
-    if (next === 'show') useUIStore.getState().openOverlay({ view: WHATS_NEW_VIEW })
-  }, [loaded, telemetryNoticeAcknowledgedVersion, onboardingCompleted, whatsNewSeenVersion])
-  return null
+  }, [next, version])
+  return {
+    pending: next === 'show',
+    open: () => {
+      setUiState('whatsNewSeenVersion', version)
+      useUIStore.getState().openOverlay({ view: WHATS_NEW_VIEW })
+    },
+  }
 }
 
 /** Inline Markdown of a changelog line: bold, code, links (as their text). */
@@ -119,6 +125,23 @@ export function WhatsNewOverlay({ onClose }: OverlayViewProps): JSX.Element | nu
   const [slots, setSlots] = useState<{ sidebar: HTMLElement; content: HTMLElement } | null>(null)
   const [active, setActive] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Only the newest major starts open; the one in view opens as the page scrolls into it.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(groups.slice(1).map((g) => g.major)))
+  const toggleMajor = (major: string) => setCollapsed((prev) => {
+    const next = new Set(prev)
+    if (next.has(major)) next.delete(major)
+    else next.add(major)
+    return next
+  })
+  useEffect(() => {
+    const group = groups.find((g) => g.minors.some((m) => m.releases.some((r) => r.version === active)))
+    if (group) setCollapsed((prev) => {
+      if (!prev.has(group.major)) return prev
+      const next = new Set(prev)
+      next.delete(group.major)
+      return next
+    })
+  }, [active])
 
   useLayoutEffect(() => {
     const sidebar = document.getElementById('overlay-sidebar-slot')
@@ -160,50 +183,71 @@ export function WhatsNewOverlay({ onClose }: OverlayViewProps): JSX.Element | nu
 
   const navigation = (
     <div className="min-h-0 flex-1 flex flex-col text-primary">
-      <nav aria-label="Versions" className="flex-1 overflow-y-auto px-2 pb-3">
-        {groups.map(({ major, minors }) => (
-          <div key={major} className="mb-3">
-            <div className="px-2 pt-1 pb-1.5 text-[11px] font-semibold text-muted">Cate {major}</div>
-            {minors.map(({ line, releases: lineReleases }) => {
-              const lineActive = lineReleases.some((r) => r.version === active)
-              return (
-                <div key={line} className="mb-0.5">
-                  <button
-                    type="button"
-                    onClick={() => jumpTo(lineReleases[0].version)}
-                    aria-current={lineActive ? 'true' : undefined}
-                    className={`w-full h-[30px] px-2 flex items-center gap-2 rounded-md text-[13px] font-medium transition-colors ${
-                      lineActive ? 'bg-surface-3 text-primary' : 'text-secondary hover:bg-hover hover:text-primary'
-                    }`}
-                  >
-                    {line}
-                    {lineReleases.some((r) => r === current) && <span aria-label="This version" className="h-1.5 w-1.5 rounded-full bg-focus-blue" />}
-                  </button>
-                  {lineActive && (
-                    <div className="ml-4 mt-0.5 mb-1 flex flex-col gap-0.5">
-                      {lineReleases.map((release) => (
-                        <button
-                          type="button"
-                          key={release.version}
-                          onClick={() => jumpTo(release.version)}
-                          aria-current={release.version === active ? 'page' : undefined}
-                          className={`flex items-center gap-1.5 text-left px-2 py-1 rounded-md text-xs transition-colors ${
-                            release.version === active ? 'text-primary' : 'text-muted hover:text-secondary'
-                          }`}
-                        >
-                          {release.version}
-                          {release.note && <span className="text-muted">({release.note})</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+      <nav aria-label="Versions" className="flex-1 overflow-y-auto px-3 pb-4 pt-1">
+        {groups.map(({ major, minors }, groupIndex) => {
+          const isCollapsed = collapsed.has(major)
+          return (
+          <div key={major} className={groupIndex === 0 ? '' : 'mt-3'}>
+            <button
+              type="button"
+              aria-expanded={!isCollapsed}
+              onClick={() => toggleMajor(major)}
+              className="group/major flex h-7 w-full items-center gap-1 rounded-md px-1.5 text-[12px] font-medium text-muted transition-colors hover:text-primary"
+            >
+              <ChevronRight size={12} className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`} />
+              Cate {major}
+              <span className="ml-auto text-[11px] font-normal opacity-0 group-hover/major:opacity-100">{minors.length}</span>
+            </button>
+            {!isCollapsed && <div className="flex flex-col gap-px">
+              {minors.map(({ line, releases: lineReleases }) => {
+                const lineActive = lineReleases.some((r) => r.version === active)
+                const installed = lineReleases.some((r) => r === current)
+                return (
+                  <div key={line}>
+                    <button
+                      type="button"
+                      onClick={() => jumpTo(lineReleases[0].version)}
+                      aria-current={lineActive ? 'true' : undefined}
+                      className={`w-full h-8 px-2 flex items-center gap-2 rounded-md text-[13px] tabular-nums transition-colors ${
+                        lineActive ? 'bg-surface-3 text-primary font-medium' : 'text-secondary hover:bg-hover hover:text-primary'
+                      }`}
+                    >
+                      <span>{line}</span>
+                      {installed && (
+                        <span className="rounded-full bg-[color-mix(in_srgb,var(--focus-blue)_15%,transparent)] px-1.5 py-px text-[10px] font-medium leading-4 text-focus-blue">Installed</span>
+                      )}
+                      {lineReleases.length > 1 && <span className="ml-auto text-[11px] text-muted">{lineReleases.length}</span>}
+                    </button>
+                    {lineActive && lineReleases.length > 1 && (
+                      <div className="ml-[15px] mt-0.5 mb-1.5 flex flex-col border-l border-[var(--border-subtle)]">
+                        {lineReleases.map((release) => {
+                          const on = release.version === active
+                          return (
+                            <button
+                              type="button"
+                              key={release.version}
+                              onClick={() => jumpTo(release.version)}
+                              aria-current={on ? 'page' : undefined}
+                              className={`-ml-px flex items-center gap-1.5 border-l-2 py-[3px] pl-3 pr-2 text-left text-[12px] tabular-nums transition-colors ${
+                                on ? 'border-focus-blue text-primary' : 'border-transparent text-muted hover:text-secondary'
+                              }`}
+                            >
+                              {release.version}
+                              {release.note && <span className="text-muted">({release.note})</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>}
           </div>
-        ))}
+          )
+        })}
       </nav>
-      <div className="shrink-0 flex items-center gap-1 p-2">
+      <div className="shrink-0 flex items-center gap-1 border-t border-subtle p-2">
         <button
           type="button"
           onClick={onClose}
