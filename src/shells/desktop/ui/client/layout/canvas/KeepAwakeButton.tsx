@@ -4,10 +4,10 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Coffee, Infinity as InfinityIcon, Power } from 'lucide-react'
+import { Coffee } from 'lucide-react'
 import { mirrorChannel } from '@kernel/rpc/client'
 import { useRuntime } from '../../../kernel/rpc'
-import { Tooltip, useDismissableLayer } from '../../../kernel/interaction'
+import { AttachedFlyout, MENU_ROW, useDismissableLayer, useMenuNumbers } from '../../../kernel/interaction'
 import type { KeepAwakeDuration, PowerState } from '@runtime/power/contract/capability'
 import { CanvasToolbarButton } from './CanvasToolbarButton'
 
@@ -113,6 +113,30 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
   }
 
   const on = state.requested
+  const menuRef = useRef<HTMLDivElement>(null)
+  useMenuNumbers(menuRef, true)
+  const menu = (
+    <div ref={menuRef} role="menu" aria-label="Keep awake duration" className="flex min-w-[148px] flex-col gap-0.5 p-1">
+      {[
+        ...durations.map(({ label, minutes }) => ({ key: label, duration: minutes as KeepAwakeDuration, tip: `Keep awake for ${label}`, text: label })),
+        { key: 'unlimited', duration: null as KeepAwakeDuration, tip: 'Keep awake unlimited', text: 'Unlimited' },
+        ...(on ? [{ key: 'off', duration: false as KeepAwakeDuration, tip: 'Turn off', text: 'Turn off' }] : []),
+      ].map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          role="menuitem"
+          aria-label={item.tip}
+          data-menu-item
+          disabled={pending}
+          onClick={() => void select(item.duration)}
+          className={`${MENU_ROW} hover:bg-hover active:bg-hover-strong`}
+        >
+          <span className="flex-1">{item.text}</span>
+        </button>
+      ))}
+    </div>
+  )
   return (
     <div className="flex shrink-0" onMouseEnter={hoverIn} onMouseLeave={hoverOut}>
       <CanvasToolbarButton
@@ -129,49 +153,33 @@ export function KeepAwakeButton({ workspaceId, tooltipPlacement = 'top' }: { wor
         className="relative"
       >
         <span ref={iconRef} className="flex" aria-hidden="true">
-          <Coffee size={18} fill={on ? 'currentColor' : 'none'} />
+          <Coffee size={16} fill={on ? 'currentColor' : 'none'} />
         </span>
         {on && <span className="absolute -top-1 -left-2 rounded-md border border-subtle bg-surface-3 px-1 text-[9px] font-semibold leading-4 text-primary whitespace-nowrap pointer-events-none" aria-hidden="true">{remainingLabel(state.endsAt, now)}</span>}
       </CanvasToolbarButton>
-      {anchor && createPortal(
-        <div
-          ref={popoverRef}
-          className="fixed z-[90]"
-          onMouseEnter={clearHoverTimer}
-          onMouseLeave={hoverOut}
-          style={side === 'up'
-            ? { left: anchor.left + anchor.width / 2, bottom: window.innerHeight - anchor.top, transform: 'translateX(-50%)', paddingBottom: 10 }
-            : { right: window.innerWidth - anchor.left, bottom: window.innerHeight - anchor.bottom, paddingRight: 10 }}
-        >
-          <div
-            role="menu"
-            aria-label="Keep awake duration"
-            className="cate-spawn-flyout flex flex-col-reverse items-center gap-1 p-1 rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
-            style={{ transformOrigin: side === 'up' ? 'bottom center' : 'bottom right' }}
+      {side === 'up'
+        ? (
+          <AttachedFlyout
+            bar={buttonRef.current?.closest<HTMLElement>('[data-toolbar-card]') ?? buttonRef.current}
+            open={open}
+            onMouseEnter={clearHoverTimer}
+            onMouseLeave={hoverOut}
           >
-            {[
-              ...durations.map(({ label, minutes }) => ({ key: label, duration: minutes as KeepAwakeDuration, tip: `Keep awake for ${label}`, content: label as React.ReactNode })),
-              { key: 'unlimited', duration: null as KeepAwakeDuration, tip: 'Keep awake unlimited', content: <InfinityIcon size={16} /> as React.ReactNode },
-              ...(on ? [{ key: 'off', duration: false as KeepAwakeDuration, tip: 'Turn off', content: <Power size={15} /> as React.ReactNode }] : []),
-            ].map((item, index) => (
-              <Tooltip key={item.key} label={item.tip} placement={side === 'up' ? 'right' : 'left'}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-label={item.tip}
-                  disabled={pending}
-                  onClick={() => void select(item.duration)}
-                  style={{ '--i': index, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}
-                  className="cate-spawn-flyout-item h-9 w-9 shrink-0 flex items-center justify-center rounded-full text-xs font-medium text-primary hover:bg-hover-strong hover:scale-110 active:scale-[0.92] transition-transform duration-100"
-                >
-                  {item.content}
-                </button>
-              </Tooltip>
-            ))}
-          </div>
-        </div>,
-        document.body,
-      )}
+            <div ref={popoverRef} className="flex justify-center">{menu}</div>
+          </AttachedFlyout>
+        )
+        : anchor && createPortal(
+          <div
+            ref={popoverRef}
+            className="fixed z-[90]"
+            onMouseEnter={clearHoverTimer}
+            onMouseLeave={hoverOut}
+            style={{ right: window.innerWidth - anchor.left, bottom: window.innerHeight - anchor.bottom, paddingRight: 10 }}
+          >
+            <div className="cate-spawn-flyout rounded-lg border border-white/[0.08] bg-surface-1 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)]" style={{ transformOrigin: 'bottom right' }}>{menu}</div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

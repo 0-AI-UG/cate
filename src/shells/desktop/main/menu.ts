@@ -1,10 +1,10 @@
-// The application menu and native context menus. The renderer sends the
+// The application menu. The renderer sends the
 // menu bar as a model built from its declared actions; this module only
 // renders it. A picked item sends its action to the focused window, which
 // runs it like the key.
 
 import { app, Menu, shell, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
-import { MENU_BAR, type ContextMenuItem } from '@kernel/interaction/contract'
+import { MENU_BAR } from '@kernel/interaction/contract'
 import { DESKTOP_CHANNELS as C, MENU_SKELETON, shortcutAccelerator, type MenuModel, type MenuModelItem, type NativeAction } from '../contract'
 import type { WindowRegistry } from './windowRegistry'
 
@@ -124,24 +124,4 @@ export function createAppMenu(deps: AppMenuDeps): AppMenu {
     },
     runNativeAction,
   }
-}
-
-/** A native context menu; resolves with the picked id, or null. */
-export function showContextMenu(win: BrowserWindow, items: ContextMenuItem[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    let chosen: string | null = null
-    const build = (list: ContextMenuItem[]): MenuItemConstructorOptions[] => list.map((item) => {
-      if (item.type === 'separator') return { type: 'separator' }
-      const option: MenuItemConstructorOptions = { label: item.label ?? '', enabled: item.enabled !== false }
-      if (item.type === 'checkbox') { option.type = 'checkbox'; option.checked = item.checked === true }
-      if (item.accelerator) option.accelerator = item.accelerator
-      if (item.submenu?.length) option.submenu = build(item.submenu)
-      else if (item.id) {
-        const id = item.id
-        option.click = () => { chosen = id }
-      }
-      return option
-    })
-    Menu.buildFromTemplate(build(Array.isArray(items) ? items : [])).popup({ window: win, callback: () => resolve(chosen) })
-  })
 }

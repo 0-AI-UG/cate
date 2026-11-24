@@ -171,9 +171,10 @@ describe('desktop renderer', () => {
 
   it('connects a client with no features to the runtime and receives the document', async () => {
     expect(client.info.features).toEqual([])
+    expect(host.querySelector('[role="tree"][aria-label="Workspaces"]')).not.toBeNull()
+    await client.workspaces.addLocal(runtime.root, 'test')
     const workspaceList = host.querySelector('[role="tree"][aria-label="Workspaces"]')
     expect(workspaceList).not.toBeNull()
-    await client.workspaces.addLocal(runtime.root, 'test')
     await act(async () => { await selectWorkspace(workspaceId) })
     await until(() => !!documentStoreFor(workspaceId)?.isSynced())
     expect(Object.keys(documentStoreFor(workspaceId)!.getSnapshot().panels).sort()).toEqual(PANEL_TYPES.map((t) => `p-${t}`).sort())

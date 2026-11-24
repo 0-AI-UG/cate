@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore }
 import { GitBranch, Plus, Minus, ArrowUp, ArrowDown, Download, Trash, Archive, X, Check, GitCompareArrows as GitDiff } from 'lucide-react'
 import { RotateCw as ArrowClockwise, ChevronDown as CaretDown, ChevronRight as CaretRight, SquareArrowOutUpRight as BoxArrowUp, History as ClockCounterClockwise } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
-import { Button, LoadingState, Spinner, Tooltip } from '../../kernel/interaction'
+import { Button, LoadingState, SearchField, Spinner, Tooltip } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
 import { pathDisplayName } from '@workspace/files/contract'
 import { GitComparisonView } from './GitComparisonView'
@@ -242,12 +242,7 @@ const BranchPicker: React.FC<{
               </div>
             ) : (
               <div className="flex gap-1">
-                <input
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  className="flex-1 min-w-0 bg-surface-2 border border-subtle rounded-lg px-2 py-1 text-[11px] text-primary placeholder:text-muted focus:outline-none focus:border-subtle"
-                  placeholder="Filter branches..."
-                />
+                <SearchField value={filter} onValueChange={setFilter} placeholder="Filter branches…" containerClassName="flex-1 min-w-0" />
                 <Tooltip label="New branch">
                   <button
                     onClick={() => setCreating(true)}

@@ -35,10 +35,11 @@ function PromptDialog({ prompt: current, reply }: { prompt: MachinePrompt; reply
   return (
     <Modal
       onClose={() => reply(null)}
-      width={420}
+      width={400}
+      hints={[{ keys: ['Enter'], label: 'Continue' }, { keys: ['Esc'], label: 'Cancel' }]}
       icon={<KeyRound size={16} />}
       title={current.machine ? `Sign in to ${current.machine}` : 'Sign in'}
-      bodyClassName="px-5 py-4"
+      bodyClassName="px-4 py-3"
     >
       <form
         className="flex flex-col gap-3"

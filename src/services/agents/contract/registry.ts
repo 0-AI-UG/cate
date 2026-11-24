@@ -69,6 +69,9 @@ export interface AgentDef {
      *  False when the CLI announces an id before persisting anything, so the
      *  session is only stamped from its first turn event. */
     fromSessionStart: boolean
+    /** Resuming without a prompt opens the normal input prompt. Readiness is
+     *  seeded only after the exact process confirms the requested session. */
+    opensAtPrompt?: boolean
   }
   /** Where the CLI persists its sessions, relative to the runtime host's home.
    *  The reader for it is `AGENT_SESSION_STORES` in the runtime. */
@@ -129,7 +132,7 @@ export const AGENT_DEFS: Record<AgentId, AgentDef> = {
     id: 'codex',
     displayName: 'Codex',
     command: 'codex',
-    resume: { args: (sid) => ['resume', sid], fromSessionStart: true },
+    resume: { args: (sid) => ['resume', sid], fromSessionStart: true, opensAtPrompt: true },
     sessionStore: '.codex/sessions',
     promptArgs: (prompt) => [prompt],
     startArgs: [],

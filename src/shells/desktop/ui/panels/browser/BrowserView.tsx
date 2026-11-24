@@ -96,7 +96,7 @@ function WebviewSlot({ tabId, src, partition, active, hidden, viewport, displayS
       data-browser-webview-slot
       data-browser-src={src}
       data-browser-partition={partition}
-      className={`${active ? 'relative' : 'absolute inset-0 invisible pointer-events-none'} overflow-hidden bg-surface-0`}
+      className={`${active ? 'relative' : 'absolute inset-0 invisible pointer-events-none'} overflow-hidden bg-surface-1`}
       style={frameStyle}
     >
       <webview
@@ -281,6 +281,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     () => (showSuggestions ? queryBrowserHistoryEntries(history, inputUrl, 8) : []),
     [showSuggestions, inputUrl, history],
   )
+  const suggestionsOpen = suggestions.length > 0
   const navigate = useCallback((input: string) => {
     if (input.trim()) quietly({ kind: 'navigate', input, tabId: shownTabId })
   }, [quietly, shownTabId])
@@ -414,7 +415,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
     if (agentCursor && agentCursor.event.kind !== 'done') quietly({ kind: 'releaseAgentCursor' })
   }
   const reload = () => { host.historyAction('reload') }
-  const iconButton = 'w-7 h-7 flex items-center justify-center rounded-[10px] hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-secondary hover:text-primary transition-colors'
+  const iconButton = 'w-7 h-[var(--ctl-h)] flex items-center justify-center rounded-[var(--node-tab-radius,6px)] hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent text-secondary hover:text-primary transition-colors'
 
   return (
     <div
@@ -446,7 +447,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
           onTogglePin={(tabId) => quietly({ kind: 'pin', tabId })}
         />
 
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-subtle bg-surface-1 px-2" data-browser-toolbar>
+        <div className="flex h-[var(--bar-h)] shrink-0 items-center gap-1 border-b border-subtle bg-surface-1 px-[var(--bar-pad)]" data-browser-toolbar>
           <div className="flex shrink-0 items-center gap-1">
             <Tooltip label="Back (⌘[)">
               <button onClick={() => host.historyAction('back')} disabled={!canGoBack} className={iconButton} aria-label="Back">
@@ -465,11 +466,18 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
             </Tooltip>
           </div>
 
-          <div className="flex-1 relative">
+          <div className="flex-1 relative h-[var(--ctl-h)]">
+           {/* One card: the input frame and its suggestions expand together. */}
+           <div
+             className={`absolute inset-x-0 top-0 z-30 rounded-[var(--node-tab-radius,6px)] ${suggestionsOpen ? 'bg-surface-2' : ''}`}
+             style={suggestionsOpen ? { boxShadow: '0 0 0 1px var(--border-subtle), 0 10px 28px rgba(0,0,0,0.35)' } : undefined}
+           >
             <div
-              data-input-frame
-              className={`flex h-7 items-center gap-2 rounded-[10px] border px-3 transition-colors ${
-                isStartPage(currentUrl)
+              {...(suggestionsOpen ? {} : { 'data-input-frame': '' })}
+              className={`flex h-[var(--ctl-h)] items-center gap-2 rounded-[var(--node-tab-radius,6px)] border px-3 transition-colors ${
+                suggestionsOpen
+                  ? 'border-transparent bg-transparent'
+                  : isStartPage(currentUrl)
                   ? 'border-strong bg-surface-1 focus-within:border-strong'
                   : 'border-transparent bg-transparent hover:bg-surface-2 focus-within:border-strong focus-within:bg-surface-1'
               }`}
@@ -506,6 +514,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
               onPick={(url) => { setShowSuggestions(false); navigate(url) }}
               onHover={setActiveSuggestion}
             />
+           </div>
           </div>
 
           {downloads.length > 0 && (
@@ -514,7 +523,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
                 ref={downloadButtonRef}
                 type="button"
                 onClick={() => { setMenuOpen(false); setDownloadsOpen((open) => !open) }}
-                className={`relative flex h-7 w-7 items-center justify-center rounded-[10px] transition-colors hover:bg-hover hover:text-primary ${
+                className={`relative flex h-[var(--ctl-h)] w-7 items-center justify-center rounded-[var(--node-tab-radius,6px)] transition-colors hover:bg-hover hover:text-primary ${
                   downloadsOpen ? 'bg-hover text-primary' : 'text-secondary'
                 }`}
                 aria-label="Downloads"
@@ -534,7 +543,7 @@ function BrowserContent({ workspaceId, panelId, partition, snapshot, send, visib
                 <button
                   onClick={() => { if (canBookmark) void browserData?.toggleBookmark(currentUrl, activeTab.title || currentUrl) }}
                   disabled={!canBookmark}
-                  className={`w-7 h-7 flex items-center justify-center rounded-[10px] transition-colors disabled:opacity-30 ${
+                  className={`w-7 h-[var(--ctl-h)] flex items-center justify-center rounded-[var(--node-tab-radius,6px)] transition-colors disabled:opacity-30 ${
                     isBookmarked ? 'text-agent hover:bg-hover' : 'text-secondary hover:text-primary hover:bg-hover'
                   }`}
                   aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
