@@ -10,6 +10,12 @@ import { SerializeAddon } from '@xterm/addon-serialize'
 import type { ReadResult, TerminalLink, TerminalLinksParams } from '../contract'
 import { rowLinks } from './links'
 
+// A serialized xterm screen carries mouse modes but omits any incomplete
+// escape sequence. Keep a trailing private-mode prefix in the replay until
+// its final byte arrives. Limit the scan and carry to a short output suffix.
+const PRIVATE_MODE_TAIL_LIMIT = 256
+const PRIVATE_MODE_PREFIX = /(?:\x1b(?:\[(?:\?[0-9;]*)?)?|\x9b(?:\?[0-9;]*)?)$/
+
 interface ScreenCapture {
   /** The serialized screen: text, styles, modes and the alternate buffer. */
   screen: string
@@ -24,6 +30,7 @@ export class HeadlessScreen {
   private readonly serializer = new SerializeAddon()
   private readonly queue: string[] = []
   private queuedChars = 0
+  private modeTail = ''
   private readonly drainWaiters: Array<() => void> = []
   private disposed = false
 
@@ -35,10 +42,14 @@ export class HeadlessScreen {
   get cols(): number { return this.term.cols }
   get rows(): number { return this.term.rows }
   /** Characters written but not yet parsed. */
-  get backlog(): number { return this.queuedChars }
+  get backlog(): number { return this.queuedChars + this.modeTail.length }
 
   write(data: string): void {
     if (this.disposed || data.length === 0) return
+    data = this.modeTail + data
+    this.modeTail = PRIVATE_MODE_PREFIX.exec(data.slice(-PRIVATE_MODE_TAIL_LIMIT))?.[0] ?? ''
+    if (this.modeTail) data = data.slice(0, -this.modeTail.length)
+    if (!data) return
     this.queue.push(data)
     this.queuedChars += data.length
     this.term.write(data, () => {
@@ -48,7 +59,8 @@ export class HeadlessScreen {
     })
   }
 
-  /** Resolves once everything written so far is parsed. */
+  /** Resolves once queued writes are parsed. An incomplete mode prefix is
+   *  retained for replay until more output arrives. */
   settled(): Promise<void> {
     if (this.disposed || this.queue.length === 0) return Promise.resolve()
     return new Promise((resolve) => this.drainWaiters.push(resolve))
@@ -58,7 +70,7 @@ export class HeadlessScreen {
   capture(scrollback?: number): ScreenCapture {
     return {
       screen: this.disposed ? '' : this.serializer.serialize(scrollback === undefined ? undefined : { scrollback }),
-      pending: [...this.queue],
+      pending: this.modeTail ? [...this.queue, this.modeTail] : [...this.queue],
       cols: this.term.cols,
       rows: this.term.rows,
     }
