@@ -38,16 +38,6 @@ afterEach(() => {
 })
 
 describe('CanvasBackgroundImage', () => {
-  it('ignores an unavailable bundled wallpaper without reading it as a file', async () => {
-    const values = { ...clientSettingsTable.defaults, canvasBackgroundImagePath: 'builtin:unavailable' }
-    installCanvasSettings({ client: { get: key => values[key], subscribe: () => () => {} } })
-    const readImage = vi.fn(async () => null)
-    installCanvasBackgroundPort({ pickImage: async () => null, readImage })
-    await act(async () => root.render(<CanvasBackgroundImage />))
-    expect(host.querySelector('[data-canvas-background-image]')).toBeNull()
-    expect(readImage).not.toHaveBeenCalled()
-  })
-
   it('releases the Blob URL for a custom wallpaper on unmount', async () => {
     const revokeObjectURL = vi.fn()
     vi.stubGlobal('URL', { createObjectURL: () => 'blob:wallpaper', revokeObjectURL })

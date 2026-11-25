@@ -161,6 +161,14 @@ test('saves a manual cross-origin iframe login and offers autofill in that frame
   const { electronApp: app, mainWindow: page } = await launchApp()
   const frameOrigin = origin.replace('127.0.0.1', 'localhost')
   try {
+    await app.evaluate(({ dialog }) => {
+      const messages: string[] = []
+      ;(globalThis as any).__passwordPrompts = messages
+      dialog.showMessageBox = (async (...args: unknown[]) => {
+        messages.push((args.at(-1) as { message: string }).message)
+        return { response: 0, checkboxChecked: false }
+      }) as typeof dialog.showMessageBox
+    })
     const browser = await createBrowser(page, `${origin}/embedded`, { x: 100, y: 100 })
     const id = (await browserWebContentsId(page, browser.panelId))!
     // Populate and submit as a manual page interaction, outside the agent
@@ -173,9 +181,7 @@ test('saves a manual cross-origin iframe login and offers autofill in that frame
     const waitForLoginFrame = () => expect.poll(() => inFrame('!!document.querySelector("input[type=password]")').catch(() => false)).toBe(true)
     await waitForLoginFrame()
     await inFrame('document.querySelector("input[type=email]").value="iframe@example.test"; document.querySelector("input[type=password]").value="iframe secret"; document.querySelector("form").requestSubmit()')
-    const savePrompt = page.getByRole('dialog', { name: 'Save the password for localhost (iframe@example.test)?' })
-    await expect(savePrompt).toBeVisible()
-    await savePrompt.getByRole('button', { name: /^OK\b/ }).click()
+    await expect.poll(() => app.evaluate(() => (globalThis as any).__passwordPrompts)).toContain(`Save the password for localhost (iframe@example.test)?`)
     await expect.poll(() => page.evaluate((url) => window.__cateE2E!.call('browserData', 'passwordSuggestions', { url }), frameOrigin))
       .toEqual([expect.objectContaining({ origin: frameOrigin, username: 'iframe@example.test' })])
 

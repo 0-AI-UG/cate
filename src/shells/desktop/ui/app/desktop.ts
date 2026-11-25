@@ -1,5 +1,5 @@
 // Desktop-only actions ui/app offers when a shell provides them: the app
-// updater, native menu bar, window chrome,
+// updater, native menus, window chrome,
 // ssh's sign-in prompts, runtime install progress and usage analytics. The desktop shell fills this slot; other shells leave it
 // empty and the UI hides what depends on it.
 
@@ -32,6 +32,14 @@ export interface MachinePrompt {
   machine: string
   /** ssh's own words. */
   prompt: string
+}
+
+export interface MenuItem {
+  id?: string
+  label?: string
+  enabled?: boolean
+  type?: 'normal' | 'separator'
+  submenu?: MenuItem[]
 }
 
 export interface DesktopPort {

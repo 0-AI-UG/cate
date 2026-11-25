@@ -9,7 +9,6 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, describe, expect, test, vi } from 'vitest'
-import * as hookTrust from './hookTrust'
 import {
   bridgeHookCommand,
   createAgentHooks,
@@ -77,49 +76,6 @@ const post = (url: string, token: string | null, body: unknown): Promise<Respons
   })
 
 describe('agentHooks capability', () => {
-  test('shares hook trust checks for the same checkout and terminal environment', async () => {
-    let release!: (result: 'approval-required') => void
-    const read = vi.spyOn(hookTrust, 'readCodexHookTrust')
-      .mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
-      .mockResolvedValue('trusted')
-    const cap = makeCap()
-    const cwd = tmpDir('hook-trust')
-    const otherCheckout = tmpDir('other-hook-trust')
-    const env = { PATH: '/agents/bin', HOME: '/agents/home', CODEX_HOME: '/agents/codex' }
-    await Promise.all([
-      cap.envForPty('one', env),
-      cap.envForPty('two', { ...env, CATE_TERMINAL_ID: 'two' }),
-      cap.envForPty('other-home', { ...env, CODEX_HOME: '/other/codex' }),
-      cap.envForPty('other-path', { ...env, PATH: '/other/bin' }),
-    ])
-    const now = Date.now()
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
-    try {
-      const first = cap.hookTrust(cwd, 'codex', 'one')
-      const second = cap.hookTrust(cwd, 'codex', 'two')
-      expect(read).toHaveBeenCalledTimes(1)
-      expect(read).toHaveBeenCalledWith(cwd, { env })
-      clock.mockReturnValue(now + 16_000)
-      const stillPending = cap.hookTrust(cwd, 'codex', 'one')
-      expect(read).toHaveBeenCalledTimes(1)
-      release('approval-required')
-      await expect(Promise.all([first, second, stillPending])).resolves.toEqual(Array(3).fill('approval-required'))
-      await expect(cap.hookTrust(cwd, 'codex', 'two')).resolves.toBe('approval-required')
-      expect(read).toHaveBeenCalledTimes(1)
-      await expect(cap.hookTrust(cwd, 'codex', 'other-home')).resolves.toBe('trusted')
-      await expect(cap.hookTrust(cwd, 'codex', 'other-path')).resolves.toBe('trusted')
-      await expect(cap.hookTrust(otherCheckout, 'codex', 'one')).resolves.toBe('trusted')
-      expect(read).toHaveBeenCalledTimes(4)
-      clock.mockReturnValue(now + 32_000)
-      await expect(cap.hookTrust(cwd, 'codex', 'one')).resolves.toBe('trusted')
-      expect(read).toHaveBeenCalledTimes(5)
-    } finally {
-      release?.('approval-required')
-      clock.mockRestore()
-      read.mockRestore()
-    }
-  })
-
   test('config inspection preserves permission, input, and completion ordering', async () => {
     let release!: (value: AgentApprovalDetection) => void
     const reader = vi.fn(() => new Promise<AgentApprovalDetection>((resolve) => { release = resolve }))

@@ -150,12 +150,6 @@ export async function forceDomTerminals(page: Page): Promise<void> {
   })
 }
 
-export async function showProjectsSidebar(page: Page): Promise<void> {
-  await page.evaluate(() => window.__cateE2E!.openSettings('sidebar'))
-  await page.getByLabel('Sidebar view').selectOption('projects')
-  await page.keyboard.press('Escape')
-}
-
 /** Clicks through the first-run welcome dialog when it shows. */
 export async function dismissFirstRun(page: Page): Promise<void> {
   const button = page.getByRole('button', { name: 'Continue', exact: true })
@@ -333,4 +327,12 @@ export async function guestEvaluate(app: ElectronApplication, urlPrefix: string,
 
 export async function guestUrls(app: ElectronApplication): Promise<string[]> {
   return app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((wc) => wc.getType() === 'webview').map((wc) => wc.getURL()))
+}
+
+/** Answers every native message box of `app` (confirmations) with button
+ *  `response` (0: the first, "OK"), so flows that confirm can run headless. */
+export async function answerDialogs(app: ElectronApplication, response = 0): Promise<void> {
+  await app.evaluate(({ dialog }, response) => {
+    dialog.showMessageBox = (async () => ({ response, checkboxChecked: false })) as typeof dialog.showMessageBox
+  }, response)
 }

@@ -1,5 +1,5 @@
 // BrowserMenu: the URL-bar overflow (⋮) dropdown for a browser panel.
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Bookmark as BookmarkSimple, ChevronLeft as CaretLeft, History as ClockCounterClockwise, Minus, Plus, Settings as Gear, Key } from 'lucide-react'
 import { clientUi } from '@kernel/interaction'
 import { POPOVER_SURFACE, useDismissableLayer, useMenuNumbers } from '../../../kernel/interaction'
@@ -50,30 +50,18 @@ export function BrowserMenu({
   const validSize = Number.isSafeInteger(Number(width)) && Number(width) > 0
     && Number.isSafeInteger(Number(height)) && Number(height) > 0
 
-  useLayoutEffect(() => { ref.current?.focus({ preventScroll: true }) }, [])
   useMenuNumbers(ref, true)
   useDismissableLayer({ open: true, contentRef: ref, triggerRefs: [triggerRef], onDismiss: onClose })
-  const closeAndFocusTrigger = () => {
-    onClose()
-    triggerRef.current?.focus({ preventScroll: true })
-  }
 
   const item = 'w-full flex items-center gap-2 rounded-md px-2 h-7 text-[13px] text-primary hover:bg-hover focus-visible:bg-hover transition-colors duration-100 motion-reduce:transition-none text-left'
 
   return (
     <div
       ref={ref}
-      tabIndex={-1}
-      className={`absolute right-2 top-[5.5rem] z-40 w-56 max-w-[calc(100%-16px)] ${POPOVER_SURFACE} p-1 outline-none`}
+      className={`absolute right-2 top-[5.5rem] z-40 w-56 max-w-[calc(100%-16px)] ${POPOVER_SURFACE} p-1`}
       onMouseDown={(e) => e.stopPropagation()}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape') return
-        event.preventDefault()
-        event.stopPropagation()
-        closeAndFocusTrigger()
-      }}
     >
-      <button data-menu-item className={item} onClick={() => { closeAndFocusTrigger(); onNewTab() }}>
+      <button data-menu-item className={item} onClick={() => { onClose(); onNewTab() }}>
         <Plus size={15} className="shrink-0 text-secondary" /> New tab
       </button>
       <div
@@ -92,7 +80,6 @@ export function BrowserMenu({
           className={item}
           aria-haspopup="menu"
           aria-expanded={bookmarksOpen}
-          onClick={() => setBookmarksOpen(true)}
         >
           <BookmarkSimple size={15} className="shrink-0 text-secondary" />
           <span className="flex-1">Bookmarks</span>
@@ -114,7 +101,7 @@ export function BrowserMenu({
                 data-menu-item
                 className={item}
                 onClick={() => {
-                  closeAndFocusTrigger()
+                  onClose()
                   onNavigate(bookmark.url)
                 }}
               >
@@ -125,10 +112,10 @@ export function BrowserMenu({
           </div>
         )}
       </div>
-      <button data-menu-item className={item} onClick={() => { closeAndFocusTrigger(); onOpenHistory() }}>
+      <button data-menu-item className={item} onClick={() => { onClose(); onOpenHistory() }}>
         <ClockCounterClockwise size={15} className="shrink-0 text-secondary" /> History
       </button>
-      <button data-menu-item className={item} onClick={() => { closeAndFocusTrigger(); onOpenPasswordManager() }}>
+      <button data-menu-item className={item} onClick={() => { onClose(); onOpenPasswordManager() }}>
         <Key size={15} className="shrink-0 text-secondary" /> Passwords and autofill
       </button>
       <div className="mx-2 my-1 border-t border-subtle" />
@@ -223,7 +210,7 @@ export function BrowserMenu({
         data-menu-item
         className={item}
         onClick={() => {
-          closeAndFocusTrigger()
+          onClose()
           clientUi().openSettings('workspace-browser')
         }}
       >

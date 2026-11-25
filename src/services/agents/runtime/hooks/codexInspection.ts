@@ -1,8 +1,6 @@
 // Read-only Codex protocol requests. Never creates a thread or writes configuration.
 import { spawn } from 'node:child_process'
 
-export const CODEX_INSPECTION_ENV_KEYS = ['PATH', 'HOME', 'USERPROFILE', 'CODEX_HOME']
-
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 

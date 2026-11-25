@@ -73,8 +73,8 @@ SwiftUI; the client core runs headless in a hidden `WKWebView`
   moves the panel to another worktree (as its screen's toolbar does). A
   card shows an agent as the desktop's tabs do (its logo and status mark);
   agents themselves live only in the Agents screen. With two or more worktrees, each one's
-  cards sit on a terraced territory in its color (`Worktrees`).
-  Connections are made only on the map. `+` adds a
+  cards sit on a terraced territory in its color (`Worktrees`), as on the
+  desktop. Connections are made only on the map. `+` adds a
   panel to the dock, or places it on the canvas on screen: the map zooms out
   to the desktop's recommended spots (`canvas.suggest`) and a tap on one puts
   it there. A new agent goes where you are looking. Agents (`AgentsView`, each a chat:

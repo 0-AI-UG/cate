@@ -4,7 +4,6 @@
 // stands in front of the app.
 
 import { test, expect } from '@playwright/test'
-import { showProjectsSidebar } from '../fixtures/electron-app'
 import { call, hasLan, launchSharedPair, relaunchB, type SharedPair } from '../fixtures/shared-workspace'
 
 test.describe('startup with a paired workspace [network]', () => {
@@ -14,7 +13,6 @@ test.describe('startup with a paired workspace [network]', () => {
   test.beforeAll(async () => {
     test.setTimeout(120_000)
     pair = await launchSharedPair('network')
-    await showProjectsSidebar(pair.b.page)
   })
   test.afterAll(async () => { await pair?.close() })
 

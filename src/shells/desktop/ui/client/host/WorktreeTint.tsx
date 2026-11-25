@@ -2,26 +2,20 @@
 // its worktree's color over the view, also while its picker menu previews
 // another worktree. None with a single worktree or with the setting off.
 
-import { useMemo } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { panelCheckout } from '@workspace/repository/contract'
 import type { PanelRecord } from '@workspace/document/contract'
-import { clientStateFor } from '@client/document'
 import { panelCheckoutHooks } from '@client/host'
-import { useDocument, usePanelView } from '../document'
+import { useDocument } from '../document'
+import { useCanvasUi, worktreeColor } from '../layout/canvas'
+import { getActiveTheme, subscribeTheme } from '../../kernel/interaction'
 import { useClientSetting } from '../../kernel/settings'
-import { useTheme, worktreeColor } from '../../workspace/repository'
-
-const WORKTREE_PREVIEW = 'worktreePreview'
-
-export function setPanelWorktreePreview(workspaceId: string, panelId: string, worktreeId: string | null): void {
-  clientStateFor(workspaceId)?.setPanelView(panelId, WORKTREE_PREVIEW, worktreeId)
-}
 
 export function WorktreeTint({ workspaceId, record }: { workspaceId: string; record: PanelRecord }) {
   const enabled = useClientSetting('worktreeTint')
-  const theme = useTheme()
+  const theme = useSyncExternalStore(subscribeTheme, getActiveTheme)
   const worktrees = useDocument(workspaceId, (d) => d.worktrees)
-  const [preview] = usePanelView<string | null>(workspaceId, record.id, WORKTREE_PREVIEW, null)
+  const preview = useCanvasUi((s) => (s.previewWorktree?.panelId === record.id ? s.previewWorktree.worktreeId : null))
   const color = useMemo(() => {
     const ready = Object.values(worktrees).filter((w) => w.status === 'ready')
     if (ready.length < 2) return null

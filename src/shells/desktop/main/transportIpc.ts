@@ -52,11 +52,10 @@ function rendererDialer(contents: WebContents): LoopbackDialer {
 export function registerTransportIpc(deps: { host: ShellTransportHost; partitions: WebPartitions }): void {
   const { host, partitions } = deps
 
-  handle(C.dialLocal, async (event, pipe: unknown, root: unknown, mode: unknown) => {
+  handle(C.dialLocal, async (event, pipe: unknown, root: unknown) => {
     const id = pipeId(pipe)
     if (typeof root !== 'string' || !root) throw new Error('no workspace root')
-    if (mode !== undefined && mode !== 'running-only') throw new Error('invalid local dial mode')
-    deliver(event.sender, id, await host.dialLocal(root, mode))
+    deliver(event.sender, id, await host.dialLocal(root))
   })
   handle(C.dialMachine, async (event, pipe: unknown, machine: unknown, root: unknown) => {
     const id = pipeId(pipe)

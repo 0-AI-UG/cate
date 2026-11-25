@@ -4,9 +4,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight as CaretRight, Copy, Folder, Ellipsis as DotsThree, Globe, LogOut, PanelsTopLeft, Pencil, Puzzle, Server, Settings2, UserPlus } from 'lucide-react'
-import { showContextMenu, Tooltip } from '../../kernel/interaction'
+import { Tooltip } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
-import type { ContextMenuItem } from '@kernel/interaction/contract'
 import { useClientSetting } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
 import { useDocument } from '../../client/document'
@@ -25,6 +24,7 @@ import { useWindowId } from '../state/windowContext'
 import { WorkspaceToggle } from './connectionStatus'
 import { ShareSlot } from './ShareSlot'
 import { WorkspaceActionsDialog, type WorkspaceAction } from './WorkspaceActionsDialog'
+import { showMenu, type MenuItem } from './menu'
 import { workspacePanelTree, type WindowTree } from './panelTree'
 
 const isMiddleClick = (e: React.MouseEvent): boolean => e.button === 1
@@ -110,7 +110,7 @@ export function WorkspaceRow({
   const workspaceCwd = (): string | undefined =>
     terminalCwd(statuses, isOpen ? focusedLeafPanelId(workspaceId) : null) ?? rootPath
 
-  /** Actions shared by the context menu and the actions dialog. */
+  /** What the workspace can do; the native menu and the actions dialog list the same. */
   const workspaceActions = (): WorkspaceAction[] => {
     const cwd = workspaceCwd()
     return [
@@ -134,8 +134,8 @@ export function WorkspaceRow({
     e.stopPropagation()
     const actions = workspaceActions()
     const byId = new Map(actions.map((action) => [action.id, action]))
-    const item = (id: string): ContextMenuItem => ({ id, label: byId.get(id)!.label, enabled: byId.get(id)!.enabled })
-    const items: ContextMenuItem[] = [
+    const item = (id: string): MenuItem => ({ id, label: byId.get(id)!.label, enabled: byId.get(id)!.enabled })
+    const items: MenuItem[] = [
       { id: 'select', label: 'Select Workspace', enabled: !isSelected },
       item('share'), item('rename'), item('settings'),
       { type: 'separator' },
@@ -144,7 +144,7 @@ export function WorkspaceRow({
       item('close'),
     ]
     setMenuOpen(true)
-    const id = await showContextMenu(items)
+    const id = await showMenu(items)
     setMenuOpen(false)
     if (id === 'select') void selectWorkspace(workspaceId)
     else if (id) byId.get(id)?.run()
@@ -154,7 +154,7 @@ export function WorkspaceRow({
     e.preventDefault()
     e.stopPropagation()
     const label = panelRowLabel(record)
-    const id = await showContextMenu([
+    const id = await showMenu([
       { id: 'rename', label: 'Rename' },
       { id: 'move-window', label: 'Move into New Window' },
       { type: 'separator' },
@@ -284,7 +284,7 @@ export function WorkspaceRow({
             <span className="truncate">{'label' in location ? location.label ?? 'Remote computer' : ''}</span>
           </span>
         )}
-        <ShareSlot workspaceId={workspaceId} isOpen={isOpen} onShare={() => void share()} />
+        <ShareSlot workspaceId={workspaceId} isOpen={isOpen} isSelected={isSelected} onShare={() => void share()} />
         <Tooltip label="Workspace actions">
           <button
             className="flex-shrink-0 w-0 -ml-1.5 overflow-hidden opacity-0 group-hover:w-5 group-hover:ml-0 group-hover:opacity-80 focus-visible:w-5 focus-visible:ml-0 focus-visible:opacity-100 hover:!opacity-100 h-5 flex items-center justify-center text-secondary hover:text-primary transition-opacity focus:outline-none"

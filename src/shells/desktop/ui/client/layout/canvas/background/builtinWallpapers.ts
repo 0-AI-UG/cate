@@ -18,7 +18,7 @@ export const BUILTIN_WALLPAPERS: BuiltinWallpaper[] = [
   { id: 'hillside', name: 'Hillside', url: hillside },
 ]
 
-export function isBuiltinWallpaperPath(path: string | undefined | null): boolean {
+function isBuiltinWallpaperPath(path: string | undefined | null): boolean {
   return !!path && path.startsWith(BUILTIN_WALLPAPER_PREFIX)
 }
 

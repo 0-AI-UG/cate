@@ -13,7 +13,7 @@ let root: Root
 const render = (isOpen = true, onShare = vi.fn(), onRow = vi.fn()) => {
   act(() => root.render(
     <div onClick={onRow}>
-      <ShareSlot workspaceId="ws-1" isOpen={isOpen} onShare={onShare} />
+      <ShareSlot workspaceId="ws-1" isOpen={isOpen} isSelected={false} onShare={onShare} />
     </div>,
   ))
   return host.querySelector('button')

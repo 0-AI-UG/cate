@@ -42,7 +42,8 @@ function canvasOfDoc(doc: WorkspaceDocument, canvasId: string | undefined): Mobi
   }
 }
 
-/** Ready checkouts, main first, when there are at least two to distinguish. */
+/** The ready checkouts, the main one (the shortest path) first; none unless
+ *  two or more, as the desktop's territories and worktree chips. */
 function readyWorktrees(doc: WorkspaceDocument): WorktreeMeta[] {
   const ready = Object.values(doc.worktrees).filter((w) => w.status === 'ready')
   return ready.length < 2 ? [] : ready.sort((a, b) => a.path.length - b.path.length)

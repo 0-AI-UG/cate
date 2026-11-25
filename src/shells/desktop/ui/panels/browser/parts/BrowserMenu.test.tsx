@@ -251,44 +251,4 @@ describe('BrowserMenu', () => {
     })
     expect(host.textContent).not.toContain('New tab')
   })
-
-  it('selects a numbered action immediately and restores focus to the trigger', () => {
-    const onNewTab = vi.fn()
-    function Harness(): JSX.Element {
-      const [open, setOpen] = useState(false)
-      const triggerRef = useRef<HTMLButtonElement>(null)
-      return <>
-        <button ref={triggerRef} onClick={() => setOpen(true)}>Browser menu</button>
-        {open && <BrowserMenu
-          bookmarks={bookmarks}
-          onNewTab={onNewTab}
-          onNavigate={vi.fn()}
-          onOpenHistory={vi.fn()}
-          onOpenPasswordManager={vi.fn()}
-          viewport={{ preset: 'compact' }}
-          onViewportChange={vi.fn()}
-          zoomPercent={100}
-          onZoomOut={vi.fn()}
-          onZoomIn={vi.fn()}
-          onZoomReset={vi.fn()}
-          onClose={() => setOpen(false)}
-          triggerRef={triggerRef}
-        />}
-      </>
-    }
-    const press = (key: string) => act(() => {
-      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
-    })
-    act(() => root.render(<Harness />))
-    const trigger = host.querySelector('button')!
-    trigger.focus()
-    act(() => trigger.click())
-    press('1')
-    expect(onNewTab).toHaveBeenCalledOnce()
-    expect(document.activeElement).toBe(trigger)
-    act(() => trigger.click())
-    press('Escape')
-    expect(host.textContent).not.toContain('New tab')
-    expect(document.activeElement).toBe(trigger)
-  })
 })

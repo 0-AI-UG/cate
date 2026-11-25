@@ -1,7 +1,7 @@
 // A workspace's parallel checkouts on this phone: a panel that runs in one
 // can move to another (`WorktreePicker`, in its screen's toolbar and its
 // card's menu), and a canvas map shows each checkout's panels on a terraced
-// territory in its color.
+// territory in its color, as the desktop's canvas does.
 
 import SwiftUI
 
@@ -143,7 +143,7 @@ struct WorktreeTerritory: View {
     let color: Color
     let touch: MapTouch
 
-    // Territory dimensions in canvas units.
+    // The desktop's look (territoryConfig), in canvas units.
     private static let reach: CGFloat = 70
     private static let innerRing: CGFloat = reach / 3
     private static let corner: CGFloat = 18

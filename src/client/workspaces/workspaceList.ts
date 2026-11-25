@@ -175,14 +175,6 @@ export class WorkspaceList {
     await this.save()
   }
 
-  /** Observes a listed local workspace without restoring membership, recording
-   *  usage or starting its runtime. */
-  observe(id: string): WorkspaceConnection {
-    const entry = this.get(id)
-    if (entry?.kind !== 'local') throw new Error(`Unknown local workspace ${id}`)
-    return this.connections.open(id, { kind: 'local', root: entry.root, runningOnly: true })
-  }
-
   /** Opens the workspace's connection and marks it opened. */
   async open(id: string): Promise<WorkspaceConnection> {
     const entry = this.get(id) ?? await this.restore(id)

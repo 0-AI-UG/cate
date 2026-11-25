@@ -12,6 +12,7 @@ import { canRunAction, creationMenuItems, creationPick, runAction, worktreeChoic
 import { RelationCanvasProvider } from '../../../workspace/relations'
 import { registerCanvasDropSurface, useDockFileDrop } from '../drag'
 import { canvasHost } from './ports'
+import { useCanvasSetting } from './settingsHooks'
 import { createPanelOnCanvas } from './actions'
 import { useCanvasInteraction } from './useCanvasInteraction'
 import { useAutoFocusLargestVisible } from './useAutoFocusLargestVisible'
@@ -372,7 +373,7 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
     dropPointRef.current = null
   }, [workspaceId, canvasId, canvasPointOf, fileDrop])
 
-  // A right click on empty canvas opens the context menu: the creation
+  // A right click on empty canvas opens the native menu: the creation
   // entries, then the actions offered in the canvas menu, run on this canvas.
   useEffect(() => {
     if (!canvasContextMenu) return

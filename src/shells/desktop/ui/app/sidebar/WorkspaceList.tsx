@@ -5,12 +5,12 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Globe, Plus } from 'lucide-react'
-import { DropdownSelect, SearchField, showContextMenu, SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
+import { SearchField, SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
 import { useWorkspaceList } from '../../client/workspaces'
 import { clientApp } from '../app'
 import { closeWorkspaces, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
-import { useUiState } from '../state/uiState'
+import { showMenu } from './menu'
 import { WorkspaceRow } from './WorkspaceRow'
 import { ThreadList } from './ThreadList'
 import { openTrusted } from '@client/workspaces'
@@ -56,10 +56,6 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
     }
   }, [entries, open, list])
   const [query, setQuery] = useState('')
-  const [projectFilter, setProjectFilter] = useState('')
-  const { sidebarMode } = useUiState()
-  const showThreads = sidebarMode === 'threads'
-  const projectId = entries.some((entry) => entry.id === projectFilter) ? projectFilter : null
   const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set())
   // Workspaces show their panels unless collapsed here.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -106,11 +102,11 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
   }, [multiSelected])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showThreads && (e.key === 'Delete' || e.key === 'Backspace') && multiSelected.size > 0) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && multiSelected.size > 0) {
       e.preventDefault()
       closeSelected()
     }
-    if (!showThreads && e.key === 'Escape' && multiSelected.size > 0) {
+    if (e.key === 'Escape' && multiSelected.size > 0) {
       e.preventDefault()
       setMultiSelected(new Set())
     }
@@ -120,7 +116,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
     if (multiSelected.size < 2 || !multiSelected.has(id)) return false
     e.preventDefault()
     e.stopPropagation()
-    const choice = await showContextMenu([{ id: 'close-selected', label: `Close ${multiSelected.size} Workspaces` }])
+    const choice = await showMenu([{ id: 'close-selected', label: `Close ${multiSelected.size} Workspaces` }])
     if (choice === 'close-selected') closeSelected()
     return true
   }
@@ -156,21 +152,19 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
           {headerTrailingAction}
         </>)}
       />
-      {showThreads && entries.length > 0 && (
-        <div className="flex shrink-0 flex-col items-start gap-1 px-2 pt-1 pb-1">
+      {entries.length > 0 && (
+        <div className="shrink-0 px-2 pt-1 pb-1">
           <SearchField aria-label="Search threads" value={query} onValueChange={setQuery}
-            containerClassName="w-full !h-7 !px-1 !border-transparent !bg-transparent hover:!bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] focus-within:!bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]" />
-          <DropdownSelect label="Filter threads by project" value={projectId ?? ''} onChange={setProjectFilter}
-            options={[{ value: '', label: 'All projects' }, ...entries.map((entry) => ({ value: entry.id, label: entry.name }))]} />
+            containerClassName="!h-7 !px-1 !border-transparent !bg-transparent hover:!bg-[color-mix(in_srgb,var(--text-primary)_5%,transparent)] focus-within:!bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]" />
         </div>
       )}
-      {entries.length > 0 && <ThreadList entries={entries} open={open} query={query} projectId={projectId} visible={showThreads} />}
       {entries.length === 0 ? (
         <div className="flex-1 overflow-y-auto pb-20" role="tree" aria-label="Workspaces">
           <p className="px-4 py-8 text-center text-xs text-muted">No workspaces yet</p>
         </div>
-      ) : !showThreads && (
-          <div className="flex-1 min-h-0 overflow-y-auto pb-20" role="tree" aria-label="Workspaces">
+      ) : (
+        <ThreadList entries={entries} open={open} query={query}>
+          <div className="pb-1" role="tree" aria-label="Workspaces">
             {groups.map((group) => group.entries.length > 0 && (
               <div key={group.title} className={group.shared ? 'mt-3 mx-2 rounded-lg border border-subtle bg-[color-mix(in_srgb,var(--text-primary)_4%,transparent)] pb-1' : ''} role="group" aria-label={group.title}>
                 <div className={`flex items-center gap-1.5 pt-4 pb-1 text-xs ${group.shared ? 'px-2.5 pt-2 text-primary' : 'px-3 text-muted'}`}>
@@ -223,6 +217,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction,
               </div>
             ))}
           </div>
+        </ThreadList>
       )}
     </div>
   )

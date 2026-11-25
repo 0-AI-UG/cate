@@ -8,7 +8,6 @@ import { Sidebar } from './Sidebar'
 import { createMemoryDeviceStore } from '@kernel/state/contract'
 import { createUiStateStore, installUiState, setUiState } from '../state/uiState'
 import { noRuntimeUpdates } from '@client/connections/testing'
-import { SidebarPage } from '../settings/pages/clientPages'
 
 let host: HTMLDivElement
 let root: Root
@@ -26,7 +25,6 @@ function fakeList() {
     getSnapshot: () => snapshot,
     subscribe: (l: () => void) => { listeners.add(l); return () => listeners.delete(l) },
     get: (id: string) => snapshot.entries.find((e) => e.id === id),
-    observe: vi.fn(),
     open: vi.fn(async (id: string) => {
       snapshot = { ...snapshot, open: [...snapshot.open, id] }
       for (const l of listeners) l()
@@ -48,11 +46,6 @@ let list: ReturnType<typeof fakeList>
 
 const rowOf = (name: string) =>
   [...host.querySelectorAll('[role="treeitem"]')].find((el) => el.textContent?.includes(name)) as HTMLElement
-
-const renderProjects = () => act(() => {
-  setUiState('sidebarMode', 'projects')
-  root.render(<Sidebar />)
-})
 
 beforeEach(async () => {
   const ui = createUiStateStore(createMemoryDeviceStore())
@@ -95,7 +88,7 @@ describe('Sidebar', () => {
   })
 
   it('lists local and paired workspaces together with remote location context', () => {
-    renderProjects()
+    act(() => root.render(<Sidebar />))
     expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(3)
     expect(host.textContent).toContain('Shared')
     expect(host.querySelectorAll('[data-machine]')).toHaveLength(0)
@@ -105,42 +98,19 @@ describe('Sidebar', () => {
 
   it('reconnects remembered local projects for threads without selecting them or dialing remote projects', async () => {
     await act(async () => { root.render(<Sidebar />) })
-    expect(list.observe.mock.calls.map(([id]) => id)).toEqual(['local:/p/cate', 'local:/p/site'])
-    expect(list.open).not.toHaveBeenCalled()
+    expect(list.open.mock.calls.map(([id]) => id)).toEqual(['local:/p/cate', 'local:/p/site'])
     expect(useUIStore.getState().selectedWorkspaceId).toBeNull()
   })
 
-  it('defaults to Threads and restores the Projects choice from device UI state', async () => {
-    const device = createMemoryDeviceStore()
-    const ui = createUiStateStore(device)
-    await ui.load()
-    act(() => {
-      installUiState(ui)
-      root.render(<><Sidebar /><SidebarPage /></>)
-    })
+  it('shows threads above the project tree in one list', () => {
+    act(() => root.render(<Sidebar />))
     expect(host.querySelector('[aria-label="Search threads"]')).not.toBeNull()
-    expect(host.querySelector('[aria-label="Filter threads by project"]')?.textContent).toContain('All projects')
+    expect(host.querySelector('[aria-label="Threads"] [aria-label="Workspaces"]')).not.toBeNull()
     expect(host.querySelector('[aria-label="Settled threads"]')).not.toBeNull()
-    expect(host.querySelector('[role="tree"][aria-label="Workspaces"]')).toBeNull()
-    const select = host.querySelector<HTMLSelectElement>('select')!
-    act(() => {
-      select.value = 'projects'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    expect(host.querySelector('[aria-label="Search threads"]')).toBeNull()
-    expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(3)
-
-    const reloaded = createUiStateStore(device)
-    await reloaded.load()
-    act(() => installUiState(reloaded))
-    expect(reloaded.getSnapshot().sidebarMode).toBe('projects')
-    expect(host.querySelectorAll('[role="treeitem"]')).toHaveLength(3)
-    reloaded.dispose()
-    ui.dispose()
   })
 
   it('reorders a paired workspace across local workspaces', () => {
-    renderProjects()
+    act(() => root.render(<Sidebar />))
     const source = rowOf('Shared').parentElement!
     const target = rowOf('cate').parentElement!
     const data = new Map<string, string>()
@@ -157,14 +127,14 @@ describe('Sidebar', () => {
   })
 
   it('opens and selects a workspace on click', async () => {
-    renderProjects()
+    act(() => root.render(<Sidebar />))
     await act(async () => { rowOf('site').click() })
     expect(list.open).toHaveBeenCalledWith('local:/p/site')
     expect(useUIStore.getState().selectedWorkspaceId).toBe('local:/p/site')
   })
 
   it('multi-selects with Cmd/Ctrl-click and closes the selection with Delete', async () => {
-    renderProjects()
+    act(() => root.render(<Sidebar />))
     await act(async () => { rowOf('cate').click() })
     await act(async () => { rowOf('site').click() })
     act(() => {
@@ -179,7 +149,7 @@ describe('Sidebar', () => {
   })
 
   it('closing the shown workspace with its neighbour shows the next one left', async () => {
-    renderProjects()
+    act(() => root.render(<Sidebar />))
     await act(async () => { rowOf('cate').click() })
     act(() => {
       rowOf('cate').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true }))

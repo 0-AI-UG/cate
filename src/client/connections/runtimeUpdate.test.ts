@@ -14,7 +14,6 @@ function fakeConnection(state: ConnectionState, idle = true, shared = false) {
   })
   const connection = {
     clientId: 'self',
-    observing: false,
     rpc: { remote: { epoch: 1, build: '2.0.4+b' } },
     state,
     subscribe: (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } },
@@ -50,17 +49,6 @@ it('updates an older runtime nothing uses without asking, and waits through its 
   expect(runtimeUpdates.run(as(older))).toEqual({ phase: 'restarting' })
   older.set({ kind: 'connected' })
   await vi.waitFor(() => expect(runtimeUpdates.run(as(older))).toBeNull())
-})
-
-it('leaves background observations alone until they are opened', () => {
-  const older = fakeConnection({ kind: 'incompatible', runtimeVersion: '2.0.3' }, false)
-  older.observing = true
-  start(older)
-  expect(older.runtime.runtime.update).not.toHaveBeenCalled()
-
-  older.observing = false
-  older.set(older.state, false)
-  expect(older.runtime.runtime.update).toHaveBeenCalledTimes(1)
 })
 
 it('tries without asking once per incompatible spell; in use, it is left to the person', async () => {

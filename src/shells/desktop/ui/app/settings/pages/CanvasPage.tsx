@@ -39,7 +39,6 @@ export function CanvasPage(): JSX.Element {
     ? wallpapers.find((w) => `${BUILTIN_WALLPAPER_PREFIX}${w.id}` === bgImagePath)
     : undefined
   const isCustomImage = !!bgImagePath && !bgImagePath.startsWith(BUILTIN_WALLPAPER_PREFIX)
-  const hasImage = !!activeBuiltin || isCustomImage
   const customImageName = isCustomImage ? bgImagePath.split(/[\\/]/).pop() : ''
 
   const chooseBackgroundImage = async () => {
@@ -80,7 +79,7 @@ export function CanvasPage(): JSX.Element {
         description={customImageName || 'Shown behind the canvas, auto-adjusted to keep titles readable.'}
       >
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <WallpaperSwatch selected={!hasImage} onClick={() => setClientSetting('canvasBackgroundImagePath', '')} label="None" />
+          <WallpaperSwatch selected={!bgImagePath} onClick={() => setClientSetting('canvasBackgroundImagePath', '')} label="None" />
           {wallpapers.map((wp) => (
             <WallpaperSwatch
               key={wp.id}
@@ -95,7 +94,7 @@ export function CanvasPage(): JSX.Element {
           )}
         </div>
       </SettingRow>
-      {hasImage && (
+      {bgImagePath && (
         <SettingRow label="Background image opacity" description={`${Math.round(bgOpacity * 100)}%`}>
           <Slider value={bgOpacity} onChange={(v) => setClientSetting('canvasBackgroundImageOpacity', v)} min={0.05} max={1} step={0.05} />
         </SettingRow>

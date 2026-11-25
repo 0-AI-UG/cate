@@ -20,6 +20,7 @@ export {
   type DesktopPort,
   type UpdateStatus,
   type UpdateState,
+  type MenuItem,
 } from './desktop'
 
 // State.

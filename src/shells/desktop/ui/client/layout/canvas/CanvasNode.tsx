@@ -160,7 +160,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const focusedWorktreeId = useCanvasUi((s) => s.focusedWorktreeId)
   const worktreeHighlight = !!activeWorktreeId && (hoveredWorktreeId === activeWorktreeId || focusedWorktreeId === activeWorktreeId)
   const worktreeDim = !!focusedWorktreeId && activeWorktreeId !== focusedWorktreeId
-  const peeked = useCanvasUi((s) => s.peekedPanel?.workspaceId === workspaceId && !!dock && dockPanels(dock).includes(s.peekedPanel.panelId))
+  const peeked = useCanvasUi((s) => !!s.peekedPanelId && !!dock && dockPanels(dock).includes(s.peekedPanelId as PanelId))
 
   // The minimap and lens layers read each node's worktree from the store.
   useEffect(() => {

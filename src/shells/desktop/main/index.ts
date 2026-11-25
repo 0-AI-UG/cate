@@ -338,8 +338,7 @@ app.whenReady().then(() => {
     sshHosts: () => listSshHosts(),
   })
   const host = createShellTransportHost({
-    startLocal: async (root, mode) => {
-      if (mode === 'running-only') return startLocalRuntime({ root, runningOnly: true })
+    startLocal: async (root) => {
       let installDir = await ensureRuntime()
       // Another app's pruning may have removed it since (a checkout and the
       // packaged app on one machine): install again.

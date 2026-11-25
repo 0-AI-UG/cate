@@ -35,7 +35,6 @@ import { createAgentChangesStore, type AgentChangeTerminal, type StoredAgentChan
 import { AGENT_SESSION_STORES, createAgentTitleTracker } from '../sessions'
 import type { AgentSessionStores } from '../sessions/types'
 import { APPROVAL_CONFIG_READERS, type ApprovalConfigReader } from './approvalConfig'
-import { CODEX_INSPECTION_ENV_KEYS } from './codexInspection'
 import { readCodexHookTrust } from './hookTrust'
 import {
   AGENTS,
@@ -64,7 +63,6 @@ import {
 } from '../../contract'
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024
-export const HOOK_STATUS_REFRESH_MS = 15_000
 
 export interface AgentHooks {
   cachedChanges(cwd: string): StoredChangesSnapshot | undefined
@@ -115,8 +113,7 @@ export interface AgentHooks {
   /** Whether Cate's hooks for one agent are installed for a checkout (its
    *  `injected` in inspectWorkspace), without inspecting the others. */
   hooksInstalled(cwd: string, agentId: AgentId): Promise<boolean>
-  /** Inspect with the CLI environment captured at PTY spawn. */
-  hookTrust(cwd: string, agentId: AgentId, terminalId: string): Promise<AgentHookTrust>
+  hookTrust(cwd: string, agentId: AgentId): Promise<AgentHookTrust>
   /** Best-effort identity from one exact process's open transcript files.
    *  Supplies no lifecycle state and never scans for a recent session. */
   identifyProcessSession(agentId: AgentId, pid: number): Promise<AgentSessionLocator | null>
@@ -325,10 +322,9 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
   /** Terminals with a hook-proven turn in flight (and its id, when known). */
   const activeTurns = new Map<string, string | undefined>()
   const promptContexts = new Map<string, string | ((agentId: AgentId, sessionId?: string) => string | null)>()
-  /** The env each PTY's CLI resolves its configuration with. */
-  const inspectionEnvs = new Map<string, NodeJS.ProcessEnv>()
+  /** The env each PTY's CLI resolves its config with (approval inspection). */
+  const approvalEnvs = new Map<string, NodeJS.ProcessEnv>()
   const approvalCache = new Map<string, { time: number; value: Promise<AgentApprovalDetection> }>()
-  const hookTrustCache = new Map<string, { expiresAt: number | null; value: Promise<AgentHookTrust> }>()
   /** Per-terminal delivery chain: an approval config read is asynchronous,
    *  and neither later hooks nor PTY input may overtake the event awaiting it. */
   const deliveries = new Map<string, Promise<void>>()
@@ -350,20 +346,6 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     const value = reader.read(cwd, { env })
       .catch(() => AGENT_APPROVAL_DETECTION[agentId])
     approvalCache.set(key, { time: Date.now(), value })
-    return value
-  }
-  const codexTrust = (cwd: string, env?: NodeJS.ProcessEnv, refresh = false): Promise<AgentHookTrust> => {
-    const key = JSON.stringify([cwd, ...CODEX_INSPECTION_ENV_KEYS.map((name) => env?.[name] ?? process.env[name])])
-    const cached = hookTrustCache.get(key)
-    const now = Date.now()
-    if (cached && (cached.expiresAt === null || (!refresh && cached.expiresAt > now))) return cached.value
-    for (const [key, entry] of hookTrustCache) {
-      if (entry.expiresAt !== null && entry.expiresAt <= now) hookTrustCache.delete(key)
-    }
-    const value = readCodexHookTrust(cwd, { env }).catch((): AgentHookTrust => 'unknown')
-    const entry = { value, expiresAt: null as number | null }
-    hookTrustCache.set(key, entry)
-    void value.then(() => { entry.expiresAt = Date.now() + HOOK_STATUS_REFRESH_MS })
     return value
   }
 
@@ -606,7 +588,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
               // told apart by config carries that config's mode.
               if (event?.kind === 'permission-check' && AGENT_APPROVAL_DETECTION[event.agentId].source === 'config') {
                 event.approvalMode = event.cwd && path.isAbsolute(event.cwd)
-                  ? (await approvalConfig(event.agentId, event.cwd, inspectionEnvs.get(terminalId))).mode : 'unknown'
+                  ? (await approvalConfig(event.agentId, event.cwd, approvalEnvs.get(terminalId))).mode : 'unknown'
               }
               if (disposed) return
               const spec = AGENT_HOOK_SPECS[agentId as AgentId]
@@ -753,7 +735,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       inputSessions.delete(terminalId)
       activeTurns.delete(terminalId)
       promptContexts.delete(terminalId)
-      inspectionEnvs.delete(terminalId)
+      approvalEnvs.delete(terminalId)
     },
     noteAgentExited(terminalId) {
       activeTurns.delete(terminalId)
@@ -770,12 +752,9 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
     readChanges: (cwd, knownRevision) => changes.readChanges(cwd, knownRevision),
     async envForPty(ptyId, env, config, cwd, baseCwd, launchedAgentId) {
       if (disposed) return env
-      const inspectionEnv: NodeJS.ProcessEnv = {}
-      for (const [key, value] of Object.entries(env)) {
-        const name = process.platform === 'win32' ? key.toUpperCase() : key
-        if (CODEX_INSPECTION_ENV_KEYS.includes(name)) inspectionEnv[name] = value
-      }
-      inspectionEnvs.set(ptyId, inspectionEnv)
+      approvalEnvs.set(ptyId, Object.fromEntries(
+        ['PATH', 'HOME', 'USERPROFILE', 'CODEX_HOME'].filter((key) => env[key] !== undefined).map((key) => [key, env[key]]),
+      ))
       let state: HookState
       try {
         state = await ensureReady()
@@ -902,7 +881,7 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
         const approval = AGENT_APPROVAL_DETECTION[agent.id]
         states.push({
           agentId: agent.id, displayName: agent.displayName, folderPresent, injected,
-          ...(agent.id === 'codex' && injected ? { hookTrust: await codexTrust(cwd, undefined, options.approvals) } : {}),
+          ...(agent.id === 'codex' && injected ? { hookTrust: await readCodexHookTrust(cwd) } : {}),
           approvalDetection: approval.source === 'config' && repoLocal && options.approvals ? await approvalConfig(agent.id, cwd, undefined, true) : approval,
         })
       }
@@ -921,8 +900,8 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       return isRepoLocalCwd(cwd, homeDir) && await injectedIn(agentId, cwd)
     },
 
-    async hookTrust(cwd, agentId, terminalId) {
-      return agentId === 'codex' && isRepoLocalCwd(cwd, homeDir) ? codexTrust(cwd, inspectionEnvs.get(terminalId)) : 'unknown'
+    async hookTrust(cwd, agentId) {
+      return agentId === 'codex' && isRepoLocalCwd(cwd, homeDir) ? readCodexHookTrust(cwd) : 'unknown'
     },
 
     subscribe(onEvent) {
@@ -951,9 +930,8 @@ export function createAgentHooks(deps: AgentHooksDeps): AgentHooks {
       listeners.clear()
       inputSessions.clear()
       activeTurns.clear()
-      inspectionEnvs.clear()
+      approvalEnvs.clear()
       approvalCache.clear()
-      hookTrustCache.clear()
       interruptWatches.clear()
       if (interruptTimer) {
         clearInterval(interruptTimer)

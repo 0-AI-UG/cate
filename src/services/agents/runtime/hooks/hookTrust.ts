@@ -21,6 +21,6 @@ export function codexHookTrust(response: unknown, cwd: string): AgentHookTrust {
     ? 'trusted' : 'unknown'
 }
 
-export async function readCodexHookTrust(cwd: string, options?: { env?: NodeJS.ProcessEnv }): Promise<AgentHookTrust> {
-  return codexHookTrust(await readCodexInspection(cwd, 'hooks/list', { cwds: [cwd] }, options), cwd)
+export async function readCodexHookTrust(cwd: string): Promise<AgentHookTrust> {
+  return codexHookTrust(await readCodexInspection(cwd, 'hooks/list', { cwds: [cwd] }), cwd)
 }

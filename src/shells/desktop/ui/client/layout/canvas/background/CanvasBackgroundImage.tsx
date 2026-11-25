@@ -11,7 +11,7 @@ import React, { useEffect, useState } from 'react'
 import { getActiveTheme, subscribeTheme } from '../../../../kernel/interaction'
 import { canvasBackgroundPort } from '../background'
 import { useCanvasSetting } from '../settingsHooks'
-import { getBuiltinWallpaper, isBuiltinWallpaperPath } from './builtinWallpapers'
+import { getBuiltinWallpaper } from './builtinWallpapers'
 
 const READABILITY = {
   dark: { filter: 'brightness(0.6) saturate(0.9)' },
@@ -27,8 +27,13 @@ function CanvasBackgroundImage() {
   useEffect(() => subscribeTheme((t) => setThemeType(t.type)), [])
 
   useEffect(() => {
-    if (!path || isBuiltinWallpaperPath(path)) {
-      setDataUrl(getBuiltinWallpaper(path)?.url ?? null)
+    if (!path) {
+      setDataUrl(null)
+      return
+    }
+    const builtin = getBuiltinWallpaper(path)
+    if (builtin) {
+      setDataUrl(builtin.url)
       return
     }
     const port = canvasBackgroundPort()

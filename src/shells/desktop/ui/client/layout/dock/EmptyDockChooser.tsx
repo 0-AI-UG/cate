@@ -15,7 +15,7 @@ export function EmptyDockChooser({ workspaceId }: { workspaceId: string }): JSX.
       <div className="relative flex h-full min-h-0 flex-col overflow-y-auto p-4">
         <div className="m-auto flex w-full max-w-xs flex-col items-center gap-5 py-4">
           <CateLogo size={61} className="shrink-0 text-muted opacity-60" aria-hidden="true" />
-          <SurfaceChoiceList choices={choices} onPick={(type) => { createPanel(workspaceId, type) }} acceptBodyKeys />
+          <SurfaceChoiceList choices={choices} onPick={(type) => { createPanel(workspaceId, type) }} />
         </div>
       </div>
     </div>

@@ -10,6 +10,7 @@ const defaultSpecs = [
   'e2e/panel-creation-performance.spec.ts',
   'e2e/canvas-scale-perf.spec.ts',
   'e2e/workspace-transition-perf.spec.ts',
+  'e2e/worktree-territory-perf.spec.ts',
   'e2e/browser-performance.spec.ts',
   // This suite leaves the largest Chromium process tree, so run it last.
   'e2e/perf-stress.spec.ts',

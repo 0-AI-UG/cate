@@ -122,23 +122,6 @@ function openLocal(rt: FakeRuntime, extra: Partial<ShellTransports> = {}, backof
 }
 
 describe('WorkspaceConnection', () => {
-  it('still dials without startup after an observed runtime drops', async () => {
-    const rt = fakeRuntime()
-    const transports = transportsFor(rt)
-    const dialLocal = vi.fn(transports.dialLocal)
-    registry = new WorkspaceConnections({
-      capabilities: RUNTIME_CAPABILITIES, identity, transports: { ...transports, dialLocal },
-      version: '9.0.0', backoff: { initialMs: 10 },
-    })
-    const connection = registry.open('ws1', { kind: 'local', root: '/w', runningOnly: true })
-    await expect(connection.runtime.workspace.info()).resolves.toMatchObject({ runtimeId: 'r1' })
-
-    rt.down = true
-    rt.dropAll()
-    await vi.waitFor(() => expect(dialLocal.mock.calls.length).toBeGreaterThan(1))
-    expect(dialLocal.mock.calls.every((args) => args[1] === 'running-only')).toBe(true)
-  })
-
   it('reaches a machine through its bridge, framed like the local socket', async () => {
     const rt = fakeRuntime()
     const local = transportsFor(rt)

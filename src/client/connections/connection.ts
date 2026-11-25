@@ -116,19 +116,12 @@ export class WorkspaceConnection {
   /** Dials `target` from the next attempt on: a paired runtime's addresses
    *  change with its network. Same kind only. */
   retarget(target: ConnectionTarget): void {
-    if (target.kind !== this.kind) return
-    const observed = this.observing
-    this._target = target
-    // Opening an observed runtime enables the usual version update policy.
-    if (observed && !this.observing) this.setState(this._state)
+    if (target.kind === this.kind) this._target = target
   }
-  get observing(): boolean { return this.target.kind === 'local' && this.target.runningOnly === true }
   /** Dialing starts the runtime when nothing answers (on this machine, or
    *  through a machine's bridge); a paired runtime is started only on its
    *  own machine. */
-  get startsRuntime(): boolean {
-    return this.kind !== 'network' && !this.observing
-  }
+  get startsRuntime(): boolean { return this.kind !== 'network' }
   get state(): ConnectionState { return this._state }
 
   getState = (): ConnectionState => this._state
@@ -243,9 +236,7 @@ export class WorkspaceConnection {
 
   private openPipe(): Promise<ByteDuplex> {
     const target = this.target
-    if (target.kind === 'local') {
-      return target.runningOnly ? this.transports.dialLocal(target.root, 'running-only') : this.transports.dialLocal(target.root)
-    }
+    if (target.kind === 'local') return this.transports.dialLocal(target.root)
     if (target.kind === 'machine') {
       if (!this.transports.dialMachine) return Promise.reject(new Error('This client cannot run commands on other machines'))
       return this.transports.dialMachine(target.machine, target.root)

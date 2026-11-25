@@ -1,5 +1,5 @@
 // What the relation UI needs from other modules, installed by the client
-// shell: a context menu, the agent transport of an execution panel, and an
+// shell: a native menu, the agent transport of an execution panel, and an
 // unsaved text panel for previews. Inert defaults keep it renderable.
 
 import type { PanelRecord } from '@workspace/document/contract'

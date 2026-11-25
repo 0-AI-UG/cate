@@ -9,7 +9,6 @@ import { documentStoreFor } from '@client/document'
 import { useDocument } from '../../client/document'
 import { confirmClose, createPanel, creatableDefinitions, focusedPanelId, panelDefinition } from '@client/host'
 import { activeCanvasId, createPanelOnCanvas, useCanvasUi } from '../../client/layout/canvas'
-import { setPanelWorktreePreview } from '../../client/host'
 import { useWorkspaceRoot } from '../../client/connections'
 import { panelsBoundTo } from '@workspace/repository/contract'
 import { switchPanelWorktree, type RepositoryHost, type ReviewRequest, type WorktreeLaunchType } from '@workspace/repository/client'
@@ -88,7 +87,7 @@ export function RepositoryHost({ workspaceId, children }: { workspaceId: string;
     },
     focusWorktree: (worktreeId) => useCanvasUi.getState().setFocusedWorktree(worktreeId),
     setHoveredWorktree: (worktreeId) => useCanvasUi.getState().setHoveredWorktree(worktreeId),
-    previewPanelWorktree: (panelId, worktreeId) => setPanelWorktreePreview(workspaceId, panelId, worktreeId),
+    previewPanelWorktree: (panelId, worktreeId) => useCanvasUi.getState().setPreviewWorktree(worktreeId ? { panelId, worktreeId } : null),
   }), [workspaceId, root, worktrees, panels, focusedWorktreeId])
 
   return <RepositoryUiProvider host={host}>{children}</RepositoryUiProvider>

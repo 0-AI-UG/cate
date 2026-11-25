@@ -7,9 +7,7 @@ import type { TerminalStatus } from '@services/terminal/contract'
 import type { PanelRecord } from '@workspace/document/contract'
 import { createUiStateStore, installUiState, uiState } from '../state/uiState'
 import { ThreadList, threadActivityText } from './ThreadList'
-import { revealPanel, selectWorkspace } from '../navigation'
-import { useUIStore } from '../state/uiStore'
-import { useCanvasUi } from '../../client/layout/canvas'
+import { revealPanel } from '../navigation'
 
 const data = vi.hoisted(() => ({
   panels: {} as Record<string, PanelRecord>, agents: {} as Record<string, PanelAgentState>, terminals: {} as Record<string, TerminalStatus>, connected: true,
@@ -97,24 +95,6 @@ it('shows the same project, device and agent details for a settled thread', () =
   } finally { vi.useRealTimers() }
 })
 
-it('updates the thread details when a paired device reports a new name', () => {
-  vi.useFakeTimers()
-  try {
-    agent('Review', 'waitingForInput', true)
-    const paired = { id: 'ws', kind: 'paired' as const, name: 'Cate', runtimeId: 'paired', endpoints: [], pairedAt: 1, lastOpenedAt: null }
-    const show = (machineName: string) => act(() => root.render(
-      <ThreadList entries={[{ ...paired, machineName }]} open={['ws']} />,
-    ))
-    show('Old device')
-    const row = host.querySelector('[data-thread-phase="ready"]')!
-    act(() => row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
-    act(() => vi.advanceTimersByTime(250))
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('Old device')
-    show('New device')
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('New device')
-  } finally { vi.useRealTimers() }
-})
-
 it('shows elapsed time since manual settlement and updates it while the list is open', () => {
   vi.useFakeTimers()
   try {
@@ -180,37 +160,6 @@ it('shows thread details on hover and keeps the settle action separate from navi
   }
 })
 
-it('highlights only in the selected workspace and reserves navigation for a click', async () => {
-  agent('Review changes', 'waitingForInput', true)
-  vi.mocked(selectWorkspace).mockClear()
-  vi.mocked(revealPanel).mockClear()
-  useUIStore.getState().setSelectedWorkspace('different-workspace')
-  try {
-    render()
-    const row = host.querySelector('[data-thread-phase="ready"]')!
-    const hover = async () => act(async () => { row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
-    const leave = async () => act(async () => { row.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: host })) })
-
-    await hover()
-    expect(selectWorkspace).not.toHaveBeenCalled()
-    expect(useCanvasUi.getState().peekedPanel).toBeNull()
-    await leave()
-
-    act(() => useUIStore.getState().setSelectedWorkspace('ws'))
-    await hover()
-    expect(useCanvasUi.getState().peekedPanel).toEqual({ workspaceId: 'ws', panelId: 'Review changes' })
-    expect(revealPanel).not.toHaveBeenCalled()
-    await leave()
-    expect(useCanvasUi.getState().peekedPanel).toBeNull()
-    await hover()
-    act(() => button('Review changes').click())
-    expect(useCanvasUi.getState().peekedPanel).toBeNull()
-    expect(revealPanel).toHaveBeenCalledExactlyOnceWith('ws', 'Review changes')
-  } finally {
-    act(() => useUIStore.getState().setSelectedWorkspace(null))
-  }
-})
-
 it('settles ready work, retains it in the bottom dropdown, and resurfaces a new turn', () => {
   agent('ready', 'waitingForInput', true); render()
   act(() => (host.querySelector('[aria-label="Mark ready settled"]') as HTMLButtonElement).click())
@@ -251,22 +200,6 @@ it('clears settled acknowledgement after a disconnect so new results can resurfa
   expect(host.querySelector('[aria-label="Ready for review"]')?.textContent).toContain('ready')
 })
 
-it('keeps observing new turns while Projects is shown', () => {
-  const show = (visible: boolean) => act(() => root.render(
-    <ThreadList entries={entries} open={['ws']} visible={visible} />,
-  ))
-  agent('review', 'waitingForInput', true)
-  show(true)
-  act(() => host.querySelector<HTMLButtonElement>('[aria-label="Mark review settled"]')!.click())
-  show(false)
-  expect(host.querySelector('[aria-label="Threads"]')).toBeNull()
-  agent('review', 'running')
-  show(false)
-  agent('review', 'waitingForInput', true)
-  show(true)
-  expect(host.querySelector('[aria-label="Ready for review"]')?.textContent).toContain('review')
-})
-
 it('aggregates open workspaces and removes a workspace when it closes', () => {
   agent('question', 'waitingForInput')
   const other = { ...entries[0], id: 'other', name: 'Website' }
@@ -276,24 +209,6 @@ it('aggregates open workspaces and removes a workspace when it closes', () => {
   act(() => root.render(<ThreadList entries={[...entries, other]} open={['ws']} />))
   expect(host.querySelectorAll('[data-thread-phase="blocked"]')).toHaveLength(1)
   expect(host.querySelector('[aria-label="Needs attention"]')?.textContent).not.toContain('Website')
-})
-
-it('applies project and text filters to both active and Settled threads', () => {
-  agent('question', 'waitingForInput')
-  agent('finished', 'finished')
-  const other = { ...entries[0], id: 'other', name: 'Website' }
-  const show = (query: string) => act(() => root.render(
-    <ThreadList entries={[...entries, other]} open={['ws', 'other']} projectId="other" query={query} />,
-  ))
-  show('')
-  act(() => button('Settled').click())
-  expect(host.querySelectorAll('[data-thread-phase="blocked"]')).toHaveLength(1)
-  expect(host.querySelector('[aria-label="Needs attention"]')?.textContent).toContain('Website')
-  expect(host.querySelectorAll('#sidebar-settled-threads [data-thread-phase="settled"]')).toHaveLength(1)
-  expect(host.querySelector('#sidebar-settled-threads [aria-label="finished, Website"]')).not.toBeNull()
-  show('finished')
-  expect(host.querySelector('[aria-label="Needs attention"]')).toBeNull()
-  expect(host.querySelectorAll('#sidebar-settled-threads [data-thread-phase="settled"]')).toHaveLength(1)
 })
 
 
@@ -313,16 +228,6 @@ it('explains Codex hook approval without claiming it is working', () => {
   expect(host.textContent).toContain('Hooks need approval')
   expect(host.textContent).toContain('Open /hooks in Codex')
   expect(host.querySelector('[data-thread-phase="running"]')).toBeNull()
-})
-
-it('shows hook approval instructions when a restored Codex thread is ready for a prompt', () => {
-  agent('Restored session', 'waitingForInput', true)
-  data.agents['Restored session'].hooksNeedApproval = true
-  render()
-  const ready = host.querySelector('[aria-label="Ready for review"]')
-  expect(ready?.textContent).toContain('Restored session')
-  expect(ready?.textContent).toContain('Hooks need approval')
-  expect(ready?.textContent).toContain('Open /hooks in Codex')
 })
 
 
