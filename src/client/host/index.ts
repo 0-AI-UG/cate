@@ -34,7 +34,7 @@ export { markdownLinkTarget, markdownPath } from './markdownLinks'
 export { closePanel, closePanels, confirmClose, registerPanelCloseGuard, type CloseGuard, type CloseGuardContext, type ConfirmedClose } from './close'
 export { activeTabOf, focusPanel, focusedPanelId, focusedLeafIn, focusedLeafPanelId, selectTab } from './focus'
 export { canMoveIntoDock, moveIntoDock } from './moveIntoDock'
-export { revealPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
+export { revealPanel, peekPanel, installRevealHooks, CANVAS_REVEAL_INTENT, type RevealHooks } from './reveal'
 export {
   registerActions,
   actionSupported,

@@ -48,6 +48,7 @@ export interface PanelAgentState {
    *  files are not installed where it runs, so its status and connected
    *  panel context do not reach it. */
   hooksMissing?: true
+  hooksNeedApproval?: true
 }
 
 /** `typed`: the prompt was typed but no turn started, so it may still be in

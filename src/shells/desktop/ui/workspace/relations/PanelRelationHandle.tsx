@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { viewToCanvas, type Point } from '@workspace/canvas/contract'
 import type { RelationSide as PanelConnectionSide } from '@workspace/document/contract'
-import { Icon, POPOVER_SURFACE } from '../../kernel/interaction'
+import { Icon, Modal } from '../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import { panelConnectionPathFromPoints, panelPlacementAtConnectionEnd } from '@workspace/canvas/contract'
 import {
@@ -16,7 +16,9 @@ import { relationUiPort } from './port'
 import { useRelationUi } from './state'
 
 const SIDES: PanelConnectionSide[] = ['top', 'right', 'bottom', 'left']
-const PORT_OFFSET = 12
+/** Screen px from the panel edge to a handle dot's centre: the dot sits just
+ *  outside the edge, touching it, so it never overlaps the panel. */
+const PORT_OFFSET = 8
 const SNAP_DISTANCE = 72
 
 interface Port {
@@ -40,12 +42,9 @@ interface DragState {
 
 interface CreateMenuState {
   sourceSide: PanelConnectionSide
-  startCanvasPoint: Point
-  screenPoint: Point
+  /** Where the connection was dropped, in canvas space: the new panel goes here. */
   menuCanvasPoint: Point
 }
-
-const CREATE_MENU_WIDTH = 220
 
 interface CreateMenuItem {
   type: string
@@ -97,7 +96,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
 }) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [createMenu, setCreateMenu] = useState<CreateMenuState | null>(null)
-  const { canvas: canvasApi, overlayTarget: relationOverlayTarget } = useRelationCanvas()
+  const { canvas: canvasApi } = useRelationCanvas()
 
   const begin = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return
@@ -133,12 +132,6 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
       if (!canvasRoot || !rect || !canvasState) return
       setCreateMenu({
         sourceSide: current.sourceSide,
-        startCanvasPoint: viewToCanvas(
-          { x: current.start.x - rect.left, y: current.start.y - rect.top },
-          canvasState.zoomLevel,
-          canvasState.viewportOffset,
-        ),
-        screenPoint: { x, y },
         menuCanvasPoint: viewToCanvas(
           { x: x - rect.left, y: y - rect.top },
           canvasState.zoomLevel,
@@ -203,39 +196,23 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
     useRelationUi.getState().openRelationEditor(relationId)
   }, [canvasApi, createMenu, sourcePanelId, workspaceId])
 
-  const createMenuPosition = createMenu
-    ? relationOverlayTarget
-      ? {
-          top: createMenu.menuCanvasPoint.y,
-          right: relationOverlayTarget.offsetWidth - createMenu.menuCanvasPoint.x - CREATE_MENU_WIDTH - PORT_OFFSET,
-        }
-      : {
-          top: createMenu.screenPoint.y,
-          right: Math.max(8, window.innerWidth - Math.max(8, createMenu.screenPoint.x) - CREATE_MENU_WIDTH),
-        }
-    : null
-
   const previewPath = drag && panelConnectionPathFromPoints(
     drag.start,
     drag.end,
     drag.sourceSide,
     drag.target?.side ?? OPPOSITE_SIDE[drag.sourceSide],
   )
-  const createPreviewPath = createMenu && panelConnectionPathFromPoints(
-    createMenu.startCanvasPoint,
-    createMenu.menuCanvasPoint,
-    createMenu.sourceSide,
-    OPPOSITE_SIDE[createMenu.sourceSide],
-  )
-
   return (
     <>
       {SIDES.map((side) => {
-        const position = {
-          top: 'left-1/2 -top-[22px] -translate-x-1/2',
-          right: 'top-1/2 -right-[22px] -translate-y-1/2',
-          bottom: 'left-1/2 -bottom-[22px] -translate-x-1/2',
-          left: 'top-1/2 -left-[22px] -translate-y-1/2',
+        // The button is 20px; scale() keeps its centre, so offset by the
+        // half-size plus the screen-constant distance in canvas units.
+        const out = 'calc(-10px - 8px / var(--canvas-zoom, 1))'
+        const position: React.CSSProperties = {
+          top: { top: out, left: '50%', marginLeft: -10 },
+          right: { right: out, top: '50%', marginTop: -10 },
+          bottom: { bottom: out, left: '50%', marginLeft: -10 },
+          left: { left: out, top: '50%', marginTop: -10 },
         }[side]
         return (
           <button
@@ -246,10 +223,10 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
             title="Drag to connect"
             onPointerDown={begin}
             onClick={(event) => { event.preventDefault(); event.stopPropagation() }}
-            className={`group pointer-events-auto absolute ${position} z-20 grid h-5 w-5 place-items-center rounded-full border-0 bg-transparent p-0 outline-none`}
-            style={{ cursor: 'crosshair' }}
+            className={`group pointer-events-auto absolute z-20 grid h-5 w-5 place-items-center rounded-full border-0 bg-transparent p-0 outline-none`}
+            style={{ ...position, cursor: 'crosshair', scale: 'calc(1 / var(--canvas-zoom, 1))' }}
           >
-            <span className="h-2 w-2 rounded-full border border-focus bg-focus-blue shadow-sm transition-[transform,box-shadow,filter] duration-150 ease-out group-hover:scale-125 group-hover:brightness-110 group-hover:shadow-md group-focus-visible:scale-125 group-focus-visible:ring-2 group-focus-visible:ring-focus-blue/30 motion-reduce:transition-none" />
+            <span className="h-2 w-2 rounded-full border-[1.5px] border-surface-1 bg-focus-blue shadow-[0_0_0_1px_var(--focus-blue)] transition-[transform,box-shadow] duration-150 ease-out group-hover:scale-125 group-hover:shadow-[0_0_0_4px_color-mix(in_srgb,var(--focus-blue)_25%,transparent)] group-focus-visible:scale-125 group-focus-visible:shadow-[0_0_0_4px_color-mix(in_srgb,var(--focus-blue)_25%,transparent)] motion-reduce:transition-none" />
           </button>
         )
       })}
@@ -264,7 +241,8 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
               d={previewPath ?? ''}
               fill="none"
               stroke="var(--focus-blue)"
-              strokeWidth="2.25"
+              strokeWidth="1.75"
+              strokeOpacity="0.8"
               strokeLinecap="round"
             />
           </svg>
@@ -272,7 +250,7 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
             <span
               key={port.side}
               data-panel-connection-target={port.side}
-              className="pointer-events-none fixed h-2 w-2 rounded-full border border-focus transition-[transform,opacity,background-color,box-shadow] duration-150 ease-out motion-reduce:transition-none"
+              className="pointer-events-none fixed h-1.5 w-1.5 rounded-full transition-[transform,opacity,background-color,box-shadow] duration-150 ease-out motion-reduce:transition-none"
               style={{
                 left: port.x,
                 top: port.y,
@@ -288,110 +266,38 @@ export function PanelRelationHandle({ workspaceId, sourcePanelId }: {
         </div>,
         document.body,
       )}
-      {createMenu && relationOverlayTarget && createPortal(
-        <svg
-          aria-hidden
-          data-panel-connection-create-preview
-          width="1"
-          height="1"
-          style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', pointerEvents: 'none', zIndex: 999 }}
-        >
-          <path
-            d={createPreviewPath ?? ''}
-            fill="none"
-            stroke="var(--focus-blue)"
-            strokeWidth="2.25"
-            strokeLinecap="round"
-            strokeDasharray="6 5"
-          />
-        </svg>,
-        relationOverlayTarget,
-      )}
-      {createMenu && relationOverlayTarget !== null && (
-        <NewLinkedPanelMenu
-          position={createMenuPosition!}
-          items={createMenuItems()}
-          onPick={createAndConnect}
-          onClose={closeCreateMenu}
-          portalTarget={relationOverlayTarget}
-        />
+      {createMenu && (
+        <NewLinkedPanelDialog items={createMenuItems()} onPick={createAndConnect} onClose={closeCreateMenu} />
       )}
     </>
   )
 }
 
-/** The panel type menu at the loose end of a dragged connection. */
-function NewLinkedPanelMenu({ position, items, onPick, onClose, portalTarget }: {
-  position: { top: number; right: number }
+/** The panel type picker for the loose end of a dragged connection. */
+function NewLinkedPanelDialog({ items, onPick, onClose }: {
   items: CreateMenuItem[]
   onPick: (type: string) => void
   onClose: () => void
-  portalTarget: HTMLElement | null | undefined
 }) {
-  const menuRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
-    const dismiss = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) onClose()
-    }
-    const onResize = () => onClose()
-    document.addEventListener('pointerdown', dismiss)
-    window.addEventListener('resize', onResize)
-    return () => {
-      document.removeEventListener('pointerdown', dismiss)
-      window.removeEventListener('resize', onResize)
-    }
-  }, [onClose])
-  return createPortal(
-    <div
-      ref={menuRef}
-      role="menu"
-      aria-label="New linked panel"
-      className="dock-new-tab-menu pointer-events-auto z-[1000] w-[220px] max-w-[calc(100vw-16px)] text-[13px]"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape' || event.key === 'Tab') { onClose(); event.stopPropagation(); return }
-        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-        event.preventDefault()
-        const buttons = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])
-        const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
-        buttons[next]?.focus()
-      }}
-      style={{
-        position: portalTarget ? 'absolute' : 'fixed',
-        top: position.top,
-        right: position.right,
-        transform: 'translateY(-50%)',
-        animation: 'none',
-      }}
-      onMouseDown={(e) => e.stopPropagation()}
-    >
-      <span
-        data-panel-connection-menu-port
-        className="pointer-events-none absolute left-[-12px] top-1/2 z-10 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-focus bg-focus-blue"
-        style={{ boxShadow: '0 0 0 4px color-mix(in srgb, var(--focus-blue) 18%, transparent)' }}
-      />
-      <div
-        className={`w-full overflow-y-auto ${POPOVER_SURFACE} p-1.5`}
-        style={{ maxHeight: portalTarget ? undefined : `calc(100vh - ${position.top + 8}px)` }}
-      >
+  return (
+    <Modal numbered title="Connect a new panel" width={280} onClose={onClose} bodyClassName="min-h-0 flex-1 overflow-auto px-1.5 pb-1.5">
+      <div aria-label="New linked panel" className="text-[13px]">
         {items.map(({ type, label, icon }) => (
           <button
             key={type}
             type="button"
-            role="menuitem"
-            className="flex items-center gap-2.5 w-full rounded-lg px-2.5 py-1.5 text-primary hover:bg-hover focus-visible:bg-hover transition-colors duration-100 motion-reduce:transition-none"
+            data-menu-item
+            className="flex w-full items-center gap-2.5 rounded-md px-2 py-1 text-left text-primary outline-none transition-colors hover:bg-hover focus-visible:bg-hover"
             onClick={() => {
               onClose()
               onPick(type)
             }}
           >
             {isIconName(icon) ? <Icon name={icon} size={16} className="shrink-0 text-secondary" /> : null}
-            <span>{label}</span>
+            <span className="flex-1">{label}</span>
           </button>
         ))}
       </div>
-    </div>,
-    portalTarget ?? document.body,
+    </Modal>
   )
 }

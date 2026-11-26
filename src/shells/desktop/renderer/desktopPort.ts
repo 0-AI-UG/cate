@@ -31,7 +31,6 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
     checkForUpdates: () => api.updates.check(),
     dismissUpdate: (version) => api.updates.dismiss(version),
     quitAndInstallUpdate: () => api.updates.install(),
-    showContextMenu: (items) => api.menu.showContextMenu(items),
     onMenuAction: (listener) => api.menu.onAction(listener),
     // Only macOS draws native controls over the content; in fullscreen they hide.
     windowControlsInset: () => (isMac && !state.fullscreen ? TRAFFIC_LIGHTS_WIDTH : 0),

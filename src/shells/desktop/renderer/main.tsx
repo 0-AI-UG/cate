@@ -8,6 +8,7 @@ import { createLogger } from '@kernel/log/contract'
 import type { BrowserPageBridge } from '@services/browser/contract'
 import { App, BootFailed } from './App'
 import { bootDesktopClient, initRendererSentry } from './boot'
+import '@fontsource-variable/inter'
 import './styles/globals.css'
 import '@xterm/xterm/css/xterm.css'
 

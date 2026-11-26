@@ -107,7 +107,7 @@ function WindowBar({ account, window, color, now }: { account: UsageAccountLimit
         </div>
       </button>
       {open && (
-        <div role="tooltip" className="absolute bottom-full left-0 z-20 mb-1.5 rounded-xl border border-subtle bg-surface-2 p-3 shadow-lg">
+        <div role="tooltip" className="absolute bottom-full left-0 z-20 mb-1.5 rounded-lg border border-white/[0.08] bg-surface-1 p-3 shadow-lg">
           <WindowDetails account={account} window={window} now={now} />
         </div>
       )}

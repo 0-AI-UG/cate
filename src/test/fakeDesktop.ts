@@ -82,7 +82,6 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       setZoomFactor: vi.fn(),
     },
     menu: {
-      showContextMenu: async () => null,
       barItems: async () => [],
       popupBarItem: async () => {},
       runNativeAction: async () => {},
@@ -90,7 +89,6 @@ export function createFakeDesktop(options: { features?: ClientFeature[]; runtime
       onAction: off,
     },
     dialogs: {
-      messageBox: async (request) => request.cancelId ?? 0,
       open: async () => null,
       pickCanvasBackground: async () => null,
       readCanvasBackground: async () => null,

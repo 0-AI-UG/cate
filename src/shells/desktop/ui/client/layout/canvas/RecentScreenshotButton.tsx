@@ -223,14 +223,14 @@ export function RecentScreenshotButton({ workspaceId, expandDown = false }: { wo
           style={{
             [expandDown ? 'top' : 'bottom']: expanded ? index * 52 : index * 5,
             zIndex: visible.length - index,
-            transform: `rotate(${hoveredId === screenshot.id ? 8 : 3}deg) scale(${hoveredId === screenshot.id ? 1.05 : expanded ? 1 : 1 - index * 0.04})`,
+            transform: `rotate(${hoveredId === screenshot.id ? -4 : expanded ? 0 : index * -3}deg)`,
           }}
         >
           <Tooltip label="Click to view or drag screenshot to a panel" placement="left">
             <button
               type="button"
               aria-label="Open screenshot preview"
-              className="block h-10 w-10 cursor-grab overflow-hidden rounded-lg border-0 bg-transparent p-0 ring-1 ring-[var(--border-strong)] transition-[transform,filter] duration-200 ease-out group-hover:brightness-110 active:scale-95 active:cursor-grabbing motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="flex h-10 w-10 cursor-grab items-center justify-center overflow-hidden rounded-lg border-0 bg-surface-2 p-0.5 shadow-md ring-1 ring-[var(--border-strong)] transition-colors duration-200 ease-out hover:bg-surface-3 active:cursor-grabbing motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
               draggable
               onPointerDown={() => { dragged.current = false }}
               onKeyDown={event => {
@@ -256,7 +256,7 @@ export function RecentScreenshotButton({ workspaceId, expandDown = false }: { wo
               }}
             >
               <img src={screenshot.dataUrl} alt="Recent screenshot" draggable={false}
-                className="h-full w-full object-contain" />
+                className="block h-full w-full rounded-md object-cover" />
             </button>
           </Tooltip>
           {screenshot.annotated && <span aria-label="Annotated screenshot" className="pointer-events-none absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-black/75 text-white shadow-sm group-hover:opacity-0 group-focus-within:opacity-0">

@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertCircle, ArrowUp, Folder, FolderPlus, Server } from 'lucide-react'
+import { getFileIcon } from '../../workspace/files'
 import { LoadingState, Modal, btn, inputCls, Spinner } from '../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
 import { machineKey, machineLabel, type Machine, type MachineSetup, type RuntimeInstallProgress, type SshDirListing } from '@runtime/daemon/contract'
@@ -147,7 +148,7 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
           onRetry={() => setAttempt((n) => n + 1)}
         />
       ) : (
-        <div className="flex flex-col gap-3 p-4 min-h-0">
+        <div className="flex min-h-0 flex-col gap-3 px-4 pb-4 pt-1">
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -166,7 +167,7 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
                     type="button"
                     disabled={busy}
                     onClick={() => void open(crumb.path)}
-                    className={`rounded px-1.5 py-0.5 hover:bg-hover ${index === all.length - 1 ? 'text-primary font-medium' : 'text-secondary'}`}
+                    className={`rounded-md px-1.5 py-0.5 hover:bg-hover ${index === all.length - 1 ? 'text-primary font-medium' : 'text-secondary'}`}
                   >
                     {crumb.name}
                   </button>
@@ -179,7 +180,7 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
             </button>
           </div>
 
-          <div role="listbox" aria-label="Folders" className="h-64 overflow-auto rounded-md border border-subtle bg-surface-0 p-1">
+          <div role="listbox" aria-label="Folders" className="h-64 overflow-auto rounded-lg bg-[color-mix(in_srgb,var(--text-primary)_3.5%,transparent)] p-1">
             {newFolder !== null && (
               <form
                 className="flex items-center gap-2 px-2 py-1"
@@ -219,9 +220,9 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
                   setPathInput(joinPath(listing.path, name))
                 }}
                 onDoubleClick={() => void open(joinPath(listing.path, name))}
-                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[13px] text-primary ${selected === name ? 'bg-surface-4' : 'hover:bg-hover'}`}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] text-primary ${selected === name ? 'bg-surface-4' : 'hover:bg-hover'}`}
               >
-                <Folder size={14} className="shrink-0 text-secondary" />
+                <span className="flex shrink-0 items-center" style={{ color: getFileIcon('', true, false).color }}>{getFileIcon('', true, false).icon}</span>
                 <span className="truncate">{name}</span>
               </button>
             ))}
@@ -245,7 +246,7 @@ export function MachineFolderDialog({ machine, setup, lastPath, onReady, onOpene
               spellCheck={false}
               disabled={busy}
             />
-            <button type="button" className={btn.secondary} onClick={onClose} disabled={step === 'opening'}>Cancel</button>
+            <button type="button" className={btn.ghost} onClick={onClose} disabled={step === 'opening'}>Cancel</button>
             <button type="button" className={btn.primary} onClick={() => void openWorkspace()} disabled={busy || !pathInput.trim()}>
               {step === 'opening' && <Spinner size={13} />}
               Open
@@ -267,30 +268,30 @@ function MachineSetupView({ where, install, error, onCancel, onRetry }: {
   onRetry: () => void
 }): JSX.Element {
   return (
-    <div className="flex flex-col gap-4 p-4">
-      <div className="flex min-h-[288px] flex-col items-center justify-center gap-3 px-6 text-center">
+    <div className="flex flex-col gap-3 px-5 pb-4 pt-1">
+      <div className="flex flex-col gap-2 py-2">
         {error ? (
           <>
-            <AlertCircle size={20} className="text-error" />
-            <span className="text-[14px] font-medium text-primary">Could not set up {where}</span>
-            <span role="alert" className="max-w-[420px] break-words text-[12px] leading-relaxed text-secondary">{error}</span>
+            <AlertCircle size={16} className="text-error" />
+            <span className="text-[13px] font-medium text-primary">Could not set up {where}</span>
+            <span role="alert" className="break-words text-[12px] leading-relaxed text-muted">{error}</span>
           </>
         ) : install ? (
           <>
-            <span className="text-[14px] font-medium text-primary">Setting up {where}</span>
-            <span className="text-[12px] text-secondary">Cate installs its runtime there once. This can take a few minutes.</span>
-            <div className="mt-2 w-full max-w-[360px] text-left"><InstallProgressView progress={install} where={where} /></div>
+            <span className="text-[13px] font-medium text-primary">Setting up {where}</span>
+            <span className="text-[12px] text-muted">Cate installs its runtime there once. This can take a few minutes.</span>
+            <div className="mt-2 w-full text-left"><InstallProgressView progress={install} where={where} /></div>
           </>
         ) : (
           <>
-            <Spinner size={16} />
-            <span role="status" className="text-[14px] font-medium text-primary">Connecting to {where}</span>
-            <span className="text-[12px] text-secondary">Checking for the Cate runtime there.</span>
+            <Spinner size={14} />
+            <span role="status" className="text-[13px] font-medium text-primary">Connecting to {where}</span>
+            <span className="text-[12px] text-muted">Checking for the Cate runtime there.</span>
           </>
         )}
       </div>
       <div className="flex justify-end gap-2">
-        <button type="button" className={btn.secondary} onClick={onCancel}>Cancel</button>
+        <button type="button" className={btn.ghost} onClick={onCancel}>Cancel</button>
         {error && <button type="button" className={btn.primary} onClick={onRetry}>Try again</button>}
       </div>
     </div>

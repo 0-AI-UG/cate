@@ -4,7 +4,6 @@
 
 import { randomUUID } from 'node:crypto'
 import { BrowserWindow, ipcMain, screen, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import type { ContextMenuItem } from '@kernel/interaction/contract'
 import {
   DESKTOP_CHANNELS as C,
   type AppPerfSnapshot,
@@ -20,7 +19,7 @@ import { createCrossWindowDrag } from './crossWindowDrag'
 import { createDragGhost } from './dragGhost'
 import { revealWindow } from './env'
 import { handle, listen } from './ipc'
-import { showContextMenu, type AppMenu } from './menu'
+import type { AppMenu } from './menu'
 import type { OpenRequests } from './openRequests'
 import type { AutoUpdater } from './updater/autoUpdater'
 import { createWebglBudget } from './webglBudget'
@@ -109,10 +108,6 @@ export function registerAppIpc(deps: AppIpcDeps): { blockers(): string[] } {
   // Synchronous: the renderer asks on drag moves whether a drag may leave.
   ipcMain.on(C.anyFullscreen, (event) => { event.returnValue = anyFullscreen() })
 
-  handle(C.menuContext, (event, items: ContextMenuItem[]) => {
-    const win = windowOf(event)
-    return win ? showContextMenu(win, items) : null
-  })
   handle(C.menuBarItems, () => deps.menu.barLabels())
   handle(C.menuPopupBarItem, (event, index: number, x: number, y: number) => {
     const win = windowOf(event)

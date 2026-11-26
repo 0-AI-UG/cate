@@ -14,9 +14,10 @@ import { Ellipsis as DotsThree, TriangleAlert as Warning } from 'lucide-react'
 import { Split as ArrowsSplit } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import { errorMessage } from '@kernel/interaction'
-import { Icon, Spinner, Tooltip, useDismissableLayer } from '../../kernel/interaction'
+import { Icon, Spinner, Tooltip, anchorScale, useDismissableLayer } from '../../kernel/interaction'
 import type { JoinedWorktree, PrStatusResult } from '@workspace/repository/contract'
 import type { WorktreeLaunchType } from '@workspace/repository/client'
+import { AttachedFlyout, useHoverIntent } from '../../kernel/interaction'
 import { useRepositoryUi } from './context'
 import { CreateWorktreeForm } from './CreateWorktreeForm'
 import { useGitStatus } from './gitStatus'
@@ -50,6 +51,7 @@ export interface WorktreeToolbarMenuProps {
 interface PopoverPos {
   left: number
   bottom: number
+  scale?: number
 }
 
 export const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
@@ -61,6 +63,8 @@ export const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
 }) => {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<PopoverPos | null>(null)
+  // The toolbar card the menu hangs from (horizontal bar only).
+  const [bar, setBar] = useState<HTMLElement | null>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const { focusedWorktreeId } = useRepositoryUi()
   const active = open || !!focusedWorktreeId
@@ -75,45 +79,53 @@ export const WorktreeToolbarMenu: React.FC<WorktreeToolbarMenuProps> = ({
 
   const close = useCallback(() => setOpen(false), [])
 
-  const toggle = useCallback(() => {
-    if (open) {
-      setOpen(false)
-      return
-    }
-    // Anchor to the toolbar card: drop up from it in the horizontal bar, or fly
-    // out to its right in the compact vertical bar (growing upward either way).
+  const show = useCallback(() => {
+    // Horizontal bar: the menu hangs from the toolbar card and slides out of it.
+    // Compact vertical bar: it flies out to the card's right.
     const cardEl = btnRef.current?.closest('[data-toolbar-card]') as HTMLElement | null
+    setBar(cardEl ?? btnRef.current)
     const r = (cardEl ?? btnRef.current)?.getBoundingClientRect()
-    if (r) {
-      setPos(
-        menuSide === 'right'
-          ? { left: r.right + 8, bottom: window.innerHeight - r.bottom }
-          : { left: r.left, bottom: window.innerHeight - r.top + 10 },
-      )
-    }
+    if (r && menuSide === 'right') setPos({ left: r.right + 8, bottom: window.innerHeight - r.bottom, scale: (cardEl ?? btnRef.current) ? anchorScale((cardEl ?? btnRef.current)!, r) : undefined })
     setOpen(true)
-  }, [open, menuSide])
+  }, [menuSide])
+  const toggle = useCallback(() => (open ? setOpen(false) : show()), [open, show])
   useEffect(() => bindToggle?.(toggle) ?? undefined, [bindToggle, toggle])
+
+  // Resting the pointer on the button opens the menu and leaving it (and the
+  // menu) closes it. A form being typed in keeps the menu until it is done.
+  const hover = useHoverIntent({
+    open: show,
+    close: () => {
+      const active = document.activeElement
+      if (active instanceof HTMLElement && active.closest('[data-worktree-menu]') && /^(INPUT|TEXTAREA)$/.test(active.tagName)) return
+      setOpen(false)
+    },
+  })
 
   return (
     <>
-      {renderTrigger({ ref: btnRef, onClick: toggle, active, icon: <ArrowsSplit size={18} /> })}
-      {open && pos &&
-        createPortal(
-          <WorktreeMenuPopover
-            pos={pos}
-            triggerRef={btnRef}
-            canvasPanelId={canvasPanelId}
-            onClose={close}
-          />,
+      <span className="flex" onMouseEnter={hover.enter} onMouseLeave={hover.leave}>
+        {renderTrigger({ ref: btnRef, onClick: show, active, icon: <ArrowsSplit size={16} /> })}
+      </span>
+      {menuSide === 'right'
+        ? open && pos && createPortal(
+          <div onMouseEnter={hover.cancel} onMouseLeave={hover.leave}>
+            <WorktreeMenuPopover pos={pos} triggerRef={btnRef} canvasPanelId={canvasPanelId} onClose={close} />
+          </div>,
           document.body,
+        )
+        : (
+          <AttachedFlyout bar={bar} open={open} onMouseEnter={hover.cancel} onMouseLeave={hover.leave}>
+            <WorktreeMenuPopover triggerRef={btnRef} canvasPanelId={canvasPanelId} onClose={close} />
+          </AttachedFlyout>
         )}
     </>
   )
 }
 
 export interface WorktreeMenuPopoverProps {
-  pos: PopoverPos
+  /** Where a floating menu sits; omitted when an `AttachedFlyout` holds it. */
+  pos?: PopoverPos
   triggerRef: React.RefObject<HTMLButtonElement>
   canvasPanelId: string
   onClose: () => void
@@ -226,15 +238,19 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
   return (
     <div
       ref={rootRef}
-      className="fixed z-[1000] w-[256px] overflow-y-auto overscroll-contain rounded-2xl border border-subtle shadow-xl py-1.5 text-xs"
-      style={{
-        left: pos.left,
-        bottom: pos.bottom,
-        maxHeight: `min(480px, calc(100dvh - ${pos.bottom + 12}px))`,
-        background: 'color-mix(in srgb, var(--surface-0) 80%, transparent)',
-        backdropFilter: 'blur(24px) saturate(1.5)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.5)',
-      }}
+      data-worktree-menu=""
+      className={pos
+        ? 'fixed z-[1000] w-[256px] overflow-y-auto overscroll-contain rounded-lg border border-white/[0.08] bg-surface-1 shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] py-1 text-xs'
+        : 'cate-rise w-full overflow-y-auto overscroll-contain py-2 text-xs'}
+      style={pos
+        ? {
+          left: pos.left,
+          bottom: pos.bottom,
+          transform: pos.scale ? `scale(${pos.scale})` : undefined,
+          transformOrigin: 'bottom left',
+          maxHeight: `min(480px, calc(100dvh - ${pos.bottom + 12}px))`,
+        }
+        : { maxHeight: 'min(480px, 60vh)' }}
       onMouseDown={(e) => e.stopPropagation()}
     >
       {error && (
@@ -307,9 +323,10 @@ export const WorktreeMenuPopover: React.FC<WorktreeMenuPopoverProps> = ({
           ))}
           <div className="my-1 h-px bg-surface-5 mx-2.5" />
           <button
+            data-menu-item
             onClick={() => setCreating(true)}
             disabled={deleting}
-            className="mx-1 w-[calc(100%-0.5rem)] flex items-center gap-2 h-[26px] px-1.5 rounded-lg text-[12px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"
+            className="mx-1 w-[calc(100%-0.5rem)] flex items-center gap-2 h-7 px-1.5 rounded-md text-[13px] text-secondary hover:text-primary hover:bg-surface-4 transition-colors"
           >
             <Plus size={13} className="flex-shrink-0" />
             <span>Create new worktree…</span>
@@ -480,7 +497,8 @@ const WorktreeRow: React.FC<{
       title={busy ? 'Discarding' : wt.path}
       aria-busy={busy || undefined}
       aria-selected={focused}
-      className={`mx-1 px-1.5 py-1 rounded-lg select-none transition-colors ${
+      data-menu-item
+      className={`mx-1 px-1.5 py-1 rounded-md select-none transition-colors ${
         busy ? 'opacity-60 cursor-wait' : 'cursor-pointer hover:bg-surface-4'
       }`}
       style={focused ? { backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)` } : undefined}

@@ -175,6 +175,10 @@ export interface CanvasViewActions {
   focusNode(nodeId: NodeId): void
   unfocus(): void
   focusAndCenter(nodeId: NodeId): void
+  /** Glides the viewport to centre a node without selecting or focusing it. Returns the offset it left. */
+  peekNode(nodeId: NodeId): Point | null
+  /** Glides the viewport back to `offset`. */
+  restoreViewport(offset: Point): void
   moveToFront(nodeId: NodeId): void
   moveToBack(nodeId: NodeId): void
   togglePin(nodeId: NodeId): void
@@ -757,6 +761,19 @@ export function createCanvasView(options: CanvasViewOptions): CanvasViewStore {
           ...(offset ? { viewportOffset: offset } : {}),
         })
         clientState?.focus(activePanelOf(nodeId))
+      },
+
+      peekNode(nodeId) {
+        const node = get().nodes[nodeId]
+        if (!node) return null
+        const previous = get().viewportOffset
+        const offset = centerOn(node)
+        if (offset) get().animateViewportTo(offset)
+        return offset ? previous : null
+      },
+
+      restoreViewport(offset) {
+        get().animateViewportTo(offset)
       },
 
       moveToFront(nodeId) {
