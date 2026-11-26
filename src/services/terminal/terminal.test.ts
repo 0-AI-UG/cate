@@ -188,6 +188,37 @@ describe('terminal service', () => {
     v.binding.dispose()
   })
 
+  it('disables mouse tracking in both viewers when one attaches during the reset', async () => {
+    const { service, ptys, connect } = setup()
+    const first = await connect()
+    const { id } = await first.spawn({ cols: 80, rows: 24 })
+    const existing = await viewer(first, id)
+    let late: typeof existing | undefined
+    try {
+      ptys[0].emit('\x1b[?1003h')
+      await until(() => existing.term.modes.mouseTrackingMode === 'any')
+      ptys[0].emit('\x1b[?100')
+      await service.read(id)
+
+      const attached = await viewer(await connect(), id)
+      late = attached
+      await flushed(attached.term)
+      expect(attached.term.modes.mouseTrackingMode).toBe('any')
+
+      ptys[0].emit('3lshell prompt')
+      await until(() => screenText(attached.term).includes('shell prompt'))
+      expect(attached.term.modes.mouseTrackingMode).toBe('none')
+      await until(() => existing.term.modes.mouseTrackingMode === 'none')
+      expect(screenText(attached.term)).toBe(screenText(existing.term))
+      expect(screenText(attached.term)).toBe('shell prompt')
+    } finally {
+      late?.binding.dispose()
+      late?.term.dispose()
+      existing.binding.dispose()
+      existing.term.dispose()
+    }
+  })
+
   it('sends input from every viewer and the write function to the same PTY', async () => {
     const { ptys, connect, service } = setup()
     const a = await connect()

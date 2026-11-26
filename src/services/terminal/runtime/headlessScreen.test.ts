@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { Terminal } from '@xterm/headless'
 import { describe, expect, it } from 'vitest'
 import { HeadlessScreen } from './headlessScreen'
 
@@ -17,6 +18,34 @@ describe('HeadlessScreen.read', () => {
 })
 
 describe('HeadlessScreen.capture', () => {
+  it.each([1, 2, 3, 4, 5, 6, 7])('disables mouse tracking in a view attached after byte %i of the reset', async (split) => {
+    const screen = new HeadlessScreen(80, 40, 100)
+    const viewer = new Terminal({ cols: 80, rows: 40, allowProposedApi: true })
+    const write = (data: string): Promise<void> => new Promise(resolve => viewer.write(data, resolve))
+    const reset = '\x1b[?1003l'
+    try {
+      screen.write('\x1b[?1003h')
+      await screen.settled()
+      screen.write(reset.slice(0, split))
+      await screen.settled()
+
+      const capture = screen.capture()
+      await write(capture.screen + capture.pending.join(''))
+      expect(viewer.modes.mouseTrackingMode).toBe('any')
+
+      const remaining = reset.slice(split) + 'shell prompt'
+      screen.write(remaining)
+      await write(remaining)
+      await screen.settled()
+
+      expect(viewer.modes.mouseTrackingMode).toBe('none')
+      expect(viewer.buffer.active.getLine(0)?.translateToString(true)).toBe(screen.read().text)
+    } finally {
+      viewer.dispose()
+      screen.dispose()
+    }
+  })
+
   it('carries at most the scrollback asked for above the screen', async () => {
     const screen = new HeadlessScreen(10, 2, 100)
     screen.write(Array.from({ length: 20 }, (_, i) => `line${i}`).join('\r\n'))
