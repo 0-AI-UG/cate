@@ -224,7 +224,7 @@ export function UsageChart({ agents, days, daily, hours, hourly, metric, referen
           {hoveredPeriod !== undefined && (
             <div
               ref={tooltipRef}
-              className="pointer-events-none absolute z-10 min-w-36 max-w-full rounded-xl border border-subtle bg-surface-2 px-2.5 py-2 text-[12px] shadow-lg"
+              className="pointer-events-none absolute z-10 min-w-36 max-w-full rounded-lg border border-white/[0.08] bg-surface-1 px-2.5 py-2 text-[12px] shadow-lg"
               style={{ left: 'var(--usage-tooltip-left, 0px)', top: 'var(--usage-tooltip-top, 0px)' }}
             >
               <div className="mb-1 text-muted">{formatTooltipPeriod(hoveredPeriod)}</div>

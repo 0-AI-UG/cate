@@ -74,7 +74,7 @@ describe('ConnectionBlocker', () => {
     expect(content().hasAttribute('inert')).toBe(true)
     act(() => { vi.advanceTimersByTime(400) })
     expect(cover()?.className).toContain('bg-transparent')
-    expect(cover()?.querySelector('details summary')?.textContent).toBe('Details')
+    expect(cover()?.querySelector('details summary')?.textContent).toBe('Technical details')
   })
 
   it('covers an incompatible workspace at once with the way to resolve it, and makes it inert', async () => {

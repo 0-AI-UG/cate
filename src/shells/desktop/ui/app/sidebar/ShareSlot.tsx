@@ -51,28 +51,18 @@ export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
     )
   }
 
-  if (isOpen && network !== 'off' && !isSelected) {
+  if (isOpen && network !== 'off') {
     const Glyph = network === 'cateConnect' ? Globe : Wifi
     const label = network === 'cateConnect' ? 'Shared: paired devices can join from anywhere' : 'Shared: paired devices can join on this network'
     return (
       <Tooltip label={label}>
-        <button className={`${SLOT} w-5 h-5 text-secondary opacity-70 hover:opacity-100 hover:text-primary`} onClick={share} aria-label={label}>
-          <Glyph size={12} />
+        <button className={`${SLOT} w-5 h-5 text-primary opacity-90 hover:opacity-100`} onClick={share} aria-label={label}>
+          <Glyph size={13} className="motion-safe:animate-pulse [animation-duration:3s]" />
         </button>
       </Tooltip>
     )
   }
 
-  return (
-    <Tooltip label="Invite to workspace…">
-      <button
-        className={`${SLOT} h-5 px-1 text-secondary hover:text-primary transition-opacity ${isSelected ? 'opacity-60' : 'opacity-0'} group-hover:opacity-80 hover:!opacity-100 focus-visible:opacity-100`}
-        onClick={share}
-        aria-label="Invite to workspace…"
-      >
-        <UserPlus size={13} />
-        {isSelected && <span className="ml-1 text-xs">Invite</span>}
-      </button>
-    </Tooltip>
-  )
+  // Inviting is in the workspace's actions menu, not on the card.
+  return <></>
 }

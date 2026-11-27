@@ -31,7 +31,6 @@ export function CanvasPage(): JSX.Element {
   const autoFocus = useClientSetting('autoFocusLargestVisibleNode')
   const snapToGrid = useClientSetting('snapToGrid')
   const placementPicker = useClientSetting('placementPicker')
-  const territory = useClientSetting('showWorktreeTerritory')
   const gridStyle = useClientSetting('canvasGridStyle')
   const bgImagePath = useClientSetting('canvasBackgroundImagePath')
   const bgOpacity = useClientSetting('canvasBackgroundImageOpacity')
@@ -63,12 +62,6 @@ export function CanvasPage(): JSX.Element {
         description="On Cmd+T or a toolbar click, show numbered spots to pick from. Off places panels automatically."
       >
         <Toggle checked={placementPicker} onChange={(v) => setClientSetting('placementPicker', v)} />
-      </SettingRow>
-      <SettingRow
-        label="Worktree territories"
-        description="Paint soft colored backgrounds grouping panels by git worktree (shown when a workspace has multiple worktrees)."
-      >
-        <Toggle checked={territory} onChange={(v) => setClientSetting('showWorktreeTerritory', v)} />
       </SettingRow>
       <SettingRow label="Grid style">
         <Select

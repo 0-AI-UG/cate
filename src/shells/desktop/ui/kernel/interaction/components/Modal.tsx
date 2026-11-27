@@ -1,10 +1,10 @@
 // =============================================================================
 // Modal — the shared dialog primitive for Cate.
 //
-// One chrome for every modal, derived from the Settings window so they all read
-// as one family: an opaque surface-1 card with a hairline border, a black ring,
-// and a deep shadow, over a dimmed+blurred backdrop. A tinted header bar
-// (surface-0/40 under a border) carries the title, optional actions, and close.
+// One quiet chrome for every modal, the same as the list dialogs: a lightly
+// translucent surface-1 card with a faint white hairline and a deep shadow over
+// a dimmed+blurred backdrop. A compact title row (no bar, no divider) carries
+// the title, optional actions, and close.
 //
 // Two entry points:
 //   • <Modal>      — portaled, centered, with backdrop. The default for dialogs.
@@ -23,13 +23,17 @@ import { X } from 'lucide-react'
 import { isTopDialogLayer, useDialogLayer } from './dialogLayers'
 import { Tooltip } from './Tooltip'
 import { buttonClassName } from './Button'
+import { useMenuNumbers } from './menuNumbers'
 
 /** Dimmed, blurred backdrop shared by every full-screen modal. */
-export const BACKDROP = 'bg-black/50 backdrop-blur-sm'
+export const BACKDROP = 'bg-black/60 backdrop-blur-[6px]'
 
 /** The card surface every modal/overlay shares (Settings-window chrome). */
 export const CARD_SURFACE =
-  'rounded-xl bg-surface-1 border border-subtle ring-1 ring-black/40 shadow-[0_24px_64px_-12px_rgba(0,0,0,0.7)]'
+  'rounded-[10px] border border-white/[0.08] bg-surface-1 shadow-[0_16px_48px_-16px_rgb(0_0_0/0.8)]'
+
+/** Where every dialog sits: the top of the card at the same height on screen. */
+export const DIALOG_TOP = 'pt-[12vh]'
 
 // Controls mirror the Settings form components (SettingsComponents.tsx): solid
 // surface-5 wells, rounded-md, hairline border, focus-blue ring. Kept here as
@@ -159,7 +163,7 @@ export function PaletteDialogShell({
   const dialogRef = useRef<HTMLDivElement>(null)
   useDialogFocus(dialogRef)
   return (
-    <div className={`fixed inset-0 flex flex-row items-start justify-center gap-2 z-50 ${BACKDROP}`} onClick={onClose}>
+    <div className={`fixed inset-0 flex flex-row items-start justify-center gap-2 z-50 ${DIALOG_TOP} ${BACKDROP}`} onClick={onClose}>
       <div
         {...cardProps}
         ref={dialogRef}
@@ -202,6 +206,10 @@ interface ModalCardProps {
   children: ReactNode
   /** Internal id used to associate a surrounding dialog with its title. */
   titleId?: string
+  /** Keyboard hints for the footer. */
+  hints?: readonly DialogHint[]
+  /** Shown at the right end of the footer. */
+  footer?: ReactNode
 }
 
 /** Bare card: shared surface + optional header + body. No portal or backdrop —
@@ -215,6 +223,8 @@ export function ModalCard({
   className = '',
   bodyClassName = 'min-h-0 flex-1 overflow-auto',
   titleId,
+  hints = [],
+  footer,
   children,
 }: ModalCardProps) {
   const hasHeader = title != null || icon != null || headerActions != null
@@ -222,25 +232,26 @@ export function ModalCard({
   return (
     <div className={`flex flex-col overflow-hidden ${CARD_SURFACE} ${className}`}>
       {hasHeader && (
-        <div className="flex items-center gap-2.5 px-5 h-14 shrink-0 border-b border-subtle bg-surface-0/40">
-          {icon && <span className="shrink-0 text-secondary">{icon}</span>}
-          <span id={titleId} className="flex-1 text-[15px] font-semibold text-primary truncate">{title}</span>
+        <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
+          {icon && <span className="shrink-0 text-muted">{icon}</span>}
+          <span id={titleId} className="flex-1 text-[13.5px] font-medium text-primary truncate">{title}</span>
           {headerActions}
           {close && onClose && (
             <Tooltip label="Close (Esc)">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex items-center justify-center w-6 h-6 -mr-1 rounded-[10px] text-secondary hover:text-primary hover:bg-hover transition-colors"
+                className="flex items-center justify-center w-5 h-5 -mr-1 rounded-md text-muted hover:text-primary hover:bg-hover transition-colors"
                 aria-label="Close"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             </Tooltip>
           )}
         </div>
       )}
       <div className={bodyClassName}>{children}</div>
+      <DialogFooter hints={hints} footer={footer} />
     </div>
   )
 }
@@ -256,6 +267,8 @@ interface ModalProps extends Omit<ModalCardProps, 'onClose' | 'className'> {
   /** Close on Escape. Defaults to `dismissable`. Set false when the caller owns
    *  Escape (e.g. to clear a search before closing). */
   closeOnEscape?: boolean
+  /** Rows marked `data-menu-item` get 1-9 badges and pick on the digit. */
+  numbered?: boolean
 }
 
 /** Portaled, centered modal: dimmed blurred backdrop + entrance + the shared
@@ -267,6 +280,8 @@ export function Modal({
   dismissable = true,
   closeOnEscape,
   bodyClassName,
+  numbered = false,
+  hints,
   ...card
 }: ModalProps) {
   useRestoreFocusOnUnmount()
@@ -282,10 +297,15 @@ export function Modal({
   useDialogFocus(dialogRef, order)
 
   const size: CSSProperties = { width, ...(height != null ? { height } : null) }
+  useMenuNumbers(dialogRef, numbered)
+  const footerHints = hints ?? [
+    ...(numbered ? [{ keys: ['1–9'], label: 'Pick' }] : []),
+    ...(escapeCloses ? [{ keys: ['Esc'], label: 'Close' }] : []),
+  ]
 
   return createPortal(
     <div
-      className={`modal-backdrop-in fixed inset-0 flex items-center justify-center ${BACKDROP}`}
+      className={`modal-backdrop-in fixed inset-0 flex items-start justify-center ${DIALOG_TOP} ${BACKDROP}`}
       style={{ zIndex: order }}
       onClick={dismissable ? onClose : undefined}
     >
@@ -296,12 +316,107 @@ export function Modal({
         aria-labelledby={card.title != null ? titleId : undefined}
         aria-label={card.title == null ? 'Dialog' : undefined}
         tabIndex={-1}
-        className="modal-card-in flex flex-col max-w-[92vw] max-h-[90vh]"
+        className="modal-card-in flex flex-col max-w-[92vw] max-h-[76vh]"
         style={size}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={trapDialogFocus}
       >
-        <ModalCard {...card} titleId={titleId} onClose={onClose} bodyClassName={bodyClassName} className="flex-1 min-h-0" />
+        <ModalCard {...card} titleId={titleId} onClose={onClose} bodyClassName={bodyClassName} hints={footerHints} className="flex-1 min-h-0" />
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+/** One keyboard hint in a dialog footer: its keys and what they do. */
+export interface DialogHint { keys: readonly string[]; label: string }
+
+/** A key cap: a quiet tinted chip, no border. */
+export function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="pointer-events-none inline-flex h-[18px] min-w-[18px] select-none items-center justify-center rounded px-1 font-sans text-[10.5px] font-medium leading-none text-primary bg-[color-mix(in_srgb,var(--text-primary)_9%,transparent)]">
+      {children}
+    </kbd>
+  )
+}
+
+/** The highlight of the row under the pointer or cursor in a list dialog. */
+export const LIST_ROW_HIGHLIGHT = 'bg-[color-mix(in_srgb,var(--text-primary)_7%,transparent)]'
+
+/** The footer every dialog shares: key hints on the left, an optional note on the right. */
+export function DialogFooter({ hints = [], footer }: { hints?: readonly DialogHint[]; footer?: ReactNode }) {
+  if (hints.length === 0 && !footer) return null
+  return (
+    <div className="flex shrink-0 flex-nowrap items-center gap-x-3 overflow-hidden whitespace-nowrap border-t border-white/[0.07] bg-white/[0.025] px-4 py-1.5 text-[11.5px] font-medium text-muted">
+      {hints.map((hint) => (
+        <span key={hint.label} className="inline-flex shrink-0 items-center gap-1.5">
+          <span className="inline-flex items-center gap-1">{hint.keys.map((key) => <Kbd key={key}>{key}</Kbd>)}</span>
+          {hint.label}
+        </span>
+      ))}
+      {footer && <span className="ml-auto shrink-0">{footer}</span>}
+    </div>
+  )
+}
+
+interface ListDialogProps {
+  onClose: () => void
+  ariaLabel: string
+  /** Card width in px. */
+  width?: number
+  /** Title row above the list. */
+  icon?: ReactNode
+  title: ReactNode
+  /** Smaller line under the title. */
+  subtitle?: ReactNode
+  /** Keyboard hints shown in the footer. */
+  hints?: readonly DialogHint[]
+  /** A fixed card height (px number or CSS string), for lists that load. */
+  height?: number | string
+  /** Shown at the right end of the footer. */
+  footer?: ReactNode
+  /** Called for keys pressed anywhere in the dialog (arrows, Enter, digits). */
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLDivElement>) => void
+  children: ReactNode
+}
+
+/** The quiet list dialog: a dimmed backdrop, a solid card in the app's own surface, a title row, the list, and a footer of shortcuts.
+ *  Used by the workspace picker and the workspace actions. */
+export function ListDialog({ onClose, ariaLabel, width = 520, height, icon, title, subtitle, hints = [], footer, onKeyDown, children }: ListDialogProps) {
+  useRestoreFocusOnUnmount()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const order = useDialogLayer((event) => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    onClose()
+  })
+  useDialogFocus(dialogRef, order)
+  return createPortal(
+    <div
+      className={`modal-backdrop-in fixed inset-0 flex items-start justify-center ${DIALOG_TOP} ${BACKDROP}`}
+      style={{ zIndex: order }}
+      onClick={onClose}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        tabIndex={-1}
+        className={`modal-card-in flex max-h-[76vh] max-w-[92vw] flex-col overflow-hidden ${CARD_SURFACE}`}
+        style={{ width, ...(height != null ? { height } : null) }}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(event) => { trapDialogFocus(event); onKeyDown?.(event) }}
+      >
+        <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
+          {icon && <span className="shrink-0 text-muted">{icon}</span>}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13.5px] font-medium text-primary">{title}</div>
+            {subtitle && <div className="truncate text-[11.5px] text-[color-mix(in_srgb,var(--text-muted)_85%,transparent)]">{subtitle}</div>}
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5 pt-0.5">{children}</div>
+        <DialogFooter hints={hints} footer={footer} />
       </div>
     </div>,
     document.body,

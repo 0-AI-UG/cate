@@ -30,6 +30,8 @@ export interface ConnectionStatus {
   title: string
   /** One or two sentences. */
   message: string
+  /** Original diagnostic, shown only on request. */
+  details?: string
   /** In the order to offer them; the first is the main one. */
   remedies: ConnectionRemedy[]
 }
@@ -68,6 +70,12 @@ export function connectionStatus(state: ConnectionState, context: StatusContext)
       const missing = missingFolderOf(state.error)
       if (missing) {
         return { title: 'Folder not found', message: `${missing} was moved or deleted.`, remedies: ['close', 'retry'] }
+      }
+      if (/runtime tarball[\s\S]*is build[\s\S]*not /i.test(state.error ?? '')) {
+        return { title: 'Runtime builds don’t match', message: 'Cate couldn’t install the runtime needed to open this workspace. Restart Cate with a matching runtime, then try again.', details: state.error, remedies: unreachable }
+      }
+      if ((state.error?.length ?? 0) > 240) {
+        return { title: 'Couldn’t open workspace', message: 'Cate couldn’t connect to the workspace. Try again, or check the technical details for the cause.', details: state.error, remedies: unreachable }
       }
       const reason = readableError(state.error)
       if (state.lastSeen) {

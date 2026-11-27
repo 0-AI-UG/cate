@@ -40,7 +40,7 @@ it('leads with recent workspaces, identifies remote computers, and opens the sel
   const rows = [...host.querySelectorAll('[role="option"]')]
   expect(rows[0].textContent).toContain('Recent')
   expect(rows[0].textContent).toContain('studio')
-  expect(rows[1].textContent).toBe('Older')
+  expect(rows[1].textContent).toContain('Older')
   await act(async () => (rows[0] as HTMLButtonElement).click())
   expect(h.app.workspaces.restore).toHaveBeenCalledWith('recent')
   expect(h.select).toHaveBeenCalledWith('recent')

@@ -4,8 +4,8 @@
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { Hand, Map as MapTrifold, Minus, MousePointer2 as Cursor, Plus, X } from 'lucide-react'
-import { Icon, Tooltip, useHoverIntent } from '../../../kernel/interaction'
+import { Hand, Map as MapTrifold, Minus, MousePointer2 as Cursor, Plus } from 'lucide-react'
+import { AttachedFlyout, Icon, Tooltip, useHoverIntent } from '../../../kernel/interaction'
 import { isIconName } from '@kernel/interaction/contract'
 import { newPanelActionId } from '@client/host'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
@@ -55,7 +55,9 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [flyoutAnchor, setFlyoutAnchor] = useState<DOMRect | null>(null)
   const [flyoutShown, setFlyoutShown] = useState(false)
-  const flyoutSide = placement === 'top' ? 'up' : 'left'
+  // On the horizontal toolbar the flyout is a card that slides out of the bar
+  // above the button; on the compact column it floats to the left.
+  const attached = !!flyout && placement === 'top'
 
   const hover = useHoverIntent({
     enabled: !!flyout,
@@ -103,7 +105,12 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   }
 
   return (
-    <div ref={wrapperRef} className="flex shrink-0" onMouseEnter={hover.enter} onMouseLeave={hover.leave}>
+    <div
+      ref={wrapperRef}
+      className="flex shrink-0 items-center rounded-md"
+      onMouseEnter={hover.enter}
+      onMouseLeave={hover.leave}
+    >
       <CanvasToolbarButton
         onClick={() => {
           closeFlyout()
@@ -113,22 +120,30 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
         onMouseDown={definition.canLiveOnCanvas ? handleMouseDown : undefined}
         action={newPanelActionId(definition.type)}
         label={`New ${definition.label.toLowerCase()}`}
-        size="panel"
         tooltipPlacement={placement}
         tooltipSuppressed={!!flyoutAnchor && flyoutShown}
       >
-        <DefinitionIcon definition={definition} size={18} />
+        <DefinitionIcon definition={definition} size={16} />
       </CanvasToolbarButton>
-      {flyout && flyoutAnchor && createPortal(
+      {attached && flyout && (
+        <AttachedFlyout
+          bar={wrapperRef.current?.closest<HTMLElement>('[data-toolbar-card]') ?? wrapperRef.current}
+          open={!!flyoutAnchor}
+          onMouseEnter={hover.cancel}
+          onMouseLeave={hover.leave}
+          className="flex justify-center p-1"
+        >
+          <flyout.Component workspaceId={workspaceId} canvasId={canvasId} side="right" onClose={closeFlyout} onShown={setFlyoutShown} />
+        </AttachedFlyout>
+      )}
+      {flyout && !attached && flyoutAnchor && createPortal(
         <div
           className="fixed z-[90]"
-          style={flyoutSide === 'up'
-            ? { left: flyoutAnchor.left + flyoutAnchor.width / 2, bottom: window.innerHeight - flyoutAnchor.top, transform: 'translateX(-50%)', paddingBottom: 10 }
-            : { right: window.innerWidth - flyoutAnchor.left, bottom: window.innerHeight - flyoutAnchor.bottom, paddingRight: 10 }}
+          style={{ right: window.innerWidth - flyoutAnchor.left, bottom: window.innerHeight - flyoutAnchor.bottom, paddingRight: 10 }}
           onMouseEnter={hover.cancel}
           onMouseLeave={hover.leave}
         >
-          <flyout.Component workspaceId={workspaceId} canvasId={canvasId} side={flyoutSide} onClose={closeFlyout} onShown={setFlyoutShown} />
+          <flyout.Component workspaceId={workspaceId} canvasId={canvasId} side="left" onClose={closeFlyout} onShown={setFlyoutShown} />
         </div>,
         document.body,
       )}
@@ -162,6 +177,21 @@ function SpawnButton({ definition, workspaceId, canvasId, placement }: {
   )
 }
 
+/** The zoom and map card: as wide as its controls closed, as wide as the map open. */
+const DOCK_WIDTH_CLOSED = 148
+const DOCK_WIDTH_OPEN = 176
+const MAP_HEIGHT = 112
+/** Bottom offset that centres the 36px toolbar and zoom card on the sidebar's
+ *  bottom icon row (32px buttons centred 24px above the window edge). */
+const CONTROLS_BOTTOM = 6
+/** The window's corner radius, so a card tucked into the bottom-right corner
+ *  (the same CONTROLS_BOTTOM from both edges) is concentric with it. */
+const WINDOW_RADIUS = 18
+const CORNER_CARD_RADIUS = WINDOW_RADIUS - CONTROLS_BOTTOM
+/** How far the controls row overlaps the map's faded end: exactly the row's
+ *  height, so the map ends where the row does and never hangs past the card. */
+const MAP_OVERLAP = 28
+
 function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarProps): React.ReactElement {
   const store = useCanvasViewStore()
   const zoom = useCanvasView((s) => s.zoomLevel)
@@ -194,9 +224,18 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
     return () => ro.disconnect()
   }, [canvasId])
 
-  const minimapWidth = minimapOpen ? 220 : 44
+  // Keep the map mounted while the card folds shut, so it collapses as
+  // smoothly as it opens instead of emptying first.
+  const [mapMounted, setMapMounted] = useState(minimapOpen)
+  useEffect(() => {
+    if (minimapOpen) { setMapMounted(true); return }
+    const timer = setTimeout(() => setMapMounted(false), 260)
+    return () => clearTimeout(timer)
+  }, [minimapOpen])
+  const fade = mmBottom ? 'to bottom' : 'to top'
+  const minimapWidth = minimapOpen ? DOCK_WIDTH_OPEN : DOCK_WIDTH_CLOSED
   const bottomLeftInset = mmBottom && !mmRight ? 16 + minimapWidth + 8 : 16
-  const bottomRightInset = mmBottom && mmRight ? 16 + minimapWidth + 8 : 16
+  const bottomRightInset = mmBottom && mmRight ? CONTROLS_BOTTOM + minimapWidth + 8 : 16
   const centeredLeft = (areaWidth - toolbarWidth) / 2
   const centeredRight = centeredLeft + toolbarWidth
   const isHorizontal = areaWidth === 0 || toolbarWidth === 0 || (
@@ -228,7 +267,7 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
 
   const place: 'top' | 'right' = isHorizontal ? 'top' : 'right'
   const menuSide: 'up' | 'right' = isHorizontal ? 'up' : 'right'
-  const divider = <div className={isHorizontal ? 'w-px h-5 bg-surface-5 mx-1' : 'h-px w-6 bg-surface-5 my-1'} />
+  const divider = <div className={isHorizontal ? 'w-px h-3 bg-surface-5 mx-0.5 shrink-0' : 'h-px w-4 bg-surface-5 my-0.5'} />
   const renderItems = (group: CanvasToolbarItem['group']) => extraItems
     .filter((item) => item.group === group)
     .map((item) => (
@@ -243,21 +282,38 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
       />
     ))
 
-  const items = (
+  const spawnButton = (definition: AnyPanelDefinition) => (
+    <SpawnButton key={definition.type} definition={definition} workspaceId={workspaceId} canvasId={canvasId} placement={place} />
+  )
+  // Every tool stays in view. Only the terminal's agents open on hover.
+  const items = isHorizontal ? (
+    <>
+      <CanvasToolbarButton onClick={() => setActiveTool('select')} action="selectTool" label="Select tool" active={activeTool === 'select'} tooltipPlacement={place}>
+        <Cursor size={16} />
+      </CanvasToolbarButton>
+      <CanvasToolbarButton onClick={() => setActiveTool('hand')} action="handTool" label="Hand tool" active={activeTool === 'hand'} tooltipPlacement={place}>
+        <Hand size={16} />
+      </CanvasToolbarButton>
+      {renderItems('tools')}
+      {divider}
+      {spawnable.map(spawnButton)}
+      {renderItems('create')}
+      {divider}
+      <KeepAwakeButton workspaceId={workspaceId} tooltipPlacement={place} />
+    </>
+  ) : (
     <>
       <KeepAwakeButton workspaceId={workspaceId} tooltipPlacement={place} />
       {divider}
       <CanvasToolbarButton onClick={() => setActiveTool('select')} action="selectTool" label="Select tool" active={activeTool === 'select'} tooltipPlacement={place}>
-        <Cursor size={18} />
+        <Cursor size={16} />
       </CanvasToolbarButton>
       <CanvasToolbarButton onClick={() => setActiveTool('hand')} action="handTool" label="Hand tool" active={activeTool === 'hand'} tooltipPlacement={place}>
-        <Hand size={18} />
+        <Hand size={16} />
       </CanvasToolbarButton>
       {renderItems('tools')}
       {divider}
-      {spawnable.map((definition) => (
-        <SpawnButton key={definition.type} definition={definition} workspaceId={workspaceId} canvasId={canvasId} placement={place} />
-      ))}
+      {spawnable.map(spawnButton)}
       {renderItems('create')}
     </>
   )
@@ -297,38 +353,20 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
   return (
     <>
       {isHorizontal ? (
-        <div className="absolute inset-x-0 bottom-4 z-50 flex justify-center pointer-events-none">
+        <div className="absolute inset-x-0 z-50 flex justify-center pointer-events-none" style={{ bottom: CONTROLS_BOTTOM }}>
           <div
             ref={horizontalCardRef}
             data-onboarding="toolbar"
             data-toolbar-card
-            className="relative shrink-0 w-max pointer-events-auto rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)]"
+            className="relative shrink-0 w-max pointer-events-auto rounded-xl bg-surface-1 bar-outline"
           >
-            <div className="flex flex-nowrap items-center gap-0.5 px-1 py-1">
+            <div className="flex flex-nowrap items-center gap-0.5 p-1">
               {items}
-              <div className="w-px h-5 bg-surface-5 mx-1" />
-              <CanvasToolbarButton onClick={() => store.getState().animateZoomTo(zoom - 0.1)} action="zoomOut" label="Zoom out" size="zoom">
-                <Minus size={16} />
-              </CanvasToolbarButton>
-              <Tooltip action="zoomReset" label="Reset zoom" placement="top">
-                <button
-                  type="button"
-                  onClick={() => store.getState().animateZoomTo(1.0)}
-                  aria-label="Reset zoom"
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                  className="text-[11px] font-mono text-secondary hover:text-primary min-w-[40px] text-center select-none rounded-full bg-transparent hover:bg-hover-strong active:bg-hover-strong cursor-pointer px-1.5 py-1 focus:outline-none focus-visible:outline-none transition-all duration-100"
-                >
-                  {zoomText}
-                </button>
-              </Tooltip>
-              <CanvasToolbarButton onClick={() => store.getState().animateZoomTo(zoom + 0.1)} action="zoomIn" label="Zoom in" size="zoom">
-                <Plus size={16} />
-              </CanvasToolbarButton>
             </div>
           </div>
         </div>
       ) : (
-        <div className="absolute bottom-4 z-50 pointer-events-none" style={{ right: bottomRightInset }}>
+        <div className="absolute z-50 pointer-events-none" style={{ right: bottomRightInset, bottom: CONTROLS_BOTTOM }}>
           <div data-onboarding="toolbar" className="relative pointer-events-auto">
             <div
               aria-hidden={!expanded}
@@ -346,7 +384,7 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
             >
               <div
                 data-toolbar-card
-                className="rounded-2xl border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] flex flex-col-reverse items-center gap-0.5 p-1"
+                className="rounded-xl bg-surface-1 bar-outline flex flex-col-reverse items-center gap-px p-0.5"
                 style={{ maxHeight: 'calc(100vh - 100px)', overflowY: 'auto' }}
               >
                 {items}
@@ -359,30 +397,30 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
                 aria-label="Toolbar"
                 aria-expanded={expanded}
                 style={{ WebkitTapHighlightColor: 'transparent' }}
-                className={`w-11 h-11 flex items-center justify-center rounded-full border border-subtle bg-surface-0 shadow-[0_8px_24px_-6px_var(--shadow-node)] ${expanded ? 'text-primary' : 'text-secondary'} hover:text-primary active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100`}
+                className={`w-7 h-7 flex items-center justify-center rounded-xl bg-surface-1 bar-outline ${expanded ? 'text-primary' : 'text-secondary'} hover:text-primary active:scale-[0.94] focus:outline-none focus-visible:outline-none transition-colors duration-100`}
               >
-                <ToolIcon size={18} />
+                <ToolIcon size={16} />
               </button>
             </Tooltip>
           </div>
         </div>
       )}
 
-      {/* The minimap pill grows toward the canvas centre while its toggle
-          stays pinned to the docked corner. */}
+      {/* One card: zoom controls with the map above (or below, in a top corner)
+          them. Closed it is the same width, so it never jumps. */}
       <div
-        className="absolute z-50 flex gap-2 pointer-events-auto"
+        className="absolute z-50 pointer-events-auto"
         style={{
-          ...(mmBottom ? { bottom: '1rem' } : { top: '1rem' }),
-          ...(mmRight ? { right: '1rem' } : { left: '1rem' }),
-          flexDirection: mmRight ? 'row' : 'row-reverse',
-          alignItems: mmBottom ? 'flex-end' : 'flex-start',
+          ...(mmBottom ? { bottom: CONTROLS_BOTTOM } : { top: '1rem' }),
+          ...(mmRight ? { right: mmBottom ? CONTROLS_BOTTOM : '1rem' } : { left: '1rem' }),
+          width: minimapWidth,
+          transition: 'width 220ms cubic-bezier(0.2, 0.8, 0.2, 1)',
         }}
       >
         <div
           className="absolute"
           style={{
-            ...(mmBottom ? { bottom: 'calc(100% + 12px)' } : { top: 'calc(100% + 12px)' }),
+            ...(mmBottom ? { bottom: 'calc(100% + 8px)' } : { top: 'calc(100% + 8px)' }),
             ...(mmRight ? { right: 2 } : { left: 2 }),
           }}
         >
@@ -390,40 +428,54 @@ function CanvasToolbar({ workspaceId, canvasId, canvasPanelId }: CanvasToolbarPr
         </div>
         <div
           data-testid="minimap-toggle"
-          className="relative overflow-hidden border border-subtle shadow-[0_8px_24px_-6px_var(--shadow-node)]"
-          style={{
-            borderRadius: 22,
-            transition: 'width 300ms cubic-bezier(0.16,1,0.3,1), height 300ms cubic-bezier(0.16,1,0.3,1), background 200ms ease, backdrop-filter 200ms ease',
-            width: minimapOpen ? 220 : 44,
-            height: minimapOpen ? 160 : 44,
-            background: minimapOpen ? 'color-mix(in srgb, var(--surface-2) 45%, transparent)' : 'var(--surface-0)',
-            backdropFilter: minimapOpen ? 'blur(24px) saturate(1.5)' : 'none',
-            WebkitBackdropFilter: minimapOpen ? 'blur(24px) saturate(1.5)' : 'none',
-          }}
+          className={`flex ${mmBottom ? 'flex-col' : 'flex-col-reverse'} overflow-hidden bg-surface-1 bar-outline p-1`}
+          style={{ borderRadius: mmBottom && mmRight ? CORNER_CARD_RADIUS : 12 }}
         >
-          {minimapOpen && (
-            <div className="absolute inset-0">
-              <Minimap workspaceId={workspaceId} />
+          {/* The map is the card's backdrop: it fades out toward the controls and
+              blurs progressively behind them, so the buttons stay readable. */}
+          <div className="canvas-map" data-open={minimapOpen || undefined}>
+            <div className="canvas-map-inner rounded-lg">
+              {mapMounted && (
+                <div className="relative" style={{ height: MAP_HEIGHT }}>
+                  <Minimap workspaceId={workspaceId} fade={fade} />
+                </div>
+              )}
             </div>
-          )}
-          <Tooltip action="toggleMinimap" label={`${minimapOpen ? 'Hide' : 'Show'} minimap`}>
-            <button
-              type="button"
-              onMouseDown={handleMinimapHandleMouseDown}
-              onClick={handleMinimapToggleClick}
-              aria-label={minimapOpen ? 'Hide minimap' : 'Show minimap'}
-              style={{
-                WebkitTapHighlightColor: 'transparent',
-                position: 'absolute',
-                cursor: 'grab',
-                ...(mmBottom ? { bottom: -1 } : { top: -1 }),
-                ...(mmRight ? { right: -1 } : { left: -1 }),
-              }}
-              className="w-[44px] h-[44px] flex items-center justify-center text-secondary hover:text-primary active:scale-[0.92] focus:outline-none focus-visible:outline-none transition-all duration-100 z-10"
-            >
-              {minimapOpen ? <X size={14} /> : <MapTrifold size={18} />}
-            </button>
-          </Tooltip>
+          </div>
+          <div className="relative z-10 flex items-center justify-between" style={{ [mmBottom ? 'marginTop' : 'marginBottom']: minimapOpen ? -MAP_OVERLAP : 0, transition: 'margin 220ms cubic-bezier(0.2, 0.8, 0.2, 1)' }}>
+            <CanvasToolbarButton onClick={() => store.getState().animateZoomTo(zoom - 0.1)} action="zoomOut" label="Zoom out">
+              <Minus size={16} />
+            </CanvasToolbarButton>
+            <Tooltip action="zoomReset" label="Reset zoom" placement="top">
+              <button
+                type="button"
+                onClick={() => store.getState().animateZoomTo(1.0)}
+                aria-label="Reset zoom"
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+                className="text-[11px] tabular-nums text-muted hover:text-primary min-w-[40px] text-center select-none rounded-lg bg-transparent hover:bg-hover-strong cursor-pointer h-7 px-1.5 focus:outline-none focus-visible:outline-none transition-colors duration-100"
+              >
+                {zoomText}
+              </button>
+            </Tooltip>
+            <CanvasToolbarButton onClick={() => store.getState().animateZoomTo(zoom + 0.1)} action="zoomIn" label="Zoom in">
+              <Plus size={16} />
+            </CanvasToolbarButton>
+            <div className="w-px h-3 bg-surface-5 mx-0.5 shrink-0" />
+            {/* The map toggle doubles as a handle: a drag re-docks the card to the corner the cursor ends in. */}
+            <Tooltip action="toggleMinimap" label={`${minimapOpen ? 'Hide' : 'Show'} minimap`}>
+              <button
+                type="button"
+                onMouseDown={handleMinimapHandleMouseDown}
+                onClick={handleMinimapToggleClick}
+                aria-label={minimapOpen ? 'Hide minimap' : 'Show minimap'}
+                aria-pressed={minimapOpen}
+                style={{ WebkitTapHighlightColor: 'transparent' }}
+                className={`h-7 w-7 shrink-0 flex items-center justify-center rounded-lg hover:bg-hover-strong hover:text-primary active:scale-[0.94] focus:outline-none focus-visible:outline-none transition-colors duration-100 ${minimapOpen ? 'bg-hover-strong text-primary' : 'text-muted'}`}
+              >
+                <MapTrifold size={16} />
+              </button>
+            </Tooltip>
+          </div>
         </div>
       </div>
     </>

@@ -21,6 +21,8 @@ export function WorktreePill({ panel }: { panel: PanelRecord }) {
 
   // Clear the hover highlight if this chip unmounts while hovered.
   useEffect(() => () => setHoveredWorktree(null), [setHoveredWorktree])
+  const { previewPanelWorktree } = host
+  const preview = useCallback((id: string | null) => previewPanelWorktree(panel.id, id), [previewPanelWorktree, panel.id])
 
   const changeWorktree = useCallback(async (id: string) => {
     if (!worktrees.some((worktree) => worktree.id === id)) return
@@ -39,6 +41,7 @@ export function WorktreePill({ panel }: { panel: PanelRecord }) {
     overlay
     focused={isFocused}
     onHoverChange={setHoveredWorktree}
+    onPreview={preview}
     focusAction={{
       label: isFocused ? 'Clear focus' : `Focus “${worktreeLabel(current)}” on canvas`,
       onSelect: () => focusWorktree(isFocused ? null : current.id),

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { Crosshair, Ellipsis, GitCompareArrows, Search, X } from 'lucide-react'
-import { LoadingState, Tooltip } from '../../kernel/interaction'
+import { LoadingState, OptionsMenu, Tooltip } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import { useDocument } from '../../client/document'
 import type { AgentId } from '@services/agents/contract'
@@ -61,7 +61,6 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
   const loading = recorded.loading || refreshing || pending
   const error = sessionError ?? recorded.error
   const root = useRef<HTMLDivElement>(null)
-  const [moreOpen, setMoreOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const setPanelScope = async (panelId: string | null) => {
     setPending(true)
@@ -109,27 +108,16 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
     view.setFileFilter('')
     setSearchOpen(false)
   }
-  const showOptions = async () => {
-    if (moreOpen) return
-    setMoreOpen(true)
-    try {
-      const choice = await clientUi().showContextMenu([
-        { id: 'split', label: 'Side-by-side diff', type: 'checkbox', checked: display.split },
-        { id: 'wordDiff', label: 'Word differences', type: 'checkbox', checked: display.wordDiff },
-        { id: 'wrap', label: 'Wrap lines', type: 'checkbox', checked: display.wrap },
-        { type: 'separator' },
-        { id: 'collapse', label: 'Collapse all files', enabled: expanded.size > 0 },
-      ])
-      if (choice === 'collapse') view.collapseAll()
-      else if (choice === 'split' || choice === 'wordDiff' || choice === 'wrap') updateDisplay({ [choice]: !display[choice] })
-    } finally { setMoreOpen(false) }
+  const pickOption = (choice: string) => {
+    if (choice === 'collapse') view.collapseAll()
+    else if (choice === 'split' || choice === 'wordDiff' || choice === 'wrap') updateDisplay({ [choice]: !display[choice] })
   }
   return <div className="flex w-full min-w-0 h-full min-h-0 flex-col overflow-hidden bg-surface-0 text-primary">
-    <ReviewToolbar review={review} busy={loading} send={send}
-      scope={<div className="flex h-7 min-w-0 max-w-full items-center rounded-lg border border-subtle bg-surface-2 text-xs text-secondary">
+    <ReviewToolbar panelId={panelId} review={review} busy={loading} send={send}
+      scope={<div className="flex h-[var(--ctl-h)] min-w-0 max-w-full items-center rounded-[var(--node-tab-radius,6px)] border border-subtle bg-surface-2 text-xs text-secondary">
         <Tooltip label="Select source panel on canvas">
           <button type="button" aria-label="Select source panel on canvas" disabled={loading || !panels.some((panel) => panel.type === 'terminal')}
-            onClick={() => void selectPanel()} className={`${scopeIconClass} rounded-l-lg border-r`}>
+            onClick={() => void selectPanel()} className={`${scopeIconClass} rounded-l-[var(--node-tab-radius,6px)] border-r`}>
             <Crosshair size={13} aria-hidden="true" />
           </button>
         </Tooltip>
@@ -140,7 +128,7 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
         </Tooltip> : <span data-review-scope-label title={scopeLabel ?? 'All terminals'} className="flex min-w-0 items-center px-1.5">{scopeTitle}</span>}
         {scopeLabel && <Tooltip label="Show all recorded edits">
           <button type="button" aria-label={`Clear review scope: ${scopeLabel}`} disabled={pending}
-            onClick={() => void setPanelScope(null)} className={`${scopeIconClass} rounded-r-lg border-l`}>
+            onClick={() => void setPanelScope(null)} className={`${scopeIconClass} rounded-r-[var(--node-tab-radius,6px)] border-l`}>
             <X size={13} aria-hidden="true" />
           </button>
         </Tooltip>}
@@ -155,7 +143,16 @@ export default function AgentChangesView({ workspaceId, panelId, snapshot, send 
       actions={<>
         {!searching && <ToolbarButton label="Search files and terminals" onClick={() => setSearchOpen(true)}><Search size={14} /></ToolbarButton>}
         <RecordedReviewButton workspaceId={workspaceId} panelId={panelId} send={send} busy={agentBusy} disabled={!recorded.files.length} />
-        <ToolbarButton label="More review options" active={moreOpen} onClick={() => void showOptions()}><Ellipsis size={16} /></ToolbarButton>
+        <OptionsMenu label="More review options" onPick={pickOption}
+          className="w-[var(--ctl-h)] h-[var(--ctl-h)] shrink-0 rounded-[var(--node-tab-radius,6px)] flex items-center justify-center transition-colors text-muted hover:text-primary hover:bg-hover"
+          openClassName="bg-hover-strong text-primary"
+          items={[
+            { id: 'split', label: 'Side-by-side diff', checked: display.split },
+            { id: 'wordDiff', label: 'Word differences', checked: display.wordDiff },
+            { id: 'wrap', label: 'Wrap lines', checked: display.wrap },
+            { type: 'separator' },
+            { id: 'collapse', label: 'Collapse all files', enabled: expanded.size > 0 },
+          ]}><Ellipsis size={16} /></OptionsMenu>
       </>}
     />
     {loading && files.length > 0 && <div role="status" className="flex shrink-0 items-center gap-2 px-2 py-1 text-xs text-muted">Loading agent changes</div>}
