@@ -12,7 +12,8 @@ import { useClientState, useDocument } from '../../document'
 import { dockPanels, placementOf, stackOfPanel, findStack, type NodeId, type PanelId } from '@workspace/document/contract'
 import { panelCheckout } from '@workspace/repository/contract'
 import { PanelRelationHandle, connectPanelToExisting, relatable } from '../../../workspace/relations'
-import { canvasDrag, canvasHost, panelMinimumSize } from './ports'
+import { canvasDrag, canvasHost, panelDefinition, panelMinimumSize } from './ports'
+import { CanvasNodeFrameContext, type CanvasNodeFrame } from './nodeFrame'
 import { useWorkspaceSetting } from './settingsHooks'
 import { activeNodePanelId, type ViewNode } from './store'
 import { isGroupDragMember, isSelected as isNodeSelected } from './selection'
@@ -110,7 +111,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const isSelected = useCanvasView((s) => isNodeSelected(s, nodeId))
   const isDragging = useIsDragging()
   const isWholeNodeDragSource = useIsDragSource(nodeId)
-  const { NodeDock } = canvasSlots()
+  const { NodeDock, PanelHost } = canvasSlots()
 
   // A file or panel drag over an unfocused node: the dim overlay lets it
   // through to the panel content that owns the drop.
@@ -143,6 +144,11 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
   const activePanel = useDocument(workspaceId, (d) => (activePanelId ? d.panels[activePanelId] : undefined))
   const relationsEnabled = useWorkspaceSetting(workspaceId, 'panelRelationsEnabled')
   const canConnect = Boolean(relationsEnabled && activePanel && relatable(activePanel.type))
+  // A frameless type (a sticky note, a text block) alone in its node draws
+  // itself: no tab bar, frame or dimming.
+  const chrome = activePanel ? panelDefinition(activePanel.type)?.chrome : undefined
+  const frameless = !!node && !!PanelHost && node.dock.kind === 'stack' && dockPanels(node.dock).length === 1 && !!chrome?.frameless
+  const autoSize = frameless && !!chrome?.autoSize
 
   // --- Worktree identity follows the visible tab --------------------------------
   // Only with 2+ worktrees, so single-branch work shows no tint.
@@ -205,6 +211,28 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
       ...(grouped ? { startOrigin: { x: current.origin.x, y: current.origin.y }, members } : {}),
     })
   }, [store, nodeId, workspaceId, canvasId])
+
+  // What a frameless view uses in place of a tab bar.
+  const fitTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (fitTimer.current) clearTimeout(fitTimer.current) }, [])
+  const frame = useMemo<CanvasNodeFrame>(() => ({
+    startDrag: (e) => {
+      if (e.button !== 0 || handToolPanShouldWin(e)) return
+      startNodeDrag(e)
+    },
+    wasDragged: () => canvasDrag().wasDragged(),
+    fit: (size) => {
+      const state = store.getState()
+      const current = state.preview[nodeId] ?? state.nodes[nodeId]
+      if (!current) return
+      const next = { width: Math.ceil(size.width), height: Math.ceil(size.height) }
+      if (current.size.width === next.width && current.size.height === next.height) return
+      // Shown at once, saved as one op once the size settles.
+      state.resizeNode(nodeId, next)
+      if (fitTimer.current) clearTimeout(fitTimer.current)
+      fitTimer.current = setTimeout(() => store.getState().commitPreview(), 400)
+    },
+  }), [store, nodeId, startNodeDrag])
 
   // The tab bar: the empty bar moves the node; a tab moves the node when it is
   // the only one, else detaches that tab. In a group, anything moves the group.
@@ -372,6 +400,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
     worktreeColor: worktreeTint,
     worktreeHighlight,
     worktreeDim,
+    frameless,
   })
 
   if (!node) return null
@@ -409,8 +438,30 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
+        {frameless && activePanelId && PanelHost && (
+          <div
+            data-panel-content
+            data-frameless
+            style={{ position: 'relative', width: '100%', height: '100%' }}
+            onMouseDownCapture={(e) => {
+              if (e.button !== 0) return
+              if (isFocused || isGroupDragMember(store.getState().selection, nodeId)) return
+              focusThisNode()
+            }}
+            // The node's own menu, as on a tab bar; a field being edited keeps its own.
+            onContextMenu={(e) => {
+              if (document.activeElement === e.target && (e.target as HTMLElement).matches('textarea, input')) return
+              void handleGrabStripContextMenu(e)
+            }}
+          >
+            <CanvasNodeFrameContext.Provider value={frame}>
+              <PanelHost workspaceId={workspaceId} panelId={activePanelId} onCanvas />
+            </CanvasNodeFrameContext.Provider>
+          </div>
+        )}
+
         {/* A split node has no single tab bar to grab, so it gets a strip. */}
-        {!rootIsStack && (
+        {!frameless && !rootIsStack && (
           <div
             data-node-grab-strip
             style={{
@@ -443,7 +494,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
           </div>
         )}
 
-        <div
+        {!frameless && <div
           data-panel-content
           onDragLeave={(e) => {
             // Entering a webview reports relatedTarget null even inside the panel.
@@ -524,7 +575,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
               dropDisabled={isWholeNodeDragSource}
             />
           </div>
-        </div>
+        </div>}
       </div>
 
       {!isWholeNodeDragSource && isFocused && activePanelId && canConnect && (
@@ -546,7 +597,7 @@ function CanvasNode({ workspaceId, canvasId, canvasPanelId, nodeId, isFocused }:
 
       {/* The resize band overhangs the border into the gutter, so it is a
           sibling of the clipped node box, positioned and stacked with it. */}
-      {!isWholeNodeDragSource && (
+      {!isWholeNodeDragSource && !autoSize && (
         <div
           aria-hidden
           data-resize-frame-for={nodeId}

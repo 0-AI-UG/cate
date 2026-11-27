@@ -1,10 +1,12 @@
 // Settings form primitives shared by every slice owner's settings page
 // (section 8). The settings window provides SettingsSearchContext; outside it
-// every row shows.
+// every row shows. Labels, descriptions, option labels and placeholders are
+// shown in the interface language; search matches English and translated.
 
 import { createContext, useContext, useEffect, useId, useState } from 'react'
 import type { ButtonHTMLAttributes, KeyboardEvent, ReactNode } from 'react'
 import { Button } from './Button'
+import { useT } from '../../settings'
 
 export interface SettingsSearchState {
   /** Lowercased, trimmed search query. Empty string = no active search. */
@@ -47,17 +49,20 @@ interface SettingRowProps {
 export function SettingRow({ label, description, keywords, hint, children }: SettingRowProps) {
   const { query, sectionMatched } = useSettingsSearch()
   const labelId = useId()
+  const t = useT()
+  const shownLabel = t(label)
+  const shownDescription = description && t(description)
   // Hide when there's an active query the section title didn't match and
   // neither the label nor description contains it.
-  if (query !== '' && !sectionMatched && !matchesQuery(label, query) && !matchesQuery(description, query) && !matchesQuery(keywords, query)) {
+  if (query !== '' && !sectionMatched && ![label, description, shownLabel, shownDescription, keywords].some((text) => text && matchesQuery(text, query))) {
     return null
   }
   return (
     <SettingLabelContext.Provider value={labelId}>
     <div data-srow className="-mx-3 flex min-h-14 items-center justify-between border-b border-subtle px-3 py-2 last:border-b-0">
       <div className="flex flex-col min-w-0">
-        <span id={labelId} className="text-[13px] font-medium text-primary">{label}</span>
-        {description && <span className="text-xs text-muted mt-0.5">{description}</span>}
+        <span id={labelId} className="text-[13px] font-medium text-primary">{shownLabel}</span>
+        {shownDescription && <span className="text-xs text-muted mt-0.5">{shownDescription}</span>}
         {hint && <div className="mt-1">{hint}</div>}
       </div>
       <div className="flex-shrink-0 ml-4">{children}</div>
@@ -118,12 +123,13 @@ interface ToggleProps {
 
 export function Toggle({ checked, onChange, disabled, label }: ToggleProps) {
   const labelledBy = useContext(SettingLabelContext)
+  const t = useT()
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      aria-label={label}
+      aria-label={label && t(label)}
       aria-labelledby={label ? undefined : labelledBy}
       disabled={disabled}
       onClick={() => onChange(!checked)}
@@ -182,6 +188,7 @@ export function TextInput({
   className,
 }: TextInputProps) {
   const labelledBy = useContext(SettingLabelContext)
+  const t = useT()
   return (
     <input
       type={type}
@@ -189,7 +196,7 @@ export function TextInput({
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
-      placeholder={placeholder}
+      placeholder={placeholder && t(placeholder)}
       disabled={disabled}
       aria-labelledby={labelledBy}
       className={`${layoutClassName} ${TEXT_INPUT_BASE}${className ? ` ${className}` : ''}`}
@@ -272,6 +279,7 @@ interface SelectProps {
 
 export function Select({ value, onChange, options }: SelectProps) {
   const labelledBy = useContext(SettingLabelContext)
+  const t = useT()
   return (
     <select
       value={value}
@@ -281,7 +289,7 @@ export function Select({ value, onChange, options }: SelectProps) {
     >
       {options.map((opt) => (
         <option key={opt.value} value={opt.value} className="bg-surface-5 text-primary">
-          {opt.label}
+          {t(opt.label)}
         </option>
       ))}
     </select>

@@ -7,6 +7,7 @@ import type { ClientFeature } from '@kernel/rpc/contract'
 import type { ClientUi } from '@kernel/interaction/contract'
 import { useUIStore } from '../ui/app'
 import { showSavePathDialog } from '../ui/workspace/files'
+import { translateMenu } from '../ui/kernel/settings'
 import type { DesktopApi, MessageBoxRequest } from '../contract'
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
@@ -24,7 +25,7 @@ export function createDesktopClientUi(api: DesktopApi, features: readonly Client
     showError(message) {
       void ask({ type: 'error', message, buttons: ['OK'] })
     },
-    showContextMenu: (items) => api.menu.showContextMenu(items),
+    showContextMenu: (items) => api.menu.showContextMenu(translateMenu(items)),
     async confirmUnsavedChanges({ fileName, multiple, filePath }) {
       const lost = "Your changes will be lost if you don't save them."
       const detail = multiple

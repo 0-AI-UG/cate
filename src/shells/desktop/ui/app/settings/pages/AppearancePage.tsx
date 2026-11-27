@@ -15,7 +15,7 @@ import {
   validateTheme,
   type Theme,
 } from '@kernel/interaction/contract'
-import { setClientSetting, useClientSetting } from '../../../kernel/settings'
+import { setClientSetting, useClientSetting, useT } from '../../../kernel/settings'
 
 const SKILL_GUIDE_URL = 'https://github.com/0-AI-UG/cate/blob/main/skills/cate-theme/SKILL.md'
 
@@ -38,6 +38,7 @@ export function AppearancePage(): JSX.Element {
   const systemLightThemeId = useClientSetting('systemLightThemeId')
   const systemDarkThemeId = useClientSetting('systemDarkThemeId')
   const uiScale = useClientSetting('uiScale')
+  const t = useT()
   const isSystem = activeThemeId === 'system'
   const [importError, setImportError] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -57,30 +58,30 @@ export function AppearancePage(): JSX.Element {
         try {
           const parsed = JSON.parse(await file.text())
           const list = Array.isArray(parsed) ? parsed : [parsed]
-          const taken = new Set(allThemes.map((t) => t.id))
+          const taken = new Set(allThemes.map((existing) => existing.id))
           const valid: Theme[] = []
           for (let i = 0; i < list.length; i++) {
             const res = validateTheme(list[i])
             if (!res.ok) {
-              setImportError(list.length > 1 ? `Theme ${i + 1}: ${res.error}` : res.error)
+              setImportError(list.length > 1 ? t('Theme {n}: {error}', { n: i + 1, error: res.error }) : res.error)
               if (list.length === 1) return
               continue
             }
-            const t = res.theme
-            t.id = uniqueId(t.id, taken)
-            t.builtIn = false
-            taken.add(t.id)
-            valid.push(t)
+            const theme = res.theme
+            theme.id = uniqueId(theme.id, taken)
+            theme.builtIn = false
+            taken.add(theme.id)
+            valid.push(theme)
           }
           if (valid.length === 0) return
           setClientSetting('customThemes', [...customThemes, ...valid])
         } catch (err) {
-          setImportError(errorMessage(err, 'Failed to parse JSON'))
+          setImportError(errorMessage(err, t('Failed to parse JSON')))
         }
       }
       input.click()
     } catch (err) {
-      setImportError(errorMessage(err, 'Import failed'))
+      setImportError(errorMessage(err, t('Import failed')))
     }
   }
 
@@ -111,18 +112,18 @@ export function AppearancePage(): JSX.Element {
 
   return (
     <div className="flex flex-col gap-1">
-      <SearchableBlock keywords={`theme appearance color dark light catalog import export system mode ${allThemes.map((theme) => theme.name).join(' ')}`}>
+      <SearchableBlock keywords={`theme tema aparência appearance color dark light catalog import export system mode ${allThemes.map((theme) => theme.name).join(' ')}`}>
       <div className="flex items-center justify-between py-2">
-        <span className="text-[13px] font-medium text-primary">Theme</span>
-        <SecondaryButton onClick={handleImport} title="Import a theme from a JSON file">
+        <span className="text-[13px] font-medium text-primary">{t('Theme')}</span>
+        <SecondaryButton onClick={handleImport} title={t('Import a theme from a JSON file')}>
           <Upload size={11} />
-          Import…
+          {t('Import…')}
         </SecondaryButton>
       </div>
 
       {importError && <InlineNotice tone="error" className="mb-2 border-0 bg-transparent px-0">{importError}</InlineNotice>}
 
-      <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-2 pb-3 lg:grid-cols-3">
+      <div role="radiogroup" aria-label={t('Theme')} className="grid grid-cols-2 gap-2 pb-3 lg:grid-cols-3">
         <SystemCard
           active={isSystem}
           lightTheme={resolveTheme(themeSettings, 'system', false)}
@@ -145,12 +146,12 @@ export function AppearancePage(): JSX.Element {
       {isSystem && (
         <div className="mt-3 flex flex-col gap-1">
           <p className="text-[11px] text-muted mb-1">
-            Follows your OS appearance, switching between the two themes below.
+            {t('Follows your OS appearance, switching between the two themes below.')}
           </p>
-          <SettingRow label="Light appearance">
+          <SettingRow label={t('Light appearance')}>
             <Select value={systemLightThemeId} onChange={(v) => setClientSetting('systemLightThemeId', v)} options={themeOptions} />
           </SettingRow>
-          <SettingRow label="Dark appearance">
+          <SettingRow label={t('Dark appearance')}>
             <Select value={systemDarkThemeId} onChange={(v) => setClientSetting('systemDarkThemeId', v)} options={themeOptions} />
           </SettingRow>
         </div>
@@ -163,11 +164,11 @@ export function AppearancePage(): JSX.Element {
         <div className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-md bg-agent/15 text-focus-blue">
           <Sparkle size={14} />
         </div>
-        <h4 className="text-xs font-medium text-primary">Create your own theme</h4>
+        <h4 className="text-xs font-medium text-primary">{t('Create your own theme')}</h4>
       </button>
       </SearchableBlock>
 
-      <SettingRow label="UI scale" description="Zooms Cate's interface; doesn't affect browser-panel pages">
+      <SettingRow label={t('UI scale')} description={t("Zooms Cate's interface; doesn't affect browser-panel pages")} keywords="UI scale">
         <Select value={String(uiScale)} onChange={(v) => setClientSetting('uiScale', parseFloat(v))} options={UI_SCALE_OPTIONS} />
       </SettingRow>
     </div>
@@ -253,33 +254,34 @@ function ThemeCard({
   onDelete?: () => void
   confirmingDelete?: boolean
 }) {
+  const t = useT()
   return (
     <CardShell active={active} onClick={onClick}>
       <SwatchPreview theme={theme} />
       <div className="flex items-center justify-between min-w-0">
         <span className="text-[12px] text-primary truncate">{theme.name}</span>
         <div className="flex items-center gap-1 flex-shrink-0">
-          <Tooltip label="Export theme">
+          <Tooltip label={t('Export theme')}>
             <button
               onClick={(e) => { e.stopPropagation(); onExport() }}
               className="opacity-0 group-hover:opacity-100 p-0.5 rounded-lg text-muted hover:text-primary transition-opacity"
-              aria-label="Export theme"
+              aria-label={t('Export theme')}
             >
               <DownloadSimple size={12} />
             </button>
           </Tooltip>
           {onDelete ? (
-            <Tooltip label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}>
+            <Tooltip label={confirmingDelete ? t('Confirm removal') : t('Remove theme')}>
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete() }}
                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded-lg text-muted hover:text-red-400 transition-opacity"
-                aria-label={confirmingDelete ? 'Confirm removal' : 'Remove theme'}
+                aria-label={confirmingDelete ? t('Confirm removal') : t('Remove theme')}
               >
                 <Trash size={12} />
               </button>
             </Tooltip>
           ) : (
-            <span className="text-[10px] text-muted">built-in</span>
+            <span className="text-[10px] text-muted">{t('built-in')}</span>
           )}
         </div>
       </div>
@@ -292,13 +294,14 @@ function SystemCard({
 }: { active: boolean; lightTheme: Theme; darkTheme: Theme; onClick: () => void }) {
   const light = mergeThemeApp(lightTheme)
   const dark = mergeThemeApp(darkTheme)
+  const t = useT()
   return (
     <CardShell active={active} onClick={onClick}>
       <div className="flex items-center justify-center gap-5 py-1">
         <ThemeOrb base={light['surface-1']} shade={light['surface-6']} accent={light['focus-blue']} />
         <ThemeOrb base={dark['surface-1']} shade={dark['surface-6']} accent={dark['focus-blue']} reverse />
       </div>
-      <span className="text-[12px] text-primary truncate">System</span>
+      <span className="text-[12px] text-primary truncate">{t('System')}</span>
     </CardShell>
   )
 }

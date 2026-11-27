@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import { NumberInput, SecondaryButton, Select, SettingRow, Slider, TextInput, Toggle } from '../../../kernel/interaction'
 import { errorMessage } from '@kernel/interaction'
+import { useT } from '../../../kernel/settings'
 import type { WorkspaceSettingKey, WorkspaceSettings } from '@panels/settings'
 import type { ClientSettings } from '../../../../settings'
 import {
@@ -103,6 +104,7 @@ export function TerminalPage(): JSX.Element {
   const fontSize = useClientSetting('terminalFontSize')
   const scrollSpeed = useClientSetting('terminalScrollSpeed')
   const contrast = useClientSetting('terminalContrast')
+  const t = useT()
   const cursorBlink = useClientSetting('terminalCursorBlink')
   const optionIsMeta = useClientSetting('terminalOptionIsMeta')
   return (
@@ -118,7 +120,7 @@ export function TerminalPage(): JSX.Element {
       </SettingRow>
       <SettingRow
         label="Text contrast"
-        description={contrast <= 1 ? 'Off. Theme colors shown exactly.' : `${contrast.toFixed(1)}:1. Lifts dim text (4.5 = WCAG AA).`}
+        description={contrast <= 1 ? 'Off. Theme colors shown exactly.' : t('{ratio}:1. Lifts dim text (4.5 = WCAG AA).', { ratio: contrast.toFixed(1) })}
       >
         {/* Above ~7:1 nearly all text is already forced to black or white. */}
         <Slider value={contrast} onChange={(v) => setClientSetting('terminalContrast', v)} min={1} max={7} step={0.1} />
@@ -206,6 +208,7 @@ export function WorkspaceBrowserPage({ workspaceId }: SettingsPageProps): JSX.El
   const ws = useWorkspaceSettings(workspaceId)
   const [confirmingClear, setConfirmingClear] = useState(false)
   const [message, setMessage] = useState('')
+  const t = useT()
 
   const clearHistory = async () => {
     if (!workspaceId) return
@@ -216,9 +219,9 @@ export function WorkspaceBrowserPage({ workspaceId }: SettingsPageProps): JSX.El
     }
     try {
       await tryRuntimeFor(workspaceId)?.browserData.clearHistory()
-      setMessage('History cleared.')
+      setMessage(t('History cleared.'))
     } catch (err) {
-      setMessage(errorMessage(err, 'Could not clear history.'))
+      setMessage(errorMessage(err, t('Could not clear history.')))
     }
     setConfirmingClear(false)
   }
@@ -262,7 +265,7 @@ export function WorkspaceBrowserPage({ workspaceId }: SettingsPageProps): JSX.El
         hint={message ? <span className="text-xs text-muted">{message}</span> : undefined}
       >
         <SecondaryButton onClick={() => void clearHistory()}>
-          {confirmingClear ? 'Confirm clear' : 'Clear…'}
+          {confirmingClear ? t('Confirm clear') : t('Clear…')}
         </SecondaryButton>
       </SettingRow>
     </div>

@@ -120,11 +120,13 @@ export async function bootDesktopClient(api: DesktopApi, options: BootOptions = 
   })
   applyTheme(settings.get('activeThemeId'))
   applyUiScale(settings.get('uiScale'))
+  document.documentElement.lang = settings.get('language')
   stops.push(settings.subscribe((_values, patch) => {
     if ('activeThemeId' in patch || 'customThemes' in patch || 'systemDarkThemeId' in patch || 'systemLightThemeId' in patch) {
       applyTheme(settings.get('activeThemeId'))
     }
     if ('uiScale' in patch) applyUiScale(settings.get('uiScale'))
+    if ('language' in patch) document.documentElement.lang = settings.get('language')
   }))
   installShortcutRegistry(createShortcutRegistry(settings))
   if (options.reportError) {

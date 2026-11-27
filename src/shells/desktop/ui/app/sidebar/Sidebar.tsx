@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ChartNoAxesCombined, GitPullRequest, Settings as Gear, Puzzle as PuzzlePiece, PanelLeft as SidebarSimple, ScrollText, type LucideIcon } from 'lucide-react'
 import { CateLogo, Tooltip, useShortcutLabel } from '../../kernel/interaction'
-import { useClientSetting } from '../../kernel/settings'
+import { useClientSetting, useT } from '../../kernel/settings'
 import type { ActionId } from '@kernel/interaction/contract'
 import { UpdateButton } from '../chrome/UpdateButton'
 import { useWindowControlsInset } from '../chrome/chrome'
@@ -45,6 +45,7 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
   const navOpen = overlayOwnsSidebar(overlay?.view)
   const controlsInset = useWindowControlsInset()
   const shortcutLabel = useShortcutLabel()
+  const t = useT()
   useOverlaysVersion()
   const [width, setWidth] = useState(defaultWidth)
   const [resizing, setResizing] = useState(false)
@@ -86,8 +87,8 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
       className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       onClick={() => useUIStore.getState().setSidebarHidden(true)}
-      aria-label="Hide sidebar"
-      title={shortcutLabel('toggleSidebar', 'Hide sidebar')}
+      aria-label={t('Hide sidebar')}
+      title={shortcutLabel('toggleSidebar', t('Hide sidebar'))}
     >
       <SidebarSimple size={16} />
     </button>
@@ -99,20 +100,20 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
       {overlay ? (
         <button
           type="button"
-          aria-label="Back to workspace"
+          aria-label={t('Back to workspace')}
           onClick={() => ui().closeOverlay()}
           className="flex-1 h-8 px-2 flex items-center gap-2 rounded-md text-[13px] text-secondary hover:bg-hover hover:text-primary transition-colors"
         >
           <ArrowLeft size={16} />
-          Back
+          {t('Back')}
         </button>
       ) : (
         <>
           {overlayButtons.filter((b) => hasOverlay(b.view)).map(({ view, label, action, icon: ButtonIcon }) => (
-            <Tooltip key={view} action={action} label={label} placement="top">
+            <Tooltip key={view} action={action} label={t(label)} placement="top">
               <button
                 type="button"
-                aria-label={label}
+                aria-label={t(label)}
                 onClick={() => ui().openOverlay({ view })}
                 className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"
               >
@@ -120,10 +121,10 @@ export function Sidebar({ defaultWidth = 220, minWidth = 220, maxWidth = 400, ov
               </button>
             </Tooltip>
           ))}
-          <Tooltip action="openSettings" label="Settings" placement="top">
+          <Tooltip action="openSettings" label={t('Settings')} placement="top">
             <button
               type="button"
-              aria-label="Settings"
+              aria-label={t('Settings')}
               aria-pressed={settingsOpen}
               onClick={() => ui().toggleSettings()}
               className="flex items-center justify-center w-8 h-8 rounded-lg text-muted hover:text-secondary hover:bg-hover transition-colors"

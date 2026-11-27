@@ -9,7 +9,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useRuntime } from '../../kernel/rpc'
 import { SecondaryButton, Select, SettingRow, Spinner, Toggle } from '../../kernel/interaction'
-import { setWorkspaceSetting, useWorkspaceSetting } from '../../kernel/settings'
+import { setWorkspaceSetting, t as tNow, useT, useWorkspaceSetting } from '../../kernel/settings'
 import { closeChoiceOf, closeChoiceTriggers, type CloseChoice, type KeepRunningTrigger, type RuntimeNetwork, type RuntimeStatus } from '@runtime/daemon/contract'
 import type { WorkspaceDevice } from '@runtime/pairing/contract'
 import { clientUi, errorMessage } from '@kernel/interaction'
@@ -21,9 +21,9 @@ const REACH: Record<RuntimeNetwork, number> = { off: 0, sameNetwork: 1, cateConn
 export async function changeNetwork(workspaceId: string, from: RuntimeNetwork, to: RuntimeNetwork): Promise<void> {
   if (REACH[to] < REACH[from]) {
     const who = to === 'off'
-      ? 'Every paired device disconnects'
-      : 'Paired devices that are not on the same network disconnect'
-    const ok = await clientUi().confirm(`${who}, this one too if it reaches the workspace that way. Only someone on its machine can turn network access back on. Continue?`)
+      ? tNow('Every paired device disconnects')
+      : tNow('Paired devices that are not on the same network disconnect')
+    const ok = await clientUi().confirm(tNow('{who}, this one too if it reaches the workspace that way. Only someone on its machine can turn network access back on. Continue?', { who }))
     if (!ok) return
   }
   await setWorkspaceSetting(workspaceId, 'runtimeNetwork', to)
@@ -33,8 +33,9 @@ const showError = (fallback: string) => (err: unknown) => clientUi().showError(e
 
 /** "A", "A and B", or "3 paired devices". */
 function deviceNames(devices: readonly WorkspaceDevice[]): string {
-  if (devices.length > 2) return `${devices.length} paired devices`
-  return devices.map((d) => d.name).join(' and ')
+  if (devices.length > 2) return tNow('{count} paired devices', { count: devices.length })
+  if (devices.length === 2) return tNow('{a} and {b}', { a: devices[0].name, b: devices[1].name })
+  return devices.map((d) => d.name).join('')
 }
 
 export interface AvailabilitySettingsProps {
@@ -59,6 +60,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, renderPanelTitle
   const [attempt, setAttempt] = useState(0)
   const [devices, setDevices] = useState<WorkspaceDevice[] | null>(null)
   const [confirmingStop, setConfirmingStop] = useState(false)
+  const t = useT()
 
   useEffect(() => {
     let cancelled = false
@@ -66,7 +68,7 @@ export function AvailabilitySettings({ workspaceId, panelTitle, renderPanelTitle
     setInfoError(null)
     runtime?.runtime.info().then(
       (i) => { if (!cancelled) setInfo(i) },
-      (err) => { if (!cancelled) setInfoError(errorMessage(err, 'The runtime did not answer.')) },
+      (err) => { if (!cancelled) setInfoError(errorMessage(err, tNow('The runtime did not answer.'))) },
     )
     return () => { cancelled = true }
   }, [runtime, attempt])
@@ -81,25 +83,25 @@ export function AvailabilitySettings({ workspaceId, panelTitle, renderPanelTitle
   }, [runtime])
 
   if (!workspaceId || !runtime) return null
-  const machine = info?.machineName ?? 'its computer'
+  const machine = info?.machineName ?? t('its computer')
   // Unknown (still asking, or an older runtime): worded for one that sleeps.
   const server = info?.machineSleeps === false
   const choice = closeChoiceOf(triggers)
   const commands = triggers.includes('commands')
   const paired = devices?.filter((d) => d.admittedBy === 'pairing') ?? []
   const set = (next: KeepRunningTrigger[]) => {
-    void setWorkspaceSetting(workspaceId, 'keepRunningWhile', next).catch(showError('Could not change the setting.'))
+    void setWorkspaceSetting(workspaceId, 'keepRunningWhile', next).catch(showError(t('Could not change the setting.')))
   }
 
   const descriptions: Record<CloseChoice | 'custom', string> = {
     finish: server
-      ? `Agents${commands ? ' and commands' : ''} keep going until they are done, then it stops. Opening it over SSH starts it again.`
-      : `Agents${commands ? ' and commands' : ''} keep going until they are done. ${machine} stays awake until then, then sleeps as usual.`,
+      ? t(commands ? 'Agents and commands keep going until they are done, then it stops. Opening it over SSH starts it again.' : 'Agents keep going until they are done, then it stops. Opening it over SSH starts it again.')
+      : t(commands ? 'Agents and commands keep going until they are done. {machine} stays awake until then, then sleeps as usual.' : 'Agents keep going until they are done. {machine} stays awake until then, then sleeps as usual.', { machine }),
     always: server
-      ? 'Keeps running so collaborators and your other devices can connect at any time.'
-      : `Keeps running and keeps ${machine} awake, so collaborators and your other devices can connect at any time. Uses more battery.`,
-    stop: 'Everything stops 5 minutes after the last window closes.',
-    custom: 'Set by hand in this workspace\'s settings.json. Picking another option replaces it.',
+      ? t('Keeps running so collaborators and your other devices can connect at any time.')
+      : t('Keeps running and keeps {machine} awake, so collaborators and your other devices can connect at any time. Uses more battery.', { machine }),
+    stop: t('Everything stops 5 minutes after the last window closes.'),
+    custom: t('Set by hand in this workspace\'s settings.json. Picking another option replaces it.'),
   }
   const always = { value: 'always', label: server ? 'Keep available (recommended)' : 'Keep available' }
   const options = [
@@ -114,18 +116,18 @@ export function AvailabilitySettings({ workspaceId, panelTitle, renderPanelTitle
   const link = 'text-focus-blue hover:underline'
   const hint = paired.length > 0 && choice !== 'always' ? (
     <span className="block text-xs text-warning">
-      {deviceNames(paired)} cannot connect once the workspace stops{server ? '' : ` or ${machine} sleeps`}.{' '}
-      <button type="button" className={link} onClick={() => set(closeChoiceTriggers('always'))}>Stay available</button>
+      {t(server ? '{devices} cannot connect once the workspace stops.' : '{devices} cannot connect once the workspace stops or {machine} sleeps.', { devices: deviceNames(paired), machine })}{' '}
+      <button type="button" className={link} onClick={() => set(closeChoiceTriggers('always'))}>{t('Stay available')}</button>
     </span>
   ) : paired.length === 0 && devices && onAddDevice ? (
     <span className="block text-xs text-muted">
-      Work together or connect your other device. <button type="button" className={link} onClick={onAddDevice}>Share workspace…</button>
+      {t('Work together or connect your other device.')} <button type="button" className={link} onClick={onAddDevice}>{t('Share workspace…')}</button>
     </span>
   ) : undefined
 
   const connectedLine = connected && connected.length > 0
-    ? `Connected: ${connected.join(', ')}`
-    : info ? `${info.clients.length} device${info.clients.length === 1 ? '' : 's'} connected` : null
+    ? t('Connected: {names}', { names: connected.join(', ') })
+    : info ? t(info.clients.length === 1 ? '{count} device connected' : '{count} devices connected', { count: info.clients.length }) : null
   const version = info ? `Cate ${info.version}` : null
 
   return (
@@ -141,22 +143,22 @@ export function AvailabilitySettings({ workspaceId, panelTitle, renderPanelTitle
       {choice === 'finish' && (
         <SettingRow
           label="Include terminal commands"
-          description={`Builds, dev servers and scripts keep it running too${server ? '' : ` and ${machine} awake`}.`}
+          description={t(server ? 'Builds, dev servers and scripts keep it running too.' : 'Builds, dev servers and scripts keep it running too and {machine} awake.', { machine })}
           keywords="keep running awake terminal command build dev server script"
         >
           <Toggle checked={commands} onChange={(on) => set(closeChoiceTriggers('finish', on))} />
         </SettingRow>
       )}
       <SettingRow
-        label={info ? `Running on ${machine}${server ? ' (server)' : ''}` : 'Running'}
+        label={info ? t(server ? 'Running on {machine} (server)' : 'Running on {machine}', { machine }) : 'Running'}
         description={[connectedLine, version ?? infoError].filter(Boolean).join(' · ') || undefined}
         keywords="runtime machine server connected devices clients version stop quit kill terminals agents"
       >
         <div className="flex items-center gap-2">
           {!info && (infoError
-            ? <SecondaryButton onClick={() => setAttempt((n) => n + 1)}>Retry</SecondaryButton>
-            : <Spinner size={14} label="Asking the runtime" className="text-muted" />)}
-          <SecondaryButton onClick={() => setConfirmingStop(true)} disabled={confirmingStop}>Stop Workspace…</SecondaryButton>
+            ? <SecondaryButton onClick={() => setAttempt((n) => n + 1)}>{t('Retry')}</SecondaryButton>
+            : <Spinner size={14} label={t('Asking the runtime')} className="text-muted" />)}
+          <SecondaryButton onClick={() => setConfirmingStop(true)} disabled={confirmingStop}>{t('Stop Workspace…')}</SecondaryButton>
         </div>
       </SettingRow>
       {children}
@@ -164,8 +166,8 @@ export function AvailabilitySettings({ workspaceId, panelTitle, renderPanelTitle
         <div data-srow className="py-2">
           <RunningWorkConfirm
             runtime={runtime}
-            actionLabel="Stop workspace"
-            consequence="Stopping ends everything below for everyone in this workspace. Opening the workspace on its machine, or over SSH or WSL, starts it again; paired devices cannot."
+            actionLabel={t('Stop workspace')}
+            consequence={t('Stopping ends everything below for everyone in this workspace. Opening the workspace on its machine, or over SSH or WSL, starts it again; paired devices cannot.')}
             title={panelTitle}
             renderPanelTitle={renderPanelTitle}
             onCancel={() => setConfirmingStop(false)}

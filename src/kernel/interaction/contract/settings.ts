@@ -1,5 +1,6 @@
-import { defineSettings, everyItem, everyValue, numberIn, setting } from '@kernel/settings/contract/define'
+import { defineSettings, everyItem, everyValue, numberIn, oneOf, setting } from '@kernel/settings/contract/define'
 import { validateTheme, type Theme, type ThemeSelection } from './theme'
+import { LANGUAGE_IDS, type Language } from './i18n'
 import type { ActionId } from './actions'
 import type { StoredShortcut } from './shortcuts'
 
@@ -13,6 +14,8 @@ export const appearanceSettings = defineSettings({
     customThemes: setting<Theme[]>([], everyItem((theme) => validateTheme(theme).ok)),
     /** Zoom of Cate's own chrome (not web pages in browser panels). */
     uiScale: setting(1.0, numberIn(0.8, 1.5)),
+    /** The interface language. */
+    language: setting<Language>('en', oneOf(...LANGUAGE_IDS)),
   },
 })
 

@@ -2,6 +2,7 @@
 // runtime install progress and analytics.
 
 import type { DesktopPort, UpdateStatus } from '../ui/app'
+import { translateMenu } from '../ui/kernel/settings'
 import type { DesktopApi, DesktopAppInfo, UpdateStatus as ShellUpdateStatus, WindowState } from '../contract'
 
 /** Horizontal space the macOS traffic lights take at the top left. */
@@ -31,7 +32,7 @@ export function createDesktopPort(api: DesktopApi, info: DesktopAppInfo): Deskto
     checkForUpdates: () => api.updates.check(),
     dismissUpdate: (version) => api.updates.dismiss(version),
     quitAndInstallUpdate: () => api.updates.install(),
-    showContextMenu: (items) => api.menu.showContextMenu(items),
+    showContextMenu: (items) => api.menu.showContextMenu(translateMenu(items)),
     onMenuAction: (listener) => api.menu.onAction(listener),
     // Only macOS draws native controls over the content; in fullscreen they hide.
     windowControlsInset: () => (isMac && !state.fullscreen ? TRAFFIC_LIGHTS_WIDTH : 0),

@@ -1,18 +1,19 @@
 // The native menu bar, generated from the declared actions: each action with
 // a `menu` placement goes into its menu's group (the shared skeleton orders
 // groups and roles), with its current key. Rebuilt and sent to main whenever
-// actions or bindings change.
+// actions, bindings or the interface language change.
 
 import { declaredActions, shortcutRegistry, subscribeShortcuts, type DeclaredAction } from '@kernel/interaction'
 import { MENU_BAR, type ActionId, type StoredShortcut } from '@kernel/interaction/contract'
 import { actionSupported, subscribeActions } from '@client/host'
 import { MENU_SKELETON, type DesktopApi, type MenuModel, type MenuModelItem, type MenuModelMenu } from '../contract'
+import { clientSettings, t } from '../ui/kernel/settings'
 
 function actionItem({ id, spec }: DeclaredAction, shortcut: StoredShortcut | undefined): MenuModelItem {
   return {
     type: 'action',
     action: id,
-    label: spec.title,
+    label: t(spec.title),
     ...(shortcut?.key ? { shortcut } : {}),
     registerShortcut: !spec.keys?.windowOnly,
   }
@@ -31,7 +32,7 @@ function groupItems(actions: DeclaredAction[], shortcuts: Readonly<Record<Action
     if (!list) {
       list = []
       submenus.set(submenu, list)
-      items.push({ type: 'submenu', label: submenu, items: list })
+      items.push({ type: 'submenu', label: t(submenu), items: list })
     }
     list.push(item)
   }
@@ -60,7 +61,7 @@ export function buildMenuModel(): MenuModel {
     ].filter((block) => block.length > 0)
     return {
       id: menuId,
-      label: skeleton.label,
+      label: t(skeleton.label),
       items: blocks.flatMap((block, i): MenuModelItem[] => (i === 0 ? block : [{ type: 'separator' }, ...block])),
     }
   }).filter((menu) => menu.items.length > 0)
@@ -69,8 +70,8 @@ export function buildMenuModel(): MenuModel {
   const guestKeys: MenuModel['guestKeys'] = []
   for (const { id, spec } of supported) {
     const shortcut = shortcuts[id]
-    if (shortcut?.key && !spec.keys?.windowOnly && !placed.has(id)) hidden.push({ action: id, label: spec.title, shortcut })
-    for (const alias of spec.aliasKeys ?? []) hidden.push({ action: id, label: spec.title, shortcut: alias })
+    if (shortcut?.key && !spec.keys?.windowOnly && !placed.has(id)) hidden.push({ action: id, label: t(spec.title), shortcut })
+    for (const alias of spec.aliasKeys ?? []) hidden.push({ action: id, label: t(spec.title), shortcut: alias })
     if (shortcut?.key && spec.keys?.fromGuests) guestKeys.push({ action: id, shortcut })
   }
   return { bar, hidden, guestKeys }
@@ -88,7 +89,11 @@ export function syncMenuModel(api: DesktopApi): () => void {
       void api.menu.setModel(buildMenuModel())
     })
   }
-  const stops = [subscribeActions(push), subscribeShortcuts(push)]
+  const stops = [
+    subscribeActions(push),
+    subscribeShortcuts(push),
+    clientSettings()?.subscribe((_values, patch) => { if ('language' in patch) push() }) ?? (() => {}),
+  ]
   push()
   return () => { for (const stop of stops) stop() }
 }

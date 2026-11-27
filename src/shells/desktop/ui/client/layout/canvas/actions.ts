@@ -32,6 +32,8 @@ export interface CanvasCreateOptions {
   size?: Size
   /** Focus and centre the new node (default true). */
   focus?: boolean
+  /** With focus: false focuses it where it lands, the view stays put. */
+  center?: boolean
   worktreeId?: string
   cwd?: string
   /** The type's own create options (url, filePath, ...). */
@@ -46,7 +48,7 @@ export function createPanelOnCanvas(workspaceId: string, canvasId: CanvasId, typ
   const store = canvasViewFor(workspaceId, canvasId)
   const doc = documentStoreFor(workspaceId)?.getSnapshot()
   const definition = panelDefinition(type)
-  const { position, exact, size, focus, ...rest } = options
+  const { position, exact, size, focus, center, ...rest } = options
   if (!store || !doc || !definition) return null
   const checkout = rest.worktreeId || rest.cwd ? {} : inheritedCheckout(workspaceId, store)
   const createOptions = { ...checkout, ...rest }
@@ -60,7 +62,7 @@ export function createPanelOnCanvas(workspaceId: string, canvasId: CanvasId, typ
   placeOnCanvas(workspaceId, canvasId, type, (at) => {
     created = host.createPanel(workspaceId, type, { ...createOptions, at })
     return created !== null
-  }, { position, exact, size, focus })
+  }, { position, exact, size, focus, center })
   return created
 }
 
@@ -71,6 +73,8 @@ export interface CanvasPlaceOptions {
   size?: Size
   /** Focus and centre the new node (default true). */
   focus?: boolean
+  /** With focus: false focuses it where it lands, the view stays put. */
+  center?: boolean
 }
 
 /** Picks a spot for a new panel of `type` the way `createPanelOnCanvas` does
@@ -92,7 +96,9 @@ export function placeOnCanvas(
   const place = (point: Point | undefined, nodeSize: Size, exactPoint: boolean): NodeId | null => {
     const at = store.getState().placeTarget(nodeSize, point ? { position: point, exact: exactPoint } : {})
     if (!make(at)) return null
-    if (options.focus !== false) store.getState().focusAndCenter(at.nodeId)
+    if (options.focus === false) return at.nodeId
+    if (options.center === false) store.getState().focusNode(at.nodeId)
+    else store.getState().focusAndCenter(at.nodeId)
     return at.nodeId
   }
 

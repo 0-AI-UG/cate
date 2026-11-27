@@ -6,7 +6,8 @@ import type { Size } from '@workspace/canvas/contract'
 import type { AnyPanelDefinition, PanelOpenKind } from '@panels/framework/contract'
 import type { PanelCheckoutHooks } from '@workspace/repository/contract'
 
-/** Floor for a dock pane, whatever its panels ask for. */
+/** A dock pane's minimum when its panels' types are unknown (or it is
+ *  empty); a known panel's own `minimumSize` decides otherwise. */
 export const MIN_PANE_SIZE: Size = { width: 320, height: 220 }
 
 const definitions = new Map<string, AnyPanelDefinition>()

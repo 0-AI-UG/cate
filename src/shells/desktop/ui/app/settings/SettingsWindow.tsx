@@ -31,7 +31,7 @@ import {
 import { workspaceLocation, type WorkspaceEntry, type WorkspaceListSnapshot } from '@client/workspaces'
 import { SettingsSearchContext } from '../../kernel/interaction'
 import { clientSettingsTable } from '../../../settings'
-import { clientSettings } from '../../kernel/settings'
+import { clientSettings, useT } from '../../kernel/settings'
 import { createLogger } from '@kernel/log/contract'
 import { LeftSidebarReopen, OverlayHeader } from '../chrome/chrome'
 import { UpdateButton } from '../chrome/UpdateButton'
@@ -80,13 +80,17 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const pages = useMemo(() => visiblePages(allPages, workspaceId), [allPages, workspaceId])
   const desktop = useDesktopPort()
   const workspace = useWorkspaceEntry(workspaceId)
+  const t = useT()
   const scopeTitle = (scope: SettingsScope): string =>
-    scope === 'client' ? 'This device' : `Workspace: ${workspace?.name ?? 'this workspace'}`
+    scope === 'client' ? t('This device') : t('Workspace: {name}', { name: workspace?.name ?? t('this workspace') })
   const scopeDescription = (scope: SettingsScope): string => {
-    if (scope === 'client') return 'Saved on this computer. Applies to every workspace you open here.'
+    if (scope === 'client') return t('Saved on this computer. Applies to every workspace you open here.')
     const where = workspace ? workspaceLocation(workspace) : null
-    return `${where ? `${where}. ` : ''}Saved with the workspace. Applies for everyone connected to it.`
+    return `${where ? `${where}. ` : ''}${t('Saved with the workspace. Applies for everyone connected to it.')}`
   }
+  // A page matches its title in English or in the interface language.
+  const titleMatches = (page: SettingsPage): boolean =>
+    page.title.toLowerCase().includes(query) || t(page.title).toLowerCase().includes(query)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [slots, setSlots] = useState<{ sidebar: HTMLElement; content: HTMLElement } | null>(null)
   const [rawQuery, setRawQuery] = useState('')
@@ -127,11 +131,12 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
     if (!root) return
     const next = new Set<string>()
     for (const page of shownPages) {
-      if (query === '' || page.title.toLowerCase().includes(query)) next.add(page.id)
+      if (query === '' || titleMatches(page)) next.add(page.id)
       else if (root.querySelector(`#${sectionDomId(page.id)} [data-srow]`)) next.add(page.id)
     }
     setVisible(next)
-  }, [query, shownPages, slots])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- titleMatches follows query and t
+  }, [query, shownPages, slots, t])
 
   // Scroll-spy: every page overlapping the viewport is active.
   useEffect(() => {
@@ -195,12 +200,12 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const navPages = shownPages.filter((p) => !searching || visible.has(p.id))
 
   const renderPage = (page: SettingsPage): JSX.Element => {
-    const sectionMatched = query !== '' && page.title.toLowerCase().includes(query)
+    const sectionMatched = query !== '' && titleMatches(page)
     const hidden = query !== '' && !visible.has(page.id)
     const Page = page.component
     return (
       <section key={page.id} id={sectionDomId(page.id)} data-section-id={page.id} hidden={hidden} className="scroll-mt-8">
-        <h2 className="text-sm font-medium text-secondary mb-2 px-1">{page.title}</h2>
+        <h2 className="text-sm font-medium text-secondary mb-2 px-1">{t(page.title)}</h2>
         <div className="rounded-xl border border-subtle bg-surface-1 px-3 py-2 overflow-hidden">
           <SettingsSearchContext.Provider value={{ query, sectionMatched }}>
             <Page workspaceId={workspaceId} />
@@ -217,7 +222,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
           <MagnifyingGlass size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
           <input
             type="search"
-            aria-label="Search settings"
+            aria-label={t('Search settings')}
             value={rawQuery}
             onChange={(e) => setRawQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -226,13 +231,13 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
                 setRawQuery('')
               }
             }}
-            placeholder="Search settings…"
+            placeholder={t('Search settings…')}
             className="w-full h-7 pl-7 pr-2 rounded-md bg-surface-2 text-xs text-primary placeholder:text-muted outline-none focus-visible:ring-1 focus-visible:ring-focus-blue"
           />
         </div>
       </div>
       {workspaceId && !searching && (
-        <div role="tablist" aria-label="Settings scope" className="mx-3 mb-3 grid grid-cols-2 gap-0.5 rounded-lg bg-surface-2 p-0.5">
+        <div role="tablist" aria-label={t('Settings scope')} className="mx-3 mb-3 grid grid-cols-2 gap-0.5 rounded-lg bg-surface-2 p-0.5">
           {SETTINGS_SCOPES.map((option) => {
             const Icon = SCOPE_ICONS[option]
             const selected = option === scope
@@ -249,7 +254,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
                 }`}
               >
                 <Icon size={13} />
-                {option === 'client' ? 'Device' : 'Workspace'}
+                {option === 'client' ? t('Device') : t('Workspace')}
               </button>
             )
           })}
@@ -281,7 +286,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
                       }`}
                     >
                       <GroupIcon size={15} />
-                      {group.title}
+                      {t(group.title)}
                     </button>
                     {groupActive && (
                       <div className="ml-6 mt-0.5 mb-1 flex flex-col gap-0.5">
@@ -295,7 +300,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
                               activeIds.has(page.id) ? 'text-primary' : 'text-muted hover:text-secondary'
                             }`}
                           >
-                            {page.title}
+                            {t(page.title)}
                           </button>
                         ))}
                       </div>
@@ -306,7 +311,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
             </div>
           )
         })}
-        {navPages.length === 0 && <span className="block px-3 py-2 text-xs text-muted">No matches</span>}
+        {navPages.length === 0 && <span className="block px-3 py-2 text-xs text-muted">{t('No matches')}</span>}
       </nav>
       <div className="shrink-0 flex items-center gap-1 p-2">
         <button
@@ -315,7 +320,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
           className="flex-1 h-8 px-2 flex items-center gap-2 rounded-md text-[13px] text-secondary hover:bg-hover hover:text-primary transition-colors"
         >
           <ArrowLeft size={16} />
-          Back
+          {t('Back')}
         </button>
         <UpdateButton />
       </div>
@@ -325,25 +330,25 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
   const content = (
     <main className="relative h-full min-w-0 flex-1 flex flex-col bg-canvas-bg text-primary pointer-events-auto">
       <LeftSidebarReopen />
-      <OverlayHeader title="Settings">
+      <OverlayHeader title={t('Settings')}>
         {desktop && scope === 'client' && (
           <button
             onClick={() => void openSettingsFile()}
-            title="Open this device's settings.json"
+            title={t("Open this device's settings.json")}
             className="flex items-center gap-1.5 px-2 h-7 rounded-md text-secondary hover:bg-hover hover:text-primary text-xs"
           >
             <BracketsCurly size={14} />
-            Open settings.json
+            {t('Open settings.json')}
           </button>
         )}
         <button
           type="button"
           onClick={restoreDefaults}
-          title="Restore this device's settings to their defaults (workspace settings stay)"
+          title={t("Restore this device's settings to their defaults (workspace settings stay)")}
           className="flex items-center gap-1.5 px-2 h-7 rounded-md text-secondary hover:bg-hover hover:text-primary text-xs"
         >
           <RotateCcw size={14} />
-          {confirmingReset ? 'Confirm restore' : 'Restore defaults'}
+          {confirmingReset ? t('Confirm restore') : t('Restore defaults')}
         </button>
       </OverlayHeader>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5">
@@ -363,7 +368,7 @@ export function SettingsWindow({ workspaceId, section, onClose }: SettingsWindow
             )
           })}
           {query !== '' && visible.size === 0 && (
-            <div className="py-10 text-center text-sm text-muted">No settings match “{rawQuery.trim()}”.</div>
+            <div className="py-10 text-center text-sm text-muted">{t('No settings match “{query}”.', { query: rawQuery.trim() })}</div>
           )}
         </div>
       </div>

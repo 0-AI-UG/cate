@@ -7,6 +7,7 @@ import { useRuntime } from '../../kernel/rpc'
 import { InlineNotice, SearchableBlock, SecondaryButton, SettingRow, TextInput, Tooltip } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
 import type { SkillSource } from '@workspace/skills/contract'
+import { useT } from '../../kernel/settings'
 
 export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
   const runtime = useRuntime(workspaceId)
@@ -15,6 +16,7 @@ export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
   const [adding, setAdding] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
+  const t = useT()
 
   const refresh = useCallback(async () => {
     if (!runtime) return
@@ -39,7 +41,7 @@ export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
       setRepo('')
       await refresh()
     } catch (error) {
-      setErr(errorMessage(error, 'Could not add that repository.'))
+      setErr(errorMessage(error, t('Could not add that repository.')))
     } finally {
       setAdding(false)
     }
@@ -53,7 +55,7 @@ export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
     try {
       await runtime?.skills.removeSource({ id })
     } catch (error) {
-      setErr(errorMessage(error, 'Could not remove that repository.'))
+      setErr(errorMessage(error, t('Could not remove that repository.')))
     }
     setConfirmRemoveId(null)
     await refresh()
@@ -73,9 +75,9 @@ export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
             placeholder="owner/repo"
             className="font-mono"
           />
-          <SecondaryButton onClick={() => void add()} disabled={!repo.trim() || !runtime} loading={adding} loadingLabel="Adding">
+          <SecondaryButton onClick={() => void add()} disabled={!repo.trim() || !runtime} loading={adding} loadingLabel={t('Adding')}>
             <Plus size={11} />
-            Add
+            {t('Add')}
           </SecondaryButton>
         </div>
       </SettingRow>
@@ -97,7 +99,7 @@ export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
                   <button
                     onClick={() => void remove(s.id)}
                     className="shrink-0 p-0.5 rounded-lg text-muted opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity"
-                    aria-label={confirmRemoveId === s.id ? 'Confirm removal' : 'Remove'}
+                    aria-label={confirmRemoveId === s.id ? t('Confirm removal') : t('Remove')}
                   >
                     <Trash size={12} />
                   </button>
@@ -113,7 +115,7 @@ export function SkillsSettings({ workspaceId }: { workspaceId: string }) {
         description="Skills use your GitHub sign-in for private repositories and higher rate limits. Public skills also work without signing in."
       >
         <SecondaryButton onClick={() => clientUi().openSettings('GitHub')}>
-          Manage GitHub account
+          {t('Manage GitHub account')}
         </SecondaryButton>
       </SettingRow>
 

@@ -99,7 +99,7 @@ No UI is shared between shells.
 | **Device** | The machine a client runs on, identified by its device key. |
 | **Shell** | A platform app around the client core, with its own UI and native primitives: desktop (Electron and React) or iOS (SwiftUI). |
 | **Service** | Infrastructure more than one panel or caller uses: terminal, browser, agents. |
-| **Panel** | A session in the runtime, drawn by each shell's own view: terminal, editor, browser, review, canvas, surface. |
+| **Panel** | A session in the runtime, drawn by each shell's own view: terminal, editor, browser, review, canvas, surface, note, text. |
 | **Caller** | Whoever calls the `cate` API: the CLI in a terminal, a client. |
 
 ### Agents
@@ -121,7 +121,7 @@ its session.
  │ shells     desktop (window host, native OS, React UI) · mobile (iOS core) │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ panels     framework + terminal · editor · browser · review · canvas ·   │
- │            surface                                                       │
+ │            surface · note · text                                         │
  ├──────────────────────────────────────────────────────────────────────────┤
  │ client     core · connections · workspaces · document mirror · host      │
  ├──────────────────────────────────────────────────────────────────────────┤
@@ -1926,7 +1926,10 @@ Each panel type is one folder, `panels/<type>/`:
   people create one: its order in every creation menu, the default key of
   its "New" action, a canvas toolbar button, whether it is created in a
   checkout), `opens` (what generic "open" actions create it for: a file, a
-  folder, a URL), `describe`, `chrome` (dock chrome flags), `relation` (its
+  folder, a URL), `describe`, `chrome` (dock chrome flags; `frameless`: alone
+  in a canvas node the view draws itself, with no tab bar or frame, and
+  moves the node through `useCanvasNodeFrame`, as a note or a text block
+  does; `autoSize`: the node takes the view's size), `relation` (its
   role in the relation graph, section 9.7), plus flags such as `surface`,
   `placeholder` (the surface picker), `navigable`, `canLiveOnCanvas` and
   `switchesWorktree`.
@@ -2301,7 +2304,14 @@ a panel type in a menu by hand.
   creation order. A type
   with `creation.inWorktree` is offered once per ready worktree
   (`creationMenuItems`, `creationPick`); each surface decides only where the
-  panel goes.
+  panel goes. The desktop's canvas menu (a right click on empty canvas) is
+  drawn in the app as a cascading menu: "Add" with those types, then the
+  actions declared for the `canvas` context menu; every panel lands at the
+  canvas point taken at the click. A module that offers more ways to create
+  a type registers a **spawn menu** for it (`registerSpawnMenu`, beside the
+  toolbar's spawn flyouts): the type's entry becomes a submenu, its plain
+  "New <label>" first, then the module's entries (the agents a terminal can
+  start as).
 - **Keys.** The shortcut registry resolves each declared action's binding
   from its default key and the `customShortcuts` client setting (overrides
   by action id; an override of an action no module declares is kept and

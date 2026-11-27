@@ -3,7 +3,7 @@
 // (`panelRelationsEnabled` from workspace/relations).
 
 import { SettingRow, Select, Slider, Toggle } from '../../../kernel/interaction'
-import { setClientSetting, setWorkspaceSetting, useClientSetting, useWorkspaceSetting } from '../../../kernel/settings'
+import { setClientSetting, setWorkspaceSetting, useClientSetting, useT, useWorkspaceSetting } from '../../../kernel/settings'
 import type { ClientSettings } from '../../../../settings'
 import { useDesktopPort } from '../../desktop'
 import type { SettingsPageProps } from '../registry'
@@ -116,19 +116,20 @@ function WallpaperSwatch({ selected, onClick, label, imageUrl }: {
   label: string
   imageUrl?: string
 }): JSX.Element {
+  const shown = useT()(label)
   return (
     <button
       type="button"
       onClick={onClick}
-      title={label}
-      aria-label={label}
+      title={shown}
+      aria-label={shown}
       aria-pressed={selected}
       className={`relative h-12 w-20 shrink-0 overflow-hidden rounded-md border text-xs transition-colors ${
         selected ? 'border-focus-blue ring-2 ring-focus-blue' : 'border-subtle hover:border-strong'
       } ${imageUrl ? '' : 'bg-surface-5 text-muted hover:text-primary'}`}
       style={imageUrl ? { backgroundImage: `url("${imageUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
     >
-      {!imageUrl && <span className="flex h-full w-full items-center justify-center px-1 text-center">{label}</span>}
+      {!imageUrl && <span className="flex h-full w-full items-center justify-center px-1 text-center">{shown}</span>}
     </button>
   )
 }

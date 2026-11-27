@@ -3,6 +3,7 @@
 // registry (kernel/interaction holds the logic).
 
 export * from './components/Button'
+export * from './components/CascadingMenu'
 export * from './components/ErrorBoundary'
 export * from './components/HoverIntent'
 export * from './components/InlineNotice'

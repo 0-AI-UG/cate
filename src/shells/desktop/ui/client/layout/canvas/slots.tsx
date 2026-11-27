@@ -29,9 +29,9 @@ export interface CanvasSlots {
    *  transformed canvas) in the same task as a viewport change, so they never
    *  trail their nodes by a frame. Installed by client/host. */
   syncSurfaces: (viewport?: SurfaceViewport) => void
-  /** Renders one panel; the list fallback of a client without `canvas` uses
-   *  it. Installed by client/host. */
-  PanelHost?: React.ComponentType<{ workspaceId: string; panelId: string }>
+  /** Renders one panel; the list fallback of a client without `canvas` and
+   *  a frameless node (`chrome.frameless`) use it. Installed by client/host. */
+  PanelHost?: React.ComponentType<{ workspaceId: string; panelId: string; onCanvas?: boolean }>
 }
 
 function ClientNodeDock({ workspaceId, canvasId, nodeId, onTabBarMouseDown, trailingControls, dropDisabled }: NodeDockProps): React.ReactElement {

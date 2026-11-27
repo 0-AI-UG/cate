@@ -139,3 +139,5 @@ export async function setWorkspaceSetting<K extends WorkspaceSettingKey>(
   if (!mirror) throw new Error(`Workspace ${workspaceId} is not open`)
   await mirror.set(key, value)
 }
+
+export { useT, t, translateMenu, type Translate } from './i18n'

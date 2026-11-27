@@ -20,10 +20,11 @@ const runtime = vi.hoisted(() => ({
   },
 }))
 vi.mock('../../kernel/rpc', () => ({ useRuntime: () => runtime }))
-vi.mock('../../kernel/settings', () => ({
-  useWorkspaceSetting: () => h.triggers,
-  setWorkspaceSetting: h.set,
-}))
+vi.mock('../../kernel/settings', async () => {
+  const { translate } = await import('@kernel/interaction/contract')
+  const t = (text: string, vars?: Record<string, string | number>) => translate('en', text, vars)
+  return { useWorkspaceSetting: () => h.triggers, setWorkspaceSetting: h.set, useT: () => t, t }
+})
 
 import { AvailabilitySettings } from './AvailabilitySettings'
 

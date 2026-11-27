@@ -165,6 +165,9 @@ enum PanelIcon {
         case "git-compare": "arrow.left.arrow.right"
         case "grid": "square.grid.3x3"
         case "plus": "plus.square.dashed"
+        case "sticky-note": "note.text"
+        case "type": "textformat"
+        case "pencil": "pencil"
         default: "square"
         }
     }

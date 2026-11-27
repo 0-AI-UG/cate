@@ -7,38 +7,40 @@ import { RotateCcw as ArrowCounterClockwise, X } from 'lucide-react'
 import { Tooltip, matchesQuery, useSettingsSearch, useDeclaredActions, useResolvedShortcuts } from '../../../kernel/interaction'
 import { shortcutRegistry } from '@kernel/interaction'
 import { displayString, normaliseShortcutKey, storedShortcut, type StoredShortcut } from '@kernel/interaction/contract'
+import { useT } from '../../../kernel/settings'
 
 export function ShortcutsPage(): JSX.Element {
   const shortcuts = useResolvedShortcuts()
   const { query, sectionMatched } = useSettingsSearch()
+  const t = useT()
   const visibleActions = useDeclaredActions().filter(
-    ({ spec }) => !spec.keyHint && (sectionMatched || matchesQuery(spec.title, query)),
+    ({ spec }) => !spec.keyHint && (sectionMatched || matchesQuery(spec.title, query) || matchesQuery(t(spec.title), query)),
   )
   return (
     <div className="flex flex-col gap-0">
       {visibleActions.map(({ id: action, spec }) => (
         <div key={action} data-srow className="flex items-center justify-between py-2 border-b border-subtle">
-          <span className="text-sm text-primary">{spec.title}</span>
+          <span className="text-sm text-primary">{t(spec.title)}</span>
           <div className="flex items-center gap-2">
             <ShortcutRecorder
               currentShortcut={shortcuts[action] ?? storedShortcut('')}
               onRecord={(shortcut) => shortcutRegistry().set(action, shortcut)}
             />
-            <Tooltip label="Disable shortcut">
+            <Tooltip label={t('Disable shortcut')}>
               <button
                 onClick={() => shortcutRegistry().clear(action)}
                 disabled={!shortcuts[action]?.key}
                 className="w-6 h-6 flex items-center justify-center rounded-[10px] hover:bg-hover text-muted hover:text-secondary disabled:opacity-30 disabled:hover:bg-transparent"
-                aria-label="Disable shortcut"
+                aria-label={t('Disable shortcut')}
               >
                 <X size={12} />
               </button>
             </Tooltip>
-            <Tooltip label="Reset to default">
+            <Tooltip label={t('Reset to default')}>
               <button
                 onClick={() => shortcutRegistry().reset(action)}
                 className="w-6 h-6 flex items-center justify-center rounded-[10px] hover:bg-hover text-muted hover:text-secondary"
-                aria-label="Reset to default"
+                aria-label={t('Reset to default')}
               >
                 <ArrowCounterClockwise size={12} />
               </button>
@@ -59,6 +61,7 @@ interface ShortcutRecorderProps {
  *  elsewhere cancels. */
 function ShortcutRecorder({ currentShortcut, onRecord }: ShortcutRecorderProps): JSX.Element {
   const [recording, setRecording] = useState(false)
+  const t = useT()
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!recording) return
@@ -109,7 +112,7 @@ function ShortcutRecorder({ currentShortcut, onRecord }: ShortcutRecorderProps):
           : 'bg-surface-5 border-subtle text-primary hover:bg-hover'
       }`}
     >
-      {recording ? 'Press keys...' : displayString(currentShortcut)}
+      {recording ? t('Press keys...') : displayString(currentShortcut)}
     </button>
   )
 }

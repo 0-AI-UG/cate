@@ -6,6 +6,7 @@ import { useRuntime } from '../../kernel/rpc'
 import { clientUi } from '@kernel/interaction'
 import { LoadingState, Spinner, SearchableBlock, SecondaryButton } from '../../kernel/interaction'
 import type { GitHubConnection, GitHubLoginState } from '@workspace/repository/contract'
+import { useT } from '../../kernel/settings'
 
 export interface GitHubSettingsProps {
   workspaceId: string
@@ -17,11 +18,12 @@ export function GitHubSettings({ workspaceId, onShowPullRequests }: GitHubSettin
   const [connection, setConnection] = useState<GitHubConnection | null>(null)
   const [login, setLogin] = useState<GitHubLoginState>({ status: 'idle' })
   const [checking, setChecking] = useState(false)
+  const t = useT()
   async function refresh() {
     if (!runtime) return
     setChecking(true)
     try { setConnection(await runtime.vcs.githubConnection()) }
-    catch { setConnection({ status: 'error', message: 'Could not check GitHub. Restart Cate if it was just updated, then retry.' }) }
+    catch { setConnection({ status: 'error', message: t('Could not check GitHub. Restart Cate if it was just updated, then retry.') }) }
     finally { setChecking(false) }
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -32,7 +34,7 @@ export function GitHubSettings({ workspaceId, onShowPullRequests }: GitHubSettin
       void runtime.vcs.githubLogin({ operation: 'state' }).then((state) => {
         setLogin(state)
         if (state.status === 'complete') void refresh()
-      }).catch(() => setLogin({ status: 'error', message: 'Could not check sign-in. Try again.' }))
+      }).catch(() => setLogin({ status: 'error', message: t('Could not check sign-in. Try again.') }))
     }, 1000)
     return () => clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -41,7 +43,7 @@ export function GitHubSettings({ workspaceId, onShowPullRequests }: GitHubSettin
     if (!runtime) return
     if (operation === 'start') setLogin({ status: 'pending' })
     try { setLogin(await runtime.vcs.githubLogin({ operation })) }
-    catch { setLogin({ status: 'error', message: 'Could not update GitHub sign-in. Try again.' }) }
+    catch { setLogin({ status: 'error', message: t('Could not update GitHub sign-in. Try again.') }) }
   }
   const connected = connection?.status === 'connected'
   return <SearchableBlock keywords="source control providers github account authentication login sign in gh cli pull requests">
@@ -53,20 +55,20 @@ export function GitHubSettings({ workspaceId, onShowPullRequests }: GitHubSettin
             <span className="text-sm font-medium text-primary">GitHub</span>
             {connection?.version && <span className="font-mono text-xs text-muted">{connection.version}</span>}
           </div>
-          {!connection ? <LoadingState label="Checking GitHub" size={13} className="mt-2 justify-start text-xs" /> : <p role="status" className="mt-2 text-xs text-muted">{connected ? `Authenticated as ${connection.account}` : connection.message}</p>}
+          {!connection ? <LoadingState label={t('Checking GitHub')} size={13} className="mt-2 justify-start text-xs" /> : <p role="status" className="mt-2 text-xs text-muted">{connected ? t('Authenticated as {account}', { account: connection.account ?? '' }) : t(connection.message ?? '')}</p>}
         </div>
         <div className="flex items-center gap-2">
-          {!connection ? null : connected ? <SecondaryButton onClick={onShowPullRequests}>Pull requests</SecondaryButton> : connection?.status === 'missing-cli' ?
-            <SecondaryButton onClick={() => clientUi().openExternal('https://cli.github.com/')}>Install GitHub CLI</SecondaryButton> :
-            <SecondaryButton disabled={!connection || login.status === 'pending'} onClick={() => void changeLogin('start')}>Sign in to GitHub</SecondaryButton>}
-          <SecondaryButton disabled={checking} onClick={() => void refresh()} aria-label="Recheck GitHub connection">{checking ? <Spinner size={14} /> : <RefreshCw size={14} />}Recheck</SecondaryButton>
+          {!connection ? null : connected ? <SecondaryButton onClick={onShowPullRequests}>{t('Pull requests')}</SecondaryButton> : connection?.status === 'missing-cli' ?
+            <SecondaryButton onClick={() => clientUi().openExternal('https://cli.github.com/')}>{t('Install GitHub CLI')}</SecondaryButton> :
+            <SecondaryButton disabled={!connection || login.status === 'pending'} onClick={() => void changeLogin('start')}>{t('Sign in to GitHub')}</SecondaryButton>}
+          <SecondaryButton disabled={checking} onClick={() => void refresh()} aria-label={t('Recheck GitHub connection')}>{checking ? <Spinner size={14} /> : <RefreshCw size={14} />}{t('Recheck')}</SecondaryButton>
         </div>
       </div>
-      <div className="py-2 text-xs text-muted">Uses the GitHub CLI account on the computer this workspace runs on.</div>
+      <div className="py-2 text-xs text-muted">{t('Uses the GitHub CLI account on the computer this workspace runs on.')}</div>
     </div>
     {login.status === 'pending' && <div role="status" className="mt-3 text-sm text-secondary">
-      <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>Enter <strong className="select-all font-mono">{login.code}</strong> on GitHub to finish signing in.</> : 'Starting GitHub sign-in'}
-      <div className="mt-2 flex gap-2"><SecondaryButton onClick={() => clientUi().openExternal('https://github.com/login/device')}>Open GitHub</SecondaryButton><SecondaryButton onClick={() => void changeLogin('cancel')}>Cancel</SecondaryButton></div>
+      <Spinner size={14} className="mr-2 align-middle" />{login.code ? <>{t('Enter')} <strong className="select-all font-mono">{login.code}</strong> {t('on GitHub to finish signing in.')}</> : t('Starting GitHub sign-in')}
+      <div className="mt-2 flex gap-2"><SecondaryButton onClick={() => clientUi().openExternal('https://github.com/login/device')}>{t('Open GitHub')}</SecondaryButton><SecondaryButton onClick={() => void changeLogin('cancel')}>{t('Cancel')}</SecondaryButton></div>
     </div>}
     {login.status === 'error' && <p role="alert" className="mt-3 text-xs text-danger">{login.message}</p>}
   </SearchableBlock>

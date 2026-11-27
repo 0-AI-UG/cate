@@ -88,3 +88,46 @@ export function subscribeSpawnFlyouts(listener: () => void): () => void {
   flyoutListeners.add(listener)
   return () => { flyoutListeners.delete(listener) }
 }
+
+// --- Spawn menus --------------------------------------------------------------
+// More ways to create a panel type a module offers in the canvas context menu:
+// the type's entry becomes a submenu with its plain "New <label>" first, then
+// these (the agents a new terminal can start as).
+
+export interface SpawnTarget {
+  workspaceId: string
+  canvasId: string
+  /** Canvas point for the new node's top-left (where the menu opened). */
+  position: { x: number; y: number }
+  worktreeId?: string
+}
+
+export interface SpawnMenuEntry {
+  id: string
+  label: string
+  icon?: React.ReactNode
+  create(target: SpawnTarget): void
+}
+
+export interface SpawnMenu {
+  panelType: string
+  /** Calls `listener` when the workspace's entries change; returns the undo. */
+  watch(workspaceId: string, listener: () => void): () => void
+  /** The entries now, in order; empty while they are not known yet. */
+  entries(workspaceId: string): readonly SpawnMenuEntry[]
+}
+
+const spawnMenus = new Map<string, SpawnMenu>()
+
+export function registerSpawnMenu(menu: SpawnMenu): () => void {
+  spawnMenus.set(menu.panelType, menu)
+  return () => { if (spawnMenus.get(menu.panelType) === menu) spawnMenus.delete(menu.panelType) }
+}
+
+export function spawnMenuFor(panelType: string): SpawnMenu | undefined {
+  return spawnMenus.get(panelType)
+}
+
+export function allSpawnMenus(): readonly SpawnMenu[] {
+  return [...spawnMenus.values()]
+}

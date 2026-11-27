@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { SidebarHeaderButton, SidebarSectionHeader } from '../../kernel/interaction'
 import { useWorkspaceList } from '../../client/workspaces'
+import { useT } from '../../kernel/settings'
 import { clientApp } from '../app'
 import { closeWorkspaces, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
@@ -33,6 +34,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
   const list = clientApp().workspaces
   const { entries, open } = useWorkspaceList(list)
   const selectedId = useUIStore((s) => s.selectedWorkspaceId)
+  const t = useT()
   const pickerOpen = useUIStore((s) => s.openDialogOpen)
   const toggleOpenPicker = () => {
     const ui = useUIStore.getState()
@@ -98,7 +100,7 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
     if (multiSelected.size < 2 || !multiSelected.has(id)) return false
     e.preventDefault()
     e.stopPropagation()
-    const choice = await showMenu([{ id: 'close-selected', label: `Close ${multiSelected.size} Workspaces` }])
+    const choice = await showMenu([{ id: 'close-selected', label: t('Close {count} Workspaces', { count: multiSelected.size }) }])
     if (choice === 'close-selected') closeSelected()
     return true
   }
@@ -123,14 +125,14 @@ export function WorkspaceList({ headerTitle = 'Workspaces', headerLeadingAction 
         leadingAction={headerLeadingAction}
         // With none, the welcome page shows the picker itself.
         actions={entries.length > 0 && (
-          <SidebarHeaderButton action="openWorkspace" onClick={toggleOpenPicker} title="Open Workspace…" aria-expanded={pickerOpen} {...{ [OPEN_WORKSPACE_ANCHOR]: '' }}>
+          <SidebarHeaderButton action="openWorkspace" onClick={toggleOpenPicker} title={t('Open Workspace…')} aria-expanded={pickerOpen} {...{ [OPEN_WORKSPACE_ANCHOR]: '' }}>
             <Plus size={14} />
           </SidebarHeaderButton>
         )}
       />
-      <div className="flex-1 overflow-y-auto pb-1" role="tree" aria-label="Workspaces">
+      <div className="flex-1 overflow-y-auto pb-1" role="tree" aria-label={t('Workspaces')}>
         {entries.length === 0 && (
-          <p className="px-4 py-8 text-center text-xs text-muted">No workspaces yet</p>
+          <p className="px-4 py-8 text-center text-xs text-muted">{t('No workspaces yet')}</p>
         )}
         {entries.map((entry, index) => {
           const isLast = entry === entries[entries.length - 1]

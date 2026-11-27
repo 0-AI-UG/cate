@@ -9,13 +9,17 @@ export { MIN_PANE_SIZE }
 
 export type PanelTypeOf = (panelId: string) => string | undefined
 
+/** A stack's minimum is the largest its panels declare (a note or a text
+ *  block on a canvas is smaller than a terminal); `MIN_PANE_SIZE` stands in
+ *  for a panel of unknown type and for an empty stack. */
 export function layoutMinimum(node: DockNode, typeOf?: PanelTypeOf): Size {
   if (node.kind === 'stack') {
+    if (node.panels.length === 0) return MIN_PANE_SIZE
     return node.panels.reduce((minimum, id) => {
       const type = typeOf?.(id)
       const panel = type ? panelMinimumSize(type) : MIN_PANE_SIZE
       return { width: Math.max(minimum.width, panel.width), height: Math.max(minimum.height, panel.height) }
-    }, MIN_PANE_SIZE)
+    }, { width: 0, height: 0 })
   }
   const children = node.children.map((child) => layoutMinimum(child, typeOf))
   const horizontal = node.direction === 'horizontal'

@@ -17,7 +17,11 @@ vi.mock('../app', () => ({ clientApp: () => h.app }))
 vi.mock('../desktop', () => ({ useDesktopPort: () => ({ pickFolder: h.pickFolder }) }))
 vi.mock('../navigation', () => ({ selectWorkspace: h.select, openLocalFolder: vi.fn() }))
 vi.mock('../../client/workspaces', () => ({ useRecentWorkspaces: () => [h.snapshot.entries[1], h.snapshot.entries[0]] }))
-vi.mock('../../kernel/settings', () => ({ useClientSetting: () => [] }))
+vi.mock('../../kernel/settings', async () => {
+  const { translate } = await import('@kernel/interaction/contract')
+  const t = (text: string, vars?: Record<string, string | number>) => translate('en', text, vars)
+  return { useClientSetting: () => [], useT: () => t, t }
+})
 
 let host: HTMLDivElement
 let root: Root

@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom'
 import type { ActionId } from '@kernel/interaction/contract'
 import { shortcutDisplay } from '@kernel/interaction'
 import { useResolvedShortcuts } from '../shortcuts/hooks'
+import { useT } from '../../settings'
 
 interface TooltipProps {
   action?: ActionId
@@ -22,7 +23,8 @@ interface TooltipProps {
 export const Tooltip: React.FC<TooltipProps> = ({ label, action, placement = 'bottom', suppressed = false, children }) => {
   const shortcuts = useResolvedShortcuts()
   const key = shortcutDisplay(shortcuts, action)
-  const text = key ? `${label} (${key})` : label
+  const shown = useT()(label)
+  const text = key ? `${shown} (${key})` : shown
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)

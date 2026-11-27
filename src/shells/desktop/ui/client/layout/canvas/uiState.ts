@@ -4,7 +4,8 @@
 import { create } from 'zustand'
 import type { CanvasCorner } from './parts/corners'
 
-export type CanvasTool = 'select' | 'hand'
+/** `draw`: presses on the canvas draw (the drawing panel's tool, `ui/panels/drawing`). */
+export type CanvasTool = 'select' | 'hand' | 'draw'
 
 interface CanvasUiState {
   activeTool: CanvasTool

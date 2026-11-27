@@ -161,8 +161,12 @@ export interface PanelDefinition<
   /** Dock chrome: `flushTabBar` drops the tab bar divider; `worktreeChip`
    *  shows the checkout chip; `floatingTabBar` floats the tab bar over the
    *  view (a canvas, whose grid shows behind it; its tab also springs open
-   *  sooner during a drag, since it is a drop surface). */
-  chrome?: { flushTabBar?: boolean; worktreeChip?: boolean; floatingTabBar?: boolean }
+   *  sooner during a drag, since it is a drop surface). `frameless`: on a
+   *  canvas, a node holding only this panel draws the view alone, with no
+   *  tab bar, frame or dimming; the view moves the node itself (a sticky
+   *  note, a text block). `autoSize`: such a node takes the size the view
+   *  asks for, and has no resize handles. */
+  chrome?: { flushTabBar?: boolean; worktreeChip?: boolean; floatingTabBar?: boolean; frameless?: boolean; autoSize?: boolean }
   /** How the type takes part in relation flows (prompt context, connected
    *  editors, the intents offered when connecting panels). */
   relation?: RelationRole

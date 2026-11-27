@@ -4,6 +4,7 @@ import { clientUi } from '@kernel/interaction'
 import type { AgentId, AgentSetupInfo, AgentSetupOperation } from '@services/agents/contract'
 import { useRuntime } from '../../kernel/rpc'
 import { LoadingState, SearchableBlock } from '../../kernel/interaction'
+import { t as tNow, useT } from '../../kernel/settings'
 import { useAgentAvailability } from './useAgentAvailability'
 import { AgentMark } from './AgentMark'
 import { AgentHookControl, useAgentHookSettings } from './AgentHooksSettings'
@@ -11,10 +12,10 @@ import { AgentHookControl, useAgentHookSettings } from './AgentHooksSettings'
 const actionClass = 'rounded-md border border-subtle px-2.5 py-1.5 text-xs text-secondary hover:bg-hover hover:text-primary disabled:opacity-40 disabled:pointer-events-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue'
 
 function authenticationLabel(auth: AgentSetupInfo['authentication']): string {
-  if (auth.status === 'signed-out') return 'Not signed in'
-  if (auth.status === 'unknown') return 'Account unavailable'
+  if (auth.status === 'signed-out') return tNow('Not signed in')
+  if (auth.status === 'unknown') return tNow('Account unavailable')
   const identity = auth.email ?? auth.displayName
-  return identity ?? `Signed in${auth.method ? ` · ${auth.method}` : ''}`
+  return identity ?? `${tNow('Signed in')}${auth.method ? ` · ${auth.method}` : ''}`
 }
 
 /** CLI setup always acts on the selected workspace's runtime host. Native
@@ -26,6 +27,7 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
 }) {
   const runtime = useRuntime(workspaceId)
   const hooks = useAgentHookSettings(workspaceId)
+  const t = useT()
   const [expanded, setExpanded] = useState<AgentId | null>(null)
   const availability = useAgentAvailability(workspaceId)
   const snapshot = availability?.snapshot ?? null
@@ -53,14 +55,14 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
     try {
       await work()
     } catch (cause) {
-      if (generation.current === current) setErrors((all) => ({ ...all, [agentId]: cause instanceof Error ? cause.message : 'Setup failed. Please try again.' }))
+      if (generation.current === current) setErrors((all) => ({ ...all, [agentId]: cause instanceof Error ? cause.message : t('Setup failed. Please try again.') }))
     } finally {
       setPending((all) => all.filter((id) => id !== agentId))
     }
   }
 
-  if (!workspaceId) return <p className="py-2 text-xs text-muted">Open a workspace to set up agents on its runtime.</p>
-  if (!runtime) return <LoadingState label="Loading agents" size={14} className="justify-start py-3 text-xs" />
+  if (!workspaceId) return <p className="py-2 text-xs text-muted">{t('Open a workspace to set up agents on its runtime.')}</p>
+  if (!runtime) return <LoadingState label={t('Loading agents')} size={14} className="justify-start py-3 text-xs" />
 
   const begin = (agentId: AgentId, action: 'login' | 'install') => perform(agentId, async () => {
     await runtime.agents.setupBegin({ agentId, action })
@@ -68,9 +70,9 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
 
   return (
     <SearchableBlock keywords="agents hooks activity setup install download login account claude codex cursor grok kiro opencode pi approvals permissions">
-      {!snapshot && !availability?.error && <LoadingState label="Loading agents" size={14} className="justify-start py-3 text-xs" />}
+      {!snapshot && !availability?.error && <LoadingState label={t('Loading agents')} size={14} className="justify-start py-3 text-xs" />}
       {availability?.error && <p role="alert" className="py-2 text-xs text-muted">{availability.error}</p>}
-      {hooks.error && <p role="alert" className="py-2 text-xs text-muted">{hooks.error}</p>}
+      {hooks.error && <p role="alert" className="py-2 text-xs text-muted">{t(hooks.error)}</p>}
       {snapshot?.agents.map((inspected) => {
         const agent = inspected
         const operation = operations[agent.agentId]
@@ -78,13 +80,13 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
         const installed = agent.installation.status === 'installed'
         const open = expanded === agent.agentId
         const ready = availability?.types.find((type) => type.agentId === agent.agentId)?.ready ?? false
-        const status = !installed ? agent.installation.status === 'missing' ? 'Not installed' : 'Unavailable'
-          : agent.hooksReady === false ? 'Integration off' : ready ? 'Ready' : agent.authentication.status === 'signed-out' ? 'Sign in' : 'Installed'
+        const status = t(!installed ? agent.installation.status === 'missing' ? 'Not installed' : 'Unavailable'
+          : agent.hooksReady === false ? 'Integration off' : ready ? 'Ready' : agent.authentication.status === 'signed-out' ? 'Sign in' : 'Installed')
         const identity = installed ? authenticationLabel(agent.authentication) : null
         return (
           <div key={agent.agentId} data-agent-setup-id={agent.agentId} className="-mx-3 border-b border-subtle px-3 last:border-b-0">
             <h3>
-              <button type="button" id={`agent-heading-${agent.agentId}`} aria-label={`${agent.displayName} settings`} aria-expanded={open} aria-controls={`agent-options-${agent.agentId}`} className="flex min-h-14 w-full items-center gap-3 rounded-md py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue" onClick={() => setExpanded(open ? null : agent.agentId)}>
+              <button type="button" id={`agent-heading-${agent.agentId}`} aria-label={t('{name} settings', { name: agent.displayName })} aria-expanded={open} aria-controls={`agent-options-${agent.agentId}`} className="flex min-h-14 w-full items-center gap-3 rounded-md py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-blue" onClick={() => setExpanded(open ? null : agent.agentId)}>
                 <AgentMark agent={agent.agentId} size={22} />
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">
@@ -100,20 +102,20 @@ export function AgentSetupSettings({ workspaceId, onOpenSetupTerminal }: {
             </h3>
             {open && <div id={`agent-options-${agent.agentId}`} role="region" aria-labelledby={`agent-heading-${agent.agentId}`} className="ml-[34px] space-y-1 pb-3 text-xs">
               {installed && agent.canLogin && <div className="flex min-h-10 items-center justify-between gap-3 py-2">
-                <span className="text-[13px] font-medium text-primary">Account</span>
-                <button type="button" className={actionClass} disabled={working} onClick={() => { void begin(agent.agentId, 'login') }}><span className="inline-flex items-center gap-1.5"><LogIn size={12} />{agent.authentication.status === 'signed-in' ? 'Switch account' : 'Sign in'}</span></button>
+                <span className="text-[13px] font-medium text-primary">{t('Account')}</span>
+                <button type="button" className={actionClass} disabled={working} onClick={() => { void begin(agent.agentId, 'login') }}><span className="inline-flex items-center gap-1.5"><LogIn size={12} />{agent.authentication.status === 'signed-in' ? t('Switch account') : t('Sign in')}</span></button>
               </div>}
               {installed && <div className="py-2"><AgentHookControl agentId={agent.agentId} name={agent.displayName} controller={hooks} /></div>}
-              {!installed && agent.canInstall && <div className="flex min-h-10 items-center justify-between gap-3 py-2"><span className="text-[13px] font-medium text-primary">Installation</span><button type="button" className={actionClass} disabled={working} onClick={() => { void begin(agent.agentId, 'install') }}>Install</button></div>}
+              {!installed && agent.canInstall && <div className="flex min-h-10 items-center justify-between gap-3 py-2"><span className="text-[13px] font-medium text-primary">{t('Installation')}</span><button type="button" className={actionClass} disabled={working} onClick={() => { void begin(agent.agentId, 'install') }}>{t('Install')}</button></div>}
               <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 py-2">
-                <span className="text-[11px] text-muted">{installed ? `Version ${agent.installation.version ?? 'unknown'}` : agent.installation.detail ?? 'Not installed'}</span>
-                <button type="button" aria-label={`${agent.displayName} download`} title="Official download" className="inline-flex items-center gap-1.5 text-xs text-secondary hover:text-primary" onClick={() => clientUi().openExternal(agent.downloadUrl)}><Download size={12} />Download</button>
+                <span className="text-[11px] text-muted">{installed ? t('Version {version}', { version: agent.installation.version ?? t('unknown') }) : agent.installation.detail ?? t('Not installed')}</span>
+                <button type="button" aria-label={t('{name} download', { name: agent.displayName })} title={t('Official download')} className="inline-flex items-center gap-1.5 text-xs text-secondary hover:text-primary" onClick={() => clientUi().openExternal(agent.downloadUrl)}><Download size={12} />{t('Download')}</button>
               </div>
             </div>}
             {operation && (operation.status === 'running' || operation.status === 'failed') && <div role="status" className="mt-2 flex flex-wrap items-center gap-2 pl-[34px] text-xs text-secondary">
-              <span>{operation.status === 'running' ? operation.action === 'login' ? 'Signing in…' : 'Installing…' : operation.message ?? 'Setup failed.'}</span>
-              {operation.panelId && onOpenSetupTerminal && <button type="button" className={actionClass} disabled={pending.includes(agent.agentId)} onClick={() => { void perform(agent.agentId, async () => { if (!await onOpenSetupTerminal(operation.panelId!)) throw new Error('The setup terminal is no longer open. Start setup again to open a new terminal.') }) }}>Open setup terminal</button>}
-              {operation.status === 'running' && <button type="button" className={actionClass} disabled={pending.includes(agent.agentId)} onClick={() => { void perform(agent.agentId, async () => { await runtime.agents.setupCancel({ operationId: operation.id }) }) }}>Cancel</button>}
+              <span>{operation.status === 'running' ? operation.action === 'login' ? t('Signing in…') : t('Installing…') : operation.message ?? t('Setup failed.')}</span>
+              {operation.panelId && onOpenSetupTerminal && <button type="button" className={actionClass} disabled={pending.includes(agent.agentId)} onClick={() => { void perform(agent.agentId, async () => { if (!await onOpenSetupTerminal(operation.panelId!)) throw new Error(t('The setup terminal is no longer open. Start setup again to open a new terminal.')) }) }}>{t('Open setup terminal')}</button>}
+              {operation.status === 'running' && <button type="button" className={actionClass} disabled={pending.includes(agent.agentId)} onClick={() => { void perform(agent.agentId, async () => { await runtime.agents.setupCancel({ operationId: operation.id }) }) }}>{t('Cancel')}</button>}
             </div>}
             {errors[agent.agentId] && <p role="alert" className="mt-2 pl-[34px] text-xs text-muted">{errors[agent.agentId]}</p>}
           </div>

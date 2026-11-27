@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Folder, KeyRound, Monitor, Plus, Server, X } from 'lucide-react'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { useClientSetting } from '../../kernel/settings'
+import { useClientSetting, useT } from '../../kernel/settings'
 import { formatSshTarget, parseSshCommand, type Machine, type SshConfigHost } from '@runtime/daemon/contract'
 import { clientApp } from '../app'
 import { useDesktopPort } from '../desktop'
@@ -49,6 +49,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
   const [adding, setAdding] = useState<string | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const t = useT()
 
   useEffect(() => {
     if (request) { setAdding(null); setAddError(null) }
@@ -73,7 +74,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
       await openLocalFolder(root)
     }
     const removeMachine = async (id: string, label: string) => {
-      if (await clientUi().confirm(`Remove ${label}? Its workspaces stay in the sidebar.`)) forgetMachine(id)
+      if (await clientUi().confirm(t('Remove {name}? Its workspaces stay in the sidebar.', { name: label }))) forgetMachine(id)
     }
     const reopen = async (id: string) => {
       try {
@@ -81,53 +82,53 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
         onPicked?.()
         await selectWorkspace(id)
       } catch (err) {
-        clientUi().showError(errorMessage(err, 'Could not reopen the workspace.'))
+        clientUi().showError(errorMessage(err, t('Could not reopen the workspace.')))
       }
     }
     const forgetWorkspace = async (entry: WorkspaceEntry) => {
       const message = entry.kind === 'paired'
-        ? `Remove "${entry.name}" from recents and forget its access? Joining again will need a new invite.`
-        : `Remove "${entry.name}" from recents?`
+        ? t('Remove "{name}" from recents and forget its access? Joining again will need a new invite.', { name: entry.name })
+        : t('Remove "{name}" from recents?', { name: entry.name })
       if (!await clientUi().confirm(message)) return
       try {
         await app.workspaces.forget(entry.id)
       } catch (err) {
-        clientUi().showError(errorMessage(err, 'Could not remove the workspace.'))
+        clientUi().showError(errorMessage(err, t('Could not remove the workspace.')))
       }
     }
     const out: PickerItem[] = entries.map((entry) => {
       const location = machineOf(entry)
       return {
         key: entry.id, section: 'Recent workspaces', icon: <Folder size={14} />, label: entry.name,
-        detail: 'label' in location ? location.label ?? 'Remote computer' : undefined,
+        detail: 'label' in location ? location.label ?? t('Remote computer') : undefined,
         run: () => void reopen(entry.id),
         remove: () => void forgetWorkspace(entry),
       }
     })
     if (port) {
-      out.push({ key: 'this', section: 'Open', icon: <Monitor size={14} />, label: 'Open Folder…', detail: 'This device', run: () => void pickFolder() })
+      out.push({ key: 'this', section: 'Open', icon: <Monitor size={14} />, label: t('Open Folder…'), detail: t('This device'), run: () => void pickFolder() })
     }
     if (setup) {
       const savedKeys = new Set(saved.map((m) => formatSshTarget(m.target)))
       for (const machine of saved) {
         const label = machine.target.destination
-        out.push({ key: `ssh:${machine.id}`, section: 'Other computers', icon: <Server size={14} />, label, detail: 'SSH', hint: 'Browse…', run: openOn({ kind: 'ssh', target: machine.target }), remove: () => void removeMachine(machine.id, label) })
+        out.push({ key: `ssh:${machine.id}`, section: 'Other computers', icon: <Server size={14} />, label, detail: 'SSH', hint: t('Browse…'), run: openOn({ kind: 'ssh', target: machine.target }), remove: () => void removeMachine(machine.id, label) })
       }
       for (const host of hosts) {
         const target = { destination: host.alias }
         if (savedKeys.has(formatSshTarget(target))) continue
-        out.push({ key: `config:${host.alias}`, section: 'Other computers', icon: <Server size={14} />, label: host.alias, detail: 'SSH config', hint: 'Browse…', run: openOn({ kind: 'ssh', target }) })
+        out.push({ key: `config:${host.alias}`, section: 'Other computers', icon: <Server size={14} />, label: host.alias, detail: t('SSH config'), hint: t('Browse…'), run: openOn({ kind: 'ssh', target }) })
       }
       for (const distro of distros) {
-        out.push({ key: `wsl:${distro}`, section: 'Other computers', icon: <Server size={14} />, label: distro, detail: 'WSL', hint: 'Browse…', run: openOn({ kind: 'wsl', distro }) })
+        out.push({ key: `wsl:${distro}`, section: 'Other computers', icon: <Server size={14} />, label: distro, detail: 'WSL', hint: t('Browse…'), run: openOn({ kind: 'wsl', distro }) })
       }
-      out.push({ key: 'add-ssh', section: 'Other computers', always: true, icon: <Plus size={14} />, label: 'Add an SSH machine…', run: () => { ui.closeJoinInput(); setAdding(''); setAddError(null) } })
+      out.push({ key: 'add-ssh', section: 'Other computers', always: true, icon: <Plus size={14} />, label: t('Add an SSH machine…'), run: () => { ui.closeJoinInput(); setAdding(''); setAddError(null) } })
     }
     if (app.pair) {
-      out.push({ key: 'join', section: 'Collaborate', always: true, icon: <KeyRound size={14} />, label: 'Join Workspace…', run: () => ui.openJoinInput() })
+      out.push({ key: 'join', section: 'Collaborate', always: true, icon: <KeyRound size={14} />, label: t('Join Workspace…'), run: () => ui.openJoinInput() })
     }
     return out
-  }, [entries, hosts, distros, saved, port, setup, onPicked, app])
+  }, [entries, hosts, distros, saved, port, setup, onPicked, app, t])
 
   useEffect(() => { setActive((index) => Math.min(index, Math.max(0, items.length - 1))) }, [items.length])
 
@@ -147,7 +148,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
       <div
         ref={listRef}
         role="listbox"
-        aria-label="Open a workspace"
+        aria-label={t('Open a workspace')}
         tabIndex={0}
         autoFocus={autoFocus}
         onKeyDown={(e) => {
@@ -163,20 +164,20 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
           lastSection = item.section
           return (
             <div key={item.key} className="group">
-              {header && <div className="px-2 pt-3 pb-1 text-[11px] font-semibold text-muted">{header}</div>}
+              {header && <div className="px-2 pt-3 pb-1 text-[11px] font-semibold text-muted">{t(header)}</div>}
               <div className="relative">
                 {item.key === 'join' && request ? (
                   <InlineJoinForm key={`${request.code ?? ''}|${request.machine ?? ''}`} request={request} />
                 ) : item.key === 'add-ssh' && adding !== null ? (
                   <InlinePickerInput
                     icon={item.icon}
-                    label="SSH command"
+                    label={t('SSH command')}
                     placeholder="ssh user@example.com -p 22"
                     value={adding}
                     onChange={(value) => { setAdding(value); setAddError(null) }}
                     onSubmit={addMachine}
                     onCancel={() => { setAdding(null); setAddError(null) }}
-                    actionLabel="Connect"
+                    actionLabel={t('Connect')}
                     error={addError}
                   />
                 ) : (
@@ -198,7 +199,7 @@ export function WorkspacePicker({ autoFocus = false, onPicked, listClassName = '
                 {item.remove && (
                   <button
                     type="button"
-                    aria-label={`Remove ${item.label}`}
+                    aria-label={t('Remove {name}', { name: item.label })}
                     onClick={item.remove}
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-danger opacity-0 group-hover:opacity-100 focus:opacity-100"
                   >

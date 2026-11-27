@@ -2,7 +2,7 @@
 // Native approval policy is inspected, never changed here.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRuntime } from '../../kernel/rpc'
-import { useWorkspaceSetting, workspaceSettingsFor, setWorkspaceSetting } from '../../kernel/settings'
+import { useT, useWorkspaceSetting, workspaceSettingsFor, setWorkspaceSetting } from '../../kernel/settings'
 import {
   AGENTS, AGENT_DEFS, AGENT_APPROVAL_DETECTION, agentHookInUse, agentHooksEnabled, resolveAgentHookMode,
   type AgentApprovalDetection, type AgentDef, type AgentHookAgentState, type AgentHookConfig, type AgentHookMode, type AgentId,
@@ -106,21 +106,22 @@ export function useAgentHookSettings(workspaceId: string | null | undefined): Ag
 export function AgentHookControl({ agentId, name, controller, onChanged }: { agentId: AgentId; name: string; controller: AgentHookController; onChanged?(): void }) {
   const row = controller.states[agentId] ?? { agent: AGENT_DEFS[agentId], folderPresent: false, injected: false, approvalDetection: AGENT_APPROVAL_DETECTION[agentId] }
   const mode = resolveAgentHookMode(controller.config, agentId)
-  const status = controller.loading ? 'Checking agent activity' : agentHookStatus(row, controller.config)
+  const t = useT()
+  const status = t(controller.loading ? 'Checking agent activity' : agentHookStatus(row, controller.config))
   const installed = mode !== 'off' && row.injected && !controller.loading
   return (
     <div data-agent-hook-id={agentId} className="space-y-3 text-xs text-muted">
       <label className="flex items-center justify-between gap-3">
-        <span className="mr-auto text-[13px] font-medium text-primary">Cate integration</span>
-        <span aria-label={`${name} integration status`} title={status} className="inline-flex">
+        <span className="mr-auto text-[13px] font-medium text-primary">{t('Cate integration')}</span>
+        <span aria-label={t('{name} integration status', { name })} title={status} className="inline-flex">
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: installed ? 'var(--git-added)' : 'currentColor' }} />
           <span className="sr-only">{status}</span>
         </span>
-        <select aria-label={`${name} integration`} title="Cate hooks for new terminals" value={mode} disabled={!controller.available || controller.loading} onChange={(event) => { void controller.setMode(agentId, event.target.value as AgentHookMode).then(onChanged) }} className="rounded border border-subtle bg-surface-2 px-1.5 py-0.5 text-[11px] text-secondary disabled:opacity-40">
-          {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value} title={option.description}>{option.label}</option>)}
+        <select aria-label={t('{name} integration', { name })} title={t('Cate hooks for new terminals')} value={mode} disabled={!controller.available || controller.loading} onChange={(event) => { void controller.setMode(agentId, event.target.value as AgentHookMode).then(onChanged) }} className="rounded border border-subtle bg-surface-2 px-1.5 py-0.5 text-[11px] text-secondary disabled:opacity-40">
+          {MODE_OPTIONS.map((option) => <option key={option.value} value={option.value} title={t(option.description)}>{t(option.label)}</option>)}
         </select>
       </label>
-      {row.approvalDetection.source === 'config' && !controller.loading && <span className="flex justify-between text-[11px]" title={row.approvalDetection.detail}><span>Approvals: </span><span>{APPROVAL_LABELS[row.approvalDetection.mode]}</span></span>}
+      {row.approvalDetection.source === 'config' && !controller.loading && <span className="flex justify-between text-[11px]" title={row.approvalDetection.detail}><span>{t('Approvals:')} </span><span>{t(APPROVAL_LABELS[row.approvalDetection.mode])}</span></span>}
     </div>
   )
 }

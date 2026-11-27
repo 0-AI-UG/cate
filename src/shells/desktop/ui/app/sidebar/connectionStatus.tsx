@@ -10,6 +10,7 @@ import { tryClientApp } from '../app'
 import { runWindowAction } from '../actions/run'
 import { closeWorkspace, openLocalFolder, selectWorkspace } from '../navigation'
 import { useUIStore } from '../state/uiStore'
+import { t, useT } from '../../kernel/settings'
 import { useRequiredRuntimeUpdate } from '../workspace/RuntimeMismatch'
 
 /** The dot color of a connection state. It pulses only while connecting:
@@ -27,8 +28,9 @@ export function connectionDotClass(state: ConnectionState): string {
 export function statusOf(connection: WorkspaceConnection | undefined, state: ConnectionState): ConnectionStatus | null {
   const app = tryClientApp()
   const status = connection ? connectionStatus(state, { startsRuntime: connection.startsRuntime, version: app?.version ?? '', requiredUpdate: app?.runtimeUpdates.required(connection) }) : null
-  if (status && state.kind === 'stopped') return { ...status, title: 'Workspace stopped' }
-  return status
+  if (!status) return null
+  // The core's words in the interface language (dynamic messages stay in English).
+  return { ...status, title: t(state.kind === 'stopped' ? 'Workspace stopped' : status.title), message: t(status.message) }
 }
 
 export interface ConnectionAction {
@@ -41,22 +43,22 @@ function remedyAction(connection: WorkspaceConnection, state: ConnectionState, r
   const id = connection.workspaceId
   switch (remedy) {
     // The workspace's card runs the update and says what it ends.
-    case 'updateRuntime': return { label: 'Update…', run: () => void selectWorkspace(id) }
-    case 'updateApp': return { label: 'Check for Updates…', run: () => runWindowAction('checkForUpdates') }
-    case 'retry': return { label: 'Try again', run: () => connection.retryNow() }
-    case 'start': return { label: 'Open Workspace', run: () => connection.retryNow() }
+    case 'updateRuntime': return { label: t('Update…'), run: () => void selectWorkspace(id) }
+    case 'updateApp': return { label: t('Check for Updates…'), run: () => runWindowAction('checkForUpdates') }
+    case 'retry': return { label: t('Try again'), run: () => connection.retryNow() }
+    case 'start': return { label: t('Open Workspace'), run: () => connection.retryNow() }
     // A paired one asks first.
-    case 'close': return { label: 'Close Workspace', run: () => void closeWorkspace(id) }
+    case 'close': return { label: t('Close Workspace'), run: () => void closeWorkspace(id) }
     case 'pair': {
       const entry = workspaces?.get(id)
       const machine = entry?.kind === 'paired' ? entry.machineName : undefined
-      return { label: 'Pair again…', run: () => useUIStore.getState().openJoinInput(machine ? { machine } : {}) }
+      return { label: t('Pair again…'), run: () => useUIStore.getState().openJoinInput(machine ? { machine } : {}) }
     }
     case 'openNested': {
       if (state.kind !== 'refused' || !state.nestedIn) return null
       const outer = state.nestedIn
       const name = outer.split(/[\\/]/).filter(Boolean).pop() ?? outer
-      return { label: `Open ${name}`, run: () => void openLocalFolder(outer) }
+      return { label: t('Open {name}', { name }), run: () => void openLocalFolder(outer) }
     }
   }
 }
@@ -79,6 +81,7 @@ export function WorkspaceToggle({ connection, canExpand, expanded, onToggle }: {
 }): JSX.Element {
   const state = useConnectionState(connection)
   useRequiredRuntimeUpdate(connection)
+  const tr = useT()
   const status = statusOf(connection, state)
   const label = status ? `${status.title}: ${status.message}` : null
 
@@ -91,7 +94,7 @@ export function WorkspaceToggle({ connection, canExpand, expanded, onToggle }: {
         if (label && connection) void selectWorkspace(connection.workspaceId)
         else if (canExpand) onToggle()
       }}
-      aria-label={label ?? (canExpand ? (expanded ? 'Collapse workspace' : 'Expand workspace') : undefined)}
+      aria-label={label ?? (canExpand ? (expanded ? tr('Collapse workspace') : tr('Expand workspace')) : undefined)}
       data-connection-status={label ? state.kind : undefined}
       disabled={!canExpand && !label}
     >
@@ -106,6 +109,7 @@ export function WorkspaceToggle({ connection, canExpand, expanded, onToggle }: {
 export function ConnectionNotice({ connection }: { connection: WorkspaceConnection | undefined }): JSX.Element | null {
   const state = useConnectionState(connection)
   useRequiredRuntimeUpdate(connection)
+  useT() // re-renders on a language change
   const status = statusOf(connection, state)
   if (!status || state.kind === 'connecting') return null
   return (

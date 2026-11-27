@@ -5,7 +5,11 @@ import { ShareSlot } from './ShareSlot'
 
 const state = vi.hoisted(() => ({ others: [] as unknown[], network: 'off' }))
 vi.mock('../../client/document', () => ({ useOtherClients: () => state.others }))
-vi.mock('../../kernel/settings', () => ({ useWorkspaceSetting: () => state.network }))
+vi.mock('../../kernel/settings', async () => {
+  const { translate } = await import('@kernel/interaction/contract')
+  const t = (text: string, vars?: Record<string, string | number>) => translate('en', text, vars)
+  return { useWorkspaceSetting: () => state.network, useT: () => t, t }
+})
 
 let host: HTMLDivElement
 let root: Root

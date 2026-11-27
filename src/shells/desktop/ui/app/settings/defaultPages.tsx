@@ -19,6 +19,7 @@ import { tryClientApp } from '../app'
 import { DevicesPage } from '../pairing/DevicesPage'
 import { ConnectionNotice } from '../sidebar/connectionStatus'
 import { AppearancePage } from './pages/AppearancePage'
+import { LanguagePage } from './pages/LanguagePage'
 import { CanvasPage, WorkspaceCanvasPage } from './pages/CanvasPage'
 import { ShortcutsPage } from './pages/ShortcutsPage'
 import { BrowserPage, EditorPage, NotificationsPage, SidebarPage, TerminalPage, WorkspaceBrowserPage, WorkspaceTerminalPage } from './pages/clientPages'
@@ -69,6 +70,7 @@ function AgentsPage({ workspaceId }: SettingsPageProps): JSX.Element {
 
 export const DEFAULT_SETTINGS_PAGES: readonly SettingsPage[] = [
   // This device. General (0) and Updates (90) come from the desktop shell.
+  { id: 'language', title: 'Language', scope: 'client', group: 'general', order: 5, component: LanguagePage },
   { id: 'appearance', title: 'Appearance', scope: 'client', group: 'general', order: 10, component: AppearancePage },
   { id: 'notifications', title: 'Notifications', scope: 'client', group: 'general', order: 20, component: NotificationsPage },
   { id: 'sidebar', title: 'Sidebar', scope: 'client', group: 'layout', order: 10, component: SidebarPage },

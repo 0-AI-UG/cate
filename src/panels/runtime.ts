@@ -21,6 +21,9 @@ import { reviewPanel } from './review/runtime'
 import { browserPanel } from './browser/runtime'
 import { surfacePanel } from './surface/runtime'
 import { canvasPanel } from './canvas/runtime'
+import { notePanel } from './note/runtime'
+import { textPanel } from './text/runtime'
+import { drawingPanel } from './drawing/runtime'
 
 /** The runtime services the daemon has for panel types; each type's entry
  *  below names the ones it takes (`PanelRuntime<keys>`). */
@@ -131,4 +134,10 @@ const canvas: PanelRuntime = () => canvasPanel()
 
 const surface: PanelRuntime = () => surfacePanel()
 
-export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface]
+const note: PanelRuntime = () => notePanel()
+
+const text: PanelRuntime = () => textPanel()
+
+const drawing: PanelRuntime = () => drawingPanel()
+
+export const PANEL_RUNTIMES: readonly PanelRuntime<keyof PanelServices>[] = [terminal, editor, review, browser, canvas, surface, note, text, drawing]

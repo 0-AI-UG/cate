@@ -6,6 +6,7 @@ import { displayString, isIconName, type ActionId, type ActionSpec, type IconNam
 import { documentOrder, windowOf, type WindowId, type WorkspaceDocument, type PanelRecord } from '@workspace/document/contract'
 import type { AnyPanelDefinition } from '@panels/framework/contract'
 import { workspaceLocation, type WorkspaceEntry } from '@client/workspaces'
+import { t } from '../../kernel/settings'
 
 interface CommandItem {
   kind: 'command'
@@ -61,17 +62,20 @@ const matches = (query: string, ...texts: (string | undefined)[]): boolean =>
 
 export function commandItems(src: CommandSources, query: string): CommandItem[] {
   const out: CommandItem[] = []
+  // A command matches its English title too.
+  const english = new Map<string, string>()
   for (const { id, spec } of src.actions) {
     if (spec.palette === false) continue
     const binding = src.shortcuts[id]
     out.push({
       kind: 'command',
       id,
-      title: spec.title,
+      title: t(spec.title),
       icon: spec.icon ?? null,
       shortcut: binding?.key ? displayString(binding) : spec.keyHint,
       run: () => src.runAction(id),
     })
+    english.set(id, spec.title)
   }
   if (src.worktrees.length > 1) {
     for (const definition of src.inWorktree) {
@@ -79,14 +83,14 @@ export function commandItems(src: CommandSources, query: string): CommandItem[] 
         out.push({
           kind: 'command',
           id: `new:${definition.type}:${worktree.id}`,
-          title: `${definition.creation?.title ?? `New ${definition.label}`} in ${worktree.label}`,
+          title: t('{command} in {worktree}', { command: t(definition.creation?.title ?? `New ${definition.label}`), worktree: worktree.label }),
           icon: isIconName(definition.icon) ? definition.icon : null,
           run: () => src.create(definition.type, { worktreeId: worktree.id, cwd: worktree.path }),
         })
       }
     }
   }
-  return out.filter((item) => matches(query, item.title))
+  return out.filter((item) => matches(query, item.title, english.get(item.id)))
 }
 
 export function workspaceItems(entries: readonly WorkspaceEntry[], currentId: string | null, query: string): WorkspaceItem[] {

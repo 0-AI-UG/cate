@@ -7,7 +7,7 @@
 import type { MouseEvent } from 'react'
 import { Globe, UserPlus, Wifi } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
-import { useWorkspaceSetting } from '../../kernel/settings'
+import { useT, useWorkspaceSetting } from '../../kernel/settings'
 import { useOtherClients } from '../../client/document'
 
 const initials = (name: string): string =>
@@ -26,9 +26,10 @@ export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
   const others = useOtherClients(workspaceId)
   const network = useWorkspaceSetting(isOpen ? workspaceId : null, 'runtimeNetwork')
   const share = (e: MouseEvent) => { e.stopPropagation(); onShare() }
+  const t = useT()
 
   if (isOpen && others.length > 0) {
-    const label = `Also here: ${others.map((client) => client.device.name).join(', ')}`
+    const label = t('Also here: {names}', { names: others.map((client) => client.device.name).join(', ') })
     const shown = others.slice(0, MAX_SHOWN)
     return (
       <Tooltip label={label}>
@@ -53,7 +54,7 @@ export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
 
   if (isOpen && network !== 'off' && !isSelected) {
     const Glyph = network === 'cateConnect' ? Globe : Wifi
-    const label = network === 'cateConnect' ? 'Shared: paired devices can join from anywhere' : 'Shared: paired devices can join on this network'
+    const label = network === 'cateConnect' ? t('Shared: paired devices can join from anywhere') : t('Shared: paired devices can join on this network')
     return (
       <Tooltip label={label}>
         <button className={`${SLOT} w-5 h-5 text-secondary opacity-70 hover:opacity-100 hover:text-primary`} onClick={share} aria-label={label}>
@@ -64,14 +65,14 @@ export function ShareSlot({ workspaceId, isOpen, isSelected, onShare }: {
   }
 
   return (
-    <Tooltip label="Invite to workspace…">
+    <Tooltip label={t('Invite to workspace…')}>
       <button
         className={`${SLOT} h-5 px-1 text-secondary hover:text-primary transition-opacity ${isSelected ? 'opacity-60' : 'opacity-0'} group-hover:opacity-80 hover:!opacity-100 focus-visible:opacity-100`}
         onClick={share}
-        aria-label="Invite to workspace…"
+        aria-label={t('Invite to workspace…')}
       >
         <UserPlus size={13} />
-        {isSelected && <span className="ml-1 text-xs">Invite</span>}
+        {isSelected && <span className="ml-1 text-xs">{t('Invite')}</span>}
       </button>
     </Tooltip>
   )

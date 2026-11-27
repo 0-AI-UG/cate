@@ -9,7 +9,7 @@ import { Check, Copy, RefreshCw, Smartphone, Trash2 } from 'lucide-react'
 import { useRuntime } from '../../kernel/rpc'
 import { Button, IconButton, SecondaryButton, SearchableBlock, SettingRow, Spinner } from '../../kernel/interaction'
 import { clientUi, errorMessage } from '@kernel/interaction'
-import { setWorkspaceSetting, useWorkspaceSetting } from '../../kernel/settings'
+import { setWorkspaceSetting, t as tNow, useT, useWorkspaceSetting } from '../../kernel/settings'
 import type { CreatedSecret, PairingMode, WorkspaceDevice } from '@runtime/pairing/contract'
 import type { SameNetworkProblem } from '@runtime/transports/contract'
 import { clientIdentity, relativeTime } from '@client/connections'
@@ -18,6 +18,7 @@ import type { SettingsPageProps } from '../settings/registry'
 import { useUIStore } from '../state/uiStore'
 
 export function DevicesPage({ workspaceId }: SettingsPageProps): JSX.Element | null {
+  const t = useT()
   if (!workspaceId) return null
   return (
     <div className="flex flex-col gap-1">
@@ -26,7 +27,7 @@ export function DevicesPage({ workspaceId }: SettingsPageProps): JSX.Element | n
         description="Share the workspace to choose who can join and show a one-time code."
         keywords="add device pair pairing qr code phone join network share"
       >
-        <SecondaryButton onClick={() => useUIStore.getState().openShare(workspaceId)}>Share…</SecondaryButton>
+        <SecondaryButton onClick={() => useUIStore.getState().openShare(workspaceId)}>{t('Share…')}</SecondaryButton>
       </SettingRow>
       <WorkspaceDevices workspaceId={workspaceId} />
     </div>
@@ -74,6 +75,7 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
   const [error, setError] = useState<string | null>(null)
   const secondsLeft = useSecondsLeft(secret?.expiresAt ?? null)
   const expired = secret !== null && secondsLeft === 0
+  const t = useT()
 
   useEffect(() => {
     if (!secret) { setQrSvg(null); return }
@@ -96,7 +98,7 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
       await ui.writeClipboard(secret.code.toUpperCase())
       setCopied(true)
     } catch (err) {
-      setError(errorMessage(err, 'Could not copy the code.'))
+      setError(errorMessage(err, t('Could not copy the code.')))
     }
   }
 
@@ -110,7 +112,7 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
       if (network === 'off') await setWorkspaceSetting(workspaceId, 'runtimeNetwork', mode)
       setSecret({ ...(await runtime.pairing.createSecret({ mode, acknowledged: true })), mode })
     } catch (err) {
-      setError(errorMessage(err, 'Could not create a pairing code.'))
+      setError(errorMessage(err, t('Could not create a pairing code.')))
     } finally {
       setBusy(false)
     }
@@ -123,22 +125,22 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
   const problem = secret?.sameNetworkProblem ?? null
   useEffect(() => { onSameNetworkProblem?.(problem) }, [problem, onSameNetworkProblem])
 
-  const howTo = 'On the other device, scan the QR code or type the code under "Join Workspace".'
+  const howTo = t('On the other device, scan the QR code or type the code under "Join Workspace".')
 
   if (!secret) {
     return (
-      <div role="group" aria-label="Confirm sharing" className="flex flex-col items-center gap-3 rounded-xl border border-warning bg-surface-0 px-4 py-4 text-center">
+      <div role="group" aria-label={t('Confirm sharing')} className="flex flex-col items-center gap-3 rounded-xl border border-warning bg-surface-0 px-4 py-4 text-center">
         <div className="flex flex-col gap-1">
-          <span className="text-[14px] font-medium text-primary">Anyone who joins can use this computer as you</span>
+          <span className="text-[14px] font-medium text-primary">{t('Anyone who joins can use this computer as you')}</span>
           <span className="max-w-[360px] text-xs leading-relaxed text-muted">
-            Full access to commands, files and local services. Only invite people you trust.
-            {network === 'off' && ' Turns on same-network access first.'}
+            {t('Full access to commands, files and local services. Only invite people you trust.')}
+            {network === 'off' && ` ${t('Turns on same-network access first.')}`}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {onCancel && <Button variant="secondary" className="w-32" onClick={onCancel}>Cancel</Button>}
+          {onCancel && <Button variant="secondary" className="w-32" onClick={onCancel}>{t('Cancel')}</Button>}
           <Button variant="primary" className="w-32" onClick={() => void create()} disabled={!runtime} loading={busy}>
-            Create Invite
+            {t('Create Invite')}
           </Button>
         </div>
         {error && <span role="alert" className="text-xs text-danger">{error}</span>}
@@ -147,7 +149,7 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
   }
 
   return (
-    <div className="flex items-center gap-5 rounded-xl border border-subtle bg-surface-0 p-4" aria-label="Pairing code">
+    <div className="flex items-center gap-5 rounded-xl border border-subtle bg-surface-0 p-4" aria-label={t('Pairing code')}>
       <div
         className={`h-36 w-36 shrink-0 rounded-lg bg-white p-1.5 ${expired ? 'opacity-20' : ''}`}
         data-testid="pairing-qr"
@@ -155,24 +157,24 @@ export function PairingCode({ workspaceId, onSameNetworkProblem, onCancel }: {
         dangerouslySetInnerHTML={qrSvg ? { __html: qrSvg } : undefined}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <span className="text-[14px] font-medium text-primary">Invite to this workspace</span>
+        <span className="text-[14px] font-medium text-primary">{t('Invite to this workspace')}</span>
         <span className="text-xs leading-relaxed text-muted">{howTo}</span>
         <div className="flex items-center gap-2">
           <code className={`min-w-0 break-all font-mono text-[15px] tracking-wider select-all ${expired ? 'text-muted line-through' : 'text-primary'}`}>
             {secret.code.toUpperCase()}
           </code>
-          <IconButton label={copied ? 'Copied' : 'Copy pairing code'} disabled={expired || !clientUi().writeClipboard} onClick={() => void copyCode()}>
+          <IconButton label={copied ? t('Copied') : t('Copy pairing code')} disabled={expired || !clientUi().writeClipboard} onClick={() => void copyCode()}>
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </IconButton>
-          <span role="status" className="sr-only">{copied ? 'Pairing code copied' : ''}</span>
+          <span role="status" className="sr-only">{copied ? t('Pairing code copied') : ''}</span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className={`text-xs ${expired ? 'text-danger' : 'text-muted'}`}>
-            {expired ? 'Expired.' : `Works once. Expires in ${formatCountdown(secondsLeft)}.`}
+            {expired ? t('Expired.') : t('Works once. Expires in {time}.', { time: formatCountdown(secondsLeft) })}
           </span>
           <Button size="sm" variant={expired ? 'primary' : 'ghost'} onClick={() => setSecret(null)} disabled={!runtime}>
             <RefreshCw size={11} />
-            New code
+            {t('New code')}
           </Button>
         </div>
         {error && <span role="alert" className="text-xs text-danger">{error}</span>}
@@ -188,6 +190,7 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
   const [error, setError] = useState<string | null>(null)
   const ownKey = clientIdentity().device.publicKey
   const online = new Set([ownKey, ...others.map((client) => client.device.publicKey)])
+  const t = useT()
 
   // Live: a device paired, connected or removed from another client shows
   // here too.
@@ -198,20 +201,20 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
       setDevices(event.kind === 'snapshot' ? event.snapshot : event.change)
       setError(null)
     })
-    watch.done.catch((err: unknown) => setError(errorMessage(err, 'Could not list the devices.')))
+    watch.done.catch((err: unknown) => setError(errorMessage(err, tNow('Could not list the devices.'))))
     return () => watch.cancel()
   }, [runtime])
 
   const revoke = async (device: WorkspaceDevice) => {
     if (!runtime) return
     const consequence = device.admittedBy === 'pairing'
-      ? 'It can no longer open this workspace until it pairs again.'
-      : 'It is disconnected, and comes back when it opens the workspace again as a user of this machine.'
-    if (!(await clientUi().confirm(`Remove "${device.name}"? ${consequence}`))) return
+      ? t('It can no longer open this workspace until it pairs again.')
+      : t('It is disconnected, and comes back when it opens the workspace again as a user of this machine.')
+    if (!(await clientUi().confirm(`${t('Remove "{name}"?', { name: device.name })} ${consequence}`))) return
     try {
       await runtime.pairing.revoke({ deviceKey: device.publicKey })
     } catch (err) {
-      clientUi().showError(errorMessage(err, 'Could not remove the device.'))
+      clientUi().showError(errorMessage(err, t('Could not remove the device.')))
     }
   }
 
@@ -219,15 +222,15 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
     <SearchableBlock keywords="devices paired revoke remove phone">
       <div className="py-3 flex flex-col gap-2">
         <span className="text-[13px] font-medium text-primary">
-          Devices with access{devices && devices.length > 0 && <span className="ml-1.5 font-normal text-muted">{devices.length}</span>}
+          {t('Devices with access')}{devices && devices.length > 0 && <span className="ml-1.5 font-normal text-muted">{devices.length}</span>}
         </span>
         {error && <span className="text-xs text-danger">{error}</span>}
         {devices === null ? (
           !error && <Spinner size={12} />
         ) : devices.length === 0 ? (
-          <span className="text-xs text-muted">No device has opened this workspace.</span>
+          <span className="text-xs text-muted">{t('No device has opened this workspace.')}</span>
         ) : (
-          <ul className="-mx-2 flex flex-col" aria-label="Devices">
+          <ul className="-mx-2 flex flex-col" aria-label={t('Devices')}>
             {devices.map((device) => {
               const connected = online.has(device.publicKey)
               return (
@@ -235,22 +238,22 @@ export function WorkspaceDevices({ workspaceId }: { workspaceId: string }): JSX.
                   <span className="relative shrink-0 text-muted">
                     <Smartphone size={15} />
                     <span
-                      aria-label={connected ? 'Connected' : 'Not connected'}
+                      aria-label={connected ? t('Connected') : t('Not connected')}
                       className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface-0 ${connected ? 'bg-green-500' : 'bg-transparent border-transparent'}`}
                     />
                   </span>
                   <div className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-[13px] text-primary">
                       {device.name}
-                      {device.publicKey === ownKey && <span className="text-muted"> (this device)</span>}
+                      {device.publicKey === ownKey && <span className="text-muted"> ({t('this device')})</span>}
                     </span>
-                    <span className="truncate text-[11px] text-muted" title={`Fingerprint ${device.fingerprint}`}>
-                      {device.admittedBy === 'pairing' ? 'Has access' : "Joined as this machine's user"} · {connected ? 'connected now' : `last seen ${relativeTime(device.lastSeen)}`}
+                    <span className="truncate text-[11px] text-muted" title={t('Fingerprint {value}', { value: device.fingerprint })}>
+                      {device.admittedBy === 'pairing' ? t('Has access') : t("Joined as this machine's user")} · {connected ? t('connected now') : t('last seen {when}', { when: relativeTime(device.lastSeen) })}
                     </span>
                   </div>
                   <button
                     type="button"
-                    aria-label={`Remove ${device.name}`}
+                    aria-label={t('Remove {name}', { name: device.name })}
                     onClick={() => void revoke(device)}
                     className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 hover:bg-hover hover:text-red-400 focus:opacity-100 group-hover/device:opacity-100"
                   >

@@ -10,6 +10,7 @@ export * from './contract/colors'
 export * from './contract/shortcuts'
 export * from './contract/actions'
 export * from './contract/icons'
+export * from './contract/i18n'
 
 export type NotificationAction =
   | { type: 'focusTerminal'; workspaceId: string; terminalId: string }

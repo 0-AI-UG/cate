@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight as CaretRight, Ellipsis as DotsThree, Folder, FolderOpen, Link2, Server } from 'lucide-react'
 import { Tooltip } from '../../kernel/interaction'
 import { clientUi } from '@kernel/interaction'
-import { useClientSetting } from '../../kernel/settings'
+import { useClientSetting, useT } from '../../kernel/settings'
 import { useConnectionState, useWorkspaceRoot } from '../../client/connections'
 import { useDocument } from '../../client/document'
 import { focusedLeafPanelId, panelRowLabel } from '@client/host'
@@ -68,6 +68,7 @@ export function WorkspaceRow({
   const titles = usePanelTitles(isOpen ? workspaceId : null)
   const showSkills = useClientSetting('showSkillsInWorkspaceOverview')
   const skillsViewOpen = useUIStore((s) => s.overlay?.view === 'skills')
+  const t = useT()
   const collapsed = useTreeCollapseStore((s) => s.collapsed)
 
   const [renamingWorkspace, setRenamingWorkspace] = useState<string | null>(null)
@@ -104,15 +105,15 @@ export function WorkspaceRow({
     e.stopPropagation()
     const cwd = terminalCwd(statuses, isOpen ? focusedLeafPanelId(workspaceId) : null) ?? rootPath
     const items: MenuItem[] = [
-      { id: 'select', label: 'Select Workspace', enabled: !isSelected },
-      { id: 'share', label: 'Share Workspace…' },
-      { id: 'rename', label: 'Rename Workspace' },
-      { id: 'settings', label: 'Workspace Settings…', enabled: isOpen },
+      { id: 'select', label: t('Select Workspace'), enabled: !isSelected },
+      { id: 'share', label: t('Share Workspace…') },
+      { id: 'rename', label: t('Rename Workspace') },
+      { id: 'settings', label: t('Workspace Settings…'), enabled: isOpen },
       { type: 'separator' },
-      { id: 'copy-cwd', label: 'Copy Working Directory', enabled: !!cwd },
-      { id: 'close-panels', label: 'Close All Panels', enabled: isOpen && tree.count > 0 },
+      { id: 'copy-cwd', label: t('Copy Working Directory'), enabled: !!cwd },
+      { id: 'close-panels', label: t('Close All Panels'), enabled: isOpen && tree.count > 0 },
       { type: 'separator' },
-      { id: 'close', label: 'Close Workspace' },
+      { id: 'close', label: t('Close Workspace') },
     ]
     setMenuOpen(true)
     const id = await showMenu(items)
@@ -136,10 +137,10 @@ export function WorkspaceRow({
     e.stopPropagation()
     const label = panelRowLabel(record)
     const id = await showMenu([
-      { id: 'rename', label: 'Rename' },
-      { id: 'move-window', label: 'Move into New Window' },
+      { id: 'rename', label: t('Rename') },
+      { id: 'move-window', label: t('Move into New Window') },
       { type: 'separator' },
-      { id: 'close', label: 'Close' },
+      { id: 'close', label: t('Close') },
     ])
     if (id === 'rename') setRename({ panelId: record.id, value: label, seed: label })
     else if (id === 'move-window') detachPanel(workspaceId, record.id)
@@ -238,7 +239,7 @@ export function WorkspaceRow({
         ) : (
           <span
             className={`flex-1 min-w-0 text-[14px] truncate ${isOpen ? '' : 'opacity-70'} ${isSelected ? 'cursor-text' : ''}`}
-            title={isSelected ? 'Rename workspace' : rootPath ?? displayTitle}
+            title={isSelected ? t('Rename workspace') : rootPath ?? displayTitle}
             onClick={(e) => {
               if (e.shiftKey || e.metaKey || e.ctrlKey || !isSelected) return
               e.stopPropagation()
@@ -249,18 +250,18 @@ export function WorkspaceRow({
             {displayTitle}
           </span>
         )}
-        {entry.kind !== 'local' && <span className="max-w-24 truncate text-[11px] text-muted" title="Workspace computer">{'label' in location ? location.label ?? 'Remote computer' : ''}</span>}
+        {entry.kind !== 'local' && <span className="max-w-24 truncate text-[11px] text-muted" title={t('Workspace computer')}>{'label' in location ? location.label ?? t('Remote computer') : ''}</span>}
         <ShareSlot workspaceId={workspaceId} isOpen={isOpen} isSelected={isSelected} onShare={() => void share()} />
         {canExpand && !isExpanded && (
           <span className="flex-shrink-0 text-[10px] text-secondary font-semibold opacity-80 group-hover:opacity-100 transition-opacity">
             {tree.count}
           </span>
         )}
-        <Tooltip label="More actions">
+        <Tooltip label={t('More actions')}>
           <button
             className="flex-shrink-0 w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-80 hover:!opacity-100 text-secondary hover:text-primary transition-opacity focus:outline-none"
             onClick={(e) => { e.stopPropagation(); void handleContextMenu(e) }}
-            aria-label="More actions"
+            aria-label={t('More actions')}
           >
             <DotsThree size={14} />
           </button>
@@ -272,7 +273,7 @@ export function WorkspaceRow({
           {tree.others.length > 0 && (
             <>
               <div className="flex items-center gap-1.5 h-6 pl-7 pr-2 text-[11px] text-muted opacity-70">
-                <span className="truncate">Other windows</span>
+                <span className="truncate">{t('Other windows')}</span>
               </div>
               {tree.others.map(renderWindow)}
             </>
@@ -379,6 +380,7 @@ function CanvasRow({ record, hasChildren, collapsed, onToggle, onClick, onContex
   onContextMenu: (e: React.MouseEvent) => void
 }): JSX.Element {
   const label = panelRowLabel(record)
+  const t = useT()
   return (
     <div
       role="button"
@@ -400,7 +402,7 @@ function CanvasRow({ record, hasChildren, collapsed, onToggle, onClick, onContex
           type="button"
           className="flex-shrink-0 flex items-center justify-center w-[10px] text-muted hover:text-primary focus:outline-none"
           onClick={(e) => { e.stopPropagation(); onToggle() }}
-          aria-label={collapsed ? 'Expand canvas' : 'Collapse canvas'}
+          aria-label={collapsed ? t('Expand canvas') : t('Collapse canvas')}
         >
           <CaretRight size={10} className={`transition-transform ${collapsed ? '' : 'rotate-90'}`} />
         </button>

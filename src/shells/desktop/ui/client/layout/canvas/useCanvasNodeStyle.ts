@@ -28,10 +28,12 @@ interface StyleArgs {
   worktreeHighlight?: boolean
   /** The lens is on another worktree: this node recedes. */
   worktreeDim?: boolean
+  /** The view draws itself (`chrome.frameless`): no border, fill or shadow. */
+  frameless?: boolean
 }
 
 export function useCanvasNodeStyle(args: StyleArgs) {
-  const { node, isFocused, isSelected, isHovered, isWholeNodeDragSource, worktreeColor, worktreeHighlight, worktreeDim } = args
+  const { node, isFocused, isSelected, isHovered, isWholeNodeDragSource, worktreeColor, worktreeHighlight, worktreeDim, frameless = false } = args
 
   const containerStyle = useMemo<React.CSSProperties>(() => {
     if (!node) return { display: 'none' }
@@ -64,8 +66,9 @@ export function useCanvasNodeStyle(args: StyleArgs) {
       visibility: isWholeNodeDragSource ? 'hidden' : undefined,
       pointerEvents: exiting || isWholeNodeDragSource ? 'none' : undefined,
       userSelect: 'none',
+      ...(frameless ? { overflow: 'visible', border: 'none', boxShadow: 'none', backgroundColor: 'transparent' } : {}),
     }
-  }, [node, isHovered, isWholeNodeDragSource, worktreeDim])
+  }, [node, isHovered, isWholeNodeDragSource, worktreeDim, frameless])
 
   const glowStyle = useMemo<React.CSSProperties | null>(() => {
     if (!node) return null

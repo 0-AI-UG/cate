@@ -6,12 +6,10 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { viewToCanvas, type Point } from '@workspace/canvas/contract'
-import { declaredActions } from '@kernel/interaction'
 import { useDocument } from '../../document'
-import { canRunAction, creationMenuItems, creationPick, runAction, worktreeChoices } from '@client/host'
+import { worktreeChoices } from '@client/host'
 import { RelationCanvasProvider } from '../../../workspace/relations'
 import { registerCanvasDropSurface, useDockFileDrop } from '../drag'
-import { canvasHost } from './ports'
 import { useCanvasSetting } from './settingsHooks'
 import { createPanelOnCanvas } from './actions'
 import { useCanvasInteraction } from './useCanvasInteraction'
@@ -19,7 +17,7 @@ import { useAutoFocusLargestVisible } from './useAutoFocusLargestVisible'
 import { CanvasRelationOverlayContext, CanvasTopOverlayContext, useCanvasView, useCanvasViewStore } from './context'
 import { canvasSlots } from './slots'
 import { useCanvasUi } from './uiState'
-import { showContextMenu, type ContextMenuItem } from './contextMenu'
+import { CanvasContextMenu } from './CanvasContextMenu'
 import CanvasGrid from './background/CanvasGrid'
 import CanvasBackgroundImage from './background/CanvasBackgroundImage'
 import { WorktreeTerritoryLayer } from './worktree'
@@ -374,32 +372,6 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
     dropPointRef.current = null
   }, [workspaceId, canvasId, canvasPointOf, fileDrop])
 
-  // A right click on empty canvas opens the native menu: the creation
-  // entries, then the actions offered in the canvas menu, run on this canvas.
-  useEffect(() => {
-    if (!canvasContextMenu) return
-    let cancelled = false
-    const point = canvasContextMenu.canvasPoint
-    const context = { workspaceId, canvasId }
-    const actions = declaredActions().filter(({ id, spec }) => spec.contextMenus?.includes('canvas') && canRunAction(id, context))
-    const items: ContextMenuItem[] = [
-      ...creationMenuItems(canvasHost().creatable(), worktreeList),
-      ...(actions.length > 0 ? [{ type: 'separator' as const }] : []),
-      ...actions.map(({ id, spec }) => ({ id: `action:${id}`, label: spec.title })),
-    ]
-    void showContextMenu(items).then((id) => {
-      if (cancelled) return
-      closeCanvasContextMenu()
-      if (id?.startsWith('action:')) {
-        void runAction(id.slice('action:'.length), context)
-        return
-      }
-      const pick = creationPick(id, worktreeList)
-      if (pick) createPanelOnCanvas(workspaceId, canvasId, pick.type, { position: point, ...pick.options })
-    })
-    return () => { cancelled = true }
-  }, [canvasContextMenu, closeCanvasContextMenu, workspaceId, canvasId, worktreeList])
-
   return (
     <CanvasTopOverlayContext.Provider value={topOverlayWorld}>
       <CanvasRelationOverlayContext.Provider value={relationOverlayWorld}>
@@ -465,6 +437,17 @@ export default function Canvas({ workspaceId, canvasId, canvasPanelId, children,
           document.body,
         )}
         <PlacementHint canvasRef={canvasRef} />
+        {canvasContextMenu && (
+          <CanvasContextMenu
+            workspaceId={workspaceId}
+            canvasId={canvasId}
+            x={canvasContextMenu.x}
+            y={canvasContextMenu.y}
+            canvasPoint={canvasContextMenu.canvasPoint}
+            worktrees={worktreeList}
+            onClose={closeCanvasContextMenu}
+          />
+        )}
       </CanvasRelationOverlayContext.Provider>
     </CanvasTopOverlayContext.Provider>
   )

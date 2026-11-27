@@ -5,7 +5,7 @@
 
 import { SettingRow, Toggle } from '../ui/kernel/interaction'
 import { clientUi } from '@kernel/interaction'
-import { setClientSetting, useClientSetting } from '../ui/kernel/settings'
+import { setClientSetting, useClientSetting, useT } from '../ui/kernel/settings'
 import { defineActions, storedShortcut } from '@kernel/interaction/contract'
 import { pickNewPanelPlace, registerActions, revealPanel } from '@client/host'
 import { installFileDropHandler } from '../ui/client/layout/drag'
@@ -24,11 +24,15 @@ import '../ui/panels/browser'
 import '../ui/panels/review'
 import '../ui/panels/canvas'
 import '../ui/panels/surface'
+import '../ui/panels/note'
+import '../ui/panels/text'
+import '../ui/panels/drawing'
 
 // --- Desktop settings pages -------------------------------------------------------
 
 function GeneralPage() {
   const warnBeforeQuit = useClientSetting('warnBeforeQuit')
+  const t = useT()
   return (
     <div className="flex flex-col gap-1">
       <SettingRow label="Warn before quit" description="Ask before quitting with Cmd+Q">
@@ -43,7 +47,7 @@ function GeneralPage() {
           onClick={() => clientUi().openExternal('https://cate.cero-ai.com/privacy')}
           className="text-blue-400 hover:text-blue-300 text-[12px] font-medium whitespace-nowrap"
         >
-          Privacy Policy
+          {t('Privacy Policy')}
         </button>
       </SettingRow>
     </div>
