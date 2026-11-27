@@ -21,7 +21,7 @@ export function probeJsonLines<T>(input: {
   answer: (line: Record<string, unknown>) => T | undefined
 }): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const child = spawn(input.command, input.args, { cwd: input.cwd, env: input.env, stdio: ['pipe', 'pipe', 'ignore'] })
+    const child = spawn(input.command, input.args, { cwd: input.cwd, env: input.env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true })
     let settled = false
     const finish = (error: Error | null, value?: T) => {
       if (settled) return

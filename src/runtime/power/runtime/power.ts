@@ -61,7 +61,7 @@ export interface PowerService {
 export function createPowerService(deps: PowerDeps): PowerService {
   const platform = deps.platform ?? process.platform
   const pid = deps.pid ?? process.pid
-  const spawnHelper = deps.spawn ?? ((command, args) => nodeSpawn(command, args, { stdio: 'ignore' }))
+  const spawnHelper = deps.spawn ?? ((command, args) => nodeSpawn(command, args, { stdio: 'ignore', windowsHide: true }))
   const now = deps.now ?? Date.now
   const listeners = new Set<(state: PowerState) => void>()
 
